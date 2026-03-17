@@ -2,17 +2,17 @@
 
 namespace App\Rules;
 
-use Adldap\Laravel\Validation\Rules\Rule;
+use Illuminate\Database\Eloquent\Model as Eloquent;
+use LdapRecord\Laravel\Auth\Rule;
+use LdapRecord\Models\Model as LdapRecord;
 
-class OnlyManagersAndAccountingRule extends Rule
+class OnlyManagersAndAccountingRule implements Rule
 {
     /**
      * Determines if the user is allowed to authenticate.
-     *
-     * @return bool
-     */   
-    public function isValid()
+     */
+    public function passes(LdapRecord $user, ?Eloquent $model = null): bool
     {
-        return \App\User::isValidUser($this->user);
+        return \App\User::isValidUser($user);
     }
 }

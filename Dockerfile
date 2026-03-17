@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.4
 
 ##### Frontend build ###########################################################
-FROM node:16-slim AS frontend-builder
+FROM node:22-slim AS frontend-builder
 
 WORKDIR /corgi
 
@@ -20,7 +20,7 @@ COPY src ./
 RUN npm run production
 
 ##### PHP release ##############################################################
-FROM php:7.3-fpm AS release
+FROM php:8.4-fpm AS release
 
 # Fail fast and keep the shell in debug mode for RUN blocks
 # SHELL ["/bin/sh", "-euxo", "pipefail", "-c"]
@@ -32,8 +32,8 @@ ENV LANG=en_CA.UTF-8 \
 WORKDIR /corgi
 
 # System packages and composer
-RUN apt-get update
-RUN apt-get install -y --no-install-recommends \
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
       mariadb-client \
       locales \
       unzip \
@@ -41,8 +41,12 @@ RUN apt-get install -y --no-install-recommends \
       supervisor \
       libldap2-dev \
       libvips-dev \
-      curl
- # && rm -rf /var/lib/apt/lists/*
+      libfreetype6-dev \
+      libjpeg62-turbo-dev \
+      libpng-dev \
+      libwebp-dev \
+      curl \
+ && rm -rf /var/lib/apt/lists/*
 
 RUN curl -sSL https://getcomposer.org/installer \
     | php -- --install-dir=/usr/local/bin --filename=composer
@@ -58,9 +62,9 @@ RUN pecl install vips \
  && docker-php-ext-enable vips
 
 RUN docker-php-ext-configure gd \
-      --with-freetype-dir=/usr/include/ \
-      --with-webp-dir=/usr/include/ \
-      --with-jpeg-dir=/usr/include/ \
+      --with-freetype \
+      --with-webp \
+      --with-jpeg \
  && docker-php-ext-configure ldap \
       --with-libdir=lib/$(uname -m)-linux-gnu/ \
  && docker-php-ext-install -j"$(nproc)" \

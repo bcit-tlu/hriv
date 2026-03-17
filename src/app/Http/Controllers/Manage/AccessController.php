@@ -8,7 +8,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Log;
 use App\LdapMember;
-use Adldap\Laravel\Facades\Adldap;
+use App\Ldap\User as LdapUser;
 
 class AccessController extends Controller
 {
@@ -37,8 +37,8 @@ class AccessController extends Controller
                 // if the account is in A0# format
                 if (preg_match('/^A[0-9]+$/', $member->cn)) {
 
-                    // serach account info from LDAP
-                    $ldap_result = Adldap::search()->where('cn', '=', $member->cn)->get()->first();
+                    // search account info from LDAP using LdapRecord
+                    $ldap_result = LdapUser::where('cn', '=', $member->cn)->first();
     
                     if(!is_null($ldap_result) && !is_null($ldap_result->displayname) && count($ldap_result->displayname) > 0){
                         $member->display_name = $ldap_result->displayname[0];

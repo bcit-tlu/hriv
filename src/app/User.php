@@ -8,16 +8,18 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 
-use Adldap\Laravel\Traits\HasLdapUser;
+use LdapRecord\Laravel\Auth\HasLdapUser;
+use LdapRecord\Laravel\Auth\LdapAuthenticatable;
+use LdapRecord\Laravel\Auth\AuthenticatesWithLdap;
 use App\AuthPolicy;
 use App\LdapMember;
 use App\Admin_program;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 
-class User extends Authenticatable
+class User extends Authenticatable implements LdapAuthenticatable
 {
-    use Notifiable, HasLdapUser;
+    use Notifiable, HasLdapUser, AuthenticatesWithLdap;
 
     /**
      * The attributes that are mass assignable.
@@ -25,8 +27,16 @@ class User extends Authenticatable
      * @var array
      */
     protected $fillable = [
-        'auth_policy_id', 'username', 'name', 'email', 'objectguid'
+        'auth_policy_id', 'username', 'name', 'email', 'objectguid', 'domain'
     ];
+
+    /**
+     * Get the database column name for the LDAP guid (LdapRecord).
+     */
+    public function getLdapGuidColumn(): string
+    {
+        return 'objectguid';
+    }
 
     /**
      * The attributes that should be hidden for arrays.
@@ -92,9 +102,8 @@ class User extends Authenticatable
         }
 
         if(!$ldapGroups){
-            $model = new User();
-            // get account cn list from LDAP
-            $ldapGroups = $model->getLdapMembers($user->ldap);
+            // get account cn list from LDAP via LdapRecord
+            $ldapGroups = self::getLdapMembers($user->ldap);
         }
 
         if($ldapGroups){
@@ -118,20 +127,12 @@ class User extends Authenticatable
                     ->ldapMember()->pluck('cn')->toArray();
 
         $user = Auth::user();
-        $model = new User();
-        // get account cn list from LDAP
-        $ldapGroups = $model->getLdapMembers($user->ldap);
-
-        // add fake CN for TESTING only
-        // array_push($ldapGroups,'SOH-MLS', 'BCIT-Corgi');
-        // overwrite CN for TESTING only
-        // $ldapGroups = ['A0010010111'];
-        // $ldapGroups = ['A0010010111', 'SOH-MLS'];
-        // $ldapGroups = ['A0010010111', 'SOH-MLS', 'BCIT-Corgi'];
+        // get account cn list from LDAP via LdapRecord
+        $ldapGroups = self::getLdapMembers($user->ldap);
 
         if($ldapGroups){
 
-            if($model->isSuperAdmin($user , $ldapGroups)){ // check if is super admin
+            if(self::isSuperAdmin($user , $ldapGroups)){ // check if is super admin
                 return true;
             }elseif(!empty(array_intersect($ldapGroups, $adminCn))){ // check if is admin
                 // Check and sync the admin program with LDAP cn
@@ -181,8 +182,7 @@ class User extends Authenticatable
 
         $validUsers = LdapMember::pluck('cn')->toArray();
 
-        $model = new User();
-        $ldapGroups = $model->getLdapMembers($user);
+        $ldapGroups = self::getLdapMembers($user);
 
         if($ldapGroups)
             return !empty(array_intersect($ldapGroups, $validUsers)); 
@@ -190,20 +190,35 @@ class User extends Authenticatable
 
     }
 
-    private function getLdapMembers($ldapData) {
+    /**
+     * Extract group/member CN list from an LdapRecord model.
+     *
+     * @param \LdapRecord\Models\Model|null $ldapData
+     * @return array|null
+     */
+    private static function getLdapMembers($ldapData) {
 
-        if(!empty($ldapData->getMemberOf())){
+        if (!$ldapData) {
+            return null;
+        }
 
-            $ldapGroups = $ldapData->getMemberOf();
+        $memberOf = $ldapData->getFirstAttribute('memberof')
+            ? $ldapData->getAttribute('memberof')
+            : [];
+
+        if(!empty($memberOf)){
+
+            $ldapGroups = $memberOf;
             $ldapGroups[] = $ldapData->getDn();
             $result=array_map(
                 function($item){ return preg_replace('/(CN=)(.*?)(,.*)/', '$2', $item); }, 
                 $ldapGroups
             );
-            array_push(
-                $result,
-                $ldapData["mail"][0]
-            );
+
+            $mail = $ldapData->getFirstAttribute('mail');
+            if ($mail) {
+                array_push($result, $mail);
+            }
             return $result;
         }
 

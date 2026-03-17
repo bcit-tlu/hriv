@@ -10,7 +10,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Pagination\Paginator;
 
-use Adldap\Laravel\Facades\Adldap;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Gate;
 

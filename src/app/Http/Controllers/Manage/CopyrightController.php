@@ -8,7 +8,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Log;
 use App\LdapMember;
-use Adldap\Laravel\Facades\Adldap;
 use Illuminate\Support\Facades\Auth;
 use App\User;
 use App\Admin_program;

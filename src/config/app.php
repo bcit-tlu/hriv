@@ -175,8 +175,8 @@ return [
         App\Providers\EventServiceProvider::class,
         App\Providers\RouteServiceProvider::class,
 
-        Adldap\Laravel\AdldapServiceProvider::class,
-        Adldap\Laravel\AdldapAuthServiceProvider::class,
+        LdapRecord\Laravel\LdapServiceProvider::class,
+        LdapRecord\Laravel\LdapAuthServiceProvider::class,
 
         Intervention\Image\ImageServiceProvider::class,
 
@@ -195,7 +195,6 @@ return [
 
     'aliases' => [
 
-        'Adldap' => Adldap\Laravel\Facades\Adldap::class,
         'App' => Illuminate\Support\Facades\App::class,
         'Arr' => Illuminate\Support\Arr::class,
         'Artisan' => Illuminate\Support\Facades\Artisan::class,

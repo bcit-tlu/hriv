@@ -81,8 +81,24 @@ return [
         //     'table' => 'users',
         // ],
         'users' => [
-            'driver' => 'ldap', // Changed from 'eloquent'
-            'model' => App\User::class,
+            'driver' => 'ldap',
+            'model' => App\Ldap\User::class,
+            'rules' => [
+                App\Rules\OnlyManagersAndAccountingRule::class,
+            ],
+            'database' => [
+                'model' => App\User::class,
+                'sync_passwords' => env('LDAP_PASSWORD_SYNC', false),
+                'sync_attributes' => [
+                    'username' => 'userprincipalname',
+                    'name' => 'displayname',
+                    'email' => 'mail',
+                ],
+                'sync_existing' => [
+                    'username' => 'userprincipalname',
+                ],
+                'password_column' => 'password',
+            ],
         ],
 
         'local_admin' => [
