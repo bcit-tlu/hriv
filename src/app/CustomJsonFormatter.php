@@ -13,7 +13,7 @@ class CustomJsonFormatter extends JsonFormatter
             'message' => $record->message,
             'record name' => $record->context['name'] ?? null,
             'record id' => $record->context['id'] ?? null,
-            'level' => $record->level->name,
+            'level' => $record->level->getName(),
             'line number' => $record->context['line'] ?? null,
             'file name' => $record->context['file'] ?? null,
             'timestamp' => $record->datetime->format('Y-m-d H:i:s'),
