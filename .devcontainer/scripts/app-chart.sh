@@ -92,7 +92,7 @@ tdir="$(mktemp -d -p . .chart.XXXXXX)"
 
   # Optional: resolve dependencies & lint (non-fatal)
   # Ensure required repos exist for dependency resolution, then vendor deps
-  helm repo add bcit-ltc https://bcit-ltc.github.io/helm-charts >/dev/null 2>&1 || true
+  helm repo add bcit-tlu https://bcit-tlu.github.io/helm-charts >/dev/null 2>&1 || true
   ( cd "$stage" && helm dependency build )
   # ( cd "$stage" && helm lint || true )
 
