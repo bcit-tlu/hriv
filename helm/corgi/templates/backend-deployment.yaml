@@ -26,10 +26,14 @@ spec:
               protocol: TCP
           env:
             - name: DATABASE_URL
+            {{- if .Values.database.enabled }}
               valueFrom:
                 secretKeyRef:
                   name: {{ include "corgi.database.secretName" . }}
                   key: uri
+            {{- else }}
+              value: {{ required "backend.databaseUrl is required when database.enabled is false" .Values.backend.databaseUrl | quote }}
+            {{- end }}
             - name: SOURCE_IMAGES_DIR
               value: "{{ .Values.backend.persistence.mountPath }}/source_images"
             - name: TILES_DIR

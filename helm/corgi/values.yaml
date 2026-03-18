@@ -41,6 +41,8 @@ backend:
     limits:
       cpu: 500m
       memory: 512Mi
+  # -- Direct DATABASE_URL value; required when database.enabled is false
+  databaseUrl: ""
   persistence:
     # -- Enable a PVC for source images and generated tiles
     enabled: true
