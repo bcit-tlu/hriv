@@ -28,9 +28,10 @@ def generate_tiles(source_path: str, output_dir: str) -> tuple[str, str]:
     image.dzsave(dzi_output, tile_size=254, overlap=1, suffix=".jpeg[Q=85]")
     # dzsave creates: <output>.dzi and <output>_files/ directory
 
-    # Generate thumbnail (256px on longest side)
+    # Generate thumbnail from a fresh file handle (sequential stream was
+    # consumed by dzsave above and cannot be rewound).
     thumb_path = os.path.join(output_dir, "thumbnail.jpeg")
-    thumb = image.thumbnail_image(256)
+    thumb = pyvips.Image.thumbnail(source_path, 256)
     thumb.jpegsave(thumb_path, Q=85)
 
     return f"{dzi_basename}.dzi", "thumbnail.jpeg"
