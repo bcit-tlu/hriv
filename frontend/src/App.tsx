@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import AppBar from '@mui/material/AppBar'
 import Box from '@mui/material/Box'
 import Container from '@mui/material/Container'
@@ -6,56 +6,103 @@ import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Toolbar from '@mui/material/Toolbar'
 import Typography from '@mui/material/Typography'
-import Card from '@mui/material/Card'
-import CardActionArea from '@mui/material/CardActionArea'
-import CardMedia from '@mui/material/CardMedia'
-import CardContent from '@mui/material/CardContent'
 import Button from '@mui/material/Button'
+import MuiBreadcrumbs from '@mui/material/Breadcrumbs'
+import Link from '@mui/material/Link'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
-import ZoomInIcon from '@mui/icons-material/ZoomIn'
+import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
+import HomeIcon from '@mui/icons-material/Home'
 import ImageViewer from './components/ImageViewer'
-
-interface DemoImage {
-  id: string
-  label: string
-  thumb: string
-  tileSources: string
-}
-
-const DEMO_IMAGES: DemoImage[] = [
-  {
-    id: 'duomo',
-    label: 'Duomo di Milano',
-    thumb:
-      'https://openseadragon.github.io/example-images/duomo/duomo_files/11/0_0.jpg',
-    tileSources:
-      'https://openseadragon.github.io/example-images/duomo/duomo.dzi',
-  },
-  {
-    id: 'highsmith',
-    label: 'Highsmith Panorama',
-    thumb:
-      'https://openseadragon.github.io/example-images/highsmith/highsmith_files/11/0_0.jpg',
-    tileSources:
-      'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi',
-  },
-]
+import CategoryTile from './components/CategoryTile'
+import ImageTile from './components/ImageTile'
+import AddCategoryDialog from './components/AddCategoryDialog'
+import { rootCategories as initialData } from './data'
+import type { Category, ImageItem } from './types'
+import { MAX_DEPTH } from './types'
 
 export default function App() {
-  const [selected, setSelected] = useState<DemoImage | null>(null)
+  const [categories, setCategories] = useState<Category[]>(initialData)
+  const [path, setPath] = useState<Category[]>([])
+  const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+
+  const currentDepth = path.length
+
+  // Resolve the live children/images from the categories state tree
+  // so newly added categories appear immediately.
+  const resolve = useCallback((): { cats: Category[]; imgs: ImageItem[] } => {
+    let node = categories
+    for (const segment of path) {
+      const found = node.find((c) => c.id === segment.id)
+      if (!found) return { cats: [], imgs: [] }
+      node = found.children
+      if (segment === path[path.length - 1]) {
+        return { cats: found.children, imgs: found.images }
+      }
+    }
+    return { cats: node, imgs: [] }
+  }, [categories, path])
+
+  const { cats: currentCategories, imgs: currentImages } = resolve()
+
+  const navigateToCategory = (cat: Category) => {
+    setPath((prev) => [...prev, cat])
+  }
+
+  const navigateToDepth = (depth: number) => {
+    setPath((prev) => prev.slice(0, depth))
+  }
+
+  const addCategory = useCallback(
+    (label: string) => {
+      const newCat: Category = {
+        id: `cat-${Date.now()}`,
+        label,
+        children: [],
+        images: [],
+      }
+
+      const updateChildren = (
+        cats: Category[],
+        pathIndex: number,
+      ): Category[] => {
+        if (pathIndex >= path.length) {
+          return [...cats, newCat]
+        }
+        return cats.map((c) => {
+          if (c.id === path[pathIndex].id) {
+            return {
+              ...c,
+              children: updateChildren(c.children, pathIndex + 1),
+            }
+          }
+          return c
+        })
+      }
+
+      setCategories((prev) => updateChildren(prev, 0))
+    },
+    [path],
+  )
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       {/* App bar */}
       <AppBar position="static" elevation={1}>
         <Toolbar>
-          {selected && (
+          {(selectedImage || path.length > 0) && (
             <IconButton
               edge="start"
               color="inherit"
               aria-label="back"
               sx={{ mr: 1 }}
-              onClick={() => setSelected(null)}
+              onClick={() => {
+                if (selectedImage) {
+                  setSelectedImage(null)
+                } else {
+                  navigateToDepth(path.length - 1)
+                }
+              }}
             >
               <ArrowBackIcon />
             </IconButton>
@@ -64,15 +111,15 @@ export default function App() {
             Corgi
           </Typography>
           <Typography variant="body2" sx={{ opacity: 0.8 }}>
-            OpenSeadragon Demo
+            Image Library
           </Typography>
         </Toolbar>
       </AppBar>
 
       {/* Main content */}
-      <Box component="main" sx={{ flexGrow: 1, py: 4 }}>
+      <Box component="main" sx={{ flexGrow: 1, py: 3 }}>
         <Container maxWidth="lg">
-          {selected ? (
+          {selectedImage ? (
             /* ---- Viewer mode ---- */
             <>
               <Box
@@ -83,18 +130,18 @@ export default function App() {
                   mb: 2,
                 }}
               >
-                <Typography variant="h5">{selected.label}</Typography>
+                <Typography variant="h5">{selectedImage.label}</Typography>
                 <Button
                   variant="outlined"
                   size="small"
-                  onClick={() => setSelected(null)}
+                  onClick={() => setSelectedImage(null)}
                 >
-                  Back to gallery
+                  Back
                 </Button>
               </Box>
 
               <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                <ImageViewer tileSources={selected.tileSources} />
+                <ImageViewer tileSources={selectedImage.tileSources} />
               </Paper>
 
               <Box sx={{ mt: 2 }}>
@@ -106,51 +153,93 @@ export default function App() {
               </Box>
             </>
           ) : (
-            /* ---- Gallery mode ---- */
+            /* ---- Browse mode ---- */
             <>
-              <Box sx={{ textAlign: 'center', mb: 4 }}>
-                <ZoomInIcon
-                  sx={{ fontSize: 48, color: 'primary.main', mb: 1 }}
-                />
-                <Typography variant="h4" gutterBottom>
-                  High-Resolution Image Viewer
-                </Typography>
-                <Typography variant="body1" color="text.secondary">
-                  Select an image below to explore it with deep-zoom
-                  powered by OpenSeadragon.
-                </Typography>
+              {/* Breadcrumbs */}
+              <Box sx={{ mb: 2 }}>
+                <MuiBreadcrumbs aria-label="category breadcrumb">
+                  <Link
+                    component="button"
+                    variant="body2"
+                    underline="hover"
+                    color={path.length === 0 ? 'text.primary' : 'inherit'}
+                    onClick={() => navigateToDepth(0)}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.5,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <HomeIcon fontSize="small" />
+                    Home
+                  </Link>
+                  {path.map((cat, i) => (
+                    <Link
+                      key={cat.id}
+                      component="button"
+                      variant="body2"
+                      underline="hover"
+                      color={
+                        i === path.length - 1 ? 'text.primary' : 'inherit'
+                      }
+                      onClick={() => navigateToDepth(i + 1)}
+                      sx={{ cursor: 'pointer' }}
+                    >
+                      {cat.label}
+                    </Link>
+                  ))}
+                </MuiBreadcrumbs>
               </Box>
 
+              {/* Add-category button */}
+              {currentDepth < MAX_DEPTH && (
+                <Box sx={{ mb: 2 }}>
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<CreateNewFolderIcon />}
+                    onClick={() => setDialogOpen(true)}
+                  >
+                    New Category
+                  </Button>
+                </Box>
+              )}
+
+              {/* Tile grid */}
               <Box
                 sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    sm: 'repeat(2, 1fr)',
-                  },
-                  gap: 3,
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 2,
                 }}
               >
-                {DEMO_IMAGES.map((img) => (
-                  <Card key={img.id} elevation={2}>
-                    <CardActionArea onClick={() => setSelected(img)}>
-                      <CardMedia
-                        component="img"
-                        height="220"
-                        image={img.thumb}
-                        alt={img.label}
-                        sx={{ objectFit: 'cover' }}
-                      />
-                      <CardContent>
-                        <Typography variant="h6">{img.label}</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          Click to open deep-zoom viewer
-                        </Typography>
-                      </CardContent>
-                    </CardActionArea>
-                  </Card>
+                {currentCategories.map((cat) => (
+                  <CategoryTile
+                    key={cat.id}
+                    category={cat}
+                    onClick={navigateToCategory}
+                  />
+                ))}
+                {currentImages.map((img) => (
+                  <ImageTile
+                    key={img.id}
+                    image={img}
+                    onClick={setSelectedImage}
+                  />
                 ))}
               </Box>
+
+              {currentCategories.length === 0 &&
+                currentImages.length === 0 && (
+                  <Typography
+                    variant="body1"
+                    color="text.secondary"
+                    sx={{ mt: 4, textAlign: 'center' }}
+                  >
+                    This category is empty. Add a sub-category to get started.
+                  </Typography>
+                )}
             </>
           )}
         </Container>
@@ -171,6 +260,14 @@ export default function App() {
           Built with React, Vite, Material UI &amp; OpenSeadragon
         </Typography>
       </Box>
+
+      {/* Add category dialog */}
+      <AddCategoryDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onAdd={addCategory}
+        currentDepth={currentDepth}
+      />
     </Box>
   )
 }
