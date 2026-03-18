@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
+import Link from '@mui/material/Link'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
@@ -23,18 +24,88 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import { fetchImages, updateImage, deleteImage } from '../api'
 import type { ApiImage } from '../api'
+import type { Category } from '../types'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData } from './EditImageModal'
 import ReplaceImageModal from './ReplaceImageModal'
 import UploadImageModal from './UploadImageModal'
 
-interface ManagePageProps {
-  onViewImage?: (image: ApiImage) => void
+interface CategoryPathSegment {
+  category: Category
+  ancestors: Category[]
 }
 
-export default function ManagePage({ onViewImage }: ManagePageProps) {
+function buildCategoryPaths(
+  nodes: Category[],
+  ancestors: Category[] = [],
+): Map<number, CategoryPathSegment> {
+  const map = new Map<number, CategoryPathSegment>()
+  for (const node of nodes) {
+    map.set(node.id, { category: node, ancestors })
+    const childMap = buildCategoryPaths(node.children, [...ancestors, node])
+    for (const [id, seg] of childMap) {
+      map.set(id, seg)
+    }
+  }
+  return map
+}
+
+function CategoryBreadcrumb({
+  categoryId,
+  categoryPaths,
+  onNavigate,
+}: {
+  categoryId: number | null
+  categoryPaths: Map<number, CategoryPathSegment>
+  onNavigate?: (categoryPath: Category[]) => void
+}) {
+  if (categoryId == null) return <>—</>
+  const seg = categoryPaths.get(categoryId)
+  if (!seg) return <>{categoryId}</>
+
+  const fullPath = [...seg.ancestors, seg.category]
+
+  return (
+    <Box component="span" sx={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center' }}>
+      {fullPath.map((cat, i) => (
+        <Box component="span" key={cat.id}>
+          {i > 0 && (
+            <Typography component="span" variant="body2" color="text.secondary" sx={{ mx: 0.25 }}>
+              :
+            </Typography>
+          )}
+          <Link
+            component="button"
+            variant="body2"
+            underline="hover"
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation()
+              if (onNavigate) {
+                onNavigate(fullPath.slice(0, i + 1))
+              }
+            }}
+            sx={{ verticalAlign: 'baseline' }}
+          >
+            {cat.label}
+          </Link>
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
+interface ManagePageProps {
+  categories: Category[]
+  onViewImage?: (image: ApiImage) => void
+  onNavigateCategory?: (categoryPath: Category[]) => void
+  onCategoriesChanged?: () => void
+}
+
+export default function ManagePage({ categories, onViewImage, onNavigateCategory, onCategoriesChanged }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
+
+  const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
 
   // Edit modal state
   const [editOpen, setEditOpen] = useState(false)
@@ -193,7 +264,13 @@ export default function ManagePage({ onViewImage }: ManagePageProps) {
                 >
                   <TableCell>{img.id}</TableCell>
                   <TableCell>{img.label}</TableCell>
-                  <TableCell>{img.category_id ?? '—'}</TableCell>
+                  <TableCell>
+                    <CategoryBreadcrumb
+                      categoryId={img.category_id}
+                      categoryPaths={categoryPaths}
+                      onNavigate={onNavigateCategory}
+                    />
+                  </TableCell>
                   <TableCell>{img.copyright ?? '—'}</TableCell>
                   <TableCell>{img.origin ?? '—'}</TableCell>
                   <TableCell>{img.program ?? '—'}</TableCell>
@@ -259,8 +336,12 @@ export default function ManagePage({ onViewImage }: ManagePageProps) {
           setEditOpen(false)
           setEditingImage(null)
         }}
-        onSave={handleSaveImage}
+        onSave={async (data) => {
+          await handleSaveImage(data)
+          onCategoriesChanged?.()
+        }}
         image={editingImage}
+        categories={categories}
       />
 
       {/* Replace image modal */}

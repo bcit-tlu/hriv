@@ -16,10 +16,13 @@ router = APIRouter(prefix="/images", tags=["images"])
 async def list_images(
     _user: Annotated[User, Depends(get_current_user)],
     category_id: int | None = None,
+    uncategorized: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(Image)
-    if category_id is not None:
+    if uncategorized:
+        stmt = stmt.where(Image.category_id.is_(None))
+    elif category_id is not None:
         stmt = stmt.where(Image.category_id == category_id)
     stmt = stmt.order_by(Image.label)
     result = await db.execute(stmt)

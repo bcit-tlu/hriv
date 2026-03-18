@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -6,9 +7,12 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import TextField from '@mui/material/TextField'
 import type { ApiImage } from '../api'
+import type { Category } from '../types'
+import CategoryPickerSelect from './CategoryPickerSelect'
 
 export interface ImageFormData {
   label?: string
+  category_id?: number | null
   copyright?: string
   origin?: string
   program?: string
@@ -20,14 +24,17 @@ interface EditImageModalProps {
   onClose: () => void
   onSave: (data: ImageFormData) => void
   image: ApiImage | null
+  categories: Category[]
 }
 
 function EditImageForm({
   onClose,
   onSave,
   image,
+  categories,
 }: Omit<EditImageModalProps, 'open'>) {
   const [label, setLabel] = useState(image?.label ?? '')
+  const [categoryId, setCategoryId] = useState<number | null>(image?.category_id ?? null)
   const [copyright, setCopyright] = useState(image?.copyright ?? '')
   const [origin, setOrigin] = useState(image?.origin ?? '')
   const [program, setProgram] = useState(image?.program ?? '')
@@ -38,6 +45,7 @@ function EditImageForm({
     if (!trimmedLabel) return
     onSave({
       label: trimmedLabel,
+      category_id: categoryId,
       copyright: copyright.trim() || undefined,
       origin: origin.trim() || undefined,
       program: program.trim() || undefined,
@@ -59,6 +67,13 @@ function EditImageForm({
           value={label}
           onChange={(e) => setLabel(e.target.value)}
         />
+        <Box sx={{ mt: 1 }}>
+          <CategoryPickerSelect
+            categories={categories}
+            value={categoryId}
+            onChange={setCategoryId}
+          />
+        </Box>
         <TextField
           label="Copyright"
           fullWidth
@@ -107,6 +122,7 @@ export default function EditImageModal({
   onClose,
   onSave,
   image,
+  categories,
 }: EditImageModalProps) {
   const formKey = image ? `edit-${image.id}` : 'closed'
 
@@ -118,6 +134,7 @@ export default function EditImageModal({
           onClose={onClose}
           onSave={onSave}
           image={image}
+          categories={categories}
         />
       )}
     </Dialog>

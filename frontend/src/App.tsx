@@ -32,10 +32,13 @@ import { useAuth } from './useAuth'
 import {
   fetchCategoryTree,
   fetchAnnouncement,
+  fetchUncategorizedImages,
   createCategory as apiCreateCategory,
+  updateCategory as apiUpdateCategory,
 } from './api'
-import type { ApiCategoryTree, ApiUser } from './api'
+import type { ApiCategoryTree, ApiImage, ApiUser } from './api'
 import { updateUser as apiUpdateUser, fetchPrograms as apiFetchPrograms } from './api'
+import MoveCategoryDialog from './components/MoveCategoryDialog'
 import type { Category, ImageItem, Program } from './types'
 import { MAX_DEPTH } from './types'
 
@@ -78,6 +81,11 @@ export default function App() {
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [announcement, setAnnouncement] = useState('')
+  const [uncategorizedImages, setUncategorizedImages] = useState<ImageItem[]>([])
+
+  // Move category dialog state
+  const [moveCatOpen, setMoveCatOpen] = useState(false)
+  const [movingCategory, setMovingCategory] = useState<Category | null>(null)
 
   // User profile popover + edit modal state
   const avatarRef = useRef<HTMLButtonElement>(null)
@@ -136,11 +144,32 @@ export default function App() {
     }
   }, [])
 
+  const loadUncategorizedImages = useCallback(async () => {
+    try {
+      const imgs = await fetchUncategorizedImages()
+      setUncategorizedImages(
+        imgs.map((img: ApiImage) => ({
+          id: img.id,
+          label: img.label,
+          thumb: img.thumb,
+          tileSources: img.tile_sources,
+          copyright: img.copyright,
+          origin: img.origin,
+          program: img.program,
+          status: img.status,
+        })),
+      )
+    } catch (err) {
+      console.error('Failed to load uncategorized images', err)
+    }
+  }, [])
+
   useEffect(() => {
     if (currentUser) {
       loadCategories()
+      loadUncategorizedImages()
     }
-  }, [currentUser, loadCategories])
+  }, [currentUser, loadCategories, loadUncategorizedImages])
 
   const currentDepth = path.length
 
@@ -181,6 +210,25 @@ export default function App() {
     },
     [path, loadCategories],
   )
+
+  const handleMoveCategory = useCallback(
+    async (categoryId: number, newParentId: number | null) => {
+      try {
+        await apiUpdateCategory(categoryId, { parent_id: newParentId })
+        setMoveCatOpen(false)
+        setMovingCategory(null)
+        await loadCategories()
+      } catch (err) {
+        console.error('Failed to move category', err)
+      }
+    },
+    [loadCategories],
+  )
+
+  const handleRequestMoveCategory = useCallback((cat: Category) => {
+    setMovingCategory(cat)
+    setMoveCatOpen(true)
+  }, [])
 
   // Show loading spinner while users are loading
   if (usersLoading) {
@@ -313,6 +361,7 @@ export default function App() {
             <PeoplePage />
           ) : page === 'manage' && canEditContent ? (
             <ManagePage
+              categories={categories}
               onViewImage={(img) => {
                 setSelectedImage({
                   id: img.id,
@@ -325,6 +374,14 @@ export default function App() {
                   status: img.status,
                 })
                 setPage('browse')
+              }}
+              onNavigateCategory={(categoryPath) => {
+                setPath(categoryPath)
+                setPage('browse')
+              }}
+              onCategoriesChanged={() => {
+                loadCategories()
+                loadUncategorizedImages()
               }}
             />
           ) : selectedImage ? (
@@ -427,8 +484,17 @@ export default function App() {
                     key={cat.id}
                     category={cat}
                     onClick={navigateToCategory}
+                    onMove={canEditContent ? handleRequestMoveCategory : undefined}
                   />
                 ))}
+                {path.length === 0 &&
+                  uncategorizedImages.map((img) => (
+                    <ImageTile
+                      key={img.id}
+                      image={img}
+                      onClick={setSelectedImage}
+                    />
+                  ))}
                 {currentImages.map((img) => (
                   <ImageTile
                     key={img.id}
@@ -444,7 +510,8 @@ export default function App() {
                 </Box>
               ) : (
                 currentCategories.length === 0 &&
-                currentImages.length === 0 && (
+                currentImages.length === 0 &&
+                (path.length > 0 || uncategorizedImages.length === 0) && (
                   <Typography
                     variant="body1"
                     color="text.secondary"
@@ -481,6 +548,18 @@ export default function App() {
         onClose={() => setDialogOpen(false)}
         onAdd={addCategory}
         currentDepth={currentDepth}
+      />
+
+      {/* Move category dialog */}
+      <MoveCategoryDialog
+        open={moveCatOpen}
+        onClose={() => {
+          setMoveCatOpen(false)
+          setMovingCategory(null)
+        }}
+        onMove={handleMoveCategory}
+        category={movingCategory}
+        categories={categories}
       />
 
       {/* Self-edit profile modal */}
