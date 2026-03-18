@@ -653,6 +653,7 @@ export default function App() {
           loadCategories()
           loadUncategorizedImages()
         }}
+        categoryId={path.length > 0 ? path[path.length - 1].id : null}
       />
 
       {/* Self-edit profile modal */}

@@ -16,12 +16,14 @@ interface UploadImageModalProps {
   open: boolean
   onClose: () => void
   onUploaded: () => void
+  categoryId?: number | null
 }
 
 export default function UploadImageModal({
   open,
   onClose,
   onUploaded,
+  categoryId,
 }: UploadImageModalProps) {
   const [file, setFile] = useState<File | null>(null)
   const [label, setLabel] = useState('')
@@ -84,7 +86,7 @@ export default function UploadImageModal({
       await uploadSourceImage(
         file,
         label || undefined,
-        undefined,
+        categoryId ?? undefined,
         copyright || undefined,
         origin || undefined,
         program || undefined,
