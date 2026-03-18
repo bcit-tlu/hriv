@@ -21,7 +21,9 @@ server {
     # ── Cache hashed assets aggressively ──────────────────
     location /assets/ {
         expires 1y;
-        add_header Cache-Control "public, immutable";
+        add_header Cache-Control          "public, immutable";
+        add_header X-Frame-Options        "SAMEORIGIN" always;
+        add_header X-Content-Type-Options "nosniff"     always;
     }
 
     # ── Reverse-proxy API to the backend ──────────────────
