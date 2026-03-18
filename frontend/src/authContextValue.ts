@@ -5,9 +5,9 @@ export interface AuthContextValue {
   currentUser: User | null
   users: User[]
   loading: boolean
-  login: (userId: number) => void
+  login: (email: string, password: string) => Promise<void>
   logout: () => void
-  addUser: (name: string, email: string, role: Role, program?: string) => void
+  addUser: (name: string, email: string, role: Role, password: string, program?: string) => void
   deleteUser: (userId: number) => void
   refreshUsers: () => void
   canManageUsers: boolean

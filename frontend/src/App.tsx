@@ -147,7 +147,7 @@ export default function App() {
 
   // Show login screen when no user is authenticated
   if (!currentUser) {
-    return <LoginScreen users={users} onLogin={login} />
+    return <LoginScreen onLogin={login} />
   }
 
   return (

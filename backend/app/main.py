@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import admin, categories, images, users
+from .routers import admin, auth, categories, images, users
 
 app = FastAPI(title="Corgi Image Library API", version="0.1.0")
 
@@ -13,6 +13,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(categories.router, prefix="/api")
 app.include_router(images.router, prefix="/api")

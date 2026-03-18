@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS users (
     id            SERIAL PRIMARY KEY,
     name          VARCHAR(255) NOT NULL,
     email         VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255),
     role          VARCHAR(50) NOT NULL DEFAULT 'student',
     program       VARCHAR(255),
     last_access   TIMESTAMPTZ,

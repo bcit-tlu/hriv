@@ -1,10 +1,13 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from ..auth import get_current_user, require_role
 from ..database import get_db
-from ..models import Category
+from ..models import Category, User
 from ..schemas import CategoryCreate, CategoryUpdate, CategoryOut, CategoryTree
 
 router = APIRouter(prefix="/categories", tags=["categories"])
@@ -57,13 +60,18 @@ async def _load_tree(db: AsyncSession, parent_id: int | None) -> list[CategoryTr
 
 
 @router.get("/tree", response_model=list[CategoryTree])
-async def get_category_tree(db: AsyncSession = Depends(get_db)):
+async def get_category_tree(
+    _user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
     return await _load_tree(db, None)
 
 
 @router.get("/", response_model=list[CategoryOut])
 async def list_categories(
-    parent_id: int | None = None, db: AsyncSession = Depends(get_db)
+    _user: Annotated[User, Depends(get_current_user)],
+    parent_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
 ):
     stmt = select(Category)
     if parent_id is not None:
@@ -76,7 +84,11 @@ async def list_categories(
 
 
 @router.get("/{category_id}", response_model=CategoryOut)
-async def get_category(category_id: int, db: AsyncSession = Depends(get_db)):
+async def get_category(
+    category_id: int,
+    _user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
     cat = await db.get(Category, category_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
@@ -84,7 +96,11 @@ async def get_category(category_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/", response_model=CategoryOut, status_code=201)
-async def create_category(body: CategoryCreate, db: AsyncSession = Depends(get_db)):
+async def create_category(
+    body: CategoryCreate,
+    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    db: AsyncSession = Depends(get_db),
+):
     cat = Category(
         label=body.label,
         parent_id=body.parent_id,
@@ -100,7 +116,10 @@ async def create_category(body: CategoryCreate, db: AsyncSession = Depends(get_d
 
 @router.patch("/{category_id}", response_model=CategoryOut)
 async def update_category(
-    category_id: int, body: CategoryUpdate, db: AsyncSession = Depends(get_db)
+    category_id: int,
+    body: CategoryUpdate,
+    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    db: AsyncSession = Depends(get_db),
 ):
     cat = await db.get(Category, category_id)
     if not cat:
@@ -116,7 +135,11 @@ async def update_category(
 
 
 @router.delete("/{category_id}", status_code=204)
-async def delete_category(category_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_category(
+    category_id: int,
+    _user: Annotated[User, Depends(require_role("admin"))],
+    db: AsyncSession = Depends(get_db),
+):
     cat = await db.get(Category, category_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")

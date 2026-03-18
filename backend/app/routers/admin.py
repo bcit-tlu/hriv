@@ -1,19 +1,26 @@
 import json
 from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import Response
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth import require_role
 from ..database import get_db
 from ..models import Category, Image, User
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
+_admin = require_role("admin")
+
 
 @router.get("/export")
-async def export_database(db: AsyncSession = Depends(get_db)):
+async def export_database(
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
     """Export all database tables as a JSON document."""
     # Categories
     result = await db.execute(
@@ -73,6 +80,7 @@ async def export_database(db: AsyncSession = Depends(get_db)):
                 "id": u.id,
                 "name": u.name,
                 "email": u.email,
+                "password_hash": u.password_hash,
                 "role": u.role,
                 "program": u.program,
                 "last_access": dt(u.last_access),
@@ -96,7 +104,9 @@ async def export_database(db: AsyncSession = Depends(get_db)):
 
 @router.post("/import")
 async def import_database(
-    file: UploadFile = File(...), db: AsyncSession = Depends(get_db)
+    _user: Annotated[User, Depends(_admin)],
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
 ):
     """Import a previously exported JSON dump, replacing all data."""
     if not file.filename or not file.filename.endswith(".json"):
@@ -129,6 +139,7 @@ async def import_database(
                 id=u["id"],
                 name=u["name"],
                 email=u["email"],
+                password_hash=u.get("password_hash"),
                 role=u.get("role", "student"),
                 program=u.get("program"),
                 last_access=_parse_dt(u.get("last_access")),

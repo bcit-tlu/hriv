@@ -42,7 +42,7 @@ interface UserManagementPanelProps {
   onClose: () => void
   users: User[]
   currentUserId: number
-  onAddUser: (name: string, email: string, role: Role, program?: string) => void
+  onAddUser: (name: string, email: string, role: Role, password: string, program?: string) => void
   onDeleteUser: (userId: number) => void
 }
 
@@ -57,17 +57,20 @@ export default function UserManagementPanel({
   const [addOpen, setAddOpen] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [role, setRole] = useState<Role>('student')
   const [program, setProgram] = useState('')
 
   const handleAdd = () => {
     const trimmedName = name.trim()
     const trimmedEmail = email.trim()
+    const trimmedPassword = password.trim()
     const trimmedProgram = program.trim()
-    if (trimmedName && trimmedEmail) {
-      onAddUser(trimmedName, trimmedEmail, role, trimmedProgram || undefined)
+    if (trimmedName && trimmedEmail && trimmedPassword) {
+      onAddUser(trimmedName, trimmedEmail, role, trimmedPassword, trimmedProgram || undefined)
       setName('')
       setEmail('')
+      setPassword('')
       setRole('student')
       setProgram('')
       setAddOpen(false)
@@ -172,6 +175,14 @@ export default function UserManagementPanel({
             value={email}
             onChange={(e) => setEmail(e.target.value)}
           />
+          <TextField
+            label="Password"
+            type="password"
+            fullWidth
+            variant="outlined"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
           <FormControl fullWidth>
             <InputLabel>Role</InputLabel>
             <Select value={role} label="Role" onChange={handleRoleChange}>
@@ -194,6 +205,7 @@ export default function UserManagementPanel({
               setAddOpen(false)
               setName('')
               setEmail('')
+              setPassword('')
               setRole('student')
               setProgram('')
             }}
@@ -203,7 +215,7 @@ export default function UserManagementPanel({
           <Button
             onClick={handleAdd}
             variant="contained"
-            disabled={!name.trim() || !email.trim()}
+            disabled={!name.trim() || !email.trim() || !password.trim()}
           >
             Add
           </Button>

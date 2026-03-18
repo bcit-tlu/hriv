@@ -1,9 +1,12 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..auth import get_current_user, require_role
 from ..database import get_db
-from ..models import Image
+from ..models import Image, User
 from ..schemas import ImageCreate, ImageUpdate, ImageOut
 
 router = APIRouter(prefix="/images", tags=["images"])
@@ -11,7 +14,9 @@ router = APIRouter(prefix="/images", tags=["images"])
 
 @router.get("/", response_model=list[ImageOut])
 async def list_images(
-    category_id: int | None = None, db: AsyncSession = Depends(get_db)
+    _user: Annotated[User, Depends(get_current_user)],
+    category_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
 ):
     stmt = select(Image)
     if category_id is not None:
@@ -22,7 +27,11 @@ async def list_images(
 
 
 @router.get("/{image_id}", response_model=ImageOut)
-async def get_image(image_id: int, db: AsyncSession = Depends(get_db)):
+async def get_image(
+    image_id: int,
+    _user: Annotated[User, Depends(get_current_user)],
+    db: AsyncSession = Depends(get_db),
+):
     img = await db.get(Image, image_id)
     if not img:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -30,7 +39,11 @@ async def get_image(image_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/", response_model=ImageOut, status_code=201)
-async def create_image(body: ImageCreate, db: AsyncSession = Depends(get_db)):
+async def create_image(
+    body: ImageCreate,
+    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    db: AsyncSession = Depends(get_db),
+):
     img = Image(
         label=body.label,
         thumb=body.thumb,
@@ -50,7 +63,10 @@ async def create_image(body: ImageCreate, db: AsyncSession = Depends(get_db)):
 
 @router.patch("/{image_id}", response_model=ImageOut)
 async def update_image(
-    image_id: int, body: ImageUpdate, db: AsyncSession = Depends(get_db)
+    image_id: int,
+    body: ImageUpdate,
+    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    db: AsyncSession = Depends(get_db),
 ):
     img = await db.get(Image, image_id)
     if not img:
@@ -66,7 +82,11 @@ async def update_image(
 
 
 @router.delete("/{image_id}", status_code=204)
-async def delete_image(image_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_image(
+    image_id: int,
+    _user: Annotated[User, Depends(require_role("admin"))],
+    db: AsyncSession = Depends(get_db),
+):
     img = await db.get(Image, image_id)
     if not img:
         raise HTTPException(status_code=404, detail="Image not found")

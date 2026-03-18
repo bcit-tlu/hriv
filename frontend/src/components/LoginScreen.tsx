@@ -1,33 +1,37 @@
+import { useState } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
+import CircularProgress from '@mui/material/CircularProgress'
 import Container from '@mui/material/Container'
+import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import Chip from '@mui/material/Chip'
-import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
-import SchoolIcon from '@mui/icons-material/School'
-import PersonIcon from '@mui/icons-material/Person'
-import type { User } from '../types'
-
-const ROLE_ICONS: Record<string, React.ReactNode> = {
-  admin: <AdminPanelSettingsIcon fontSize="small" />,
-  instructor: <SchoolIcon fontSize="small" />,
-  student: <PersonIcon fontSize="small" />,
-}
-
-const ROLE_COLORS: Record<string, 'error' | 'warning' | 'info'> = {
-  admin: 'error',
-  instructor: 'warning',
-  student: 'info',
-}
 
 interface LoginScreenProps {
-  users: User[]
-  onLogin: (userId: number) => void
+  onLogin: (email: string, password: string) => Promise<void>
 }
 
-export default function LoginScreen({ users, onLogin }: LoginScreenProps) {
+export default function LoginScreen({ onLogin }: LoginScreenProps) {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    setLoading(true)
+    try {
+      await onLogin(email, password)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <Box
       sx={{
@@ -38,52 +42,55 @@ export default function LoginScreen({ users, onLogin }: LoginScreenProps) {
         bgcolor: 'background.default',
       }}
     >
-      <Container maxWidth="sm">
+      <Container maxWidth="xs">
         <Box sx={{ textAlign: 'center', mb: 4 }}>
           <Typography variant="h4" gutterBottom>
             Corgi Image Library
           </Typography>
           <Typography variant="body1" color="text.secondary">
-            Select a user to sign in
+            Sign in with your credentials
           </Typography>
         </Box>
 
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {users.map((user) => (
-            <Card key={user.id} elevation={2}>
-              <CardContent
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                }}
+        <Card elevation={2}>
+          <CardContent>
+            <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {error && (
+                <Alert severity="error" onClose={() => setError(null)}>
+                  {error}
+                </Alert>
+              )}
+              <TextField
+                label="Email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                fullWidth
+                autoFocus
+                autoComplete="email"
+              />
+              <TextField
+                label="Password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                fullWidth
+                autoComplete="current-password"
+              />
+              <Button
+                type="submit"
+                variant="contained"
+                fullWidth
+                disabled={loading || !email || !password}
+                startIcon={loading ? <CircularProgress size={18} color="inherit" /> : undefined}
               >
-                <Box>
-                  <Typography variant="subtitle1">{user.name}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    {user.email}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Chip
-                    icon={ROLE_ICONS[user.role] as React.ReactElement}
-                    label={user.role}
-                    size="small"
-                    color={ROLE_COLORS[user.role]}
-                    variant="outlined"
-                  />
-                  <Button
-                    variant="contained"
-                    size="small"
-                    onClick={() => onLogin(user.id)}
-                  >
-                    Sign in
-                  </Button>
-                </Box>
-              </CardContent>
-            </Card>
-          ))}
-        </Box>
+                {loading ? 'Signing in...' : 'Sign in'}
+              </Button>
+            </Box>
+          </CardContent>
+        </Card>
       </Container>
     </Box>
   )

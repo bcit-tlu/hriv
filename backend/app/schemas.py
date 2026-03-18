@@ -86,7 +86,7 @@ class UserBase(BaseModel):
 
 
 class UserCreate(UserBase):
-    pass
+    password: str
 
 
 class UserUpdate(BaseModel):
@@ -94,6 +94,7 @@ class UserUpdate(BaseModel):
     email: str | None = None
     role: str | None = None
     program: str | None = None
+    password: str | None = None
     metadata_extra: dict | None = None
 
 

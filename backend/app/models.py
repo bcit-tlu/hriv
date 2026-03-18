@@ -65,6 +65,7 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="student")
     program: Mapped[str | None] = mapped_column(String(255), nullable=True)
     last_access: Mapped[datetime | None] = mapped_column(

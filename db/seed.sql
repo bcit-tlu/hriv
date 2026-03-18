@@ -43,10 +43,10 @@ SELECT setval('images_id_seq', 4);
 
 -- ── Users ─────────────────────────────────────────────────
 
-INSERT INTO users (id, name, email, role, program, last_access, metadata)
+INSERT INTO users (id, name, email, password_hash, role, program, last_access, metadata)
 VALUES
-  (1, 'Alice Admin',      'alice@example.com',   'admin',      'Administration', NULL, '{}'),
-  (2, 'Bob Instructor',   'bob@example.com',     'instructor', 'Digital Design', NULL, '{}'),
-  (3, 'Charlie Student',  'charlie@example.com', 'student',    'Digital Design', NULL, '{}');
+  (1, 'Alice Admin',      'alice@example.com',   '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'admin',      'Administration', NULL, '{}'),
+  (2, 'Bob Instructor',   'bob@example.com',     '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'instructor', 'Digital Design', NULL, '{}'),
+  (3, 'Charlie Student',  'charlie@example.com', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    'Digital Design', NULL, '{}');
 
 SELECT setval('users_id_seq', 3);

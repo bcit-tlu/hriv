@@ -1,10 +1,31 @@
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
+let _token: string | null = localStorage.getItem('corgi_token')
+
+export function setToken(token: string | null): void {
+  _token = token
+  if (token) {
+    localStorage.setItem('corgi_token', token)
+  } else {
+    localStorage.removeItem('corgi_token')
+  }
+}
+
+export function getToken(): string | null {
+  return _token
+}
+
+function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = {}
+  if (_token) h['Authorization'] = `Bearer ${_token}`
+  return h
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const { headers: initHeaders, ...restInit } = init ?? {}
   const res = await fetch(`${BASE}/api${path}`, {
     ...restInit,
-    headers: { 'Content-Type': 'application/json', ...initHeaders },
+    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...initHeaders },
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
@@ -119,14 +140,24 @@ export function fetchUsers(): Promise<ApiUser[]> {
   return request('/users/')
 }
 
-export function loginUser(id: number): Promise<ApiUser> {
-  return request(`/users/login/${id}`, { method: 'POST' })
+export interface LoginResponse {
+  access_token: string
+  token_type: string
+  user: ApiUser
+}
+
+export function loginUser(email: string, password: string): Promise<LoginResponse> {
+  return request('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email, password }),
+  })
 }
 
 export function createUser(body: {
   name: string
   email: string
   role: string
+  password: string
   program?: string
 }): Promise<ApiUser> {
   return request('/users/', {
@@ -143,7 +174,7 @@ export function deleteUser(id: number): Promise<void> {
 
 export function exportDatabase(): Promise<void> {
   const url = `${BASE}/api/admin/export`
-  return fetch(url)
+  return fetch(url, { headers: authHeaders() })
     .then((res) => {
       if (!res.ok) throw new Error(`Export failed: ${res.status}`)
       return res.blob()
@@ -167,6 +198,7 @@ export async function importDatabase(file: File): Promise<ImportResult> {
   form.append('file', file)
   const res = await fetch(`${BASE}/api/admin/import`, {
     method: 'POST',
+    headers: authHeaders(),
     body: form,
   })
   if (!res.ok) {
