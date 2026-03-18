@@ -18,7 +18,9 @@ services:
       retries: 10
 
   backend:
-    build: ./backend
+    build:
+      context: ./backend
+      target: dev
     ports:
       - 8000:8000
     volumes:
@@ -30,7 +32,9 @@ services:
         condition: service_healthy
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      target: dev
     ports:
       - 5173:5173
     volumes:
