@@ -138,6 +138,25 @@ export function createImage(body: {
   })
 }
 
+export function updateImage(
+  id: number,
+  body: {
+    label?: string
+    thumb?: string
+    tile_sources?: string
+    category_id?: number | null
+    copyright?: string
+    origin?: string
+    program?: string
+    status?: string
+  },
+): Promise<ApiImage> {
+  return request(`/images/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
 export function deleteImage(id: number): Promise<void> {
   return request(`/images/${id}`, { method: 'DELETE' })
 }

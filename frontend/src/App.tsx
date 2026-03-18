@@ -312,7 +312,21 @@ export default function App() {
           ) : page === 'people' && canManageUsers ? (
             <PeoplePage />
           ) : page === 'manage' && canEditContent ? (
-            <ManagePage />
+            <ManagePage
+              onViewImage={(img) => {
+                setSelectedImage({
+                  id: img.id,
+                  label: img.label,
+                  thumb: img.thumb,
+                  tileSources: img.tile_sources,
+                  copyright: img.copyright,
+                  origin: img.origin,
+                  program: img.program,
+                  status: img.status,
+                })
+                setPage('browse')
+              }}
+            />
           ) : selectedImage ? (
             /* ---- Viewer mode ---- */
             <>
