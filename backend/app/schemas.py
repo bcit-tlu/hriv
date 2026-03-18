@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ── Category ──────────────────────────────────────────────
@@ -9,7 +9,7 @@ class CategoryBase(BaseModel):
     parent_id: int | None = None
     program: str | None = None
     status: str | None = "active"
-    metadata_extra: dict | None = None
+    metadata_extra: dict | None = Field(default=None, validation_alias="metadata_")
 
 
 class CategoryCreate(CategoryBase):
@@ -29,7 +29,7 @@ class CategoryOut(CategoryBase):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class CategoryTree(CategoryOut):
@@ -48,7 +48,7 @@ class ImageBase(BaseModel):
     origin: str | None = None
     program: str | None = None
     status: str | None = "active"
-    metadata_extra: dict | None = None
+    metadata_extra: dict | None = Field(default=None, validation_alias="metadata_")
 
 
 class ImageCreate(ImageBase):
@@ -72,7 +72,7 @@ class ImageOut(ImageBase):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 # ── User ──────────────────────────────────────────────────
@@ -82,7 +82,7 @@ class UserBase(BaseModel):
     email: str
     role: str = "student"
     program: str | None = None
-    metadata_extra: dict | None = None
+    metadata_extra: dict | None = Field(default=None, validation_alias="metadata_")
 
 
 class UserCreate(UserBase):
@@ -103,7 +103,7 @@ class UserOut(UserBase):
     created_at: datetime
     updated_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 # Rebuild forward refs for nested models
