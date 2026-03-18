@@ -1,6 +1,13 @@
 -- Corgi Image Library – schema initialization
 -- Executed before seed.sql by PostgreSQL on first startup.
 
+CREATE TABLE IF NOT EXISTS programs (
+    id            SERIAL PRIMARY KEY,
+    name          VARCHAR(255) NOT NULL UNIQUE,
+    created_at    TIMESTAMPTZ DEFAULT now(),
+    updated_at    TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS categories (
     id            SERIAL PRIMARY KEY,
     label         VARCHAR(255) NOT NULL,
@@ -37,7 +44,7 @@ CREATE TABLE IF NOT EXISTS users (
     email         VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255),
     role          VARCHAR(50) NOT NULL DEFAULT 'student',
-    program       VARCHAR(255),
+    program_id    INTEGER REFERENCES programs(id) ON DELETE SET NULL,
     last_access   TIMESTAMPTZ,
     metadata      JSONB DEFAULT '{}',
     created_at    TIMESTAMPTZ DEFAULT now(),

@@ -5,6 +5,21 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 
+class Program(Base):
+    __tablename__ = "programs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    users: Mapped[list["User"]] = relationship("User", back_populates="program_rel")
+
+
 class Category(Base):
     __tablename__ = "categories"
 
@@ -67,7 +82,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="student")
-    program: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    program_id: Mapped[int | None] = mapped_column(
+        ForeignKey("programs.id", ondelete="SET NULL"), nullable=True
+    )
     last_access: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -78,3 +95,5 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    program_rel: Mapped["Program | None"] = relationship("Program", back_populates="users")

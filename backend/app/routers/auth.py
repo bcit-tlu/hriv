@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from ..auth import verify_password, create_access_token
 from ..database import get_db
@@ -29,7 +30,9 @@ class LoginResponse(BaseModel):
 @router.post("/login", response_model=LoginResponse)
 async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     """Authenticate with email + password. Returns a JWT bearer token."""
-    result = await db.execute(select(User).where(User.email == body.email))
+    result = await db.execute(
+        select(User).options(selectinload(User.program_rel)).where(User.email == body.email)
+    )
     user = result.scalars().first()
 
     if not user or not user.password_hash:
@@ -49,7 +52,19 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     await db.refresh(user)
 
     token = create_access_token(user)
+    user_data = {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role,
+        "program_id": user.program_id,
+        "program_name": user.program_rel.name if user.program_rel else None,
+        "metadata_extra": user.metadata_,
+        "last_access": user.last_access,
+        "created_at": user.created_at,
+        "updated_at": user.updated_at,
+    }
     return LoginResponse(
         access_token=token,
-        user=UserOut.model_validate(user),
+        user=UserOut(**user_data),
     )

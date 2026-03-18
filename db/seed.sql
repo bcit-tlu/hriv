@@ -2,6 +2,16 @@
 -- This file is mounted into the PostgreSQL container at
 -- /docker-entrypoint-initdb.d/ and executed automatically on first startup.
 
+-- ── Programs ──────────────────────────────────────────────
+
+INSERT INTO programs (id, name)
+VALUES
+  (1, 'Administration'),
+  (2, 'Digital Design'),
+  (3, 'Photography');
+
+SELECT setval('programs_id_seq', 3);
+
 -- ── Categories ────────────────────────────────────────────
 
 INSERT INTO categories (id, label, parent_id, program, status, metadata)
@@ -43,10 +53,10 @@ SELECT setval('images_id_seq', 4);
 
 -- ── Users ─────────────────────────────────────────────────
 
-INSERT INTO users (id, name, email, password_hash, role, program, last_access, metadata)
+INSERT INTO users (id, name, email, password_hash, role, program_id, last_access, metadata)
 VALUES
-  (1, 'Alice Admin',      'alice@example.com',   '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'admin',      'Administration', NULL, '{}'),
-  (2, 'Bob Instructor',   'bob@example.com',     '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'instructor', 'Digital Design', NULL, '{}'),
-  (3, 'Charlie Student',  'charlie@example.com', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    'Digital Design', NULL, '{}');
+  (1, 'Alice Admin',      'alice@example.com',   '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'admin',      1, NULL, '{}'),
+  (2, 'Bob Instructor',   'bob@example.com',     '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'instructor', 2, NULL, '{}'),
+  (3, 'Charlie Student',  'charlie@example.com', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    2, NULL, '{}');
 
 SELECT setval('users_id_seq', 3);

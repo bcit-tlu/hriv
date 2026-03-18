@@ -28,6 +28,14 @@ export interface User {
   name: string
   email: string
   role: Role
-  program?: string | null
+  program_id?: number | null
+  program_name?: string | null
   lastAccess?: string | null
+}
+
+export interface Program {
+  id: number
+  name: string
+  created_at: string
+  updated_at: string
 }

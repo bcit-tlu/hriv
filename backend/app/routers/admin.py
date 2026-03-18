@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
 from ..database import get_db
-from ..models import Category, Image, User
+from ..models import Category, Image, Program, User
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -22,6 +22,12 @@ async def export_database(
     db: AsyncSession = Depends(get_db),
 ):
     """Export all database tables as a JSON document."""
+    # Programs
+    result = await db.execute(
+        select(Program).order_by(Program.id)
+    )
+    programs = result.scalars().all()
+
     # Categories
     result = await db.execute(
         select(Category).order_by(Category.id)
@@ -45,6 +51,15 @@ async def export_database(
 
     dump = {
         "exported_at": datetime.now(timezone.utc).isoformat(),
+        "programs": [
+            {
+                "id": p.id,
+                "name": p.name,
+                "created_at": dt(p.created_at),
+                "updated_at": dt(p.updated_at),
+            }
+            for p in programs
+        ],
         "categories": [
             {
                 "id": c.id,
@@ -82,7 +97,7 @@ async def export_database(
                 "email": u.email,
                 "password_hash": u.password_hash,
                 "role": u.role,
-                "program": u.program,
+                "program_id": u.program_id,
                 "last_access": dt(u.last_access),
                 "metadata": u.metadata_,
                 "created_at": dt(u.created_at),
@@ -132,6 +147,16 @@ async def import_database(
         await db.execute(text("DELETE FROM images"))
         await db.execute(text("DELETE FROM categories"))
         await db.execute(text("DELETE FROM users"))
+        await db.execute(text("DELETE FROM programs"))
+
+        # Import programs (if present in dump)
+        for p in dump.get("programs", []):
+            program = Program(
+                id=p["id"],
+                name=p["name"],
+            )
+            db.add(program)
+        await db.flush()
 
         # Import users
         for u in dump["users"]:
@@ -141,13 +166,12 @@ async def import_database(
                 email=u["email"],
                 password_hash=u.get("password_hash"),
                 role=u.get("role", "student"),
-                program=u.get("program"),
+                program_id=u.get("program_id"),
                 last_access=_parse_dt(u.get("last_access")),
                 metadata_=u.get("metadata", {}),
             )
             db.add(user)
 
-        # Import categories (ordered by id to respect parent_id references)
         # Import categories (topologically sorted to respect parent_id FK)
         cat_map = {c["id"]: c for c in dump["categories"]}
         inserted_ids: set[int] = set()
@@ -202,6 +226,9 @@ async def import_database(
         # Use GREATEST(..., 1) with is_called=EXISTS(...) to handle empty tables
         # (PostgreSQL SERIAL sequences have MINVALUE 1, so setval(seq, 0) would fail)
         await db.execute(
+            text("SELECT setval('programs_id_seq', GREATEST(COALESCE((SELECT MAX(id) FROM programs), 1), 1), EXISTS(SELECT 1 FROM programs))")
+        )
+        await db.execute(
             text("SELECT setval('categories_id_seq', GREATEST(COALESCE((SELECT MAX(id) FROM categories), 1), 1), EXISTS(SELECT 1 FROM categories))")
         )
         await db.execute(
@@ -220,6 +247,7 @@ async def import_database(
     return {
         "status": "ok",
         "imported": {
+            "programs": len(dump.get("programs", [])),
             "categories": len(dump["categories"]),
             "images": len(dump["images"]),
             "users": len(dump["users"]),

@@ -73,9 +73,17 @@ export interface ApiUser {
   name: string
   email: string
   role: string
-  program: string | null
+  program_id: number | null
+  program_name: string | null
   last_access: string | null
   metadata_extra: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ApiProgram {
+  id: number
+  name: string
   created_at: string
   updated_at: string
 }
@@ -158,7 +166,7 @@ export function createUser(body: {
   email: string
   role: string
   password: string
-  program?: string
+  program_id?: number | null
 }): Promise<ApiUser> {
   return request('/users/', {
     method: 'POST',
@@ -166,8 +174,61 @@ export function createUser(body: {
   })
 }
 
+export function updateUser(
+  id: number,
+  body: {
+    name?: string
+    email?: string
+    role?: string
+    password?: string
+    program_id?: number | null
+  },
+): Promise<ApiUser> {
+  return request(`/users/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
 export function deleteUser(id: number): Promise<void> {
   return request(`/users/${id}`, { method: 'DELETE' })
+}
+
+export function bulkUpdateUserProgram(body: {
+  user_ids: number[]
+  program_id: number | null
+}): Promise<ApiUser[]> {
+  return request('/users/bulk/program', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+// ── Programs ────────────────────────────────────────────
+
+export function fetchPrograms(): Promise<ApiProgram[]> {
+  return request('/programs/')
+}
+
+export function createProgram(body: { name: string }): Promise<ApiProgram> {
+  return request('/programs/', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateProgram(
+  id: number,
+  body: { name: string },
+): Promise<ApiProgram> {
+  return request(`/programs/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteProgram(id: number): Promise<void> {
+  return request(`/programs/${id}`, { method: 'DELETE' })
 }
 
 // ── Admin ───────────────────────────────────────────────
@@ -190,7 +251,7 @@ export function exportDatabase(): Promise<void> {
 
 export interface ImportResult {
   status: string
-  imported: { categories: number; images: number; users: number }
+  imported: { programs?: number; categories: number; images: number; users: number }
 }
 
 export async function importDatabase(file: File): Promise<ImportResult> {

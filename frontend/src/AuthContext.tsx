@@ -18,7 +18,8 @@ function toUser(u: ApiUser): User {
     name: u.name,
     email: u.email,
     role: u.role as Role,
-    program: u.program,
+    program_id: u.program_id,
+    program_name: u.program_name,
     lastAccess: u.last_access,
   }
 }
@@ -86,9 +87,9 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const addUser = useCallback(
-    async (name: string, email: string, role: Role, password: string, program?: string) => {
+    async (name: string, email: string, role: Role, password: string, programId?: number | null) => {
       try {
-        const data = await apiCreateUser({ name, email, role, password, program })
+        const data = await apiCreateUser({ name, email, role, password, program_id: programId })
         const newUser = toUser(data)
         setUsers((prev) => [...prev, newUser])
       } catch (err) {

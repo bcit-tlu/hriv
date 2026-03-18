@@ -2,6 +2,28 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 
+# ── Program ──────────────────────────────────────────────
+
+class ProgramBase(BaseModel):
+    name: str
+
+
+class ProgramCreate(ProgramBase):
+    pass
+
+
+class ProgramUpdate(BaseModel):
+    name: str | None = None
+
+
+class ProgramOut(ProgramBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ── Category ──────────────────────────────────────────────
 
 class CategoryBase(BaseModel):
@@ -81,7 +103,7 @@ class UserBase(BaseModel):
     name: str
     email: str
     role: str = "student"
-    program: str | None = None
+    program_id: int | None = None
     metadata_extra: dict | None = Field(default=None, validation_alias="metadata_")
 
 
@@ -93,9 +115,14 @@ class UserUpdate(BaseModel):
     name: str | None = None
     email: str | None = None
     role: str | None = None
-    program: str | None = None
+    program_id: int | None = None
     password: str | None = None
     metadata_extra: dict | None = None
+
+
+class UserBulkUpdate(BaseModel):
+    user_ids: list[int]
+    program_id: int | None = None
 
 
 class UserOut(UserBase):
@@ -103,6 +130,7 @@ class UserOut(UserBase):
     last_access: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    program_name: str | None = None
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 

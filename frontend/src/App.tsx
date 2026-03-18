@@ -17,15 +17,14 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
 import HomeIcon from '@mui/icons-material/Home'
 import LogoutIcon from '@mui/icons-material/Logout'
-import PeopleIcon from '@mui/icons-material/People'
 import ImageViewer from './components/ImageViewer'
 import CategoryTile from './components/CategoryTile'
 import ImageTile from './components/ImageTile'
 import AddCategoryDialog from './components/AddCategoryDialog'
 import AdminPage from './components/AdminPage'
 import ManagePage from './components/ManagePage'
+import PeoplePage from './components/PeoplePage'
 import LoginScreen from './components/LoginScreen'
-import UserManagementPanel from './components/UserManagementPanel'
 import { useAuth } from './useAuth'
 import {
   fetchCategoryTree,
@@ -59,24 +58,20 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
 export default function App() {
   const {
     currentUser,
-    users,
     loading: usersLoading,
     login,
     logout,
-    addUser,
-    deleteUser,
     canManageUsers,
     canEditContent,
   } = useAuth()
 
-  type Page = 'browse' | 'manage' | 'admin'
+  type Page = 'browse' | 'manage' | 'people' | 'admin'
   const [page, setPage] = useState<Page>('browse')
   const [categories, setCategories] = useState<Category[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [path, setPath] = useState<Category[]>([])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [userPanelOpen, setUserPanelOpen] = useState(false)
 
   // Reset navigation state when user identity changes (login/logout/switch)
   useEffect(() => {
@@ -195,6 +190,7 @@ export default function App() {
           >
             <Tab label="Browse" value="browse" />
             {canEditContent && <Tab label="Manage" value="manage" />}
+            {canManageUsers && <Tab label="People" value="people" />}
             {canManageUsers && <Tab label="Admin" value="admin" />}
           </Tabs>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -207,15 +203,6 @@ export default function App() {
               }}
               variant="outlined"
             />
-            {canManageUsers && (
-              <IconButton
-                color="inherit"
-                aria-label="user management"
-                onClick={() => setUserPanelOpen(true)}
-              >
-                <PeopleIcon />
-              </IconButton>
-            )}
             <IconButton
               color="inherit"
               aria-label="sign out"
@@ -232,6 +219,8 @@ export default function App() {
         <Container maxWidth="lg">
           {page === 'admin' && canManageUsers ? (
             <AdminPage />
+          ) : page === 'people' && canManageUsers ? (
+            <PeoplePage />
           ) : page === 'manage' && canEditContent ? (
             <ManagePage />
           ) : selectedImage ? (
@@ -390,15 +379,6 @@ export default function App() {
         currentDepth={currentDepth}
       />
 
-      {/* User management panel (admin only) */}
-      <UserManagementPanel
-        open={userPanelOpen}
-        onClose={() => setUserPanelOpen(false)}
-        users={users}
-        currentUserId={currentUser.id}
-        onAddUser={addUser}
-        onDeleteUser={deleteUser}
-      />
     </Box>
   )
 }
