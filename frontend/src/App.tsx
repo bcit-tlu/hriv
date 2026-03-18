@@ -11,6 +11,8 @@ import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import MuiBreadcrumbs from '@mui/material/Breadcrumbs'
 import Link from '@mui/material/Link'
+import Tab from '@mui/material/Tab'
+import Tabs from '@mui/material/Tabs'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
 import HomeIcon from '@mui/icons-material/Home'
@@ -20,6 +22,8 @@ import ImageViewer from './components/ImageViewer'
 import CategoryTile from './components/CategoryTile'
 import ImageTile from './components/ImageTile'
 import AddCategoryDialog from './components/AddCategoryDialog'
+import AdminPage from './components/AdminPage'
+import ManagePage from './components/ManagePage'
 import LoginScreen from './components/LoginScreen'
 import UserManagementPanel from './components/UserManagementPanel'
 import { useAuth } from './useAuth'
@@ -65,6 +69,8 @@ export default function App() {
     canEditContent,
   } = useAuth()
 
+  type Page = 'browse' | 'manage' | 'admin'
+  const [page, setPage] = useState<Page>('browse')
   const [categories, setCategories] = useState<Category[]>([])
   const [categoriesLoading, setCategoriesLoading] = useState(true)
   const [path, setPath] = useState<Category[]>([])
@@ -166,9 +172,24 @@ export default function App() {
               <ArrowBackIcon />
             </IconButton>
           )}
-          <Typography variant="h6" component="h1" sx={{ flexGrow: 1 }}>
+          <Typography variant="h6" component="h1" sx={{ mr: 2 }}>
             Corgi
           </Typography>
+          <Tabs
+            value={page}
+            onChange={(_, v: Page) => {
+              setPage(v)
+              setSelectedImage(null)
+              setPath([])
+            }}
+            textColor="inherit"
+            TabIndicatorProps={{ style: { backgroundColor: 'white' } }}
+            sx={{ flexGrow: 1 }}
+          >
+            <Tab label="Browse" value="browse" />
+            {canEditContent && <Tab label="Manage" value="manage" />}
+            {canManageUsers && <Tab label="Admin" value="admin" />}
+          </Tabs>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Chip
               label={`${currentUser.name} (${currentUser.role})`}
@@ -202,7 +223,11 @@ export default function App() {
       {/* Main content */}
       <Box component="main" sx={{ flexGrow: 1, py: 3 }}>
         <Container maxWidth="lg">
-          {selectedImage ? (
+          {page === 'admin' && canManageUsers ? (
+            <AdminPage />
+          ) : page === 'manage' && canEditContent ? (
+            <ManagePage />
+          ) : selectedImage ? (
             /* ---- Viewer mode ---- */
             <>
               <Box

@@ -138,3 +138,40 @@ export function createUser(body: {
 export function deleteUser(id: number): Promise<void> {
   return request(`/users/${id}`, { method: 'DELETE' })
 }
+
+// ── Admin ───────────────────────────────────────────────
+
+export function exportDatabase(): Promise<void> {
+  const url = `${BASE}/api/admin/export`
+  return fetch(url)
+    .then((res) => {
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`)
+      return res.blob()
+    })
+    .then((blob) => {
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = 'corgi-export.json'
+      a.click()
+      URL.revokeObjectURL(a.href)
+    })
+}
+
+export interface ImportResult {
+  status: string
+  imported: { categories: number; images: number; users: number }
+}
+
+export async function importDatabase(file: File): Promise<ImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${BASE}/api/admin/import`, {
+    method: 'POST',
+    body: form,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(`Import failed: ${text}`)
+  }
+  return res.json() as Promise<ImportResult>
+}
