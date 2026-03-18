@@ -1,146 +1,93 @@
-# Testing the Corgi Image Library
+# Testing Corgi Image Library
 
-## Environment Setup
+## Local Environment Setup
 
-### Docker Compose (Dev)
-The app runs via Docker Compose with three services: `frontend` (Vite), `backend` (FastAPI), `db` (PostgreSQL 16).
+1. From the repo root, run:
+   ```bash
+   docker compose down -v  # Clean slate
+   docker compose up --build
+   ```
+2. Wait for all three services to be ready:
+   - `db-1`: "database system is ready to accept connections"
+   - `backend-1`: "Application startup complete"
+   - `frontend-1`: "VITE ready"
+3. Frontend: http://localhost:5173
+4. Backend API: http://localhost:8000
 
-```bash
-# Fresh start (required when DB schema changes)
-docker compose down -v && docker compose up --build
+## Test Credentials
 
-# Regular restart (preserves data)
-docker compose up --build
+| User  | Email               | Password   | Role       |
+|-------|---------------------|------------|------------|
+| Alice | alice@example.com   | password   | admin      |
+
+These are seeded automatically on first DB init via `db/seed.sql`.
+
+## Docker Networking Notes
+
+- If you see `network corgi_default was found but has incorrect label`, run:
+  ```bash
+  docker compose down -v
+  docker network rm corgi_default  # may error if already removed, that's fine
+  docker compose up --build
+  ```
+- The `docker compose down -v` flag removes volumes, giving a clean DB. Without `-v`, the DB persists between runs.
+
+## Testing the Image Upload Pipeline
+
+### Prerequisites
+- The backend Dockerfile needs `libvips-dev`, `pkg-config`, and `gcc` for `pyvips` to install correctly. If you see `ModuleNotFoundError: No module named 'pyvips'`, check that these apt packages are in the Dockerfile.
+
+### Upload Flow
+1. Log in as Alice (admin)
+2. Navigate to IMAGES tab
+3. Click "UPLOAD IMAGE" button (top right)
+4. Use "browse to upload" or drag-and-drop an image file
+5. Optionally edit the Label field
+6. Click "Upload"
+7. The modal closes and the images table reloads
+
+### Background Processing
+- After upload, VIPS tile generation runs as a background task
+- The new Image record does NOT appear immediately — the frontend calls `loadImages()` right after the HTTP upload response, but background processing hasn't finished yet
+- Check backend logs: `docker compose logs backend --tail=20`
+- Look for: `Processed source image X -> image Y`
+- After processing completes, refresh the Images page to see the new entry
+
+### Verifying Tiles
+- Check tiles on disk: `docker compose exec backend ls -la /data/tiles/{id}/`
+- Expected files: `image.dzi`, `image_files/` directory, `thumbnail.jpeg`
+- Verify DZI XML: `curl http://localhost:8000/api/tiles/{id}/image.dzi`
+- Should return XML with `<Image>` root, `Format="jpeg"`, `TileSize="254"`, `Overlap="1"`
+
+### Verifying in OpenSeaDragon
+- On the Images table, click the three-dot menu on a row → "View"
+- The viewer should display the image with zoom controls and a navigator mini-map
+- Scroll to zoom in/out — this exercises the DZI tile pyramid at different levels
+
+### Source Image Status API
+- Get auth token: `curl -s http://localhost:8000/api/auth/login -H 'Content-Type: application/json' -d '{"email":"alice@example.com","password":"password"}'`
+- Query: `curl -s http://localhost:8000/api/source-images/ -H 'Authorization: Bearer {token}'`
+- Verify: `status` should be `"completed"`, `image_id` should be non-null, and `stored_path` should NOT be in the response
+
+## Creating Test Images
+
+You can create synthetic test images with Python PIL:
+```python
+from PIL import Image
+img = Image.new('RGB', (2000, 2000), (255, 255, 255))
+pixels = img.load()
+for x in range(2000):
+    for y in range(2000):
+        if (x // 100 + y // 100) % 2 == 0:
+            pixels[x, y] = (200, 50, 50)
+        else:
+            pixels[x, y] = (50, 50, 200)
+img.save('/tmp/test_checkerboard.jpg', quality=90)
 ```
+A recognizable pattern like a checkerboard makes it easy to verify tile generation visually.
 
-- Frontend: http://localhost:5173
-- Backend: http://localhost:8000
-- The frontend proxies `/api` requests to the backend via Vite config.
-- docker-compose.yml targets the `dev` stage in each Dockerfile.
+## Common Issues
 
-### Important: Schema Changes
-When adding new database tables or modifying schema, you MUST run `docker compose down -v` to destroy the PostgreSQL volume before rebuilding. The `db/init.sql` and `db/seed.sql` only run on first initialization.
-
-### Production Frontend (nginx)
-The frontend Dockerfile has a `prod` target that builds a Vite production bundle and serves it with nginx on port 8080.
-
-```bash
-# Build the prod frontend image
-docker build --target prod -t corgi-fe ./frontend
-
-# Run a full prod-like stack manually:
-docker network create corgi-test
-docker run -d --name corgi-db --network corgi-test \
-  -e POSTGRES_DB=corgi -e POSTGRES_USER=corgi -e POSTGRES_PASSWORD=corgi \
-  -v $(pwd)/db/init.sql:/docker-entrypoint-initdb.d/01-init.sql \
-  -v $(pwd)/db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql \
-  postgres:16-alpine
-
-# Wait for DB, then:
-docker build --target prod -t corgi-be ./backend
-docker run -d --name corgi-backend --network corgi-test --network-alias backend \
-  -e DATABASE_URL=postgresql+asyncpg://corgi:corgi@corgi-db:5432/corgi \
-  -p 8000:8000 corgi-be
-
-docker run -d --name corgi-frontend --network corgi-test \
-  -e BACKEND_URL=http://backend:8000 \
-  -p 8080:8080 corgi-fe
-```
-
-Prod frontend is then at http://localhost:8080.
-
-### Verifying nginx Config
-The nginx config is generated at container startup via envsubst. To inspect the rendered config:
-```bash
-docker exec <frontend-container> cat /etc/nginx/conf.d/default.conf
-```
-
-Key things to verify with curl:
-```bash
-# API proxy
-curl -s http://localhost:8080/api/health  # Should return {"status":"ok"}
-
-# SPA fallback
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/some/deep/path  # Should return 200
-
-# Cache headers on /assets/
-curl -sI http://localhost:8080/assets/<hashed-file>.js
-# Should include: Cache-Control: public, immutable; X-Frame-Options: SAMEORIGIN; X-Content-Type-Options: nosniff
-
-# Gzip
-curl -sI -H "Accept-Encoding: gzip" http://localhost:8080/assets/<hashed-file>.js
-# Should include: Content-Encoding: gzip
-```
-
-Note: The hashed asset filename changes with each build. Check `frontend/dist/assets/` after building to find the exact filename.
-
-### Production Backend
-The backend Dockerfile has a `prod` target that runs uvicorn with 2 workers (no --reload).
-
-## Seed Credentials
-
-| User | Email | Password | Role |
-|------|-------|----------|------|
-| Alice Admin | alice@example.com | password | admin |
-| Bob Instructor | bob@example.com | password | instructor |
-| Charlie Student | charlie@example.com | password | student |
-
-## RBAC Tab Visibility
-- **Admin**: Browse, Manage, People, Admin
-- **Instructor**: Browse, Manage
-- **Student**: Browse only
-
-## Testing Patterns
-
-### Chrome Password Dialog
-When logging in, Chrome may show a "Change your password" dialog (because the seed password "password" is in breach databases). Click "OK" to dismiss it before continuing tests.
-
-### Announcement Feature
-- Admin page has an "Announcement" card with a "Manage" button
-- The modal has a multiline text field and an enable/disable switch
-- When enabled, a blue filled Alert banner appears below the AppBar on all authenticated pages
-- On the login page, the announcement appears as a standard (unfilled) Alert above the BCIT logo
-- GET /api/announcement is public (no auth required) so the login page can fetch it
-- PUT /api/announcement requires admin role
-
-### Admin Export/Import
-- Export downloads a JSON file with all database records
-- Import uploads a JSON file and replaces all data
-- After import, test that sequences are correctly reset by creating a new record
-- Export/import includes announcement data
-
-### CLI Testing via curl
-```bash
-# Get a JWT token
-TOKEN=$(curl -s http://localhost:8000/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"alice@example.com","password":"password"}' \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-
-# Use it
-curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
-```
-
-### Cleanup After Testing
-Always clean up Docker resources after testing:
-```bash
-# Dev compose
-docker compose down -v
-
-# Manual prod containers
-docker stop corgi-frontend corgi-backend corgi-db
-docker rm corgi-frontend corgi-backend corgi-db
-docker network rm corgi-test
-```
-
-## Lint & Build
-```bash
-# Frontend
-cd frontend && npm run lint && npx tsc --noEmit
-
-# Backend
-cd backend && ruff check .
-```
-
-## Devin Secrets Needed
-No secrets required - all credentials are seeded in the database.
+- **pyvips ModuleNotFoundError**: Ensure `libvips-dev`, `pkg-config`, and `gcc` are installed in the Dockerfile before `poetry install`
+- **Sequential access stream consumed**: When using `pyvips.Image.new_from_file(path, access="sequential")`, the pixel stream can only be read once. Use `pyvips.Image.thumbnail(path, size)` (class method, opens fresh file) instead of `image.thumbnail_image(size)` (instance method, reuses stream) for operations after `dzsave`
+- **Network label conflict**: Docker compose network label mismatch — clean up with `docker compose down -v && docker network rm corgi_default`
