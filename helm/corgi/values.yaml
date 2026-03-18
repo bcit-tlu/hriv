@@ -62,6 +62,9 @@ database:
     size: 5Gi
   database: corgi
   owner: corgi
+  seed:
+    # -- Load demo seed data (users, categories, images) on first init
+    enabled: true
 
 # -- Ingress
 ingress:

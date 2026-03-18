@@ -13,6 +13,14 @@ spec:
     initdb:
       database: {{ .Values.database.database }}
       owner: {{ .Values.database.owner }}
+      postInitApplicationSQLRefs:
+        configMapRefs:
+          - name: {{ include "corgi.fullname" . }}-db-init
+            key: init.sql
+          {{- if .Values.database.seed.enabled }}
+          - name: {{ include "corgi.fullname" . }}-db-seed
+            key: seed.sql
+          {{- end }}
 
   storage:
     storageClass: {{ .Values.database.storage.storageClass }}
