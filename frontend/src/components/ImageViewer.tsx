@@ -21,7 +21,7 @@ export default function ImageViewer({
       element: containerRef.current,
       tileSources,
       prefixUrl:
-        'https://cdn.jsdelivr.net/npm/openseadragon@5.0/build/openseadragon/images/',
+        'https://cdn.jsdelivr.net/npm/openseadragon@6/build/openseadragon/images/',
       animationTime: 0.4,
       blendTime: 0.1,
       minZoomImageRatio: 0.8,
