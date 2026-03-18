@@ -50,12 +50,6 @@ function buildCategoryPaths(
   return map
 }
 
-interface ManagePageProps {
-  categories: Category[]
-  onViewImage?: (image: ApiImage) => void
-  onNavigateCategory?: (categoryPath: Category[]) => void
-}
-
 function CategoryBreadcrumb({
   categoryId,
   categoryPaths,
@@ -100,7 +94,14 @@ function CategoryBreadcrumb({
   )
 }
 
-export default function ManagePage({ categories, onViewImage, onNavigateCategory }: ManagePageProps) {
+interface ManagePageProps {
+  categories: Category[]
+  onViewImage?: (image: ApiImage) => void
+  onNavigateCategory?: (categoryPath: Category[]) => void
+  onCategoriesChanged?: () => void
+}
+
+export default function ManagePage({ categories, onViewImage, onNavigateCategory, onCategoriesChanged }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -335,8 +336,12 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
           setEditOpen(false)
           setEditingImage(null)
         }}
-        onSave={handleSaveImage}
+        onSave={async (data) => {
+          await handleSaveImage(data)
+          onCategoriesChanged?.()
+        }}
         image={editingImage}
+        categories={categories}
       />
 
       {/* Replace image modal */}

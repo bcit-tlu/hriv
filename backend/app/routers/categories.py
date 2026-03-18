@@ -125,6 +125,24 @@ async def update_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
     update_data = body.model_dump(exclude_unset=True)
+    if "parent_id" in update_data:
+        new_parent_id = update_data["parent_id"]
+        if new_parent_id == category_id:
+            raise HTTPException(
+                status_code=400, detail="A category cannot be its own parent"
+            )
+        if new_parent_id is not None:
+            ancestor_id: int | None = new_parent_id
+            while ancestor_id is not None:
+                ancestor = await db.get(Category, ancestor_id)
+                if ancestor is None:
+                    break
+                if ancestor.id == category_id:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Cannot move a category into one of its own descendants",
+                    )
+                ancestor_id = ancestor.parent_id
     if "metadata_extra" in update_data:
         update_data["metadata_"] = update_data.pop("metadata_extra")
     for key, value in update_data.items():

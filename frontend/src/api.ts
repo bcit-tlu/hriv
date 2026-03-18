@@ -111,6 +111,21 @@ export function createCategory(body: {
   })
 }
 
+export function updateCategory(
+  id: number,
+  body: {
+    label?: string
+    parent_id?: number | null
+    program?: string
+    status?: string
+  },
+): Promise<ApiCategory> {
+  return request(`/categories/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
 export function deleteCategory(id: number): Promise<void> {
   return request(`/categories/${id}`, { method: 'DELETE' })
 }
@@ -120,6 +135,10 @@ export function deleteCategory(id: number): Promise<void> {
 export function fetchImages(categoryId?: number): Promise<ApiImage[]> {
   const qs = categoryId != null ? `?category_id=${categoryId}` : ''
   return request(`/images/${qs}`)
+}
+
+export function fetchUncategorizedImages(): Promise<ApiImage[]> {
+  return request('/images/?uncategorized=true')
 }
 
 export function createImage(body: {
