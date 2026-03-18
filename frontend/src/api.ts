@@ -274,6 +274,49 @@ export function updateAnnouncement(body: {
   })
 }
 
+// ── Source Images ───────────────────────────────────────
+
+export interface ApiSourceImage {
+  id: number
+  original_filename: string
+  status: string
+  error_message: string | null
+  label: string | null
+  category_id: number | null
+  image_id: number | null
+  created_at: string
+  updated_at: string
+}
+
+export async function uploadSourceImage(
+  file: File,
+  label?: string,
+  categoryId?: number | null,
+): Promise<ApiSourceImage> {
+  const form = new FormData()
+  form.append('file', file)
+  if (label) form.append('label', label)
+  if (categoryId != null) form.append('category_id', String(categoryId))
+  const res = await fetch(`${BASE}/api/source-images/upload`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: form,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(`Upload failed: ${text}`)
+  }
+  return res.json() as Promise<ApiSourceImage>
+}
+
+export function fetchSourceImages(): Promise<ApiSourceImage[]> {
+  return request('/source-images/')
+}
+
+export function fetchSourceImage(id: number): Promise<ApiSourceImage> {
+  return request(`/source-images/${id}`)
+}
+
 // ── Admin ───────────────────────────────────────────────
 
 export function exportDatabase(): Promise<void> {

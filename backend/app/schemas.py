@@ -114,6 +114,22 @@ class ImageOut(ImageBase):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
 
+# ── Source Image ─────────────────────────────────────────
+
+class SourceImageOut(BaseModel):
+    id: int
+    original_filename: str
+    status: str
+    error_message: str | None = None
+    label: str | None = None
+    category_id: int | None = None
+    image_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ── User ──────────────────────────────────────────────────
 
 class UserBase(BaseModel):

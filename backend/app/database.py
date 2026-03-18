@@ -5,6 +5,8 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://corgi:corgi@db:5432/corgi"
+    source_images_dir: str = "/data/source_images"
+    tiles_dir: str = "/data/tiles"
 
 
 settings = Settings()
