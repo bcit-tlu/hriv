@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "corgi-backend"
+version = "0.1.0"
+description = "Corgi Image Library API"
+authors = ["Devin AI"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.115.0"
+uvicorn = {extras = ["standard"], version = "^0.34.0"}
+sqlalchemy = "^2.0.0"
+asyncpg = "^0.30.0"
+pydantic = "^2.0.0"
+pydantic-settings = "^2.0.0"
+python-multipart = "^0.0.22"
+python-jose = {extras = ["cryptography"], version = "^3.5.0"}
+bcrypt = "^5.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

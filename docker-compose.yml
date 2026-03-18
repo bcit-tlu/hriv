@@ -1,136 +1,49 @@
-version: "3.8"
-
 services:
-  db-init:
-    image: bcitltc/bash-aws-jq-curl
-    entrypoint: ["bash", "db-init.sh"]
-
-    environment:
-      # Use the same settings that are used in the `review` and `latest` cluster environments
-      #   (see `deploy/base/kustomization.yaml`)
-      #
-      AWS_BUCKET: corgi-test-bucket-2020-06-29
-      AWS_DB_BACKUP: corgi-db-backup
-    volumes:
-      # Use local AWS credentials for development
-      - ~/.aws:/root/.aws
-
-      # Map aws cli config to container
-      - ./deploy/base/components/conf.d/aws/cli-config.ini:/root/.aws/config
-
-      # Map `db-init` script to container
-      - ./deploy/base/components/init.d/db-init.sh:/db-init.sh
-
-      # Mount shared entrypoint volume for mariadb startup
-      - docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
-
   db:
-    image: mariadb:10.10
+    image: postgres:16-alpine
     environment:
-      MARIADB_ROOT_PASSWORD: insecurerootpassw0rd
-      MARIADB_DATABASE: corgi
-      MARIADB_USER: corgi
-      MARIADB_PASSWORD: example
+      POSTGRES_DB: corgi
+      POSTGRES_USER: corgi
+      POSTGRES_PASSWORD: corgi
     ports:
-      - 3306:3306
+      - 5432:5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
     healthcheck:
-      test:
-        - CMD-SHELL
-        - mariadb-admin -u$$MARIADB_USER -p$$MARIADB_PASSWORD ping
-      timeout: 5s
+      test: ["CMD-SHELL", "pg_isready -U corgi"]
+      interval: 5s
+      timeout: 3s
       retries: 10
-    volumes:
-      - docker-entrypoint-initdb.d:/docker-entrypoint-initdb.d
-    depends_on:
-      db-init:
-        condition: service_completed_successfully
 
-  corgi-service:
-    image: corgi
-    build: .
-    command:
-      - /bin/sh
-      - -c
-      - |
-        mkdir -p /var/www/html \
-          && cp -R /corgi/. /var/www/html/ \
-          && chown -R www-data:www-data /var/www/html \
-          && chmod -R 755 /var/www/html \
-          && supervisord -c /etc/supervisor/supervisord.conf
-    environment:
-      MARIADB_ROOT_HOST: db
-      MARIADB_DATABASE: corgi
-      MARIADB_USER: corgi
-      MARIADB_PASSWORD: example
-
-      # Adds verbose logging
-      APP_DEBUG: true
-
-      # Local development settings that enable local admin user
-      APP_ENV: dev
-      LOCAL_DEV_ADMIN_USER: admin
-      LOCAL_DEV_ADMIN_PASSWORD: secret
-      LOCAL_DEV_GUARD: local
-    env_file:
-      # This file is for stable/production development
-      - ./src/.env
-      # This file is git ignored and should be for latest and local development only     
-      - ./src/git_ignored_folder/.env
-    develop:
-      watch:
-        # Action mode can be: Sync, Rebuild, Sync+Restart (not supported yet in this version of Docker Desktop)
-        - action: rebuild
-          # Path to the local folder to watch
-          path: ./src/app
-          # Target field controls how the path is mapped into the container
-          target: /corgi/app
-          # Ignore files or folders
-          ignore:
-            - node_modules/
+  backend:
+    build: ./backend
     ports:
-      - 9000:9000
+      - 8000:8000
     volumes:
-      - static-assets:/var/www/html/
-
-      # NOTE: Create local log files in DEV mode only
-      - ./src/storage/logs:/corgi/storage/logs
-
-      # Use local AWS credentials for development
-      - ~/.aws:/root/.aws
-
-      # Map aws cli config to container
-      - ./deploy/base/components/conf.d/aws/cli-config.ini:/root/.aws/config
-
-      # Use the same app settings that are used on-cluster
-      - ./deploy/base/components/conf.d/ImageMagick/policy.xml:/etc/ImageMagick/policy.xml
-      - ./deploy/base/components/conf.d/php/corgi.conf:/usr/local/etc/php-fpm.d/corgi.conf
-      - ./deploy/base/components/conf.d/php/conf.d/local.ini:/etc/php7/conf.d/local.ini
-      - ./deploy/base/components/conf.d/php/conf.d/local.ini:/usr/local/etc/php/conf.d/local.ini
-      - ./deploy/base/components/conf.d/php/conf.d/uploads.ini:/etc/php7/conf.d/uploads.ini
-      - ./deploy/base/components/conf.d/php/conf.d/uploads.ini:/usr/local/etc/php/conf.d/uploads.ini
-      - ./deploy/base/components/conf.d/supervisor/supervisord.conf:/etc/supervisor/supervisord.conf
+      - ./backend/app:/app/app
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://corgi:corgi@db:5432/corgi
     depends_on:
       db:
         condition: service_healthy
 
-  nginx:
-    image: nginx
+  frontend:
+    build: ./frontend
     ports:
-      - 8080:8080
+      - 5173:5173
     volumes:
-      - ./deploy/base/components/conf.d/nginx/:/etc/nginx/conf.d/
-      - static-assets:/var/www/html/
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/tsconfig.app.json:/app/tsconfig.app.json
+    environment:
+      - NODE_ENV=development
     depends_on:
-      - corgi-service
-
-  adminer:
-    image: adminer
-    ports:
-      - 8081:8081
-    command: ["php", "-S", "[::]:8081", "-t", "/var/www/html"]
-    depends_on:
-      - db
+      - backend
 
 volumes:
-  static-assets:
-  docker-entrypoint-initdb.d:
+  pgdata:
