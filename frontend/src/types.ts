@@ -13,3 +13,12 @@ export interface Category {
 }
 
 export const MAX_DEPTH = 6
+
+export type Role = 'admin' | 'instructor' | 'student'
+
+export interface User {
+  id: string
+  name: string
+  email: string
+  role: Role
+}

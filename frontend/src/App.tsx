@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import AppBar from '@mui/material/AppBar'
 import Box from '@mui/material/Box'
+import Chip from '@mui/material/Chip'
 import Container from '@mui/material/Container'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
@@ -12,19 +13,36 @@ import Link from '@mui/material/Link'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
 import HomeIcon from '@mui/icons-material/Home'
+import LogoutIcon from '@mui/icons-material/Logout'
+import PeopleIcon from '@mui/icons-material/People'
 import ImageViewer from './components/ImageViewer'
 import CategoryTile from './components/CategoryTile'
 import ImageTile from './components/ImageTile'
 import AddCategoryDialog from './components/AddCategoryDialog'
+import LoginScreen from './components/LoginScreen'
+import UserManagementPanel from './components/UserManagementPanel'
+import { useAuth } from './useAuth'
 import { rootCategories as initialData } from './data'
 import type { Category, ImageItem } from './types'
 import { MAX_DEPTH } from './types'
 
 export default function App() {
+  const {
+    currentUser,
+    users,
+    login,
+    logout,
+    addUser,
+    deleteUser,
+    canManageUsers,
+    canEditContent,
+  } = useAuth()
+
   const [categories, setCategories] = useState<Category[]>(initialData)
   const [path, setPath] = useState<Category[]>([])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [userPanelOpen, setUserPanelOpen] = useState(false)
 
   const currentDepth = path.length
 
@@ -85,6 +103,11 @@ export default function App() {
     [path],
   )
 
+  // Show login screen when no user is authenticated
+  if (!currentUser) {
+    return <LoginScreen users={users} onLogin={login} />
+  }
+
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
       {/* App bar */}
@@ -110,9 +133,33 @@ export default function App() {
           <Typography variant="h6" component="h1" sx={{ flexGrow: 1 }}>
             Corgi
           </Typography>
-          <Typography variant="body2" sx={{ opacity: 0.8 }}>
-            Image Library
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Chip
+              label={`${currentUser.name} (${currentUser.role})`}
+              size="small"
+              sx={{
+                color: 'white',
+                borderColor: 'rgba(255,255,255,0.5)',
+              }}
+              variant="outlined"
+            />
+            {canManageUsers && (
+              <IconButton
+                color="inherit"
+                aria-label="user management"
+                onClick={() => setUserPanelOpen(true)}
+              >
+                <PeopleIcon />
+              </IconButton>
+            )}
+            <IconButton
+              color="inherit"
+              aria-label="sign out"
+              onClick={logout}
+            >
+              <LogoutIcon />
+            </IconButton>
+          </Box>
         </Toolbar>
       </AppBar>
 
@@ -192,8 +239,8 @@ export default function App() {
                 </MuiBreadcrumbs>
               </Box>
 
-              {/* Add-category button */}
-              {currentDepth < MAX_DEPTH && (
+              {/* Add-category button (admin + instructor only) */}
+              {canEditContent && currentDepth < MAX_DEPTH && (
                 <Box sx={{ mb: 2 }}>
                   <Button
                     variant="outlined"
@@ -267,6 +314,16 @@ export default function App() {
         onClose={() => setDialogOpen(false)}
         onAdd={addCategory}
         currentDepth={currentDepth}
+      />
+
+      {/* User management panel (admin only) */}
+      <UserManagementPanel
+        open={userPanelOpen}
+        onClose={() => setUserPanelOpen(false)}
+        users={users}
+        currentUserId={currentUser.id}
+        onAddUser={addUser}
+        onDeleteUser={deleteUser}
       />
     </Box>
   )
