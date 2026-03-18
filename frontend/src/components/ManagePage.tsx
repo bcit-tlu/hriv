@@ -17,6 +17,7 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
+import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
 import DeleteIcon from '@mui/icons-material/Delete'
 import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
@@ -99,9 +100,10 @@ interface ManagePageProps {
   onViewImage?: (image: ApiImage) => void
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
+  onNewCategory?: () => void
 }
 
-export default function ManagePage({ categories, onViewImage, onNavigateCategory, onCategoriesChanged }: ManagePageProps) {
+export default function ManagePage({ categories, onViewImage, onNavigateCategory, onCategoriesChanged, onNewCategory }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -225,13 +227,24 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         <Typography variant="h5">
           Images
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddPhotoAlternateIcon />}
-          onClick={() => setUploadOpen(true)}
-        >
-          Upload Image
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+          {onNewCategory && (
+            <Button
+              variant="contained"
+              startIcon={<CreateNewFolderIcon />}
+              onClick={onNewCategory}
+            >
+              New Category
+            </Button>
+          )}
+          <Button
+            variant="outlined"
+            startIcon={<AddPhotoAlternateIcon />}
+            onClick={() => setUploadOpen(true)}
+          >
+            Upload Image
+          </Button>
+        </Box>
       </Box>
 
       {images.length === 0 ? (

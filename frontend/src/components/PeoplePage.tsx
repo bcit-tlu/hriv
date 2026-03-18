@@ -208,6 +208,7 @@ export default function PeoplePage() {
         sx={{
           display: 'flex',
           alignItems: 'center',
+          justifyContent: 'flex-end',
           gap: 2,
           mb: 2,
           flexWrap: 'wrap',

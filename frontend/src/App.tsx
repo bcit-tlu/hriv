@@ -394,42 +394,22 @@ export default function App() {
                 loadCategories()
                 loadUncategorizedImages()
               }}
+              onNewCategory={() => setDialogOpen(true)}
             />
           ) : selectedImage ? (
             /* ---- Viewer mode ---- */
             <>
-              {/* Toolbar */}
-              {canEditContent && (
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    mb: 2,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  {currentDepth < MAX_DEPTH && (
-                    <Button
-                      variant="contained"
-                      startIcon={<CreateNewFolderIcon />}
-                      onClick={() => setDialogOpen(true)}
-                    >
-                      New Category
-                    </Button>
-                  )}
-                  <Button
-                    variant="outlined"
-                    startIcon={<AddPhotoAlternateIcon />}
-                    onClick={() => setUploadOpen(true)}
-                  >
-                    Upload Image
-                  </Button>
-                </Box>
-              )}
-
-              {/* Breadcrumbs */}
-              <Box sx={{ mb: 2 }}>
+              {/* Breadcrumbs + action buttons */}
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  mb: 2,
+                  flexWrap: 'wrap',
+                  gap: 1,
+                }}
+              >
                 <MuiBreadcrumbs aria-label="image breadcrumb">
                   <Link
                     component="button"
@@ -470,6 +450,26 @@ export default function App() {
                     {selectedImage.label}
                   </Typography>
                 </MuiBreadcrumbs>
+                {canEditContent && (
+                  <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                    {currentDepth < MAX_DEPTH && (
+                      <Button
+                        variant="contained"
+                        startIcon={<CreateNewFolderIcon />}
+                        onClick={() => setDialogOpen(true)}
+                      >
+                        New Category
+                      </Button>
+                    )}
+                    <Button
+                      variant="outlined"
+                      startIcon={<AddPhotoAlternateIcon />}
+                      onClick={() => setUploadOpen(true)}
+                    >
+                      Upload Image
+                    </Button>
+                  </Box>
+                )}
               </Box>
 
               <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
@@ -487,8 +487,17 @@ export default function App() {
           ) : (
             /* ---- Browse mode ---- */
             <>
-              {/* Breadcrumbs */}
-              <Box sx={{ mb: 2 }}>
+              {/* Breadcrumbs + action buttons */}
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  mb: 2,
+                  flexWrap: 'wrap',
+                  gap: 1,
+                }}
+              >
                 <MuiBreadcrumbs aria-label="category breadcrumb">
                   <Link
                     component="button"
@@ -522,37 +531,27 @@ export default function App() {
                     </Link>
                   ))}
                 </MuiBreadcrumbs>
-              </Box>
-
-              {/* Toolbar */}
-              {canEditContent && (
-                <Box
-                  sx={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 2,
-                    mb: 2,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  {currentDepth < MAX_DEPTH && (
+                {canEditContent && (
+                  <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                    {currentDepth < MAX_DEPTH && (
+                      <Button
+                        variant="contained"
+                        startIcon={<CreateNewFolderIcon />}
+                        onClick={() => setDialogOpen(true)}
+                      >
+                        New Category
+                      </Button>
+                    )}
                     <Button
-                      variant="contained"
-                      startIcon={<CreateNewFolderIcon />}
-                      onClick={() => setDialogOpen(true)}
+                      variant="outlined"
+                      startIcon={<AddPhotoAlternateIcon />}
+                      onClick={() => setUploadOpen(true)}
                     >
-                      New Category
+                      Upload Image
                     </Button>
-                  )}
-                  <Button
-                    variant="outlined"
-                    startIcon={<AddPhotoAlternateIcon />}
-                    onClick={() => setUploadOpen(true)}
-                  >
-                    Upload Image
-                  </Button>
-                </Box>
-              )}
+                  </Box>
+                )}
+              </Box>
 
               {/* Tile grid */}
               <Box

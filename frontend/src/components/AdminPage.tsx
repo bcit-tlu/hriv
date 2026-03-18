@@ -206,6 +206,7 @@ export default function AdminPage({ onAnnouncementChange }: AdminPageProps) {
               variant="contained"
               startIcon={<CampaignIcon />}
               onClick={openAnnModal}
+              sx={{ bgcolor: 'grey.600', '&:hover': { bgcolor: 'grey.700' } }}
             >
               Manage
             </Button>
