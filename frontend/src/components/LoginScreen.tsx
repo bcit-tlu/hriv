@@ -2,12 +2,13 @@ import { useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Card from '@mui/material/Card'
-import CardContent from '@mui/material/CardContent'
 import CircularProgress from '@mui/material/CircularProgress'
-import Container from '@mui/material/Container'
+import IconButton from '@mui/material/IconButton'
+import InputAdornment from '@mui/material/InputAdornment'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import Visibility from '@mui/icons-material/Visibility'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => Promise<void>
@@ -16,6 +17,7 @@ interface LoginScreenProps {
 export default function LoginScreen({ onLogin }: LoginScreenProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -37,61 +39,112 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
       sx={{
         minHeight: '100vh',
         display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        bgcolor: 'background.default',
+        bgcolor: '#fff',
       }}
     >
-      <Container maxWidth="xs">
-        <Box sx={{ textAlign: 'center', mb: 4 }}>
-          <Typography variant="h4" gutterBottom>
-            Corgi Image Library
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            Sign in with your credentials
-          </Typography>
-        </Box>
+      {/* Left side — form */}
+      <Box
+        sx={{
+          flex: '0 0 50%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          px: { xs: 3, sm: 6, md: 8 },
+        }}
+      >
+        <Box sx={{ width: '100%', maxWidth: 400 }}>
+          {/* BCIT logo + Login heading */}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 5 }}>
+            <Box
+              component="img"
+              src="/bcit-logo.svg"
+              alt="BCIT"
+              sx={{ height: 48 }}
+            />
+            <Typography variant="h5" sx={{ fontWeight: 400 }}>
+              Login
+            </Typography>
+          </Box>
 
-        <Card elevation={2}>
-          <CardContent>
-            <Box component="form" onSubmit={handleSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {error && (
-                <Alert severity="error" onClose={() => setError(null)}>
-                  {error}
-                </Alert>
-              )}
-              <TextField
-                label="Email"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                fullWidth
-                autoFocus
-                autoComplete="email"
-              />
-              <TextField
-                label="Password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                fullWidth
-                autoComplete="current-password"
-              />
+          <Box
+            component="form"
+            onSubmit={handleSubmit}
+            sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}
+          >
+            {error && (
+              <Alert severity="error" onClose={() => setError(null)}>
+                {error}
+              </Alert>
+            )}
+
+            <TextField
+              placeholder="username@bcit.ca / username@my.bcit.ca"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              fullWidth
+              autoFocus
+              autoComplete="email"
+              variant="standard"
+            />
+
+            <TextField
+              placeholder="Password"
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              fullWidth
+              autoComplete="current-password"
+              variant="standard"
+              slotProps={{
+                input: {
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton
+                        aria-label="toggle password visibility"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        edge="end"
+                        size="small"
+                      >
+                        {showPassword ? <VisibilityOff /> : <Visibility />}
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                },
+              }}
+            />
+
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
               <Button
                 type="submit"
-                variant="contained"
-                fullWidth
+                variant="text"
                 disabled={loading || !email || !password}
-                startIcon={loading ? <CircularProgress size={18} color="inherit" /> : undefined}
+                startIcon={
+                  loading ? (
+                    <CircularProgress size={18} color="inherit" />
+                  ) : undefined
+                }
+                sx={{ fontWeight: 600, letterSpacing: 1 }}
               >
-                {loading ? 'Signing in...' : 'Sign in'}
+                {loading ? 'Signing in...' : 'LOGIN'}
               </Button>
             </Box>
-          </CardContent>
-        </Card>
-      </Container>
+          </Box>
+        </Box>
+      </Box>
+
+      {/* Right side — splash image */}
+      <Box
+        sx={{
+          flex: '0 0 50%',
+          backgroundImage: 'url(/login-splash.jpg)',
+          backgroundSize: 'cover',
+          backgroundPosition: 'center',
+          display: { xs: 'none', md: 'block' },
+        }}
+      />
     </Box>
   )
 }
