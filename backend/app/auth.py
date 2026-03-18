@@ -1,5 +1,6 @@
 """JWT authentication and RBAC utilities."""
 
+import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
@@ -15,12 +16,19 @@ from .models import User
 
 
 class AuthSettings(Settings):
-    jwt_secret: str = "corgi-dev-secret-change-in-production"
+    jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440  # 24 hours
 
 
 auth_settings = AuthSettings()
+
+# Generate a random secret on each backend startup so that tokens from a
+# previous container instance (e.g. after ``docker compose down -v``) are
+# automatically invalidated.  An explicit ``JWT_SECRET`` env-var still takes
+# precedence for production deployments that need stable tokens.
+if not auth_settings.jwt_secret:
+    auth_settings.jwt_secret = secrets.token_urlsafe(32)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
