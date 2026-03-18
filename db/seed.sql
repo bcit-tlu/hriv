@@ -51,6 +51,13 @@ VALUES
 
 SELECT setval('images_id_seq', 4);
 
+-- ── Announcements ───────────────────────────────────────────
+
+INSERT INTO announcements (id, message, enabled)
+VALUES (1, '', false);
+
+SELECT setval('announcements_id_seq', 1);
+
 -- ── Users ─────────────────────────────────────────────────
 
 INSERT INTO users (id, name, email, password_hash, role, program_id, last_access, metadata)

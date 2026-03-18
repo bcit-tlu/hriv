@@ -22,12 +22,14 @@ import CategoryTile from './components/CategoryTile'
 import ImageTile from './components/ImageTile'
 import AddCategoryDialog from './components/AddCategoryDialog'
 import AdminPage from './components/AdminPage'
+import AnnouncementBanner from './components/AnnouncementBanner'
 import ManagePage from './components/ManagePage'
 import PeoplePage from './components/PeoplePage'
 import LoginScreen from './components/LoginScreen'
 import { useAuth } from './useAuth'
 import {
   fetchCategoryTree,
+  fetchAnnouncement,
   createCategory as apiCreateCategory,
 } from './api'
 import type { ApiCategoryTree } from './api'
@@ -72,6 +74,21 @@ export default function App() {
   const [path, setPath] = useState<Category[]>([])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [announcement, setAnnouncement] = useState('')
+
+  // Load announcement (works for both logged-in and login page)
+  const loadAnnouncement = useCallback(async () => {
+    try {
+      const ann = await fetchAnnouncement()
+      setAnnouncement(ann.enabled ? ann.message : '')
+    } catch {
+      // Silently ignore — announcement is non-critical
+    }
+  }, [])
+
+  useEffect(() => {
+    loadAnnouncement()
+  }, [loadAnnouncement])
 
   // Reset navigation state when user identity changes (login/logout/switch)
   useEffect(() => {
@@ -149,7 +166,7 @@ export default function App() {
 
   // Show login screen when no user is authenticated
   if (!currentUser) {
-    return <LoginScreen onLogin={login} />
+    return <LoginScreen onLogin={login} announcement={announcement} />
   }
 
   return (
@@ -214,11 +231,14 @@ export default function App() {
         </Toolbar>
       </AppBar>
 
+      {/* Announcement banner */}
+      {announcement && <AnnouncementBanner message={announcement} />}
+
       {/* Main content */}
       <Box component="main" sx={{ flexGrow: 1, py: 3 }}>
         <Container maxWidth="lg">
           {page === 'admin' && canManageUsers ? (
-            <AdminPage />
+            <AdminPage onAnnouncementChange={loadAnnouncement} />
           ) : page === 'people' && canManageUsers ? (
             <PeoplePage />
           ) : page === 'manage' && canEditContent ? (

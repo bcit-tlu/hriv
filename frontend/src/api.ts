@@ -231,6 +231,30 @@ export function deleteProgram(id: number): Promise<void> {
   return request(`/programs/${id}`, { method: 'DELETE' })
 }
 
+// ── Announcement ────────────────────────────────────────
+
+export interface ApiAnnouncement {
+  id: number
+  message: string
+  enabled: boolean
+  created_at: string
+  updated_at: string
+}
+
+export function fetchAnnouncement(): Promise<ApiAnnouncement> {
+  return request('/announcement/')
+}
+
+export function updateAnnouncement(body: {
+  message?: string
+  enabled?: boolean
+}): Promise<ApiAnnouncement> {
+  return request('/announcement/', {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  })
+}
+
 // ── Admin ───────────────────────────────────────────────
 
 export function exportDatabase(): Promise<void> {

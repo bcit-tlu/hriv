@@ -9,12 +9,14 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
+import AnnouncementBanner from './AnnouncementBanner'
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => Promise<void>
+  announcement?: string
 }
 
-export default function LoginScreen({ onLogin }: LoginScreenProps) {
+export default function LoginScreen({ onLogin, announcement }: LoginScreenProps) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -53,6 +55,10 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
         }}
       >
         <Box sx={{ width: '100%', maxWidth: 400 }}>
+          {announcement && (
+            <AnnouncementBanner message={announcement} variant="login" />
+          )}
+
           {/* BCIT logo + Login heading */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 5 }}>
             <Box

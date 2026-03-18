@@ -24,6 +24,23 @@ class ProgramOut(ProgramBase):
     model_config = {"from_attributes": True}
 
 
+# ── Announcement ─────────────────────────────────────────
+
+class AnnouncementOut(BaseModel):
+    id: int
+    message: str
+    enabled: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AnnouncementUpdate(BaseModel):
+    message: str | None = None
+    enabled: bool | None = None
+
+
 # ── Category ──────────────────────────────────────────────
 
 class CategoryBase(BaseModel):

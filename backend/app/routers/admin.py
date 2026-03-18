@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
 from ..database import get_db
-from ..models import Category, Image, Program, User
+from ..models import Announcement, Category, Image, Program, User
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -45,6 +45,12 @@ async def export_database(
         select(User).order_by(User.id)
     )
     users = result.scalars().all()
+
+    # Announcement
+    result = await db.execute(
+        select(Announcement).where(Announcement.id == 1)
+    )
+    ann = result.scalar_one_or_none()
 
     def dt(v: datetime | None) -> str | None:
         return v.isoformat() if v else None
@@ -105,6 +111,12 @@ async def export_database(
             }
             for u in users
         ],
+        "announcement": {
+            "message": ann.message if ann else "",
+            "enabled": ann.enabled if ann else False,
+            "created_at": dt(ann.created_at) if ann else None,
+            "updated_at": dt(ann.updated_at) if ann else None,
+        },
     }
 
     content = json.dumps(dump, indent=2)
@@ -147,6 +159,7 @@ async def import_database(
         await db.execute(text("DELETE FROM images"))
         await db.execute(text("DELETE FROM categories"))
         await db.execute(text("DELETE FROM users"))
+        await db.execute(text("DELETE FROM announcements"))
         await db.execute(text("DELETE FROM programs"))
 
         # Import programs (if present in dump)
@@ -230,6 +243,21 @@ async def import_database(
         # Flush images so sequence reset sees all rows
         await db.flush()
 
+        # Import announcement (if present in dump)
+        ann_data = dump.get("announcement")
+        if ann_data:
+            ann = Announcement(
+                id=1,
+                message=ann_data.get("message", ""),
+                enabled=ann_data.get("enabled", False),
+                created_at=_parse_dt(ann_data.get("created_at")),
+                updated_at=_parse_dt(ann_data.get("updated_at")),
+            )
+            db.add(ann)
+        else:
+            db.add(Announcement(id=1, message="", enabled=False))
+        await db.flush()
+
         # Reset sequences so new inserts get correct IDs (before commit for atomicity)
         # Use GREATEST(..., 1) with is_called=EXISTS(...) to handle empty tables
         # (PostgreSQL SERIAL sequences have MINVALUE 1, so setval(seq, 0) would fail)
@@ -244,6 +272,9 @@ async def import_database(
         )
         await db.execute(
             text("SELECT setval('users_id_seq', GREATEST(COALESCE((SELECT MAX(id) FROM users), 1), 1), EXISTS(SELECT 1 FROM users))")
+        )
+        await db.execute(
+            text("SELECT setval('announcements_id_seq', GREATEST(COALESCE((SELECT MAX(id) FROM announcements), 1), 1), EXISTS(SELECT 1 FROM announcements))")
         )
 
         await db.commit()

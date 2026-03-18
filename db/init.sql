@@ -38,6 +38,14 @@ CREATE TABLE IF NOT EXISTS images (
 
 CREATE INDEX IF NOT EXISTS idx_images_category ON images(category_id);
 
+CREATE TABLE IF NOT EXISTS announcements (
+    id            SERIAL PRIMARY KEY,
+    message       TEXT NOT NULL DEFAULT '',
+    enabled       BOOLEAN NOT NULL DEFAULT false,
+    created_at    TIMESTAMPTZ DEFAULT now(),
+    updated_at    TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS users (
     id            SERIAL PRIMARY KEY,
     name          VARCHAR(255) NOT NULL,
