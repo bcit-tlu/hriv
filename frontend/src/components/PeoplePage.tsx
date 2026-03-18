@@ -192,7 +192,13 @@ export default function PeoplePage() {
   const someSelected = selected.size > 0 && selected.size < users.length
 
   return (
-    <Box>
+    <Box
+      sx={{
+        bgcolor: '#d1cdcd',
+        borderRadius: 2,
+        p: 3,
+      }}
+    >
       <Typography variant="h5" sx={{ mb: 3 }}>
         People
       </Typography>
@@ -240,7 +246,7 @@ export default function PeoplePage() {
           No people found.
         </Typography>
       ) : (
-        <TableContainer component={Paper} variant="outlined">
+        <TableContainer component={Paper} variant="outlined" sx={{ bgcolor: '#fff' }}>
           <Table size="small">
             <TableHead>
               <TableRow>

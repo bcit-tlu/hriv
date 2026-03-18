@@ -16,6 +16,7 @@ import MuiBreadcrumbs from '@mui/material/Breadcrumbs'
 import Link from '@mui/material/Link'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
+import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
 import HomeIcon from '@mui/icons-material/Home'
 import ImageViewer from './components/ImageViewer'
@@ -28,6 +29,7 @@ import AddEditPersonModal from './components/AddEditPersonModal'
 import ManagePage from './components/ManagePage'
 import PeoplePage from './components/PeoplePage'
 import LoginScreen from './components/LoginScreen'
+import UploadImageModal from './components/UploadImageModal'
 import { useAuth } from './useAuth'
 import {
   fetchCategoryTree,
@@ -80,6 +82,7 @@ export default function App() {
   const [path, setPath] = useState<Category[]>([])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [uploadOpen, setUploadOpen] = useState(false)
   const [announcement, setAnnouncement] = useState('')
   const [uncategorizedImages, setUncategorizedImages] = useState<ImageItem[]>([])
 
@@ -263,7 +266,15 @@ export default function App() {
             TabIndicatorProps={{ style: { backgroundColor: 'white' } }}
             sx={{ flexGrow: 1 }}
           >
-            <Tab label="Home" value="browse" />
+            <Tab
+              label="Home"
+              value="browse"
+              onClick={() => {
+                setPage('browse')
+                setSelectedImage(null)
+                setPath([])
+              }}
+            />
             {canEditContent && <Tab label="Images" value="manage" />}
             {canManageUsers && <Tab label="People" value="people" />}
             {canManageUsers && <Tab label="Admin" value="admin" />}
@@ -387,6 +398,34 @@ export default function App() {
           ) : selectedImage ? (
             /* ---- Viewer mode ---- */
             <>
+              {/* Toolbar */}
+              {canEditContent && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    mb: 2,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  <Button
+                    variant="contained"
+                    startIcon={<CreateNewFolderIcon />}
+                    onClick={() => setDialogOpen(true)}
+                  >
+                    New Category
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<AddPhotoAlternateIcon />}
+                    onClick={() => setUploadOpen(true)}
+                  >
+                    Upload Image
+                  </Button>
+                </Box>
+              )}
+
               {/* Breadcrumbs */}
               <Box sx={{ mb: 2 }}>
                 <MuiBreadcrumbs aria-label="image breadcrumb">
@@ -483,16 +522,32 @@ export default function App() {
                 </MuiBreadcrumbs>
               </Box>
 
-              {/* Add-category button (admin + instructor only) */}
-              {canEditContent && currentDepth < MAX_DEPTH && (
-                <Box sx={{ mb: 2 }}>
+              {/* Toolbar */}
+              {canEditContent && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 2,
+                    mb: 2,
+                    flexWrap: 'wrap',
+                  }}
+                >
+                  {currentDepth < MAX_DEPTH && (
+                    <Button
+                      variant="contained"
+                      startIcon={<CreateNewFolderIcon />}
+                      onClick={() => setDialogOpen(true)}
+                    >
+                      New Category
+                    </Button>
+                  )}
                   <Button
                     variant="outlined"
-                    size="small"
-                    startIcon={<CreateNewFolderIcon />}
-                    onClick={() => setDialogOpen(true)}
+                    startIcon={<AddPhotoAlternateIcon />}
+                    onClick={() => setUploadOpen(true)}
                   >
-                    New Category
+                    Upload Image
                   </Button>
                 </Box>
               )}
@@ -586,6 +641,16 @@ export default function App() {
         onMove={handleMoveCategory}
         category={movingCategory}
         categories={categories}
+      />
+
+      {/* Upload image modal */}
+      <UploadImageModal
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onUploaded={() => {
+          loadCategories()
+          loadUncategorizedImages()
+        }}
       />
 
       {/* Self-edit profile modal */}
