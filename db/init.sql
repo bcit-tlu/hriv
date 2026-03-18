@@ -38,6 +38,21 @@ CREATE TABLE IF NOT EXISTS images (
 
 CREATE INDEX IF NOT EXISTS idx_images_category ON images(category_id);
 
+CREATE TABLE IF NOT EXISTS source_images (
+    id            SERIAL PRIMARY KEY,
+    original_filename VARCHAR(500) NOT NULL,
+    stored_path   TEXT NOT NULL,
+    status        VARCHAR(50) NOT NULL DEFAULT 'pending',
+    error_message TEXT,
+    label         VARCHAR(255),
+    category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    image_id      INTEGER REFERENCES images(id) ON DELETE SET NULL,
+    created_at    TIMESTAMPTZ DEFAULT now(),
+    updated_at    TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_source_images_status ON source_images(status);
+
 CREATE TABLE IF NOT EXISTS announcements (
     id            SERIAL PRIMARY KEY,
     message       TEXT NOT NULL DEFAULT '',

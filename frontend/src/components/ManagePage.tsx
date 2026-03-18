@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
 import IconButton from '@mui/material/IconButton'
 import ListItemIcon from '@mui/material/ListItemIcon'
@@ -14,6 +15,7 @@ import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
+import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import DeleteIcon from '@mui/icons-material/Delete'
 import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
@@ -24,6 +26,7 @@ import type { ApiImage } from '../api'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData } from './EditImageModal'
 import ReplaceImageModal from './ReplaceImageModal'
+import UploadImageModal from './UploadImageModal'
 
 interface ManagePageProps {
   onViewImage?: (image: ApiImage) => void
@@ -40,6 +43,9 @@ export default function ManagePage({ onViewImage }: ManagePageProps) {
   // Replace modal state
   const [replaceOpen, setReplaceOpen] = useState(false)
   const [replacingImage, setReplacingImage] = useState<ApiImage | null>(null)
+
+  // Upload modal state
+  const [uploadOpen, setUploadOpen] = useState(false)
 
   // Action menu state
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
@@ -144,9 +150,18 @@ export default function ManagePage({ onViewImage }: ManagePageProps) {
 
   return (
     <Box>
-      <Typography variant="h5" sx={{ mb: 3 }}>
-        Images
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+        <Typography variant="h5">
+          Images
+        </Typography>
+        <Button
+          variant="contained"
+          startIcon={<AddPhotoAlternateIcon />}
+          onClick={() => setUploadOpen(true)}
+        >
+          Upload Image
+        </Button>
+      </Box>
 
       {images.length === 0 ? (
         <Typography variant="body1" color="text.secondary">
@@ -256,6 +271,13 @@ export default function ManagePage({ onViewImage }: ManagePageProps) {
           setReplacingImage(null)
         }}
         imageLabel={replacingImage?.label ?? ''}
+      />
+
+      {/* Upload image modal */}
+      <UploadImageModal
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onUploaded={loadImages}
       />
     </Box>
   )
