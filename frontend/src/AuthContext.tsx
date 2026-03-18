@@ -67,8 +67,8 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
 
-    // Validate the token by fetching the user's own record
-    fetch(`${import.meta.env.VITE_API_URL ?? ''}/api/users/${parsed.id}`, {
+    // Validate the token via /auth/me (accessible by any authenticated role)
+    fetch(`${import.meta.env.VITE_API_URL ?? ''}/api/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((res) => {

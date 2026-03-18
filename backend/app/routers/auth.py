@@ -1,6 +1,7 @@
 """Authentication endpoints."""
 
 from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -8,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from ..auth import verify_password, create_access_token
+from ..auth import verify_password, create_access_token, get_current_user
 from ..database import get_db
 from ..models import User
 from ..schemas import UserOut
@@ -67,4 +68,25 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     return LoginResponse(
         access_token=token,
         user=UserOut(**user_data),
+    )
+
+
+@router.get("/me", response_model=UserOut)
+async def get_me(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Return the currently authenticated user. Any role can access this."""
+    await db.refresh(current_user, ["program_rel"])
+    return UserOut(
+        id=current_user.id,
+        name=current_user.name,
+        email=current_user.email,
+        role=current_user.role,
+        program_id=current_user.program_id,
+        program_name=current_user.program_rel.name if current_user.program_rel else None,
+        metadata_extra=current_user.metadata_,
+        last_access=current_user.last_access,
+        created_at=current_user.created_at,
+        updated_at=current_user.updated_at,
     )
