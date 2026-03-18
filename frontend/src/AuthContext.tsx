@@ -47,19 +47,47 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // On mount, check if we have a stored token and user
+  // On mount, validate stored token by calling a protected endpoint.
+  // If the token is expired or the DB was recreated, clear session.
   useEffect(() => {
     const stored = localStorage.getItem('corgi_user')
-    if (getToken() && stored) {
-      try {
-        const parsed = JSON.parse(stored) as User
-        setCurrentUser(parsed)
-      } catch {
+    const token = getToken()
+    if (!token || !stored) {
+      setLoading(false)
+      return
+    }
+
+    let parsed: User
+    try {
+      parsed = JSON.parse(stored) as User
+    } catch {
+      setToken(null)
+      localStorage.removeItem('corgi_user')
+      setLoading(false)
+      return
+    }
+
+    // Validate the token by fetching the user's own record
+    fetch(`${import.meta.env.VITE_API_URL ?? ''}/api/users/${parsed.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((res) => {
+        if (res.ok) {
+          setCurrentUser(parsed)
+        } else {
+          // Token invalid or user no longer exists — clear session
+          setToken(null)
+          localStorage.removeItem('corgi_user')
+        }
+      })
+      .catch(() => {
+        // Network error — clear session to be safe
         setToken(null)
         localStorage.removeItem('corgi_user')
-      }
-    }
-    setLoading(false)
+      })
+      .finally(() => {
+        setLoading(false)
+      })
   }, [])
 
   // Load users list when an admin is authenticated

@@ -22,7 +22,7 @@ export default function AnnouncementBanner({ message, variant = 'app' }: Announc
   return (
     <Alert
       severity="info"
-      variant="filled"
+      variant="standard"
       sx={{
         borderRadius: 0,
         justifyContent: 'center',
