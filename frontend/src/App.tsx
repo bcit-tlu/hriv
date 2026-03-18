@@ -27,7 +27,7 @@ const DEMO_IMAGES: DemoImage[] = [
     id: 'duomo',
     label: 'Duomo di Milano',
     thumb:
-      'https://openseadragon.github.io/example-images/duomo/duomo.jpg',
+      'https://openseadragon.github.io/example-images/duomo/duomo_files/11/0_0.jpg',
     tileSources:
       'https://openseadragon.github.io/example-images/duomo/duomo.dzi',
   },
@@ -35,7 +35,7 @@ const DEMO_IMAGES: DemoImage[] = [
     id: 'highsmith',
     label: 'Highsmith Panorama',
     thumb:
-      'https://openseadragon.github.io/example-images/highsmith/highsmith.jpg',
+      'https://openseadragon.github.io/example-images/highsmith/highsmith_files/11/0_0.jpg',
     tileSources:
       'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi',
   },
