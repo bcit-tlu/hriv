@@ -409,13 +409,15 @@ export default function App() {
                     flexWrap: 'wrap',
                   }}
                 >
-                  <Button
-                    variant="contained"
-                    startIcon={<CreateNewFolderIcon />}
-                    onClick={() => setDialogOpen(true)}
-                  >
-                    New Category
-                  </Button>
+                  {currentDepth < MAX_DEPTH && (
+                    <Button
+                      variant="contained"
+                      startIcon={<CreateNewFolderIcon />}
+                      onClick={() => setDialogOpen(true)}
+                    >
+                      New Category
+                    </Button>
+                  )}
                   <Button
                     variant="outlined"
                     startIcon={<AddPhotoAlternateIcon />}
