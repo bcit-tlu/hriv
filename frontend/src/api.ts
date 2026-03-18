@@ -302,6 +302,9 @@ export interface ApiSourceImage {
   error_message: string | null
   label: string | null
   category_id: number | null
+  copyright: string | null
+  origin: string | null
+  program: string | null
   image_id: number | null
   created_at: string
   updated_at: string
