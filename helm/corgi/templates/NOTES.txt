@@ -1,0 +1,24 @@
+Corgi has been deployed!
+
+{{- if .Values.ingress.enabled }}
+Access the application at:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}
+{{- end }}
+{{- else }}
+
+To access the application, run:
+
+  kubectl port-forward svc/{{ include "corgi.fullname" . }}-frontend {{ .Values.frontend.service.port }}:{{ .Values.frontend.service.port }}
+
+Then open http://localhost:{{ .Values.frontend.service.port }} in your browser.
+{{- end }}
+
+Backend API is available internally at:
+  {{ include "corgi.backend.url" . }}
+
+{{- if .Values.database.enabled }}
+
+CloudNative-PG database cluster: {{ include "corgi.fullname" . }}-db
+  Database credentials are stored in secret: {{ include "corgi.database.secretName" . }}
+{{- end }}
