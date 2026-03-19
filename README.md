@@ -18,11 +18,11 @@ Source files in `frontend/src/` and `backend/app/` are bind-mounted into the con
 
 All seed users share the password `password`.
 
-| User             | Email                  | Password   | Role         |
-|------------------|------------------------|------------|--------------|
-| Haruki Tanaka      | admin@bcit.ca      | password   | admin        |
-| Carlos Henrique Souza   | instructor@bcit.ca        | password   | instructor   |
-| Mira Patel  | student@bcit.ca    | password   | student      |
+| **User**                | **Email**            | **Password** | **Role**     |
+|-------------------------|----------------------|--------------|--------------|
+| Haruki Tanaka           | admin@bcit.ca        | password     | admin        |
+| Carlos Henrique Souza   | instructor@bcit.ca   | password     | instructor   |
+| Mira Patel              | student@bcit.ca      | password     | student      |
 
 ### Role Capabilities
 
@@ -61,21 +61,3 @@ Note: the Vite proxy target uses the Docker service name (`http://backend:8000`)
 ## Testing
 
 See [docs/TESTING.md](docs/TESTING.md) for the full test plan and verification procedures.
-
-## Project Structure
-
-```
-frontend/          React + Vite application
-  src/             Source code
-  Dockerfile       Dev container image
-backend/           FastAPI + SQLAlchemy backend
-  app/             Application code
-  Dockerfile       Backend container image
-db/                Database schema and seed data
-  init.sql         PostgreSQL schema
-  seed.sql         Seed data (demo users, categories, images)
-docs/              Documentation
-  TESTING.md       Test plan and verification procedures
-archive/           Legacy Laravel/Vue codebase (preserved for reference)
-docker-compose.yml Docker Compose dev environment
-```
