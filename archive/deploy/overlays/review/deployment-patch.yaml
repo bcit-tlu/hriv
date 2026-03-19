@@ -1,6 +1,0 @@
-# adds secrets to deployment
-#
----
-# removes elastic-apm-config
-- op: remove
-  path: /spec/template/spec/containers/0/envFrom

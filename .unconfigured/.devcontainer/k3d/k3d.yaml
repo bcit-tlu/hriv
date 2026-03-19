@@ -1,0 +1,24 @@
+apiVersion: k3d.io/v1alpha5
+kind: Simple
+metadata:
+  name: review
+servers: 1
+agents: 1
+network: k3d
+kubeAPI:
+  hostIP: "127.0.0.1"
+  hostPort: "6443"
+registries:
+  create:
+    name: registry
+  config: |
+    mirrors:
+      "$SKAFFOLD_DEFAULT_REPO":
+        endpoint:
+          - $SKAFFOLD_DEFAULT_REPO
+options:
+  k3s:
+    extraArgs:
+      - arg: "--disable=metrics-server"
+        nodeFilters:
+          - server:*

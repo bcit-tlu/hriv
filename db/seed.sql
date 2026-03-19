@@ -62,8 +62,8 @@ SELECT setval('announcements_id_seq', 1);
 
 INSERT INTO users (id, name, email, password_hash, role, program_id, last_access, metadata)
 VALUES
-  (1, 'Alice Admin',      'alice@example.com',   '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'admin',      1, NULL, '{}'),
-  (2, 'Bob Instructor',   'bob@example.com',     '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'instructor', 2, NULL, '{}'),
-  (3, 'Charlie Student',  'charlie@example.com', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    2, NULL, '{}');
+  (1, 'Haruki Tanaka',      'admin@bcit.ca',   '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'admin',      1, NULL, '{}'),
+  (2, 'Carlos Henrique Souza',   'instructor@bcit.ca',     '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'instructor', 2, NULL, '{}'),
+  (3, 'Mira Patel',  'student@bcit.ca', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    2, NULL, '{}');
 
 SELECT setval('users_id_seq', 3);

@@ -1,0 +1,99 @@
+apiVersion: skaffold/v4beta13
+kind: Config
+metadata:
+  name: app
+build:
+  insecureRegistries:
+    - registry
+  artifacts:
+    - image: app
+  local:
+    useBuildkit: true
+deploy:
+  helm:
+    releases:
+      - name: app
+        chartPath: app-chart
+        namespace: app
+        createNamespace: true
+        setValues:
+          frontend.image.registry: registry.localhost:5000
+          frontend.image.repository: app
+        setValueTemplates:
+          # frontend.image.registry: "{{.IMAGE_DOMAIN_app}}"
+          # frontend.image.repository: "{{.IMAGE_REPO_NO_DOMAIN_app}}"
+          frontend.image.tag: "{{.IMAGE_TAG_app}}"
+
+    hooks:
+      before:
+        - host:
+            command:
+              - sh
+              - -ceu
+              - |
+                #!/bin/sh
+                set -e
+
+                NS="${NS:-app}"
+                echo "[skaffold] Preparing secrets in namespace: $NS"
+                kubectl get ns "$NS" >/dev/null 2>&1 || kubectl create ns "$NS"
+
+                # ---- Defaults match docker-compose.yaml; override via env if needed ----
+                ADMIN_USERNAME="${ADMIN_USERNAME:-admin}"
+                ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin}"
+                DJANGO_SECRET_KEY="${DJANGO_SECRET_KEY:-notveryS3cret}"
+
+                POSTGRES_DB="${POSTGRES_DB:-qcon-web}"
+                POSTGRES_USER="${POSTGRES_USER:-postgres}"
+                POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-postgres}"
+                POSTGRES_HOST="${POSTGRES_HOST:-localhost}"
+
+                API_KEY="${API_KEY:-01234567890}"
+
+                echo "[skaffold] Creating/Updating app-internal-credentials"
+                kubectl -n "$NS" create secret generic app-internal-credentials \
+                  --from-literal=ADMIN_USERNAME="$ADMIN_USERNAME" \
+                  --from-literal=ADMIN_PASSWORD="$ADMIN_PASSWORD" \
+                  --from-literal=DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY" \
+                  --dry-run=client -o yaml | kubectl apply -f -
+
+                echo "[skaffold] Creating/Updating db-credentials"
+                kubectl -n "$NS" create secret generic db-credentials \
+                  --from-literal=POSTGRES_DB="$POSTGRES_DB" \
+                  --from-literal=POSTGRES_USER="$POSTGRES_USER" \
+                  --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+                  --from-literal=POSTGRES_HOST="$POSTGRES_HOST" \
+                  --dry-run=client -o yaml | kubectl apply -f -
+
+                echo "[skaffold] Creating/Updating api-key"
+                kubectl -n "$NS" create secret generic api-key \
+                  --from-literal=API_KEY="$API_KEY" \
+                  --dry-run=client -o yaml | kubectl apply -f -
+
+                echo "[skaffold] Secrets ready in namespace: $NS"
+
+# FUTURE
+# - see https://skaffold.dev/docs/verify/ and https://skaffold.dev/docs/testers/structure/
+# 
+# profiles:
+#   - name: quickcheck
+#     test:
+#       - image: app
+#         structureTests:
+#           - './test/example/container-structure-test.yaml'
+# verify:
+#   - name: alpine-wget
+#     container:
+#       name: alpine-wget
+#       image: alpine:3.15.4
+#       command: ["/bin/sh"]
+#       args: ["-c", "wget http://www.google.com"]
+# test:
+#   - image: app
+#     structureTests:
+#       - './test/example/container-structure-test.yaml'
+#     structureTestsArgs:
+#       - --driver=tar
+#       - -q
+#       - --no-color
+#       -  --test-report=TEST_REPORT_NAME

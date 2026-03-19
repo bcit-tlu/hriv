@@ -1,0 +1,37 @@
+# Currently not used
+
+schemaVersion: '2.0.0'
+
+# commandTests:
+#   - name: Check OS release
+#     command: "cat"
+#     args: ["/etc/os-release"]
+#     expectedOutput: ['ID=ubuntu']
+
+fileExistenceTests:
+  - name: App directory exists
+    path: /app
+    shouldExist: true
+  - name: Entrypoint script exists
+    path: /entrypoint.sh
+    shouldExist: true
+
+metadataTest:
+  UnboundEnvVars:
+    - key: APP_NAME
+      value: baz
+  labels:
+    - key: 'com.example.vendor'
+      value: 'ACME Incorporated'
+    - key: 'build-date'
+      value: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}$'
+      isRegex: true
+  exposedPorts: ["8080"]
+  # # volumes: ["/test"]
+  # entrypoint: []
+  # cmd: ["/bin/bash"]
+  workdir: "/app"
+  # user: "luke"
+
+# To run the container-structure-test:
+# `container-structure-test test --image <your-image-name> --config container-structure-test.yaml`

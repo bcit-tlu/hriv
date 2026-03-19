@@ -1,7 +1,0 @@
-@include md-register-theme("default", (
-  primary: md-get-palette-color(red, 300),
-  accent: md-get-palette-color(red, A200),
-  primary-on-background: md-get-palette-color(bluegrey, 800),
-  text-primary-on-background: md-get-palette-color(bluegrey, 800),
-  text-primary-on-modal-title: md-get-palette-color(red, 700),
-));

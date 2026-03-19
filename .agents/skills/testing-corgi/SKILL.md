@@ -18,7 +18,7 @@
 
 | User  | Email               | Password   | Role       |
 |-------|---------------------|------------|------------|
-| Alice | alice@example.com   | password   | admin      |
+| Haruki | admin@bcit.ca   | password   | admin      |
 
 These are seeded automatically on first DB init via `db/seed.sql`.
 
@@ -50,7 +50,7 @@ After a fresh `docker compose up` with `-v`, the following seed data exists:
 ## Testing Category Management
 
 ### Moving Categories
-1. Log in as Alice (admin)
+1. Log in as Haruki (admin)
 2. Navigate to Home page — category tiles have a move icon (top-right corner, folder-arrow icon)
 3. Click the move icon on a category tile to open the Move Category dialog
 4. The Destination dropdown shows the full category tree with indentation, excluding the category being moved and its descendants (circular reference prevention)
@@ -88,7 +88,7 @@ After a fresh `docker compose up` with `-v`, the following seed data exists:
 - The backend Dockerfile needs `libvips-dev`, `pkg-config`, and `gcc` for `pyvips` to install correctly. If you see `ModuleNotFoundError: No module named 'pyvips'`, check that these apt packages are in the Dockerfile.
 
 ### Upload Flow
-1. Log in as Alice (admin)
+1. Log in as Haruki (admin)
 2. Navigate to IMAGES tab
 3. Click "UPLOAD IMAGE" button (top right)
 4. Use "browse to upload" or drag-and-drop an image file
@@ -115,7 +115,7 @@ After a fresh `docker compose up` with `-v`, the following seed data exists:
 - Scroll to zoom in/out — this exercises the DZI tile pyramid at different levels
 
 ### Source Image Status API
-- Get auth token: `curl -s http://localhost:8000/api/auth/login -H 'Content-Type: application/json' -d '{"email":"alice@example.com","password":"password"}'`
+- Get auth token: `curl -s http://localhost:8000/api/auth/login -H 'Content-Type: application/json' -d '{"email":"admin@bcit.ca","password":"password"}'`
 - Query: `curl -s http://localhost:8000/api/source-images/ -H 'Authorization: Bearer {token}'`
 - Verify: `status` should be `"completed"`, `image_id` should be non-null, and `stored_path` should NOT be in the response
 

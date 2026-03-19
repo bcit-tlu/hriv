@@ -15,9 +15,9 @@ All seed users share the password `password`.
 
 | User             | Email                  | Password   | Role         |
 |------------------|------------------------|------------|--------------|
-| Alice Admin      | alice@example.com      | password   | admin        |
-| Bob Instructor   | bob@example.com        | password   | instructor   |
-| Charlie Student  | charlie@example.com    | password   | student      |
+| Haruki Tanaka      | admin@bcit.ca      | password   | admin        |
+| Carlos Henrique Souza   | instructor@bcit.ca        | password   | instructor   |
+| Mira Patel  | mira@student.com    | password   | student      |
 
 ---
 
@@ -28,10 +28,10 @@ All seed users share the password `password`.
 1. Open http://localhost:5173 in a browser.
 2. **Assert:** Login form shows with Email field, Password field, and "Sign in" button.
 3. **Assert:** "Sign in" button is disabled when both fields are empty.
-4. Enter email: `alice@example.com`, password: `wrongpassword`, click Sign in.
-5. **Assert:** Error alert appears containing "401" or "Invalid".
+4. Enter email: `admin@bcit.ca`, password: `wrongpassword`, click Sign in.
+5. **Assert:** Error alert appears containing "Incorrect email or password".
 6. Clear password, enter correct password: `password`, click Sign in.
-7. **Assert:** Login succeeds — AppBar appears with "Alice Admin (admin)" chip, three tabs visible: Browse, Manage, Admin.
+7. **Assert:** Login succeeds — AppBar appears with avatar, tabs are visible.
 8. **Assert:** Category tiles load (at least "Architecture" and "Panoramas" visible).
 
 ---
@@ -40,15 +40,15 @@ All seed users share the password `password`.
 
 **Purpose:** Verify each role sees only the tabs and controls they are authorized for.
 
-1. Login as `alice@example.com` / `password` (admin).
-2. **Assert:** 3 tabs visible: Browse, Manage, Admin. PeopleIcon (user management) visible in AppBar.
+1. Login as `admin@bcit.ca` / `password` (admin).
+2. **Assert:** 4 tabs visible: Home, Images, People, Admin.
 3. Click Logout.
-4. Login as `charlie@example.com` / `password` (student).
-5. **Assert:** Only 1 tab visible: Browse. No Manage tab, no Admin tab, no PeopleIcon.
+4. Login as `mira@student.com` / `password` (student).
+5. **Assert:** Only 1 tab visible: Home. No Manage tab, no Admin tab, no People tab.
 6. **Assert:** Category tiles still load (students can browse).
 7. Click Logout.
-8. Login as `bob@example.com` / `password` (instructor).
-9. **Assert:** 2 tabs visible: Browse and Manage. No Admin tab, no PeopleIcon.
+8. Login as `instructor@bcit.ca` / `password` (instructor).
+9. **Assert:** 2 tabs visible: Home and Images. No Admin tab, no People tab.
 
 ---
 
@@ -56,8 +56,8 @@ All seed users share the password `password`.
 
 **Purpose:** Verify that a logged-in session survives a hard browser refresh.
 
-1. While logged in as Bob (instructor), hard-refresh the browser (F5 or Ctrl+R).
-2. **Assert:** Still logged in as Bob — AppBar shows "Bob Instructor (instructor)", no login screen shown.
+1. While logged in as Carlos Henrique (instructor), hard-refresh the browser (F5 or Ctrl+R).
+2. **Assert:** Still logged in as Carlos Henrique — AppBar shows Avatar component, no login screen shown.
 3. **Assert:** Categories load successfully after refresh.
 
 ---
@@ -79,7 +79,7 @@ curl -s http://localhost:8000/api/categories/
 ```bash
 curl -s http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"alice@example.com","password":"password"}'
+  -d '{"email":"admin@bcit.ca","password":"password"}'
 ```
 
 **Assert:** Response contains an `access_token` field.
@@ -99,7 +99,7 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 # Get a student token
 STUDENT_TOKEN=$(curl -s http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"charlie@example.com","password":"password"}' \
+  -d '{"email":"mira@student.com","password":"password"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 # Try an admin-only route
@@ -113,7 +113,7 @@ curl -s http://localhost:8000/api/admin/export -H "Authorization: Bearer $STUDEN
 ```bash
 TOKEN=$(curl -s http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"alice@example.com","password":"password"}' \
+  -d '{"email":"admin@bcit.ca","password":"password"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
@@ -136,7 +136,7 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 **Purpose:** Verify category browsing and creation (for authorized roles).
 
-1. Login as `alice@example.com` / `password` (admin).
+1. Login as `admin@bcit.ca` / `password` (admin).
 2. **Assert:** Root categories display as tiles (Architecture, Panoramas).
 3. Click on "Architecture" category tile.
 4. **Assert:** Subcategories appear, breadcrumb shows "Home > Architecture".
@@ -151,8 +151,8 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 **Purpose:** Verify admin can add and delete users.
 
-1. Login as `alice@example.com` / `password` (admin).
-2. Click the PeopleIcon in the AppBar to open user management.
+1. Login as `admin@bcit.ca` / `password` (admin).
+2. Click the People tab in the AppBar to open user management.
 3. Click "Add User" — fill in name, email, role, and password.
 4. **Assert:** New user appears in the user list.
 5. Hard-refresh browser, reopen user management.
@@ -166,7 +166,7 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 **Purpose:** Verify the database can be exported and reimported.
 
-1. Login as `alice@example.com` / `password` (admin).
+1. Login as `admin@bcit.ca` / `password` (admin).
 2. Navigate to the Admin tab.
 3. Click "Export" to download the database as JSON.
 4. **Assert:** JSON file downloads containing categories, images, and users.
@@ -178,13 +178,13 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 ---
 
-## Test Case 9: Manage Page — Image Metadata Table
+## Test Case 9: Images Page — Image Metadata Table
 
-**Purpose:** Verify the Manage page displays image metadata correctly.
+**Purpose:** Verify the Images page displays image metadata correctly.
 
-1. Login as `alice@example.com` / `password` (admin) or `bob@example.com` / `password` (instructor).
-2. Navigate to the Manage tab.
-3. **Assert:** Table displays seed images with columns: Title, Filename, Category, Copyright, Origin, Program, Status, Created, and an actions column with ellipsis icons.
+1. Login as `admin@bcit.ca` / `password` (admin) or `instructor@bcit.ca` / `password` (instructor).
+2. Navigate to the Images tab.
+3. **Assert:** Table displays images with columns: Title, Filename, Category, Copyright, Origin, Program, Status, Created, and an actions column with ellipsis icons.
 4. **Assert:** All 4 seed images are listed.
 
 ---

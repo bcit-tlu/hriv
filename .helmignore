@@ -1,0 +1,34 @@
+# OS / Editor Junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# VCS
+.git/
+
+# Helm packaging artifacts
+*.tgz
+
+# Keep dependency lock for reproducibility
+!Chart.lock
+
+# Secrets / Env
+.env
+.env.*
+!.env.example
+**/secrets*
+
+# Logs
+*.log
+
+# Values: keep only default
+values*.yaml
+!values.yaml

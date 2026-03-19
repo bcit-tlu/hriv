@@ -1,0 +1,14 @@
+apiVersion: v2
+name: corgi
+description: High-resolution image viewer powered by OpenSeaDragon
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - image-viewer
+  - openseadragon
+  - fastapi
+  - react
+home: https://github.com/bcit-tlu/corgi
+sources:
+  - https://github.com/bcit-tlu/corgi

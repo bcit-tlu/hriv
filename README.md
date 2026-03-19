@@ -20,9 +20,9 @@ All seed users share the password `password`.
 
 | User             | Email                  | Password   | Role         |
 |------------------|------------------------|------------|--------------|
-| Alice Admin      | alice@example.com      | password   | admin        |
-| Bob Instructor   | bob@example.com        | password   | instructor   |
-| Charlie Student  | charlie@example.com    | password   | student      |
+| Haruki Tanaka      | admin@bcit.ca      | password   | admin        |
+| Carlos Henrique Souza   | instructor@bcit.ca        | password   | instructor   |
+| Mira Patel  | student@bcit.ca    | password   | student      |
 
 ### Role Capabilities
 
@@ -41,7 +41,7 @@ All seed users share the password `password`.
 # Get a JWT token
 TOKEN=$(curl -s http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"alice@example.com","password":"password"}' \
+  -d '{"email":"admin@bcit.ca","password":"password"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 # Use the token on any protected route
@@ -79,4 +79,3 @@ docs/              Documentation
 archive/           Legacy Laravel/Vue codebase (preserved for reference)
 docker-compose.yml Docker Compose dev environment
 ```
-

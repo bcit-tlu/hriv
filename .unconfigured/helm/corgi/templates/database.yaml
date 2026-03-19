@@ -1,0 +1,29 @@
+{{- if .Values.database.enabled }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "corgi.fullname" . }}-db
+  labels:
+    {{- include "corgi.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.database.instances }}
+  imageName: {{ .Values.database.image }}
+
+  bootstrap:
+    initdb:
+      database: {{ .Values.database.database }}
+      owner: {{ .Values.database.owner }}
+      postInitApplicationSQLRefs:
+        configMapRefs:
+          - name: {{ include "corgi.fullname" . }}-db-init
+            key: init.sql
+        {{- if .Values.database.seed.enabled }}
+        secretRefs:
+          - name: {{ include "corgi.fullname" . }}-db-seed
+            key: seed.sql
+        {{- end }}
+
+  storage:
+    storageClass: {{ .Values.database.storage.storageClass }}
+    size: {{ .Values.database.storage.size }}
+{{- end }}
