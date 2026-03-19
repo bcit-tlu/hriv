@@ -350,7 +350,7 @@ export default function App() {
                         logout()
                       }}
                     >
-                      Sign out
+                      Logout
                     </Link>
                   </Box>
                 </CardContent>

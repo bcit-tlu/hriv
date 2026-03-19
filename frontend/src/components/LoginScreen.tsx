@@ -69,7 +69,7 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
               sx={{ height: 48 }}
             />
             <Typography variant="h5" sx={{ fontWeight: 400 }}>
-              Login
+              Corgi Login
             </Typography>
           </Box>
 
@@ -85,7 +85,7 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
             )}
 
             <TextField
-              placeholder="username@bcit.ca / username@my.bcit.ca"
+              placeholder="username@bcit.ca"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
