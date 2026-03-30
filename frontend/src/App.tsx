@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
@@ -16,10 +16,14 @@ import MuiBreadcrumbs from '@mui/material/Breadcrumbs'
 import Link from '@mui/material/Link'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
+import Snackbar from '@mui/material/Snackbar'
+import Tooltip from '@mui/material/Tooltip'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
 import HomeIcon from '@mui/icons-material/Home'
+import LinkIcon from '@mui/icons-material/Link'
 import ImageViewer from './components/ImageViewer'
+import type { ViewportState } from './components/ImageViewer'
 import CategoryTile from './components/CategoryTile'
 import ImageTile from './components/ImageTile'
 import AddCategoryDialog from './components/AddCategoryDialog'
@@ -43,6 +47,22 @@ import { updateUser as apiUpdateUser, fetchPrograms as apiFetchPrograms } from '
 import MoveCategoryDialog from './components/MoveCategoryDialog'
 import type { Category, ImageItem, Program } from './types'
 import { MAX_DEPTH } from './types'
+
+/** Search the category tree for an image by ID, returning the image and its category path. */
+function findImageInTree(
+  tree: Category[],
+  imageId: number,
+  path: Category[] = [],
+): { image: ImageItem; path: Category[] } | null {
+  for (const cat of tree) {
+    for (const img of cat.images) {
+      if (img.id === imageId) return { image: img, path: [...path, cat] }
+    }
+    const found = findImageInTree(cat.children, imageId, [...path, cat])
+    if (found) return found
+  }
+  return null
+}
 
 function apiTreeToCategory(node: ApiCategoryTree): Category {
   return {
@@ -86,6 +106,12 @@ export default function App() {
   const [announcement, setAnnouncement] = useState('')
   const [uncategorizedImages, setUncategorizedImages] = useState<ImageItem[]>([])
 
+  // Shareable-URL state
+  const [viewportState, setViewportState] = useState<ViewportState | undefined>(undefined)
+  const [snackOpen, setSnackOpen] = useState(false)
+  const pendingImageId = useRef<number | null>(null)
+  const pendingViewport = useRef<ViewportState | undefined>(undefined)
+
   // Move category dialog state
   const [moveCatOpen, setMoveCatOpen] = useState(false)
   const [movingCategory, setMovingCategory] = useState<Category | null>(null)
@@ -125,6 +151,25 @@ export default function App() {
   useEffect(() => {
     loadAnnouncement()
   }, [loadAnnouncement])
+
+  // On mount, parse URL search params for shareable link state
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const imgId = params.get('image')
+    if (imgId) {
+      pendingImageId.current = Number(imgId)
+      const z = params.get('zoom')
+      const px = params.get('x')
+      const py = params.get('y')
+      if (z && px && py) {
+        pendingViewport.current = {
+          zoom: parseFloat(z),
+          x: parseFloat(px),
+          y: parseFloat(py),
+        }
+      }
+    }
+  }, [])
 
   // Reset navigation state when user identity changes (login/logout/switch)
   useEffect(() => {
@@ -174,6 +219,68 @@ export default function App() {
     }
   }, [currentUser, loadCategories, loadUncategorizedImages])
 
+  // Once categories are loaded, restore a pending shared-link image
+  useEffect(() => {
+    if (pendingImageId.current === null || categoriesLoading) return
+    const id = pendingImageId.current
+    pendingImageId.current = null
+
+    // Check uncategorized images first
+    const uncatImg = uncategorizedImages.find((img) => img.id === id)
+    if (uncatImg) {
+      setSelectedImage(uncatImg)
+      setViewportState(pendingViewport.current)
+      pendingViewport.current = undefined
+      return
+    }
+
+    const result = findImageInTree(categories, id)
+    if (result) {
+      setPath(result.path)
+      setSelectedImage(result.image)
+      setViewportState(pendingViewport.current)
+      pendingViewport.current = undefined
+    }
+  }, [categories, uncategorizedImages, categoriesLoading])
+
+  // Keep URL search params in sync with the current view
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (selectedImage) {
+      params.set('image', String(selectedImage.id))
+      if (viewportState) {
+        params.set('zoom', viewportState.zoom.toFixed(4))
+        params.set('x', viewportState.x.toFixed(6))
+        params.set('y', viewportState.y.toFixed(6))
+      }
+    }
+    const qs = params.toString()
+    const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname
+    window.history.replaceState(null, '', newUrl)
+  }, [selectedImage, viewportState])
+
+  const handleViewportChange = useCallback((state: ViewportState) => {
+    setViewportState(state)
+  }, [])
+
+  // Memoize initialViewport so it stays referentially stable per image
+  const initialViewport = useMemo(() => viewportState, [selectedImage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const copyShareLink = useCallback(() => {
+    navigator.clipboard.writeText(window.location.href).then(() => {
+      setSnackOpen(true)
+    }).catch(() => {
+      // Fallback: select + copy for non-secure contexts
+      const input = document.createElement('input')
+      input.value = window.location.href
+      document.body.appendChild(input)
+      input.select()
+      document.execCommand('copy')
+      document.body.removeChild(input)
+      setSnackOpen(true)
+    })
+  }, [])
+
   const currentDepth = path.length
 
   // Resolve the live children/images from the categories state tree
@@ -192,6 +299,11 @@ export default function App() {
   }, [categories, path])
 
   const { cats: currentCategories, imgs: currentImages } = resolve()
+
+  const clearImage = useCallback(() => {
+    setSelectedImage(null)
+    setViewportState(undefined)
+  }, [])
 
   const navigateToCategory = (cat: Category) => {
     setPath((prev) => [...prev, cat])
@@ -259,7 +371,7 @@ export default function App() {
             value={page}
             onChange={(_, v: Page) => {
               setPage(v)
-              setSelectedImage(null)
+              clearImage()
               setPath([])
             }}
             textColor="inherit"
@@ -271,7 +383,7 @@ export default function App() {
               value="browse"
               onClick={() => {
                 setPage('browse')
-                setSelectedImage(null)
+                clearImage()
                 setPath([])
               }}
             />
@@ -424,7 +536,7 @@ export default function App() {
                     underline="hover"
                     color="inherit"
                     onClick={() => {
-                      setSelectedImage(null)
+                      clearImage()
                       navigateToDepth(0)
                     }}
                     sx={{
@@ -445,7 +557,7 @@ export default function App() {
                       underline="hover"
                       color="inherit"
                       onClick={() => {
-                        setSelectedImage(null)
+                        clearImage()
                         navigateToDepth(i + 1)
                       }}
                       sx={{ cursor: 'pointer' }}
@@ -480,15 +592,30 @@ export default function App() {
               </Box>
 
               <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
-                <ImageViewer tileSources={selectedImage.tileSources} />
+                <ImageViewer
+                  tileSources={selectedImage.tileSources}
+                  initialViewport={initialViewport}
+                  onViewportChange={handleViewportChange}
+                />
               </Paper>
 
-              <Box sx={{ mt: 2 }}>
+              <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Typography variant="body2" color="text.secondary">
                   Use your scroll wheel to zoom, or click and drag to pan.
                   Pinch-to-zoom is supported on touch devices. The mini-map in
                   the bottom-right corner shows your current viewport.
                 </Typography>
+                <Tooltip title="Copy shareable link to clipboard">
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    startIcon={<LinkIcon />}
+                    onClick={copyShareLink}
+                    sx={{ flexShrink: 0, ml: 2 }}
+                  >
+                    Share View
+                  </Button>
+                </Tooltip>
               </Box>
             </>
           ) : (
@@ -679,6 +806,15 @@ export default function App() {
         }}
         programs={programs}
         user={currentApiUser}
+      />
+
+      {/* Share-link snackbar */}
+      <Snackbar
+        open={snackOpen}
+        autoHideDuration={3000}
+        onClose={() => setSnackOpen(false)}
+        message="Link copied to clipboard"
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       />
 
     </Box>
