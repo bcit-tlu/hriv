@@ -176,6 +176,7 @@ export default function App() {
     setPage('browse')
     setPath([])
     setSelectedImage(null)
+    setViewportState(undefined)
     setProfileOpen(false)
     setEditModalOpen(false)
   }, [currentUser])
@@ -223,11 +224,11 @@ export default function App() {
   useEffect(() => {
     if (pendingImageId.current === null || categoriesLoading) return
     const id = pendingImageId.current
-    pendingImageId.current = null
 
     // Check uncategorized images first
     const uncatImg = uncategorizedImages.find((img) => img.id === id)
     if (uncatImg) {
+      pendingImageId.current = null
       setSelectedImage(uncatImg)
       setViewportState(pendingViewport.current)
       pendingViewport.current = undefined
@@ -236,11 +237,14 @@ export default function App() {
 
     const result = findImageInTree(categories, id)
     if (result) {
+      pendingImageId.current = null
       setPath(result.path)
       setSelectedImage(result.image)
       setViewportState(pendingViewport.current)
       pendingViewport.current = undefined
     }
+    // If neither source has the image yet, keep pendingImageId so we retry
+    // on the next update to categories or uncategorizedImages.
   }, [categories, uncategorizedImages, categoriesLoading])
 
   // Keep URL search params in sync with the current view
