@@ -111,6 +111,7 @@ export default function App() {
   const [snackOpen, setSnackOpen] = useState(false)
   const pendingImageId = useRef<number | null>(null)
   const pendingViewport = useRef<ViewportState | undefined>(undefined)
+  const uncategorizedLoaded = useRef(false)
 
   // Move category dialog state
   const [moveCatOpen, setMoveCatOpen] = useState(false)
@@ -208,8 +209,10 @@ export default function App() {
           status: img.status,
         })),
       )
+      uncategorizedLoaded.current = true
     } catch (err) {
       console.error('Failed to load uncategorized images', err)
+      uncategorizedLoaded.current = true
     }
   }, [])
 
@@ -242,11 +245,12 @@ export default function App() {
       setSelectedImage(result.image)
       setViewportState(pendingViewport.current)
       pendingViewport.current = undefined
-    } else if (uncategorizedImages.length > 0 || categories.length > 0) {
-      // Both data sources have had a chance to load — image doesn't exist.
-      // Clear pending state so URL sync can resume normally.
+    } else if (!categoriesLoading && uncategorizedLoaded.current) {
+      // Both data sources have loaded — image doesn't exist.
+      // Clear pending state and URL so URL sync can resume normally.
       pendingImageId.current = null
       pendingViewport.current = undefined
+      window.history.replaceState(null, '', window.location.pathname)
     }
     // Otherwise keep pendingImageId so we retry on the next data update.
   }, [categories, uncategorizedImages, categoriesLoading])
