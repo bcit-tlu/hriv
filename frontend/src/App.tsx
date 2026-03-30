@@ -242,9 +242,13 @@ export default function App() {
       setSelectedImage(result.image)
       setViewportState(pendingViewport.current)
       pendingViewport.current = undefined
+    } else if (uncategorizedImages.length > 0 || categories.length > 0) {
+      // Both data sources have had a chance to load — image doesn't exist.
+      // Clear pending state so URL sync can resume normally.
+      pendingImageId.current = null
+      pendingViewport.current = undefined
     }
-    // If neither source has the image yet, keep pendingImageId so we retry
-    // on the next update to categories or uncategorizedImages.
+    // Otherwise keep pendingImageId so we retry on the next data update.
   }, [categories, uncategorizedImages, categoriesLoading])
 
   // Keep URL search params in sync with the current view
