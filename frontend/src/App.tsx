@@ -271,18 +271,29 @@ export default function App() {
   const initialViewport = useMemo(() => viewportState, [selectedImage]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const copyShareLink = useCallback(() => {
-    navigator.clipboard.writeText(window.location.href).then(() => {
-      setSnackOpen(true)
-    }).catch(() => {
-      // Fallback: select + copy for non-secure contexts
+    const url = window.location.href
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(url).then(() => {
+        setSnackOpen(true)
+      }).catch(() => {
+        // Fallback: select + copy for non-secure contexts
+        const input = document.createElement('input')
+        input.value = url
+        document.body.appendChild(input)
+        input.select()
+        document.execCommand('copy')
+        document.body.removeChild(input)
+        setSnackOpen(true)
+      })
+    } else {
       const input = document.createElement('input')
-      input.value = window.location.href
+      input.value = url
       document.body.appendChild(input)
       input.select()
       document.execCommand('copy')
       document.body.removeChild(input)
       setSnackOpen(true)
-    })
+    }
   }, [])
 
   const currentDepth = path.length
