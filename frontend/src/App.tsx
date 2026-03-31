@@ -79,6 +79,7 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
       name: img.name,
       thumb: img.thumb,
       tileSources: img.tile_sources,
+      categoryId: img.category_id,
       copyright: img.copyright,
       note: img.note,
       programIds: img.program_ids,
@@ -223,6 +224,7 @@ export default function App() {
           name: img.name,
           thumb: img.thumb,
           tileSources: img.tile_sources,
+          categoryId: img.category_id,
           copyright: img.copyright,
           note: img.note,
           programIds: img.program_ids,
@@ -444,7 +446,7 @@ export default function App() {
         name: selectedImage.name,
         thumb: selectedImage.thumb,
         tile_sources: selectedImage.tileSources,
-        category_id: path.length > 0 ? path[path.length - 1].id : null,
+        category_id: selectedImage.categoryId ?? null,
         copyright: selectedImage.copyright ?? null,
         note: selectedImage.note ?? null,
         program_ids: selectedImage.programIds,
@@ -459,7 +461,18 @@ export default function App() {
     async (data: ImageFormData) => {
       if (!selectedImage) return
       try {
-        await apiUpdateImage(selectedImage.id, data)
+        const updated = await apiUpdateImage(selectedImage.id, data)
+        setSelectedImage({
+          id: updated.id,
+          name: updated.name,
+          thumb: updated.thumb,
+          tileSources: updated.tile_sources,
+          categoryId: updated.category_id,
+          copyright: updated.copyright,
+          note: updated.note,
+          programIds: updated.program_ids,
+          active: updated.active,
+        })
         setImageEditOpen(false)
         await loadCategories()
         loadUncategorizedImages()
@@ -636,6 +649,7 @@ export default function App() {
                   name: img.name,
                   thumb: img.thumb,
                   tileSources: img.tile_sources,
+                  categoryId: img.category_id,
                   copyright: img.copyright,
                   note: img.note,
                   programIds: img.program_ids,

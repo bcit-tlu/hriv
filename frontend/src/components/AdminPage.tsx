@@ -33,6 +33,7 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
       name: img.name,
       thumb: img.thumb,
       tileSources: img.tile_sources,
+      categoryId: img.category_id,
       copyright: img.copyright,
       note: img.note,
       programIds: img.program_ids,

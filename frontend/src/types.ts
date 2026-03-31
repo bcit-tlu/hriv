@@ -3,6 +3,7 @@ export interface ImageItem {
   name: string
   thumb: string
   tileSources: string
+  categoryId?: number | null
   copyright?: string | null
   note?: string | null
   programIds: number[]
