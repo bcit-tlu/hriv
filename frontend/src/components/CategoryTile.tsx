@@ -1,56 +1,123 @@
+import { useState } from 'react'
+import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import CardContent from '@mui/material/CardContent'
+import CardMedia from '@mui/material/CardMedia'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
-import FolderIcon from '@mui/icons-material/Folder'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
-import Box from '@mui/material/Box'
-import type { Category } from '../types'
+import FolderIcon from '@mui/icons-material/Folder'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
+import type { Category, ImageItem } from '../types'
+import CardImagePickerModal from './CardImagePickerModal'
 
-function countAllObjects(cat: Category): number {
-  let total = cat.images.length
-  for (const child of cat.children) {
-    total += countAllObjects(child)
+function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
+  for (const img of cat.images) {
+    if (img.id === imageId) return img
   }
-  return total
+  for (const child of cat.children) {
+    const found = findImageInCategory(child, imageId)
+    if (found) return found
+  }
+  return null
 }
 
 interface CategoryTileProps {
   category: Category
   onClick: (category: Category) => void
   onMove?: (category: Category) => void
+  onSetCardImage?: (categoryId: number, imageId: number | null) => void
 }
 
-export default function CategoryTile({ category, onClick, onMove }: CategoryTileProps) {
-  const directCount = category.children.length + category.images.length
-  const totalObjects = countAllObjects(category)
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage }: CategoryTileProps) {
+  const [pickerOpen, setPickerOpen] = useState(false)
+
+  const subCategoryCount = category.children.length
+  const imageCount = category.images.length
+
+  const detailParts: string[] = []
+  if (subCategoryCount > 0) {
+    detailParts.push(`${subCategoryCount} sub-${subCategoryCount === 1 ? 'category' : 'categories'}`)
+  }
+  if (imageCount > 0) {
+    detailParts.push(`${imageCount} ${imageCount === 1 ? 'image' : 'images'}`)
+  }
+  const detailText = detailParts.length > 0 ? detailParts.join(' \u00b7 ') : 'Empty'
+
+  const cardImage = category.cardImageId
+    ? findImageInCategory(category, category.cardImageId)
+    : null
 
   return (
-    <Card
-      elevation={2}
-      sx={{ width: '100%', maxWidth: 300 }}
-    >
-      <CardActionArea onClick={() => onClick(category)}>
+    <>
+      <Card
+        elevation={2}
+        sx={{ width: '100%', maxWidth: 300, position: 'relative' }}
+      >
+        <CardActionArea onClick={() => onClick(category)}>
+          {cardImage ? (
+            <CardMedia
+              component="img"
+              height="140"
+              image={cardImage.thumb}
+              alt={category.label}
+              sx={{ objectFit: 'cover' }}
+            />
+          ) : (
+            <Box
+              sx={{
+                height: 140,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: 'primary.main',
+                color: 'white',
+              }}
+            >
+              <FolderIcon sx={{ fontSize: 64, opacity: 0.85 }} />
+            </Box>
+          )}
+          <CardContent>
+            <Typography variant="h6" noWrap>
+              {category.label}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              {detailText}
+            </Typography>
+          </CardContent>
+        </CardActionArea>
         <Box
           sx={{
-            height: 140,
+            position: 'absolute',
+            top: 4,
+            right: 4,
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            bgcolor: 'primary.main',
-            color: 'white',
-            position: 'relative',
+            gap: 0.5,
           }}
         >
-          <FolderIcon sx={{ fontSize: 64, opacity: 0.85 }} />
+          {onSetCardImage && (
+            <IconButton
+              size="small"
+              sx={{
+                color: 'white',
+                bgcolor: 'rgba(0,0,0,0.25)',
+                '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                e.preventDefault()
+                setPickerOpen(true)
+              }}
+              aria-label="Set card image"
+            >
+              <MoreVertIcon fontSize="small" />
+            </IconButton>
+          )}
           {onMove && (
             <IconButton
               size="small"
               sx={{
-                position: 'absolute',
-                top: 4,
-                right: 4,
                 color: 'white',
                 bgcolor: 'rgba(0,0,0,0.25)',
                 '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
@@ -66,16 +133,20 @@ export default function CategoryTile({ category, onClick, onMove }: CategoryTile
             </IconButton>
           )}
         </Box>
-        <CardContent>
-          <Typography variant="subtitle1" noWrap>
-            {category.label}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {directCount} {directCount === 1 ? 'item' : 'items'}
-            {totalObjects > 0 && ` · ${totalObjects} ${totalObjects === 1 ? 'object' : 'objects'}`}
-          </Typography>
-        </CardContent>
-      </CardActionArea>
-    </Card>
+      </Card>
+
+      {onSetCardImage && (
+        <CardImagePickerModal
+          open={pickerOpen}
+          onClose={() => setPickerOpen(false)}
+          onSave={(imageId) => {
+            onSetCardImage(category.id, imageId)
+            setPickerOpen(false)
+          }}
+          category={category}
+          currentImageId={category.cardImageId ?? null}
+        />
+      )}
+    </>
   )
 }

@@ -65,6 +65,7 @@ function findImageInTree(
 }
 
 function apiTreeToCategory(node: ApiCategoryTree): Category {
+  const meta = node.metadata_extra as Record<string, unknown> | null
   return {
     id: node.id,
     label: node.label,
@@ -82,6 +83,7 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
     })),
     program: node.program,
     status: node.status,
+    cardImageId: typeof meta?.card_image_id === 'number' ? meta.card_image_id : null,
   }
 }
 
@@ -403,6 +405,20 @@ export default function App() {
     setMovingCategory(cat)
     setMoveCatOpen(true)
   }, [])
+
+  const handleSetCardImage = useCallback(
+    async (categoryId: number, imageId: number | null) => {
+      try {
+        await apiUpdateCategory(categoryId, {
+          metadata_extra: { card_image_id: imageId },
+        })
+        await loadCategories()
+      } catch (err) {
+        console.error('Failed to set card image', err)
+      }
+    },
+    [loadCategories],
+  )
 
   // Show loading spinner while users are loading
   if (usersLoading) {
@@ -782,6 +798,7 @@ export default function App() {
                     category={cat}
                     onClick={navigateToCategory}
                     onMove={canEditContent ? handleRequestMoveCategory : undefined}
+                    onSetCardImage={canEditContent ? handleSetCardImage : undefined}
                   />
                 ))}
                 {path.length === 0 &&

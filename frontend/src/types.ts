@@ -17,6 +17,7 @@ export interface Category {
   images: ImageItem[]
   program?: string | null
   status?: string | null
+  cardImageId?: number | null
 }
 
 export const MAX_DEPTH = 6
