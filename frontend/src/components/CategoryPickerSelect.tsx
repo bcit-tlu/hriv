@@ -1,10 +1,17 @@
-import { useMemo } from 'react'
+import { useState, useMemo } from 'react'
+import Box from '@mui/material/Box'
 import FormControl from '@mui/material/FormControl'
+import IconButton from '@mui/material/IconButton'
 import InputLabel from '@mui/material/InputLabel'
+import ListItemText from '@mui/material/ListItemText'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
+import Tooltip from '@mui/material/Tooltip'
+import AddIcon from '@mui/icons-material/Add'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import type { Category } from '../types'
+import { MAX_DEPTH } from '../types'
+import AddCategoryDialog from './AddCategoryDialog'
 
 interface FlatOption {
   id: number
@@ -52,6 +59,8 @@ interface CategoryPickerSelectProps {
   label?: string
   excludeCategoryId?: number
   includeRoot?: boolean
+  /** When provided, a "+" button appears on each menu item to add a child category. */
+  onAddCategory?: (label: string, parentId: number | null) => Promise<void>
 }
 
 export default function CategoryPickerSelect({
@@ -61,7 +70,12 @@ export default function CategoryPickerSelect({
   label = 'Category',
   excludeCategoryId,
   includeRoot = true,
+  onAddCategory,
 }: CategoryPickerSelectProps) {
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [addParentId, setAddParentId] = useState<number | null>(null)
+  const [addParentDepth, setAddParentDepth] = useState(0)
+
   const options = useMemo(() => {
     let excludeIds: Set<number> | undefined
     if (excludeCategoryId != null) {
@@ -78,25 +92,98 @@ export default function CategoryPickerSelect({
     onChange(val === '' ? null : Number(val))
   }
 
+  const handleAddClick = (
+    e: React.MouseEvent,
+    parentId: number | null,
+    depth: number,
+  ) => {
+    e.stopPropagation()
+    e.preventDefault()
+    setAddParentId(parentId)
+    setAddParentDepth(depth)
+    setAddDialogOpen(true)
+  }
+
+  const handleAddCategory = async (categoryLabel: string) => {
+    if (onAddCategory) {
+      await onAddCategory(categoryLabel, addParentId)
+    }
+  }
+
   return (
-    <FormControl fullWidth variant="outlined">
-      <InputLabel>{label}</InputLabel>
-      <Select
-        value={value == null ? '' : String(value)}
-        onChange={handleChange}
-        label={label}
-      >
-        {includeRoot && (
-          <MenuItem value="">
-            <em>None (root level)</em>
-          </MenuItem>
-        )}
-        {options.map((opt) => (
-          <MenuItem key={opt.id} value={String(opt.id)}>
-            {'  '.repeat(opt.depth)}{opt.depth > 0 ? '└ ' : ''}{opt.label}
-          </MenuItem>
-        ))}
-      </Select>
-    </FormControl>
+    <>
+      <FormControl fullWidth variant="outlined">
+        <InputLabel>{label}</InputLabel>
+        <Select
+          value={value == null ? '' : String(value)}
+          onChange={handleChange}
+          label={label}
+        >
+          {includeRoot && (
+            <MenuItem value="">
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                }}
+              >
+                <ListItemText>
+                  <em>None (root level)</em>
+                </ListItemText>
+                {onAddCategory && (
+                  <Tooltip title="Add child category">
+                    <IconButton
+                      size="small"
+                      onClick={(e) => handleAddClick(e, null, 0)}
+                      sx={{ ml: 1, p: 0.5 }}
+                    >
+                      <AddIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+              </Box>
+            </MenuItem>
+          )}
+          {options.map((opt) => (
+            <MenuItem key={opt.id} value={String(opt.id)}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  width: '100%',
+                }}
+              >
+                <ListItemText>
+                  {'  '.repeat(opt.depth)}{opt.depth > 0 ? '\u2514 ' : ''}{opt.label}
+                </ListItemText>
+                {onAddCategory && opt.depth + 1 < MAX_DEPTH && (
+                  <Tooltip title="Add child category">
+                    <IconButton
+                      size="small"
+                      onClick={(e) => handleAddClick(e, opt.id, opt.depth + 1)}
+                      sx={{ ml: 1, p: 0.5 }}
+                    >
+                      <AddIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                )}
+              </Box>
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+
+      {onAddCategory && (
+        <AddCategoryDialog
+          open={addDialogOpen}
+          onClose={() => setAddDialogOpen(false)}
+          onAdd={handleAddCategory}
+          currentDepth={addParentDepth}
+        />
+      )}
+    </>
   )
 }

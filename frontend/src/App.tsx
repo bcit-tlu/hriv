@@ -359,6 +359,18 @@ export default function App() {
     [path, loadCategories],
   )
 
+  const addCategoryInline = useCallback(
+    async (label: string, parentId: number | null) => {
+      try {
+        await apiCreateCategory({ label, parent_id: parentId })
+        await loadCategories()
+      } catch (err) {
+        console.error('Failed to create category', err)
+      }
+    },
+    [loadCategories],
+  )
+
   const handleMoveCategory = useCallback(
     async (categoryId: number, newParentId: number | null) => {
       try {
@@ -547,6 +559,7 @@ export default function App() {
                 loadUncategorizedImages()
               }}
               onNewCategory={() => setDialogOpen(true)}
+              onAddCategory={addCategoryInline}
             />
           ) : selectedImage ? (
             /* ---- Viewer mode ---- */
