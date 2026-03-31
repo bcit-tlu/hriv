@@ -160,7 +160,7 @@ export default function BulkEditImagesModal({
           onChange={(e) => setCopyright(e.target.value)}
         />
         <TextField
-          label="Origin"
+          label="Note"
           fullWidth
           variant="outlined"
           value={origin}

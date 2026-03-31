@@ -168,7 +168,7 @@ function EditImageForm({
 
         <TextField
           autoFocus
-          label="Label"
+          label="Name"
           fullWidth
           variant="outlined"
           value={label}
@@ -190,7 +190,7 @@ function EditImageForm({
           onChange={(e) => setCopyright(e.target.value)}
         />
         <TextField
-          label="Origin"
+          label="Note"
           fullWidth
           variant="outlined"
           value={origin}
@@ -232,6 +232,16 @@ function EditImageForm({
           }
           label="Active (visible to students)"
         />
+        {image && (
+          <Box sx={{ display: 'flex', gap: 4, mt: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              Created: {new Date(image.created_at).toLocaleString()}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Modified: {new Date(image.updated_at).toLocaleString()}
+            </Typography>
+          </Box>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>

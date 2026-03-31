@@ -177,13 +177,13 @@ export default function UploadImageModal({
           )}
         </Box>
         <TextField
-          label="Label"
+          label="Name"
           fullWidth
           variant="outlined"
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           sx={{ mt: 2 }}
-          placeholder="Image label (defaults to filename)"
+          placeholder="Image name (defaults to filename)"
         />
         <TextField
           label="Copyright"
@@ -195,13 +195,13 @@ export default function UploadImageModal({
           placeholder="e.g. 2026 BCIT"
         />
         <TextField
-          label="Origin"
+          label="Note"
           fullWidth
           variant="outlined"
           value={origin}
           onChange={(e) => setOrigin(e.target.value)}
           sx={{ mt: 2 }}
-          placeholder="Image origin or source"
+          placeholder="Image note"
         />
         <FormControl fullWidth sx={{ mt: 2 }}>
           <InputLabel id="upload-program-select-label">Program</InputLabel>
