@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -9,7 +9,6 @@ import DialogTitle from '@mui/material/DialogTitle'
 import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import InputLabel from '@mui/material/InputLabel'
-import Link from '@mui/material/Link'
 import MenuItem from '@mui/material/MenuItem'
 import OutlinedInput from '@mui/material/OutlinedInput'
 import Select from '@mui/material/Select'
@@ -55,6 +54,7 @@ function EditImageForm({
   const [note, setNote] = useState(image?.note ?? '')
   const [programIds, setProgramIds] = useState<number[]>(image?.program_ids ?? [])
   const [active, setActive] = useState(image?.active ?? true)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [dragOver, setDragOver] = useState(false)
 
@@ -111,10 +111,18 @@ function EditImageForm({
         sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
       >
         {/* Replace image drop zone */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={handleFileSelect}
+        />
         <Box
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
+          onClick={() => fileInputRef.current?.click()}
           sx={{
             mt: 1,
             border: '2px dashed',
@@ -149,15 +157,14 @@ function EditImageForm({
                 sx={{ mt: 0.5 }}
               >
                 or{' '}
-                <Link component="label" sx={{ cursor: 'pointer' }}>
+                <Typography
+                  component="span"
+                  variant="caption"
+                  color="primary"
+                  sx={{ cursor: 'pointer', textDecoration: 'underline' }}
+                >
                   browse to upload
-                  <input
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={handleFileSelect}
-                  />
-                </Link>
+                </Typography>
               </Typography>
             </>
           )}

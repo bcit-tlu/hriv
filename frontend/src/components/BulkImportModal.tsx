@@ -20,13 +20,16 @@ interface BulkImportModalProps {
   open: boolean
   onClose: () => void
   categories: Category[]
+  onAddCategory?: (label: string, parentId: number | null) => Promise<void>
 }
 
 export default function BulkImportModal({
   open,
   onClose,
   categories,
+  onAddCategory,
 }: BulkImportModalProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [files, setFiles] = useState<File[]>([])
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState(false)
@@ -150,10 +153,19 @@ export default function BulkImportModal({
         {!job ? (
           <>
             {/* Drop zone */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,.zip"
+              multiple
+              hidden
+              onChange={handleFileSelect}
+            />
             <Box
               onDrop={handleDrop}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
+              onClick={() => fileInputRef.current?.click()}
               sx={{
                 mt: 1,
                 border: '2px dashed',
@@ -177,19 +189,12 @@ export default function BulkImportModal({
               <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
                 or{' '}
                 <Typography
-                  component="label"
+                  component="span"
                   variant="body2"
                   color="primary"
                   sx={{ cursor: 'pointer', textDecoration: 'underline' }}
                 >
                   browse to select files
-                  <input
-                    type="file"
-                    accept="image/*,.zip"
-                    multiple
-                    hidden
-                    onChange={handleFileSelect}
-                  />
                 </Typography>
               </Typography>
             </Box>
@@ -217,6 +222,7 @@ export default function BulkImportModal({
                 onChange={setCategoryId}
                 label="Target Category"
                 includeRoot={false}
+                onAddCategory={onAddCategory}
               />
             </Box>
 

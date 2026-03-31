@@ -146,6 +146,7 @@ class SourceImageOut(BaseModel):
     category_id: int | None = None
     copyright: str | None = None
     note: str | None = None
+    active: bool = True
     program_ids: list[int] = []
     image_id: int | None = None
     created_at: datetime

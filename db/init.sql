@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS source_images (
     category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     copyright     VARCHAR(500),
     note          VARCHAR(500),
+    active        BOOLEAN NOT NULL DEFAULT true,
     program       VARCHAR(255),
     image_id      INTEGER REFERENCES images(id) ON DELETE SET NULL,
     created_at    TIMESTAMPTZ DEFAULT now(),

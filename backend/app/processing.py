@@ -75,7 +75,7 @@ async def process_source_image(source_image_id: int) -> None:
                 category_id=src.category_id,
                 copyright=src.copyright,
                 note=src.note,
-                active=True,
+                active=src.active,
                 metadata_={},
             )
             db.add(img)

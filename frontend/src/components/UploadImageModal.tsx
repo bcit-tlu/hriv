@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -8,41 +8,57 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import FormControl from '@mui/material/FormControl'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import InputLabel from '@mui/material/InputLabel'
-import Link from '@mui/material/Link'
 import MenuItem from '@mui/material/MenuItem'
 import OutlinedInput from '@mui/material/OutlinedInput'
 import Select from '@mui/material/Select'
+import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import { uploadSourceImage } from '../api'
-import type { Program } from '../types'
+import CategoryPickerSelect from './CategoryPickerSelect'
+import type { Category, Program } from '../types'
 
 interface UploadImageModalProps {
   open: boolean
   onClose: () => void
   onUploaded: () => void
   categoryId?: number | null
+  categories: Category[]
   programs: Program[]
+  onAddCategory?: (label: string, parentId: number | null) => Promise<void>
 }
 
 export default function UploadImageModal({
   open,
   onClose,
   onUploaded,
-  categoryId,
+  categoryId: initialCategoryId,
+  categories,
   programs,
+  onAddCategory,
 }: UploadImageModalProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [name, setName] = useState('')
+  const [categoryId, setCategoryId] = useState<number | null>(initialCategoryId ?? null)
   const [copyright, setCopyright] = useState('')
   const [note, setNote] = useState('')
   const [programIds, setProgramIds] = useState<number[]>([])
+  const [active, setActive] = useState(true)
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Sync categoryId state when the dialog opens with a new prop value
+  useEffect(() => {
+    if (open) {
+      setCategoryId(initialCategoryId ?? null)
+    }
+  }, [open, initialCategoryId])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -86,9 +102,11 @@ export default function UploadImageModal({
   const handleReset = () => {
     setFile(null)
     setName('')
+    setCategoryId(initialCategoryId ?? null)
     setCopyright('')
     setNote('')
     setProgramIds([])
+    setActive(true)
     setError(null)
     setUploading(false)
   }
@@ -105,6 +123,7 @@ export default function UploadImageModal({
         copyright || undefined,
         note || undefined,
         programIds.length > 0 ? programIds : undefined,
+        active,
       )
       onUploaded()
       onClose()
@@ -124,11 +143,21 @@ export default function UploadImageModal({
       TransitionProps={{ onExited: handleReset }}
     >
       <DialogTitle>Upload Image</DialogTitle>
-      <DialogContent>
+      <DialogContent
+        sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={handleFileSelect}
+        />
         <Box
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
+          onClick={() => fileInputRef.current?.click()}
           sx={{
             mt: 1,
             border: '2px dashed',
@@ -163,15 +192,14 @@ export default function UploadImageModal({
                 sx={{ mt: 0.5 }}
               >
                 or{' '}
-                <Link component="label" sx={{ cursor: 'pointer' }}>
+                <Typography
+                  component="span"
+                  variant="body2"
+                  color="primary"
+                  sx={{ cursor: 'pointer', textDecoration: 'underline' }}
+                >
                   browse to upload
-                  <input
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={handleFileSelect}
-                  />
-                </Link>
+                </Typography>
               </Typography>
             </>
           )}
@@ -182,16 +210,22 @@ export default function UploadImageModal({
           variant="outlined"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          sx={{ mt: 2 }}
           placeholder="Image name (defaults to filename)"
         />
+        <Box>
+          <CategoryPickerSelect
+            categories={categories}
+            value={categoryId}
+            onChange={setCategoryId}
+            onAddCategory={onAddCategory}
+          />
+        </Box>
         <TextField
           label="Copyright"
           fullWidth
           variant="outlined"
           value={copyright}
           onChange={(e) => setCopyright(e.target.value)}
-          sx={{ mt: 2 }}
           placeholder="e.g. 2026 BCIT"
         />
         <TextField
@@ -200,10 +234,9 @@ export default function UploadImageModal({
           variant="outlined"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          sx={{ mt: 2 }}
           placeholder="Image note"
         />
-        <FormControl fullWidth sx={{ mt: 2 }}>
+        <FormControl fullWidth>
           <InputLabel id="upload-program-select-label">Program</InputLabel>
           <Select
             labelId="upload-program-select-label"
@@ -227,15 +260,24 @@ export default function UploadImageModal({
             ))}
           </Select>
           <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-            Hold Ctrl (or Cmd on Mac) to select multiple programs.
+            Multiple programs can be selected.
           </Typography>
         </FormControl>
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={active}
+              onChange={(e) => setActive(e.target.checked)}
+            />
+          }
+          label="Active (visible to students)"
+        />
+        <Typography variant="caption" color="text.secondary">
           The image will be processed in the background using VIPS to generate
           zoomable tiles for the viewer.
         </Typography>
         {error && (
-          <Typography variant="body2" color="error" sx={{ mt: 1 }}>
+          <Typography variant="body2" color="error">
             {error}
           </Typography>
         )}

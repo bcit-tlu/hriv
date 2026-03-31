@@ -17,7 +17,7 @@ import CampaignIcon from '@mui/icons-material/Campaign'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import DownloadIcon from '@mui/icons-material/Download'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
-import { exportDatabase, importDatabase, fetchAnnouncement, updateAnnouncement, fetchCategoryTree } from '../api'
+import { exportDatabase, importDatabase, fetchAnnouncement, updateAnnouncement, fetchCategoryTree, createCategory as apiCreateCategory } from '../api'
 import type { ApiCategoryTree, ImportResult } from '../api'
 import BulkImportModal from './BulkImportModal'
 import type { Category } from '../types'
@@ -74,6 +74,18 @@ export default function AdminPage({ onAnnouncementChange }: AdminPageProps) {
       // ignore
     }
   }, [])
+
+  const addCategoryInline = useCallback(
+    async (label: string, parentId: number | null) => {
+      try {
+        await apiCreateCategory({ label, parent_id: parentId })
+        await loadCategories()
+      } catch (err) {
+        console.error('Failed to create category', err)
+      }
+    },
+    [loadCategories],
+  )
 
   useEffect(() => {
     loadCategories()
@@ -318,6 +330,7 @@ export default function AdminPage({ onAnnouncementChange }: AdminPageProps) {
         open={bulkImportOpen}
         onClose={() => setBulkImportOpen(false)}
         categories={categories}
+        onAddCategory={addCategoryInline}
       />
     </Box>
   )

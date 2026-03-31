@@ -29,6 +29,7 @@ async def upload_source_image(
     copyright: Annotated[str | None, Form()] = None,
     note: Annotated[str | None, Form()] = None,
     program_ids: Annotated[list[int], Form()] = [],
+    active: Annotated[bool, Form()] = True,
     db: AsyncSession = Depends(get_db),
 ) -> SourceImage:
     """Upload a source image and trigger background tile generation."""
@@ -60,6 +61,7 @@ async def upload_source_image(
         category_id=category_id,
         copyright=copyright,
         note=note,
+        active=active,
         program=json.dumps(program_ids) if program_ids else None,
     )
     db.add(src)

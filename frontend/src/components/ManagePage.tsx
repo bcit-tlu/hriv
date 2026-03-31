@@ -836,7 +836,9 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
           loadImages()
           onCategoriesChanged?.()
         }}
+        categories={categories}
         programs={programs}
+        onAddCategory={onAddCategory}
       />
 
       {/* Bulk edit images modal */}

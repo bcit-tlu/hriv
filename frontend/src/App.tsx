@@ -898,7 +898,9 @@ export default function App() {
           loadUncategorizedImages()
         }}
         categoryId={path.length > 0 ? path[path.length - 1].id : null}
+        categories={categories}
         programs={programs}
+        onAddCategory={addCategoryInline}
       />
 
       {/* Self-edit profile modal */}
