@@ -914,13 +914,14 @@ export default function App() {
                 }}
               >
                 {currentCategories.map((cat) => (
-                  <CategoryTile
-                    key={cat.id}
-                    category={cat}
-                    onClick={navigateToCategory}
-                    onMove={canEditContent ? handleRequestMoveCategory : undefined}
-                    onSetCardImage={canEditContent ? handleSetCardImage : undefined}
-                  />
+                    <CategoryTile
+                      key={cat.id}
+                      category={cat}
+                      onClick={navigateToCategory}
+                      onMove={canEditContent ? handleRequestMoveCategory : undefined}
+                      onSetCardImage={canEditContent ? handleSetCardImage : undefined}
+                      programs={programs}
+                    />
                 ))}
                 {path.length === 0 &&
                   uncategorizedImages.map((img) => (
@@ -928,6 +929,7 @@ export default function App() {
                       key={img.id}
                       image={img}
                       onClick={setSelectedImage}
+                      programs={programs}
                     />
                   ))}
                 {currentImages.map((img) => (
@@ -935,6 +937,7 @@ export default function App() {
                     key={img.id}
                     image={img}
                     onClick={setSelectedImage}
+                    programs={programs}
                   />
                 ))}
               </Box>

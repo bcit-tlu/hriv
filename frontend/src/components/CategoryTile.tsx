@@ -4,12 +4,13 @@ import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import CardContent from '@mui/material/CardContent'
 import CardMedia from '@mui/material/CardMedia'
+import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import FolderIcon from '@mui/icons-material/Folder'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
-import type { Category, ImageItem } from '../types'
+import type { Category, ImageItem, Program } from '../types'
 import CardImagePickerModal from './CardImagePickerModal'
 
 function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
@@ -23,19 +24,32 @@ function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
   return null
 }
 
+/** Collect all unique program IDs from a category and all its descendants. */
+function collectProgramIds(cat: Category): Set<number> {
+  const ids = new Set<number>()
+  for (const img of cat.images) {
+    for (const pid of img.programIds) ids.add(pid)
+  }
+  for (const child of cat.children) {
+    for (const pid of collectProgramIds(child)) ids.add(pid)
+  }
+  return ids
+}
+
 interface CategoryTileProps {
   category: Category
   onClick: (category: Category) => void
   onMove?: (category: Category) => void
   onSetCardImage?: (categoryId: number, imageId: number | null) => void
+  programs: Program[]
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage }: CategoryTileProps) {
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage, programs }: CategoryTileProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const subCategoryCount = category.children.length
   const imageCount = category.images.length
-  const programCount = new Set(category.images.flatMap((img) => img.programIds)).size
+  const programIds = collectProgramIds(category)
 
   const detailParts: string[] = []
   if (subCategoryCount > 0) {
@@ -44,10 +58,12 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
   if (imageCount > 0) {
     detailParts.push(`${imageCount} ${imageCount === 1 ? 'image' : 'images'}`)
   }
-  if (programCount > 0) {
-    detailParts.push(`${programCount} ${programCount === 1 ? 'program' : 'programs'}`)
-  }
   const detailText = detailParts.length > 0 ? detailParts.join(' \u00b7 ') : 'Empty'
+
+  const programChips = Array.from(programIds)
+    .map((pid) => programs.find((p) => p.id === pid))
+    .filter((p): p is Program => p != null)
+    .sort((a, b) => a.name.localeCompare(b.name))
 
   const cardImage = category.cardImageId
     ? findImageInCategory(category, category.cardImageId)
@@ -89,6 +105,13 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             <Typography variant="body2" color="text.secondary">
               {detailText}
             </Typography>
+            {programChips.length > 0 && (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                {programChips.map((p) => (
+                  <Chip key={p.id} label={p.name} size="small" />
+                ))}
+              </Box>
+            )}
           </CardContent>
         </CardActionArea>
         <Box

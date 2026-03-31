@@ -1,16 +1,24 @@
+import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import CardMedia from '@mui/material/CardMedia'
 import CardContent from '@mui/material/CardContent'
+import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
-import type { ImageItem } from '../types'
+import type { ImageItem, Program } from '../types'
 
 interface ImageTileProps {
   image: ImageItem
   onClick: (image: ImageItem) => void
+  programs: Program[]
 }
 
-export default function ImageTile({ image, onClick }: ImageTileProps) {
+export default function ImageTile({ image, onClick, programs }: ImageTileProps) {
+  const programChips = image.programIds
+    .map((pid) => programs.find((p) => p.id === pid))
+    .filter((p): p is Program => p != null)
+    .sort((a, b) => a.name.localeCompare(b.name))
+
   return (
     <Card
       elevation={2}
@@ -28,10 +36,12 @@ export default function ImageTile({ image, onClick }: ImageTileProps) {
           <Typography variant="h6" noWrap>
             {image.name}
           </Typography>
-          {image.programIds && image.programIds.length > 0 && (
-            <Typography variant="body2" color="text.secondary" noWrap>
-              {image.programIds.length} program(s)
-            </Typography>
+          {programChips.length > 0 && (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+              {programChips.map((p) => (
+                <Chip key={p.id} label={p.name} size="small" />
+              ))}
+            </Box>
           )}
           {image.copyright && (
             <Typography variant="body2" color="text.secondary" noWrap>
