@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
+import DialogContentText from '@mui/material/DialogContentText'
 import DialogTitle from '@mui/material/DialogTitle'
 import IconButton from '@mui/material/IconButton'
 import List from '@mui/material/List'
@@ -21,12 +22,21 @@ interface FlatOption {
   id: number
   label: string
   depth: number
+  childCount: number
+}
+
+function countDescendants(node: Category): number {
+  let count = node.children.length
+  for (const child of node.children) {
+    count += countDescendants(child)
+  }
+  return count
 }
 
 function flattenTree(nodes: Category[], depth: number = 0): FlatOption[] {
   const result: FlatOption[] = []
   for (const node of nodes) {
-    result.push({ id: node.id, label: node.label, depth })
+    result.push({ id: node.id, label: node.label, depth, childCount: countDescendants(node) })
     result.push(...flattenTree(node.children, depth + 1))
   }
   return result
@@ -51,6 +61,9 @@ export default function ManageCategoriesDialog({
   const [addParentId, setAddParentId] = useState<number | null>(null)
   const [addParentDepth, setAddParentDepth] = useState(0)
 
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<FlatOption | null>(null)
+
   const options = useMemo(() => flattenTree(categories), [categories])
 
   const handleAddClick = (parentId: number | null, depth: number) => {
@@ -62,6 +75,24 @@ export default function ManageCategoriesDialog({
   const handleAddCategory = async (label: string) => {
     await onAddCategory(label, addParentId)
   }
+
+  const handleDeleteClick = useCallback((opt: FlatOption) => {
+    setPendingDelete(opt)
+    setConfirmDeleteOpen(true)
+  }, [])
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (pendingDelete) {
+      await onDeleteCategory(pendingDelete.id)
+    }
+    setConfirmDeleteOpen(false)
+    setPendingDelete(null)
+  }, [pendingDelete, onDeleteCategory])
+
+  const handleCancelDelete = useCallback(() => {
+    setConfirmDeleteOpen(false)
+    setPendingDelete(null)
+  }, [])
 
   return (
     <>
@@ -111,7 +142,7 @@ export default function ManageCategoriesDialog({
                       <IconButton
                         edge="end"
                         size="small"
-                        onClick={() => onDeleteCategory(opt.id)}
+                        onClick={() => handleDeleteClick(opt)}
                       >
                         <DeleteIcon fontSize="small" color="error" />
                       </IconButton>
@@ -155,6 +186,30 @@ export default function ManageCategoriesDialog({
         onAdd={handleAddCategory}
         currentDepth={addParentDepth}
       />
+
+      {/* Confirm delete dialog */}
+      <Dialog open={confirmDeleteOpen} onClose={handleCancelDelete}>
+        <DialogTitle>Delete Category</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete <strong>{pendingDelete?.label}</strong>?
+          </DialogContentText>
+          <DialogContentText sx={{ mt: 1 }}>
+            All images in this category will become uncategorized (they will not be deleted).
+          </DialogContentText>
+          {(pendingDelete?.childCount ?? 0) > 0 && (
+            <DialogContentText sx={{ mt: 1 }} color="error">
+              This category has {pendingDelete?.childCount} sub-categor{pendingDelete?.childCount === 1 ? 'y' : 'ies'} that will also be permanently deleted.
+            </DialogContentText>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelDelete}>Cancel</Button>
+          <Button onClick={handleConfirmDelete} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   )
 }
