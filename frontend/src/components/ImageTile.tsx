@@ -25,7 +25,7 @@ export default function ImageTile({ image, onClick }: ImageTileProps) {
           sx={{ objectFit: 'cover' }}
         />
         <CardContent>
-          <Typography variant="subtitle1" noWrap>
+          <Typography variant="h6" noWrap>
             {image.name}
           </Typography>
           {image.programIds && image.programIds.length > 0 && (

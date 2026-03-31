@@ -19,9 +19,11 @@ import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
 import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
+import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
 import TextField from '@mui/material/TextField'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
@@ -29,6 +31,7 @@ import ClearIcon from '@mui/icons-material/Clear'
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
+import FilterListIcon from '@mui/icons-material/FilterList'
 import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityIcon from '@mui/icons-material/Visibility'
@@ -147,6 +150,13 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
   const [moveOpen, setMoveOpen] = useState(false)
   const [movingImage, setMovingImage] = useState<ApiImage | null>(null)
 
+  // Filter row visibility
+  const [showFilters, setShowFilters] = useState(false)
+
+  // Pagination state
+  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [currentPage, setCurrentPage] = useState(0)
+
   // Action menu state
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const [menuImage, setMenuImage] = useState<ApiImage | null>(null)
@@ -254,25 +264,37 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
     return sorted
   }, [filteredImages, sortColumn, sortDirection, getCategoryLabel, getProgramNames])
 
+  // Auto-correct currentPage when dataset shrinks (e.g. after delete/bulk-delete)
+  useEffect(() => {
+    const maxPage = Math.max(0, Math.ceil(sortedImages.length / rowsPerPage) - 1)
+    if (currentPage > maxPage) {
+      setCurrentPage(maxPage)
+    }
+  }, [sortedImages.length, rowsPerPage, currentPage])
+
   const handleFilterChange = (column: string, value: string) => {
     setFilters((prev) => ({ ...prev, [column]: value }))
+    setCurrentPage(0)
   }
 
   const handleClearFilters = () => {
     setFilters({})
+    setCurrentPage(0)
   }
 
+  const pageImages = sortedImages.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage)
+
   const selectedInView = useMemo(
-    () => sortedImages.filter((img) => selected.has(img.id)).length,
-    [sortedImages, selected],
+    () => pageImages.filter((img) => selected.has(img.id)).length,
+    [pageImages, selected],
   )
 
-  // Selection handlers
+  // Selection handlers — scoped to current page only
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelected(new Set(sortedImages.map((img) => img.id)))
+      setSelected((prev) => { const next = new Set(prev); pageImages.forEach((img) => next.add(img.id)); return next })
     } else {
-      setSelected(new Set())
+      setSelected((prev) => { const next = new Set(prev); pageImages.forEach((img) => next.delete(img.id)); return next })
     }
   }
 
@@ -441,6 +463,15 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
           Images
         </Typography>
         <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'center' }}>
+          <Tooltip title={showFilters ? 'Hide filters' : 'Show filters'}>
+            <IconButton
+              size="small"
+              onClick={() => setShowFilters((prev) => !prev)}
+              color={showFilters || hasActiveFilters ? 'primary' : 'default'}
+            >
+              <FilterListIcon />
+            </IconButton>
+          </Tooltip>
           {selected.size > 0 && (
             <Button
               variant="contained"
@@ -481,8 +512,8 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
               <TableRow>
                 <TableCell padding="checkbox">
                   <Checkbox
-                    indeterminate={selectedInView > 0 && selectedInView < sortedImages.length}
-                    checked={sortedImages.length > 0 && selectedInView === sortedImages.length}
+                    indeterminate={selectedInView > 0 && selectedInView < pageImages.length}
+                    checked={pageImages.length > 0 && selectedInView === pageImages.length}
                     onChange={(e) => handleSelectAll(e.target.checked)}
                   />
                 </TableCell>
@@ -569,6 +600,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                 </TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
+              {showFilters && (
               <TableRow>
                 <TableCell padding="checkbox">
                   {hasActiveFilters && (
@@ -661,9 +693,10 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                 <TableCell />
                 <TableCell />
               </TableRow>
+              )}
             </TableHead>
             <TableBody>
-              {sortedImages.map((img) => (
+              {sortedImages.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage).map((img) => (
                 <TableRow
                   key={img.id}
                   hover
@@ -731,6 +764,18 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
               ))}
             </TableBody>
           </Table>
+          <TablePagination
+            rowsPerPageOptions={[5, 10, 25, 50]}
+            component="div"
+            count={sortedImages.length}
+            rowsPerPage={rowsPerPage}
+            page={currentPage}
+            onPageChange={(_, newPage) => setCurrentPage(newPage)}
+            onRowsPerPageChange={(e) => {
+              setRowsPerPage(parseInt(e.target.value, 10))
+              setCurrentPage(0)
+            }}
+          />
         </TableContainer>
       )}
 
@@ -787,7 +832,10 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
       <UploadImageModal
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
-        onUploaded={loadImages}
+        onUploaded={() => {
+          loadImages()
+          onCategoriesChanged?.()
+        }}
         programs={programs}
       />
 

@@ -118,6 +118,7 @@ export function updateCategory(
     parent_id?: number | null
     program?: string
     status?: string
+    metadata_extra?: Record<string, unknown>
   },
 ): Promise<ApiCategory> {
   return request(`/categories/${id}`, {
