@@ -14,6 +14,7 @@ interface MoveCategoryDialogProps {
   onMove: (categoryId: number, newParentId: number | null) => void
   category: Category | null
   categories: Category[]
+  onAddCategory?: (label: string, parentId: number | null) => Promise<void>
 }
 
 export default function MoveCategoryDialog({
@@ -22,6 +23,7 @@ export default function MoveCategoryDialog({
   onMove,
   category,
   categories,
+  onAddCategory,
 }: MoveCategoryDialogProps) {
   const [newParentId, setNewParentId] = useState<number | null>(null)
 
@@ -49,6 +51,7 @@ export default function MoveCategoryDialog({
           onChange={setNewParentId}
           label="Destination"
           excludeCategoryId={category?.id}
+          onAddCategory={onAddCategory}
         />
       </DialogContent>
       <DialogActions>

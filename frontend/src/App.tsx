@@ -824,6 +824,7 @@ export default function App() {
         onMove={handleMoveCategory}
         category={movingCategory}
         categories={categories}
+        onAddCategory={addCategoryInline}
       />
 
       {/* Upload image modal */}
