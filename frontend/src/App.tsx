@@ -413,9 +413,35 @@ export default function App() {
       {/* App bar */}
       <AppBar position="static" elevation={1}>
         <Toolbar>
-          <Typography variant="h6" component="h1" sx={{ mr: 2 }}>
-            Corgi
-          </Typography>
+          <Box
+            component="a"
+            href="/"
+            onClick={(e: React.MouseEvent) => {
+              e.preventDefault()
+              setPage('browse')
+              clearImage()
+              setPath([])
+            }}
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              mr: 2,
+              textDecoration: 'none',
+              color: 'inherit',
+              cursor: 'pointer',
+            }}
+          >
+            <Box
+              component="img"
+              src="/favicon.svg"
+              alt="Corgi"
+              sx={{ height: 32, width: 32 }}
+            />
+            <Typography variant="h6" component="h1">
+              Corgi
+            </Typography>
+          </Box>
           <Tabs
             value={page}
             onChange={(_, v: Page) => {
