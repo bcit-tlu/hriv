@@ -1,10 +1,10 @@
 export interface ImageItem {
   id: number
-  label: string
+  name: string
   thumb: string
   tileSources: string
   copyright?: string | null
-  origin?: string | null
+  note?: string | null
   programIds: number[]
   active: boolean
 }

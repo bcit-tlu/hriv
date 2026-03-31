@@ -48,7 +48,7 @@ export default function MoveImageDialog({
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
         {image && (
           <Typography variant="body2" color="text.secondary">
-            Move &ldquo;{image.label}&rdquo; to a different category.
+            Move &ldquo;{image.name}&rdquo; to a different category.
           </Typography>
         )}
         <CategoryPickerSelect
