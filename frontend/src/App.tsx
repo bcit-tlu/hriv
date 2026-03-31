@@ -227,12 +227,22 @@ export default function App() {
     }
   }, [])
 
+  const loadPrograms = useCallback(async () => {
+    try {
+      const p = await apiFetchPrograms()
+      setPrograms(p.map((pg) => ({ id: pg.id, name: pg.name, created_at: pg.created_at, updated_at: pg.updated_at })))
+    } catch {
+      // Silently ignore — programs are non-critical for initial load
+    }
+  }, [])
+
   useEffect(() => {
     if (currentUser) {
       loadCategories()
       loadUncategorizedImages()
+      loadPrograms()
     }
-  }, [currentUser, loadCategories, loadUncategorizedImages])
+  }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms])
 
   // Once categories are loaded, restore a pending shared-link image
   useEffect(() => {
@@ -519,9 +529,7 @@ export default function App() {
                         variant="body2"
                         onClick={() => {
                           setProfileOpen(false)
-                          apiFetchPrograms()
-                            .then((p) => setPrograms(p.map((pg) => ({ id: pg.id, name: pg.name, created_at: pg.created_at, updated_at: pg.updated_at }))))
-                            .catch(() => {})
+                          loadPrograms()
                           setEditModalOpen(true)
                         }}
                       >
