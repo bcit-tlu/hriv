@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -52,6 +52,13 @@ export default function UploadImageModal({
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Sync categoryId state when the dialog opens with a new prop value
+  useEffect(() => {
+    if (open) {
+      setCategoryId(initialCategoryId ?? null)
+    }
+  }, [open, initialCategoryId])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
