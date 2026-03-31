@@ -101,9 +101,10 @@ interface ManagePageProps {
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
   onNewCategory?: () => void
+  onAddCategory?: (label: string, parentId: number | null) => Promise<void>
 }
 
-export default function ManagePage({ categories, onViewImage, onNavigateCategory, onCategoriesChanged, onNewCategory }: ManagePageProps) {
+export default function ManagePage({ categories, onViewImage, onNavigateCategory, onCategoriesChanged, onNewCategory, onAddCategory }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -299,7 +300,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
               startIcon={<CreateNewFolderIcon />}
               onClick={onNewCategory}
             >
-              New Category
+              Add/Edit Categories
             </Button>
           )}
           <Button
@@ -433,6 +434,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         }}
         image={editingImage}
         categories={categories}
+        onAddCategory={onAddCategory}
       />
 
       {/* Upload image modal */}

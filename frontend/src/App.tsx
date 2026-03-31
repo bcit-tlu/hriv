@@ -26,7 +26,7 @@ import ImageViewer from './components/ImageViewer'
 import type { ViewportState } from './components/ImageViewer'
 import CategoryTile from './components/CategoryTile'
 import ImageTile from './components/ImageTile'
-import AddCategoryDialog from './components/AddCategoryDialog'
+import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
 import AnnouncementBanner from './components/AnnouncementBanner'
 import AddEditPersonModal from './components/AddEditPersonModal'
@@ -40,13 +40,13 @@ import {
   fetchAnnouncement,
   fetchUncategorizedImages,
   createCategory as apiCreateCategory,
+  deleteCategory as apiDeleteCategory,
   updateCategory as apiUpdateCategory,
 } from './api'
 import type { ApiCategoryTree, ApiImage, ApiUser } from './api'
 import { updateUser as apiUpdateUser, fetchPrograms as apiFetchPrograms } from './api'
 import MoveCategoryDialog from './components/MoveCategoryDialog'
 import type { Category, ImageItem, Program } from './types'
-import { MAX_DEPTH } from './types'
 
 /** Search the category tree for an image by ID, returning the image and its category path. */
 function findImageInTree(
@@ -314,8 +314,6 @@ export default function App() {
     }
   }, [])
 
-  const currentDepth = path.length
-
   // Resolve the live children/images from the categories state tree
   // so newly added categories appear immediately.
   const resolve = useCallback((): { cats: Category[]; imgs: ImageItem[] } => {
@@ -346,17 +344,35 @@ export default function App() {
     setPath((prev) => prev.slice(0, depth))
   }
 
-  const addCategory = useCallback(
-    async (label: string) => {
-      const parentId = path.length > 0 ? path[path.length - 1].id : null
+  const addCategoryInline = useCallback(
+    async (label: string, parentId: number | null) => {
       try {
         await apiCreateCategory({ label, parent_id: parentId })
         await loadCategories()
+        loadUncategorizedImages()
       } catch (err) {
         console.error('Failed to create category', err)
       }
     },
-    [path, loadCategories],
+    [loadCategories, loadUncategorizedImages],
+  )
+
+  const deleteCategoryInline = useCallback(
+    async (categoryId: number) => {
+      try {
+        await apiDeleteCategory(categoryId)
+        // Clear path segments that reference the deleted category
+        setPath((prev) => {
+          const idx = prev.findIndex((seg) => seg.id === categoryId)
+          return idx >= 0 ? prev.slice(0, idx) : prev
+        })
+        await loadCategories()
+        loadUncategorizedImages()
+      } catch (err) {
+        console.error('Failed to delete category', err)
+      }
+    },
+    [loadCategories, loadUncategorizedImages],
   )
 
   const handleMoveCategory = useCallback(
@@ -547,6 +563,7 @@ export default function App() {
                 loadUncategorizedImages()
               }}
               onNewCategory={() => setDialogOpen(true)}
+              onAddCategory={addCategoryInline}
             />
           ) : selectedImage ? (
             /* ---- Viewer mode ---- */
@@ -604,15 +621,13 @@ export default function App() {
                 </MuiBreadcrumbs>
                 {canEditContent && (
                   <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-                    {currentDepth < MAX_DEPTH && (
-                      <Button
-                        variant="contained"
-                        startIcon={<CreateNewFolderIcon />}
-                        onClick={() => setDialogOpen(true)}
-                      >
-                        New Category
-                      </Button>
-                    )}
+                    <Button
+                      variant="contained"
+                      startIcon={<CreateNewFolderIcon />}
+                      onClick={() => setDialogOpen(true)}
+                    >
+                      Add/Edit Categories
+                    </Button>
                     <Button
                       variant="outlined"
                       startIcon={<AddPhotoAlternateIcon />}
@@ -701,15 +716,13 @@ export default function App() {
                 </MuiBreadcrumbs>
                 {canEditContent && (
                   <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-                    {currentDepth < MAX_DEPTH && (
-                      <Button
-                        variant="contained"
-                        startIcon={<CreateNewFolderIcon />}
-                        onClick={() => setDialogOpen(true)}
-                      >
-                        New Category
-                      </Button>
-                    )}
+                    <Button
+                      variant="contained"
+                      startIcon={<CreateNewFolderIcon />}
+                      onClick={() => setDialogOpen(true)}
+                    >
+                      Add/Edit Categories
+                    </Button>
                     <Button
                       variant="outlined"
                       startIcon={<AddPhotoAlternateIcon />}
@@ -792,12 +805,13 @@ export default function App() {
         </Typography>
       </Box>
 
-      {/* Add category dialog */}
-      <AddCategoryDialog
+      {/* Manage categories dialog */}
+      <ManageCategoriesDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
-        onAdd={addCategory}
-        currentDepth={currentDepth}
+        categories={categories}
+        onAddCategory={addCategoryInline}
+        onDeleteCategory={deleteCategoryInline}
       />
 
       {/* Move category dialog */}
