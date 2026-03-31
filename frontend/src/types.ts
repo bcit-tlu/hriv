@@ -18,6 +18,7 @@ export interface Category {
   program?: string | null
   status?: string | null
   cardImageId?: number | null
+  metadataExtra?: Record<string, unknown> | null
 }
 
 export const MAX_DEPTH = 6

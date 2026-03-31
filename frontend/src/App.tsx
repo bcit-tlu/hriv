@@ -84,6 +84,7 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
     program: node.program,
     status: node.status,
     cardImageId: typeof meta?.card_image_id === 'number' ? meta.card_image_id : null,
+    metadataExtra: meta ?? null,
   }
 }
 
@@ -409,15 +410,25 @@ export default function App() {
   const handleSetCardImage = useCallback(
     async (categoryId: number, imageId: number | null) => {
       try {
+        // Find existing metadata so we merge rather than overwrite
+        const findCat = (cats: Category[]): Category | null => {
+          for (const c of cats) {
+            if (c.id === categoryId) return c
+            const found = findCat(c.children)
+            if (found) return found
+          }
+          return null
+        }
+        const existing = findCat(categories)?.metadataExtra ?? {}
         await apiUpdateCategory(categoryId, {
-          metadata_extra: { card_image_id: imageId },
+          metadata_extra: { ...existing, card_image_id: imageId },
         })
         await loadCategories()
       } catch (err) {
         console.error('Failed to set card image', err)
       }
     },
-    [loadCategories],
+    [loadCategories, categories],
   )
 
   // Show loading spinner while users are loading
