@@ -37,28 +37,18 @@ export default function BulkEditImagesModal({
   selectedCount,
 }: BulkEditImagesModalProps) {
   const [categoryId, setCategoryId] = useState<number | null>(null)
-  const [categoryEnabled, setCategoryEnabled] = useState(false)
   const [copyright, setCopyright] = useState('')
-  const [copyrightEnabled, setCopyrightEnabled] = useState(false)
   const [origin, setOrigin] = useState('')
-  const [originEnabled, setOriginEnabled] = useState(false)
   const [program, setProgram] = useState('')
-  const [programEnabled, setProgramEnabled] = useState(false)
   const [active, setActive] = useState(true)
-  const [activeEnabled, setActiveEnabled] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const resetForm = useCallback(() => {
     setCategoryId(null)
-    setCategoryEnabled(false)
     setCopyright('')
-    setCopyrightEnabled(false)
     setOrigin('')
-    setOriginEnabled(false)
     setProgram('')
-    setProgramEnabled(false)
     setActive(true)
-    setActiveEnabled(false)
     setConfirmDelete(false)
   }, [])
 
@@ -79,11 +69,11 @@ export default function BulkEditImagesModal({
       program?: string
       active?: boolean
     } = {}
-    if (categoryEnabled) data.category_id = categoryId
-    if (copyrightEnabled) data.copyright = copyright
-    if (originEnabled) data.origin = origin
-    if (programEnabled) data.program = program
-    if (activeEnabled) data.active = active
+    if (categoryId !== null) data.category_id = categoryId
+    if (copyright.trim()) data.copyright = copyright.trim()
+    if (origin.trim()) data.origin = origin.trim()
+    if (program.trim()) data.program = program.trim()
+    if (!active) data.active = active
     onSave(data)
     resetForm()
   }
@@ -97,9 +87,6 @@ export default function BulkEditImagesModal({
     resetForm()
   }
 
-  const hasChanges =
-    categoryEnabled || copyrightEnabled || originEnabled || programEnabled || activeEnabled
-
   return (
     <Dialog
       open={open}
@@ -112,137 +99,50 @@ export default function BulkEditImagesModal({
       <DialogContent
         sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
       >
-        <Typography variant="body2" color="text.secondary">
-          Edit {selectedCount} selected{' '}
-          {selectedCount === 1 ? 'image' : 'images'}. Toggle on the fields you
-          want to change.
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          Editing {selectedCount} selected{' '}
+          {selectedCount === 1 ? 'image' : 'images'}. Only fields you fill in
+          will be updated.
         </Typography>
 
-        {/* Move Category */}
         <Box>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={categoryEnabled}
-                onChange={(e) => setCategoryEnabled(e.target.checked)}
-                size="small"
-              />
-            }
-            label="Move Category"
+          <CategoryPickerSelect
+            categories={categories}
+            value={categoryId}
+            onChange={setCategoryId}
+            label="Move to Category"
           />
-          {categoryEnabled && (
-            <Box sx={{ mt: 1 }}>
-              <CategoryPickerSelect
-                categories={categories}
-                value={categoryId}
-                onChange={setCategoryId}
-                label="Destination Category"
-              />
-            </Box>
-          )}
         </Box>
-
-        {/* Copyright */}
-        <Box>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={copyrightEnabled}
-                onChange={(e) => setCopyrightEnabled(e.target.checked)}
-                size="small"
-              />
-            }
-            label="Change Copyright"
-          />
-          {copyrightEnabled && (
-            <TextField
-              label="Copyright"
-              fullWidth
-              variant="outlined"
-              size="small"
-              value={copyright}
-              onChange={(e) => setCopyright(e.target.value)}
-              sx={{ mt: 1 }}
+        <TextField
+          label="Copyright"
+          fullWidth
+          variant="outlined"
+          value={copyright}
+          onChange={(e) => setCopyright(e.target.value)}
+        />
+        <TextField
+          label="Origin"
+          fullWidth
+          variant="outlined"
+          value={origin}
+          onChange={(e) => setOrigin(e.target.value)}
+        />
+        <TextField
+          label="Program"
+          fullWidth
+          variant="outlined"
+          value={program}
+          onChange={(e) => setProgram(e.target.value)}
+        />
+        <FormControlLabel
+          control={
+            <Switch
+              checked={active}
+              onChange={(e) => setActive(e.target.checked)}
             />
-          )}
-        </Box>
-
-        {/* Origin */}
-        <Box>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={originEnabled}
-                onChange={(e) => setOriginEnabled(e.target.checked)}
-                size="small"
-              />
-            }
-            label="Change Origin"
-          />
-          {originEnabled && (
-            <TextField
-              label="Origin"
-              fullWidth
-              variant="outlined"
-              size="small"
-              value={origin}
-              onChange={(e) => setOrigin(e.target.value)}
-              sx={{ mt: 1 }}
-            />
-          )}
-        </Box>
-
-        {/* Program */}
-        <Box>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={programEnabled}
-                onChange={(e) => setProgramEnabled(e.target.checked)}
-                size="small"
-              />
-            }
-            label="Change Program"
-          />
-          {programEnabled && (
-            <TextField
-              label="Program"
-              fullWidth
-              variant="outlined"
-              size="small"
-              value={program}
-              onChange={(e) => setProgram(e.target.value)}
-              sx={{ mt: 1 }}
-            />
-          )}
-        </Box>
-
-        {/* Status (Active) */}
-        <Box>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={activeEnabled}
-                onChange={(e) => setActiveEnabled(e.target.checked)}
-                size="small"
-              />
-            }
-            label="Change Status"
-          />
-          {activeEnabled && (
-            <Box sx={{ mt: 1, pl: 2 }}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={active}
-                    onChange={(e) => setActive(e.target.checked)}
-                  />
-                }
-                label={active ? 'Active (visible to students)' : 'Inactive (hidden from students)'}
-              />
-            </Box>
-          )}
-        </Box>
+          }
+          label="Active (visible to students)"
+        />
 
         <Divider />
 
@@ -271,11 +171,7 @@ export default function BulkEditImagesModal({
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose}>Cancel</Button>
-        <Button
-          onClick={handleSave}
-          variant="contained"
-          disabled={!hasChanges}
-        >
+        <Button onClick={handleSave} variant="contained">
           Save Changes
         </Button>
       </DialogActions>
