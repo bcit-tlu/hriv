@@ -7,6 +7,10 @@ image:
 # This is the <cluster>-app secret created by the backend chart's CNPG Cluster.
 cnpgSecretName: corgi-backend-db-app
 
+# Pod label used for pod affinity when sharing the backend's RWO data PVC.
+# Ensures the backup pod is co-located on the same node as the backend.
+colocateWithPodLabel: corgi-backend
+
 env:
   DATA_DIR: /data
   BACKUP_CRON_SCHEDULE: "0 2 * * *"

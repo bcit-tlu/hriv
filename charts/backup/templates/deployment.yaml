@@ -83,7 +83,17 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- if or .Values.affinity .Values.persistence.data.existingClaim }}
       affinity:
+        {{- if .Values.persistence.data.existingClaim }}
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: {{ .Values.colocateWithPodLabel }}
+              topologyKey: kubernetes.io/hostname
+        {{- end }}
+        {{- with .Values.affinity }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- end }}
