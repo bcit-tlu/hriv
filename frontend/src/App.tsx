@@ -530,7 +530,7 @@ export default function App() {
         sx={{
           flexGrow: 1,
           py: 3,
-          bgcolor: page === 'people' || page === 'admin' ? '#d1cdcd' : undefined,
+          bgcolor: page === 'people' || page === 'admin' ? 'background.default' : undefined,
         }}
       >
         <Container maxWidth="lg">
@@ -795,7 +795,7 @@ export default function App() {
         sx={{
           py: 2,
           textAlign: 'center',
-          bgcolor: 'grey.100',
+          bgcolor: 'background.default',
           borderTop: 1,
           borderColor: 'divider',
         }}
