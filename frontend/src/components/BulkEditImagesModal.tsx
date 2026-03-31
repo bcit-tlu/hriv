@@ -41,6 +41,7 @@ export default function BulkEditImagesModal({
   const [origin, setOrigin] = useState('')
   const [program, setProgram] = useState('')
   const [active, setActive] = useState(true)
+  const [activeChanged, setActiveChanged] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const resetForm = useCallback(() => {
@@ -49,6 +50,7 @@ export default function BulkEditImagesModal({
     setOrigin('')
     setProgram('')
     setActive(true)
+    setActiveChanged(false)
     setConfirmDelete(false)
   }, [])
 
@@ -73,7 +75,7 @@ export default function BulkEditImagesModal({
     if (copyright.trim()) data.copyright = copyright.trim()
     if (origin.trim()) data.origin = origin.trim()
     if (program.trim()) data.program = program.trim()
-    if (!active) data.active = active
+    if (activeChanged) data.active = active
     onSave(data)
     resetForm()
   }
@@ -138,7 +140,10 @@ export default function BulkEditImagesModal({
           control={
             <Switch
               checked={active}
-              onChange={(e) => setActive(e.target.checked)}
+              onChange={(e) => {
+                setActive(e.target.checked)
+                setActiveChanged(true)
+              }}
             />
           }
           label="Active (visible to students)"
