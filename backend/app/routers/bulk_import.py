@@ -253,7 +253,7 @@ async def bulk_import_images(
                     f.write(contents)
 
                 file_entries.append((upload.filename, stored_path))
-    except HTTPException:
+    except Exception:
         # Clean up any files already stored before re-raising
         for _, stored_path in file_entries:
             try:
