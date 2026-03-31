@@ -78,7 +78,7 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
       copyright: img.copyright,
       origin: img.origin,
       program: img.program,
-      status: img.status,
+      active: img.active,
     })),
     program: node.program,
     status: node.status,
@@ -210,7 +210,7 @@ export default function App() {
           copyright: img.copyright,
           origin: img.origin,
           program: img.program,
-          status: img.status,
+          active: img.active,
         })),
       )
       uncategorizedLoaded.current = true
@@ -524,7 +524,7 @@ export default function App() {
                   copyright: img.copyright,
                   origin: img.origin,
                   program: img.program,
-                  status: img.status,
+                  active: img.active,
                 })
                 setPage('browse')
               }}

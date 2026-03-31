@@ -86,7 +86,7 @@ class ImageBase(BaseModel):
     copyright: str | None = None
     origin: str | None = None
     program: str | None = None
-    status: str | None = "active"
+    active: bool = True
     metadata_extra: dict | None = Field(default=None, validation_alias="metadata_")
 
 
@@ -102,7 +102,7 @@ class ImageUpdate(BaseModel):
     copyright: str | None = None
     origin: str | None = None
     program: str | None = None
-    status: str | None = None
+    active: bool | None = None
     metadata_extra: dict | None = None
 
 

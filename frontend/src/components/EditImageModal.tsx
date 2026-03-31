@@ -5,7 +5,9 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import Link from '@mui/material/Link'
+import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
@@ -19,7 +21,7 @@ export interface ImageFormData {
   copyright?: string
   origin?: string
   program?: string
-  status?: string
+  active?: boolean
 }
 
 interface EditImageModalProps {
@@ -41,7 +43,7 @@ function EditImageForm({
   const [copyright, setCopyright] = useState(image?.copyright ?? '')
   const [origin, setOrigin] = useState(image?.origin ?? '')
   const [program, setProgram] = useState(image?.program ?? '')
-  const [status, setStatus] = useState(image?.status ?? '')
+  const [active, setActive] = useState(image?.active ?? true)
   const [file, setFile] = useState<File | null>(null)
   const [dragOver, setDragOver] = useState(false)
 
@@ -82,7 +84,7 @@ function EditImageForm({
       copyright: copyright.trim() || undefined,
       origin: origin.trim() || undefined,
       program: program.trim() || undefined,
-      status: status.trim() || undefined,
+      active,
     })
   }
 
@@ -184,12 +186,14 @@ function EditImageForm({
           value={program}
           onChange={(e) => setProgram(e.target.value)}
         />
-        <TextField
-          label="Status"
-          fullWidth
-          variant="outlined"
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
+        <FormControlLabel
+          control={
+            <Switch
+              checked={active}
+              onChange={(e) => setActive(e.target.checked)}
+            />
+          }
+          label="Active (visible to students)"
         />
       </DialogContent>
       <DialogActions>

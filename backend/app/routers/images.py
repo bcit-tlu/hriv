@@ -24,6 +24,8 @@ async def list_images(
         stmt = stmt.where(Image.category_id.is_(None))
     elif category_id is not None:
         stmt = stmt.where(Image.category_id == category_id)
+    if _user.role == "student":
+        stmt = stmt.where(Image.active.is_(True))
     stmt = stmt.order_by(Image.label)
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -37,6 +39,8 @@ async def get_image(
 ):
     img = await db.get(Image, image_id)
     if not img:
+        raise HTTPException(status_code=404, detail="Image not found")
+    if not img.active and _user.role == "student":
         raise HTTPException(status_code=404, detail="Image not found")
     return img
 
@@ -55,7 +59,7 @@ async def create_image(
         copyright=body.copyright,
         origin=body.origin,
         program=body.program,
-        status=body.status,
+        active=body.active,
         metadata_=body.metadata_extra or {},
     )
     db.add(img)

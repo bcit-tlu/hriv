@@ -6,7 +6,7 @@ export interface ImageItem {
   copyright?: string | null
   origin?: string | null
   program?: string | null
-  status?: string | null
+  active: boolean
 }
 
 export interface Category {

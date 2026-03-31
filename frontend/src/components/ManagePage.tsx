@@ -248,7 +248,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                 <TableCell>Copyright</TableCell>
                 <TableCell>Origin</TableCell>
                 <TableCell>Program</TableCell>
-                <TableCell>Status</TableCell>
+                <TableCell>Active</TableCell>
                 <TableCell>Created</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
@@ -273,7 +273,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                   <TableCell>{img.copyright ?? '—'}</TableCell>
                   <TableCell>{img.origin ?? '—'}</TableCell>
                   <TableCell>{img.program ?? '—'}</TableCell>
-                  <TableCell>{img.status ?? '—'}</TableCell>
+                  <TableCell>{img.active ? 'Yes' : 'No'}</TableCell>
                   <TableCell>
                     {new Date(img.created_at).toLocaleDateString()}
                   </TableCell>

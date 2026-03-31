@@ -13,7 +13,7 @@ from ..schemas import CategoryCreate, CategoryUpdate, CategoryOut, CategoryTree
 router = APIRouter(prefix="/categories", tags=["categories"])
 
 
-async def _load_tree(db: AsyncSession, parent_id: int | None) -> list[CategoryTree]:
+async def _load_tree(db: AsyncSession, parent_id: int | None, *, user_role: str = "admin") -> list[CategoryTree]:
     from ..schemas import ImageOut
 
     stmt = (
@@ -27,7 +27,8 @@ async def _load_tree(db: AsyncSession, parent_id: int | None) -> list[CategoryTr
 
     tree: list[CategoryTree] = []
     for cat in cats:
-        children = await _load_tree(db, cat.id)
+        children = await _load_tree(db, cat.id, user_role=user_role)
+        images = cat.images if user_role != "student" else [img for img in cat.images if img.active]
         tree.append(CategoryTree(
             id=cat.id,
             label=cat.label,
@@ -48,12 +49,12 @@ async def _load_tree(db: AsyncSession, parent_id: int | None) -> list[CategoryTr
                     copyright=img.copyright,
                     origin=img.origin,
                     program=img.program,
-                    status=img.status,
+                    active=img.active,
                     metadata_extra=img.metadata_,
                     created_at=img.created_at,
                     updated_at=img.updated_at,
                 )
-                for img in cat.images
+                for img in images
             ],
         ))
     return tree
@@ -64,7 +65,7 @@ async def get_category_tree(
     _user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
-    return await _load_tree(db, None)
+    return await _load_tree(db, None, user_role=_user.role)
 
 
 @router.get("/", response_model=list[CategoryOut])

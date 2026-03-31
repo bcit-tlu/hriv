@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS images (
     copyright     VARCHAR(500),
     origin        VARCHAR(500),
     program       VARCHAR(255),
-    status        VARCHAR(50) DEFAULT 'active',
+    active        BOOLEAN DEFAULT true,
     metadata      JSONB DEFAULT '{}',
     created_at    TIMESTAMPTZ DEFAULT now(),
     updated_at    TIMESTAMPTZ DEFAULT now()
