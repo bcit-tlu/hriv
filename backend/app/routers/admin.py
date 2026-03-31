@@ -88,7 +88,7 @@ async def export_database(
                 "category_id": i.category_id,
                 "copyright": i.copyright,
                 "origin": i.origin,
-                "program": i.program,
+                "program_ids": [p.id for p in i.programs],
                 "active": i.active,
                 "metadata": i.metadata_,
                 "created_at": dt(i.created_at),
@@ -156,6 +156,7 @@ async def import_database(
 
     try:
         # Clear existing data in dependency order
+        await db.execute(text("DELETE FROM image_programs"))
         await db.execute(text("DELETE FROM images"))
         await db.execute(text("DELETE FROM categories"))
         await db.execute(text("DELETE FROM users"))
@@ -232,12 +233,18 @@ async def import_database(
                 category_id=i.get("category_id"),
                 copyright=i.get("copyright"),
                 origin=i.get("origin"),
-                program=i.get("program"),
                 active=i.get("active", True),
                 metadata_=i.get("metadata", {}),
                 created_at=_parse_dt(i.get("created_at")),
                 updated_at=_parse_dt(i.get("updated_at")),
             )
+            # Handle program_ids (new format only; legacy string 'program' is not migrated)
+            prog_ids = i.get("program_ids", [])
+            if prog_ids:
+                progs = (await db.execute(
+                    select(Program).where(Program.id.in_(prog_ids))
+                )).scalars().all()
+                img.programs = list(progs)
             db.add(img)
 
         # Flush images so sequence reset sees all rows

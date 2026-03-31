@@ -12,11 +12,12 @@ from ..schemas import ProgramCreate, ProgramUpdate, ProgramOut
 router = APIRouter(prefix="/programs", tags=["programs"])
 
 _admin = require_role("admin")
+_editor = require_role("admin", "instructor")
 
 
 @router.get("/", response_model=list[ProgramOut])
 async def list_programs(
-    _user: Annotated[User, Depends(_admin)],
+    _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(Program).order_by(Program.name)

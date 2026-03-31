@@ -28,9 +28,9 @@ export default function ImageTile({ image, onClick }: ImageTileProps) {
           <Typography variant="subtitle1" noWrap>
             {image.label}
           </Typography>
-          {image.program && (
+          {image.programIds && image.programIds.length > 0 && (
             <Typography variant="body2" color="text.secondary" noWrap>
-              {image.program}
+              {image.programIds.length} program(s)
             </Typography>
           )}
           {image.copyright && (

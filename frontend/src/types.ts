@@ -5,7 +5,7 @@ export interface ImageItem {
   tileSources: string
   copyright?: string | null
   origin?: string | null
-  program?: string | null
+  programIds: number[]
   active: boolean
 }
 

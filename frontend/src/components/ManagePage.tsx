@@ -23,9 +23,9 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityIcon from '@mui/icons-material/Visibility'
-import { fetchImages, updateImage, deleteImage, bulkUpdateImages, bulkDeleteImages } from '../api'
+import { fetchImages, fetchPrograms, updateImage, deleteImage, bulkUpdateImages, bulkDeleteImages } from '../api'
 import type { ApiImage } from '../api'
-import type { Category } from '../types'
+import type { Category, Program } from '../types'
 import BulkEditImagesModal from './BulkEditImagesModal'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData } from './EditImageModal'
@@ -106,6 +106,7 @@ interface ManagePageProps {
 
 export default function ManagePage({ categories, onViewImage, onNavigateCategory, onCategoriesChanged, onNewCategory, onAddCategory }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
+  const [programs, setPrograms] = useState<Program[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
@@ -128,8 +129,9 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
   const loadImages = useCallback(async () => {
     try {
       setLoading(true)
-      const data = await fetchImages()
+      const [data, progs] = await Promise.all([fetchImages(), fetchPrograms()])
       setImages(data)
+      setPrograms(progs)
     } catch (err) {
       console.error('Failed to load images', err)
     } finally {
@@ -167,7 +169,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
     category_id?: number | null
     copyright?: string
     origin?: string
-    program?: string
+    program_ids?: number[]
     active?: boolean
   }) => {
     try {
@@ -371,7 +373,13 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                   </TableCell>
                   <TableCell>{img.copyright ?? '—'}</TableCell>
                   <TableCell>{img.origin ?? '—'}</TableCell>
-                  <TableCell>{img.program ?? '—'}</TableCell>
+                  <TableCell>
+                    {img.program_ids.length > 0
+                      ? img.program_ids
+                          .map((pid) => programs.find((p) => p.id === pid)?.name ?? pid)
+                          .join(', ')
+                      : '—'}
+                  </TableCell>
                   <TableCell>{img.active ? 'Yes' : 'No'}</TableCell>
                   <TableCell>
                     {new Date(img.created_at).toLocaleDateString()}
@@ -434,6 +442,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         }}
         image={editingImage}
         categories={categories}
+        programs={programs}
         onAddCategory={onAddCategory}
       />
 
@@ -451,6 +460,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         onSave={handleBulkSave}
         onDelete={handleBulkDelete}
         categories={categories}
+        programs={programs}
         selectedCount={selected.size}
         onAddCategory={onAddCategory}
       />

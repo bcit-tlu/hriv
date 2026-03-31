@@ -1,17 +1,24 @@
 import { useState, useCallback } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
+import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
+import InputLabel from '@mui/material/InputLabel'
+import MenuItem from '@mui/material/MenuItem'
+import OutlinedInput from '@mui/material/OutlinedInput'
+import Select from '@mui/material/Select'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import type { SelectChangeEvent } from '@mui/material/Select'
 import CategoryPickerSelect from './CategoryPickerSelect'
-import type { Category } from '../types'
+import type { Category, Program } from '../types'
 
 interface BulkEditImagesModalProps {
   open: boolean
@@ -20,11 +27,12 @@ interface BulkEditImagesModalProps {
     category_id?: number | null
     copyright?: string
     origin?: string
-    program?: string
+    program_ids?: number[]
     active?: boolean
   }) => Promise<void>
   onDelete: () => Promise<void>
   categories: Category[]
+  programs: Program[]
   selectedCount: number
   onAddCategory?: (label: string, parentId: number | null) => Promise<void>
 }
@@ -35,6 +43,7 @@ export default function BulkEditImagesModal({
   onSave,
   onDelete,
   categories,
+  programs,
   selectedCount,
   onAddCategory,
 }: BulkEditImagesModalProps) {
@@ -42,7 +51,8 @@ export default function BulkEditImagesModal({
   const [categoryChanged, setCategoryChanged] = useState(false)
   const [copyright, setCopyright] = useState('')
   const [origin, setOrigin] = useState('')
-  const [program, setProgram] = useState('')
+  const [programIds, setProgramIds] = useState<number[]>([])
+  const [programChanged, setProgramChanged] = useState(false)
   const [active, setActive] = useState(true)
   const [activeChanged, setActiveChanged] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -53,7 +63,8 @@ export default function BulkEditImagesModal({
     setCategoryChanged(false)
     setCopyright('')
     setOrigin('')
-    setProgram('')
+    setProgramIds([])
+    setProgramChanged(false)
     setActive(true)
     setActiveChanged(false)
     setConfirmDelete(false)
@@ -69,18 +80,24 @@ export default function BulkEditImagesModal({
     onClose()
   }
 
+  const handleProgramChange = (event: SelectChangeEvent<number[]>) => {
+    const value = event.target.value
+    setProgramIds(typeof value === 'string' ? [] : value)
+    setProgramChanged(true)
+  }
+
   const handleSave = async () => {
     const data: {
       category_id?: number | null
       copyright?: string
       origin?: string
-      program?: string
+      program_ids?: number[]
       active?: boolean
     } = {}
     if (categoryChanged) data.category_id = categoryId
     if (copyright.trim()) data.copyright = copyright.trim()
     if (origin.trim()) data.origin = origin.trim()
-    if (program.trim()) data.program = program.trim()
+    if (programChanged) data.program_ids = programIds
     if (activeChanged) data.active = active
     setSaving(true)
     try {
@@ -149,13 +166,33 @@ export default function BulkEditImagesModal({
           value={origin}
           onChange={(e) => setOrigin(e.target.value)}
         />
-        <TextField
-          label="Program"
-          fullWidth
-          variant="outlined"
-          value={program}
-          onChange={(e) => setProgram(e.target.value)}
-        />
+        <FormControl fullWidth>
+          <InputLabel id="bulk-program-select-label">Program</InputLabel>
+          <Select
+            labelId="bulk-program-select-label"
+            multiple
+            value={programIds}
+            onChange={handleProgramChange}
+            input={<OutlinedInput label="Program" />}
+            renderValue={(selected) => (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                {selected.map((id) => {
+                  const prog = programs.find((p) => p.id === id)
+                  return <Chip key={id} label={prog?.name ?? id} size="small" />
+                })}
+              </Box>
+            )}
+          >
+            {programs.map((p) => (
+              <MenuItem key={p.id} value={p.id}>
+                {p.name}
+              </MenuItem>
+            ))}
+          </Select>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+            Hold Ctrl (or Cmd on Mac) to select multiple programs.
+          </Typography>
+        </FormControl>
         <FormControlLabel
           control={
             <Switch

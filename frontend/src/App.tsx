@@ -77,7 +77,7 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
       tileSources: img.tile_sources,
       copyright: img.copyright,
       origin: img.origin,
-      program: img.program,
+      programIds: img.program_ids,
       active: img.active,
     })),
     program: node.program,
@@ -216,7 +216,7 @@ export default function App() {
           tileSources: img.tile_sources,
           copyright: img.copyright,
           origin: img.origin,
-          program: img.program,
+          programIds: img.program_ids,
           active: img.active,
         })),
       )
@@ -549,7 +549,7 @@ export default function App() {
                   tileSources: img.tile_sources,
                   copyright: img.copyright,
                   origin: img.origin,
-                  program: img.program,
+                  programIds: img.program_ids,
                   active: img.active,
                 })
                 setPage('browse')

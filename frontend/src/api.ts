@@ -61,7 +61,7 @@ export interface ApiImage {
   category_id: number | null
   copyright: string | null
   origin: string | null
-  program: string | null
+  program_ids: number[]
   active: boolean
   metadata_extra: Record<string, unknown> | null
   created_at: string
@@ -148,7 +148,7 @@ export function createImage(body: {
   category_id?: number | null
   copyright?: string
   origin?: string
-  program?: string
+  program_ids?: number[]
   active?: boolean
 }): Promise<ApiImage> {
   return request('/images/', {
@@ -166,7 +166,7 @@ export function updateImage(
     category_id?: number | null
     copyright?: string
     origin?: string
-    program?: string
+    program_ids?: number[]
     active?: boolean
   },
 ): Promise<ApiImage> {
@@ -185,7 +185,7 @@ export function bulkUpdateImages(body: {
   category_id?: number | null
   copyright?: string
   origin?: string
-  program?: string
+  program_ids?: number[]
   active?: boolean
 }): Promise<ApiImage[]> {
   return request('/images/bulk', {

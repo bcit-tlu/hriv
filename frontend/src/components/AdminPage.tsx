@@ -35,7 +35,7 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
       tileSources: img.tile_sources,
       copyright: img.copyright,
       origin: img.origin,
-      program: img.program,
+      programIds: img.program_ids,
       active: img.active,
     })),
     program: node.program,

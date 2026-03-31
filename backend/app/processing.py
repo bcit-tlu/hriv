@@ -73,7 +73,6 @@ async def process_source_image(source_image_id: int) -> None:
                 category_id=src.category_id,
                 copyright=src.copyright,
                 origin=src.origin,
-                program=src.program,
                 active=True,
                 metadata_={},
             )

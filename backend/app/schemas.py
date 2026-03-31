@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ── Program ──────────────────────────────────────────────
@@ -85,7 +85,7 @@ class ImageBase(BaseModel):
     category_id: int | None = None
     copyright: str | None = None
     origin: str | None = None
-    program: str | None = None
+    program_ids: list[int] = []
     active: bool = True
     metadata_extra: dict | None = Field(default=None, validation_alias="metadata_")
 
@@ -101,7 +101,7 @@ class ImageUpdate(BaseModel):
     category_id: int | None = None
     copyright: str | None = None
     origin: str | None = None
-    program: str | None = None
+    program_ids: list[int] | None = None
     active: bool | None = None
     metadata_extra: dict | None = None
 
@@ -112,6 +112,27 @@ class ImageOut(ImageBase):
     updated_at: datetime
 
     model_config = {"from_attributes": True, "populate_by_name": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_program_ids(cls, data: object) -> object:
+        """Convert the 'programs' relationship list into 'program_ids'."""
+        if hasattr(data, "programs"):
+            data = dict(
+                label=data.label,
+                thumb=data.thumb,
+                tile_sources=data.tile_sources,
+                category_id=data.category_id,
+                copyright=data.copyright,
+                origin=data.origin,
+                active=data.active,
+                metadata_=data.metadata_,
+                id=data.id,
+                created_at=data.created_at,
+                updated_at=data.updated_at,
+                program_ids=[p.id for p in data.programs],
+            )
+        return data
 
 
 # ── Source Image ─────────────────────────────────────────
@@ -184,7 +205,7 @@ class ImageBulkUpdate(BaseModel):
     category_id: int | None = None
     copyright: str | None = None
     origin: str | None = None
-    program: str | None = None
+    program_ids: list[int] | None = None
     active: bool | None = None
 
 

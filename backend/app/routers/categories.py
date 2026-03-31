@@ -40,20 +40,7 @@ async def _load_tree(db: AsyncSession, parent_id: int | None, *, user_role: str 
             updated_at=cat.updated_at,
             children=children,
             images=[
-                ImageOut(
-                    id=img.id,
-                    label=img.label,
-                    thumb=img.thumb,
-                    tile_sources=img.tile_sources,
-                    category_id=img.category_id,
-                    copyright=img.copyright,
-                    origin=img.origin,
-                    program=img.program,
-                    active=img.active,
-                    metadata_extra=img.metadata_,
-                    created_at=img.created_at,
-                    updated_at=img.updated_at,
-                )
+                ImageOut.model_validate(img)
                 for img in images
             ],
         ))
