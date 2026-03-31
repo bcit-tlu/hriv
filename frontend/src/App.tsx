@@ -201,6 +201,7 @@ export default function App() {
     setViewportState(undefined)
     setProfileOpen(false)
     setEditModalOpen(false)
+    setImageEditOpen(false)
   }, [currentUser])
 
   const loadCategories = useCallback(async () => {
