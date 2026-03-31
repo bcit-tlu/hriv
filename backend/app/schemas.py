@@ -133,6 +133,22 @@ class SourceImageOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Bulk Import Job ──────────────────────────────────────
+
+class BulkImportJobOut(BaseModel):
+    id: int
+    status: str
+    category_id: int | None = None
+    total_count: int
+    completed_count: int
+    failed_count: int
+    errors: list[dict] | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # ── User ──────────────────────────────────────────────────
 
 class UserBase(BaseModel):

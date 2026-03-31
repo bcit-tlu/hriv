@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .database import settings
-from .routers import admin, announcement, auth, categories, images, programs, upload, users
+from .routers import admin, announcement, auth, bulk_import, categories, images, programs, upload, users
 
 app = FastAPI(title="Corgi Image Library API", version="0.1.0")
 
@@ -19,6 +19,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(bulk_import.router, prefix="/api")
 app.include_router(announcement.router, prefix="/api")
 app.include_router(categories.router, prefix="/api")
 app.include_router(images.router, prefix="/api")

@@ -1,0 +1,253 @@
+"""Bulk image import endpoints (admin-only).
+
+Accepts multiple image files and/or zip archives, extracts images,
+and processes them in the background with concurrency limiting.
+"""
+
+import asyncio
+import logging
+import os
+import tempfile
+import uuid
+import zipfile
+from pathlib import Path
+from typing import Annotated
+
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..auth import require_role
+from ..database import async_session, get_db, settings
+from ..models import BulkImportJob, SourceImage, User
+from ..processing import process_source_image
+from ..schemas import BulkImportJobOut
+
+router = APIRouter(prefix="/admin/bulk-import", tags=["admin"])
+
+_admin = require_role("admin")
+
+logger = logging.getLogger(__name__)
+
+# Image extensions we accept (lowercase)
+_IMAGE_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp", ".svs",
+}
+
+# Maximum concurrent tile-generation tasks per bulk import
+_MAX_CONCURRENCY = 4
+
+
+def _is_image_filename(filename: str) -> bool:
+    """Return True if the filename has a recognised image extension."""
+    return Path(filename).suffix.lower() in _IMAGE_EXTENSIONS
+
+
+async def _process_bulk_import(job_id: int, file_entries: list[tuple[str, str]]) -> None:
+    """Background task: process all images for a bulk import job.
+
+    ``file_entries`` is a list of (original_filename, stored_path) tuples.
+    Each image is turned into a SourceImage record and processed via the
+    existing VIPS pipeline, with concurrency limited by a semaphore.
+    """
+    semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
+
+    async def _process_one(original_filename: str, stored_path: str) -> None:
+        async with async_session() as db:
+            # Reload job to get current category_id
+            job = await db.get(BulkImportJob, job_id)
+            if job is None:
+                return
+
+            label = Path(original_filename).stem
+            src = SourceImage(
+                original_filename=original_filename,
+                stored_path=stored_path,
+                status="pending",
+                label=label,
+                category_id=job.category_id,
+                copyright="Public Domain",
+            )
+            db.add(src)
+            await db.commit()
+            await db.refresh(src)
+
+        # Process through VIPS pipeline (this acquires the semaphore)
+        async with semaphore:
+            try:
+                await process_source_image(src.id)
+
+                # Update job counters on success
+                async with async_session() as db:
+                    job = await db.get(BulkImportJob, job_id)
+                    if job is not None:
+                        job.completed_count += 1
+                        await db.commit()
+            except Exception as exc:
+                logger.exception(
+                    "Bulk import: failed to process %s", original_filename
+                )
+                async with async_session() as db:
+                    job = await db.get(BulkImportJob, job_id)
+                    if job is not None:
+                        job.failed_count += 1
+                        errors = list(job.errors or [])
+                        errors.append({
+                            "filename": original_filename,
+                            "error": str(exc),
+                        })
+                        job.errors = errors
+                        await db.commit()
+
+    # Mark job as processing
+    async with async_session() as db:
+        job = await db.get(BulkImportJob, job_id)
+        if job is not None:
+            job.status = "processing"
+            await db.commit()
+
+    # Process all images concurrently (bounded by semaphore)
+    tasks = [
+        asyncio.create_task(_process_one(fname, spath))
+        for fname, spath in file_entries
+    ]
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+    # Finalise job status
+    async with async_session() as db:
+        job = await db.get(BulkImportJob, job_id)
+        if job is not None:
+            if job.failed_count > 0 and job.completed_count == 0:
+                job.status = "failed"
+            elif job.failed_count > 0:
+                job.status = "completed"  # partial success
+            else:
+                job.status = "completed"
+            await db.commit()
+
+
+@router.post("/", response_model=BulkImportJobOut, status_code=201)
+async def bulk_import_images(
+    files: Annotated[list[UploadFile], File()],
+    category_id: Annotated[int, Form()],
+    background_tasks: BackgroundTasks,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+) -> BulkImportJob:
+    """Upload multiple image files and/or zip archives for bulk import.
+
+    All images are assigned to the specified category with sane defaults:
+    - active = True
+    - label = filename stem
+    - copyright = "Public Domain"
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files provided")
+
+    os.makedirs(settings.source_images_dir, exist_ok=True)
+
+    file_entries: list[tuple[str, str]] = []  # (original_filename, stored_path)
+
+    for upload in files:
+        if not upload.filename:
+            continue
+
+        contents = await upload.read()
+
+        # Handle zip files
+        if upload.filename.lower().endswith(".zip"):
+            # Write zip to a temp file, then extract images
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+                tmp.write(contents)
+                tmp_path = tmp.name
+
+            try:
+                with zipfile.ZipFile(tmp_path, "r") as zf:
+                    for zip_entry in zf.namelist():
+                        # Skip directories and hidden/system files
+                        if zip_entry.endswith("/") or zip_entry.startswith("__MACOSX"):
+                            continue
+                        basename = os.path.basename(zip_entry)
+                        if not basename or basename.startswith("."):
+                            continue
+                        if not _is_image_filename(basename):
+                            continue
+
+                        ext = Path(basename).suffix or ".bin"
+                        unique_name = f"{uuid.uuid4().hex}{ext}"
+                        stored_path = os.path.join(
+                            settings.source_images_dir, unique_name
+                        )
+
+                        with zf.open(zip_entry) as src, open(stored_path, "wb") as dst:
+                            dst.write(src.read())
+
+                        file_entries.append((basename, stored_path))
+            except zipfile.BadZipFile:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File '{upload.filename}' is not a valid zip archive",
+                )
+            finally:
+                os.unlink(tmp_path)
+        else:
+            # Regular image file
+            if not _is_image_filename(upload.filename):
+                continue  # silently skip non-image files
+
+            ext = os.path.splitext(upload.filename)[1] or ".bin"
+            unique_name = f"{uuid.uuid4().hex}{ext}"
+            stored_path = os.path.join(settings.source_images_dir, unique_name)
+
+            with open(stored_path, "wb") as f:
+                f.write(contents)
+
+            file_entries.append((upload.filename, stored_path))
+
+    if not file_entries:
+        raise HTTPException(
+            status_code=400,
+            detail="No valid image files found in the upload",
+        )
+
+    # Create the bulk import job record
+    job = BulkImportJob(
+        status="pending",
+        category_id=category_id,
+        total_count=len(file_entries),
+        completed_count=0,
+        failed_count=0,
+        errors=[],
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+
+    # Fire off background processing
+    background_tasks.add_task(_process_bulk_import, job.id, file_entries)
+
+    return job
+
+
+@router.get("/", response_model=list[BulkImportJobOut])
+async def list_bulk_import_jobs(
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+) -> list[BulkImportJob]:
+    """List all bulk import jobs, most recent first."""
+    stmt = select(BulkImportJob).order_by(BulkImportJob.created_at.desc())
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+@router.get("/{job_id}", response_model=BulkImportJobOut)
+async def get_bulk_import_job(
+    job_id: int,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+) -> BulkImportJob:
+    """Get the current status of a bulk import job."""
+    job = await db.get(BulkImportJob, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Bulk import job not found")
+    return job

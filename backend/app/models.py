@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, String, Text, ForeignKey, DateTime, func
+from sqlalchemy import Boolean, Integer, String, Text, ForeignKey, DateTime, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
@@ -100,6 +100,28 @@ class SourceImage(Base):
     )
 
     image: Mapped["Image | None"] = relationship("Image")
+
+
+class BulkImportJob(Base):
+    __tablename__ = "bulk_import_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
+    category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    total_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    errors: Mapped[list | None] = mapped_column(JSONB, nullable=True, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    category: Mapped["Category | None"] = relationship("Category")
 
 
 class Announcement(Base):

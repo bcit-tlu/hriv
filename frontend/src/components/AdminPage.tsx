@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -14,10 +14,34 @@ import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import CampaignIcon from '@mui/icons-material/Campaign'
+import CollectionsIcon from '@mui/icons-material/Collections'
 import DownloadIcon from '@mui/icons-material/Download'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
-import { exportDatabase, importDatabase, fetchAnnouncement, updateAnnouncement } from '../api'
-import type { ImportResult } from '../api'
+import { exportDatabase, importDatabase, fetchAnnouncement, updateAnnouncement, fetchCategoryTree } from '../api'
+import type { ApiCategoryTree, ImportResult } from '../api'
+import BulkImportModal from './BulkImportModal'
+import type { Category } from '../types'
+
+function apiTreeToCategory(node: ApiCategoryTree): Category {
+  return {
+    id: node.id,
+    label: node.label,
+    parentId: node.parent_id,
+    children: node.children.map(apiTreeToCategory),
+    images: node.images.map((img) => ({
+      id: img.id,
+      label: img.label,
+      thumb: img.thumb,
+      tileSources: img.tile_sources,
+      copyright: img.copyright,
+      origin: img.origin,
+      program: img.program,
+      active: img.active,
+    })),
+    program: node.program,
+    status: node.status,
+  }
+}
 
 interface AdminPageProps {
   onAnnouncementChange?: () => void
@@ -37,6 +61,23 @@ export default function AdminPage({ onAnnouncementChange }: AdminPageProps) {
   const [annDraftMessage, setAnnDraftMessage] = useState('')
   const [annDraftEnabled, setAnnDraftEnabled] = useState(false)
   const [annSaving, setAnnSaving] = useState(false)
+
+  // Bulk import state
+  const [bulkImportOpen, setBulkImportOpen] = useState(false)
+  const [categories, setCategories] = useState<Category[]>([])
+
+  const loadCategories = useCallback(async () => {
+    try {
+      const tree = await fetchCategoryTree()
+      setCategories(tree.map(apiTreeToCategory))
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  useEffect(() => {
+    loadCategories()
+  }, [loadCategories])
 
   useEffect(() => {
     fetchAnnouncement()
@@ -176,6 +217,27 @@ export default function AdminPage({ onAnnouncementChange }: AdminPageProps) {
             />
           </CardContent>
         </Card>
+        {/* Bulk Import card */}
+        <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: '#fff' }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              Bulk Import Images
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Upload multiple image files or a zip archive to import them all
+              at once into a category. Images are processed in the background.
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<CollectionsIcon />}
+              onClick={() => setBulkImportOpen(true)}
+              color="success"
+            >
+              Bulk Import
+            </Button>
+          </CardContent>
+        </Card>
+
         {/* Announcement card */}
         <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: '#fff' }}>
           <CardContent>
@@ -250,6 +312,13 @@ export default function AdminPage({ onAnnouncementChange }: AdminPageProps) {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Bulk import modal */}
+      <BulkImportModal
+        open={bulkImportOpen}
+        onClose={() => setBulkImportOpen(false)}
+        categories={categories}
+      />
     </Box>
   )
 }

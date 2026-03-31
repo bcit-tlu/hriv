@@ -345,6 +345,49 @@ export function fetchSourceImage(id: number): Promise<ApiSourceImage> {
   return request(`/source-images/${id}`)
 }
 
+// ── Bulk Import ────────────────────────────────────────
+
+export interface ApiBulkImportJob {
+  id: number
+  status: string
+  category_id: number | null
+  total_count: number
+  completed_count: number
+  failed_count: number
+  errors: Array<{ filename: string; error: string }> | null
+  created_at: string
+  updated_at: string
+}
+
+export async function bulkImportImages(
+  files: File[],
+  categoryId: number,
+): Promise<ApiBulkImportJob> {
+  const form = new FormData()
+  for (const file of files) {
+    form.append('files', file)
+  }
+  form.append('category_id', String(categoryId))
+  const res = await fetch(`${BASE}/api/admin/bulk-import/`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: form,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(`Bulk import failed: ${text}`)
+  }
+  return res.json() as Promise<ApiBulkImportJob>
+}
+
+export function fetchBulkImportJob(jobId: number): Promise<ApiBulkImportJob> {
+  return request(`/admin/bulk-import/${jobId}`)
+}
+
+export function fetchBulkImportJobs(): Promise<ApiBulkImportJob[]> {
+  return request('/admin/bulk-import/')
+}
+
 // ── Admin ───────────────────────────────────────────────
 
 export function exportDatabase(): Promise<void> {

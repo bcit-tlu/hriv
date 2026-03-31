@@ -56,6 +56,20 @@ CREATE TABLE IF NOT EXISTS source_images (
 
 CREATE INDEX IF NOT EXISTS idx_source_images_status ON source_images(status);
 
+CREATE TABLE IF NOT EXISTS bulk_import_jobs (
+    id            SERIAL PRIMARY KEY,
+    status        VARCHAR(50) NOT NULL DEFAULT 'pending',
+    category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    total_count   INTEGER NOT NULL DEFAULT 0,
+    completed_count INTEGER NOT NULL DEFAULT 0,
+    failed_count  INTEGER NOT NULL DEFAULT 0,
+    errors        JSONB DEFAULT '[]',
+    created_at    TIMESTAMPTZ DEFAULT now(),
+    updated_at    TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_bulk_import_jobs_status ON bulk_import_jobs(status);
+
 CREATE TABLE IF NOT EXISTS announcements (
     id            SERIAL PRIMARY KEY,
     message       TEXT NOT NULL DEFAULT '',
