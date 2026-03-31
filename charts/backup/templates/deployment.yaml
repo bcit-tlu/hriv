@@ -33,24 +33,15 @@ spec:
               value: {{ .Values.env.BACKUP_CRON_SCHEDULE | quote }}
             - name: BACKUP_RETENTION_COUNT
               value: {{ .Values.env.BACKUP_RETENTION_COUNT | quote }}
-            - name: S3_ENDPOINT
-              value: {{ .Values.env.S3_ENDPOINT | quote }}
-            - name: S3_BUCKET
-              value: {{ .Values.env.S3_BUCKET | quote }}
-            - name: S3_ACCESS_KEY
+            - name: AZURE_STORAGE_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "corgi-backup.fullname" . }}-s3
-                  key: S3_ACCESS_KEY
-            - name: S3_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "corgi-backup.fullname" . }}-s3
-                  key: S3_SECRET_KEY
-            - name: S3_REGION
-              value: {{ .Values.env.S3_REGION | quote }}
-            - name: S3_PREFIX
-              value: {{ .Values.env.S3_PREFIX | quote }}
+                  name: {{ include "corgi-backup.fullname" . }}-azure
+                  key: AZURE_STORAGE_CONNECTION_STRING
+            - name: AZURE_STORAGE_CONTAINER
+              value: {{ .Values.env.AZURE_STORAGE_CONTAINER | quote }}
+            - name: AZURE_BLOB_PREFIX
+              value: {{ .Values.env.AZURE_BLOB_PREFIX | quote }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}

@@ -1,7 +1,7 @@
 """Corgi Disaster Recovery Backup Service.
 
 Standalone service that snapshots the PostgreSQL database and image
-filesystem on a cron schedule, uploads archives to S3-compatible storage,
+filesystem on a cron schedule, uploads archives to Azure Blob Storage,
 and can restore from any snapshot after a fresh redeployment.
 
 Usage:
@@ -29,8 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
-import boto3
-from botocore.config import Config as BotoConfig
+from azure.storage.blob import BlobServiceClient, ContainerClient
 from croniter import croniter
 
 # ---------------------------------------------------------------------------
@@ -56,13 +55,10 @@ DATABASE_URL: str = _env("DATABASE_URL", "postgresql://corgi:corgi@db:5432/corgi
 # Filesystem
 DATA_DIR: str = _env("DATA_DIR", "/data")
 
-# S3
-S3_ENDPOINT: str = _env("S3_ENDPOINT", "")
-S3_BUCKET: str = _env("S3_BUCKET", "")
-S3_ACCESS_KEY: str = _env("S3_ACCESS_KEY", "")
-S3_SECRET_KEY: str = _env("S3_SECRET_KEY", "")
-S3_REGION: str = _env("S3_REGION", "us-east-1")
-S3_PREFIX: str = _env("S3_PREFIX", "corgi-backups")
+# Azure Blob Storage
+AZURE_STORAGE_CONNECTION_STRING: str = _env("AZURE_STORAGE_CONNECTION_STRING", "")
+AZURE_STORAGE_CONTAINER: str = _env("AZURE_STORAGE_CONTAINER", "")
+AZURE_BLOB_PREFIX: str = _env("AZURE_BLOB_PREFIX", "corgi-backups")
 
 # Schedule & retention
 BACKUP_CRON_SCHEDULE: str = _env("BACKUP_CRON_SCHEDULE", "0 2 * * *")
@@ -95,24 +91,17 @@ def _pg_env(db: dict[str, str]) -> dict[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# S3 client
+# Azure Blob Storage client
 # ---------------------------------------------------------------------------
 
-def _s3_client():
-    """Create a boto3 S3 client from env config."""
-    kwargs: dict = {
-        "aws_access_key_id": S3_ACCESS_KEY,
-        "aws_secret_access_key": S3_SECRET_KEY,
-        "region_name": S3_REGION,
-        "config": BotoConfig(signature_version="s3v4"),
-    }
-    if S3_ENDPOINT:
-        kwargs["endpoint_url"] = S3_ENDPOINT
-    return boto3.client("s3", **kwargs)
+def _blob_container_client() -> ContainerClient:
+    """Create an Azure Blob Storage container client from env config."""
+    service = BlobServiceClient.from_connection_string(AZURE_STORAGE_CONNECTION_STRING)
+    return service.get_container_client(AZURE_STORAGE_CONTAINER)
 
 
-def _s3_configured() -> bool:
-    return bool(S3_BUCKET and S3_ACCESS_KEY and S3_SECRET_KEY)
+def _azure_configured() -> bool:
+    return bool(AZURE_STORAGE_CONNECTION_STRING and AZURE_STORAGE_CONTAINER)
 
 
 # ---------------------------------------------------------------------------
@@ -219,24 +208,25 @@ def run_backup() -> Path | None:
         archive_size = archive_path.stat().st_size
         log.info("Archive created: %s (%s bytes)", archive_name, archive_size)
 
-        # 5. Upload to S3 -----------------------------------------------------
-        if _s3_configured():
-            s3_key = f"{S3_PREFIX}/{archive_name}" if S3_PREFIX else archive_name
-            log.info("Uploading to s3://%s/%s …", S3_BUCKET, s3_key)
+        # 5. Upload to Azure Blob Storage ------------------------------------
+        if _azure_configured():
+            blob_name = f"{AZURE_BLOB_PREFIX}/{archive_name}" if AZURE_BLOB_PREFIX else archive_name
+            log.info("Uploading to azure://%s/%s …", AZURE_STORAGE_CONTAINER, blob_name)
             try:
-                client = _s3_client()
-                client.upload_file(str(archive_path), S3_BUCKET, s3_key)
+                container = _blob_container_client()
+                with open(archive_path, "rb") as data:
+                    container.upload_blob(blob_name, data, overwrite=True)
                 log.info("Upload complete")
             except Exception:
-                log.exception("S3 upload failed")
+                log.exception("Azure Blob upload failed")
                 return None
 
             # 6. Enforce retention policy --------------------------------------
-            _enforce_retention(client)
+            _enforce_retention(container)
         else:
             log.warning(
-                "S3 not configured – archive saved locally at %s only. "
-                "Set S3_BUCKET, S3_ACCESS_KEY, and S3_SECRET_KEY to enable cloud storage.",
+                "Azure Blob Storage not configured – archive saved locally at %s only. "
+                "Set AZURE_STORAGE_CONNECTION_STRING and AZURE_STORAGE_CONTAINER to enable cloud storage.",
                 archive_path,
             )
             # Copy to a persistent location so it survives tmpdir cleanup
@@ -253,33 +243,30 @@ def run_backup() -> Path | None:
     return Path(archive_name)
 
 
-def _enforce_retention(client) -> None:
+def _enforce_retention(container: ContainerClient) -> None:
     """Delete old snapshots beyond BACKUP_RETENTION_COUNT."""
     if BACKUP_RETENTION_COUNT <= 0:
         return
 
-    prefix = f"{S3_PREFIX}/" if S3_PREFIX else ""
+    prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
     try:
-        paginator = client.get_paginator("list_objects_v2")
-        pages = paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix)
-        objects = []
-        for page in pages:
-            for obj in page.get("Contents", []):
-                if obj["Key"].endswith(".tar.gz"):
-                    objects.append(obj)
+        blobs = []
+        for blob in container.list_blobs(name_starts_with=prefix):
+            if blob.name.endswith(".tar.gz"):
+                blobs.append(blob)
 
-        objects.sort(key=lambda o: o["LastModified"], reverse=True)
+        blobs.sort(key=lambda b: b.last_modified, reverse=True)
 
-        if len(objects) > BACKUP_RETENTION_COUNT:
-            to_delete = objects[BACKUP_RETENTION_COUNT:]
+        if len(blobs) > BACKUP_RETENTION_COUNT:
+            to_delete = blobs[BACKUP_RETENTION_COUNT:]
             log.info(
                 "Retention policy: keeping %d, deleting %d old snapshot(s)",
                 BACKUP_RETENTION_COUNT,
                 len(to_delete),
             )
-            for obj in to_delete:
-                client.delete_object(Bucket=S3_BUCKET, Key=obj["Key"])
-                log.info("  Deleted %s", obj["Key"])
+            for blob in to_delete:
+                container.delete_blob(blob.name)
+                log.info("  Deleted %s", blob.name)
     except Exception:
         log.exception("Failed to enforce retention policy")
 
@@ -311,8 +298,8 @@ def _enforce_local_retention() -> None:
 # ---------------------------------------------------------------------------
 
 def list_snapshots() -> list[dict]:
-    """List available snapshots in S3."""
-    if not _s3_configured():
+    """List available snapshots in Azure Blob Storage or locally."""
+    if not _azure_configured():
         # List local backups
         local_dir = Path("/backups")
         if not local_dir.exists():
@@ -330,23 +317,20 @@ def list_snapshots() -> list[dict]:
             })
         return snapshots
 
-    prefix = f"{S3_PREFIX}/" if S3_PREFIX else ""
-    client = _s3_client()
-    paginator = client.get_paginator("list_objects_v2")
-    pages = paginator.paginate(Bucket=S3_BUCKET, Prefix=prefix)
+    prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
+    container = _blob_container_client()
 
     snapshots = []
-    for page in pages:
-        for obj in page.get("Contents", []):
-            if obj["Key"].endswith(".tar.gz"):
-                name = obj["Key"].rsplit("/", 1)[-1]
-                snapshots.append({
-                    "name": name,
-                    "key": obj["Key"],
-                    "size": obj["Size"],
-                    "last_modified": obj["LastModified"].isoformat(),
-                    "location": "s3",
-                })
+    for blob in container.list_blobs(name_starts_with=prefix):
+        if blob.name.endswith(".tar.gz"):
+            name = blob.name.rsplit("/", 1)[-1]
+            snapshots.append({
+                "name": name,
+                "blob_name": blob.name,
+                "size": blob.size,
+                "last_modified": blob.last_modified.isoformat(),
+                "location": "azure",
+            })
 
     snapshots.sort(key=lambda s: s["name"], reverse=True)
     return snapshots
@@ -363,7 +347,7 @@ def run_restore(snapshot_name: str | None = None) -> bool:
     Returns ``True`` on success.
     """
     # Locate the snapshot -------------------------------------------------------
-    if _s3_configured():
+    if _azure_configured():
         snapshots = list_snapshots()
         if not snapshots:
             log.error("No snapshots found")
@@ -382,9 +366,11 @@ def run_restore(snapshot_name: str | None = None) -> bool:
         # Download ---------------------------------------------------------------
         with tempfile.TemporaryDirectory(prefix="corgi-restore-") as tmpdir:
             archive_path = Path(tmpdir) / target["name"]
-            log.info("Downloading s3://%s/%s …", S3_BUCKET, target["key"])
-            client = _s3_client()
-            client.download_file(S3_BUCKET, target["key"], str(archive_path))
+            log.info("Downloading azure://%s/%s …", AZURE_STORAGE_CONTAINER, target["blob_name"])
+            container = _blob_container_client()
+            with open(archive_path, "wb") as f:
+                stream = container.download_blob(target["blob_name"])
+                stream.readinto(f)
             log.info("Download complete (%s bytes)", archive_path.stat().st_size)
             return _restore_from_archive(archive_path)
     else:
@@ -532,7 +518,7 @@ def run_cron() -> None:
     log.info("Corgi Backup Service started")
     log.info("  Schedule : %s", BACKUP_CRON_SCHEDULE)
     log.info("  Retention: %d snapshots", BACKUP_RETENTION_COUNT)
-    log.info("  S3 bucket: %s", S3_BUCKET or "(not configured – local only)")
+    log.info("  Azure container: %s", AZURE_STORAGE_CONTAINER or "(not configured – local only)")
     log.info("  Data dir : %s", DATA_DIR)
 
     cron = croniter(BACKUP_CRON_SCHEDULE, datetime.now(timezone.utc))

@@ -15,10 +15,8 @@ env:
   DATA_DIR: /data
   BACKUP_CRON_SCHEDULE: "0 2 * * *"
   BACKUP_RETENTION_COUNT: "30"
-  S3_ENDPOINT: ""
-  S3_BUCKET: ""
-  S3_REGION: us-east-1
-  S3_PREFIX: corgi-backups
+  AZURE_STORAGE_CONTAINER: ""
+  AZURE_BLOB_PREFIX: corgi-backups
 
 # Vault Secrets Operator integration
 vault:
@@ -26,7 +24,7 @@ vault:
   kvMount: secret
   authRef: vault-auth
   refreshAfter: 1h
-  s3SecretPath: corgi/s3
+  azureSecretPath: corgi/azure-storage
 
 persistence:
   data:
