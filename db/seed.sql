@@ -26,28 +26,28 @@ SELECT setval('categories_id_seq', 5);
 
 -- ── Images ────────────────────────────────────────────────
 
-INSERT INTO images (id, label, thumb, tile_sources, category_id, copyright, origin, program, status, metadata)
+INSERT INTO images (id, label, thumb, tile_sources, category_id, copyright, origin, program, active, metadata)
 VALUES
   (1,
    'Duomo di Milano',
    'https://openseadragon.github.io/example-images/duomo/duomo_files/11/0_0.jpg',
    'https://openseadragon.github.io/example-images/duomo/duomo.dzi',
-   3, 'Public Domain', 'OpenSeaDragon Examples', 'Digital Design', 'active', '{}'),
+   3, 'Public Domain', 'OpenSeaDragon Examples', 'Digital Design', true, '{}'),
   (2,
    'Duomo di Milano (Gothic Detail)',
    'https://openseadragon.github.io/example-images/duomo/duomo_files/11/0_0.jpg',
    'https://openseadragon.github.io/example-images/duomo/duomo.dzi',
-   5, 'Public Domain', 'OpenSeaDragon Examples', 'Digital Design', 'active', '{}'),
+   5, 'Public Domain', 'OpenSeaDragon Examples', 'Digital Design', true, '{}'),
   (3,
    'Highsmith Panorama',
    'https://openseadragon.github.io/example-images/highsmith/highsmith_files/11/0_0.jpg',
    'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi',
-   4, 'Public Domain', 'Library of Congress', 'Photography', 'active', '{}'),
+   4, 'Public Domain', 'Library of Congress', 'Photography', true, '{}'),
   (4,
    'Library of Congress',
    'https://openseadragon.github.io/example-images/highsmith/highsmith_files/11/0_0.jpg',
    'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi',
-   2, 'Public Domain', 'Library of Congress', 'Photography', 'active', '{}');
+   2, 'Public Domain', 'Library of Congress', 'Photography', true, '{}');
 
 SELECT setval('images_id_seq', 4);
 

@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import String, Text, ForeignKey, DateTime, func
+from sqlalchemy import Boolean, String, Text, ForeignKey, DateTime, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
@@ -62,7 +62,7 @@ class Image(Base):
     copyright: Mapped[str | None] = mapped_column(String(500), nullable=True)
     origin: Mapped[str | None] = mapped_column(String(500), nullable=True)
     program: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    status: Mapped[str | None] = mapped_column(String(50), nullable=True, default="active")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

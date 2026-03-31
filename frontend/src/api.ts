@@ -62,7 +62,7 @@ export interface ApiImage {
   copyright: string | null
   origin: string | null
   program: string | null
-  status: string | null
+  active: boolean
   metadata_extra: Record<string, unknown> | null
   created_at: string
   updated_at: string
@@ -149,7 +149,7 @@ export function createImage(body: {
   copyright?: string
   origin?: string
   program?: string
-  status?: string
+  active?: boolean
 }): Promise<ApiImage> {
   return request('/images/', {
     method: 'POST',
@@ -167,7 +167,7 @@ export function updateImage(
     copyright?: string
     origin?: string
     program?: string
-    status?: string
+    active?: boolean
   },
 ): Promise<ApiImage> {
   return request(`/images/${id}`, {
