@@ -90,6 +90,7 @@ async def process_source_image(source_image_id: int) -> None:
                             select(Program).where(Program.id.in_(program_ids))
                         )
                         programs = list(result.scalars().all())
+                        await db.refresh(img, ["programs"])
                         img.programs = programs
                         await db.flush()
                 except (json.JSONDecodeError, TypeError):
