@@ -1,0 +1,33 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "corgi-backend.fullname" . }}-db
+  labels:
+    {{- include "corgi-backend.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.cnpg.instances }}
+  imageName: {{ .Values.cnpg.imageName }}
+
+  bootstrap:
+    initdb:
+      database: {{ .Values.cnpg.database }}
+      owner: {{ .Values.cnpg.owner }}
+      secret:
+        name: {{ include "corgi-backend.fullname" . }}-db-app
+      postInitApplicationSQLRefs:
+        configMapRefs:
+          - name: {{ include "corgi-backend.fullname" . }}-initdb
+            key: init.sql
+          - name: {{ include "corgi-backend.fullname" . }}-initdb
+            key: seed.sql
+
+  superuserSecret:
+    name: {{ include "corgi-backend.fullname" . }}-db-superuser
+
+  storage:
+    storageClass: {{ .Values.cnpg.storage.storageClass }}
+    size: {{ .Values.cnpg.storage.size }}
+
+  {{- if .Values.cnpg.enableSuperuserAccess }}
+  enableSuperuserAccess: true
+  {{- end }}

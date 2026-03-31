@@ -26,8 +26,8 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "corgi-backend.fullname" . }}
-                  key: DATABASE_URL
+                  name: {{ include "corgi-backend.fullname" . }}-db-app
+                  key: uri
             - name: SOURCE_IMAGES_DIR
               value: {{ .Values.env.SOURCE_IMAGES_DIR | quote }}
             - name: TILES_DIR

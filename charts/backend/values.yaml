@@ -10,9 +10,28 @@ service:
   port: 8000
 
 env:
-  DATABASE_URL: ""
   SOURCE_IMAGES_DIR: /data/source_images
   TILES_DIR: /data/tiles
+
+# CloudNative-PG database cluster
+cnpg:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  database: corgi
+  owner: corgi
+  enableSuperuserAccess: true
+  storage:
+    storageClass: longhorn
+    size: 5Gi
+
+# Vault Secrets Operator integration
+vault:
+  enabled: true
+  kvMount: secret
+  authRef: vault-auth
+  refreshAfter: 1h
+  dbAppSecretPath: corgi/db-app
+  dbSuperuserSecretPath: corgi/db-superuser
 
 persistence:
   enabled: true

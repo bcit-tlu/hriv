@@ -1,0 +1,167 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "corgi-backend.fullname" . }}-initdb
+  labels:
+    {{- include "corgi-backend.labels" . | nindent 4 }}
+data:
+  init.sql: |
+    -- Corgi Image Library – schema initialization
+    CREATE TABLE IF NOT EXISTS programs (
+        id            SERIAL PRIMARY KEY,
+        name          VARCHAR(255) NOT NULL UNIQUE,
+        created_at    TIMESTAMPTZ DEFAULT now(),
+        updated_at    TIMESTAMPTZ DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS categories (
+        id            SERIAL PRIMARY KEY,
+        label         VARCHAR(255) NOT NULL,
+        parent_id     INTEGER REFERENCES categories(id) ON DELETE CASCADE,
+        program       VARCHAR(255),
+        status        VARCHAR(50) DEFAULT 'active',
+        metadata      JSONB DEFAULT '{}',
+        created_at    TIMESTAMPTZ DEFAULT now(),
+        updated_at    TIMESTAMPTZ DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_id);
+
+    CREATE TABLE IF NOT EXISTS images (
+        id            SERIAL PRIMARY KEY,
+        name          VARCHAR(255) NOT NULL,
+        thumb         TEXT NOT NULL,
+        tile_sources  TEXT NOT NULL,
+        category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+        copyright     VARCHAR(500),
+        note          VARCHAR(500),
+        active        BOOLEAN DEFAULT true,
+        metadata      JSONB DEFAULT '{}',
+        created_at    TIMESTAMPTZ DEFAULT now(),
+        updated_at    TIMESTAMPTZ DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_images_category ON images(category_id);
+
+    CREATE TABLE IF NOT EXISTS image_programs (
+        image_id      INTEGER NOT NULL REFERENCES images(id) ON DELETE CASCADE,
+        program_id    INTEGER NOT NULL REFERENCES programs(id) ON DELETE CASCADE,
+        PRIMARY KEY (image_id, program_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS source_images (
+        id            SERIAL PRIMARY KEY,
+        original_filename VARCHAR(500) NOT NULL,
+        stored_path   TEXT NOT NULL,
+        status        VARCHAR(50) NOT NULL DEFAULT 'pending',
+        error_message TEXT,
+        name          VARCHAR(255),
+        category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+        copyright     VARCHAR(500),
+        note          VARCHAR(500),
+        active        BOOLEAN NOT NULL DEFAULT true,
+        program       VARCHAR(255),
+        image_id      INTEGER REFERENCES images(id) ON DELETE SET NULL,
+        created_at    TIMESTAMPTZ DEFAULT now(),
+        updated_at    TIMESTAMPTZ DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_source_images_status ON source_images(status);
+
+    CREATE TABLE IF NOT EXISTS bulk_import_jobs (
+        id            SERIAL PRIMARY KEY,
+        status        VARCHAR(50) NOT NULL DEFAULT 'pending',
+        category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+        total_count   INTEGER NOT NULL DEFAULT 0,
+        completed_count INTEGER NOT NULL DEFAULT 0,
+        failed_count  INTEGER NOT NULL DEFAULT 0,
+        errors        JSONB DEFAULT '[]',
+        created_at    TIMESTAMPTZ DEFAULT now(),
+        updated_at    TIMESTAMPTZ DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_bulk_import_jobs_status ON bulk_import_jobs(status);
+
+    CREATE TABLE IF NOT EXISTS announcements (
+        id            SERIAL PRIMARY KEY,
+        message       TEXT NOT NULL DEFAULT '',
+        enabled       BOOLEAN NOT NULL DEFAULT false,
+        created_at    TIMESTAMPTZ DEFAULT now(),
+        updated_at    TIMESTAMPTZ DEFAULT now()
+    );
+
+    CREATE TABLE IF NOT EXISTS users (
+        id            SERIAL PRIMARY KEY,
+        name          VARCHAR(255) NOT NULL,
+        email         VARCHAR(255) NOT NULL UNIQUE,
+        password_hash VARCHAR(255),
+        role          VARCHAR(50) NOT NULL DEFAULT 'student',
+        program_id    INTEGER REFERENCES programs(id) ON DELETE SET NULL,
+        last_access   TIMESTAMPTZ,
+        metadata      JSONB DEFAULT '{}',
+        created_at    TIMESTAMPTZ DEFAULT now(),
+        updated_at    TIMESTAMPTZ DEFAULT now()
+    );
+
+  seed.sql: |
+    -- Corgi Image Library – seed data
+
+    -- Programs
+    INSERT INTO programs (id, name)
+    VALUES
+      (1, 'Administration'),
+      (2, 'Digital Design'),
+      (3, 'Photography');
+    SELECT setval('programs_id_seq', 3);
+
+    -- Categories
+    INSERT INTO categories (id, label, parent_id, program, status, metadata)
+    VALUES
+      (1, 'Architecture', NULL, 'Digital Design', 'active', '{}'),
+      (2, 'Panoramas',    NULL, 'Photography',    'active', '{}'),
+      (3, 'Italian',      1,    'Digital Design', 'active', '{}'),
+      (4, 'American',     1,    'Digital Design', 'active', '{}'),
+      (5, 'Gothic',       3,    'Digital Design', 'active', '{}');
+    SELECT setval('categories_id_seq', 5);
+
+    -- Images
+    INSERT INTO images (id, name, thumb, tile_sources, category_id, copyright, note, active, metadata)
+    VALUES
+      (1, 'Duomo di Milano',
+       'https://openseadragon.github.io/example-images/duomo/duomo_files/11/0_0.jpg',
+       'https://openseadragon.github.io/example-images/duomo/duomo.dzi',
+       3, 'Public Domain', 'OpenSeaDragon Examples', true, '{}'),
+      (2, 'Duomo di Milano (Gothic Detail)',
+       'https://openseadragon.github.io/example-images/duomo/duomo_files/11/0_0.jpg',
+       'https://openseadragon.github.io/example-images/duomo/duomo.dzi',
+       5, 'Public Domain', 'OpenSeaDragon Examples', true, '{}'),
+      (3, 'Highsmith Panorama',
+       'https://openseadragon.github.io/example-images/highsmith/highsmith_files/11/0_0.jpg',
+       'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi',
+       4, 'Public Domain', 'Library of Congress', true, '{}'),
+      (4, 'Library of Congress',
+       'https://openseadragon.github.io/example-images/highsmith/highsmith_files/11/0_0.jpg',
+       'https://openseadragon.github.io/example-images/highsmith/highsmith.dzi',
+       2, 'Public Domain', 'Library of Congress', true, '{}');
+    SELECT setval('images_id_seq', 4);
+
+    -- Image-Program associations
+    INSERT INTO image_programs (image_id, program_id)
+    VALUES
+      (1, 2),
+      (2, 2),
+      (3, 3),
+      (4, 3);
+
+    -- Announcements
+    INSERT INTO announcements (id, message, enabled)
+    VALUES (1, '', false);
+    SELECT setval('announcements_id_seq', 1);
+
+    -- Users
+    INSERT INTO users (id, name, email, password_hash, role, program_id, last_access, metadata)
+    VALUES
+      (1, 'Haruki Tanaka',         'admin@bcit.ca',      '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'admin',      1, NULL, '{}'),
+      (2, 'Carlos Henrique Souza', 'instructor@bcit.ca', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'instructor', 2, NULL, '{}'),
+      (3, 'Mira Patel',            'student@bcit.ca',    '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    2, NULL, '{}');
+    SELECT setval('users_id_seq', 3);
