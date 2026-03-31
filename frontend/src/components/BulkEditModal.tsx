@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
@@ -7,6 +9,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import FormControl from '@mui/material/FormControl'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
+import OutlinedInput from '@mui/material/OutlinedInput'
 import Select from '@mui/material/Select'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
@@ -54,11 +57,21 @@ export default function BulkEditModal({
           {selectedCount === 1 ? 'person' : 'people'}.
         </Typography>
         <FormControl fullWidth>
-          <InputLabel>Program</InputLabel>
+          <InputLabel id="bulk-edit-program-label">Program</InputLabel>
           <Select
+            labelId="bulk-edit-program-label"
             value={programId}
-            label="Program"
             onChange={handleProgramChange}
+            input={<OutlinedInput label="Program" />}
+            renderValue={(selected) => {
+              if (!selected) return <em>None</em>
+              const prog = programs.find((p) => p.id === selected)
+              return (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                  <Chip label={prog?.name ?? selected} size="small" />
+                </Box>
+              )
+            }}
           >
             <MenuItem value="">
               <em>None</em>

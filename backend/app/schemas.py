@@ -146,12 +146,42 @@ class SourceImageOut(BaseModel):
     category_id: int | None = None
     copyright: str | None = None
     origin: str | None = None
-    program: str | None = None
+    program_ids: list[int] = []
     image_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_program_ids_from_json(cls, data: object) -> object:
+        """Convert the 'program' JSON string into 'program_ids' list."""
+        import json as _json
+
+        program_val = None
+        if hasattr(data, "program"):
+            program_val = data.program
+        elif isinstance(data, dict):
+            program_val = data.get("program")
+
+        program_ids: list[int] = []
+        if program_val and isinstance(program_val, str):
+            try:
+                parsed = _json.loads(program_val)
+                if isinstance(parsed, list):
+                    program_ids = [int(x) for x in parsed]
+            except (ValueError, TypeError):
+                pass
+
+        if hasattr(data, "__dict__"):
+            result = {k: v for k, v in data.__dict__.items() if not k.startswith("_")}
+            result["program_ids"] = program_ids
+            return result
+        elif isinstance(data, dict):
+            data["program_ids"] = program_ids
+            return data
+        return data
 
 
 # ── Bulk Import Job ──────────────────────────────────────

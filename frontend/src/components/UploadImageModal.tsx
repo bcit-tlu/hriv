@@ -1,22 +1,31 @@
 import { useState, useCallback } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import FormControl from '@mui/material/FormControl'
+import InputLabel from '@mui/material/InputLabel'
 import Link from '@mui/material/Link'
+import MenuItem from '@mui/material/MenuItem'
+import OutlinedInput from '@mui/material/OutlinedInput'
+import Select from '@mui/material/Select'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
+import type { SelectChangeEvent } from '@mui/material/Select'
 import { uploadSourceImage } from '../api'
+import type { Program } from '../types'
 
 interface UploadImageModalProps {
   open: boolean
   onClose: () => void
   onUploaded: () => void
   categoryId?: number | null
+  programs: Program[]
 }
 
 export default function UploadImageModal({
@@ -24,12 +33,13 @@ export default function UploadImageModal({
   onClose,
   onUploaded,
   categoryId,
+  programs,
 }: UploadImageModalProps) {
   const [file, setFile] = useState<File | null>(null)
   const [label, setLabel] = useState('')
   const [copyright, setCopyright] = useState('')
   const [origin, setOrigin] = useState('')
-  const [program, setProgram] = useState('')
+  const [programIds, setProgramIds] = useState<number[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -68,12 +78,17 @@ export default function UploadImageModal({
     [label],
   )
 
+  const handleProgramChange = (event: SelectChangeEvent<number[]>) => {
+    const value = event.target.value
+    setProgramIds(typeof value === 'string' ? [] : value)
+  }
+
   const handleReset = () => {
     setFile(null)
     setLabel('')
     setCopyright('')
     setOrigin('')
-    setProgram('')
+    setProgramIds([])
     setError(null)
     setUploading(false)
   }
@@ -89,7 +104,7 @@ export default function UploadImageModal({
         categoryId ?? undefined,
         copyright || undefined,
         origin || undefined,
-        program || undefined,
+        programIds.length > 0 ? programIds : undefined,
       )
       onUploaded()
       onClose()
@@ -188,15 +203,33 @@ export default function UploadImageModal({
           sx={{ mt: 2 }}
           placeholder="Image origin or source"
         />
-        <TextField
-          label="Program"
-          fullWidth
-          variant="outlined"
-          value={program}
-          onChange={(e) => setProgram(e.target.value)}
-          sx={{ mt: 2 }}
-          placeholder="Associated program"
-        />
+        <FormControl fullWidth sx={{ mt: 2 }}>
+          <InputLabel id="upload-program-select-label">Program</InputLabel>
+          <Select
+            labelId="upload-program-select-label"
+            multiple
+            value={programIds}
+            onChange={handleProgramChange}
+            input={<OutlinedInput label="Program" />}
+            renderValue={(selected) => (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                {selected.map((id) => {
+                  const prog = programs.find((p) => p.id === id)
+                  return <Chip key={id} label={prog?.name ?? id} size="small" />
+                })}
+              </Box>
+            )}
+          >
+            {programs.map((p) => (
+              <MenuItem key={p.id} value={p.id}>
+                {p.name}
+              </MenuItem>
+            ))}
+          </Select>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+            Hold Ctrl (or Cmd on Mac) to select multiple programs.
+          </Typography>
+        </FormControl>
         <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
           The image will be processed in the background using VIPS to generate
           zoomable tiles for the viewer.

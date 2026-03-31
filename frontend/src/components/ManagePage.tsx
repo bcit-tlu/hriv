@@ -451,6 +451,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         open={uploadOpen}
         onClose={() => setUploadOpen(false)}
         onUploaded={loadImages}
+        programs={programs}
       />
 
       {/* Bulk edit images modal */}

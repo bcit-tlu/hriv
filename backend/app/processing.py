@@ -1,14 +1,16 @@
 """VIPS-based image processing pipeline for DZI tile generation."""
 
 import asyncio
+import json
 import logging
 import os
 from pathlib import Path
 
 import pyvips
+from sqlalchemy import select
 
 from .database import async_session, settings
-from .models import Image, SourceImage
+from .models import Image, Program, SourceImage
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +80,23 @@ async def process_source_image(source_image_id: int) -> None:
             )
             db.add(img)
             await db.flush()
+
+            # Associate programs if stored on source image
+            if src.program:
+                try:
+                    program_ids = json.loads(src.program)
+                    if isinstance(program_ids, list) and program_ids:
+                        result = await db.execute(
+                            select(Program).where(Program.id.in_(program_ids))
+                        )
+                        programs = list(result.scalars().all())
+                        img.programs = programs
+                        await db.flush()
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(
+                        "Could not parse program_ids from source image %d",
+                        src.id,
+                    )
 
             src.image_id = img.id
             src.status = "completed"
