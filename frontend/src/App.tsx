@@ -556,7 +556,7 @@ export default function App() {
         sx={{
           flexGrow: 1,
           py: 3,
-          bgcolor: page === 'people' || page === 'admin' ? 'background.default' : undefined,
+          bgcolor: page === 'people' || page === 'admin' ? '#DAC7B5' : undefined,
         }}
       >
         <Container maxWidth="lg">
