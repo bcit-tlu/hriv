@@ -265,7 +265,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
   // Selection handlers
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelected(new Set(images.map((img) => img.id)))
+      setSelected(new Set(sortedImages.map((img) => img.id)))
     } else {
       setSelected(new Set())
     }
@@ -476,8 +476,8 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
               <TableRow>
                 <TableCell padding="checkbox">
                   <Checkbox
-                    indeterminate={selected.size > 0 && selected.size < images.length}
-                    checked={images.length > 0 && selected.size === images.length}
+                    indeterminate={selected.size > 0 && selected.size < sortedImages.length}
+                    checked={sortedImages.length > 0 && selected.size === sortedImages.length}
                     onChange={(e) => handleSelectAll(e.target.checked)}
                   />
                 </TableCell>
