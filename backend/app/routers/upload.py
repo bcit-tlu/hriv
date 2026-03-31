@@ -4,6 +4,8 @@ import os
 import uuid
 from typing import Annotated
 
+import json
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,7 +28,7 @@ async def upload_source_image(
     category_id: Annotated[int | None, Form()] = None,
     copyright: Annotated[str | None, Form()] = None,
     origin: Annotated[str | None, Form()] = None,
-    program: Annotated[str | None, Form()] = None,
+    program_ids: Annotated[list[int], Form()] = [],
     db: AsyncSession = Depends(get_db),
 ) -> SourceImage:
     """Upload a source image and trigger background tile generation."""
@@ -58,7 +60,7 @@ async def upload_source_image(
         category_id=category_id,
         copyright=copyright,
         origin=origin,
-        program=program,
+        program=json.dumps(program_ids) if program_ids else None,
     )
     db.add(src)
     await db.commit()

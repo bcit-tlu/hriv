@@ -327,7 +327,7 @@ export interface ApiSourceImage {
   category_id: number | null
   copyright: string | null
   origin: string | null
-  program: string | null
+  program_ids: number[]
   image_id: number | null
   created_at: string
   updated_at: string
@@ -339,7 +339,7 @@ export async function uploadSourceImage(
   categoryId?: number | null,
   copyright?: string,
   origin?: string,
-  program?: string,
+  programIds?: number[],
 ): Promise<ApiSourceImage> {
   const form = new FormData()
   form.append('file', file)
@@ -347,7 +347,11 @@ export async function uploadSourceImage(
   if (categoryId != null) form.append('category_id', String(categoryId))
   if (copyright) form.append('copyright', copyright)
   if (origin) form.append('origin', origin)
-  if (program) form.append('program', program)
+  if (programIds) {
+    for (const id of programIds) {
+      form.append('program_ids', String(id))
+    }
+  }
   const res = await fetch(`${BASE}/api/source-images/upload`, {
     method: 'POST',
     headers: authHeaders(),
