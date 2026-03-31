@@ -26,6 +26,7 @@ interface BulkEditImagesModalProps {
   onDelete: () => Promise<void>
   categories: Category[]
   selectedCount: number
+  onAddCategory?: (label: string, parentId: number | null) => Promise<void>
 }
 
 export default function BulkEditImagesModal({
@@ -35,6 +36,7 @@ export default function BulkEditImagesModal({
   onDelete,
   categories,
   selectedCount,
+  onAddCategory,
 }: BulkEditImagesModalProps) {
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [categoryChanged, setCategoryChanged] = useState(false)
@@ -130,6 +132,7 @@ export default function BulkEditImagesModal({
               setCategoryChanged(true)
             }}
             label="Move to Category"
+            onAddCategory={onAddCategory}
           />
         </Box>
         <TextField

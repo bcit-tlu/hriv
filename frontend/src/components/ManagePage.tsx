@@ -452,6 +452,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         onDelete={handleBulkDelete}
         categories={categories}
         selectedCount={selected.size}
+        onAddCategory={onAddCategory}
       />
     </Box>
   )
