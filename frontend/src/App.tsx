@@ -361,6 +361,11 @@ export default function App() {
     async (categoryId: number) => {
       try {
         await apiDeleteCategory(categoryId)
+        // Clear path segments that reference the deleted category
+        setPath((prev) => {
+          const idx = prev.findIndex((seg) => seg.id === categoryId)
+          return idx >= 0 ? prev.slice(0, idx) : prev
+        })
         await loadCategories()
         loadUncategorizedImages()
       } catch (err) {
