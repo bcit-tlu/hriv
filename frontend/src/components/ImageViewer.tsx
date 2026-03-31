@@ -114,6 +114,8 @@ export default function ImageViewer({
       // Rotation controls
       showRotationControl: true,
       gestureSettingsTouch: { pinchRotate: true },
+      // Position controls at bottom-left
+      navigationControlAnchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
     })
 
     const viewer = viewerRef.current

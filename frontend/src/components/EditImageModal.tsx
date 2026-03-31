@@ -239,7 +239,7 @@ function EditImageForm({
           }
           label="Active (visible to students)"
         />
-        {image && (
+        {image && image.created_at && image.updated_at && (
           <Box sx={{ display: 'flex', gap: 4, mt: 1 }}>
             <Typography variant="caption" color="text.secondary">
               Created: {new Date(image.created_at).toLocaleString()}

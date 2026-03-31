@@ -35,6 +35,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
 
   const subCategoryCount = category.children.length
   const imageCount = category.images.length
+  const programCount = new Set(category.images.flatMap((img) => img.programIds)).size
 
   const detailParts: string[] = []
   if (subCategoryCount > 0) {
@@ -42,6 +43,9 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
   }
   if (imageCount > 0) {
     detailParts.push(`${imageCount} ${imageCount === 1 ? 'image' : 'images'}`)
+  }
+  if (programCount > 0) {
+    detailParts.push(`${programCount} ${programCount === 1 ? 'program' : 'programs'}`)
   }
   const detailText = detailParts.length > 0 ? detailParts.join(' \u00b7 ') : 'Empty'
 

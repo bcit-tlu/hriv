@@ -89,6 +89,7 @@ function AddEditPersonForm({
           variant="outlined"
           value={name}
           onChange={(e) => setName(e.target.value)}
+          sx={{ mt: 1 }}
         />
         <TextField
           label="Email"

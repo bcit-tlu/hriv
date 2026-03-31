@@ -20,6 +20,7 @@ import Snackbar from '@mui/material/Snackbar'
 import Tooltip from '@mui/material/Tooltip'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
+import EditIcon from '@mui/icons-material/Edit'
 import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
 import ImageViewer from './components/ImageViewer'
@@ -33,6 +34,8 @@ import AddEditPersonModal from './components/AddEditPersonModal'
 import ManagePage from './components/ManagePage'
 import PeoplePage from './components/PeoplePage'
 import LoginScreen from './components/LoginScreen'
+import EditImageModal from './components/EditImageModal'
+import type { ImageFormData } from './components/EditImageModal'
 import UploadImageModal from './components/UploadImageModal'
 import { useAuth } from './useAuth'
 import {
@@ -44,7 +47,7 @@ import {
   updateCategory as apiUpdateCategory,
 } from './api'
 import type { ApiCategoryTree, ApiImage, ApiUser } from './api'
-import { updateUser as apiUpdateUser, fetchPrograms as apiFetchPrograms } from './api'
+import { updateUser as apiUpdateUser, fetchPrograms as apiFetchPrograms, updateImage as apiUpdateImage } from './api'
 import MoveCategoryDialog from './components/MoveCategoryDialog'
 import type { Category, ImageItem, Program } from './types'
 
@@ -64,6 +67,19 @@ function findImageInTree(
   return null
 }
 
+function findCategoryPath(
+  tree: Category[],
+  categoryId: number,
+  path: Category[] = [],
+): Category[] | null {
+  for (const cat of tree) {
+    if (cat.id === categoryId) return [...path, cat]
+    const found = findCategoryPath(cat.children, categoryId, [...path, cat])
+    if (found) return found
+  }
+  return null
+}
+
 function apiTreeToCategory(node: ApiCategoryTree): Category {
   const meta = node.metadata_extra as Record<string, unknown> | null
   return {
@@ -76,10 +92,13 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
       name: img.name,
       thumb: img.thumb,
       tileSources: img.tile_sources,
+      categoryId: img.category_id,
       copyright: img.copyright,
       note: img.note,
       programIds: img.program_ids,
       active: img.active,
+      createdAt: img.created_at,
+      updatedAt: img.updated_at,
     })),
     program: node.program,
     status: node.status,
@@ -119,6 +138,9 @@ export default function App() {
   // Move category dialog state
   const [moveCatOpen, setMoveCatOpen] = useState(false)
   const [movingCategory, setMovingCategory] = useState<Category | null>(null)
+
+  // Image edit modal state (for viewer page)
+  const [imageEditOpen, setImageEditOpen] = useState(false)
 
   // User profile popover + edit modal state
   const avatarRef = useRef<HTMLButtonElement>(null)
@@ -194,6 +216,7 @@ export default function App() {
     setViewportState(undefined)
     setProfileOpen(false)
     setEditModalOpen(false)
+    setImageEditOpen(false)
   }, [currentUser])
 
   const loadCategories = useCallback(async () => {
@@ -217,10 +240,13 @@ export default function App() {
           name: img.name,
           thumb: img.thumb,
           tileSources: img.tile_sources,
+          categoryId: img.category_id,
           copyright: img.copyright,
           note: img.note,
           programIds: img.program_ids,
           active: img.active,
+          createdAt: img.created_at,
+          updatedAt: img.updated_at,
         })),
       )
       uncategorizedLoaded.current = true
@@ -431,6 +457,60 @@ export default function App() {
     [loadCategories, categories],
   )
 
+  // Build ApiImage shape from selectedImage for EditImageModal on viewer page
+  const selectedApiImage: ApiImage | null = selectedImage
+    ? {
+        id: selectedImage.id,
+        name: selectedImage.name,
+        thumb: selectedImage.thumb,
+        tile_sources: selectedImage.tileSources,
+        category_id: selectedImage.categoryId ?? null,
+        copyright: selectedImage.copyright ?? null,
+        note: selectedImage.note ?? null,
+        program_ids: selectedImage.programIds,
+        active: selectedImage.active,
+        metadata_extra: null,
+        created_at: selectedImage.createdAt ?? '',
+        updated_at: selectedImage.updatedAt ?? '',
+      }
+    : null
+
+  const handleSaveViewerImage = useCallback(
+    async (data: ImageFormData) => {
+      if (!selectedImage) return
+      try {
+        const updated = await apiUpdateImage(selectedImage.id, data)
+        setSelectedImage({
+          id: updated.id,
+          name: updated.name,
+          thumb: updated.thumb,
+          tileSources: updated.tile_sources,
+          categoryId: updated.category_id,
+          copyright: updated.copyright,
+          note: updated.note,
+          programIds: updated.program_ids,
+          active: updated.active,
+          createdAt: updated.created_at,
+          updatedAt: updated.updated_at,
+        })
+        setImageEditOpen(false)
+        // Refresh categories and update breadcrumb path from the fresh tree
+        const freshTree = (await fetchCategoryTree()).map(apiTreeToCategory)
+        setCategories(freshTree)
+        if (updated.category_id != null) {
+          const newPath = findCategoryPath(freshTree, updated.category_id)
+          setPath(newPath ?? [])
+        } else {
+          setPath([])
+        }
+        loadUncategorizedImages()
+      } catch (err) {
+        console.error('Failed to update image', err)
+      }
+    },
+    [selectedImage, loadUncategorizedImages],
+  )
+
   // Show loading spinner while users are loading
   if (usersLoading) {
     return (
@@ -451,22 +531,11 @@ export default function App() {
       <AppBar position="static" elevation={1}>
         <Toolbar>
           <Box
-            component="a"
-            href="/"
-            onClick={(e: React.MouseEvent) => {
-              e.preventDefault()
-              setPage('browse')
-              clearImage()
-              setPath([])
-            }}
             sx={{
               display: 'flex',
               alignItems: 'center',
               gap: 1,
               mr: 2,
-              textDecoration: 'none',
-              color: 'inherit',
-              cursor: 'pointer',
             }}
           >
             <Box
@@ -608,11 +677,21 @@ export default function App() {
                   name: img.name,
                   thumb: img.thumb,
                   tileSources: img.tile_sources,
+                  categoryId: img.category_id,
                   copyright: img.copyright,
                   note: img.note,
                   programIds: img.program_ids,
                   active: img.active,
+                  createdAt: img.created_at,
+                  updatedAt: img.updated_at,
                 })
+                // Build breadcrumb path from the image's category
+                if (img.category_id != null) {
+                  const catPath = findCategoryPath(categories, img.category_id)
+                  if (catPath) setPath(catPath)
+                } else {
+                  setPath([])
+                }
                 setPage('browse')
               }}
               onNavigateCategory={(categoryPath) => {
@@ -680,24 +759,26 @@ export default function App() {
                     {selectedImage.name}
                   </Typography>
                 </MuiBreadcrumbs>
-                {canEditContent && (
-                  <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                  {canEditContent && (
                     <Button
                       variant="contained"
-                      startIcon={<CreateNewFolderIcon />}
-                      onClick={() => setDialogOpen(true)}
+                      startIcon={<EditIcon />}
+                      onClick={() => setImageEditOpen(true)}
                     >
-                      Add/Edit Categories
+                      Edit Details
                     </Button>
+                  )}
+                  <Tooltip title="Copy shareable link to clipboard">
                     <Button
                       variant="outlined"
-                      startIcon={<AddPhotoAlternateIcon />}
-                      onClick={() => setUploadOpen(true)}
+                      startIcon={<LinkIcon />}
+                      onClick={copyShareLink}
                     >
-                      Upload Image
+                      Share View
                     </Button>
-                  </Box>
-                )}
+                  </Tooltip>
+                </Box>
               </Box>
 
               <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
@@ -708,24 +789,53 @@ export default function App() {
                 />
               </Paper>
 
-              <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box sx={{ mt: 2 }}>
                 <Typography variant="body2" color="text.secondary">
                   Use your scroll wheel to zoom, or click and drag to pan.
                   Use the rotation buttons to rotate the image, or pinch-rotate
                   on touch devices. The mini-map in the bottom-right corner
                   shows your current viewport.
                 </Typography>
-                <Tooltip title="Copy shareable link to clipboard">
-                  <Button
-                    variant="outlined"
-                    size="small"
-                    startIcon={<LinkIcon />}
-                    onClick={copyShareLink}
-                    sx={{ flexShrink: 0, ml: 2 }}
-                  >
-                    Share View
-                  </Button>
-                </Tooltip>
+              </Box>
+
+              {/* Image metadata */}
+              <Box
+                sx={{
+                  mt: 2,
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 0,
+                  '& > span': { mr: '2em' },
+                }}
+              >
+                {selectedImage.copyright && (
+                  <Typography variant="body2" color="text.secondary" component="span">
+                    <strong>Copyright:</strong> {selectedImage.copyright}
+                  </Typography>
+                )}
+                {selectedImage.programIds.length > 0 && (
+                  <Typography variant="body2" color="text.secondary" component="span">
+                    <strong>Program{selectedImage.programIds.length > 1 ? 's' : ''}:</strong>{' '}
+                    {selectedImage.programIds
+                      .map((pid) => programs.find((p) => p.id === pid)?.name ?? pid)
+                      .join(', ')}
+                  </Typography>
+                )}
+                {selectedImage.note && (
+                  <Typography variant="body2" color="text.secondary" component="span">
+                    <strong>Note:</strong> {selectedImage.note}
+                  </Typography>
+                )}
+                {selectedImage.createdAt && (
+                  <Typography variant="body2" color="text.secondary" component="span">
+                    <strong>Created:</strong> {new Date(selectedImage.createdAt).toLocaleString()}
+                  </Typography>
+                )}
+                {selectedImage.updatedAt && (
+                  <Typography variant="body2" color="text.secondary" component="span">
+                    <strong>Modified:</strong> {new Date(selectedImage.updatedAt).toLocaleString()}
+                  </Typography>
+                )}
               </Box>
             </>
           ) : (
@@ -886,6 +996,17 @@ export default function App() {
         onMove={handleMoveCategory}
         category={movingCategory}
         categories={categories}
+        onAddCategory={addCategoryInline}
+      />
+
+      {/* Image edit modal (viewer page) */}
+      <EditImageModal
+        open={imageEditOpen}
+        onClose={() => setImageEditOpen(false)}
+        onSave={handleSaveViewerImage}
+        image={selectedApiImage}
+        categories={categories}
+        programs={programs}
         onAddCategory={addCategoryInline}
       />
 
