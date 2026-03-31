@@ -24,10 +24,10 @@ async def upload_source_image(
     file: Annotated[UploadFile, File()],
     background_tasks: BackgroundTasks,
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
-    label: Annotated[str | None, Form()] = None,
+    name: Annotated[str | None, Form()] = None,
     category_id: Annotated[int | None, Form()] = None,
     copyright: Annotated[str | None, Form()] = None,
-    origin: Annotated[str | None, Form()] = None,
+    note: Annotated[str | None, Form()] = None,
     program_ids: Annotated[list[int], Form()] = [],
     db: AsyncSession = Depends(get_db),
 ) -> SourceImage:
@@ -56,10 +56,10 @@ async def upload_source_image(
         original_filename=file.filename,
         stored_path=stored_path,
         status="pending",
-        label=label,
+        name=name,
         category_id=category_id,
         copyright=copyright,
-        origin=origin,
+        note=note,
         program=json.dumps(program_ids) if program_ids else None,
     )
     db.add(src)

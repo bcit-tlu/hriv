@@ -82,12 +82,12 @@ async def export_database(
         "images": [
             {
                 "id": i.id,
-                "label": i.label,
+                "name": i.name,
                 "thumb": i.thumb,
                 "tile_sources": i.tile_sources,
                 "category_id": i.category_id,
                 "copyright": i.copyright,
-                "origin": i.origin,
+                "note": i.note,
                 "program_ids": [p.id for p in i.programs],
                 "active": i.active,
                 "metadata": i.metadata_,
@@ -227,12 +227,12 @@ async def import_database(
         for i in dump["images"]:
             img = Image(
                 id=i["id"],
-                label=i["label"],
+                name=i.get("name") or i.get("label", ""),
                 thumb=i["thumb"],
                 tile_sources=i["tile_sources"],
                 category_id=i.get("category_id"),
                 copyright=i.get("copyright"),
-                origin=i.get("origin"),
+                note=i.get("note") or i.get("origin"),
                 active=i.get("active", True),
                 metadata_=i.get("metadata", {}),
                 created_at=_parse_dt(i.get("created_at")),

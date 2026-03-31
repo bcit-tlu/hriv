@@ -61,14 +61,14 @@ class Image(Base):
     __tablename__ = "images"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    label: Mapped[str] = mapped_column(String(255), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
     thumb: Mapped[str] = mapped_column(Text, nullable=False)
     tile_sources: Mapped[str] = mapped_column(Text, nullable=False)
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True
     )
     copyright: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    origin: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True, default=dict)
     created_at: Mapped[datetime] = mapped_column(
@@ -92,12 +92,12 @@ class SourceImage(Base):
     stored_path: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    label: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )
     copyright: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    origin: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     program: Mapped[str | None] = mapped_column(String(255), nullable=True)
     image_id: Mapped[int | None] = mapped_column(
         ForeignKey("images.id", ondelete="SET NULL"), nullable=True

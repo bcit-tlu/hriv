@@ -26,7 +26,7 @@ SELECT setval('categories_id_seq', 5);
 
 -- ── Images ────────────────────────────────────────────────
 
-INSERT INTO images (id, label, thumb, tile_sources, category_id, copyright, origin, active, metadata)
+INSERT INTO images (id, name, thumb, tile_sources, category_id, copyright, note, active, metadata)
 VALUES
   (1,
    'Duomo di Milano',

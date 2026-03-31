@@ -26,7 +26,7 @@ interface BulkEditImagesModalProps {
   onSave: (data: {
     category_id?: number | null
     copyright?: string
-    origin?: string
+    note?: string
     program_ids?: number[]
     active?: boolean
   }) => Promise<void>
@@ -50,7 +50,7 @@ export default function BulkEditImagesModal({
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [categoryChanged, setCategoryChanged] = useState(false)
   const [copyright, setCopyright] = useState('')
-  const [origin, setOrigin] = useState('')
+  const [note, setNote] = useState('')
   const [programIds, setProgramIds] = useState<number[]>([])
   const [programChanged, setProgramChanged] = useState(false)
   const [active, setActive] = useState(true)
@@ -62,7 +62,7 @@ export default function BulkEditImagesModal({
     setCategoryId(null)
     setCategoryChanged(false)
     setCopyright('')
-    setOrigin('')
+    setNote('')
     setProgramIds([])
     setProgramChanged(false)
     setActive(true)
@@ -90,13 +90,13 @@ export default function BulkEditImagesModal({
     const data: {
       category_id?: number | null
       copyright?: string
-      origin?: string
+      note?: string
       program_ids?: number[]
       active?: boolean
     } = {}
     if (categoryChanged) data.category_id = categoryId
     if (copyright.trim()) data.copyright = copyright.trim()
-    if (origin.trim()) data.origin = origin.trim()
+    if (note.trim()) data.note = note.trim()
     if (programChanged) data.program_ids = programIds
     if (activeChanged) data.active = active
     setSaving(true)
@@ -160,11 +160,11 @@ export default function BulkEditImagesModal({
           onChange={(e) => setCopyright(e.target.value)}
         />
         <TextField
-          label="Origin"
+          label="Note"
           fullWidth
           variant="outlined"
-          value={origin}
-          onChange={(e) => setOrigin(e.target.value)}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
         />
         <FormControl fullWidth>
           <InputLabel id="bulk-program-select-label">Program</InputLabel>

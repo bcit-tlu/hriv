@@ -23,10 +23,10 @@ import type { Category, Program } from '../types'
 import CategoryPickerSelect from './CategoryPickerSelect'
 
 export interface ImageFormData {
-  label?: string
+  name?: string
   category_id?: number | null
   copyright?: string
-  origin?: string
+  note?: string
   program_ids?: number[]
   active?: boolean
 }
@@ -49,10 +49,10 @@ function EditImageForm({
   programs,
   onAddCategory,
 }: Omit<EditImageModalProps, 'open'>) {
-  const [label, setLabel] = useState(image?.label ?? '')
+  const [name, setName] = useState(image?.name ?? '')
   const [categoryId, setCategoryId] = useState<number | null>(image?.category_id ?? null)
   const [copyright, setCopyright] = useState(image?.copyright ?? '')
-  const [origin, setOrigin] = useState(image?.origin ?? '')
+  const [note, setNote] = useState(image?.note ?? '')
   const [programIds, setProgramIds] = useState<number[]>(image?.program_ids ?? [])
   const [active, setActive] = useState(image?.active ?? true)
   const [file, setFile] = useState<File | null>(null)
@@ -92,13 +92,13 @@ function EditImageForm({
   }
 
   const handleSave = () => {
-    const trimmedLabel = label.trim()
-    if (!trimmedLabel) return
+    const trimmedName = name.trim()
+    if (!trimmedName) return
     onSave({
-      label: trimmedLabel,
+      name: trimmedName,
       category_id: categoryId,
       copyright: copyright.trim() || undefined,
-      origin: origin.trim() || undefined,
+      note: note.trim() || undefined,
       program_ids: programIds,
       active,
     })
@@ -168,11 +168,11 @@ function EditImageForm({
 
         <TextField
           autoFocus
-          label="Label"
+          label="Name"
           fullWidth
           variant="outlined"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
         />
         <Box>
           <CategoryPickerSelect
@@ -190,11 +190,11 @@ function EditImageForm({
           onChange={(e) => setCopyright(e.target.value)}
         />
         <TextField
-          label="Origin"
+          label="Note"
           fullWidth
           variant="outlined"
-          value={origin}
-          onChange={(e) => setOrigin(e.target.value)}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
         />
         <FormControl fullWidth>
           <InputLabel id="program-select-label">Program</InputLabel>
@@ -232,13 +232,23 @@ function EditImageForm({
           }
           label="Active (visible to students)"
         />
+        {image && (
+          <Box sx={{ display: 'flex', gap: 4, mt: 1 }}>
+            <Typography variant="caption" color="text.secondary">
+              Created: {new Date(image.created_at).toLocaleString()}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Modified: {new Date(image.updated_at).toLocaleString()}
+            </Typography>
+          </Box>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Cancel</Button>
         <Button
           onClick={handleSave}
           variant="contained"
-          disabled={!label.trim()}
+          disabled={!name.trim()}
         >
           Save
         </Button>

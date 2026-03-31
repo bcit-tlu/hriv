@@ -36,9 +36,9 @@ export default function UploadImageModal({
   programs,
 }: UploadImageModalProps) {
   const [file, setFile] = useState<File | null>(null)
-  const [label, setLabel] = useState('')
+  const [name, setName] = useState('')
   const [copyright, setCopyright] = useState('')
-  const [origin, setOrigin] = useState('')
+  const [note, setNote] = useState('')
   const [programIds, setProgramIds] = useState<number[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -50,11 +50,11 @@ export default function UploadImageModal({
     const dropped = e.dataTransfer.files[0]
     if (dropped && dropped.type.startsWith('image/')) {
       setFile(dropped)
-      if (!label) {
-        setLabel(dropped.name.replace(/\.[^.]+$/, ''))
+      if (!name) {
+        setName(dropped.name.replace(/\.[^.]+$/, ''))
       }
     }
-  }, [label])
+  }, [name])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -70,12 +70,12 @@ export default function UploadImageModal({
       const selected = e.target.files?.[0]
       if (selected) {
         setFile(selected)
-        if (!label) {
-          setLabel(selected.name.replace(/\.[^.]+$/, ''))
+        if (!name) {
+          setName(selected.name.replace(/\.[^.]+$/, ''))
         }
       }
     },
-    [label],
+    [name],
   )
 
   const handleProgramChange = (event: SelectChangeEvent<number[]>) => {
@@ -85,9 +85,9 @@ export default function UploadImageModal({
 
   const handleReset = () => {
     setFile(null)
-    setLabel('')
+    setName('')
     setCopyright('')
-    setOrigin('')
+    setNote('')
     setProgramIds([])
     setError(null)
     setUploading(false)
@@ -100,10 +100,10 @@ export default function UploadImageModal({
     try {
       await uploadSourceImage(
         file,
-        label || undefined,
+        name || undefined,
         categoryId ?? undefined,
         copyright || undefined,
-        origin || undefined,
+        note || undefined,
         programIds.length > 0 ? programIds : undefined,
       )
       onUploaded()
@@ -177,13 +177,13 @@ export default function UploadImageModal({
           )}
         </Box>
         <TextField
-          label="Label"
+          label="Name"
           fullWidth
           variant="outlined"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           sx={{ mt: 2 }}
-          placeholder="Image label (defaults to filename)"
+          placeholder="Image name (defaults to filename)"
         />
         <TextField
           label="Copyright"
@@ -195,13 +195,13 @@ export default function UploadImageModal({
           placeholder="e.g. 2026 BCIT"
         />
         <TextField
-          label="Origin"
+          label="Note"
           fullWidth
           variant="outlined"
-          value={origin}
-          onChange={(e) => setOrigin(e.target.value)}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
           sx={{ mt: 2 }}
-          placeholder="Image origin or source"
+          placeholder="Image note"
         />
         <FormControl fullWidth sx={{ mt: 2 }}>
           <InputLabel id="upload-program-select-label">Program</InputLabel>

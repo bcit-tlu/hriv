@@ -21,12 +21,12 @@ export default function ImageTile({ image, onClick }: ImageTileProps) {
           component="img"
           height="160"
           image={image.thumb}
-          alt={image.label}
+          alt={image.name}
           sx={{ objectFit: 'cover' }}
         />
         <CardContent>
           <Typography variant="subtitle1" noWrap>
-            {image.label}
+            {image.name}
           </Typography>
           {image.programIds && image.programIds.length > 0 && (
             <Typography variant="body2" color="text.secondary" noWrap>

@@ -66,15 +66,15 @@ async def process_source_image(source_image_id: int) -> None:
             tile_sources_url = f"/api/tiles/{src.id}/{dzi_rel}"
             thumb_url = f"/api/tiles/{src.id}/{thumb_rel}"
 
-            label = src.label or Path(src.original_filename).stem
+            name = src.name or Path(src.original_filename).stem
 
             img = Image(
-                label=label,
+                name=name,
                 thumb=thumb_url,
                 tile_sources=tile_sources_url,
                 category_id=src.category_id,
                 copyright=src.copyright,
-                origin=src.origin,
+                note=src.note,
                 active=True,
                 metadata_={},
             )

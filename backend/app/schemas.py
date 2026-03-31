@@ -79,12 +79,12 @@ class CategoryTree(CategoryOut):
 # ── Image ─────────────────────────────────────────────────
 
 class ImageBase(BaseModel):
-    label: str
+    name: str
     thumb: str
     tile_sources: str
     category_id: int | None = None
     copyright: str | None = None
-    origin: str | None = None
+    note: str | None = None
     program_ids: list[int] = []
     active: bool = True
     metadata_extra: dict | None = Field(default=None, validation_alias="metadata_")
@@ -95,12 +95,12 @@ class ImageCreate(ImageBase):
 
 
 class ImageUpdate(BaseModel):
-    label: str | None = None
+    name: str | None = None
     thumb: str | None = None
     tile_sources: str | None = None
     category_id: int | None = None
     copyright: str | None = None
-    origin: str | None = None
+    note: str | None = None
     program_ids: list[int] | None = None
     active: bool | None = None
     metadata_extra: dict | None = None
@@ -119,12 +119,12 @@ class ImageOut(ImageBase):
         """Convert the 'programs' relationship list into 'program_ids'."""
         if hasattr(data, "programs"):
             data = dict(
-                label=data.label,
+                name=data.name,
                 thumb=data.thumb,
                 tile_sources=data.tile_sources,
                 category_id=data.category_id,
                 copyright=data.copyright,
-                origin=data.origin,
+                note=data.note,
                 active=data.active,
                 metadata_=data.metadata_,
                 id=data.id,
@@ -142,10 +142,10 @@ class SourceImageOut(BaseModel):
     original_filename: str
     status: str
     error_message: str | None = None
-    label: str | None = None
+    name: str | None = None
     category_id: int | None = None
     copyright: str | None = None
-    origin: str | None = None
+    note: str | None = None
     program_ids: list[int] = []
     image_id: int | None = None
     created_at: datetime
@@ -234,7 +234,7 @@ class ImageBulkUpdate(BaseModel):
     image_ids: list[int]
     category_id: int | None = None
     copyright: str | None = None
-    origin: str | None = None
+    note: str | None = None
     program_ids: list[int] | None = None
     active: bool | None = None
 

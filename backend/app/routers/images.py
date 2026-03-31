@@ -26,7 +26,7 @@ async def list_images(
         stmt = stmt.where(Image.category_id == category_id)
     if _user.role == "student":
         stmt = stmt.where(Image.active.is_(True))
-    stmt = stmt.order_by(Image.label)
+    stmt = stmt.order_by(Image.name)
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -52,12 +52,12 @@ async def create_image(
     db: AsyncSession = Depends(get_db),
 ):
     img = Image(
-        label=body.label,
+        name=body.name,
         thumb=body.thumb,
         tile_sources=body.tile_sources,
         category_id=body.category_id,
         copyright=body.copyright,
-        origin=body.origin,
+        note=body.note,
         active=body.active,
         metadata_=body.metadata_extra or {},
     )
@@ -94,7 +94,7 @@ async def bulk_update_images(
             img.programs = progs
     await db.commit()
     # Reload updated images
-    stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.label)
+    stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.name)
     result = await db.execute(stmt)
     return result.scalars().all()
 

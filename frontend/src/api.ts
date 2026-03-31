@@ -55,12 +55,12 @@ export interface ApiCategoryTree extends ApiCategory {
 
 export interface ApiImage {
   id: number
-  label: string
+  name: string
   thumb: string
   tile_sources: string
   category_id: number | null
   copyright: string | null
-  origin: string | null
+  note: string | null
   program_ids: number[]
   active: boolean
   metadata_extra: Record<string, unknown> | null
@@ -142,12 +142,12 @@ export function fetchUncategorizedImages(): Promise<ApiImage[]> {
 }
 
 export function createImage(body: {
-  label: string
+  name: string
   thumb: string
   tile_sources: string
   category_id?: number | null
   copyright?: string
-  origin?: string
+  note?: string
   program_ids?: number[]
   active?: boolean
 }): Promise<ApiImage> {
@@ -160,12 +160,12 @@ export function createImage(body: {
 export function updateImage(
   id: number,
   body: {
-    label?: string
+    name?: string
     thumb?: string
     tile_sources?: string
     category_id?: number | null
     copyright?: string
-    origin?: string
+    note?: string
     program_ids?: number[]
     active?: boolean
   },
@@ -184,7 +184,7 @@ export function bulkUpdateImages(body: {
   image_ids: number[]
   category_id?: number | null
   copyright?: string
-  origin?: string
+  note?: string
   program_ids?: number[]
   active?: boolean
 }): Promise<ApiImage[]> {
@@ -323,10 +323,10 @@ export interface ApiSourceImage {
   original_filename: string
   status: string
   error_message: string | null
-  label: string | null
+  name: string | null
   category_id: number | null
   copyright: string | null
-  origin: string | null
+  note: string | null
   program_ids: number[]
   image_id: number | null
   created_at: string
@@ -335,18 +335,18 @@ export interface ApiSourceImage {
 
 export async function uploadSourceImage(
   file: File,
-  label?: string,
+  name?: string,
   categoryId?: number | null,
   copyright?: string,
-  origin?: string,
+  note?: string,
   programIds?: number[],
 ): Promise<ApiSourceImage> {
   const form = new FormData()
   form.append('file', file)
-  if (label) form.append('label', label)
+  if (name) form.append('name', name)
   if (categoryId != null) form.append('category_id', String(categoryId))
   if (copyright) form.append('copyright', copyright)
-  if (origin) form.append('origin', origin)
+  if (note) form.append('note', note)
   if (programIds) {
     for (const id of programIds) {
       form.append('program_ids', String(id))

@@ -62,12 +62,12 @@ async def _process_bulk_import(job_id: int, file_entries: list[tuple[str, str]])
                 if job is None:
                     return
 
-                label = Path(original_filename).stem
+                name = Path(original_filename).stem
                 src = SourceImage(
                     original_filename=original_filename,
                     stored_path=stored_path,
                     status="pending",
-                    label=label,
+                    name=name,
                     category_id=job.category_id,
                     copyright="Public Domain",
                 )
@@ -182,7 +182,7 @@ async def bulk_import_images(
 
     All images are assigned to the specified category with sane defaults:
     - active = True
-    - label = filename stem
+    - name = filename stem
     - copyright = "Public Domain"
     """
     if not files:

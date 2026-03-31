@@ -221,7 +221,7 @@ export default function BulkImportModal({
             </Box>
 
             <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
-              All images will be imported with sane defaults: active, label set to
+              All images will be imported with sane defaults: active, name set to
               filename, copyright set to &quot;Public Domain&quot;. You can bulk-edit
               metadata later from the Images page.
             </Typography>

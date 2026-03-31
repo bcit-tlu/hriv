@@ -72,11 +72,11 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
     children: node.children.map(apiTreeToCategory),
     images: node.images.map((img) => ({
       id: img.id,
-      label: img.label,
+      name: img.name,
       thumb: img.thumb,
       tileSources: img.tile_sources,
       copyright: img.copyright,
-      origin: img.origin,
+      note: img.note,
       programIds: img.program_ids,
       active: img.active,
     })),
@@ -211,11 +211,11 @@ export default function App() {
       setUncategorizedImages(
         imgs.map((img: ApiImage) => ({
           id: img.id,
-          label: img.label,
+          name: img.name,
           thumb: img.thumb,
           tileSources: img.tile_sources,
           copyright: img.copyright,
-          origin: img.origin,
+          note: img.note,
           programIds: img.program_ids,
           active: img.active,
         })),
@@ -578,11 +578,11 @@ export default function App() {
               onViewImage={(img) => {
                 setSelectedImage({
                   id: img.id,
-                  label: img.label,
+                  name: img.name,
                   thumb: img.thumb,
                   tileSources: img.tile_sources,
                   copyright: img.copyright,
-                  origin: img.origin,
+                  note: img.note,
                   programIds: img.program_ids,
                   active: img.active,
                 })
@@ -650,7 +650,7 @@ export default function App() {
                     </Link>
                   ))}
                   <Typography variant="body2" color="text.primary">
-                    {selectedImage.label}
+                    {selectedImage.name}
                   </Typography>
                 </MuiBreadcrumbs>
                 {canEditContent && (

@@ -105,7 +105,7 @@ function CategoryBreadcrumb({
   )
 }
 
-type SortableColumn = 'id' | 'label' | 'category' | 'copyright' | 'origin' | 'program' | 'active' | 'created_at' | 'updated_at'
+type SortableColumn = 'id' | 'name' | 'category' | 'copyright' | 'note' | 'program' | 'active' | 'created_at' | 'updated_at'
 type SortDirection = 'asc' | 'desc'
 
 interface ManagePageProps {
@@ -202,10 +202,10 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         return value.toLowerCase().includes(filter.toLowerCase())
       }
       if (!match('id', String(img.id))) return false
-      if (!match('label', img.label)) return false
+      if (!match('name', img.name)) return false
       if (!match('category', getCategoryLabel(img))) return false
       if (!match('copyright', img.copyright ?? '')) return false
-      if (!match('origin', img.origin ?? '')) return false
+      if (!match('note', img.note ?? '')) return false
       if (!match('program', getProgramNames(img))) return false
       const statusFilter = filters['active']
       if (statusFilter) {
@@ -224,8 +224,8 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         case 'id':
           cmp = a.id - b.id
           break
-        case 'label':
-          cmp = a.label.localeCompare(b.label)
+        case 'name':
+          cmp = a.name.localeCompare(b.name)
           break
         case 'category':
           cmp = getCategoryLabel(a).localeCompare(getCategoryLabel(b))
@@ -233,8 +233,8 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         case 'copyright':
           cmp = (a.copyright ?? '').localeCompare(b.copyright ?? '')
           break
-        case 'origin':
-          cmp = (a.origin ?? '').localeCompare(b.origin ?? '')
+        case 'note':
+          cmp = (a.note ?? '').localeCompare(b.note ?? '')
           break
         case 'program':
           cmp = getProgramNames(a).localeCompare(getProgramNames(b))
@@ -292,7 +292,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
   const handleBulkSave = async (data: {
     category_id?: number | null
     copyright?: string
-    origin?: string
+    note?: string
     program_ids?: number[]
     active?: boolean
   }) => {
@@ -495,11 +495,11 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                     ID
                   </TableSortLabel>
                 </TableCell>
-                <TableCell sortDirection={sortColumn === 'label' ? sortDirection : false}>
+                <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
                   <TableSortLabel
-                    active={sortColumn === 'label'}
-                    direction={sortColumn === 'label' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('label')}
+                    active={sortColumn === 'name'}
+                    direction={sortColumn === 'name' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('name')}
                   >
                     Name
                   </TableSortLabel>
@@ -522,11 +522,11 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                     Copyright
                   </TableSortLabel>
                 </TableCell>
-                <TableCell sortDirection={sortColumn === 'origin' ? sortDirection : false}>
+                <TableCell sortDirection={sortColumn === 'note' ? sortDirection : false}>
                   <TableSortLabel
-                    active={sortColumn === 'origin'}
-                    direction={sortColumn === 'origin' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('origin')}
+                    active={sortColumn === 'note'}
+                    direction={sortColumn === 'note' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('note')}
                   >
                     Note
                   </TableSortLabel>
@@ -593,10 +593,10 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                     size="small"
                     variant="standard"
                     placeholder="Filter"
-                    value={filters['label'] ?? ''}
-                    onChange={(e) => handleFilterChange('label', e.target.value)}
+                    value={filters['name'] ?? ''}
+                    onChange={(e) => handleFilterChange('name', e.target.value)}
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                    InputProps={filters['label'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('label', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
+                    InputProps={filters['name'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('name', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
                 </TableCell>
                 <TableCell>
@@ -626,10 +626,10 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                     size="small"
                     variant="standard"
                     placeholder="Filter"
-                    value={filters['origin'] ?? ''}
-                    onChange={(e) => handleFilterChange('origin', e.target.value)}
+                    value={filters['note'] ?? ''}
+                    onChange={(e) => handleFilterChange('note', e.target.value)}
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                    InputProps={filters['origin'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('origin', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
+                    InputProps={filters['note'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('note', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
                 </TableCell>
                 <TableCell>
@@ -683,7 +683,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                     />
                   </TableCell>
                   <TableCell>{img.id}</TableCell>
-                  <TableCell>{img.label}</TableCell>
+                  <TableCell>{img.name}</TableCell>
                   <TableCell>
                     <CategoryBreadcrumb
                       categoryId={img.category_id}
@@ -692,7 +692,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                     />
                   </TableCell>
                   <TableCell>{img.copyright ?? '—'}</TableCell>
-                  <TableCell>{img.origin ?? '—'}</TableCell>
+                  <TableCell>{img.note ?? '—'}</TableCell>
                   <TableCell>
                     {img.program_ids.length > 0
                       ? img.program_ids
