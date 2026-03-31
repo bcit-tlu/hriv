@@ -1,0 +1,6 @@
+apiVersion: v2
+name: corgi-backend
+description: Corgi Backend – FastAPI image library API
+version: 0.1.0
+appVersion: "0.1.0"
+type: application

@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "corgi-backup.fullname" . }}
+  labels:
+    {{- include "corgi-backup.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "corgi-backup.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "corgi-backup.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: backup
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["cron"]
+          env:
+            - name: DATABASE_URL
+              value: {{ .Values.env.DATABASE_URL | quote }}
+            - name: DATA_DIR
+              value: {{ .Values.env.DATA_DIR | quote }}
+            - name: BACKUP_CRON_SCHEDULE
+              value: {{ .Values.env.BACKUP_CRON_SCHEDULE | quote }}
+            - name: BACKUP_RETENTION_COUNT
+              value: {{ .Values.env.BACKUP_RETENTION_COUNT | quote }}
+            - name: S3_ENDPOINT
+              value: {{ .Values.env.S3_ENDPOINT | quote }}
+            - name: S3_BUCKET
+              value: {{ .Values.env.S3_BUCKET | quote }}
+            - name: S3_ACCESS_KEY
+              value: {{ .Values.env.S3_ACCESS_KEY | quote }}
+            - name: S3_SECRET_KEY
+              value: {{ .Values.env.S3_SECRET_KEY | quote }}
+            - name: S3_REGION
+              value: {{ .Values.env.S3_REGION | quote }}
+            - name: S3_PREFIX
+              value: {{ .Values.env.S3_PREFIX | quote }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.persistence.data.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+            {{- if .Values.persistence.backups.enabled }}
+            - name: backups
+              mountPath: /backups
+            {{- end }}
+      volumes:
+        {{- if .Values.persistence.data.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "corgi-backup.fullname" . }}-data
+        {{- end }}
+        {{- if .Values.persistence.backups.enabled }}
+        - name: backups
+          persistentVolumeClaim:
+            claimName: {{ include "corgi-backup.fullname" . }}-backups
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: corgi-backup
+description: Corgi Backup Service – scheduled database and filesystem snapshots
+version: 0.1.0
+appVersion: "0.1.0"
+type: application

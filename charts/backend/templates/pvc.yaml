@@ -1,0 +1,17 @@
+{{- if .Values.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "corgi-backend.fullname" . }}-data
+  labels:
+    {{- include "corgi-backend.labels" . | nindent 4 }}
+spec:
+  storageClassName: {{ .Values.persistence.storageClass }}
+  accessModes:
+    {{- range .Values.persistence.accessModes }}
+    - {{ . }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+{{- end }}

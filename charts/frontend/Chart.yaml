@@ -1,0 +1,6 @@
+apiVersion: v2
+name: corgi-frontend
+description: Corgi Frontend – React/Vite SPA served by nginx
+version: 0.1.0
+appVersion: "0.1.0"
+type: application
