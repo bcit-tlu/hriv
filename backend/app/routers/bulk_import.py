@@ -207,16 +207,19 @@ async def bulk_import_images(
 
             # Handle zip files
             if upload.filename.lower().endswith(".zip"):
-                # Stream zip to a temp file, then extract images
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-                    tmp_path = tmp.name
-                    while True:
-                        chunk = await upload.read(_UPLOAD_CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        tmp.write(chunk)
-
+                # Stream zip to a temp file, then extract images.
+                # The try/finally wraps the entire lifecycle so the
+                # temp file is cleaned up even if streaming fails.
+                tmp_path: str | None = None
                 try:
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+                        tmp_path = tmp.name
+                        while True:
+                            chunk = await upload.read(_UPLOAD_CHUNK_SIZE)
+                            if not chunk:
+                                break
+                            tmp.write(chunk)
+
                     with zipfile.ZipFile(tmp_path, "r") as zf:
                         for zip_entry in zf.namelist():
                             # Skip directories and hidden/system files
@@ -244,7 +247,11 @@ async def bulk_import_images(
                         detail=f"File '{upload.filename}' is not a valid zip archive",
                     )
                 finally:
-                    os.unlink(tmp_path)
+                    if tmp_path is not None:
+                        try:
+                            os.unlink(tmp_path)
+                        except OSError:
+                            pass
             else:
                 # Regular image file
                 if not _is_image_filename(upload.filename):
