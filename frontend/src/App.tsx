@@ -220,6 +220,7 @@ export default function App() {
     setProfileOpen(false)
     setEditModalOpen(false)
     setImageEditOpen(false)
+    setBrowseEditImage(null)
   }, [currentUser])
 
   const loadCategories = useCallback(async () => {
