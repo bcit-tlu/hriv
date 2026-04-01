@@ -28,7 +28,6 @@ import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import ClearIcon from '@mui/icons-material/Clear'
-import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import FilterListIcon from '@mui/icons-material/FilterList'
@@ -116,13 +115,12 @@ interface ManagePageProps {
   onViewImage?: (image: ApiImage) => void
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
-  onNewCategory?: () => void
   onAddCategory?: (label: string, parentId: number | null) => Promise<void>
   onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
 }
 
-export default function ManagePage({ categories, onViewImage, onNavigateCategory, onCategoriesChanged, onNewCategory, onAddCategory, onEditCategory, onToggleVisibility }: ManagePageProps) {
+export default function ManagePage({ categories, onViewImage, onNavigateCategory, onCategoriesChanged, onAddCategory, onEditCategory, onToggleVisibility }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
   const [programs, setPrograms] = useState<Program[]>([])
   const [loading, setLoading] = useState(true)
@@ -484,21 +482,12 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
               Bulk Edit ({selected.size} selected)
             </Button>
           )}
-          {onNewCategory && (
-            <Button
-              variant="contained"
-              startIcon={<CreateNewFolderIcon />}
-              onClick={onNewCategory}
-            >
-              Add/Edit Categories
-            </Button>
-          )}
           <Button
             variant="outlined"
             startIcon={<AddPhotoAlternateIcon />}
             onClick={() => setUploadOpen(true)}
           >
-            Upload Image
+            Add Image
           </Button>
         </Box>
       </Box>
