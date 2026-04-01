@@ -31,9 +31,9 @@ async def get_announcement(db: Annotated[AsyncSession, Depends(get_db)]):
 async def update_announcement(
     body: AnnouncementUpdate,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _admin: Annotated[None, Depends(require_role("admin"))],
+    _editor: Annotated[None, Depends(require_role("admin", "instructor"))],
 ):
-    """Update the site-wide announcement. Admin only."""
+    """Update the site-wide announcement. Admin and instructor."""
     result = await db.execute(select(Announcement).where(Announcement.id == 1))
     ann = result.scalar_one_or_none()
     if ann is None:

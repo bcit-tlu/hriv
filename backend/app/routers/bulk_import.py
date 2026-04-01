@@ -1,4 +1,4 @@
-"""Bulk image import endpoints (admin-only).
+"""Bulk image import endpoints (admin and instructor).
 
 Accepts multiple image files and/or zip archives, extracts images,
 and processes them in the background with concurrency limiting.
@@ -27,7 +27,7 @@ from ..schemas import BulkImportJobOut
 
 router = APIRouter(prefix="/admin/bulk-import", tags=["admin"])
 
-_admin = require_role("admin")
+_editor = require_role("admin", "instructor")
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +178,7 @@ async def bulk_import_images(
     files: Annotated[list[UploadFile], File()],
     category_id: Annotated[int, Form()],
     background_tasks: BackgroundTasks,
-    _user: Annotated[User, Depends(_admin)],
+    _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
 ) -> BulkImportJob:
     """Upload multiple image files and/or zip archives for bulk import.
@@ -306,7 +306,7 @@ async def bulk_import_images(
 
 @router.get("/", response_model=list[BulkImportJobOut])
 async def list_bulk_import_jobs(
-    _user: Annotated[User, Depends(_admin)],
+    _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
 ) -> list[BulkImportJob]:
     """List all bulk import jobs, most recent first."""
@@ -318,7 +318,7 @@ async def list_bulk_import_jobs(
 @router.get("/{job_id}", response_model=BulkImportJobOut)
 async def get_bulk_import_job(
     job_id: int,
-    _user: Annotated[User, Depends(_admin)],
+    _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
 ) -> BulkImportJob:
     """Get the current status of a bulk import job."""

@@ -32,6 +32,9 @@ All seed users share the password `password`.
 | Create/update categories        | Yes   | Yes        | No      |
 | Delete categories               | Yes   | No         | No      |
 | Manage page (image table)       | Yes   | Yes        | No      |
+| Bulk import images              | Yes   | Yes        | No      |
+| Manage programs                 | Yes   | Yes        | No      |
+| Manage announcement             | Yes   | Yes        | No      |
 | Admin page (DB import/export)   | Yes   | No         | No      |
 | User management (add/delete)    | Yes   | No         | No      |
 
