@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -19,9 +19,15 @@ export default function ReportIssueModal({ open, onClose }: ReportIssueModalProp
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+  }, [])
 
   const handleClose = () => {
     if (submitting) return
+    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
     setDescription('')
     setError('')
     setSuccess('')
@@ -47,7 +53,8 @@ export default function ReportIssueModal({ open, onClose }: ReportIssueModalProp
       setSuccess(`Issue created successfully.`)
       setDescription('')
       // Auto-close after a short delay
-      setTimeout(() => {
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null
         setSuccess('')
         handleClose()
       }, 2000)
