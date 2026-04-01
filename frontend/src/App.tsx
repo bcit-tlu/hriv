@@ -40,7 +40,6 @@ import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
 import AnnouncementBanner from './components/AnnouncementBanner'
 import AddEditPersonModal from './components/AddEditPersonModal'
-import BulkImportModal from './components/BulkImportModal'
 import ManagePage from './components/ManagePage'
 import PeoplePage from './components/PeoplePage'
 import LoginScreen from './components/LoginScreen'
@@ -170,9 +169,6 @@ export default function App() {
 
   // Program management modal state (for Manage menu)
   const [programModalOpen, setProgramModalOpen] = useState(false)
-
-  // Bulk import modal state (for Images page)
-  const [bulkImportOpen, setBulkImportOpen] = useState(false)
 
   // Move category dialog state
   const [moveCatOpen, setMoveCatOpen] = useState(false)
@@ -1336,19 +1332,6 @@ export default function App() {
         onDelete={handleDeleteProgram}
       />
 
-      {/* Bulk import modal (from browse/Images page) */}
-      <BulkImportModal
-        open={bulkImportOpen}
-        onClose={() => {
-          setBulkImportOpen(false)
-          loadCategories()
-          loadUncategorizedImages()
-        }}
-        categories={categories}
-        onAddCategory={addCategoryInline}
-        onEditCategory={editCategoryInline}
-        onToggleVisibility={toggleCategoryVisibility}
-      />
 
       {/* Report issue modal */}
       <ReportIssueModal
