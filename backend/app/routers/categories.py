@@ -27,6 +27,9 @@ async def _load_tree(db: AsyncSession, parent_id: int | None, *, user_role: str 
 
     tree: list[CategoryTree] = []
     for cat in cats:
+        # Hide categories with status='hidden' from students
+        if user_role == "student" and cat.status == "hidden":
+            continue
         children = await _load_tree(db, cat.id, user_role=user_role)
         images = cat.images if user_role != "student" else [img for img in cat.images if img.active]
         tree.append(CategoryTree(

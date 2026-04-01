@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
 from ..database import get_db
-from ..models import Image, Program, User
+from ..models import Category, Image, Program, User
 from ..schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageOut
 
 router = APIRouter(prefix="/images", tags=["images"])
@@ -26,6 +26,11 @@ async def list_images(
         stmt = stmt.where(Image.category_id == category_id)
     if _user.role == "student":
         stmt = stmt.where(Image.active.is_(True))
+        # Exclude images belonging to hidden categories
+        hidden_cat_ids = select(Category.id).where(Category.status == "hidden").scalar_subquery()
+        stmt = stmt.where(
+            (Image.category_id.is_(None)) | (~Image.category_id.in_(hidden_cat_ids))
+        )
     stmt = stmt.order_by(Image.name)
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -40,8 +45,14 @@ async def get_image(
     img = await db.get(Image, image_id)
     if not img:
         raise HTTPException(status_code=404, detail="Image not found")
-    if not img.active and _user.role == "student":
-        raise HTTPException(status_code=404, detail="Image not found")
+    if _user.role == "student":
+        if not img.active:
+            raise HTTPException(status_code=404, detail="Image not found")
+        # Block access to images in hidden categories
+        if img.category_id is not None:
+            cat = await db.get(Category, img.category_id)
+            if cat and cat.status == "hidden":
+                raise HTTPException(status_code=404, detail="Image not found")
     return img
 
 
