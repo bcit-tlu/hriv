@@ -27,6 +27,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
+import CollectionsIcon from '@mui/icons-material/Collections'
 import ClearIcon from '@mui/icons-material/Clear'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
@@ -38,6 +39,7 @@ import { fetchImages, fetchPrograms, updateImage, deleteImage, bulkUpdateImages,
 import type { ApiImage } from '../api'
 import type { Category, Program } from '../types'
 import BulkEditImagesModal from './BulkEditImagesModal'
+import BulkImportModal from './BulkImportModal'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData } from './EditImageModal'
 import MoveImageDialog from './MoveImageDialog'
@@ -145,6 +147,9 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
 
   // Upload modal state
   const [uploadOpen, setUploadOpen] = useState(false)
+
+  // Bulk import modal state
+  const [bulkImportOpen, setBulkImportOpen] = useState(false)
 
   // Move modal state
   const [moveOpen, setMoveOpen] = useState(false)
@@ -483,11 +488,18 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
             </Button>
           )}
           <Button
-            variant="outlined"
+            variant="contained"
             startIcon={<AddPhotoAlternateIcon />}
             onClick={() => setUploadOpen(true)}
           >
             Add Image
+          </Button>
+          <Button
+            variant="outlined"
+            startIcon={<CollectionsIcon />}
+            onClick={() => setBulkImportOpen(true)}
+          >
+            Bulk Import
           </Button>
         </Box>
       </Box>
@@ -845,6 +857,20 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         categories={categories}
         programs={programs}
         selectedCount={selected.size}
+        onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleVisibility}
+      />
+
+      {/* Bulk import modal */}
+      <BulkImportModal
+        open={bulkImportOpen}
+        onClose={() => {
+          setBulkImportOpen(false)
+          loadImages()
+          onCategoriesChanged?.()
+        }}
+        categories={categories}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}

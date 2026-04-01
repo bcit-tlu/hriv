@@ -29,7 +29,6 @@ import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
-import CollectionsIcon from '@mui/icons-material/Collections'
 import EditIcon from '@mui/icons-material/Edit'
 import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
@@ -734,8 +733,6 @@ export default function App() {
               }}
             />
             {canEditContent && <Tab label="Images" value="manage" />}
-            {canManageUsers && <Tab label="People" value="people" />}
-            {canManageUsers && <Tab label="Admin" value="admin" />}
             {canEditContent && (
               <Tab
                 label="Manage"
@@ -743,6 +740,8 @@ export default function App() {
                 onClick={(e) => setManageMenuAnchor(e.currentTarget)}
               />
             )}
+            {canManageUsers && <Tab label="People" value="people" />}
+            {canManageUsers && <Tab label="Admin" value="admin" />}
           </Tabs>
           <Menu
             anchorEl={manageMenuAnchor}
@@ -750,12 +749,8 @@ export default function App() {
             onClose={() => setManageMenuAnchor(null)}
           >
             <MenuItem onClick={() => { setManageMenuAnchor(null); setDialogOpen(true) }}>Categories</MenuItem>
-            {canManageUsers && (
-              <MenuItem onClick={() => { setManageMenuAnchor(null); setProgramModalOpen(true) }}>Programs</MenuItem>
-            )}
-            {canManageUsers && (
-              <MenuItem onClick={() => { setManageMenuAnchor(null); openAnnModal() }}>Announcement</MenuItem>
-            )}
+            <MenuItem onClick={() => { setManageMenuAnchor(null); setProgramModalOpen(true) }}>Programs</MenuItem>
+            <MenuItem onClick={() => { setManageMenuAnchor(null); openAnnModal() }}>Announcement</MenuItem>
           </Menu>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <IconButton
@@ -1072,18 +1067,11 @@ export default function App() {
                 {canEditContent && (
                   <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
                     <Button
-                      variant="outlined"
+                      variant="contained"
                       startIcon={<AddPhotoAlternateIcon />}
                       onClick={() => setUploadOpen(true)}
                     >
                       Add Image
-                    </Button>
-                    <Button
-                      variant="outlined"
-                      startIcon={<CollectionsIcon />}
-                      onClick={() => setBulkImportOpen(true)}
-                    >
-                      Bulk Import
                     </Button>
                   </Box>
                 )}
@@ -1164,20 +1152,35 @@ export default function App() {
           borderColor: 'divider',
         }}
       >
-        <Link
-          href={
-            import.meta.env.VITE_APP_VERSION && import.meta.env.VITE_APP_VERSION !== 'dev'
-              ? `https://github.com/bcit-tlu/corgi/releases`
-              : `https://github.com/bcit-tlu/corgi`
-          }
-          target="_blank"
-          rel="noopener noreferrer"
-          variant="caption"
-          color="text.secondary"
-          underline="hover"
-        >
-          {import.meta.env.VITE_APP_VERSION || 'dev'}
-        </Link>
+        <Typography variant="caption" color="text.secondary">
+          <strong>BCIT Teaching and Learning Unit</strong>
+          {' - '}
+          <strong>Source code:</strong>{' '}
+          <Link
+            href="https://www.mozilla.org/en-US/MPL/2.0/"
+            target="_blank"
+            rel="noopener noreferrer"
+            color="text.secondary"
+            underline="hover"
+          >
+            MPL-2.0
+          </Link>
+          {' - '}
+          <strong>Version:</strong>{' '}
+          <Link
+            href={
+              import.meta.env.VITE_APP_VERSION && import.meta.env.VITE_APP_VERSION !== 'dev'
+                ? `https://github.com/bcit-tlu/corgi/releases`
+                : `https://github.com/bcit-tlu/corgi`
+            }
+            target="_blank"
+            rel="noopener noreferrer"
+            color="text.secondary"
+            underline="hover"
+          >
+            {import.meta.env.VITE_APP_VERSION || 'dev'}
+          </Link>
+        </Typography>
         <Link
           component="button"
           variant="caption"
