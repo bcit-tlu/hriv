@@ -410,8 +410,7 @@ export default function SearchModal({
       slotProps={{
         paper: {
           sx: {
-            minHeight: '60vh',
-            maxHeight: '80vh',
+            height: '80vh',
             display: 'flex',
             flexDirection: 'column',
           },
@@ -422,7 +421,7 @@ export default function SearchModal({
         <TextField
           autoFocus
           fullWidth
-          placeholder="Search categories, images, programs, people\u2026"
+          placeholder="Search categories, images, programs, people"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           slotProps={{
@@ -438,7 +437,7 @@ export default function SearchModal({
 
         {/* Filter chips */}
         {query.trim().length > 0 && allResults.length > 0 && (
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
             <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', mr: 0.5 }}>
               Type:
             </Typography>
@@ -448,6 +447,7 @@ export default function SearchModal({
                   icon={f.icon}
                   label={f.label}
                   size="small"
+                  sx={{ px: 0.5 }}
                   variant={typeFilters.has(f.key) ? 'filled' : 'outlined'}
                   color={typeFilters.has(f.key) ? 'primary' : 'default'}
                   onClick={() => toggleTypeFilter(f.key)}
@@ -464,6 +464,7 @@ export default function SearchModal({
                   icon={f.icon}
                   label={f.label}
                   size="small"
+                  sx={{ px: 0.5 }}
                   variant={fieldFilters.has(f.key) ? 'filled' : 'outlined'}
                   color={fieldFilters.has(f.key) ? 'primary' : 'default'}
                   onClick={() => toggleFieldFilter(f.key)}
