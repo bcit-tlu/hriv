@@ -700,7 +700,7 @@ export default function App() {
           bgcolor: page === 'people' || page === 'admin' ? '#DAC7B5' : undefined,
         }}
       >
-        <Container maxWidth={false} sx={{ px: '120px' }}>
+        <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
           {page === 'admin' && canManageUsers ? (
             <AdminPage onAnnouncementChange={loadAnnouncement} />
           ) : page === 'people' && canManageUsers ? (
