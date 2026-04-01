@@ -1328,7 +1328,11 @@ export default function App() {
       {/* Bulk import modal (from browse/Images page) */}
       <BulkImportModal
         open={bulkImportOpen}
-        onClose={() => setBulkImportOpen(false)}
+        onClose={() => {
+          setBulkImportOpen(false)
+          loadCategories()
+          loadUncategorizedImages()
+        }}
         categories={categories}
         onAddCategory={addCategoryInline}
         onEditCategory={editCategoryInline}
