@@ -209,12 +209,12 @@ async def bulk_import_images(
             if upload.filename.lower().endswith(".zip"):
                 # Stream zip to a temp file, then extract images
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+                    tmp_path = tmp.name
                     while True:
                         chunk = await upload.read(_UPLOAD_CHUNK_SIZE)
                         if not chunk:
                             break
                         tmp.write(chunk)
-                    tmp_path = tmp.name
 
                 try:
                     with zipfile.ZipFile(tmp_path, "r") as zf:
