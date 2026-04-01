@@ -173,7 +173,7 @@ export default function UploadImageModal({
       fullWidth
       TransitionProps={{ onExited: handleReset }}
     >
-      <DialogTitle>Upload Image</DialogTitle>
+      <DialogTitle>Add Image</DialogTitle>
       <DialogContent
         sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
       >
@@ -327,8 +327,7 @@ export default function UploadImageModal({
           </Box>
         )}
         <Typography variant="caption" color="text.secondary">
-          The image will be processed in the background using VIPS to generate
-          zoomable tiles for the viewer.
+          The image will be processed in the background to generate a zoomable view.
         </Typography>
         {error && (
           <Typography variant="body2" color="error">
@@ -346,7 +345,7 @@ export default function UploadImageModal({
           onClick={handleUpload}
           startIcon={uploading ? <CircularProgress size={16} /> : undefined}
         >
-          {uploading ? 'Uploading…' : 'Upload'}
+          {uploading ? 'Adding…' : 'Add'}
         </Button>
       </DialogActions>
     </Dialog>

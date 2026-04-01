@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import Alert from '@mui/material/Alert'
 import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
@@ -6,6 +7,11 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import CircularProgress from '@mui/material/CircularProgress'
 import Container from '@mui/material/Container'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
+import FormControlLabel from '@mui/material/FormControlLabel'
 import IconButton from '@mui/material/IconButton'
 import Paper from '@mui/material/Paper'
 import Popover from '@mui/material/Popover'
@@ -14,12 +20,16 @@ import Typography from '@mui/material/Typography'
 import Button from '@mui/material/Button'
 import MuiBreadcrumbs from '@mui/material/Breadcrumbs'
 import Link from '@mui/material/Link'
+import Menu from '@mui/material/Menu'
+import MenuItem from '@mui/material/MenuItem'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import Snackbar from '@mui/material/Snackbar'
+import Switch from '@mui/material/Switch'
+import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
-import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
+import CollectionsIcon from '@mui/icons-material/Collections'
 import EditIcon from '@mui/icons-material/Edit'
 import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
@@ -31,11 +41,13 @@ import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
 import AnnouncementBanner from './components/AnnouncementBanner'
 import AddEditPersonModal from './components/AddEditPersonModal'
+import BulkImportModal from './components/BulkImportModal'
 import ManagePage from './components/ManagePage'
 import PeoplePage from './components/PeoplePage'
 import LoginScreen from './components/LoginScreen'
 import EditImageModal from './components/EditImageModal'
 import type { ImageFormData } from './components/EditImageModal'
+import ProgramManagementModal from './components/ProgramManagementModal'
 import ReportIssueModal from './components/ReportIssueModal'
 import UploadImageModal from './components/UploadImageModal'
 import { useAuth } from './useAuth'
@@ -46,9 +58,15 @@ import {
   createCategory as apiCreateCategory,
   deleteCategory as apiDeleteCategory,
   updateCategory as apiUpdateCategory,
+  updateUser as apiUpdateUser,
+  fetchPrograms as apiFetchPrograms,
+  updateImage as apiUpdateImage,
+  updateAnnouncement,
+  createProgram,
+  updateProgram,
+  deleteProgram,
 } from './api'
 import type { ApiCategoryTree, ApiImage, ApiUser } from './api'
-import { updateUser as apiUpdateUser, fetchPrograms as apiFetchPrograms, updateImage as apiUpdateImage } from './api'
 import MoveCategoryDialog from './components/MoveCategoryDialog'
 import type { Category, ImageItem, Program } from './types'
 
@@ -139,6 +157,24 @@ export default function App() {
   // Report issue modal state
   const [reportIssueOpen, setReportIssueOpen] = useState(false)
 
+  // Manage menu state
+  const [manageMenuAnchor, setManageMenuAnchor] = useState<HTMLElement | null>(null)
+
+  // Announcement modal state (for Manage menu)
+  const [annModalOpen, setAnnModalOpen] = useState(false)
+  const [annMessage, setAnnMessage] = useState('')
+  const [annEnabled, setAnnEnabled] = useState(false)
+  const [annDraftMessage, setAnnDraftMessage] = useState('')
+  const [annDraftEnabled, setAnnDraftEnabled] = useState(false)
+  const [annSaving, setAnnSaving] = useState(false)
+  const [annError, setAnnError] = useState<string | null>(null)
+
+  // Program management modal state (for Manage menu)
+  const [programModalOpen, setProgramModalOpen] = useState(false)
+
+  // Bulk import modal state (for Images page)
+  const [bulkImportOpen, setBulkImportOpen] = useState(false)
+
   // Move category dialog state
   const [moveCatOpen, setMoveCatOpen] = useState(false)
   const [movingCategory, setMovingCategory] = useState<Category | null>(null)
@@ -176,6 +212,8 @@ export default function App() {
     try {
       const ann = await fetchAnnouncement()
       setAnnouncement(ann.enabled ? ann.message : '')
+      setAnnMessage(ann.message)
+      setAnnEnabled(ann.enabled)
     } catch {
       // Silently ignore — announcement is non-critical
     }
@@ -272,6 +310,60 @@ export default function App() {
       // Silently ignore — programs are non-critical for initial load
     }
   }, [])
+
+  // Announcement modal handlers (for Manage menu)
+  const openAnnModal = useCallback(() => {
+    setAnnDraftMessage(annMessage)
+    setAnnDraftEnabled(annEnabled)
+    setAnnError(null)
+    setAnnModalOpen(true)
+  }, [annMessage, annEnabled])
+
+  const handleAnnSave = useCallback(async () => {
+    setAnnSaving(true)
+    try {
+      const updated = await updateAnnouncement({
+        message: annDraftMessage,
+        enabled: annDraftEnabled,
+      })
+      setAnnMessage(updated.message)
+      setAnnEnabled(updated.enabled)
+      setAnnModalOpen(false)
+      loadAnnouncement()
+    } catch (err) {
+      setAnnError(err instanceof Error ? err.message : 'Failed to update announcement')
+    } finally {
+      setAnnSaving(false)
+    }
+  }, [annDraftMessage, annDraftEnabled, loadAnnouncement])
+
+  // Program management handlers (for Manage menu)
+  const handleAddProgram = useCallback(async (name: string) => {
+    try {
+      await createProgram({ name })
+      await loadPrograms()
+    } catch (err) {
+      console.error('Failed to add program', err)
+    }
+  }, [loadPrograms])
+
+  const handleEditProgram = useCallback(async (id: number, name: string) => {
+    try {
+      await updateProgram(id, { name })
+      await loadPrograms()
+    } catch (err) {
+      console.error('Failed to edit program', err)
+    }
+  }, [loadPrograms])
+
+  const handleDeleteProgram = useCallback(async (id: number) => {
+    try {
+      await deleteProgram(id)
+      await loadPrograms()
+    } catch (err) {
+      console.error('Failed to delete program', err)
+    }
+  }, [loadPrograms])
 
   useEffect(() => {
     if (currentUser) {
@@ -622,9 +714,11 @@ export default function App() {
           <Tabs
             value={page}
             onChange={(_, v: Page) => {
-              setPage(v)
-              clearImage()
-              setPath([])
+              if (v === 'browse' || v === 'manage' || v === 'people' || v === 'admin') {
+                setPage(v)
+                clearImage()
+                setPath([])
+              }
             }}
             textColor="inherit"
             TabIndicatorProps={{ style: { backgroundColor: 'white' } }}
@@ -642,7 +736,27 @@ export default function App() {
             {canEditContent && <Tab label="Images" value="manage" />}
             {canManageUsers && <Tab label="People" value="people" />}
             {canManageUsers && <Tab label="Admin" value="admin" />}
+            {canEditContent && (
+              <Tab
+                label="Manage"
+                value={false}
+                onClick={(e) => setManageMenuAnchor(e.currentTarget)}
+              />
+            )}
           </Tabs>
+          <Menu
+            anchorEl={manageMenuAnchor}
+            open={Boolean(manageMenuAnchor)}
+            onClose={() => setManageMenuAnchor(null)}
+          >
+            <MenuItem onClick={() => { setManageMenuAnchor(null); setDialogOpen(true) }}>Categories</MenuItem>
+            {canManageUsers && (
+              <MenuItem onClick={() => { setManageMenuAnchor(null); setProgramModalOpen(true) }}>Programs</MenuItem>
+            )}
+            {canManageUsers && (
+              <MenuItem onClick={() => { setManageMenuAnchor(null); openAnnModal() }}>Announcement</MenuItem>
+            )}
+          </Menu>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <IconButton
               ref={avatarRef}
@@ -736,7 +850,7 @@ export default function App() {
       >
         <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
           {page === 'admin' && canManageUsers ? (
-            <AdminPage onAnnouncementChange={loadAnnouncement} />
+            <AdminPage />
           ) : page === 'people' && canManageUsers ? (
             <PeoplePage />
           ) : page === 'manage' && canEditContent ? (
@@ -775,7 +889,7 @@ export default function App() {
                 loadCategories()
                 loadUncategorizedImages()
               }}
-              onNewCategory={() => setDialogOpen(true)}
+
               onAddCategory={addCategoryInline}
             />
           ) : selectedImage ? (
@@ -864,10 +978,7 @@ export default function App() {
 
               <Box sx={{ mt: 2 }}>
                 <Typography variant="body2" color="text.secondary">
-                  Use your scroll wheel to zoom, or click and drag to pan.
-                  Use the rotation buttons to rotate the image, or pinch-rotate
-                  on touch devices. The mini-map in the bottom-right corner
-                  shows your current viewport.
+                  Scroll or tap to zoom, and drag to pan. Buttons in the bottom left corner control the view. On touch-devices, pinch-turn to rotate. The mini-map in the bottom-right corner shows your current viewport.
                 </Typography>
               </Box>
 
@@ -961,18 +1072,18 @@ export default function App() {
                 {canEditContent && (
                   <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
                     <Button
-                      variant="contained"
-                      startIcon={<CreateNewFolderIcon />}
-                      onClick={() => setDialogOpen(true)}
-                    >
-                      Add/Edit Categories
-                    </Button>
-                    <Button
                       variant="outlined"
                       startIcon={<AddPhotoAlternateIcon />}
                       onClick={() => setUploadOpen(true)}
                     >
-                      Upload Image
+                      Add Image
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      startIcon={<CollectionsIcon />}
+                      onClick={() => setBulkImportOpen(true)}
+                    >
+                      Bulk Import
                     </Button>
                   </Box>
                 )}
@@ -1053,9 +1164,20 @@ export default function App() {
           borderColor: 'divider',
         }}
       >
-        <Typography variant="caption" color="text.secondary">
+        <Link
+          href={
+            import.meta.env.VITE_APP_VERSION && import.meta.env.VITE_APP_VERSION !== 'dev'
+              ? `https://github.com/bcit-tlu/corgi/releases`
+              : `https://github.com/bcit-tlu/corgi`
+          }
+          target="_blank"
+          rel="noopener noreferrer"
+          variant="caption"
+          color="text.secondary"
+          underline="hover"
+        >
           {import.meta.env.VITE_APP_VERSION || 'dev'}
-        </Typography>
+        </Link>
         <Link
           component="button"
           variant="caption"
@@ -1151,6 +1273,78 @@ export default function App() {
         }}
         programs={programs}
         user={currentApiUser}
+      />
+
+      {/* Announcement modal (from Manage menu) */}
+      <Dialog
+        open={annModalOpen}
+        onClose={() => setAnnModalOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Manage Announcement</DialogTitle>
+        <DialogContent>
+          <TextField
+            label="Announcement Message"
+            multiline
+            minRows={3}
+            maxRows={8}
+            fullWidth
+            value={annDraftMessage}
+            onChange={(e) => setAnnDraftMessage(e.target.value)}
+            sx={{ mt: 1 }}
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={annDraftEnabled}
+                onChange={(e) => setAnnDraftEnabled(e.target.checked)}
+              />
+            }
+            label="Enable announcement"
+            sx={{ mt: 2 }}
+          />
+          {annError && (
+            <Alert severity="error" sx={{ mt: 2 }} onClose={() => setAnnError(null)}>
+              {annError}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAnnModalOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleAnnSave}
+            disabled={annSaving}
+            startIcon={annSaving ? <CircularProgress size={18} color="inherit" /> : undefined}
+          >
+            {annSaving ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Program management modal (from Manage menu) */}
+      <ProgramManagementModal
+        open={programModalOpen}
+        onClose={() => setProgramModalOpen(false)}
+        programs={programs}
+        onAdd={handleAddProgram}
+        onEdit={handleEditProgram}
+        onDelete={handleDeleteProgram}
+      />
+
+      {/* Bulk import modal (from browse/Images page) */}
+      <BulkImportModal
+        open={bulkImportOpen}
+        onClose={() => {
+          setBulkImportOpen(false)
+          loadCategories()
+          loadUncategorizedImages()
+        }}
+        categories={categories}
+        onAddCategory={addCategoryInline}
+        onEditCategory={editCategoryInline}
+        onToggleVisibility={toggleCategoryVisibility}
       />
 
       {/* Report issue modal */}

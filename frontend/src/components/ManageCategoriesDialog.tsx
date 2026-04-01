@@ -120,7 +120,7 @@ export default function ManageCategoriesDialog({
   return (
     <>
       <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-        <DialogTitle>Add/Edit Categories</DialogTitle>
+        <DialogTitle>Manage Categories</DialogTitle>
         <DialogContent>
           <List dense disablePadding>
             {/* Root-level add button */}

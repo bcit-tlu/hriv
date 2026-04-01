@@ -198,8 +198,11 @@ export default function BulkImportModal({
                   color="primary"
                   sx={{ cursor: 'pointer', textDecoration: 'underline' }}
                 >
-                  browse to select files
+                  browse to upload
                 </Typography>
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                Supports JPEG, PNG, TIFF, BMP, GIF, WebP, and SVS files.
               </Typography>
             </Box>
 
@@ -233,7 +236,7 @@ export default function BulkImportModal({
             </Box>
 
             <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
-              All images will be imported with sane defaults: active, name set to
+              All images will be imported with the following defaults: active, name set to
               filename, copyright set to &quot;Public Domain&quot;. You can bulk-edit
               metadata later from the Images page.
             </Typography>

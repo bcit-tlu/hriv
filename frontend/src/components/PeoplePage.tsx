@@ -12,7 +12,6 @@ import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
 import Typography from '@mui/material/Typography'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
-import GroupWorkIcon from '@mui/icons-material/GroupWork'
 import {
   fetchUsers,
   fetchPrograms,
@@ -213,13 +212,6 @@ export default function PeoplePage() {
             onClick={handleOpenAdd}
           >
             Add Person
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<GroupWorkIcon />}
-            onClick={() => setProgramModalOpen(true)}
-          >
-            Add / Edit Program
           </Button>
         </Box>
       </Box>
