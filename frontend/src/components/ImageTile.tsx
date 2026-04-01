@@ -4,16 +4,19 @@ import CardActionArea from '@mui/material/CardActionArea'
 import CardMedia from '@mui/material/CardMedia'
 import CardContent from '@mui/material/CardContent'
 import Chip from '@mui/material/Chip'
+import IconButton from '@mui/material/IconButton'
 import Typography from '@mui/material/Typography'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
 import type { ImageItem, Program } from '../types'
 
 interface ImageTileProps {
   image: ImageItem
   onClick: (image: ImageItem) => void
   programs: Program[]
+  onEditDetails?: (image: ImageItem) => void
 }
 
-export default function ImageTile({ image, onClick, programs }: ImageTileProps) {
+export default function ImageTile({ image, onClick, programs, onEditDetails }: ImageTileProps) {
   const programChips = image.programIds
     .map((pid) => programs.find((p) => p.id === pid))
     .filter((p): p is Program => p != null)
@@ -22,8 +25,27 @@ export default function ImageTile({ image, onClick, programs }: ImageTileProps) 
   return (
     <Card
       elevation={2}
-      sx={{ width: '100%', maxWidth: 300 }}
+      sx={{ width: '100%', maxWidth: 300, position: 'relative' }}
     >
+      {onEditDetails && (
+        <IconButton
+          size="small"
+          onClick={(e) => {
+            e.stopPropagation()
+            onEditDetails(image)
+          }}
+          sx={{
+            position: 'absolute',
+            top: 4,
+            right: 4,
+            zIndex: 1,
+            bgcolor: 'rgba(255,255,255,0.8)',
+            '&:hover': { bgcolor: 'rgba(255,255,255,0.95)' },
+          }}
+        >
+          <MoreVertIcon fontSize="small" />
+        </IconButton>
+      )}
       <CardActionArea onClick={() => onClick(image)}>
         <CardMedia
           component="img"

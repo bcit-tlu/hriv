@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -54,38 +54,6 @@ function EditImageForm({
   const [note, setNote] = useState(image?.note ?? '')
   const [programIds, setProgramIds] = useState<number[]>(image?.program_ids ?? [])
   const [active, setActive] = useState(image?.active ?? true)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [file, setFile] = useState<File | null>(null)
-  const [dragOver, setDragOver] = useState(false)
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
-    const dropped = e.dataTransfer.files[0]
-    if (dropped && dropped.type.startsWith('image/')) {
-      setFile(dropped)
-    }
-  }, [])
-
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(true)
-  }, [])
-
-  const handleDragLeave = useCallback(() => {
-    setDragOver(false)
-  }, [])
-
-  const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const selected = e.target.files?.[0]
-      if (selected) {
-        setFile(selected)
-      }
-    },
-    [],
-  )
-
   const handleProgramChange = (event: SelectChangeEvent<number[]>) => {
     const value = event.target.value
     setProgramIds(typeof value === 'string' ? [] : value)
@@ -110,23 +78,12 @@ function EditImageForm({
       <DialogContent
         sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
       >
-        {/* Replace image drop zone */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          hidden
-          onChange={handleFileSelect}
-        />
+        {/* Replace image drop zone (disabled until replacement is implemented) */}
         <Box
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onClick={() => fileInputRef.current?.click()}
           sx={{
             mt: 1,
             border: '2px dashed',
-            borderColor: dragOver ? 'primary.main' : 'grey.400',
+            borderColor: 'grey.300',
             borderRadius: 2,
             p: 3,
             display: 'flex',
@@ -134,40 +91,24 @@ function EditImageForm({
             alignItems: 'center',
             justifyContent: 'center',
             minHeight: 120,
-            bgcolor: dragOver ? 'action.hover' : 'grey.50',
-            transition: 'all 0.2s',
-            cursor: 'pointer',
+            bgcolor: 'grey.100',
+            opacity: 0.6,
+            pointerEvents: 'none',
           }}
         >
           <CloudUploadIcon
-            sx={{ fontSize: 36, color: 'grey.500', mb: 0.5 }}
+            sx={{ fontSize: 36, color: 'grey.400', mb: 0.5 }}
           />
-          {file ? (
-            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-              {file.name}
-            </Typography>
-          ) : (
-            <>
-              <Typography variant="body2" color="text.secondary">
-                Drag and drop to replace image
-              </Typography>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ mt: 0.5 }}
-              >
-                or{' '}
-                <Typography
-                  component="span"
-                  variant="caption"
-                  color="primary"
-                  sx={{ cursor: 'pointer', textDecoration: 'underline' }}
-                >
-                  browse to upload
-                </Typography>
-              </Typography>
-            </>
-          )}
+          <Typography variant="body2" color="text.disabled">
+            Drag and drop to replace image
+          </Typography>
+          <Typography
+            variant="caption"
+            color="text.disabled"
+            sx={{ mt: 0.5 }}
+          >
+            or browse to upload
+          </Typography>
         </Box>
         <Typography variant="caption" color="text.secondary">
           Image replacement processing will be added in a future update.
@@ -242,10 +183,10 @@ function EditImageForm({
         {image && image.created_at && image.updated_at && (
           <Box sx={{ display: 'flex', gap: 4, mt: 1 }}>
             <Typography variant="caption" color="text.secondary">
-              Created: {new Date(image.created_at).toLocaleString()}
+              <strong>Created:</strong> {new Date(image.created_at).toLocaleString()}
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              Modified: {new Date(image.updated_at).toLocaleString()}
+              <strong>Modified:</strong> {new Date(image.updated_at).toLocaleString()}
             </Typography>
           </Box>
         )}

@@ -142,6 +142,9 @@ export default function App() {
   // Image edit modal state (for viewer page)
   const [imageEditOpen, setImageEditOpen] = useState(false)
 
+  // Image edit modal state (for browse-view ellipsis icon)
+  const [browseEditImage, setBrowseEditImage] = useState<ImageItem | null>(null)
+
   // User profile popover + edit modal state
   const avatarRef = useRef<HTMLButtonElement>(null)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -475,6 +478,39 @@ export default function App() {
       }
     : null
 
+  // Build ApiImage shape from browseEditImage for EditImageModal on browse page
+  const browseApiImage: ApiImage | null = browseEditImage
+    ? {
+        id: browseEditImage.id,
+        name: browseEditImage.name,
+        thumb: browseEditImage.thumb,
+        tile_sources: browseEditImage.tileSources,
+        category_id: browseEditImage.categoryId ?? null,
+        copyright: browseEditImage.copyright ?? null,
+        note: browseEditImage.note ?? null,
+        program_ids: browseEditImage.programIds,
+        active: browseEditImage.active,
+        metadata_extra: null,
+        created_at: browseEditImage.createdAt ?? '',
+        updated_at: browseEditImage.updatedAt ?? '',
+      }
+    : null
+
+  const handleSaveBrowseImage = useCallback(
+    async (data: ImageFormData) => {
+      if (!browseEditImage) return
+      try {
+        await apiUpdateImage(browseEditImage.id, data)
+        setBrowseEditImage(null)
+        await loadCategories()
+        loadUncategorizedImages()
+      } catch (err) {
+        console.error('Failed to update image', err)
+      }
+    },
+    [browseEditImage, loadCategories, loadUncategorizedImages],
+  )
+
   const handleSaveViewerImage = useCallback(
     async (data: ImageFormData) => {
       if (!selectedImage) return
@@ -663,7 +699,7 @@ export default function App() {
           bgcolor: page === 'people' || page === 'admin' ? '#DAC7B5' : undefined,
         }}
       >
-        <Container maxWidth={false}>
+        <Container maxWidth={false} sx={{ px: '120px' }}>
           {page === 'admin' && canManageUsers ? (
             <AdminPage onAnnouncementChange={loadAnnouncement} />
           ) : page === 'people' && canManageUsers ? (
@@ -930,6 +966,7 @@ export default function App() {
                       image={img}
                       onClick={setSelectedImage}
                       programs={programs}
+                      onEditDetails={canEditContent ? setBrowseEditImage : undefined}
                     />
                   ))}
                 {currentImages.map((img) => (
@@ -938,6 +975,7 @@ export default function App() {
                     image={img}
                     onClick={setSelectedImage}
                     programs={programs}
+                    onEditDetails={canEditContent ? setBrowseEditImage : undefined}
                   />
                 ))}
               </Box>
@@ -1008,6 +1046,17 @@ export default function App() {
         onClose={() => setImageEditOpen(false)}
         onSave={handleSaveViewerImage}
         image={selectedApiImage}
+        categories={categories}
+        programs={programs}
+        onAddCategory={addCategoryInline}
+      />
+
+      {/* Browse-view image edit modal */}
+      <EditImageModal
+        open={browseEditImage != null}
+        onClose={() => setBrowseEditImage(null)}
+        onSave={handleSaveBrowseImage}
+        image={browseApiImage}
         categories={categories}
         programs={programs}
         onAddCategory={addCategoryInline}
