@@ -1194,6 +1194,7 @@ export default function App() {
         uncategorizedImages={uncategorizedImages}
         programs={programs}
         users={searchUsers}
+        isStudent={isStudent}
         onSelectCategory={(catPath) => {
           setPage('browse')
           setPath(catPath)

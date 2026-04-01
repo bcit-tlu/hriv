@@ -107,8 +107,10 @@ function collectCategoryResults(
   query: string,
   path: Category[],
   results: SearchResult[],
+  excludeHidden: boolean,
 ): void {
   for (const cat of cats) {
+    if (excludeHidden && cat.status === 'hidden') continue
     const currentPath = [...path, cat]
     const idx = cat.label.toLowerCase().indexOf(query)
     if (idx !== -1) {
@@ -123,7 +125,7 @@ function collectCategoryResults(
         payload: { kind: 'category', categoryPath: currentPath },
       })
     }
-    collectCategoryResults(cat.children, query, currentPath, results)
+    collectCategoryResults(cat.children, query, currentPath, results, excludeHidden)
   }
 }
 
@@ -132,13 +134,15 @@ function collectImageResults(
   query: string,
   path: Category[],
   results: SearchResult[],
+  excludeHidden: boolean,
 ): void {
   for (const cat of cats) {
+    if (excludeHidden && cat.status === 'hidden') continue
     const currentPath = [...path, cat]
     for (const img of cat.images) {
       addImageMatches(img, query, currentPath, results)
     }
-    collectImageResults(cat.children, query, currentPath, results)
+    collectImageResults(cat.children, query, currentPath, results, excludeHidden)
   }
 }
 
@@ -153,13 +157,14 @@ function addImageMatches(
     { field: 'Copyright', value: img.copyright },
     { field: 'Note', value: img.note },
   ]
-  for (const { field, value } of fields) {
+  for (let fi = 0; fi < fields.length; fi++) {
+    const { field, value } = fields[fi]
     if (!value) continue
     const idx = value.toLowerCase().indexOf(query)
     if (idx !== -1) {
       results.push({
         kind: 'image',
-        id: img.id * 1000 + fields.indexOf({ field, value }),
+        id: img.id * 1000 + fi,
         label: img.name,
         field,
         fieldValue: value,
@@ -180,6 +185,7 @@ interface SearchModalProps {
   uncategorizedImages: ImageItem[]
   programs: Program[]
   users: ApiUser[]
+  isStudent: boolean
   onSelectCategory: (path: Category[]) => void
   onSelectImage: (image: ImageItem, path: Category[]) => void
   onSelectProgram: () => void
@@ -193,6 +199,7 @@ export default function SearchModal({
   uncategorizedImages,
   programs,
   users,
+  isStudent,
   onSelectCategory,
   onSelectImage,
   onSelectProgram,
@@ -216,10 +223,10 @@ export default function SearchModal({
       const results: SearchResult[] = []
 
       // 1. Categories
-      collectCategoryResults(categories, lowerQ, [], results)
+      collectCategoryResults(categories, lowerQ, [], results, isStudent)
 
       // 2. Images within category tree
-      collectImageResults(categories, lowerQ, [], results)
+      collectImageResults(categories, lowerQ, [], results, isStudent)
 
       // 3. Uncategorized images
       for (const img of uncategorizedImages) {
@@ -250,12 +257,13 @@ export default function SearchModal({
           { field: 'Email', value: user.email },
           { field: 'Role', value: user.role },
         ]
-        for (const { field, value } of userFields) {
+        for (let fi = 0; fi < userFields.length; fi++) {
+          const { field, value } = userFields[fi]
           const idx = value.toLowerCase().indexOf(lowerQ)
           if (idx !== -1) {
             results.push({
               kind: 'user',
-              id: user.id * 1000 + userFields.findIndex((f) => f.field === field),
+              id: user.id * 1000 + fi,
               label: user.name,
               field,
               fieldValue: value,
@@ -269,7 +277,7 @@ export default function SearchModal({
 
       return results
     },
-    [categories, uncategorizedImages, programs, users],
+    [categories, uncategorizedImages, programs, users, isStudent],
   )
 
   const results = useMemo(() => buildResults(query), [query, buildResults])
