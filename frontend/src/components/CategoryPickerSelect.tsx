@@ -136,8 +136,6 @@ export default function CategoryPickerSelect({
     if (editingOpt && onEditCategory) {
       await onEditCategory(editingOpt.id, newLabel)
     }
-    setEditDialogOpen(false)
-    setEditingOpt(null)
   }
 
   return (

@@ -110,8 +110,6 @@ export default function ManageCategoriesDialog({
     if (editingCategory && onEditCategory) {
       await onEditCategory(editingCategory.id, newLabel)
     }
-    setEditDialogOpen(false)
-    setEditingCategory(null)
   }, [editingCategory, onEditCategory])
 
   return (
