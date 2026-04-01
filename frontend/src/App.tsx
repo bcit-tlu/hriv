@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import Alert from '@mui/material/Alert'
 import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
@@ -166,6 +167,7 @@ export default function App() {
   const [annDraftMessage, setAnnDraftMessage] = useState('')
   const [annDraftEnabled, setAnnDraftEnabled] = useState(false)
   const [annSaving, setAnnSaving] = useState(false)
+  const [annError, setAnnError] = useState<string | null>(null)
 
   // Program management modal state (for Manage menu)
   const [programModalOpen, setProgramModalOpen] = useState(false)
@@ -313,6 +315,7 @@ export default function App() {
   const openAnnModal = useCallback(() => {
     setAnnDraftMessage(annMessage)
     setAnnDraftEnabled(annEnabled)
+    setAnnError(null)
     setAnnModalOpen(true)
   }, [annMessage, annEnabled])
 
@@ -328,7 +331,7 @@ export default function App() {
       setAnnModalOpen(false)
       loadAnnouncement()
     } catch (err) {
-      console.error('Failed to update announcement', err)
+      setAnnError(err instanceof Error ? err.message : 'Failed to update announcement')
     } finally {
       setAnnSaving(false)
     }
@@ -1301,6 +1304,11 @@ export default function App() {
             label="Enable announcement"
             sx={{ mt: 2 }}
           />
+          {annError && (
+            <Alert severity="error" sx={{ mt: 2 }} onClose={() => setAnnError(null)}>
+              {annError}
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setAnnModalOpen(false)}>Cancel</Button>
