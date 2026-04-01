@@ -343,6 +343,7 @@ export async function uploadSourceImage(
   note?: string,
   programIds?: number[],
   active?: boolean,
+  onProgress?: (fraction: number) => void,
 ): Promise<ApiSourceImage> {
   const form = new FormData()
   form.append('file', file)
@@ -356,16 +357,39 @@ export async function uploadSourceImage(
     }
   }
   if (active !== undefined) form.append('active', String(active))
-  const res = await fetch(`${BASE}/api/source-images/upload`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: form,
+
+  // Use XMLHttpRequest for upload progress reporting (essential for large TIFFs)
+  return new Promise<ApiSourceImage>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${BASE}/api/source-images/upload`)
+
+    const hdrs = authHeaders()
+    for (const [k, v] of Object.entries(hdrs)) {
+      xhr.setRequestHeader(k, v)
+    }
+
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          onProgress(e.loaded / e.total)
+        }
+      })
+    }
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
+      } else {
+        reject(new Error(`Upload failed: ${xhr.responseText || xhr.statusText}`))
+      }
+    })
+
+    xhr.addEventListener('error', () => {
+      reject(new Error('Upload failed: network error'))
+    })
+
+    xhr.send(form)
   })
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText)
-    throw new Error(`Upload failed: ${text}`)
-  }
-  return res.json() as Promise<ApiSourceImage>
 }
 
 export function fetchSourceImages(): Promise<ApiSourceImage[]> {

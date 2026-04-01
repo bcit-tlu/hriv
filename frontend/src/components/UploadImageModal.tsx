@@ -10,6 +10,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import InputLabel from '@mui/material/InputLabel'
+import LinearProgress from '@mui/material/LinearProgress'
 import MenuItem from '@mui/material/MenuItem'
 import OutlinedInput from '@mui/material/OutlinedInput'
 import Select from '@mui/material/Select'
@@ -21,6 +22,27 @@ import type { SelectChangeEvent } from '@mui/material/Select'
 import { uploadSourceImage } from '../api'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import type { Category, Program } from '../types'
+
+/** Image file extensions accepted by the app (including TIFF). */
+const ACCEPTED_IMAGE_TYPES = 'image/*,.tif,.tiff'
+
+/** Recognised image extensions for drag-and-drop validation. */
+const IMAGE_EXTENSIONS = new Set([
+  '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff', '.svs',
+])
+
+function isImageFile(file: File): boolean {
+  if (file.type.startsWith('image/')) return true
+  const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+  return IMAGE_EXTENSIONS.has(ext)
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
 
 interface UploadImageModalProps {
   open: boolean
@@ -55,6 +77,7 @@ export default function UploadImageModal({
   const [active, setActive] = useState(true)
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Sync categoryId state when the dialog opens with a new prop value
@@ -68,7 +91,7 @@ export default function UploadImageModal({
     e.preventDefault()
     setDragOver(false)
     const dropped = e.dataTransfer.files[0]
-    if (dropped && dropped.type.startsWith('image/')) {
+    if (dropped && isImageFile(dropped)) {
       setFile(dropped)
       if (!name) {
         setName(dropped.name.replace(/\.[^.]+$/, ''))
@@ -113,12 +136,14 @@ export default function UploadImageModal({
     setActive(true)
     setError(null)
     setUploading(false)
+    setUploadProgress(null)
   }
 
   const handleUpload = async () => {
     if (!file) return
     setUploading(true)
     setError(null)
+    setUploadProgress(0)
     try {
       await uploadSourceImage(
         file,
@@ -128,6 +153,7 @@ export default function UploadImageModal({
         note || undefined,
         programIds.length > 0 ? programIds : undefined,
         active,
+        (fraction) => setUploadProgress(fraction),
       )
       onUploaded()
       onClose()
@@ -135,6 +161,7 @@ export default function UploadImageModal({
       setError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
       setUploading(false)
+      setUploadProgress(null)
     }
   }
 
@@ -153,7 +180,7 @@ export default function UploadImageModal({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept={ACCEPTED_IMAGE_TYPES}
           hidden
           onChange={handleFileSelect}
         />
@@ -182,9 +209,14 @@ export default function UploadImageModal({
             sx={{ fontSize: 48, color: 'grey.500', mb: 1 }}
           />
           {file ? (
-            <Typography variant="body1" sx={{ fontWeight: 500 }}>
-              {file.name}
-            </Typography>
+            <>
+              <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                {file.name}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {formatBytes(file.size)}
+              </Typography>
+            </>
           ) : (
             <>
               <Typography variant="body1" color="text.secondary">
@@ -204,6 +236,9 @@ export default function UploadImageModal({
                 >
                   browse to upload
                 </Typography>
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                Supports JPEG, PNG, TIFF, BMP, GIF, WebP, and SVS files.
               </Typography>
             </>
           )}
@@ -278,6 +313,19 @@ export default function UploadImageModal({
           }
           label="Active (visible to students)"
         />
+        {uploading && uploadProgress !== null && (
+          <Box sx={{ width: '100%' }}>
+            <LinearProgress
+              variant="determinate"
+              value={Math.round(uploadProgress * 100)}
+              sx={{ height: 8, borderRadius: 1 }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+              Uploading: {Math.round(uploadProgress * 100)}%
+              {file ? ` (${formatBytes(Math.round(uploadProgress * file.size))} / ${formatBytes(file.size)})` : ''}
+            </Typography>
+          </Box>
+        )}
         <Typography variant="caption" color="text.secondary">
           The image will be processed in the background using VIPS to generate
           zoomable tiles for the viewer.

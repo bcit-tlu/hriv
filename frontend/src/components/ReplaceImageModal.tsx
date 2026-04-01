@@ -9,6 +9,20 @@ import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 
+/** Image file extensions accepted by the app (including TIFF). */
+const ACCEPTED_IMAGE_TYPES = 'image/*,.tif,.tiff'
+
+/** Recognised image extensions for drag-and-drop validation. */
+const IMAGE_EXTENSIONS = new Set([
+  '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff', '.svs',
+])
+
+function isImageFile(file: File): boolean {
+  if (file.type.startsWith('image/')) return true
+  const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+  return IMAGE_EXTENSIONS.has(ext)
+}
+
 interface ReplaceImageModalProps {
   open: boolean
   onClose: () => void
@@ -27,7 +41,7 @@ export default function ReplaceImageModal({
     e.preventDefault()
     setDragOver(false)
     const dropped = e.dataTransfer.files[0]
-    if (dropped && dropped.type.startsWith('image/')) {
+    if (dropped && isImageFile(dropped)) {
       setFile(dropped)
     }
   }, [])
@@ -107,7 +121,7 @@ export default function ReplaceImageModal({
                   browse to upload
                   <input
                     type="file"
-                    accept="image/*"
+                    accept={ACCEPTED_IMAGE_TYPES}
                     hidden
                     onChange={handleFileSelect}
                   />

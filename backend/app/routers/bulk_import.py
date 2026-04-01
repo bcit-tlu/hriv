@@ -39,6 +39,9 @@ _IMAGE_EXTENSIONS = {
 # Maximum concurrent tile-generation tasks per bulk import
 _MAX_CONCURRENCY = 4
 
+# 1 MiB chunks for streaming large uploads to disk
+_UPLOAD_CHUNK_SIZE = 1024 * 1024
+
 
 def _is_image_filename(filename: str) -> bool:
     """Return True if the filename has a recognised image extension."""
@@ -202,13 +205,15 @@ async def bulk_import_images(
             if not upload.filename:
                 continue
 
-            contents = await upload.read()
-
             # Handle zip files
             if upload.filename.lower().endswith(".zip"):
-                # Write zip to a temp file, then extract images
+                # Stream zip to a temp file, then extract images
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-                    tmp.write(contents)
+                    while True:
+                        chunk = await upload.read(_UPLOAD_CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        tmp.write(chunk)
                     tmp_path = tmp.name
 
                 try:
@@ -249,8 +254,13 @@ async def bulk_import_images(
                 unique_name = f"{uuid.uuid4().hex}{ext}"
                 stored_path = os.path.join(settings.source_images_dir, unique_name)
 
+                # Stream to disk in chunks (handles large TIFFs)
                 with open(stored_path, "wb") as f:
-                    f.write(contents)
+                    while True:
+                        chunk = await upload.read(_UPLOAD_CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        f.write(chunk)
 
                 file_entries.append((upload.filename, stored_path))
     except Exception:

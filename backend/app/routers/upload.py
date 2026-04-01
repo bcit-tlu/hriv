@@ -2,6 +2,7 @@
 
 import os
 import uuid
+from pathlib import Path
 from typing import Annotated
 
 import json
@@ -17,6 +18,21 @@ from ..processing import process_source_image
 from ..schemas import SourceImageOut
 
 router = APIRouter(prefix="/source-images", tags=["source-images"])
+
+# Recognised image extensions (lowercase, with dot)
+_IMAGE_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp", ".svs",
+}
+
+# 1 MiB chunks for streaming large uploads to disk
+_UPLOAD_CHUNK_SIZE = 1024 * 1024
+
+
+def _is_valid_image(filename: str, content_type: str | None) -> bool:
+    """Accept the file if it has a recognised image extension *or* MIME type."""
+    if content_type and content_type.startswith("image/"):
+        return True
+    return Path(filename).suffix.lower() in _IMAGE_EXTENSIONS
 
 
 @router.post("/upload", response_model=SourceImageOut, status_code=201)
@@ -36,7 +52,7 @@ async def upload_source_image(
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
 
-    if not file.content_type or not file.content_type.startswith("image/"):
+    if not _is_valid_image(file.filename, file.content_type):
         raise HTTPException(status_code=400, detail="File must be an image")
 
     # Ensure the source images directory exists
@@ -47,10 +63,13 @@ async def upload_source_image(
     unique_name = f"{uuid.uuid4().hex}{ext}"
     stored_path = os.path.join(settings.source_images_dir, unique_name)
 
-    # Write the uploaded file to disk
-    contents = await file.read()
+    # Stream the uploaded file to disk in chunks (handles large files like 360 MB TIFFs)
     with open(stored_path, "wb") as f:
-        f.write(contents)
+        while True:
+            chunk = await file.read(_UPLOAD_CHUNK_SIZE)
+            if not chunk:
+                break
+            f.write(chunk)
 
     # Create the source image record
     src = SourceImage(
