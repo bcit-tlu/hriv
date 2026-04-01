@@ -6,7 +6,9 @@ import CardContent from '@mui/material/CardContent'
 import CardMedia from '@mui/material/CardMedia'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import FolderIcon from '@mui/icons-material/Folder'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
@@ -99,9 +101,16 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             </Box>
           )}
           <CardContent>
-            <Typography variant="h6" noWrap>
-              {category.label}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="h6" noWrap sx={{ opacity: category.status === 'hidden' ? 0.5 : 1 }}>
+                {category.label}
+              </Typography>
+              {category.status === 'hidden' && (
+                <Tooltip title="Hidden from students">
+                  <DisabledVisibleIcon fontSize="small" color="disabled" />
+                </Tooltip>
+              )}
+            </Box>
             <Typography variant="body2" color="text.secondary">
               {detailText}
             </Typography>

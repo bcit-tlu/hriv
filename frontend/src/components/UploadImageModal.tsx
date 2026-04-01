@@ -30,6 +30,8 @@ interface UploadImageModalProps {
   categories: Category[]
   programs: Program[]
   onAddCategory?: (label: string, parentId: number | null) => Promise<void>
+  onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
+  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
 }
 
 export default function UploadImageModal({
@@ -40,6 +42,8 @@ export default function UploadImageModal({
   categories,
   programs,
   onAddCategory,
+  onEditCategory,
+  onToggleVisibility,
 }: UploadImageModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -218,6 +222,8 @@ export default function UploadImageModal({
             value={categoryId}
             onChange={setCategoryId}
             onAddCategory={onAddCategory}
+            onEditCategory={onEditCategory}
+            onToggleVisibility={onToggleVisibility}
           />
         </Box>
         <TextField

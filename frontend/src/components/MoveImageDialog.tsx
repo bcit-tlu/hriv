@@ -16,6 +16,8 @@ interface MoveImageDialogProps {
   image: ApiImage | null
   categories: Category[]
   onAddCategory?: (label: string, parentId: number | null) => Promise<void>
+  onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
+  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
 }
 
 export default function MoveImageDialog({
@@ -25,6 +27,8 @@ export default function MoveImageDialog({
   image,
   categories,
   onAddCategory,
+  onEditCategory,
+  onToggleVisibility,
 }: MoveImageDialogProps) {
   const [newCategoryId, setNewCategoryId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
@@ -57,6 +61,8 @@ export default function MoveImageDialog({
           onChange={setNewCategoryId}
           label="Destination"
           onAddCategory={onAddCategory}
+          onEditCategory={onEditCategory}
+          onToggleVisibility={onToggleVisibility}
         />
       </DialogContent>
       <DialogActions>

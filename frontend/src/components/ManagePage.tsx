@@ -118,9 +118,11 @@ interface ManagePageProps {
   onCategoriesChanged?: () => void
   onNewCategory?: () => void
   onAddCategory?: (label: string, parentId: number | null) => Promise<void>
+  onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
+  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
 }
 
-export default function ManagePage({ categories, onViewImage, onNavigateCategory, onCategoriesChanged, onNewCategory, onAddCategory }: ManagePageProps) {
+export default function ManagePage({ categories, onViewImage, onNavigateCategory, onCategoriesChanged, onNewCategory, onAddCategory, onEditCategory, onToggleVisibility }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
   const [programs, setPrograms] = useState<Program[]>([])
   const [loading, setLoading] = useState(true)
@@ -826,6 +828,8 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         categories={categories}
         programs={programs}
         onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleVisibility}
       />
 
       {/* Upload image modal */}
@@ -839,6 +843,8 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         categories={categories}
         programs={programs}
         onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleVisibility}
       />
 
       {/* Bulk edit images modal */}
@@ -851,6 +857,8 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         programs={programs}
         selectedCount={selected.size}
         onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleVisibility}
       />
 
       {/* Move image modal */}
@@ -864,6 +872,8 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         image={movingImage}
         categories={categories}
         onAddCategory={onAddCategory}
+        onEditCategory={onEditCategory}
+        onToggleVisibility={onToggleVisibility}
       />
     </Box>
   )

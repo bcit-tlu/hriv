@@ -17,7 +17,7 @@ import CampaignIcon from '@mui/icons-material/Campaign'
 import CollectionsIcon from '@mui/icons-material/Collections'
 import DownloadIcon from '@mui/icons-material/Download'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
-import { exportDatabase, importDatabase, fetchAnnouncement, updateAnnouncement, fetchCategoryTree, createCategory as apiCreateCategory } from '../api'
+import { exportDatabase, importDatabase, fetchAnnouncement, updateAnnouncement, fetchCategoryTree, createCategory as apiCreateCategory, updateCategory as apiUpdateCategory } from '../api'
 import type { ApiCategoryTree, ImportResult } from '../api'
 import BulkImportModal from './BulkImportModal'
 import type { Category } from '../types'
@@ -85,6 +85,30 @@ export default function AdminPage({ onAnnouncementChange }: AdminPageProps) {
         await loadCategories()
       } catch (err) {
         console.error('Failed to create category', err)
+      }
+    },
+    [loadCategories],
+  )
+
+  const editCategoryInline = useCallback(
+    async (categoryId: number, newLabel: string) => {
+      try {
+        await apiUpdateCategory(categoryId, { label: newLabel })
+        await loadCategories()
+      } catch (err) {
+        console.error('Failed to rename category', err)
+      }
+    },
+    [loadCategories],
+  )
+
+  const toggleCategoryVisibility = useCallback(
+    async (categoryId: number, hidden: boolean) => {
+      try {
+        await apiUpdateCategory(categoryId, { status: hidden ? 'hidden' : 'active' })
+        await loadCategories()
+      } catch (err) {
+        console.error('Failed to toggle category visibility', err)
       }
     },
     [loadCategories],
@@ -334,6 +358,8 @@ export default function AdminPage({ onAnnouncementChange }: AdminPageProps) {
         onClose={() => setBulkImportOpen(false)}
         categories={categories}
         onAddCategory={addCategoryInline}
+        onEditCategory={editCategoryInline}
+        onToggleVisibility={toggleCategoryVisibility}
       />
     </Box>
   )

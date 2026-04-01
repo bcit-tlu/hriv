@@ -14,15 +14,20 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
+import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
+import EditIcon from '@mui/icons-material/Edit'
+import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { Category } from '../types'
 import { MAX_DEPTH } from '../types'
 import AddCategoryDialog from './AddCategoryDialog'
+import EditCategoryDialog from './EditCategoryDialog'
 
 interface FlatOption {
   id: number
   label: string
   depth: number
   childCount: number
+  status: string | null
 }
 
 function countDescendants(node: Category): number {
@@ -36,7 +41,7 @@ function countDescendants(node: Category): number {
 function flattenTree(nodes: Category[], depth: number = 0): FlatOption[] {
   const result: FlatOption[] = []
   for (const node of nodes) {
-    result.push({ id: node.id, label: node.label, depth, childCount: countDescendants(node) })
+    result.push({ id: node.id, label: node.label, depth, childCount: countDescendants(node), status: node.status ?? 'active' })
     result.push(...flattenTree(node.children, depth + 1))
   }
   return result
@@ -48,6 +53,8 @@ interface ManageCategoriesDialogProps {
   categories: Category[]
   onAddCategory: (label: string, parentId: number | null) => Promise<void>
   onDeleteCategory: (categoryId: number) => Promise<void>
+  onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
+  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
 }
 
 export default function ManageCategoriesDialog({
@@ -56,6 +63,8 @@ export default function ManageCategoriesDialog({
   categories,
   onAddCategory,
   onDeleteCategory,
+  onEditCategory,
+  onToggleVisibility,
 }: ManageCategoriesDialogProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addParentId, setAddParentId] = useState<number | null>(null)
@@ -63,6 +72,9 @@ export default function ManageCategoriesDialog({
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<FlatOption | null>(null)
+
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [editingCategory, setEditingCategory] = useState<FlatOption | null>(null)
 
   const options = useMemo(() => flattenTree(categories), [categories])
 
@@ -93,6 +105,17 @@ export default function ManageCategoriesDialog({
     setConfirmDeleteOpen(false)
     setPendingDelete(null)
   }, [])
+
+  const handleEditClick = useCallback((opt: FlatOption) => {
+    setEditingCategory(opt)
+    setEditDialogOpen(true)
+  }, [])
+
+  const handleEditSave = useCallback(async (newLabel: string) => {
+    if (editingCategory && onEditCategory) {
+      await onEditCategory(editingCategory.id, newLabel)
+    }
+  }, [editingCategory, onEditCategory])
 
   return (
     <>
@@ -126,19 +149,45 @@ export default function ManageCategoriesDialog({
                 key={opt.id}
                 sx={{ pl: 2 + opt.depth * 3 }}
                 secondaryAction={
-                  <Box sx={{ display: 'flex', gap: 0.5 }}>
-                    {opt.depth + 1 < MAX_DEPTH && (
-                      <Tooltip title="Add child category">
-                        <IconButton
-                          edge="end"
-                          size="small"
-                          onClick={() => handleAddClick(opt.id, opt.depth + 1)}
-                        >
-                          <AddIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    )}
-                    <Tooltip title="Delete category">
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      {onToggleVisibility && (
+                        <Tooltip title={opt.status === 'hidden' ? 'Show to students' : 'Hide from students'}>
+                          <IconButton
+                            edge="end"
+                            size="small"
+                            onClick={() => onToggleVisibility(opt.id, opt.status !== 'hidden')}
+                          >
+                            {opt.status === 'hidden' ? (
+                              <DisabledVisibleIcon fontSize="small" color="disabled" />
+                            ) : (
+                              <VisibilityIcon fontSize="small" />
+                            )}
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {onEditCategory && (
+                        <Tooltip title="Rename category">
+                          <IconButton
+                            edge="end"
+                            size="small"
+                            onClick={() => handleEditClick(opt)}
+                          >
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      {opt.depth + 1 < MAX_DEPTH && (
+                        <Tooltip title="Add child category">
+                          <IconButton
+                            edge="end"
+                            size="small"
+                            onClick={() => handleAddClick(opt.id, opt.depth + 1)}
+                          >
+                            <AddIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                      )}
+                      <Tooltip title="Delete category">
                       <IconButton
                         edge="end"
                         size="small"
@@ -158,7 +207,9 @@ export default function ManageCategoriesDialog({
                           {'\u2514 '}
                         </Typography>
                       )}
-                      {opt.label}
+                      <Typography component="span" sx={{ opacity: opt.status === 'hidden' ? 0.5 : 1 }}>
+                        {opt.label}
+                      </Typography>
                     </>
                   }
                 />
@@ -185,6 +236,16 @@ export default function ManageCategoriesDialog({
         onClose={() => setAddDialogOpen(false)}
         onAdd={handleAddCategory}
         currentDepth={addParentDepth}
+      />
+
+      <EditCategoryDialog
+        open={editDialogOpen}
+        onClose={() => {
+          setEditDialogOpen(false)
+          setEditingCategory(null)
+        }}
+        onSave={handleEditSave}
+        currentLabel={editingCategory?.label ?? ''}
       />
 
       {/* Confirm delete dialog */}
