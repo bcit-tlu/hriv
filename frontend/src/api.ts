@@ -483,7 +483,7 @@ export function exportDatabase(): Promise<void> {
 
 export interface ImportResult {
   status: string
-  imported: { programs?: number; categories: number; images: number; users: number }
+  imported: { programs?: number; categories: number; images: number; users: number; source_images?: number }
 }
 
 export async function importDatabase(file: File): Promise<ImportResult> {
@@ -499,4 +499,41 @@ export async function importDatabase(file: File): Promise<ImportResult> {
     throw new Error(`Import failed: ${text}`)
   }
   return res.json() as Promise<ImportResult>
+}
+
+// ── Filesystem Snapshots ────────────────────────────────
+
+export async function exportFiles(): Promise<void> {
+  // Obtain a short-lived download token so we can hand the URL directly
+  // to the browser.  This avoids buffering the entire archive in JS memory
+  // (res.blob()) which would crash on multi-GB datasets.
+  const tokenRes = await fetch(`${BASE}/api/admin/export-files-token`, {
+    method: 'POST',
+    headers: authHeaders(),
+  })
+  if (!tokenRes.ok) throw new Error(`Failed to obtain download token: ${tokenRes.status}`)
+  const { token } = (await tokenRes.json()) as { token: string }
+
+  // Browser-native download — no JS buffering required
+  window.location.href = `${BASE}/api/admin/export-files?token=${encodeURIComponent(token)}`
+}
+
+export interface FilesImportResult {
+  status: string
+  restored: { tile_files: number; source_files: number }
+}
+
+export async function importFiles(file: File): Promise<FilesImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${BASE}/api/admin/import-files`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: form,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(`File import failed: ${text}`)
+  }
+  return res.json() as Promise<FilesImportResult>
 }
