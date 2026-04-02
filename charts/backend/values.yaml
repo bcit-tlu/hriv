@@ -14,6 +14,10 @@ env:
     TILES_DIR: /data/tiles
     GITHUB_REPO: "https://github.com/bcit-tlu/corgi"
 
+# Stable JWT signing secret shared across all Uvicorn workers.
+# Leave blank to auto-generate a random value at install time.
+jwtSecret: ""
+
 # CloudNative-PG database cluster
 cnpg:
     instances: 1

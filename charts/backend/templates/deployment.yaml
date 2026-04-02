@@ -41,6 +41,11 @@ spec:
             {{- end }}
             - name: GITHUB_REPO
               value: {{ .Values.env.GITHUB_REPO | quote }}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "corgi-backend.fullname" . }}-jwt
+                  key: secret
           livenessProbe:
             httpGet:
               path: /api/health
