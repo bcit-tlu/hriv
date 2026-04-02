@@ -23,11 +23,14 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
-    # Allow traffic to the backend service
+    # Allow traffic to the backend on port 8000.
+    # Using a namespace-scoped empty podSelector (all pods in this
+    # namespace) so that the rule matches regardless of whether the CNI
+    # evaluates NetworkPolicy before or after kube-proxy DNAT.  A bare
+    # podSelector with the backend label can fail when traffic is sent to
+    # the ClusterIP rather than directly to a pod IP.
     - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: {{ .Values.networkPolicy.backendPodLabel }}
+        - podSelector: {}
       ports:
         - port: 8000
           protocol: TCP

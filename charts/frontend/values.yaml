@@ -21,7 +21,6 @@ ingress:
 
 networkPolicy:
     enabled: true
-    backendPodLabel: corgi-backend
 
 resources: {}
 

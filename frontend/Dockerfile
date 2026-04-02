@@ -30,6 +30,7 @@ RUN npm run build
 FROM nginx:1.27-alpine AS prod
 RUN rm /etc/nginx/conf.d/default.conf
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY dns-resolver.envsh /docker-entrypoint.d/12-dns-resolver.envsh
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 8080
 # nginx docker image auto-processes templates in /etc/nginx/templates/

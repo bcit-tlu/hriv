@@ -1,0 +1,5 @@
+#!/bin/sh
+# Extract the first nameserver from /etc/resolv.conf so envsubst can
+# inject it into the nginx resolver directive.
+NGINX_DNS_RESOLVER=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf)
+export NGINX_DNS_RESOLVER

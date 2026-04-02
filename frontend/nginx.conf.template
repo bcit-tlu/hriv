@@ -28,7 +28,12 @@ server {
 
     # ── Reverse-proxy API to the backend ──────────────────
     location /api/ {
-        proxy_pass         ${BACKEND_URL};
+        # Re-resolve the backend hostname on every request so that nginx
+        # picks up endpoint changes after pod restarts or service updates.
+        resolver           ${NGINX_DNS_RESOLVER} valid=5s;
+        set                $backend "${BACKEND_URL}";
+        proxy_pass         $backend$request_uri;
+
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
