@@ -1,0 +1,13 @@
+{{- range $m := (.Values.configMounts | default list) }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $m.name | quote }}
+  labels:
+    {{- include "corgi-frontend.labels" $ | nindent 4 }}
+{{- if $m.data }}
+data:
+{{ toYaml $m.data | indent 2 }}
+{{- end }}
+{{- end }}

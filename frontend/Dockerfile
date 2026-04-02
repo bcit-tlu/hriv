@@ -29,6 +29,9 @@ RUN npm run build
 # ── Stage 4: Production server (nginx) ───────────────────
 FROM nginx:1.27-alpine AS prod
 RUN rm /etc/nginx/conf.d/default.conf
+# The nginx config template is supplied at deploy time via a ConfigMap
+# mounted at /etc/nginx/templates/.  A baked-in fallback is kept for
+# local development (docker compose) where no ConfigMap is available.
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY --chmod=755 dns-resolver.envsh /docker-entrypoint.d/12-dns-resolver.envsh
 COPY --from=build /app/dist /usr/share/nginx/html

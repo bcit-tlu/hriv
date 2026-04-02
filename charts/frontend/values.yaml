@@ -26,6 +26,86 @@ backend:
 env:
     BACKEND_URL: ""
 
+# Volume mounts backed by ConfigMaps.  Each entry creates a ConfigMap
+# resource and is mounted into the container at the given mountPath.
+# Override the nginx config at deploy time without rebuilding the image.
+configMounts:
+    - name: nginx-config
+      mountPath: /etc/nginx/templates
+      data:
+        default.conf.template: |-
+          server {
+              listen       8080;
+              server_name  _;
+              root         /usr/share/nginx/html;
+              index        index.html;
+
+              # ── Gzip ──────────────────────────────────────────────
+              gzip             on;
+              gzip_vary        on;
+              gzip_proxied     any;
+              gzip_min_length  256;
+              gzip_types
+                  text/plain
+                  text/css
+                  text/javascript
+                  application/javascript
+                  application/json
+                  application/xml
+                  image/svg+xml;
+
+              # ── Cache hashed assets aggressively ──────────────────
+              location /assets/ {
+                  expires 1y;
+                  add_header Cache-Control          "public, immutable";
+                  add_header X-Frame-Options        "SAMEORIGIN" always;
+                  add_header X-Content-Type-Options "nosniff"     always;
+              }
+
+              # ── Reverse-proxy API to the backend ──────────────────
+              location /api/ {
+                  # Re-resolve the backend hostname on every request so that nginx
+                  # picks up endpoint changes after pod restarts or service updates.
+                  resolver           ${NGINX_DNS_RESOLVER} valid=5s;
+                  set                $backend "${BACKEND_URL}";
+                  proxy_pass         $backend$request_uri;
+
+                  proxy_http_version 1.1;
+                  proxy_set_header   Host              $host;
+                  proxy_set_header   X-Real-IP         $remote_addr;
+                  proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+                  proxy_set_header   X-Forwarded-Proto $scheme;
+
+                  # Allow large image uploads (high-res pathology TIFFs can be
+                  # hundreds of megabytes).  0 = unlimited.
+                  client_max_body_size 0;
+
+                  # Extend timeouts for slow uploads / large tile-generation responses.
+                  proxy_read_timeout    600s;
+                  proxy_send_timeout    600s;
+                  proxy_connect_timeout 60s;
+              }
+
+              # ── SPA fallback ─────────────────────────────────────
+              location / {
+                  try_files $uri $uri/ /index.html;
+              }
+
+              # ── Security headers ─────────────────────────────────
+              add_header X-Frame-Options        "SAMEORIGIN" always;
+              add_header X-Content-Type-Options "nosniff"     always;
+          }
+
+# emptyDir mounts required by the nginx container (writable paths on a
+# read-only root filesystem).
+emptyDirMounts:
+    - name: tmp
+      mountPath: /tmp
+    - name: nginx-cache
+      mountPath: /var/cache/nginx
+    - name: nginx-run
+      mountPath: /var/run
+
 ingress:
     enabled: false
     className: ""

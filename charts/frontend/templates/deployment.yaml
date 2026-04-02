@@ -13,6 +13,11 @@ spec:
     metadata:
       labels:
         {{- include "corgi-frontend.selectorLabels" . | nindent 8 }}
+      annotations:
+        {{- /* Restart pods automatically when ConfigMap content changes */}}
+        {{- range $m := (.Values.configMounts | default list) }}
+        checksum/{{ $m.name }}: {{ toYaml $m.data | sha256sum }}
+        {{- end }}
     spec:
       containers:
         - name: frontend
@@ -41,6 +46,25 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          volumeMounts:
+            {{- range $m := (.Values.configMounts | default list) }}
+            - name: {{ $m.name }}
+              mountPath: {{ $m.mountPath | quote }}
+            {{- end }}
+            {{- range $m := (.Values.emptyDirMounts | default list) }}
+            - name: {{ $m.name }}
+              mountPath: {{ $m.mountPath | quote }}
+            {{- end }}
+      volumes:
+        {{- range $m := (.Values.configMounts | default list) }}
+        - name: {{ $m.name }}
+          configMap:
+            name: {{ $m.name | quote }}
+        {{- end }}
+        {{- range $m := (.Values.emptyDirMounts | default list) }}
+        - name: {{ $m.name }}
+          emptyDir: {}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
