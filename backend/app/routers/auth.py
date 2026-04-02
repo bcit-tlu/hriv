@@ -1,5 +1,6 @@
 """Authentication endpoints."""
 
+import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -13,6 +14,8 @@ from ..auth import verify_password, create_access_token, get_current_user
 from ..database import get_db
 from ..models import User
 from ..schemas import UserOut
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -37,12 +40,24 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     user = result.scalars().first()
 
     if not user or not user.password_hash:
+        logger.warning(
+            "Login failed: unknown email",
+            extra={"event": "auth.login_failed", "user_email": body.email},
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
 
     if not verify_password(body.password, user.password_hash):
+        logger.warning(
+            "Login failed: invalid password",
+            extra={
+                "event": "auth.login_failed",
+                "user_email": body.email,
+                "user_id": user.id,
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
@@ -51,6 +66,15 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     user.last_access = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(user)
+
+    logger.info(
+        "Login successful",
+        extra={
+            "event": "auth.login_success",
+            "user_id": user.id,
+            "user_email": user.email,
+        },
+    )
 
     token = create_access_token(user)
     user_data = {

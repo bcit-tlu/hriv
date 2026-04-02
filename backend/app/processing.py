@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import time
 from pathlib import Path
 
 import pyvips
@@ -23,6 +24,16 @@ def generate_tiles(source_path: str, output_dir: str) -> tuple[str, str]:
     os.makedirs(output_dir, exist_ok=True)
 
     image = pyvips.Image.new_from_file(source_path, access="sequential")
+
+    logger.info(
+        "Generating DZI tiles",
+        extra={
+            "event": "tiles.generation_started",
+            "source_path": source_path,
+            "image_width": image.width,
+            "image_height": image.height,
+        },
+    )
 
     # Generate DZI tiles using dzsave
     dzi_basename = "image"
@@ -50,16 +61,44 @@ async def process_source_image(source_image_id: int) -> None:
     async with async_session() as db:
         src = await db.get(SourceImage, source_image_id)
         if src is None:
-            logger.error("SourceImage %d not found", source_image_id)
+            logger.error(
+                "SourceImage not found, skipping processing",
+                extra={
+                    "event": "processing.source_not_found",
+                    "source_image_id": source_image_id,
+                },
+            )
             return
 
         src.status = "processing"
         await db.commit()
 
+        logger.info(
+            "Processing started for source image",
+            extra={
+                "event": "processing.started",
+                "source_image_id": src.id,
+                "filename": src.original_filename,
+                "category_id": src.category_id,
+            },
+        )
+        t_start = time.monotonic()
+
         try:
             output_dir = os.path.join(settings.tiles_dir, str(src.id))
             dzi_rel, thumb_rel = await asyncio.to_thread(
                 generate_tiles, src.stored_path, output_dir
+            )
+
+            t_tiles = time.monotonic()
+            logger.info(
+                "Tile generation completed",
+                extra={
+                    "event": "processing.tiles_generated",
+                    "source_image_id": src.id,
+                    "filename": src.original_filename,
+                    "duration_ms": round((t_tiles - t_start) * 1000),
+                },
             )
 
             # Build URLs for serving tiles via the API
@@ -95,20 +134,41 @@ async def process_source_image(source_image_id: int) -> None:
                         await db.flush()
                 except (json.JSONDecodeError, TypeError):
                     logger.warning(
-                        "Could not parse program_ids from source image %d",
-                        src.id,
+                        "Could not parse program_ids from source image",
+                        extra={
+                            "event": "processing.program_parse_error",
+                            "source_image_id": src.id,
+                        },
                     )
 
             src.image_id = img.id
             src.status = "completed"
             await db.commit()
 
+            duration_ms = round((time.monotonic() - t_start) * 1000)
             logger.info(
-                "Processed source image %d -> image %d", src.id, img.id
+                "Processing completed successfully",
+                extra={
+                    "event": "processing.completed",
+                    "source_image_id": src.id,
+                    "image_id": img.id,
+                    "filename": src.original_filename,
+                    "category_id": src.category_id,
+                    "duration_ms": duration_ms,
+                },
             )
 
         except Exception:
-            logger.exception("Failed to process source image %d", src.id)
+            duration_ms = round((time.monotonic() - t_start) * 1000)
+            logger.exception(
+                "Failed to process source image",
+                extra={
+                    "event": "processing.failed",
+                    "source_image_id": src.id,
+                    "filename": src.original_filename,
+                    "duration_ms": duration_ms,
+                },
+            )
             await db.rollback()
 
             # Re-fetch after rollback to update status

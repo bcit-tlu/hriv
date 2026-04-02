@@ -1,11 +1,11 @@
 """Source image upload and processing status endpoints."""
 
+import json
+import logging
 import os
 import uuid
 from pathlib import Path
 from typing import Annotated
-
-import json
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
@@ -16,6 +16,8 @@ from ..database import get_db, settings
 from ..models import SourceImage, User
 from ..processing import process_source_image
 from ..schemas import SourceImageOut
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/source-images", tags=["source-images"])
 
@@ -86,6 +88,16 @@ async def upload_source_image(
     db.add(src)
     await db.commit()
     await db.refresh(src)
+
+    logger.info(
+        "Source image uploaded, queuing for processing",
+        extra={
+            "event": "upload.accepted",
+            "source_image_id": src.id,
+            "filename": file.filename,
+            "category_id": category_id,
+        },
+    )
 
     # Fire off the background processing task
     background_tasks.add_task(process_source_image, src.id)

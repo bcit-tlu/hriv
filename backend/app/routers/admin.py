@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -10,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import require_role
 from ..database import get_db
 from ..models import Announcement, Category, Image, Program, User
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -118,6 +121,19 @@ async def export_database(
             "updated_at": dt(ann.updated_at) if ann else None,
         },
     }
+
+    logger.info(
+        "Database export generated",
+        extra={
+            "event": "admin.export",
+            "detail": {
+                "programs": len(dump["programs"]),
+                "categories": len(dump["categories"]),
+                "images": len(dump["images"]),
+                "users": len(dump["users"]),
+            },
+        },
+    )
 
     content = json.dumps(dump, indent=2)
     return Response(
@@ -288,9 +304,13 @@ async def import_database(
 
     except Exception as exc:
         await db.rollback()
+        logger.exception(
+            "Database import failed",
+            extra={"event": "admin.import_failed"},
+        )
         raise HTTPException(status_code=500, detail=f"Import failed: {exc}")
 
-    return {
+    result = {
         "status": "ok",
         "imported": {
             "programs": len(dump.get("programs", [])),
@@ -299,6 +319,14 @@ async def import_database(
             "users": len(dump["users"]),
         },
     }
+    logger.info(
+        "Database import completed",
+        extra={
+            "event": "admin.import",
+            "detail": result["imported"],
+        },
+    )
+    return result
 
 
 def _parse_dt(value: str | None) -> datetime | None:

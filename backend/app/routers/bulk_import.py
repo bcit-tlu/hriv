@@ -84,7 +84,12 @@ async def _process_bulk_import(job_id: int, file_entries: list[tuple[str, str]])
                     await process_source_image(src.id)
                 except Exception as exc:
                     logger.exception(
-                        "Bulk import: failed to process %s", original_filename
+                        "Bulk import: image processing failed",
+                        extra={
+                            "event": "bulk_import.image_failed",
+                            "job_id": job_id,
+                            "filename": original_filename,
+                        },
                     )
                     error_entry = [{"filename": original_filename, "error": str(exc)}]
                     async with async_session() as db:
@@ -126,7 +131,12 @@ async def _process_bulk_import(job_id: int, file_entries: list[tuple[str, str]])
             # failure so that gather(return_exceptions=True) doesn't silently
             # swallow them without updating job counters.
             logger.exception(
-                "Bulk import: unexpected error for %s", original_filename
+                "Bulk import: unexpected error",
+                extra={
+                    "event": "bulk_import.unexpected_error",
+                    "job_id": job_id,
+                    "filename": original_filename,
+                },
             )
             error_entry = [{"filename": original_filename, "error": str(exc)}]
             try:
@@ -142,8 +152,12 @@ async def _process_bulk_import(job_id: int, file_entries: list[tuple[str, str]])
                     await db.commit()
             except Exception:
                 logger.exception(
-                    "Bulk import: failed to update job counters for %s",
-                    original_filename,
+                    "Bulk import: failed to update job counters",
+                    extra={
+                        "event": "bulk_import.counter_update_failed",
+                        "job_id": job_id,
+                        "filename": original_filename,
+                    },
                 )
 
     # Mark job as processing
@@ -152,6 +166,15 @@ async def _process_bulk_import(job_id: int, file_entries: list[tuple[str, str]])
         if job is not None:
             job.status = "processing"
             await db.commit()
+
+    logger.info(
+        "Bulk import processing started",
+        extra={
+            "event": "bulk_import.processing_started",
+            "job_id": job_id,
+            "total_count": len(file_entries),
+        },
+    )
 
     # Process all images concurrently (bounded by semaphore)
     tasks = [
@@ -171,6 +194,18 @@ async def _process_bulk_import(job_id: int, file_entries: list[tuple[str, str]])
             else:
                 job.status = "completed"
             await db.commit()
+
+            logger.info(
+                "Bulk import job finished",
+                extra={
+                    "event": "bulk_import.finished",
+                    "job_id": job_id,
+                    "status": job.status,
+                    "total_count": job.total_count,
+                    "completed_count": job.completed_count,
+                    "failed_count": job.failed_count,
+                },
+            )
 
 
 @router.post("/", response_model=BulkImportJobOut, status_code=201)
@@ -297,6 +332,16 @@ async def bulk_import_images(
     db.add(job)
     await db.commit()
     await db.refresh(job)
+
+    logger.info(
+        "Bulk import job created",
+        extra={
+            "event": "bulk_import.job_created",
+            "job_id": job.id,
+            "category_id": category_id,
+            "total_count": len(file_entries),
+        },
+    )
 
     # Fire off background processing
     background_tasks.add_task(_process_bulk_import, job.id, file_entries)
