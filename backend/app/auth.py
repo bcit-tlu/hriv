@@ -68,6 +68,10 @@ async def _get_user_from_token(
         payload = jwt.decode(
             token, auth_settings.jwt_secret, algorithms=[auth_settings.jwt_algorithm]
         )
+        # Reject scoped tokens (e.g. file-export JWTs) from being used
+        # as general-purpose Bearer tokens.
+        if payload.get("purpose") is not None:
+            raise credentials_exception
         user_id_str: str | None = payload.get("sub")
         if user_id_str is None:
             raise credentials_exception
