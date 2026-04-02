@@ -14,6 +14,10 @@ spec:
       owner: {{ .Values.cnpg.owner }}
       secret:
         name: {{ include "corgi-backend.fullname" . }}-db-bootstrap
+      postInitApplicationSQL:
+        - GRANT ALL ON SCHEMA public TO {{ .Values.cnpg.owner | quote }}
+        - ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO {{ .Values.cnpg.owner | quote }}
+        - ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO {{ .Values.cnpg.owner | quote }}
       postInitApplicationSQLRefs:
         configMapRefs:
           - name: {{ include "corgi-backend.fullname" . }}-initdb
