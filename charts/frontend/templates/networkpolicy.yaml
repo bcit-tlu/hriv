@@ -24,14 +24,19 @@ spec:
         - port: 53
           protocol: TCP
     # Allow traffic to the backend on port 8000.
-    # Using a namespace-scoped empty podSelector (all pods in this
-    # namespace) so that the rule matches regardless of whether the CNI
-    # evaluates NetworkPolicy before or after kube-proxy DNAT.  A bare
-    # podSelector with the backend label can fail when traffic is sent to
-    # the ClusterIP rather than directly to a pod IP.
+    # Using an empty podSelector (all pods) so that the rule matches
+    # regardless of whether the CNI evaluates NetworkPolicy before or
+    # after kube-proxy DNAT.  When backend.namespace is set to a
+    # different namespace, a namespaceSelector is added so egress is
+    # permitted cross-namespace.
     - to:
         - podSelector: {}
+          {{- if .Values.backend.namespace }}
+          namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.backend.namespace }}
+          {{- end }}
       ports:
-        - port: 8000
+        - port: {{ .Values.backend.port | default 8000 }}
           protocol: TCP
 {{- end }}
