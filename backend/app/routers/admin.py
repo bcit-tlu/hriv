@@ -1,23 +1,30 @@
+import asyncio
 import json
 import logging
+import os
+import secrets as _secrets_mod
+import shutil
+import tarfile
+import tempfile
+import time as _time_mod
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from fastapi.responses import Response
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
-from ..database import get_db
-from ..models import Announcement, Category, Image, Program, User
+from ..database import get_db, settings
+from ..models import Announcement, Category, Image, Program, SourceImage, User
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 _admin = require_role("admin")
-
 
 @router.get("/export")
 async def export_database(
@@ -48,6 +55,12 @@ async def export_database(
         select(User).order_by(User.id)
     )
     users = result.scalars().all()
+
+    # Source images
+    result = await db.execute(
+        select(SourceImage).order_by(SourceImage.id)
+    )
+    source_images = result.scalars().all()
 
     # Announcement
     result = await db.execute(
@@ -114,6 +127,25 @@ async def export_database(
             }
             for u in users
         ],
+        "source_images": [
+            {
+                "id": s.id,
+                "original_filename": s.original_filename,
+                "stored_path": s.stored_path,
+                "status": s.status,
+                "error_message": s.error_message,
+                "name": s.name,
+                "category_id": s.category_id,
+                "copyright": s.copyright,
+                "note": s.note,
+                "active": s.active,
+                "program": s.program,
+                "image_id": s.image_id,
+                "created_at": dt(s.created_at),
+                "updated_at": dt(s.updated_at),
+            }
+            for s in source_images
+        ],
         "announcement": {
             "message": ann.message if ann else "",
             "enabled": ann.enabled if ann else False,
@@ -172,6 +204,7 @@ async def import_database(
 
     try:
         # Clear existing data in dependency order
+        await db.execute(text("DELETE FROM source_images"))
         await db.execute(text("DELETE FROM image_programs"))
         await db.execute(text("DELETE FROM images"))
         await db.execute(text("DELETE FROM categories"))
@@ -266,6 +299,27 @@ async def import_database(
         # Flush images so sequence reset sees all rows
         await db.flush()
 
+        # Import source images (if present in dump)
+        for s in dump.get("source_images", []):
+            src = SourceImage(
+                id=s["id"],
+                original_filename=s["original_filename"],
+                stored_path=s["stored_path"],
+                status=s.get("status", "pending"),
+                error_message=s.get("error_message"),
+                name=s.get("name"),
+                category_id=s.get("category_id"),
+                copyright=s.get("copyright"),
+                note=s.get("note"),
+                active=s.get("active", True),
+                program=s.get("program"),
+                image_id=s.get("image_id"),
+                created_at=_parse_dt(s.get("created_at")),
+                updated_at=_parse_dt(s.get("updated_at")),
+            )
+            db.add(src)
+        await db.flush()
+
         # Import announcement (if present in dump)
         ann_data = dump.get("announcement")
         if ann_data:
@@ -299,6 +353,9 @@ async def import_database(
         await db.execute(
             text("SELECT setval('announcements_id_seq', GREATEST(COALESCE((SELECT MAX(id) FROM announcements), 1), 1), EXISTS(SELECT 1 FROM announcements))")
         )
+        await db.execute(
+            text("SELECT setval('source_images_id_seq', GREATEST(COALESCE((SELECT MAX(id) FROM source_images), 1), 1), EXISTS(SELECT 1 FROM source_images))")
+        )
 
         await db.commit()
 
@@ -317,6 +374,7 @@ async def import_database(
             "categories": len(dump["categories"]),
             "images": len(dump["images"]),
             "users": len(dump["users"]),
+            "source_images": len(dump.get("source_images", [])),
         },
     }
     logger.info(
@@ -333,3 +391,231 @@ def _parse_dt(value: str | None) -> datetime | None:
     if not value:
         return None
     return datetime.fromisoformat(value)
+
+
+# ---------------------------------------------------------------------------
+# Filesystem snapshot export / import
+# ---------------------------------------------------------------------------
+
+_CHUNK_SIZE = 1024 * 1024  # 1 MiB streaming chunks
+
+# Short-lived download tokens so the browser can perform a native download
+# (via window.location) without buffering the entire archive in JS memory.
+_download_tokens: dict[str, tuple[float, int]] = {}  # token -> (expires, user_id)
+_TOKEN_LIFETIME_SECONDS = 60
+
+
+def _create_tar_file(data_dir: str, dest: str) -> None:
+    """Write a tar.gz archive of *data_dir* to *dest* (runs in a thread)."""
+    with tarfile.open(dest, mode="w:gz") as tar:
+        tar.add(data_dir, arcname="data")
+
+
+def _extract_and_restore(
+    tmp_archive: str,
+    tmpdir: str,
+    data_dir: str,
+    tiles_dir: str,
+    source_images_dir: str,
+) -> dict[str, int]:
+    """Extract archive, swap data dir atomically, count restored files.
+
+    Runs in a worker thread to avoid blocking the async event loop.
+    """
+    # Validate and extract the archive into a staging directory
+    with tarfile.open(tmp_archive, "r:gz") as tar:
+        members = tar.getnames()
+        if not members:
+            raise ValueError("Archive is empty")
+        staging = Path(tmpdir) / "staging"
+        staging.mkdir()
+        tar.extractall(path=str(staging), filter="data")
+
+    # Locate the extracted data root
+    extracted = staging / "data"
+    if not extracted.exists():
+        entries = list(staging.iterdir())
+        extracted = entries[0] if len(entries) == 1 and entries[0].is_dir() else staging
+
+    data_path = Path(data_dir)
+    backup_path = data_path.with_name(
+        data_path.name + f".bak-{int(_time_mod.time())}"
+    )
+
+    # Atomic-ish swap: rename existing data to backup, copy new data in.
+    # If the copy fails, restore the backup so no data is lost.
+    if data_path.exists():
+        os.rename(str(data_path), str(backup_path))
+
+    try:
+        os.makedirs(str(data_path), exist_ok=True)
+        shutil.copytree(str(extracted), str(data_path), dirs_exist_ok=True)
+    except Exception:
+        # Restore the backup on failure
+        if backup_path.exists():
+            if data_path.exists():
+                shutil.rmtree(str(data_path), ignore_errors=True)
+            os.rename(str(backup_path), str(data_path))
+        raise
+
+    # Success — remove the backup
+    if backup_path.exists():
+        shutil.rmtree(str(backup_path), ignore_errors=True)
+
+    # Count what was restored
+    tiles_count = 0
+    source_count = 0
+    tiles_path = Path(tiles_dir)
+    source_path = Path(source_images_dir)
+    if tiles_path.exists():
+        tiles_count = sum(1 for f in tiles_path.rglob("*") if f.is_file())
+    if source_path.exists():
+        source_count = sum(1 for f in source_path.rglob("*") if f.is_file())
+
+    return {"tile_files": tiles_count, "source_files": source_count}
+
+
+@router.post("/export-files-token")
+async def create_export_files_token(
+    _user: Annotated[User, Depends(_admin)],
+):
+    """Create a short-lived token for downloading the filesystem archive.
+
+    The token is valid for 60 seconds and allows a single browser-native
+    download via ``GET /admin/export-files?token=<token>``, avoiding the
+    need to buffer the entire archive in browser memory.
+    """
+    token = _secrets_mod.token_urlsafe(32)
+    _download_tokens[token] = (
+        _time_mod.time() + _TOKEN_LIFETIME_SECONDS,
+        _user.id,
+    )
+
+    # Housekeeping: remove expired tokens
+    now = _time_mod.time()
+    expired = [t for t, (exp, _uid) in _download_tokens.items() if exp < now]
+    for t in expired:
+        _download_tokens.pop(t, None)
+
+    return {"token": token}
+
+
+@router.get("/export-files")
+async def export_files(
+    token: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stream a tar.gz archive of the filesystem data directory.
+
+    The archive contains DZI tiles, thumbnails, and source images —
+    everything needed to restore the file-based half of the system.
+
+    Authentication is via a short-lived download token obtained from
+    ``POST /admin/export-files-token``.  This allows the browser to
+    perform a native download (``window.location``) instead of buffering
+    the entire archive in JavaScript memory.
+    """
+    # Validate the download token
+    entry = _download_tokens.pop(token, None)
+    if entry is None or entry[0] < _time_mod.time():
+        raise HTTPException(
+            status_code=401, detail="Invalid or expired download token"
+        )
+    user = await db.get(User, entry[1])
+    if user is None or user.role != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    data_dir = Path(settings.tiles_dir).parent  # /data
+
+    if not data_dir.exists() or not any(data_dir.iterdir()):
+        raise HTTPException(
+            status_code=404,
+            detail="Data directory is empty or missing \u2014 nothing to export",
+        )
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    filename = f"corgi-files-{timestamp}.tar.gz"
+
+    # Write the archive to a temp file in a worker thread so we don't
+    # block the async event loop or hold the full archive in memory.
+    tmp = tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False)
+    tmp.close()
+    try:
+        await asyncio.to_thread(_create_tar_file, str(data_dir), tmp.name)
+    except Exception:
+        os.unlink(tmp.name)
+        raise
+
+    # Sync generator — Starlette wraps it in iterate_in_threadpool so
+    # file reads don't block the event loop.
+    def _stream_and_cleanup():
+        try:
+            with open(tmp.name, "rb") as fh:
+                while True:
+                    chunk = fh.read(_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    yield chunk
+        finally:
+            os.unlink(tmp.name)
+
+    return StreamingResponse(
+        _stream_and_cleanup(),
+        media_type="application/gzip",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}",
+        },
+    )
+
+
+@router.post("/import-files")
+async def import_files(
+    _user: Annotated[User, Depends(_admin)],
+    file: UploadFile = File(...),
+):
+    """Accept a tar.gz archive and restore it over the data directory.
+
+    This replaces the current tiles and source images on disk.
+    """
+    if not file.filename or not (
+        file.filename.endswith(".tar.gz") or file.filename.endswith(".tgz")
+    ):
+        raise HTTPException(
+            status_code=400, detail="Only .tar.gz / .tgz files are accepted"
+        )
+
+    data_dir = Path(settings.tiles_dir).parent  # /data
+
+    with tempfile.TemporaryDirectory(prefix="corgi-import-") as tmpdir:
+        # Stream the upload to a temporary file (handles large archives).
+        # This uses ``await file.read()`` and must stay in the async handler.
+        tmp_archive = Path(tmpdir) / "upload.tar.gz"
+        with open(tmp_archive, "wb") as f:
+            while True:
+                chunk = await file.read(_CHUNK_SIZE)
+                if not chunk:
+                    break
+                f.write(chunk)
+
+        # Offload all blocking I/O (tar extraction, directory swap,
+        # file counting) to a worker thread.
+        try:
+            restored = await asyncio.to_thread(
+                _extract_and_restore,
+                str(tmp_archive),
+                tmpdir,
+                str(data_dir),
+                settings.tiles_dir,
+                settings.source_images_dir,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except tarfile.TarError as exc:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid tar.gz archive: {exc}"
+            )
+
+    return {
+        "status": "ok",
+        "restored": restored,
+    }

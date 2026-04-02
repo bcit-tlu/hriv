@@ -483,7 +483,7 @@ export function exportDatabase(): Promise<void> {
 
 export interface ImportResult {
   status: string
-  imported: { programs?: number; categories: number; images: number; users: number }
+  imported: { programs?: number; categories: number; images: number; users: number; source_images?: number }
 }
 
 export async function importDatabase(file: File): Promise<ImportResult> {
@@ -499,4 +499,45 @@ export async function importDatabase(file: File): Promise<ImportResult> {
     throw new Error(`Import failed: ${text}`)
   }
   return res.json() as Promise<ImportResult>
+}
+
+// ── Filesystem Snapshots ────────────────────────────────
+
+export function exportFiles(): Promise<void> {
+  const url = `${BASE}/api/admin/export-files`
+  return fetch(url, { headers: authHeaders() })
+    .then((res) => {
+      if (!res.ok) throw new Error(`File export failed: ${res.status}`)
+      const disposition = res.headers.get('Content-Disposition') ?? ''
+      const match = disposition.match(/filename=([\w.-]+)/)
+      const filename = match ? match[1] : 'corgi-files.tar.gz'
+      return res.blob().then((blob) => ({ blob, filename }))
+    })
+    .then(({ blob, filename }) => {
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = filename
+      a.click()
+      URL.revokeObjectURL(a.href)
+    })
+}
+
+export interface FilesImportResult {
+  status: string
+  restored: { tile_files: number; source_files: number }
+}
+
+export async function importFiles(file: File): Promise<FilesImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${BASE}/api/admin/import-files`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: form,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(`File import failed: ${text}`)
+  }
+  return res.json() as Promise<FilesImportResult>
 }
