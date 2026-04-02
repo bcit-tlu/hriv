@@ -5,7 +5,7 @@ description = "Corgi Image Library API"
 authors = ["Devin AI"]
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.12"
 fastapi = "^0.115.0"
 uvicorn = {extras = ["standard"], version = "^0.34.0"}
 sqlalchemy = "^2.0.0"
