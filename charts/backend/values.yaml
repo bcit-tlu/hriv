@@ -20,6 +20,7 @@ cnpg:
     imageName: ghcr.io/cloudnative-pg/postgresql:16
     database: corgi
     owner: corgi
+    devPassword: password1234
     enableSuperuserAccess: true
     storage:
         storageClass: longhorn
