@@ -41,7 +41,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
 
     if not user or not user.password_hash:
         logger.warning(
-            "Login failed: unknown email",
+            "Login failed: unknown email or no password set",
             extra={"event": "auth.login_failed", "user_email": body.email},
         )
         raise HTTPException(
