@@ -11,6 +11,7 @@ import Typography from '@mui/material/Typography'
 import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import FolderIcon from '@mui/icons-material/Folder'
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import type { Category, ImageItem, Program } from '../types'
 import CardImagePickerModal from './CardImagePickerModal'
@@ -102,6 +103,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
           )}
           <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <FolderOutlinedIcon fontSize="small" color="action" sx={{ flexShrink: 0 }} />
               <Typography variant="h6" noWrap sx={{ opacity: category.status === 'hidden' ? 0.5 : 1 }}>
                 {category.label}
               </Typography>
