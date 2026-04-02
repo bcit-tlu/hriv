@@ -16,6 +16,11 @@ interface ImageViewerProps {
   onViewportChange?: (state: ViewportState) => void
 }
 
+interface DragState {
+  overlayElement: HTMLDivElement
+  startPos: OpenSeadragon.Point
+}
+
 export default function ImageViewer({
   tileSources,
   height = '70vh',
@@ -25,6 +30,8 @@ export default function ImageViewer({
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
   const onViewportChangeRef = useRef(onViewportChange)
+  const selectionModeRef = useRef(false)
+  const dragRef = useRef<DragState | null>(null)
   useEffect(() => {
     onViewportChangeRef.current = onViewportChange
   }, [onViewportChange])
@@ -119,6 +126,62 @@ export default function ImageViewer({
     })
 
     const viewer = viewerRef.current
+
+    // --- Selection rectangle toolbar button ---
+    const prefix = '/openseadragon-svg-icons/'
+    const selectionButton = new OpenSeadragon.Button({
+      tooltip: 'Draw selection rectangle',
+      srcRest: prefix + 'selection_rest.svg',
+      srcGroup: prefix + 'selection_grouphover.svg',
+      srcHover: prefix + 'selection_hover.svg',
+      srcDown: prefix + 'selection_pressed.svg',
+      onClick: () => {
+        selectionModeRef.current = !selectionModeRef.current
+        viewer.setMouseNavEnabled(!selectionModeRef.current)
+        selectionButton.element.style.outline = selectionModeRef.current
+          ? '2px solid #fd0000'
+          : 'none'
+      },
+    })
+    viewer.addControl(selectionButton.element, {
+      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+    })
+
+    // --- Mouse tracker for drawing selection rectangles ---
+    new OpenSeadragon.MouseTracker({
+      element: viewer.element,
+      pressHandler: (event: OpenSeadragon.MouseTrackerEvent) => {
+        if (!selectionModeRef.current || !event.position) return
+        const overlayElement = document.createElement('div')
+        overlayElement.style.border = '2px solid red'
+        overlayElement.style.boxSizing = 'border-box'
+        const viewportPos = viewer.viewport.pointFromPixel(event.position)
+        viewer.addOverlay(
+          overlayElement,
+          new OpenSeadragon.Rect(viewportPos.x, viewportPos.y, 0, 0),
+        )
+        dragRef.current = { overlayElement, startPos: viewportPos }
+      },
+      dragHandler: (event: OpenSeadragon.MouseTrackerEvent) => {
+        if (!dragRef.current || !event.position) return
+        const viewportPos = viewer.viewport.pointFromPixel(event.position)
+        const diffX = viewportPos.x - dragRef.current.startPos.x
+        const diffY = viewportPos.y - dragRef.current.startPos.y
+        const location = new OpenSeadragon.Rect(
+          Math.min(dragRef.current.startPos.x, dragRef.current.startPos.x + diffX),
+          Math.min(dragRef.current.startPos.y, dragRef.current.startPos.y + diffY),
+          Math.abs(diffX),
+          Math.abs(diffY),
+        )
+        viewer.updateOverlay(dragRef.current.overlayElement, location)
+      },
+      releaseHandler: () => {
+        dragRef.current = null
+        selectionModeRef.current = false
+        viewer.setMouseNavEnabled(true)
+        selectionButton.element.style.outline = 'none'
+      },
+    })
 
     // Restore viewport state after the image has loaded
     if (initialViewport) {

@@ -16,4 +16,13 @@ declare module 'openseadragon' {
     /** Enable pinch-rotate gesture on touch devices. */
     pinchRotate?: boolean
   }
+
+  /**
+   * Drag and release tracker events carry a `position` property at runtime
+   * but @types/openseadragon only declares it on PointerMouseTrackerEvent.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface MouseTrackerEvent<T extends Event = Event> {
+    position?: Point | undefined
+  }
 }
