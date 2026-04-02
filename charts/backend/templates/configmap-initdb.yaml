@@ -103,6 +103,17 @@ data:
         updated_at    TIMESTAMPTZ DEFAULT now()
     );
 
+    -- Grant the CNPG application owner full access to all tables and
+    -- sequences.  postInitApplicationSQLRefs may execute as the superuser,
+    -- leaving the tables owned by 'postgres'.  These GRANTs ensure the
+    -- application user (cnpg.owner) can read/write every object.
+    GRANT ALL PRIVILEGES ON ALL TABLES    IN SCHEMA public TO {{ .Values.cnpg.owner | quote }};
+    GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {{ .Values.cnpg.owner | quote }};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+      GRANT ALL PRIVILEGES ON TABLES    TO {{ .Values.cnpg.owner | quote }};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public
+      GRANT ALL PRIVILEGES ON SEQUENCES TO {{ .Values.cnpg.owner | quote }};
+
   seed.sql: |
     -- Corgi Image Library – seed data
 
