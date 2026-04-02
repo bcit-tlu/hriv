@@ -13,10 +13,15 @@ service:
 # internal FQDN (<host>.<namespace>.svc.cluster.local:<port>) so that
 # DNS always resolves through kube-dns, avoiding corporate firewalls
 # that block non-443 traffic on public/node IPs.
-# Set BACKEND_URL to override the auto-constructed URL entirely.
+# Set env.BACKEND_URL to override the auto-constructed URL entirely.
 backend:
     host: corgi-backend
     port: 8000
+    # Namespace where the backend service lives.  When empty the chart
+    # uses .Release.Namespace (i.e. the namespace you pass to
+    # helm install/upgrade --namespace).  Set this explicitly if the
+    # backend is deployed to a different namespace than the frontend.
+    namespace: ""
 
 env:
     BACKEND_URL: ""

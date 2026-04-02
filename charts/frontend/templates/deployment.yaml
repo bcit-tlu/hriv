@@ -24,7 +24,7 @@ spec:
               protocol: TCP
           env:
             - name: BACKEND_URL
-              value: {{ .Values.env.BACKEND_URL | default (printf "http://%s.%s.svc.cluster.local:%d" .Values.backend.host .Release.Namespace (.Values.backend.port | int)) | quote }}
+              value: {{ .Values.env.BACKEND_URL | default (printf "http://%s.%s.svc.cluster.local:%d" .Values.backend.host (.Values.backend.namespace | default .Release.Namespace) (.Values.backend.port | int)) | quote }}
           livenessProbe:
             httpGet:
               path: /
