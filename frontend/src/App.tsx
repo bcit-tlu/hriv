@@ -296,19 +296,6 @@ export default function App() {
     }
   }, [processingJobs]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Remove completed/failed jobs after their snackbar auto-hide duration
-  useEffect(() => {
-    const doneJobs = processingJobs.filter((j) => j.status === 'completed' || j.status === 'failed')
-    if (doneJobs.length === 0) return
-
-    const timers = doneJobs.map((job) =>
-      setTimeout(() => {
-        setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id))
-      }, 6000),
-    )
-
-    return () => timers.forEach(clearTimeout)
-  }, [processingJobs])
 
   // Load announcement (works for both logged-in and login page)
   const loadAnnouncement = useCallback(async () => {
