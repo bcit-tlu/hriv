@@ -28,6 +28,7 @@ export interface ImageFormData {
   note?: string
   program_ids?: number[]
   active?: boolean
+  metadata_extra?: Record<string, unknown>
 }
 
 interface EditImageModalProps {
@@ -58,6 +59,13 @@ function EditImageForm({
   const [note, setNote] = useState(image?.note ?? '')
   const [programIds, setProgramIds] = useState<number[]>(image?.program_ids ?? [])
   const [active, setActive] = useState(image?.active ?? true)
+  const meta = image?.metadata_extra as Record<string, unknown> | null
+  const [measurementScale, setMeasurementScale] = useState<string>(
+    meta?.measurement_scale != null ? String(meta.measurement_scale) : '',
+  )
+  const [measurementUnit, setMeasurementUnit] = useState<string>(
+    typeof meta?.measurement_unit === 'string' ? meta.measurement_unit : '',
+  )
   const handleProgramChange = (event: SelectChangeEvent<number[]>) => {
     const value = event.target.value
     setProgramIds(typeof value === 'string' ? [] : value)
@@ -66,14 +74,33 @@ function EditImageForm({
   const handleSave = () => {
     const trimmedName = name.trim()
     if (!trimmedName) return
-    onSave({
+    // Only include metadata_extra when measurement fields have been touched
+    const scaleNum = measurementScale.trim() ? Number(measurementScale) : undefined
+    const unitStr = measurementUnit.trim() || undefined
+    const hasScale = scaleNum !== undefined && !Number.isNaN(scaleNum)
+    const hasUnit = unitStr !== undefined
+    const existingMeta = (image?.metadata_extra as Record<string, unknown>) ?? {}
+    const hadMeasurement =
+      existingMeta.measurement_scale != null || existingMeta.measurement_unit != null
+
+    const formData: ImageFormData = {
       name: trimmedName,
       category_id: categoryId,
       copyright: copyright.trim() || undefined,
       note: note.trim() || undefined,
       program_ids: programIds,
       active,
-    })
+    }
+
+    if (hasScale || hasUnit || hadMeasurement) {
+      formData.metadata_extra = {
+        ...existingMeta,
+        measurement_scale: hasScale ? scaleNum : null,
+        measurement_unit: hasUnit ? unitStr : null,
+      }
+    }
+
+    onSave(formData)
   }
 
   return (
@@ -186,6 +213,29 @@ function EditImageForm({
           }
           label="Active (visible to students)"
         />
+        <Typography variant="subtitle2" sx={{ mt: 1 }}>
+          Measurement Settings
+        </Typography>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <TextField
+            label="Scale (px per unit)"
+            fullWidth
+            variant="outlined"
+            type="number"
+            value={measurementScale}
+            onChange={(e) => setMeasurementScale(e.target.value)}
+            helperText="Image pixels per real-world unit"
+            slotProps={{ htmlInput: { min: 0, step: 'any' } }}
+          />
+          <TextField
+            label="Unit"
+            fullWidth
+            variant="outlined"
+            value={measurementUnit}
+            onChange={(e) => setMeasurementUnit(e.target.value)}
+            helperText='e.g. "mm", "um", "cm"'
+          />
+        </Box>
         {image && image.created_at && image.updated_at && (
           <Box sx={{ display: 'flex', gap: 4, mt: 1 }}>
             <Typography variant="caption" color="text.secondary">

@@ -169,6 +169,7 @@ export function updateImage(
     note?: string
     program_ids?: number[]
     active?: boolean
+    metadata_extra?: Record<string, unknown>
   },
 ): Promise<ApiImage> {
   return request(`/images/${id}`, {

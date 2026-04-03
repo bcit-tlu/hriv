@@ -34,7 +34,7 @@ import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
 import SearchIcon from '@mui/icons-material/Search'
 import ImageViewer from './components/ImageViewer'
-import type { ViewportState } from './components/ImageViewer'
+import type { ViewportState, MeasurementConfig, OverlayRect } from './components/ImageViewer'
 import CategoryTile from './components/CategoryTile'
 import ImageTile from './components/ImageTile'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
@@ -119,6 +119,7 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
       active: img.active,
       createdAt: img.created_at,
       updatedAt: img.updated_at,
+      metadataExtra: img.metadata_extra,
     })),
     program: node.program,
     status: node.status,
@@ -150,9 +151,11 @@ export default function App() {
 
   // Shareable-URL state
   const [viewportState, setViewportState] = useState<ViewportState | undefined>(undefined)
+  const [overlays, setOverlays] = useState<OverlayRect[]>([])
   const [snackOpen, setSnackOpen] = useState(false)
   const pendingImageId = useRef<number | null>(null)
   const pendingViewport = useRef<ViewportState | undefined>(undefined)
+  const pendingOverlays = useRef<OverlayRect[] | undefined>(undefined)
   const uncategorizedLoaded = useRef(false)
 
   // Report issue modal state
@@ -251,6 +254,19 @@ export default function App() {
             }
           }
         }
+        // Parse overlay rectangles (ov0..ov4) — format: x,y,w,h
+        const parsedOverlays: OverlayRect[] = []
+        for (let i = 0; i < 5; i++) {
+          const ov = params.get(`ov${i}`)
+          if (!ov) continue
+          const parts = ov.split(',').map(Number)
+          if (parts.length === 4 && parts.every((n) => !Number.isNaN(n))) {
+            parsedOverlays.push({ x: parts[0], y: parts[1], w: parts[2], h: parts[3] })
+          }
+        }
+        if (parsedOverlays.length > 0) {
+          pendingOverlays.current = parsedOverlays
+        }
       }
     }
   }, [])
@@ -261,6 +277,7 @@ export default function App() {
     setPath([])
     setSelectedImage(null)
     setViewportState(undefined)
+    setOverlays([])
     setProfileOpen(false)
     setEditModalOpen(false)
     setImageEditOpen(false)
@@ -306,6 +323,7 @@ export default function App() {
           active: img.active,
           createdAt: img.created_at,
           updatedAt: img.updated_at,
+          metadataExtra: img.metadata_extra,
         })),
       )
       uncategorizedLoaded.current = true
@@ -398,6 +416,10 @@ export default function App() {
       setSelectedImage(uncatImg)
       setViewportState(pendingViewport.current)
       pendingViewport.current = undefined
+      if (pendingOverlays.current) {
+        setOverlays(pendingOverlays.current)
+        pendingOverlays.current = undefined
+      }
       return
     }
 
@@ -408,11 +430,16 @@ export default function App() {
       setSelectedImage(result.image)
       setViewportState(pendingViewport.current)
       pendingViewport.current = undefined
+      if (pendingOverlays.current) {
+        setOverlays(pendingOverlays.current)
+        pendingOverlays.current = undefined
+      }
     } else if (!categoriesLoading && uncategorizedLoaded.current) {
       // Both data sources have loaded — image doesn't exist.
       // Clear pending state and URL so URL sync can resume normally.
       pendingImageId.current = null
       pendingViewport.current = undefined
+      pendingOverlays.current = undefined
       window.history.replaceState(null, '', window.location.pathname)
     }
     // Otherwise keep pendingImageId so we retry on the next data update.
@@ -433,18 +460,40 @@ export default function App() {
           params.set('rotation', viewportState.rotation.toFixed(1))
         }
       }
+      // Serialize overlay rectangles (up to 5)
+      for (let i = 0; i < Math.min(overlays.length, 5); i++) {
+        const r = overlays[i]
+        params.set(`ov${i}`, [r.x, r.y, r.w, r.h].map((n) => n.toPrecision(8)).join(','))
+      }
     }
     const qs = params.toString()
     const newUrl = qs ? `${window.location.pathname}?${qs}` : window.location.pathname
     window.history.replaceState(null, '', newUrl)
-  }, [selectedImage, viewportState])
+  }, [selectedImage, viewportState, overlays])
 
   const handleViewportChange = useCallback((state: ViewportState) => {
     setViewportState(state)
   }, [])
 
+  const handleOverlaysChange = useCallback((newOverlays: OverlayRect[]) => {
+    setOverlays(newOverlays)
+  }, [])
+
   // Memoize initialViewport so it stays referentially stable per image
   const initialViewport = useMemo(() => viewportState, [selectedImage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Memoize initialOverlays so they stay referentially stable per image
+  const initialOverlays = useMemo(() => overlays, [selectedImage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Build measurement config from the selected image's metadata
+  const selectedImageMeasurement = useMemo((): MeasurementConfig | undefined => {
+    const meta = selectedImage?.metadataExtra
+    if (!meta) return undefined
+    const scale = typeof meta.measurement_scale === 'number' ? meta.measurement_scale : undefined
+    const unit = typeof meta.measurement_unit === 'string' ? meta.measurement_unit : undefined
+    if (!scale && !unit) return undefined
+    return { scale, unit }
+  }, [selectedImage])
 
   const copyShareLink = useCallback(() => {
     const url = window.location.href
@@ -492,6 +541,7 @@ export default function App() {
   const clearImage = useCallback(() => {
     setSelectedImage(null)
     setViewportState(undefined)
+    setOverlays([])
   }, [])
 
   const navigateToCategory = (cat: Category) => {
@@ -612,7 +662,7 @@ export default function App() {
         note: selectedImage.note ?? null,
         program_ids: selectedImage.programIds,
         active: selectedImage.active,
-        metadata_extra: null,
+        metadata_extra: selectedImage.metadataExtra ?? null,
         created_at: selectedImage.createdAt ?? '',
         updated_at: selectedImage.updatedAt ?? '',
       }
@@ -630,7 +680,7 @@ export default function App() {
         note: browseEditImage.note ?? null,
         program_ids: browseEditImage.programIds,
         active: browseEditImage.active,
-        metadata_extra: null,
+        metadata_extra: browseEditImage.metadataExtra ?? null,
         created_at: browseEditImage.createdAt ?? '',
         updated_at: browseEditImage.updatedAt ?? '',
       }
@@ -668,6 +718,7 @@ export default function App() {
           active: updated.active,
           createdAt: updated.created_at,
           updatedAt: updated.updated_at,
+          metadataExtra: updated.metadata_extra,
         })
         setImageEditOpen(false)
         // Refresh categories and update breadcrumb path from the fresh tree
@@ -889,6 +940,7 @@ export default function App() {
                   active: img.active,
                   createdAt: img.created_at,
                   updatedAt: img.updated_at,
+                  metadataExtra: img.metadata_extra,
                 })
                 // Build breadcrumb path from the image's category
                 if (img.category_id != null) {
@@ -991,6 +1043,9 @@ export default function App() {
                   tileSources={selectedImage.tileSources}
                   initialViewport={initialViewport}
                   onViewportChange={handleViewportChange}
+                  measurement={selectedImageMeasurement}
+                  initialOverlays={initialOverlays}
+                  onOverlaysChange={handleOverlaysChange}
                 />
               </Paper>
 
@@ -1385,6 +1440,7 @@ export default function App() {
           setPath(catPath)
           setSelectedImage(image)
           setViewportState(undefined)
+          setOverlays([])
         }}
         onSelectProgram={() => {
           if (canManageUsers) setPage('people')

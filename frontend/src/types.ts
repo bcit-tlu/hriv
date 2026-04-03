@@ -10,6 +10,7 @@ export interface ImageItem {
   active: boolean
   createdAt?: string | null
   updatedAt?: string | null
+  metadataExtra?: Record<string, unknown> | null
 }
 
 export interface Category {
