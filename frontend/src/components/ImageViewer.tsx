@@ -202,6 +202,8 @@ export default function ImageViewer({
     viewer.addHandler('animation-finish', emitViewport)
 
     return () => {
+      selectionModeRef.current = false
+      dragRef.current = null
       selectionTracker.destroy()
       viewer.destroy()
       viewerRef.current = null
