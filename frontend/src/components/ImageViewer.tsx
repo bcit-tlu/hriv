@@ -464,7 +464,7 @@ export default function ImageViewer({
         }
       })
       lockButton.element.title = locked
-        ? 'Unlock overlays (remove from image metadata)'
+        ? 'Unlock overlays (re-enable clear button)'
         : 'Lock overlays (persist to image metadata)'
       lockButton.element.style.outline = locked ? '2px solid #fd0000' : 'none'
     }
@@ -477,7 +477,7 @@ export default function ImageViewer({
         srcDown: prefix + 'lock_open_pressed.svg',
         onClick: () => {
           if (overlaysLockedRef.current) {
-            // Unlock: remove persisted overlays
+            // Unlock: re-enable clear button (does not remove metadata)
             onUnlockOverlaysRef.current?.()
           } else {
             // Lock: persist current overlays

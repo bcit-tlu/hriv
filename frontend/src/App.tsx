@@ -1114,7 +1114,7 @@ export default function App() {
                   overlaysLocked={lockEngaged}
                   onLockOverlays={handleLockOverlays}
                   onUnlockOverlays={handleUnlockOverlays}
-                  onClearOverlays={handleClearOverlays}
+                  onClearOverlays={canEditContent ? handleClearOverlays : undefined}
                 />
               </Paper>
 
