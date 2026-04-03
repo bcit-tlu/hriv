@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from ..auth import get_current_user, require_role
 from ..database import get_db
 from ..models import Category, User
-from ..schemas import CategoryCreate, CategoryUpdate, CategoryOut, CategoryTree
+from ..schemas import CategoryCreate, CategoryUpdate, CategoryOut, CategoryTree, CategoryReorderRequest
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -20,7 +20,7 @@ async def _load_tree(db: AsyncSession, parent_id: int | None, *, user_role: str 
         select(Category)
         .where(Category.parent_id == parent_id if parent_id is not None else Category.parent_id.is_(None))
         .options(selectinload(Category.images))
-        .order_by(Category.label)
+        .order_by(Category.sort_order, Category.label)
     )
     result = await db.execute(stmt)
     cats = result.scalars().unique().all()
@@ -38,6 +38,7 @@ async def _load_tree(db: AsyncSession, parent_id: int | None, *, user_role: str 
             parent_id=cat.parent_id,
             program=cat.program,
             status=cat.status,
+            sort_order=cat.sort_order,
             metadata_extra=cat.metadata_,
             created_at=cat.created_at,
             updated_at=cat.updated_at,
@@ -69,7 +70,7 @@ async def list_categories(
         stmt = stmt.where(Category.parent_id == parent_id)
     else:
         stmt = stmt.where(Category.parent_id.is_(None))
-    stmt = stmt.order_by(Category.label)
+    stmt = stmt.order_by(Category.sort_order, Category.label)
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -97,6 +98,7 @@ async def create_category(
         parent_id=body.parent_id,
         program=body.program,
         status=body.status,
+        sort_order=body.sort_order,
         metadata_=body.metadata_extra or {},
     )
     db.add(cat)
@@ -141,6 +143,47 @@ async def update_category(
     await db.commit()
     await db.refresh(cat)
     return cat
+
+
+@router.put("/reorder", status_code=200)
+async def reorder_categories(
+    body: CategoryReorderRequest,
+    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    db: AsyncSession = Depends(get_db),
+):
+    # Build proposed parent graph and validate for cycles
+    parent_map: dict[int, int | None] = {item.id: item.parent_id for item in body.items}
+    for item in body.items:
+        if item.parent_id == item.id:
+            raise HTTPException(
+                status_code=400, detail="A category cannot be its own parent"
+            )
+    # Walk ancestor chains in the proposed graph to detect cycles
+    for item_id in parent_map:
+        visited: set[int] = set()
+        current: int | None = item_id
+        while current is not None:
+            if current in visited:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Reorder would create a circular parent reference",
+                )
+            visited.add(current)
+            if current in parent_map:
+                current = parent_map[current]
+            else:
+                # Not in the request — look up its existing parent in the DB
+                ancestor = await db.get(Category, current)
+                current = ancestor.parent_id if ancestor else None
+
+    for item in body.items:
+        cat = await db.get(Category, item.id)
+        if cat is None:
+            raise HTTPException(status_code=404, detail=f"Category {item.id} not found")
+        cat.parent_id = item.parent_id
+        cat.sort_order = item.sort_order
+    await db.commit()
+    return {"status": "ok"}
 
 
 @router.delete("/{category_id}", status_code=204)

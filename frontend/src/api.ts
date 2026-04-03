@@ -131,6 +131,15 @@ export function deleteCategory(id: number): Promise<void> {
   return request(`/categories/${id}`, { method: 'DELETE' })
 }
 
+export function reorderCategories(
+  items: Array<{ id: number; parent_id: number | null; sort_order: number }>,
+): Promise<void> {
+  return request('/categories/reorder', {
+    method: 'PUT',
+    body: JSON.stringify({ items }),
+  })
+}
+
 // ── Images ───────────────────────────────────────────────
 
 export function fetchImages(categoryId?: number): Promise<ApiImage[]> {

@@ -38,6 +38,7 @@ class Category(Base):
     )
     program: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str | None] = mapped_column(String(50), nullable=True, default="active")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

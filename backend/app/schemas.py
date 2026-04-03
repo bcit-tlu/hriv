@@ -50,6 +50,7 @@ class CategoryBase(BaseModel):
     parent_id: int | None = None
     program: str | None = None
     status: str | None = "active"
+    sort_order: int = 0
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
 
 
@@ -62,7 +63,18 @@ class CategoryUpdate(BaseModel):
     parent_id: int | None = None
     program: str | None = None
     status: str | None = None
+    sort_order: int | None = None
     metadata_extra: dict | None = None
+
+
+class CategoryReorderItem(BaseModel):
+    id: int
+    parent_id: int | None = None
+    sort_order: int
+
+
+class CategoryReorderRequest(BaseModel):
+    items: list[CategoryReorderItem]
 
 
 class CategoryOut(CategoryBase):

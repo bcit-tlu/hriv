@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS categories (
     parent_id     INTEGER REFERENCES categories(id) ON DELETE CASCADE,
     program       VARCHAR(255),
     status        VARCHAR(50) DEFAULT 'active',
+    sort_order    INTEGER NOT NULL DEFAULT 0,
     metadata      JSONB DEFAULT '{}',
     created_at    TIMESTAMPTZ DEFAULT now(),
     updated_at    TIMESTAMPTZ DEFAULT now()
