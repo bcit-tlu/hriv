@@ -38,6 +38,7 @@ async def _load_tree(db: AsyncSession, parent_id: int | None, *, user_role: str 
             parent_id=cat.parent_id,
             program=cat.program,
             status=cat.status,
+            sort_order=cat.sort_order,
             metadata_extra=cat.metadata_,
             created_at=cat.created_at,
             updated_at=cat.updated_at,
@@ -150,6 +151,31 @@ async def reorder_categories(
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
 ):
+    # Build proposed parent graph and validate for cycles
+    parent_map: dict[int, int | None] = {item.id: item.parent_id for item in body.items}
+    for item in body.items:
+        if item.parent_id == item.id:
+            raise HTTPException(
+                status_code=400, detail="A category cannot be its own parent"
+            )
+    # Walk ancestor chains in the proposed graph to detect cycles
+    for item_id in parent_map:
+        visited: set[int] = set()
+        current: int | None = item_id
+        while current is not None:
+            if current in visited:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Reorder would create a circular parent reference",
+                )
+            visited.add(current)
+            if current in parent_map:
+                current = parent_map[current]
+            else:
+                # Not in the request — look up its existing parent in the DB
+                ancestor = await db.get(Category, current)
+                current = ancestor.parent_id if ancestor else None
+
     for item in body.items:
         cat = await db.get(Category, item.id)
         if cat is None:
