@@ -518,22 +518,21 @@ export default function App() {
     return { scale, unit }
   }, [selectedImage])
 
-  // Lock overlays: persist to image metadata_extra and engage lock
+  // Lock overlays: persist to image metadata_extra and engage lock.
+  // Refreshes category tree so re-navigation reflects the update;
+  // does NOT call setSelectedImage to avoid triggering a viewer remount.
   const handleLockOverlays = useCallback(async (rects: OverlayRect[]) => {
     if (!selectedImage) return
     try {
       const meta = selectedImage.metadataExtra ?? {}
       const updatedMeta = { ...meta, locked_overlays: rects }
-      const updated = await apiUpdateImage(selectedImage.id, { metadata_extra: updatedMeta })
-      setSelectedImage({
-        ...selectedImage,
-        metadataExtra: updated.metadata_extra,
-      })
+      await apiUpdateImage(selectedImage.id, { metadata_extra: updatedMeta })
       setLockEngaged(true)
+      await loadCategories()
     } catch (err) {
       console.error('Failed to lock overlays', err)
     }
-  }, [selectedImage])
+  }, [selectedImage, loadCategories])
 
   // Unlock: only disengage the lock UI (re-enable clear button).
   // Does NOT remove persisted overlays from metadata.
@@ -541,7 +540,8 @@ export default function App() {
     setLockEngaged(false)
   }, [])
 
-  // Clear overlays: also remove from metadata if they were persisted
+  // Clear overlays: also remove from metadata if they were persisted.
+  // Refreshes category tree; does NOT call setSelectedImage.
   const handleClearOverlays = useCallback(async () => {
     if (!selectedImage) return
     if (!hasLockedOverlays) return
@@ -549,17 +549,14 @@ export default function App() {
       const meta = { ...(selectedImage.metadataExtra ?? {}) } as Record<string, unknown>
       delete meta.locked_overlays
       const updatedMeta = Object.keys(meta).length > 0 ? meta : null
-      const updated = await apiUpdateImage(selectedImage.id, {
+      await apiUpdateImage(selectedImage.id, {
         metadata_extra: updatedMeta as Record<string, unknown> | undefined,
       })
-      setSelectedImage({
-        ...selectedImage,
-        metadataExtra: updated.metadata_extra,
-      })
+      await loadCategories()
     } catch (err) {
       console.error('Failed to clear locked overlays', err)
     }
-  }, [selectedImage, hasLockedOverlays])
+  }, [selectedImage, hasLockedOverlays, loadCategories])
 
   const copyShareLink = useCallback(() => {
     const url = window.location.href
