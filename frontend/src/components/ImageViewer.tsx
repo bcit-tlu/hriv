@@ -353,8 +353,8 @@ export default function ImageViewer({
         const origEvent = event.originalEvent as MouseEvent | undefined
         if (origEvent?.shiftKey) {
           const maxDim = Math.max(Math.abs(diffX), Math.abs(diffY))
-          diffX = Math.sign(diffX) * maxDim
-          diffY = Math.sign(diffY) * maxDim
+          diffX = (Math.sign(diffX) || 1) * maxDim
+          diffY = (Math.sign(diffY) || 1) * maxDim
         }
 
         const location = new OpenSeadragon.Rect(
