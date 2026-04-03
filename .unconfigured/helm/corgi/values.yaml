@@ -70,8 +70,11 @@ database:
 ingress:
   enabled: false
   className: ""
-  annotations: {}
-    # nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+  annotations:
+    # Allow large image uploads through the ingress controller.
+    # Without this the nginx ingress controller defaults to 1 MB,
+    # which blocks pathology TIFF/SVS uploads.  0 = unlimited.
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
   hosts:
     - host: corgi.local
       paths:
