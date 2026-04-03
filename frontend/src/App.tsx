@@ -55,6 +55,7 @@ import {
   fetchCategoryTree,
   fetchAnnouncement,
   fetchUncategorizedImages,
+  fetchSourceImage,
   createCategory as apiCreateCategory,
   deleteCategory as apiDeleteCategory,
   updateCategory as apiUpdateCategory,
@@ -161,6 +162,17 @@ export default function App() {
   // Report issue modal state
   const [reportIssueOpen, setReportIssueOpen] = useState(false)
 
+  // Image processing tracking state (supports up to 5 concurrent jobs)
+  const MAX_PROCESSING_JOBS = 5
+  interface ProcessingJob {
+    id: number
+    filename: string
+    status: 'processing' | 'completed' | 'failed'
+    errorMessage?: string
+  }
+  const [processingJobs, setProcessingJobs] = useState<ProcessingJob[]>([])
+  const processingPollRefs = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
+
   // Search modal state
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchUsers, setSearchUsers] = useState<ApiUser[]>([])
@@ -211,6 +223,82 @@ export default function App() {
         updated_at: '',
       }
     : null
+
+  // Start polling for each new processing job (uses setTimeout chaining to avoid overlapping calls)
+  useEffect(() => {
+    const refs = processingPollRefs.current
+    const abortControllers = new Map<number, AbortController>()
+
+    for (const job of processingJobs) {
+      if (job.status !== 'processing') continue // only poll active jobs
+      if (refs.has(job.id)) continue // already polling
+
+      const schedulePoll = () => {
+        const controller = new AbortController()
+        abortControllers.set(job.id, controller)
+
+        const poll = async () => {
+          try {
+            const src = await fetchSourceImage(job.id)
+            if (controller.signal.aborted) return
+            if (src.status === 'completed') {
+              refs.delete(job.id)
+              setProcessingJobs((prev) =>
+                prev.map((j) => j.id === job.id ? { ...j, status: 'completed' as const } : j),
+              )
+              loadCategories()
+              loadUncategorizedImages()
+            } else if (src.status === 'failed') {
+              refs.delete(job.id)
+              setProcessingJobs((prev) =>
+                prev.map((j) =>
+                  j.id === job.id
+                    ? { ...j, status: 'failed' as const, errorMessage: src.error_message || undefined }
+                    : j,
+                ),
+              )
+            } else {
+              // Still processing — schedule next poll after this one completes
+              if (!controller.signal.aborted) {
+                refs.set(job.id, setTimeout(schedulePoll, 3000))
+              }
+            }
+          } catch {
+            // Network error — schedule retry if not aborted
+            if (!controller.signal.aborted) {
+              refs.set(job.id, setTimeout(schedulePoll, 3000))
+            }
+          }
+        }
+
+        poll()
+      }
+
+      schedulePoll()
+    }
+
+    // Clean up timeouts for jobs that were removed
+    for (const [id, timeout] of refs) {
+      if (!processingJobs.some((j) => j.id === id && j.status === 'processing')) {
+        clearTimeout(timeout)
+        refs.delete(id)
+        abortControllers.get(id)?.abort()
+        abortControllers.delete(id)
+      }
+    }
+
+    return () => {
+      for (const [, timeout] of refs) {
+        clearTimeout(timeout)
+      }
+      refs.clear()
+      for (const [, controller] of abortControllers) {
+        controller.abort()
+      }
+      abortControllers.clear()
+    }
+  }, [processingJobs]) // eslint-disable-line react-hooks/exhaustive-deps
+
 
   // Load announcement (works for both logged-in and login page)
   const loadAnnouncement = useCallback(async () => {
@@ -284,6 +372,7 @@ export default function App() {
     setBrowseEditImage(null)
     setSearchOpen(false)
     setSearchUsers([])
+    setProcessingJobs([])
   }, [currentUser])
 
   // Load users for search when modal opens (admin/instructor only)
@@ -1329,6 +1418,13 @@ export default function App() {
           loadCategories()
           loadUncategorizedImages()
         }}
+        onProcessingStarted={(sourceImageId, filename) => {
+          setProcessingJobs((prev) => {
+            if (prev.filter((j) => j.status === 'processing').length >= MAX_PROCESSING_JOBS) return prev
+            if (prev.some((j) => j.id === sourceImageId)) return prev
+            return [...prev, { id: sourceImageId, filename, status: 'processing' as const }]
+          })
+        }}
         categoryId={path.length > 0 ? path[path.length - 1].id : null}
         categories={categories}
         programs={programs}
@@ -1458,6 +1554,30 @@ export default function App() {
         message="Link copied to clipboard"
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       />
+
+      {/* Image processing snackbars (one per job, stacked above modals) */}
+      {processingJobs.map((job, index) => (
+        <Snackbar
+          key={job.id}
+          open
+          autoHideDuration={job.status !== 'processing' ? 6000 : null}
+          onClose={(_event, reason) => { if (reason === 'clickaway') return; setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id)) }}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          sx={{ zIndex: 1500, bottom: { xs: `${24 + index * 60}px !important` } }}
+        >
+          <Alert
+            severity={job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : 'info'}
+            variant="filled"
+            sx={{ width: '100%', display: 'flex', alignItems: 'center' }}
+            icon={job.status === 'processing' ? <CircularProgress size={20} sx={{ color: 'inherit' }} /> : undefined}
+            onClose={() => setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id))}
+          >
+            {job.status === 'processing' && `Processing: ${job.filename}`}
+            {job.status === 'completed' && `"${job.filename}" processed successfully!`}
+            {job.status === 'failed' && (job.errorMessage || `"${job.filename}" processing failed.`)}
+          </Alert>
+        </Snackbar>
+      ))}
 
     </Box>
   )

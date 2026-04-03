@@ -48,6 +48,8 @@ interface UploadImageModalProps {
   open: boolean
   onClose: () => void
   onUploaded: () => void
+  /** Called after file upload completes so the parent can track processing. */
+  onProcessingStarted?: (sourceImageId: number, filename: string) => void
   categoryId?: number | null
   categories: Category[]
   programs: Program[]
@@ -60,6 +62,7 @@ export default function UploadImageModal({
   open,
   onClose,
   onUploaded,
+  onProcessingStarted,
   categoryId: initialCategoryId,
   categories,
   programs,
@@ -145,7 +148,7 @@ export default function UploadImageModal({
     setError(null)
     setUploadProgress(0)
     try {
-      await uploadSourceImage(
+      const result = await uploadSourceImage(
         file,
         name || undefined,
         categoryId ?? undefined,
@@ -155,6 +158,8 @@ export default function UploadImageModal({
         active,
         (fraction) => setUploadProgress(fraction),
       )
+      // Hand off processing tracking to the parent and close the modal
+      onProcessingStarted?.(result.id, file.name)
       onUploaded()
       onClose()
     } catch (err) {
@@ -327,7 +332,7 @@ export default function UploadImageModal({
           </Box>
         )}
         <Typography variant="caption" color="text.secondary">
-          The image will be processed in the background to generate a zoomable view.
+          The image will be processed after upload to generate a zoomable view.
         </Typography>
         {error && (
           <Typography variant="body2" color="error">
