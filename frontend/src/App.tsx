@@ -7,7 +7,6 @@ import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import CircularProgress from '@mui/material/CircularProgress'
 import Container from '@mui/material/Container'
-import LinearProgress from '@mui/material/LinearProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
@@ -160,10 +159,11 @@ export default function App() {
   // Report issue modal state
   const [reportIssueOpen, setReportIssueOpen] = useState(false)
 
-  // Image processing tracking state
-  const [bgProcessingId, setBgProcessingId] = useState<number | null>(null)
-  const [bgProcessingFilename, setBgProcessingFilename] = useState<string>('')
-  const bgPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  // Image processing tracking state (supports up to 5 concurrent jobs)
+  const MAX_PROCESSING_JOBS = 5
+  interface ProcessingJob { id: number; filename: string }
+  const [processingJobs, setProcessingJobs] = useState<ProcessingJob[]>([])
+  const processingPollRefs = useRef<Map<number, ReturnType<typeof setInterval>>>(new Map())
   const [processingSnack, setProcessingSnack] = useState<{
     open: boolean
     message: string
@@ -221,54 +221,61 @@ export default function App() {
       }
     : null
 
-  // Poll for image processing status and auto-refresh when done
+  // Start polling for each new processing job
   useEffect(() => {
-    if (bgProcessingId === null) return
+    const refs = processingPollRefs.current
 
-    const poll = async () => {
-      try {
-        const src = await fetchSourceImage(bgProcessingId)
-        if (src.status === 'completed') {
-          setBgProcessingId(null)
-          if (bgPollRef.current) {
-            clearInterval(bgPollRef.current)
-            bgPollRef.current = null
+    for (const job of processingJobs) {
+      if (refs.has(job.id)) continue // already polling
+
+      const poll = async () => {
+        try {
+          const src = await fetchSourceImage(job.id)
+          if (src.status === 'completed') {
+            clearInterval(refs.get(job.id)!)
+            refs.delete(job.id)
+            setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id))
+            loadCategories()
+            loadUncategorizedImages()
+            setProcessingSnack({
+              open: true,
+              message: `"${job.filename}" processed successfully!`,
+              severity: 'success',
+            })
+          } else if (src.status === 'failed') {
+            clearInterval(refs.get(job.id)!)
+            refs.delete(job.id)
+            setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id))
+            setProcessingSnack({
+              open: true,
+              message: src.error_message || `"${job.filename}" processing failed.`,
+              severity: 'error',
+            })
           }
-          // Refresh the data
-          loadCategories()
-          loadUncategorizedImages()
-          setProcessingSnack({
-            open: true,
-            message: 'Image processed successfully and is now available!',
-            severity: 'success',
-          })
-        } else if (src.status === 'failed') {
-          setBgProcessingId(null)
-          if (bgPollRef.current) {
-            clearInterval(bgPollRef.current)
-            bgPollRef.current = null
-          }
-          setProcessingSnack({
-            open: true,
-            message: src.error_message || 'Image processing failed.',
-            severity: 'error',
-          })
+        } catch {
+          // Network error — keep polling
         }
-      } catch {
-        // Network error — keep polling
       }
+
+      poll()
+      refs.set(job.id, setInterval(poll, 3000))
     }
 
-    poll()
-    bgPollRef.current = setInterval(poll, 3000)
+    // Clean up intervals for jobs that were removed
+    for (const [id, interval] of refs) {
+      if (!processingJobs.some((j) => j.id === id)) {
+        clearInterval(interval)
+        refs.delete(id)
+      }
+    }
 
     return () => {
-      if (bgPollRef.current) {
-        clearInterval(bgPollRef.current)
-        bgPollRef.current = null
+      for (const [, interval] of refs) {
+        clearInterval(interval)
       }
+      refs.clear()
     }
-  }, [bgProcessingId]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [processingJobs]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load announcement (works for both logged-in and login page)
   const loadAnnouncement = useCallback(async () => {
@@ -828,6 +835,26 @@ export default function App() {
             <MenuItem onClick={() => { setManageMenuAnchor(null); openAnnModal() }}>Announcement</MenuItem>
           </Menu>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {/* Processing indicators (up to 5 concurrent) */}
+            {processingJobs.map((job) => (
+              <Tooltip key={job.id} title={`Processing: ${job.filename}`}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 0.5 }}>
+                  <CircularProgress size={16} sx={{ color: 'inherit' }} />
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: 'inherit',
+                      maxWidth: 100,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {job.filename}
+                  </Typography>
+                </Box>
+              </Tooltip>
+            ))}
             <Tooltip title="Search">
               <IconButton
                 onClick={() => setSearchOpen(true)}
@@ -914,34 +941,6 @@ export default function App() {
           </Box>
         </Toolbar>
       </AppBar>
-
-      {/* Image processing indicator (non-blocking bar below app bar) */}
-      {bgProcessingId !== null && (
-        <Box sx={{ width: '100%', position: 'relative' }}>
-          <LinearProgress
-            sx={{
-              height: 3,
-              '& .MuiLinearProgress-bar': { animationDuration: '1.5s' },
-            }}
-          />
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 1,
-              px: 2,
-              py: 0.5,
-              bgcolor: 'info.main',
-              color: 'info.contrastText',
-            }}
-          >
-            <CircularProgress size={14} sx={{ color: 'inherit' }} />
-            <Typography variant="caption">
-              Processing {bgProcessingFilename || 'image'}…
-            </Typography>
-          </Box>
-        </Box>
-      )}
 
       {/* Announcement banner */}
       {announcement && <AnnouncementBanner message={announcement} />}
@@ -1364,8 +1363,11 @@ export default function App() {
           loadUncategorizedImages()
         }}
         onProcessingStarted={(sourceImageId, filename) => {
-          setBgProcessingId(sourceImageId)
-          setBgProcessingFilename(filename)
+          setProcessingJobs((prev) => {
+            if (prev.length >= MAX_PROCESSING_JOBS) return prev
+            if (prev.some((j) => j.id === sourceImageId)) return prev
+            return [...prev, { id: sourceImageId, filename }]
+          })
         }}
         categoryId={path.length > 0 ? path[path.length - 1].id : null}
         categories={categories}
