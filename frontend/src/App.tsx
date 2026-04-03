@@ -152,6 +152,8 @@ export default function App() {
   // Shareable-URL state
   const [viewportState, setViewportState] = useState<ViewportState | undefined>(undefined)
   const [overlays, setOverlays] = useState<OverlayRect[]>([])
+  // Lock-engaged: whether the clear button is disabled (separate from metadata persistence)
+  const [lockEngaged, setLockEngaged] = useState(false)
   const [snackOpen, setSnackOpen] = useState(false)
   const pendingImageId = useRef<number | null>(null)
   const pendingViewport = useRef<ViewportState | undefined>(undefined)
@@ -482,7 +484,7 @@ export default function App() {
   // Memoize initialViewport so it stays referentially stable per image
   const initialViewport = useMemo(() => viewportState, [selectedImage]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Derive locked overlay state from the selected image's metadata
+  // Derive locked overlays from the selected image's metadata
   const lockedOverlays = useMemo((): OverlayRect[] | undefined => {
     const meta = selectedImage?.metadataExtra
     if (!meta) return undefined
@@ -491,11 +493,15 @@ export default function App() {
     return locked as OverlayRect[]
   }, [selectedImage])
 
-  const overlaysLocked = lockedOverlays !== undefined && lockedOverlays.length > 0
+  const hasLockedOverlays = lockedOverlays !== undefined && lockedOverlays.length > 0
 
-  // Memoize initialOverlays: merge locked overlays with URL overlays on initial load
+  // Auto-engage lock when image has persisted overlays
+  useEffect(() => {
+    setLockEngaged(hasLockedOverlays)
+  }, [hasLockedOverlays])
+
+  // Memoize initialOverlays: use locked overlays on initial load if no URL overlays
   const initialOverlays = useMemo(() => {
-    // If there are locked overlays and no user-drawn overlays yet, use locked ones
     if (lockedOverlays && lockedOverlays.length > 0 && overlays.length === 0) {
       return lockedOverlays
     }
@@ -512,7 +518,7 @@ export default function App() {
     return { scale, unit }
   }, [selectedImage])
 
-  // Lock overlays: persist to image metadata_extra
+  // Lock overlays: persist to image metadata_extra and engage lock
   const handleLockOverlays = useCallback(async (rects: OverlayRect[]) => {
     if (!selectedImage) return
     try {
@@ -523,14 +529,22 @@ export default function App() {
         ...selectedImage,
         metadataExtra: updated.metadata_extra,
       })
+      setLockEngaged(true)
     } catch (err) {
       console.error('Failed to lock overlays', err)
     }
   }, [selectedImage])
 
-  // Unlock overlays: remove from image metadata_extra
-  const handleUnlockOverlays = useCallback(async () => {
+  // Unlock: only disengage the lock UI (re-enable clear button).
+  // Does NOT remove persisted overlays from metadata.
+  const handleUnlockOverlays = useCallback(() => {
+    setLockEngaged(false)
+  }, [])
+
+  // Clear overlays: also remove from metadata if they were persisted
+  const handleClearOverlays = useCallback(async () => {
     if (!selectedImage) return
+    if (!hasLockedOverlays) return
     try {
       const meta = { ...(selectedImage.metadataExtra ?? {}) } as Record<string, unknown>
       delete meta.locked_overlays
@@ -543,9 +557,9 @@ export default function App() {
         metadataExtra: updated.metadata_extra,
       })
     } catch (err) {
-      console.error('Failed to unlock overlays', err)
+      console.error('Failed to clear locked overlays', err)
     }
-  }, [selectedImage])
+  }, [selectedImage, hasLockedOverlays])
 
   const copyShareLink = useCallback(() => {
     const url = window.location.href
@@ -1099,9 +1113,10 @@ export default function App() {
                   initialOverlays={initialOverlays}
                   onOverlaysChange={handleOverlaysChange}
                   canEditContent={canEditContent}
-                  overlaysLocked={overlaysLocked}
+                  overlaysLocked={lockEngaged}
                   onLockOverlays={handleLockOverlays}
                   onUnlockOverlays={handleUnlockOverlays}
+                  onClearOverlays={handleClearOverlays}
                 />
               </Paper>
 

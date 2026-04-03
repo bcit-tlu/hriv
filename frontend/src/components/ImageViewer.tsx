@@ -42,6 +42,8 @@ interface ImageViewerProps {
   onLockOverlays?: (overlays: OverlayRect[]) => void
   /** Called when the user unlocks overlays — parent should remove from metadata */
   onUnlockOverlays?: () => void
+  /** Called when overlays are cleared — parent should remove locked_overlays from metadata */
+  onClearOverlays?: () => void
 }
 
 interface DragState {
@@ -99,6 +101,7 @@ export default function ImageViewer({
   overlaysLocked = false,
   onLockOverlays,
   onUnlockOverlays,
+  onClearOverlays,
 }: ImageViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
@@ -110,6 +113,7 @@ export default function ImageViewer({
   const measurementRef = useRef(measurement)
   const onLockOverlaysRef = useRef(onLockOverlays)
   const onUnlockOverlaysRef = useRef(onUnlockOverlays)
+  const onClearOverlaysRef = useRef(onClearOverlays)
   const overlaysLockedRef = useRef(overlaysLocked)
   const canEditContentRef = useRef(canEditContent)
   const updateLockUiRef = useRef<(() => void) | null>(null)
@@ -128,6 +132,9 @@ export default function ImageViewer({
   useEffect(() => {
     onUnlockOverlaysRef.current = onUnlockOverlays
   }, [onUnlockOverlays])
+  useEffect(() => {
+    onClearOverlaysRef.current = onClearOverlays
+  }, [onClearOverlays])
   useEffect(() => {
     overlaysLockedRef.current = overlaysLocked
   }, [overlaysLocked])
@@ -497,7 +504,7 @@ export default function ImageViewer({
       srcHover: prefix + 'clear_hover.svg',
       srcDown: prefix + 'clear_pressed.svg',
       onClick: () => {
-        // Prevent clearing when overlays are locked
+        // Prevent clearing when lock is engaged
         if (overlaysLockedRef.current) return
         for (const el of overlaysRef.current) {
           viewer.removeOverlay(el)
@@ -510,6 +517,8 @@ export default function ImageViewer({
         }
         labelPairs.length = 0
         emitOverlays()
+        // Also remove persisted overlays from metadata
+        onClearOverlaysRef.current?.()
       },
     })
     // Visually disable clear button when locked
