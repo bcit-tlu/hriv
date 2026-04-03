@@ -355,6 +355,7 @@ export default function App() {
     setBrowseEditImage(null)
     setSearchOpen(false)
     setSearchUsers([])
+    setProcessingJobs([])
   }, [currentUser])
 
   // Load users for search when modal opens (admin/instructor only)
