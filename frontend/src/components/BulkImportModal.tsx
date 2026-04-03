@@ -202,7 +202,7 @@ export default function BulkImportModal({
                 </Typography>
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
-                Supports JPEG, PNG, TIFF, BMP, GIF, WebP, and SVS files.
+                Supports JPEG, PNG, TIFF, BMP, GIF, WebP, SVS, and ZIP files.
               </Typography>
             </Box>
 

@@ -63,6 +63,7 @@ import {
   updateUser as apiUpdateUser,
   fetchPrograms as apiFetchPrograms,
   updateImage as apiUpdateImage,
+  deleteImage as apiDeleteImage,
   updateAnnouncement,
   createProgram,
   updateProgram,
@@ -1462,6 +1463,13 @@ export default function App() {
         open={imageEditOpen}
         onClose={() => setImageEditOpen(false)}
         onSave={handleSaveViewerImage}
+        onDelete={selectedImage ? async () => {
+          await apiDeleteImage(selectedImage.id)
+          setImageEditOpen(false)
+          clearImage()
+          await loadCategories()
+          loadUncategorizedImages()
+        } : undefined}
         image={selectedApiImage}
         categories={categories}
         programs={programs}
@@ -1475,6 +1483,12 @@ export default function App() {
         open={browseEditImage != null}
         onClose={() => setBrowseEditImage(null)}
         onSave={handleSaveBrowseImage}
+        onDelete={browseEditImage ? async () => {
+          await apiDeleteImage(browseEditImage.id)
+          setBrowseEditImage(null)
+          await loadCategories()
+          loadUncategorizedImages()
+        } : undefined}
         image={browseApiImage}
         categories={categories}
         programs={programs}

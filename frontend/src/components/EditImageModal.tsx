@@ -6,6 +6,7 @@ import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Divider from '@mui/material/Divider'
 import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import InputLabel from '@mui/material/InputLabel'
@@ -35,6 +36,7 @@ interface EditImageModalProps {
   open: boolean
   onClose: () => void
   onSave: (data: ImageFormData) => void
+  onDelete?: () => Promise<void>
   image: ApiImage | null
   categories: Category[]
   programs: Program[]
@@ -46,6 +48,7 @@ interface EditImageModalProps {
 function EditImageForm({
   onClose,
   onSave,
+  onDelete,
   image,
   categories,
   programs,
@@ -66,6 +69,23 @@ function EditImageForm({
   const [measurementUnit, setMeasurementUnit] = useState<string>(
     typeof meta?.measurement_unit === 'string' ? meta.measurement_unit : '',
   )
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  const handleDelete = async () => {
+    if (!onDelete) return
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      return
+    }
+    setDeleting(true)
+    try {
+      await onDelete()
+    } catch {
+      setDeleting(false)
+    }
+  }
+
   const handleProgramChange = (event: SelectChangeEvent<number[]>) => {
     const value = event.target.value
     setProgramIds(typeof value === 'string' ? [] : value)
@@ -246,13 +266,41 @@ function EditImageForm({
             </Typography>
           </Box>
         )}
+
+        {onDelete && (
+          <>
+            <Divider />
+            <Box>
+              <Button
+                color="error"
+                variant={confirmDelete ? 'contained' : 'outlined'}
+                onClick={handleDelete}
+                disabled={deleting}
+                fullWidth
+              >
+                {confirmDelete
+                  ? 'Confirm Delete Image'
+                  : 'Delete Image'}
+              </Button>
+              {confirmDelete && (
+                <Typography
+                  variant="caption"
+                  color="error"
+                  sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
+                >
+                  This action cannot be undone. Click again to confirm.
+                </Typography>
+              )}
+            </Box>
+          </>
+        )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
+        <Button onClick={onClose} disabled={deleting}>Cancel</Button>
         <Button
           onClick={handleSave}
           variant="contained"
-          disabled={!name.trim()}
+          disabled={!name.trim() || deleting}
         >
           Save
         </Button>
@@ -265,6 +313,7 @@ export default function EditImageModal({
   open,
   onClose,
   onSave,
+  onDelete,
   image,
   categories,
   programs,
@@ -281,6 +330,7 @@ export default function EditImageModal({
           key={formKey}
           onClose={onClose}
           onSave={onSave}
+          onDelete={onDelete}
           image={image}
           categories={categories}
           programs={programs}

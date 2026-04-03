@@ -159,7 +159,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
   const [showFilters, setShowFilters] = useState(false)
 
   // Pagination state
-  const [rowsPerPage, setRowsPerPage] = useState(10)
+  const [rowsPerPage, setRowsPerPage] = useState(25)
   const [currentPage, setCurrentPage] = useState(0)
 
   // Action menu state
@@ -447,10 +447,11 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
   }
 
   const handleMenuDelete = () => {
-    if (menuImage) {
-      handleDeleteImage(menuImage)
-    }
+    const image = menuImage
     handleMenuClose()
+    if (image) {
+      handleDeleteImage(image).then(() => onCategoriesChanged?.())
+    }
   }
 
   if (loading) {
@@ -825,6 +826,18 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
           await handleSaveImage(data)
           onCategoriesChanged?.()
         }}
+        onDelete={editingImage ? async () => {
+          await deleteImage(editingImage.id)
+          setSelected((prev) => {
+            const next = new Set(prev)
+            next.delete(editingImage.id)
+            return next
+          })
+          setEditOpen(false)
+          setEditingImage(null)
+          await loadImages()
+          onCategoriesChanged?.()
+        } : undefined}
         image={editingImage}
         categories={categories}
         programs={programs}
