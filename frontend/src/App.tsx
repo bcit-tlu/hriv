@@ -277,6 +277,7 @@ export default function App() {
     setPath([])
     setSelectedImage(null)
     setViewportState(undefined)
+    setOverlays([])
     setProfileOpen(false)
     setEditModalOpen(false)
     setImageEditOpen(false)
@@ -1439,6 +1440,7 @@ export default function App() {
           setPath(catPath)
           setSelectedImage(image)
           setViewportState(undefined)
+          setOverlays([])
         }}
         onSelectProgram={() => {
           if (canManageUsers) setPage('people')
