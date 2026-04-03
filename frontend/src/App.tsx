@@ -482,8 +482,25 @@ export default function App() {
   // Memoize initialViewport so it stays referentially stable per image
   const initialViewport = useMemo(() => viewportState, [selectedImage]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Memoize initialOverlays so they stay referentially stable per image
-  const initialOverlays = useMemo(() => overlays, [selectedImage]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Derive locked overlay state from the selected image's metadata
+  const lockedOverlays = useMemo((): OverlayRect[] | undefined => {
+    const meta = selectedImage?.metadataExtra
+    if (!meta) return undefined
+    const locked = meta.locked_overlays
+    if (!Array.isArray(locked) || locked.length === 0) return undefined
+    return locked as OverlayRect[]
+  }, [selectedImage])
+
+  const overlaysLocked = lockedOverlays !== undefined && lockedOverlays.length > 0
+
+  // Memoize initialOverlays: merge locked overlays with URL overlays on initial load
+  const initialOverlays = useMemo(() => {
+    // If there are locked overlays and no user-drawn overlays yet, use locked ones
+    if (lockedOverlays && lockedOverlays.length > 0 && overlays.length === 0) {
+      return lockedOverlays
+    }
+    return overlays
+  }, [selectedImage]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Build measurement config from the selected image's metadata
   const selectedImageMeasurement = useMemo((): MeasurementConfig | undefined => {
@@ -493,6 +510,41 @@ export default function App() {
     const unit = typeof meta.measurement_unit === 'string' ? meta.measurement_unit : undefined
     if (!scale && !unit) return undefined
     return { scale, unit }
+  }, [selectedImage])
+
+  // Lock overlays: persist to image metadata_extra
+  const handleLockOverlays = useCallback(async (rects: OverlayRect[]) => {
+    if (!selectedImage) return
+    try {
+      const meta = selectedImage.metadataExtra ?? {}
+      const updatedMeta = { ...meta, locked_overlays: rects }
+      const updated = await apiUpdateImage(selectedImage.id, { metadata_extra: updatedMeta })
+      setSelectedImage({
+        ...selectedImage,
+        metadataExtra: updated.metadata_extra,
+      })
+    } catch (err) {
+      console.error('Failed to lock overlays', err)
+    }
+  }, [selectedImage])
+
+  // Unlock overlays: remove from image metadata_extra
+  const handleUnlockOverlays = useCallback(async () => {
+    if (!selectedImage) return
+    try {
+      const meta = { ...(selectedImage.metadataExtra ?? {}) } as Record<string, unknown>
+      delete meta.locked_overlays
+      const updatedMeta = Object.keys(meta).length > 0 ? meta : null
+      const updated = await apiUpdateImage(selectedImage.id, {
+        metadata_extra: updatedMeta as Record<string, unknown> | undefined,
+      })
+      setSelectedImage({
+        ...selectedImage,
+        metadataExtra: updated.metadata_extra,
+      })
+    } catch (err) {
+      console.error('Failed to unlock overlays', err)
+    }
   }, [selectedImage])
 
   const copyShareLink = useCallback(() => {
@@ -1046,6 +1098,10 @@ export default function App() {
                   measurement={selectedImageMeasurement}
                   initialOverlays={initialOverlays}
                   onOverlaysChange={handleOverlaysChange}
+                  canEditContent={canEditContent}
+                  overlaysLocked={overlaysLocked}
+                  onLockOverlays={handleLockOverlays}
+                  onUnlockOverlays={handleUnlockOverlays}
                 />
               </Paper>
 
