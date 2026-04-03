@@ -1504,7 +1504,7 @@ export default function App() {
           key={job.id}
           open
           autoHideDuration={job.status !== 'processing' ? 6000 : null}
-          onClose={() => setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id))}
+          onClose={(_event, reason) => { if (reason === 'clickaway') return; setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id)) }}
           anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
           sx={{ zIndex: 1500, bottom: { xs: `${24 + index * 60}px !important` } }}
         >
