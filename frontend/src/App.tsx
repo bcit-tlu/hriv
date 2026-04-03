@@ -153,6 +153,8 @@ export default function App() {
   // Shareable-URL state
   const [viewportState, setViewportState] = useState<ViewportState | undefined>(undefined)
   const [overlays, setOverlays] = useState<OverlayRect[]>([])
+  // Lock-engaged: whether the clear button is disabled (separate from metadata persistence)
+  const [lockEngaged, setLockEngaged] = useState(false)
   const [snackOpen, setSnackOpen] = useState(false)
   const pendingImageId = useRef<number | null>(null)
   const pendingViewport = useRef<ViewportState | undefined>(undefined)
@@ -571,8 +573,29 @@ export default function App() {
   // Memoize initialViewport so it stays referentially stable per image
   const initialViewport = useMemo(() => viewportState, [selectedImage]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Memoize initialOverlays so they stay referentially stable per image
-  const initialOverlays = useMemo(() => overlays, [selectedImage]) // eslint-disable-line react-hooks/exhaustive-deps
+  // Derive locked overlays from the selected image's metadata
+  const lockedOverlays = useMemo((): OverlayRect[] | undefined => {
+    const meta = selectedImage?.metadataExtra
+    if (!meta) return undefined
+    const locked = meta.locked_overlays
+    if (!Array.isArray(locked) || locked.length === 0) return undefined
+    return locked as OverlayRect[]
+  }, [selectedImage])
+
+  const hasLockedOverlays = lockedOverlays !== undefined && lockedOverlays.length > 0
+
+  // Auto-engage lock when image has persisted overlays
+  useEffect(() => {
+    setLockEngaged(hasLockedOverlays)
+  }, [hasLockedOverlays])
+
+  // Memoize initialOverlays: use locked overlays on initial load if no URL overlays
+  const initialOverlays = useMemo(() => {
+    if (lockedOverlays && lockedOverlays.length > 0 && overlays.length === 0) {
+      return lockedOverlays
+    }
+    return overlays
+  }, [selectedImage]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Build measurement config from the selected image's metadata
   const selectedImageMeasurement = useMemo((): MeasurementConfig | undefined => {
@@ -583,6 +606,49 @@ export default function App() {
     if (!scale && !unit) return undefined
     return { scale, unit }
   }, [selectedImage])
+
+  // Lock overlays: persist to image metadata_extra and engage lock.
+  // Refreshes category tree so re-navigation reflects the update;
+  // does NOT call setSelectedImage to avoid triggering a viewer remount.
+  const handleLockOverlays = useCallback(async (rects: OverlayRect[]) => {
+    if (!selectedImage) return
+    try {
+      const meta = selectedImage.metadataExtra ?? {}
+      const updatedMeta = { ...meta, locked_overlays: rects }
+      await apiUpdateImage(selectedImage.id, { metadata_extra: updatedMeta })
+      setLockEngaged(true)
+      await loadCategories()
+      loadUncategorizedImages()
+    } catch (err) {
+      console.error('Failed to lock overlays', err)
+    }
+  }, [selectedImage, loadCategories, loadUncategorizedImages])
+
+  // Unlock: only disengage the lock UI (re-enable clear button).
+  // Does NOT remove persisted overlays from metadata.
+  const handleUnlockOverlays = useCallback(() => {
+    setLockEngaged(false)
+  }, [])
+
+  // Clear overlays: also remove from metadata if they were persisted.
+  // Refreshes category tree; does NOT call setSelectedImage.
+  // No hasLockedOverlays guard — selectedImage may be stale after a lock
+  // in the same session (we intentionally skip setSelectedImage on lock).
+  const handleClearOverlays = useCallback(async () => {
+    if (!selectedImage) return
+    try {
+      const meta = { ...(selectedImage.metadataExtra ?? {}) } as Record<string, unknown>
+      delete meta.locked_overlays
+      const updatedMeta = Object.keys(meta).length > 0 ? meta : null
+      await apiUpdateImage(selectedImage.id, {
+        metadata_extra: updatedMeta as Record<string, unknown> | undefined,
+      })
+      await loadCategories()
+      loadUncategorizedImages()
+    } catch (err) {
+      console.error('Failed to clear locked overlays', err)
+    }
+  }, [selectedImage, loadCategories, loadUncategorizedImages])
 
   const copyShareLink = useCallback(() => {
     const url = window.location.href
@@ -1135,6 +1201,11 @@ export default function App() {
                   measurement={selectedImageMeasurement}
                   initialOverlays={initialOverlays}
                   onOverlaysChange={handleOverlaysChange}
+                  canEditContent={canEditContent}
+                  overlaysLocked={lockEngaged}
+                  onLockOverlays={handleLockOverlays}
+                  onUnlockOverlays={handleUnlockOverlays}
+                  onClearOverlays={canEditContent ? handleClearOverlays : undefined}
                 />
               </Paper>
 

@@ -34,6 +34,16 @@ interface ImageViewerProps {
   initialOverlays?: OverlayRect[]
   /** Called whenever the set of overlay rectangles changes */
   onOverlaysChange?: (overlays: OverlayRect[]) => void
+  /** Whether the current user can edit content (admin/instructor) */
+  canEditContent?: boolean
+  /** Whether overlays are currently locked (persisted to image metadata) */
+  overlaysLocked?: boolean
+  /** Called when the user locks overlays — parent should persist to metadata */
+  onLockOverlays?: (overlays: OverlayRect[]) => void
+  /** Called when the user unlocks overlays — parent should remove from metadata */
+  onUnlockOverlays?: () => void
+  /** Called when overlays are cleared — parent should remove locked_overlays from metadata */
+  onClearOverlays?: () => void
 }
 
 interface DragState {
@@ -87,6 +97,11 @@ export default function ImageViewer({
   measurement,
   initialOverlays,
   onOverlaysChange,
+  canEditContent = false,
+  overlaysLocked = false,
+  onLockOverlays,
+  onUnlockOverlays,
+  onClearOverlays,
 }: ImageViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
@@ -96,6 +111,12 @@ export default function ImageViewer({
   const dragRef = useRef<DragState | null>(null)
   const overlaysRef = useRef<HTMLDivElement[]>([])
   const measurementRef = useRef(measurement)
+  const onLockOverlaysRef = useRef(onLockOverlays)
+  const onUnlockOverlaysRef = useRef(onUnlockOverlays)
+  const onClearOverlaysRef = useRef(onClearOverlays)
+  const overlaysLockedRef = useRef(overlaysLocked)
+  const canEditContentRef = useRef(canEditContent)
+  const updateLockUiRef = useRef<(() => void) | null>(null)
   useEffect(() => {
     onViewportChangeRef.current = onViewportChange
   }, [onViewportChange])
@@ -105,6 +126,21 @@ export default function ImageViewer({
   useEffect(() => {
     measurementRef.current = measurement
   }, [measurement])
+  useEffect(() => {
+    onLockOverlaysRef.current = onLockOverlays
+  }, [onLockOverlays])
+  useEffect(() => {
+    onUnlockOverlaysRef.current = onUnlockOverlays
+  }, [onUnlockOverlays])
+  useEffect(() => {
+    onClearOverlaysRef.current = onClearOverlays
+  }, [onClearOverlays])
+  useEffect(() => {
+    overlaysLockedRef.current = overlaysLocked
+  }, [overlaysLocked])
+  useEffect(() => {
+    canEditContentRef.current = canEditContent
+  }, [canEditContent])
 
   const emitViewport = useCallback(() => {
     const viewer = viewerRef.current
@@ -413,6 +449,57 @@ export default function ImageViewer({
     viewer.addHandler('animation', repositionLabels)
     viewer.addHandler('animation-finish', repositionLabels)
 
+    // --- Lock overlay toolbar button (visible to admin/instructor) ---
+    let lockButton: OpenSeadragon.Button | null = null
+    const updateLockIcon = () => {
+      if (!lockButton) return
+      const locked = overlaysLockedRef.current
+      const state = locked ? 'lock_closed' : 'lock_open'
+      // Update all four OSD button image states (REST, HOVER, GROUP, DOWN)
+      const imgs = lockButton.element.querySelectorAll('img')
+      // OSD Button appends imgs as: imgRest, imgGroup, imgHover, imgDown
+      const suffixes = ['rest', 'grouphover', 'hover', 'pressed']
+      imgs.forEach((img, i) => {
+        if (i < suffixes.length) {
+          img.src = prefix + state + '_' + suffixes[i] + '.svg'
+        }
+      })
+      lockButton.element.title = locked
+        ? 'Unlock overlays (re-enable clear button)'
+        : 'Lock overlays (persist to image metadata)'
+      lockButton.element.style.outline = locked ? '2px solid #fd0000' : 'none'
+    }
+    if (canEditContentRef.current) {
+      lockButton = new OpenSeadragon.Button({
+        tooltip: 'Lock overlays (persist to image metadata)',
+        srcRest: prefix + 'lock_open_rest.svg',
+        srcGroup: prefix + 'lock_open_grouphover.svg',
+        srcHover: prefix + 'lock_open_hover.svg',
+        srcDown: prefix + 'lock_open_pressed.svg',
+        onClick: () => {
+          if (overlaysLockedRef.current) {
+            // Unlock: re-enable clear button (does not remove metadata)
+            onUnlockOverlaysRef.current?.()
+          } else {
+            // Lock: persist current overlays
+            const rects: OverlayRect[] = labelPairs.slice(0, 5).map((p) => ({
+              x: p.rect.x,
+              y: p.rect.y,
+              w: p.rect.width,
+              h: p.rect.height,
+            }))
+            if (rects.length > 0) {
+              onLockOverlaysRef.current?.(rects)
+            }
+          }
+        },
+      })
+      viewer.addControl(lockButton.element, {
+        anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+      })
+      updateLockIcon()
+    }
+
     // --- Clear overlays toolbar button ---
     const clearButton = new OpenSeadragon.Button({
       tooltip: 'Clear all selection rectangles',
@@ -421,6 +508,8 @@ export default function ImageViewer({
       srcHover: prefix + 'clear_hover.svg',
       srcDown: prefix + 'clear_pressed.svg',
       onClick: () => {
+        // Prevent clearing when lock is engaged
+        if (overlaysLockedRef.current) return
         for (const el of overlaysRef.current) {
           viewer.removeOverlay(el)
         }
@@ -432,11 +521,25 @@ export default function ImageViewer({
         }
         labelPairs.length = 0
         emitOverlays()
+        // Also remove persisted overlays from metadata
+        onClearOverlaysRef.current?.()
       },
     })
+    // Visually disable clear button when locked
+    const updateClearButtonState = () => {
+      clearButton.element.style.opacity = overlaysLockedRef.current ? '0.3' : '1'
+      clearButton.element.style.pointerEvents = overlaysLockedRef.current ? 'none' : 'auto'
+    }
+    updateClearButtonState()
     viewer.addControl(clearButton.element, {
       anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
     })
+
+    // Expose a function to reactively update lock/clear UI when overlaysLocked changes
+    updateLockUiRef.current = () => {
+      updateLockIcon()
+      updateClearButtonState()
+    }
 
     // Restore viewport state and initial overlays after the image has loaded
     viewer.addOnceHandler('open', () => {
@@ -471,6 +574,11 @@ export default function ImageViewer({
       viewerRef.current = null
     }
   }, [tileSources, initialViewport, initialOverlays, emitViewport, updateMeasurementLabels])
+
+  // Reactively update lock/clear button UI when overlaysLocked prop changes
+  useEffect(() => {
+    updateLockUiRef.current?.()
+  }, [overlaysLocked])
 
   return (
     <Box
