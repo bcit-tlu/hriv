@@ -161,14 +161,14 @@ export default function App() {
 
   // Image processing tracking state (supports up to 5 concurrent jobs)
   const MAX_PROCESSING_JOBS = 5
-  interface ProcessingJob { id: number; filename: string }
+  interface ProcessingJob {
+    id: number
+    filename: string
+    status: 'processing' | 'completed' | 'failed'
+    errorMessage?: string
+  }
   const [processingJobs, setProcessingJobs] = useState<ProcessingJob[]>([])
-  const processingPollRefs = useRef<Map<number, ReturnType<typeof setInterval>>>(new Map())
-  const [processingSnack, setProcessingSnack] = useState<{
-    open: boolean
-    message: string
-    severity: 'info' | 'success' | 'error'
-  }>({ open: false, message: '', severity: 'info' })
+  const processingPollRefs = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map())
 
   // Search modal state
   const [searchOpen, setSearchOpen] = useState(false)
@@ -221,61 +221,94 @@ export default function App() {
       }
     : null
 
-  // Start polling for each new processing job
+  // Start polling for each new processing job (uses setTimeout chaining to avoid overlapping calls)
   useEffect(() => {
     const refs = processingPollRefs.current
+    const abortControllers = new Map<number, AbortController>()
 
     for (const job of processingJobs) {
+      if (job.status !== 'processing') continue // only poll active jobs
       if (refs.has(job.id)) continue // already polling
 
-      const poll = async () => {
-        try {
-          const src = await fetchSourceImage(job.id)
-          if (src.status === 'completed') {
-            clearInterval(refs.get(job.id)!)
-            refs.delete(job.id)
-            setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id))
-            loadCategories()
-            loadUncategorizedImages()
-            setProcessingSnack({
-              open: true,
-              message: `"${job.filename}" processed successfully!`,
-              severity: 'success',
-            })
-          } else if (src.status === 'failed') {
-            clearInterval(refs.get(job.id)!)
-            refs.delete(job.id)
-            setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id))
-            setProcessingSnack({
-              open: true,
-              message: src.error_message || `"${job.filename}" processing failed.`,
-              severity: 'error',
-            })
+      const schedulePoll = () => {
+        const controller = new AbortController()
+        abortControllers.set(job.id, controller)
+
+        const poll = async () => {
+          try {
+            const src = await fetchSourceImage(job.id)
+            if (controller.signal.aborted) return
+            if (src.status === 'completed') {
+              refs.delete(job.id)
+              setProcessingJobs((prev) =>
+                prev.map((j) => j.id === job.id ? { ...j, status: 'completed' as const } : j),
+              )
+              loadCategories()
+              loadUncategorizedImages()
+            } else if (src.status === 'failed') {
+              refs.delete(job.id)
+              setProcessingJobs((prev) =>
+                prev.map((j) =>
+                  j.id === job.id
+                    ? { ...j, status: 'failed' as const, errorMessage: src.error_message || undefined }
+                    : j,
+                ),
+              )
+            } else {
+              // Still processing — schedule next poll after this one completes
+              if (!controller.signal.aborted) {
+                refs.set(job.id, setTimeout(schedulePoll, 3000))
+              }
+            }
+          } catch {
+            // Network error — schedule retry if not aborted
+            if (!controller.signal.aborted) {
+              refs.set(job.id, setTimeout(schedulePoll, 3000))
+            }
           }
-        } catch {
-          // Network error — keep polling
         }
+
+        poll()
       }
 
-      poll()
-      refs.set(job.id, setInterval(poll, 3000))
+      schedulePoll()
     }
 
-    // Clean up intervals for jobs that were removed
-    for (const [id, interval] of refs) {
-      if (!processingJobs.some((j) => j.id === id)) {
-        clearInterval(interval)
+    // Clean up timeouts for jobs that were removed
+    for (const [id, timeout] of refs) {
+      if (!processingJobs.some((j) => j.id === id && j.status === 'processing')) {
+        clearTimeout(timeout)
         refs.delete(id)
+        abortControllers.get(id)?.abort()
+        abortControllers.delete(id)
       }
     }
 
     return () => {
-      for (const [, interval] of refs) {
-        clearInterval(interval)
+      for (const [, timeout] of refs) {
+        clearTimeout(timeout)
       }
       refs.clear()
+      for (const [, controller] of abortControllers) {
+        controller.abort()
+      }
+      abortControllers.clear()
     }
   }, [processingJobs]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Remove completed/failed jobs after their snackbar auto-hide duration
+  useEffect(() => {
+    const doneJobs = processingJobs.filter((j) => j.status === 'completed' || j.status === 'failed')
+    if (doneJobs.length === 0) return
+
+    const timers = doneJobs.map((job) =>
+      setTimeout(() => {
+        setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id))
+      }, 6000),
+    )
+
+    return () => timers.forEach(clearTimeout)
+  }, [processingJobs])
 
   // Load announcement (works for both logged-in and login page)
   const loadAnnouncement = useCallback(async () => {
@@ -835,26 +868,6 @@ export default function App() {
             <MenuItem onClick={() => { setManageMenuAnchor(null); openAnnModal() }}>Announcement</MenuItem>
           </Menu>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            {/* Processing indicators (up to 5 concurrent) */}
-            {processingJobs.map((job) => (
-              <Tooltip key={job.id} title={`Processing: ${job.filename}`}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 0.5 }}>
-                  <CircularProgress size={16} sx={{ color: 'inherit' }} />
-                  <Typography
-                    variant="caption"
-                    sx={{
-                      color: 'inherit',
-                      maxWidth: 100,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {job.filename}
-                  </Typography>
-                </Box>
-              </Tooltip>
-            ))}
             <Tooltip title="Search">
               <IconButton
                 onClick={() => setSearchOpen(true)}
@@ -1366,7 +1379,7 @@ export default function App() {
           setProcessingJobs((prev) => {
             if (prev.length >= MAX_PROCESSING_JOBS) return prev
             if (prev.some((j) => j.id === sourceImageId)) return prev
-            return [...prev, { id: sourceImageId, filename }]
+            return [...prev, { id: sourceImageId, filename, status: 'processing' as const }]
           })
         }}
         categoryId={path.length > 0 ? path[path.length - 1].id : null}
@@ -1498,22 +1511,29 @@ export default function App() {
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       />
 
-      {/* Image processing snackbar */}
-      <Snackbar
-        open={processingSnack.open}
-        autoHideDuration={processingSnack.severity === 'info' ? null : 6000}
-        onClose={() => setProcessingSnack((prev) => ({ ...prev, open: false }))}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert
-          onClose={() => setProcessingSnack((prev) => ({ ...prev, open: false }))}
-          severity={processingSnack.severity}
-          variant="filled"
-          sx={{ width: '100%' }}
+      {/* Image processing snackbars (one per job, stacked) */}
+      {processingJobs.map((job, index) => (
+        <Snackbar
+          key={job.id}
+          open
+          autoHideDuration={job.status !== 'processing' ? 6000 : null}
+          onClose={() => setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id))}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          sx={{ bottom: { xs: `${24 + index * 60}px !important` } }}
         >
-          {processingSnack.message}
-        </Alert>
-      </Snackbar>
+          <Alert
+            severity={job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : 'info'}
+            variant="filled"
+            sx={{ width: '100%', display: 'flex', alignItems: 'center' }}
+            icon={job.status === 'processing' ? <CircularProgress size={20} sx={{ color: 'inherit' }} /> : undefined}
+            onClose={() => setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id))}
+          >
+            {job.status === 'processing' && `Processing: ${job.filename}`}
+            {job.status === 'completed' && `"${job.filename}" processed successfully!`}
+            {job.status === 'failed' && (job.errorMessage || `"${job.filename}" processing failed.`)}
+          </Alert>
+        </Snackbar>
+      ))}
 
     </Box>
   )
