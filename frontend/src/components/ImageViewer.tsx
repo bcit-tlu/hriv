@@ -148,7 +148,7 @@ export default function ImageViewer({
     })
 
     // --- Mouse tracker for drawing selection rectangles ---
-    new OpenSeadragon.MouseTracker({
+    const selectionTracker = new OpenSeadragon.MouseTracker({
       element: viewer.element,
       pressHandler: (event: OpenSeadragon.MouseTrackerEvent) => {
         if (!selectionModeRef.current || !event.position) return
@@ -176,6 +176,7 @@ export default function ImageViewer({
         viewer.updateOverlay(dragRef.current.overlayElement, location)
       },
       releaseHandler: () => {
+        if (!dragRef.current) return
         dragRef.current = null
         selectionModeRef.current = false
         viewer.setMouseNavEnabled(true)
@@ -201,6 +202,7 @@ export default function ImageViewer({
     viewer.addHandler('animation-finish', emitViewport)
 
     return () => {
+      selectionTracker.destroy()
       viewer.destroy()
       viewerRef.current = null
     }
