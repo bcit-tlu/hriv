@@ -89,10 +89,13 @@ class AuditMiddleware(BaseHTTPMiddleware):
             auth_header = request.headers.get("Authorization") or ""
             if auth_header.startswith("Bearer "):
                 try:
+                    # Skip expiry check so we still capture identity for
+                    # expired-but-validly-signed tokens in the audit trail.
                     payload = jwt.decode(
                         auth_header[7:],
                         auth_settings.jwt_secret,
                         algorithms=[auth_settings.jwt_algorithm],
+                        options={"verify_exp": False},
                     )
                     sub = payload.get("sub")
                     if sub is not None:
@@ -100,7 +103,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
                     user_email = payload.get("email")
                     user_role = payload.get("role")
                 except Exception:
-                    pass  # invalid/expired token — just skip identity fields
+                    pass  # invalid/malformed token — skip identity fields
 
             extra: dict[str, object] = {
                 "event": "http.request",
