@@ -181,7 +181,7 @@ export default function CategoryPickerSelect({
             </MenuItem>
           )}
           {options.map((opt) => (
-            <MenuItem key={opt.id} value={String(opt.id)}>
+            <MenuItem key={opt.id} value={String(opt.id)} sx={{ pl: 2 + opt.depth * 3 }}>
               <Box
                 sx={{
                   display: 'flex',
@@ -191,7 +191,7 @@ export default function CategoryPickerSelect({
                 }}
               >
                 <ListItemText>
-                  {'  '.repeat(opt.depth)}{opt.depth > 0 ? '\u2514 ' : ''}<span style={{ opacity: opt.status === 'hidden' ? 0.5 : 1 }}>{opt.label}</span>
+                  {opt.depth > 0 ? '\u2514 ' : ''}<span style={{ opacity: opt.status === 'hidden' ? 0.5 : 1 }}>{opt.label}</span>
                 </ListItemText>
                 {onToggleVisibility && (
                   <Tooltip title={opt.status === 'hidden' ? 'Show to students' : 'Hide from students'}>
