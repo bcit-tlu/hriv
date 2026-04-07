@@ -344,9 +344,12 @@ export default function ImageViewer({
       onClick: () => {
         selectionModeRef.current = !selectionModeRef.current
         viewer.setMouseNavEnabled(!selectionModeRef.current)
-        selectionButton.element.style.boxShadow = selectionModeRef.current
-          ? 'inset 0 0 0 2px red'
+        selectionButton.element.style.outline = selectionModeRef.current
+          ? '2px solid red'
           : 'none'
+        selectionButton.element.style.outlineOffset = selectionModeRef.current
+          ? '-2px'
+          : ''
       },
     })
     // Eliminate inline-block descender gap so inset border aligns with visible button area
@@ -430,7 +433,8 @@ export default function ImageViewer({
         currentRect = null
         selectionModeRef.current = false
         viewer.setMouseNavEnabled(true)
-        selectionButton.element.style.boxShadow = 'none'
+        selectionButton.element.style.outline = 'none'
+        selectionButton.element.style.outlineOffset = ''
       },
     })
 
@@ -469,7 +473,8 @@ export default function ImageViewer({
       lockButton.element.title = locked
         ? 'Unlock overlays (re-enable clear button)'
         : 'Lock overlays (persist to image metadata)'
-      lockButton.element.style.boxShadow = locked ? 'inset 0 0 0 2px red' : 'none'
+      lockButton.element.style.outline = locked ? '2px solid red' : 'none'
+      lockButton.element.style.outlineOffset = locked ? '-2px' : ''
     }
     if (canEditContentRef.current) {
       lockButton = new OpenSeadragon.Button({
