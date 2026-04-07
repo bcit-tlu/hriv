@@ -350,6 +350,8 @@ export default function ImageViewer({
           : 'none'
       },
     })
+    // Eliminate inline-block descender gap so inset border aligns with visible button area
+    selectionButton.element.style.lineHeight = '0'
     viewer.addControl(selectionButton.element, {
       anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
     })
@@ -495,6 +497,7 @@ export default function ImageViewer({
           }
         },
       })
+      lockButton.element.style.lineHeight = '0'
       viewer.addControl(lockButton.element, {
         anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
       })
