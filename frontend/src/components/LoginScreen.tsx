@@ -223,51 +223,12 @@ export default function LoginScreen({
             <Box
                 sx={{
                     flex: "0 0 50%",
-                    backgroundImage: "url(/kidney-splash.jpg)",
+                    backgroundImage: "url(/hriv-splash.png)",
                     backgroundSize: "cover",
                     backgroundPosition: "center",
                     display: { xs: "none", md: "block" },
-                    position: "relative",
                 }}
-            >
-                <Box
-                    sx={{
-                        position: "absolute",
-                        right: 12,
-                        bottom: 12,
-                        maxWidth: "80%",
-                        px: 1.25,
-                        py: 0.75,
-                        bgcolor: "rgba(0, 0, 0, 0.6)",
-                        borderRadius: 1,
-                    }}
-                >
-                    <Typography
-                        variant="caption"
-                        sx={{ color: "white", lineHeight: 1.4 }}
-                    >
-                        ZEISS Microscopy from Germany,{" "}
-                        <a
-                            href="https://creativecommons.org/licenses/by/2.0"
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ color: "#fff" }}
-                        >
-                            CC BY 2.0
-                        </a>
-                        , via{" "}
-                        <a
-                            href="https://commons.wikimedia.org/wiki/File:Kidney_section,_fluorescence_microscopy_(30575642655).jpg"
-                            target="_blank"
-                            rel="noreferrer"
-                            style={{ color: "#fff" }}
-                        >
-                            Wikimedia Commons
-                        </a>
-                        .
-                    </Typography>
-                </Box>
-            </Box>
+            />
         </Box>
     );
 }
