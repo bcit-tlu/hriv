@@ -765,24 +765,28 @@ export default function CanvasOverlay({
             style={{ width: '100%', height: '100%', display: 'block' }}
           />
           {/* Clickable link overlays */}
-          {linkBoxes.map((lb) => (
-            <a
-              key={lb.key}
-              href={lb.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={lb.text}
-              style={{
-                position: 'absolute',
-                left: lb.left,
-                top: lb.top,
-                width: lb.width,
-                height: lb.height,
-                pointerEvents: 'auto',
-                cursor: 'pointer',
-              }}
-            />
-          ))}
+          {linkBoxes.map((lb) => {
+            // Only allow http/https URLs to prevent javascript: XSS
+            if (!/^https?:\/\//i.test(lb.url)) return null
+            return (
+              <a
+                key={lb.key}
+                href={lb.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={lb.text}
+                style={{
+                  position: 'absolute',
+                  left: lb.left,
+                  top: lb.top,
+                  width: lb.width,
+                  height: lb.height,
+                  pointerEvents: 'auto',
+                  cursor: 'pointer',
+                }}
+              />
+            )
+          })}
         </Box>
       )}
 

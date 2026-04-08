@@ -609,10 +609,21 @@ export default function App() {
     setLockEngaged(hasLockedOverlays)
   }, [hasLockedOverlays])
 
+  // Local override for canvas annotations so view mode reflects edits immediately
+  // (selectedImage is intentionally NOT updated after saves to avoid viewer remount)
+  const [localCanvasAnnotations, setLocalCanvasAnnotations] = useState<CanvasAnnotation[] | null>(null)
+
   // Reset version ref when a different image is selected
   useEffect(() => {
     latestVersionRef.current = selectedImage?.version ?? 0
     latestMetadataRef.current = undefined // reset to 'uninitialised' so first read falls back to selectedImage
+    setLocalCanvasAnnotations(null) // fall back to server-derived data for new image
+    // Clear any pending canvas annotation saves for the previous image
+    if (canvasSaveTimerRef.current) {
+      clearTimeout(canvasSaveTimerRef.current)
+      canvasSaveTimerRef.current = null
+    }
+    pendingCanvasAnnotationsRef.current = null
   }, [selectedImage])
 
   // Memoize initialOverlays: use locked overlays on initial load if no URL overlays
@@ -671,7 +682,9 @@ export default function App() {
   // Save canvas annotations to image metadata_extra (debounced).
   // Rapid edits reset a 600ms timer; if a save is already in-flight the
   // latest data is queued and flushed when the current request completes.
+  // Also eagerly updates local state so view mode reflects edits immediately.
   const handleCanvasAnnotationsChange = useCallback((annotations: CanvasAnnotation[]) => {
+    setLocalCanvasAnnotations(annotations)
     if (canvasSaveTimerRef.current) clearTimeout(canvasSaveTimerRef.current)
     if (canvasSaveInFlightRef.current) {
       // A save is in-flight — queue the latest data (replaces any prior queued data)
@@ -1320,7 +1333,7 @@ export default function App() {
                   onLockOverlays={handleLockOverlays}
                   onUnlockOverlays={handleUnlockOverlays}
                   onClearOverlays={canEditContent ? handleClearOverlays : undefined}
-                  canvasAnnotations={canvasAnnotations}
+                  canvasAnnotations={localCanvasAnnotations ?? canvasAnnotations}
                   onCanvasAnnotationsChange={handleCanvasAnnotationsChange}
                 />
               </Paper>
