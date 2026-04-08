@@ -157,6 +157,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    oidc_subject: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True)
     role: Mapped[str] = mapped_column(String(50), nullable=False, default="student")
     program_id: Mapped[int | None] = mapped_column(
         ForeignKey("programs.id", ondelete="SET NULL"), nullable=True

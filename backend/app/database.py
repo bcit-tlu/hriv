@@ -12,6 +12,15 @@ class Settings(BaseSettings):
     db_pool_size: int = 10
     db_max_overflow: int = 20
 
+    # OIDC / OAuth settings (Phase 3 — Identity)
+    oidc_enabled: bool = False
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: str = ""
+    oidc_redirect_uri: str = ""
+    oidc_scopes: str = "openid email profile"
+    oidc_role_mapping: str = "{}"  # JSON: {"idp-group": "corgi-role"}
+
     @model_validator(mode="after")
     def _normalize_database_scheme(self) -> "Settings":
         """Rewrite ``postgresql://`` to ``postgresql+asyncpg://`` so that

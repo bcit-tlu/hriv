@@ -5,13 +5,15 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .auth import auth_settings
 from .database import get_db, settings
 from .logging_config import setup_logging
 from .middleware import AuditMiddleware
-from .routers import admin, announcement, auth, bulk_import, categories, images, issues, programs, upload, users
+from .routers import admin, announcement, auth, bulk_import, categories, images, issues, oidc, programs, upload, users
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +48,10 @@ _cors_origins = [
 
 app.add_middleware(AuditMiddleware)
 
+# Starlette session middleware — required by authlib's OIDC client to store
+# the OAuth state/nonce between the login redirect and the callback.
+app.add_middleware(SessionMiddleware, secret_key=auth_settings.jwt_secret)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
@@ -56,6 +62,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix="/api")
+app.include_router(oidc.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(bulk_import.router, prefix="/api")
 app.include_router(announcement.router, prefix="/api")

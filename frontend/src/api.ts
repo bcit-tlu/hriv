@@ -219,6 +219,24 @@ export function bulkDeleteImages(body: {
   })
 }
 
+// ── OIDC ────────────────────────────────────────────────
+
+export interface OidcStatus {
+  enabled: boolean
+}
+
+export function fetchOidcEnabled(): Promise<OidcStatus> {
+  return request('/auth/oidc/enabled')
+}
+
+/**
+ * Return the full URL the browser should navigate to in order to start the
+ * OIDC login flow.  This is a backend redirect endpoint, not a JSON API.
+ */
+export function getOidcLoginUrl(): string {
+  return `${BASE}/api/auth/oidc/login`
+}
+
 // ── Users ────────────────────────────────────────────────
 
 export function fetchUsers(): Promise<ApiUser[]> {
