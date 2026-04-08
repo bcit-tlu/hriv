@@ -24,21 +24,45 @@ class AuthSettings(Settings):
     jwt_expire_minutes: int = 1440  # 24 hours
 
 
-auth_settings = AuthSettings()
+_auth_settings: AuthSettings | None = None
 
-# Generate a random secret on each backend startup so that tokens from a
-# previous container instance (e.g. after ``docker compose down -v``) are
-# automatically invalidated.  An explicit ``JWT_SECRET`` env-var still takes
-# precedence for production deployments that need stable tokens.
-if not auth_settings.jwt_secret:
-    auth_settings.jwt_secret = secrets.token_urlsafe(32)
-    logger.warning(
-        "No JWT_SECRET configured — using an ephemeral random secret. "
-        "Sessions will not survive restarts and tokens will not be valid "
-        "across multiple replicas. Set the JWT_SECRET environment variable "
-        "for production deployments.",
-        extra={"event": "auth.jwt_secret_missing"},
-    )
+
+def _get_auth_settings() -> AuthSettings:
+    """Return the singleton ``AuthSettings``, creating it on first call.
+
+    Lazy initialisation avoids reading environment variables and generating
+    an ephemeral JWT secret at module import time, which lets unit tests
+    import this module without triggering side effects.
+    """
+    global _auth_settings
+    if _auth_settings is None:
+        _auth_settings = AuthSettings()
+        # Generate a random secret on each backend startup so that tokens from
+        # a previous container instance (e.g. after ``docker compose down -v``)
+        # are automatically invalidated.  An explicit ``JWT_SECRET`` env-var
+        # still takes precedence for production deployments that need stable
+        # tokens.
+        if not _auth_settings.jwt_secret:
+            _auth_settings.jwt_secret = secrets.token_urlsafe(32)
+            logger.warning(
+                "No JWT_SECRET configured — using an ephemeral random secret. "
+                "Sessions will not survive restarts and tokens will not be valid "
+                "across multiple replicas. Set the JWT_SECRET environment variable "
+                "for production deployments.",
+                extra={"event": "auth.jwt_secret_missing"},
+            )
+    return _auth_settings
+
+
+class _LazyAuthSettings:
+    """Proxy so ``auth_settings.X`` still works without eager instantiation."""
+    def __getattr__(self, name: str):
+        return getattr(_get_auth_settings(), name)
+    def __setattr__(self, name: str, value):
+        setattr(_get_auth_settings(), name, value)
+
+
+auth_settings = _LazyAuthSettings()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 

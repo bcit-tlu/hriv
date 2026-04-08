@@ -37,14 +37,57 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-engine = create_async_engine(
-    settings.database_url,
-    echo=False,
-    pool_size=settings.db_pool_size,
-    max_overflow=settings.db_max_overflow,
-    pool_pre_ping=True,
-)
-async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+_engine = None
+_async_session = None
+
+
+def get_engine():
+    """Return the async engine, creating it on first call.
+
+    Lazy initialisation avoids executing ``create_async_engine`` at module
+    import time, which lets unit tests import application modules without
+    needing a live database driver or connection string.
+    """
+    global _engine
+    if _engine is None:
+        _engine = create_async_engine(
+            settings.database_url,
+            echo=False,
+            pool_size=settings.db_pool_size,
+            max_overflow=settings.db_max_overflow,
+            pool_pre_ping=True,
+        )
+    return _engine
+
+
+def get_async_session():
+    """Return the session factory, creating it on first call."""
+    global _async_session
+    if _async_session is None:
+        _async_session = async_sessionmaker(
+            get_engine(), class_=AsyncSession, expire_on_commit=False
+        )
+    return _async_session
+
+
+# Backward-compatible module-level aliases so that existing code using
+# ``from .database import engine, async_session`` continues to work.
+# These are lazy proxies that resolve on first attribute access.
+class _LazyEngine:
+    """Proxy that defers ``create_async_engine`` until first use."""
+    def __getattr__(self, name: str):
+        return getattr(get_engine(), name)
+
+class _LazySession:
+    """Proxy that defers session-factory creation until first use."""
+    def __call__(self, *args, **kwargs):
+        return get_async_session()(*args, **kwargs)
+    def __getattr__(self, name: str):
+        return getattr(get_async_session(), name)
+
+
+engine = _LazyEngine()
+async_session = _LazySession()
 
 
 class Base(DeclarativeBase):
@@ -52,5 +95,5 @@ class Base(DeclarativeBase):
 
 
 async def get_db() -> AsyncSession:  # type: ignore[misc]
-    async with async_session() as session:
+    async with get_async_session()() as session:
         yield session
