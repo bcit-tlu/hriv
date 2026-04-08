@@ -879,11 +879,12 @@ export default function App() {
   }
 
   const addCategoryInline = useCallback(
-    async (label: string, parentId: number | null) => {
+    async (label: string, parentId: number | null): Promise<number | void> => {
       try {
-        await apiCreateCategory({ label, parent_id: parentId })
+        const created = await apiCreateCategory({ label, parent_id: parentId })
         await loadCategories()
         loadUncategorizedImages()
+        return created.id
       } catch (err) {
         console.error('Failed to create category', err)
       }
@@ -1587,7 +1588,16 @@ export default function App() {
         }}
       >
         <Typography variant="caption" color="text.secondary">
-          <strong>BCIT Teaching and Learning Unit</strong>
+          <Link
+            href="https://github.com/bcit-tlu"
+            target="_blank"
+            rel="noopener noreferrer"
+            color="text.secondary"
+            underline="hover"
+            sx={{ fontWeight: 'bold' }}
+          >
+            BCIT Teaching and Learning Unit
+          </Link>
           {' - '}
           <strong>Source code:</strong>{' '}
           <Link
@@ -1654,7 +1664,7 @@ export default function App() {
         onToggleVisibility={toggleCategoryVisibility}
       />
 
-      {/* Image edit modal (viewer page) */}
+      {/* Image edit modal (viewer page) — no View Image button since we're already viewing */}
       <EditImageModal
         open={imageEditOpen}
         onClose={() => setImageEditOpen(false)}
@@ -1689,6 +1699,18 @@ export default function App() {
         categories={categories}
         programs={programs}
         onAddCategory={addCategoryInline}
+        onEditCategory={editCategoryInline}
+        onToggleVisibility={toggleCategoryVisibility}
+        onViewImage={browseEditImage ? () => {
+          setSelectedImage(browseEditImage)
+          setBrowseEditImage(null)
+          if (browseEditImage.categoryId != null) {
+            const catPath = findCategoryPath(categories, browseEditImage.categoryId)
+            if (catPath) setPath(catPath)
+          } else {
+            setPath([])
+          }
+        } : undefined}
       />
 
       {/* Upload image modal */}
@@ -1863,7 +1885,7 @@ export default function App() {
                     component="button"
                     color="inherit"
                     underline="always"
-                    sx={{ fontWeight: 'bold', verticalAlign: 'baseline', cursor: 'pointer' }}
+                    sx={{ fontWeight: 'bold', verticalAlign: 'baseline', cursor: 'pointer', color: '#42a5f5', pl: '10px' }}
                     onClick={async () => {
                       // Categories may not have refreshed yet; reload and search fresh data
                       let found = false
@@ -1918,7 +1940,7 @@ export default function App() {
                       }
                     }}
                   >
-                    View
+                    View image
                   </Link>
                 )}
               </>

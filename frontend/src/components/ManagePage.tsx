@@ -109,7 +109,7 @@ function CategoryBreadcrumb({
   )
 }
 
-type SortableColumn = 'id' | 'name' | 'category' | 'copyright' | 'note' | 'program' | 'active' | 'created_at' | 'updated_at'
+type SortableColumn = 'id' | 'name' | 'category' | 'copyright' | 'note' | 'program' | 'active' | 'updated_at'
 type SortDirection = 'asc' | 'desc'
 
 interface ManagePageProps {
@@ -117,7 +117,7 @@ interface ManagePageProps {
   onViewImage?: (image: ApiImage) => void
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
-  onAddCategory?: (label: string, parentId: number | null) => Promise<void>
+  onAddCategory?: (label: string, parentId: number | null) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
 }
@@ -193,11 +193,13 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
     }
   }
 
-  // Helper to get category label for sorting
+  // Helper to get full category path string for sorting and filtering
   const getCategoryLabel = useCallback((img: ApiImage): string => {
     if (img.category_id == null) return ''
     const seg = categoryPaths.get(img.category_id)
-    return seg ? seg.category.label : ''
+    if (!seg) return ''
+    const fullPath = [...seg.ancestors, seg.category]
+    return fullPath.map((c) => c.label).join(' : ')
   }, [categoryPaths])
 
   // Helper to get program names for sorting
@@ -256,9 +258,6 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
           break
         case 'active':
           cmp = Number(a.active) - Number(b.active)
-          break
-        case 'created_at':
-          cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
           break
         case 'updated_at':
           cmp = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
@@ -584,15 +583,6 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                     Status
                   </TableSortLabel>
                 </TableCell>
-                <TableCell sortDirection={sortColumn === 'created_at' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'created_at'}
-                    direction={sortColumn === 'created_at' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('created_at')}
-                  >
-                    Created
-                  </TableSortLabel>
-                </TableCell>
                 <TableCell sortDirection={sortColumn === 'updated_at' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'updated_at'}
@@ -695,7 +685,6 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                 </TableCell>
                 <TableCell />
                 <TableCell />
-                <TableCell />
               </TableRow>
               )}
             </TableHead>
@@ -745,9 +734,6 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
                       checked={img.active}
                       onChange={() => handleToggleActive(img)}
                     />
-                  </TableCell>
-                  <TableCell>
-                    {new Date(img.created_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell>
                     {new Date(img.updated_at).toLocaleDateString()}
@@ -844,6 +830,12 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
+        onViewImage={editingImage && onViewImage ? () => {
+          const img = editingImage
+          setEditOpen(false)
+          setEditingImage(null)
+          onViewImage(img)
+        } : undefined}
       />
 
       {/* Upload image modal */}

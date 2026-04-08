@@ -66,7 +66,7 @@ interface CategoryPickerSelectProps {
   excludeCategoryId?: number
   includeRoot?: boolean
   /** When provided, a "+" button appears on each menu item to add a child category. */
-  onAddCategory?: (label: string, parentId: number | null) => Promise<void>
+  onAddCategory?: (label: string, parentId: number | null) => Promise<number | void>
   /** When provided, a delete button appears on each menu item to delete that category. */
   onDeleteCategory?: (categoryId: number) => Promise<void>
   /** When provided, a pencil button appears on each menu item to rename that category. */
@@ -124,7 +124,10 @@ export default function CategoryPickerSelect({
 
   const handleAddCategory = async (categoryLabel: string) => {
     if (onAddCategory) {
-      await onAddCategory(categoryLabel, addParentId)
+      const newId = await onAddCategory(categoryLabel, addParentId)
+      if (typeof newId === 'number') {
+        onChange(newId)
+      }
     }
   }
 

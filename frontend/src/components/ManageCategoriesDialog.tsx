@@ -149,7 +149,7 @@ interface ManageCategoriesDialogProps {
   open: boolean
   onClose: () => void
   categories: Category[]
-  onAddCategory: (label: string, parentId: number | null) => Promise<void>
+  onAddCategory: (label: string, parentId: number | null) => Promise<number | void>
   onDeleteCategory: (categoryId: number) => Promise<void>
   onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>

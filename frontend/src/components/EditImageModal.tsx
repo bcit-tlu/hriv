@@ -16,6 +16,7 @@ import Select from '@mui/material/Select'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import VisibilityIcon from '@mui/icons-material/Visibility'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import type { ApiImage } from '../api'
@@ -40,9 +41,10 @@ interface EditImageModalProps {
   image: ApiImage | null
   categories: Category[]
   programs: Program[]
-  onAddCategory?: (label: string, parentId: number | null) => Promise<void>
+  onAddCategory?: (label: string, parentId: number | null) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  onViewImage?: () => void
 }
 
 function EditImageForm({
@@ -55,6 +57,7 @@ function EditImageForm({
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
+  onViewImage,
 }: Omit<EditImageModalProps, 'open'>) {
   const [name, setName] = useState(image?.name ?? '')
   const [categoryId, setCategoryId] = useState<number | null>(image?.category_id ?? null)
@@ -71,6 +74,18 @@ function EditImageForm({
   )
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [confirmViewImage, setConfirmViewImage] = useState(false)
+
+  // Track whether the form has been modified from its initial values
+  const isDirty =
+    name !== (image?.name ?? '') ||
+    categoryId !== (image?.category_id ?? null) ||
+    copyright !== (image?.copyright ?? '') ||
+    note !== (image?.note ?? '') ||
+    JSON.stringify(programIds) !== JSON.stringify(image?.program_ids ?? []) ||
+    active !== (image?.active ?? true) ||
+    measurementScale !== (meta?.measurement_scale != null ? String(meta.measurement_scale) : '') ||
+    measurementUnit !== (typeof meta?.measurement_unit === 'string' ? meta.measurement_unit : '')
 
   const handleDelete = async () => {
     if (!onDelete) return
@@ -125,7 +140,25 @@ function EditImageForm({
 
   return (
     <>
-      <DialogTitle>Edit Details</DialogTitle>
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        Edit Details
+        {onViewImage && (
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<VisibilityIcon />}
+            onClick={() => {
+              if (isDirty) {
+                setConfirmViewImage(true)
+              } else {
+                onViewImage()
+              }
+            }}
+          >
+            View Image
+          </Button>
+        )}
+      </DialogTitle>
       <DialogContent
         sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
       >
@@ -295,6 +328,30 @@ function EditImageForm({
           </>
         )}
       </DialogContent>
+      {confirmViewImage && (
+        <Box
+          sx={{
+            px: 3,
+            py: 1.5,
+            bgcolor: 'warning.light',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Typography variant="body2">
+            You have unsaved changes. Discard and view image?
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1, ml: 2, flexShrink: 0 }}>
+            <Button size="small" onClick={() => setConfirmViewImage(false)}>
+              Cancel
+            </Button>
+            <Button size="small" variant="contained" color="warning" onClick={onViewImage}>
+              Discard &amp; View
+            </Button>
+          </Box>
+        </Box>
+      )}
       <DialogActions>
         <Button onClick={onClose} disabled={deleting}>Cancel</Button>
         <Button
@@ -320,6 +377,7 @@ export default function EditImageModal({
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
+  onViewImage,
 }: EditImageModalProps) {
   const formKey = image ? `edit-${image.id}` : 'closed'
 
@@ -337,6 +395,7 @@ export default function EditImageModal({
           onAddCategory={onAddCategory}
           onEditCategory={onEditCategory}
           onToggleVisibility={onToggleVisibility}
+          onViewImage={onViewImage}
         />
       )}
     </Dialog>
