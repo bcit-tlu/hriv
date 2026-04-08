@@ -3,6 +3,9 @@ import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
+import Dialog from "@mui/material/Dialog";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import IconButton from "@mui/material/IconButton";
 import InputAdornment from "@mui/material/InputAdornment";
@@ -28,6 +31,7 @@ export default function LoginScreen({
     const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
     const [oidcEnabled, setOidcEnabled] = useState(false);
+    const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
 
     useEffect(() => {
         fetchOidcEnabled()
@@ -98,7 +102,7 @@ export default function LoginScreen({
                             sx={{ height: 48 }}
                         />
                         <Typography variant="h5" sx={{ fontWeight: 400 }}>
-                            Corgi Login
+                            High Resolution Image Viewer Login
                         </Typography>
                     </Box>
 
@@ -196,8 +200,20 @@ export default function LoginScreen({
                         />
 
                         <Box
-                            sx={{ display: "flex", justifyContent: "flex-end" }}
+                            sx={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                            }}
                         >
+                            <Button
+                                type="button"
+                                variant="text"
+                                onClick={() => setForgotPasswordOpen(true)}
+                                sx={{ px: 0, textTransform: "none" }}
+                            >
+                                Forgot Password?
+                            </Button>
                             <Button
                                 type="submit"
                                 variant="text"
@@ -218,6 +234,22 @@ export default function LoginScreen({
                     </Box>
                 </Box>
             </Box>
+
+            <Dialog
+                open={forgotPasswordOpen}
+                onClose={() => setForgotPasswordOpen(false)}
+                aria-labelledby="forgot-password-dialog-title"
+            >
+                <DialogTitle id="forgot-password-dialog-title">
+                    Forgot Password
+                </DialogTitle>
+                <DialogContent>
+                    <Typography>
+                        Please contact the TLU Labs via Teams to reset your
+                        password.
+                    </Typography>
+                </DialogContent>
+            </Dialog>
 
             {/* Right side — splash image */}
             <Box
