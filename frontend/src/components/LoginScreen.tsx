@@ -147,6 +147,7 @@ export default function LoginScreen({
                         )}
 
                         <TextField
+                            label="Username"
                             placeholder="username@bcit.ca"
                             type="email"
                             value={email}
@@ -159,6 +160,7 @@ export default function LoginScreen({
                         />
 
                         <TextField
+                            label="Password"
                             placeholder="Password"
                             type={showPassword ? "text" : "password"}
                             value={password}
