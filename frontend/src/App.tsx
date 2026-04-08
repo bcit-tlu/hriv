@@ -35,6 +35,7 @@ import LinkIcon from '@mui/icons-material/Link'
 import SearchIcon from '@mui/icons-material/Search'
 import ImageViewer from './components/ImageViewer'
 import type { ViewportState, MeasurementConfig, OverlayRect } from './components/ImageViewer'
+import type { CanvasAnnotation } from './components/CanvasOverlay'
 import { MAX_SHARE_OVERLAYS } from './components/ImageViewer'
 import CategoryTile from './components/CategoryTile'
 import ImageTile from './components/ImageTile'
@@ -168,6 +169,22 @@ export default function App() {
   // to avoid stale-version 409s when clearing overlays after locking
   // (lock intentionally does NOT update selectedImage to avoid viewer remount).
   const latestVersionRef = useRef<number>(0)
+  // Track the latest known metadata independently from selectedImage so that
+  // successive metadata-modifying operations (lock, canvas annotations, clear)
+  // don't clobber each other's fields.  Initialised from selectedImage and
+  // updated after every successful PATCH.
+  // undefined = not yet initialised (use selectedImage); null/object = latest known server state
+  const latestMetadataRef = useRef<Record<string, unknown> | null | undefined>(undefined)
+  // Debounce timer for canvas annotation saves to avoid 409 version conflicts
+  const canvasSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const canvasSaveInFlightRef = useRef(false)
+  const pendingCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null)
+  /** Always-current annotations last passed to handleCanvasAnnotationsChange.
+   *  Used by flushCanvasAnnotations to avoid reading stale React state. */
+  const latestCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null)
+  // Track which image ID the current in-flight save targets so stale completions
+  // don't overwrite refs after an image change
+  const saveTargetImageIdRef = useRef<number | null>(null)
 
   // Report issue modal state
   const [reportIssueOpen, setReportIssueOpen] = useState(false)
@@ -209,6 +226,8 @@ export default function App() {
 
   // Image edit modal state (for viewer page)
   const [imageEditOpen, setImageEditOpen] = useState(false)
+  // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
+  const [canvasEditActive, setCanvasEditActive] = useState(false)
 
   // Image edit modal state (for browse-view ellipsis icon)
   const [browseEditImage, setBrowseEditImage] = useState<ImageItem | null>(null)
@@ -601,9 +620,24 @@ export default function App() {
     setLockEngaged(hasLockedOverlays)
   }, [hasLockedOverlays])
 
+  // Local override for canvas annotations so view mode reflects edits immediately
+  // (selectedImage is intentionally NOT updated after saves to avoid viewer remount)
+  const [localCanvasAnnotations, setLocalCanvasAnnotations] = useState<CanvasAnnotation[] | null>(null)
+
   // Reset version ref when a different image is selected
   useEffect(() => {
     latestVersionRef.current = selectedImage?.version ?? 0
+    latestMetadataRef.current = undefined // reset to 'uninitialised' so first read falls back to selectedImage
+    setLocalCanvasAnnotations(null) // fall back to server-derived data for new image
+    // Clear any pending canvas annotation saves for the previous image
+    if (canvasSaveTimerRef.current) {
+      clearTimeout(canvasSaveTimerRef.current)
+      canvasSaveTimerRef.current = null
+    }
+    pendingCanvasAnnotationsRef.current = null
+    latestCanvasAnnotationsRef.current = null
+    canvasSaveInFlightRef.current = false
+    saveTargetImageIdRef.current = null
   }, [selectedImage])
 
   // Memoize initialOverlays: use locked overlays on initial load if no URL overlays
@@ -613,6 +647,109 @@ export default function App() {
     }
     return overlays
   }, [selectedImage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Extract canvas annotations from the selected image's metadata
+  const canvasAnnotations = useMemo((): CanvasAnnotation[] => {
+    const meta = selectedImage?.metadataExtra
+    if (!meta) return []
+    const annotations = meta.canvas_annotations
+    if (!Array.isArray(annotations)) return []
+    return annotations as CanvasAnnotation[]
+  }, [selectedImage])
+
+  // Persist canvas annotations to server.  Called by the debounced handler below.
+  const saveCanvasAnnotations = useCallback(async (annotations: CanvasAnnotation[]) => {
+    if (!selectedImage) return
+    const targetImageId = selectedImage.id
+    saveTargetImageIdRef.current = targetImageId
+    canvasSaveInFlightRef.current = true
+    try {
+      const base = latestMetadataRef.current === undefined
+        ? (selectedImage.metadataExtra ?? {})
+        : (latestMetadataRef.current ?? {})
+      const meta = { ...base } as Record<string, unknown>
+      if (annotations.length > 0) {
+        meta.canvas_annotations = annotations
+      } else {
+        delete meta.canvas_annotations
+      }
+      const updatedMeta = Object.keys(meta).length > 0 ? meta : null
+      const currentVersion = latestVersionRef.current || selectedImage.version
+      const updated = await apiUpdateImage(selectedImage.id, {
+        metadata_extra: updatedMeta as Record<string, unknown> | undefined,
+      }, currentVersion)
+      // Only update shared refs if the image hasn't changed while we were saving
+      if (saveTargetImageIdRef.current === targetImageId) {
+        latestVersionRef.current = updated.version
+        latestMetadataRef.current = updatedMeta ?? {}
+      }
+      await loadCategories()
+      loadUncategorizedImages()
+    } catch (err) {
+      console.error('Failed to save canvas annotations', err)
+    } finally {
+      // Only clear in-flight flag and flush queue if still targeting the same image
+      if (saveTargetImageIdRef.current === targetImageId) {
+        canvasSaveInFlightRef.current = false
+        if (pendingCanvasAnnotationsRef.current !== null) {
+          const queued = pendingCanvasAnnotationsRef.current
+          pendingCanvasAnnotationsRef.current = null
+          void saveCanvasAnnotations(queued)
+        }
+      }
+    }
+  }, [selectedImage, loadCategories, loadUncategorizedImages])
+
+  // Save canvas annotations to image metadata_extra (debounced).
+  // Rapid edits reset a 600ms timer; if a save is already in-flight the
+  // latest data is queued and flushed when the current request completes.
+  // Also eagerly updates local state so view mode reflects edits immediately.
+  const handleCanvasAnnotationsChange = useCallback((annotations: CanvasAnnotation[]) => {
+    setLocalCanvasAnnotations(annotations)
+    latestCanvasAnnotationsRef.current = annotations
+    if (canvasSaveTimerRef.current) clearTimeout(canvasSaveTimerRef.current)
+    if (canvasSaveInFlightRef.current) {
+      // A save is in-flight — queue the latest data (replaces any prior queued data)
+      pendingCanvasAnnotationsRef.current = annotations
+      return
+    }
+    canvasSaveTimerRef.current = setTimeout(() => {
+      canvasSaveTimerRef.current = null
+      void saveCanvasAnnotations(annotations)
+    }, 600)
+  }, [saveCanvasAnnotations])
+
+  // Flush any pending canvas annotation save immediately (bypass debounce).
+  // Used by the "Done" button to ensure data is persisted before exiting edit mode,
+  // and by lock/clear operations to avoid race conditions.
+  const flushCanvasAnnotations = useCallback(async () => {
+    // Cancel any pending debounce timer
+    if (canvasSaveTimerRef.current) {
+      clearTimeout(canvasSaveTimerRef.current)
+      canvasSaveTimerRef.current = null
+    }
+    // If there's queued data waiting behind an in-flight save, grab it
+    const pending = pendingCanvasAnnotationsRef.current
+    pendingCanvasAnnotationsRef.current = null
+    // If a save is already in-flight we need to wait for it, then save queued data
+    if (canvasSaveInFlightRef.current) {
+      // Re-queue so the in-flight finally block picks it up
+      if (pending) pendingCanvasAnnotationsRef.current = pending
+      // Spin-wait (max ~3s) for the in-flight save to finish
+      for (let i = 0; i < 30 && canvasSaveInFlightRef.current; i++) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      return
+    }
+    // Use the ref (always current) instead of localCanvasAnnotations state
+    // which may be stale due to React's async state batching.
+    const latest = latestCanvasAnnotationsRef.current
+    if (pending) {
+      await saveCanvasAnnotations(pending)
+    } else if (latest) {
+      await saveCanvasAnnotations(latest)
+    }
+  }, [saveCanvasAnnotations])
 
   // Build measurement config from the selected image's metadata
   const selectedImageMeasurement = useMemo((): MeasurementConfig | undefined => {
@@ -627,21 +764,27 @@ export default function App() {
   // Lock overlays: persist to image metadata_extra and engage lock.
   // Refreshes category tree so re-navigation reflects the update;
   // does NOT call setSelectedImage to avoid triggering a viewer remount.
+  // Flushes any pending canvas annotation save first to prevent race conditions.
   const handleLockOverlays = useCallback(async (rects: OverlayRect[]) => {
     if (!selectedImage) return
+    // Flush any pending canvas annotation save to avoid version conflict
+    await flushCanvasAnnotations()
     try {
-      const meta = selectedImage.metadataExtra ?? {}
-      const updatedMeta = { ...meta, locked_overlays: rects }
+      const base = latestMetadataRef.current === undefined
+        ? (selectedImage.metadataExtra ?? {})
+        : (latestMetadataRef.current ?? {})
+      const updatedMeta = { ...base, locked_overlays: rects }
       const currentVersion = latestVersionRef.current || selectedImage.version
       const updated = await apiUpdateImage(selectedImage.id, { metadata_extra: updatedMeta }, currentVersion)
       latestVersionRef.current = updated.version
+      latestMetadataRef.current = updatedMeta
       setLockEngaged(true)
       await loadCategories()
       loadUncategorizedImages()
     } catch (err) {
       console.error('Failed to lock overlays', err)
     }
-  }, [selectedImage, loadCategories, loadUncategorizedImages])
+  }, [selectedImage, flushCanvasAnnotations, loadCategories, loadUncategorizedImages])
 
   // Unlock: only disengage the lock UI (re-enable clear button).
   // Does NOT remove persisted overlays from metadata.
@@ -653,10 +796,16 @@ export default function App() {
   // Refreshes category tree; does NOT call setSelectedImage.
   // No hasLockedOverlays guard — selectedImage may be stale after a lock
   // in the same session (we intentionally skip setSelectedImage on lock).
+  // Flushes any pending canvas annotation save first to prevent race conditions.
   const handleClearOverlays = useCallback(async () => {
     if (!selectedImage) return
+    // Flush any pending canvas annotation save to avoid version conflict
+    await flushCanvasAnnotations()
     try {
-      const meta = { ...(selectedImage.metadataExtra ?? {}) } as Record<string, unknown>
+      const base = latestMetadataRef.current === undefined
+        ? (selectedImage.metadataExtra ?? {})
+        : (latestMetadataRef.current ?? {})
+      const meta = { ...base } as Record<string, unknown>
       delete meta.locked_overlays
       const updatedMeta = Object.keys(meta).length > 0 ? meta : null
       const currentVersion = latestVersionRef.current || selectedImage.version
@@ -664,12 +813,13 @@ export default function App() {
         metadata_extra: updatedMeta as Record<string, unknown> | undefined,
       }, currentVersion)
       latestVersionRef.current = updated.version
+      latestMetadataRef.current = updatedMeta ?? {}
       await loadCategories()
       loadUncategorizedImages()
     } catch (err) {
       console.error('Failed to clear locked overlays', err)
     }
-  }, [selectedImage, loadCategories, loadUncategorizedImages])
+  }, [selectedImage, flushCanvasAnnotations, loadCategories, loadUncategorizedImages])
 
   const copyShareLink = useCallback(() => {
     const url = window.location.href
@@ -1210,13 +1360,18 @@ export default function App() {
                 </MuiBreadcrumbs>
                 <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
                   {canEditContent && (
-                    <Button
-                      variant="contained"
-                      startIcon={<EditIcon />}
-                      onClick={() => setImageEditOpen(true)}
-                    >
-                      Edit Details
-                    </Button>
+                    <Tooltip title={canvasEditActive ? 'Exit canvas edit mode first' : ''}>
+                      <span>
+                        <Button
+                          variant="contained"
+                          startIcon={<EditIcon />}
+                          onClick={() => setImageEditOpen(true)}
+                          disabled={canvasEditActive}
+                        >
+                          Edit Details
+                        </Button>
+                      </span>
+                    </Tooltip>
                   )}
                   <Tooltip title="Copy shareable link to clipboard">
                     <Button
@@ -1243,6 +1398,10 @@ export default function App() {
                   onLockOverlays={handleLockOverlays}
                   onUnlockOverlays={handleUnlockOverlays}
                   onClearOverlays={canEditContent ? handleClearOverlays : undefined}
+                  canvasAnnotations={localCanvasAnnotations ?? canvasAnnotations}
+                  onCanvasAnnotationsChange={handleCanvasAnnotationsChange}
+                  onFlushCanvasAnnotations={flushCanvasAnnotations}
+                  onCanvasEditModeChange={setCanvasEditActive}
                 />
               </Paper>
 

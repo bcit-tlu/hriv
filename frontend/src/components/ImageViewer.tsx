@@ -1,6 +1,8 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
+import CanvasOverlay from './CanvasOverlay'
+import type { CanvasAnnotation } from './CanvasOverlay'
 
 export interface ViewportState {
   zoom: number
@@ -47,6 +49,14 @@ interface ImageViewerProps {
   onUnlockOverlays?: () => void
   /** Called when overlays are cleared — parent should remove locked_overlays from metadata */
   onClearOverlays?: () => void
+  /** Canvas annotations (shapes, text, links) persisted in image metadata */
+  canvasAnnotations?: CanvasAnnotation[]
+  /** Called when canvas annotations change — parent should persist to metadata */
+  onCanvasAnnotationsChange?: (annotations: CanvasAnnotation[]) => void
+  /** Flush any pending canvas annotation save immediately (bypass debounce) */
+  onFlushCanvasAnnotations?: () => Promise<void>
+  /** Notified when canvas edit mode changes (so parent can disable conflicting UI) */
+  onCanvasEditModeChange?: (active: boolean) => void
 }
 
 interface DragState {
@@ -105,9 +115,16 @@ export default function ImageViewer({
   onLockOverlays,
   onUnlockOverlays,
   onClearOverlays,
+  canvasAnnotations,
+  onCanvasAnnotationsChange,
+  onFlushCanvasAnnotations,
+  onCanvasEditModeChange,
 }: ImageViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
+  const [canvasEditMode, setCanvasEditMode] = useState(false)
+  const [viewerInstance, setViewerInstance] = useState<OpenSeadragon.Viewer | null>(null)
+  const canvasEditModeRef = useRef(false)
   const onViewportChangeRef = useRef(onViewportChange)
   const onOverlaysChangeRef = useRef(onOverlaysChange)
   const selectionModeRef = useRef(false)
@@ -120,6 +137,7 @@ export default function ImageViewer({
   const overlaysLockedRef = useRef(overlaysLocked)
   const canEditContentRef = useRef(canEditContent)
   const updateLockUiRef = useRef<(() => void) | null>(null)
+  const updateCanvasEditUiRef = useRef<((active: boolean) => void) | null>(null)
   useEffect(() => {
     onViewportChangeRef.current = onViewportChange
   }, [onViewportChange])
@@ -546,11 +564,43 @@ export default function ImageViewer({
       anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
     })
 
+    // --- Canvas edit mode toolbar button (visible to admin/instructor) ---
+    if (canEditContentRef.current) {
+      const canvasEditButton = new OpenSeadragon.Button({
+        tooltip: 'Canvas annotations (add shapes, text, links)',
+        srcRest: prefix + 'canvas_edit_rest.svg',
+        srcGroup: prefix + 'canvas_edit_grouphover.svg',
+        srcHover: prefix + 'canvas_edit_hover.svg',
+        srcDown: prefix + 'canvas_edit_pressed.svg',
+        onClick: () => {
+          const entering = !canvasEditModeRef.current
+          canvasEditModeRef.current = entering
+          setCanvasEditMode(entering)
+          viewer.setMouseNavEnabled(!entering)
+          canvasEditButton.element.style.outline = entering ? '2px solid #2196F3' : 'none'
+          canvasEditButton.element.style.outlineOffset = entering ? '-2px' : ''
+        },
+      })
+      canvasEditButton.element.style.lineHeight = '0'
+      viewer.addControl(canvasEditButton.element, {
+        anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+      })
+
+      // Allow external code (e.g. CanvasOverlay "Done" button) to update the button outline
+      updateCanvasEditUiRef.current = (active: boolean) => {
+        canvasEditButton.element.style.outline = active ? '2px solid #2196F3' : 'none'
+        canvasEditButton.element.style.outlineOffset = active ? '-2px' : ''
+      }
+    }
+
     // Expose a function to reactively update lock/clear UI when overlaysLocked changes
     updateLockUiRef.current = () => {
       updateLockIcon()
       updateClearButtonState()
     }
+
+    // Expose viewer instance to React state for child components
+    setViewerInstance(viewer)
 
     // Restore viewport state and initial overlays after the image has loaded
     viewer.addOnceHandler('open', () => {
@@ -580,6 +630,9 @@ export default function ImageViewer({
       dragRef.current = null
       overlaysRef.current = []
       labelPairs.length = 0
+      canvasEditModeRef.current = false
+      setCanvasEditMode(false)
+      setViewerInstance(null)
       selectionTracker.destroy()
       viewer.destroy()
       viewerRef.current = null
@@ -591,16 +644,44 @@ export default function ImageViewer({
     updateLockUiRef.current?.()
   }, [overlaysLocked])
 
+  // Handle canvas edit mode toggle from the CanvasOverlay (e.g. "Done" button)
+  const handleCanvasEditModeChange = useCallback((mode: boolean) => {
+    canvasEditModeRef.current = mode
+    setCanvasEditMode(mode)
+    viewerRef.current?.setMouseNavEnabled(!mode)
+    updateCanvasEditUiRef.current?.(mode)
+    onCanvasEditModeChange?.(mode)
+  }, [onCanvasEditModeChange])
+
   return (
     <Box
-      ref={containerRef}
       sx={{
+        position: 'relative',
         width: '100%',
         height,
         borderRadius: 2,
         overflow: 'hidden',
         bgcolor: 'grey.900',
       }}
-    />
+    >
+      <Box
+        ref={containerRef}
+        sx={{
+          width: '100%',
+          height: '100%',
+        }}
+      />
+      {viewerInstance && (
+        <CanvasOverlay
+          viewer={viewerInstance}
+          annotations={canvasAnnotations ?? []}
+          onAnnotationsChange={onCanvasAnnotationsChange ?? (() => {})}
+          canEdit={canEditContent}
+          editMode={canvasEditMode}
+          onEditModeChange={handleCanvasEditModeChange}
+          onFlushAnnotations={onFlushCanvasAnnotations}
+        />
+      )}
+    </Box>
   )
 }
