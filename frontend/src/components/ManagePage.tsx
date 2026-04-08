@@ -884,6 +884,7 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
           onCategoriesChanged?.()
         }}
         categories={categories}
+        programs={programs}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}

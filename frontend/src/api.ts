@@ -462,12 +462,24 @@ export interface ApiBulkImportJob {
 export async function bulkImportImages(
   files: File[],
   categoryId: number,
+  copyright?: string,
+  note?: string,
+  programIds?: number[],
+  active?: boolean,
 ): Promise<ApiBulkImportJob> {
   const form = new FormData()
   for (const file of files) {
     form.append('files', file)
   }
   form.append('category_id', String(categoryId))
+  if (copyright) form.append('copyright', copyright)
+  if (note) form.append('note', note)
+  if (programIds) {
+    for (const id of programIds) {
+      form.append('program_ids', String(id))
+    }
+  }
+  if (active !== undefined) form.append('active', String(active))
   const res = await fetch(`${BASE}/api/admin/bulk-import/`, {
     method: 'POST',
     headers: authHeaders(),

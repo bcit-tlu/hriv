@@ -5,6 +5,7 @@ and processes them in the background with concurrency limiting.
 """
 
 import asyncio
+import json
 import logging
 import os
 import tempfile
@@ -48,7 +49,14 @@ def _is_image_filename(filename: str) -> bool:
     return Path(filename).suffix.lower() in _IMAGE_EXTENSIONS
 
 
-async def _process_bulk_import(job_id: int, file_entries: list[tuple[str, str]]) -> None:
+async def _process_bulk_import(
+    job_id: int,
+    file_entries: list[tuple[str, str]],
+    copyright: str | None = None,
+    note: str | None = None,
+    program_ids: list[int] | None = None,
+    active: bool = True,
+) -> None:
     """Background task: process all images for a bulk import job.
 
     ``file_entries`` is a list of (original_filename, stored_path) tuples.
@@ -72,7 +80,10 @@ async def _process_bulk_import(job_id: int, file_entries: list[tuple[str, str]])
                     status="pending",
                     name=name,
                     category_id=job.category_id,
-                    copyright="Public Domain",
+                    copyright=copyright or "Public Domain",
+                    note=note,
+                    active=active,
+                    program=json.dumps(program_ids) if program_ids else None,
                 )
                 db.add(src)
                 await db.commit()
@@ -217,13 +228,16 @@ async def bulk_import_images(
     background_tasks: BackgroundTasks,
     _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
+    copyright: Annotated[str | None, Form()] = None,
+    note: Annotated[str | None, Form()] = None,
+    program_ids: Annotated[list[int] | None, Form()] = None,
+    active: Annotated[bool, Form()] = True,
 ) -> BulkImportJob:
     """Upload multiple image files and/or zip archives for bulk import.
 
-    All images are assigned to the specified category with sane defaults:
-    - active = True
-    - name = filename stem
-    - copyright = "Public Domain"
+    All images are assigned to the specified category.  Metadata fields
+    (copyright, note, program_ids, active) are applied uniformly to every
+    image in the batch.  Omitted fields fall back to sensible defaults.
     """
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
@@ -346,7 +360,15 @@ async def bulk_import_images(
     )
 
     # Fire off background processing
-    background_tasks.add_task(_process_bulk_import, job.id, file_entries)
+    background_tasks.add_task(
+        _process_bulk_import,
+        job.id,
+        file_entries,
+        copyright=copyright,
+        note=note,
+        program_ids=program_ids,
+        active=active,
+    )
 
     return job
 

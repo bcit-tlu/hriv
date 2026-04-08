@@ -1,26 +1,19 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
-import FormControl from '@mui/material/FormControl'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import InputLabel from '@mui/material/InputLabel'
 import LinearProgress from '@mui/material/LinearProgress'
-import MenuItem from '@mui/material/MenuItem'
-import OutlinedInput from '@mui/material/OutlinedInput'
-import Select from '@mui/material/Select'
-import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
-import type { SelectChangeEvent } from '@mui/material/Select'
 import { uploadSourceImage } from '../api'
 import CategoryPickerSelect from './CategoryPickerSelect'
+import ImageMetadataFields from './ImageMetadataFields'
+import type { ImageMetadataValues } from './ImageMetadataFields'
 import type { Category, Program } from '../types'
 
 /** Image file extensions accepted by the app (including TIFF). */
@@ -74,10 +67,12 @@ export default function UploadImageModal({
   const [file, setFile] = useState<File | null>(null)
   const [name, setName] = useState('')
   const [categoryId, setCategoryId] = useState<number | null>(initialCategoryId ?? null)
-  const [copyright, setCopyright] = useState('')
-  const [note, setNote] = useState('')
-  const [programIds, setProgramIds] = useState<number[]>([])
-  const [active, setActive] = useState(true)
+  const [metadata, setMetadata] = useState<ImageMetadataValues>({
+    copyright: '',
+    note: '',
+    programIds: [],
+    active: true,
+  })
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
@@ -124,19 +119,11 @@ export default function UploadImageModal({
     [name],
   )
 
-  const handleProgramChange = (event: SelectChangeEvent<number[]>) => {
-    const value = event.target.value
-    setProgramIds(typeof value === 'string' ? [] : value)
-  }
-
   const handleReset = () => {
     setFile(null)
     setName('')
     setCategoryId(initialCategoryId ?? null)
-    setCopyright('')
-    setNote('')
-    setProgramIds([])
-    setActive(true)
+    setMetadata({ copyright: '', note: '', programIds: [], active: true })
     setError(null)
     setUploading(false)
     setUploadProgress(null)
@@ -152,10 +139,10 @@ export default function UploadImageModal({
         file,
         name || undefined,
         categoryId ?? undefined,
-        copyright || undefined,
-        note || undefined,
-        programIds.length > 0 ? programIds : undefined,
-        active,
+        metadata.copyright || undefined,
+        metadata.note || undefined,
+        metadata.programIds.length > 0 ? metadata.programIds : undefined,
+        metadata.active,
         (fraction) => setUploadProgress(fraction),
       )
       // Hand off processing tracking to the parent and close the modal
@@ -266,57 +253,11 @@ export default function UploadImageModal({
             onToggleVisibility={onToggleVisibility}
           />
         </Box>
-        <TextField
-          label="Copyright"
-          fullWidth
-          variant="outlined"
-          value={copyright}
-          onChange={(e) => setCopyright(e.target.value)}
-          placeholder="e.g. 2026 BCIT"
-        />
-        <TextField
-          label="Note"
-          fullWidth
-          variant="outlined"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          placeholder="Image note"
-        />
-        <FormControl fullWidth>
-          <InputLabel id="upload-program-select-label">Program</InputLabel>
-          <Select
-            labelId="upload-program-select-label"
-            multiple
-            value={programIds}
-            onChange={handleProgramChange}
-            input={<OutlinedInput label="Program" />}
-            renderValue={(selected) => (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                {selected.map((id) => {
-                  const prog = programs.find((p) => p.id === id)
-                  return <Chip key={id} label={prog?.name ?? id} size="small" />
-                })}
-              </Box>
-            )}
-          >
-            {programs.map((p) => (
-              <MenuItem key={p.id} value={p.id}>
-                {p.name}
-              </MenuItem>
-            ))}
-          </Select>
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-            Multiple programs can be selected.
-          </Typography>
-        </FormControl>
-        <FormControlLabel
-          control={
-            <Switch
-              checked={active}
-              onChange={(e) => setActive(e.target.checked)}
-            />
-          }
-          label="Active (visible to students)"
+        <ImageMetadataFields
+          values={metadata}
+          onChange={setMetadata}
+          programs={programs}
+          idPrefix="upload"
         />
         {uploading && uploadProgress !== null && (
           <Box sx={{ width: '100%' }}>

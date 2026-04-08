@@ -12,14 +12,17 @@ import LinearProgress from '@mui/material/LinearProgress'
 import Typography from '@mui/material/Typography'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import CategoryPickerSelect from './CategoryPickerSelect'
+import ImageMetadataFields from './ImageMetadataFields'
+import type { ImageMetadataValues } from './ImageMetadataFields'
 import { bulkImportImages, fetchBulkImportJob } from '../api'
 import type { ApiBulkImportJob } from '../api'
-import type { Category } from '../types'
+import type { Category, Program } from '../types'
 
 interface BulkImportModalProps {
   open: boolean
   onClose: () => void
   categories: Category[]
+  programs: Program[]
   onAddCategory?: (label: string, parentId: number | null) => Promise<void>
   onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
@@ -29,6 +32,7 @@ export default function BulkImportModal({
   open,
   onClose,
   categories,
+  programs,
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
@@ -36,6 +40,12 @@ export default function BulkImportModal({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [files, setFiles] = useState<File[]>([])
   const [categoryId, setCategoryId] = useState<number | null>(null)
+  const [metadata, setMetadata] = useState<ImageMetadataValues>({
+    copyright: '',
+    note: '',
+    programIds: [],
+    active: true,
+  })
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -76,6 +86,7 @@ export default function BulkImportModal({
   const handleReset = useCallback(() => {
     setFiles([])
     setCategoryId(null)
+    setMetadata({ copyright: '', note: '', programIds: [], active: true })
     setDragOver(false)
     setUploading(false)
     setError(null)
@@ -128,7 +139,14 @@ export default function BulkImportModal({
     setUploading(true)
     setError(null)
     try {
-      const result = await bulkImportImages(files, categoryId)
+      const result = await bulkImportImages(
+        files,
+        categoryId,
+        metadata.copyright || undefined,
+        metadata.note || undefined,
+        metadata.programIds.length > 0 ? metadata.programIds : undefined,
+        metadata.active,
+      )
       setJob(result)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed')
@@ -153,7 +171,9 @@ export default function BulkImportModal({
       TransitionProps={{ onExited: handleReset }}
     >
       <DialogTitle>Bulk Import Images</DialogTitle>
-      <DialogContent>
+      <DialogContent
+        sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
+      >
         {!job ? (
           <>
             {/* Drop zone */}
@@ -208,7 +228,7 @@ export default function BulkImportModal({
 
             {/* File list */}
             {files.length > 0 && (
-              <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                 {files.map((file, i) => (
                   <Chip
                     key={`${file.name}-${i}`}
@@ -222,7 +242,7 @@ export default function BulkImportModal({
             )}
 
             {/* Category picker */}
-            <Box sx={{ mt: 2 }}>
+            <Box>
               <CategoryPickerSelect
                 categories={categories}
                 value={categoryId}
@@ -235,10 +255,17 @@ export default function BulkImportModal({
               />
             </Box>
 
-            <Typography variant="caption" color="text.secondary" sx={{ mt: 2, display: 'block' }}>
-              All images will be imported with the following defaults: active, name set to
-              filename, copyright set to &quot;Public Domain&quot;. You can bulk-edit
-              metadata later from the Images page.
+            {/* Shared metadata fields: Copyright, Note, Program, Active */}
+            <ImageMetadataFields
+              values={metadata}
+              onChange={setMetadata}
+              programs={programs}
+              idPrefix="bulk-import"
+            />
+
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+              All images will be imported with the name set to their filename.
+              You can bulk-edit metadata later from the Images page.
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
               Zip files will be extracted and all image files inside will be imported.
