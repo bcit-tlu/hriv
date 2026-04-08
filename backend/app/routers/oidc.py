@@ -200,8 +200,10 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
         # Existing user — link OIDC subject if not yet linked and update fields
         if not user.oidc_subject:
             user.oidc_subject = sub
-        user.name = name
-        user.role = role
+        # Only update role from IdP when groups were actually provided;
+        # otherwise preserve admin-assigned roles.
+        if groups:
+            user.role = role
         user.last_access = datetime.now(timezone.utc)
         logger.info(
             "OIDC: logged in existing user",
@@ -219,10 +221,22 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
     jwt_token = create_access_token(user)
 
     # Redirect to the frontend with the JWT so AuthContext can bootstrap
-    # the session.  Derive the frontend URL from CORS_ORIGINS; skip the
-    # wildcard default used in local dev.
-    origins = [o.strip() for o in _settings.cors_origins.split(",") if o.strip()]
-    frontend_origin = next((o for o in origins if o != "*"), "")
-    redirect_url = f"{frontend_origin}/?oidc_token={jwt_token}"
+    # the session.  Use the dedicated setting if provided; otherwise fall
+    # back to the first non-wildcard CORS origin.
+    frontend_origin = _settings.oidc_post_login_redirect
+    if not frontend_origin:
+        origins = [o.strip() for o in _settings.cors_origins.split(",") if o.strip()]
+        frontend_origin = next((o for o in origins if o != "*"), "")
+    if not frontend_origin:
+        logger.error(
+            "OIDC post-login redirect target not configured",
+            extra={"event": "oidc.redirect_missing"},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="OIDC post-login redirect is not configured. "
+                   "Set OIDC_POST_LOGIN_REDIRECT or a non-wildcard CORS_ORIGINS.",
+        )
+    redirect_url = f"{frontend_origin.rstrip('/')}/?oidc_token={jwt_token}"
 
     return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)

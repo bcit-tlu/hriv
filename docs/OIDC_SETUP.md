@@ -18,6 +18,7 @@ admin bootstrap accounts.
 | `OIDC_REDIRECT_URI` | Yes | — | The callback URL registered with the IdP, e.g. `https://corgi.bcit.ca/api/auth/oidc/callback`. |
 | `OIDC_SCOPES` | No | `openid email profile` | Space-separated list of scopes to request. |
 | `OIDC_ROLE_MAPPING` | No | `{}` | JSON object mapping IdP group names to CORGI roles. See [Role Mapping](#role-mapping). |
+| `OIDC_POST_LOGIN_REDIRECT` | No | — | Frontend URL to redirect to after OIDC login (e.g. `https://corgi.bcit.ca`). Falls back to the first non-wildcard `CORS_ORIGINS` entry. |
 
 All variables should be provided via Kubernetes Secrets or a `.env` file
 in development.
@@ -62,9 +63,11 @@ The first matching group wins, so order does not matter as long as each
 group maps to exactly one role.
 
 > **Tip:** If the IdP does not emit a `groups` claim in the ID token,
-> all OIDC users will be assigned the `student` role.  You can then
-> promote individual users to `admin` or `instructor` through the CORGI
-> admin UI.
+> existing users keep their current role and new users default to
+> `student`.  You can promote individual users to `admin` or
+> `instructor` through the CORGI admin UI and those promotions will be
+> preserved across OIDC logins as long as the IdP does not supply
+> groups.
 
 ---
 

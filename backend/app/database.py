@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     oidc_redirect_uri: str = ""
     oidc_scopes: str = "openid email profile"
     oidc_role_mapping: str = "{}"  # JSON: {"idp-group": "corgi-role"}
+    oidc_post_login_redirect: str = ""  # Frontend URL to redirect to after OIDC login
 
     @model_validator(mode="after")
     def _normalize_database_scheme(self) -> "Settings":
