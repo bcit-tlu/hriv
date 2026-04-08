@@ -125,10 +125,9 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
             detail="OIDC authentication failed",
         )
 
-    # Extract user info from the ID token (preferred) or userinfo endpoint
+    # Extract user info — authlib's authorize_access_token already parses
+    # the ID token and populates token_data["userinfo"] when available.
     userinfo = token_data.get("userinfo")
-    if userinfo is None and "id_token" in token_data:
-        userinfo = await client.parse_id_token(token_data, nonce=request.session.get("_oidc_nonce"))
 
     if userinfo is None:
         # Fall back to the userinfo endpoint

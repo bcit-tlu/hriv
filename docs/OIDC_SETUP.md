@@ -81,9 +81,10 @@ group maps to exactly one role.
 4. The backend exchanges the code for tokens, extracts user info (sub,
    email, name, groups), upserts the user in the database (linking by
    `oidc_subject`), and issues a CORGI JWT.
-5. The backend redirects to the frontend with the JWT as a query
-   parameter (`?oidc_token=...`).  The frontend stores the token and
-   cleans the URL.
+5. The backend redirects to the frontend with the JWT in a URL
+   fragment (`#oidc_token=...`) so the token is never sent to the
+   server or recorded in access logs.  The frontend stores the token
+   and cleans the URL.
 
 ---
 
