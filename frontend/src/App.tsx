@@ -254,11 +254,12 @@ export default function App() {
             if (controller.signal.aborted) return
             if (src.status === 'completed') {
               refs.delete(job.id)
+              // Refresh data BEFORE marking the job as completed so the
+              // new image is visible in the browse view immediately.
+              await Promise.all([loadCategories(), loadUncategorizedImages()])
               setProcessingJobs((prev) =>
                 prev.map((j) => j.id === job.id ? { ...j, status: 'completed' as const, imageId: src.image_id ?? undefined } : j),
               )
-              loadCategories()
-              loadUncategorizedImages()
             } else if (src.status === 'failed') {
               refs.delete(job.id)
               setProcessingJobs((prev) =>
