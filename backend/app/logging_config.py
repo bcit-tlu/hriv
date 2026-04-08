@@ -9,6 +9,7 @@ Each log record is a single JSON object with at minimum:
   - level      (DEBUG / INFO / WARNING / ERROR / CRITICAL)
   - logger     (Python logger name, e.g. "app.processing")
   - message    (human-readable description)
+  - request_id (correlation ID from the current request, when available)
 
 Additional contextual fields are included when the caller passes them via
 the ``extra`` dict on standard logging calls, for example:
@@ -37,6 +38,10 @@ class JSONFormatter(logging.Formatter):
     """Format log records as single-line JSON objects."""
 
     def format(self, record: logging.LogRecord) -> str:
+        # Import here to avoid circular imports (middleware imports auth which
+        # imports database which may not be ready at module-import time).
+        from .middleware import get_request_id
+
         log_entry: dict[str, object] = {
             "timestamp": datetime.fromtimestamp(
                 record.created, tz=timezone.utc
@@ -45,6 +50,11 @@ class JSONFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+
+        # Inject the correlation ID from the current request context (if any)
+        req_id = get_request_id()
+        if req_id:
+            log_entry["request_id"] = req_id
 
         # Automatically promote any extra fields the caller attached via
         # ``extra={...}``.  We diff the record's ``__dict__`` against the

@@ -2,6 +2,11 @@ const BASE = import.meta.env.VITE_API_URL ?? ''
 
 let _token: string | null = localStorage.getItem('corgi_token')
 
+// Unique per browser-tab identifier sent on every API call.  Allows the
+// backend audit log to correlate all requests from a single tab, even when
+// many students share the same JWT (shared "student@bcit.ca" account).
+const SESSION_ID = crypto.randomUUID()
+
 export function setToken(token: string | null): void {
   _token = token
   if (token) {
@@ -16,7 +21,7 @@ export function getToken(): string | null {
 }
 
 function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = {}
+  const h: Record<string, string> = { 'X-Session-ID': SESSION_ID }
   if (_token) h['Authorization'] = `Bearer ${_token}`
   return h
 }

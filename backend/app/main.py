@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import get_db, settings
 from .logging_config import setup_logging
+from .middleware import AuditMiddleware
 from .routers import admin, announcement, auth, bulk_import, categories, images, issues, programs, upload, users
 
 logger = logging.getLogger(__name__)
@@ -43,12 +44,15 @@ _cors_origins = [
     o.strip() for o in settings.cors_origins.split(",") if o.strip()
 ] or ["*"]
 
+app.add_middleware(AuditMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*", "X-Request-ID", "X-Session-ID"],
+    expose_headers=["X-Request-ID"],
 )
 
 app.include_router(auth.router, prefix="/api")

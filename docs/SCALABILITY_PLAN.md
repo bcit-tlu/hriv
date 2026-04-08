@@ -30,22 +30,22 @@ sessions know where to start.
 
 ---
 
-## Phase 2 — Observability  `TODO`
+## Phase 2 — Observability  `DONE`
 
 > Add request-level audit logging so every HTTP request is traceable.  Must be
 > completed before Phase 3 so OIDC debugging has full visibility.
 
-- [ ] **2.1 Request audit middleware** — FastAPI middleware that logs every
+- [x] **2.1 Request audit middleware** — FastAPI middleware that logs every
   request with:
   - Correlation ID (generate UUID or honour inbound `X-Request-ID`)
   - Client IP (`request.client.host` + `X-Forwarded-For`)
   - Authenticated user ID (extracted from JWT when present)
   - HTTP method, path, response status, duration in ms
-- [ ] **2.2 Correlation ID propagation** — Use Python `contextvars` to make
+- [x] **2.2 Correlation ID propagation** — Use Python `contextvars` to make
   the correlation ID available to all downstream log calls within the same
   request, so processing logs and DB errors can be traced back to the
   originating HTTP request.
-- [ ] **2.3 Client session fingerprint header** — Frontend generates a random
+- [x] **2.3 Client session fingerprint header** — Frontend generates a random
   `session_id` on page load and sends it as `X-Session-ID` on every API call.
   The audit middleware logs this value, enabling correlation of all requests
   from a single browser tab — critical for distinguishing users behind the
