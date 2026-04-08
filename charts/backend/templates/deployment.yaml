@@ -22,6 +22,37 @@ spec:
             - name: http
               containerPort: 8000
               protocol: TCP
+        {{- if .Values.tileSidecar.enabled }}
+        - name: tile-server
+          image: {{ .Values.tileSidecar.image | quote }}
+          ports:
+            - name: tiles
+              containerPort: {{ .Values.tileSidecar.port }}
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /data
+              readOnly: true
+            - name: nginx-tiles-config
+              mountPath: /etc/nginx/conf.d
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: tiles
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: tiles
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          {{- with .Values.tileSidecar.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
           env:
             - name: DATABASE_URL
               valueFrom:
@@ -67,11 +98,18 @@ spec:
             - name: data
               mountPath: /data
           {{- end }}
-      {{- if .Values.persistence.enabled }}
+      {{- if or .Values.persistence.enabled .Values.tileSidecar.enabled }}
       volumes:
+        {{- if .Values.persistence.enabled }}
         - name: data
           persistentVolumeClaim:
             claimName: {{ include "corgi-backend.fullname" . }}-data
+        {{- end }}
+        {{- if .Values.tileSidecar.enabled }}
+        - name: nginx-tiles-config
+          configMap:
+            name: {{ include "corgi-backend.fullname" . }}-nginx-tiles
+        {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
