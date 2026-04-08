@@ -1885,7 +1885,7 @@ export default function App() {
                     component="button"
                     color="inherit"
                     underline="always"
-                    sx={{ fontWeight: 'bold', verticalAlign: 'baseline', cursor: 'pointer' }}
+                    sx={{ fontWeight: 'bold', verticalAlign: 'baseline', cursor: 'pointer', color: '#42a5f5', pl: '10px' }}
                     onClick={async () => {
                       // Categories may not have refreshed yet; reload and search fresh data
                       let found = false
@@ -1940,7 +1940,7 @@ export default function App() {
                       }
                     }}
                   >
-                    View
+                    View image
                   </Link>
                 )}
               </>
