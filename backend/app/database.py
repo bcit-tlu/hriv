@@ -41,7 +41,7 @@ _engine = None
 _async_session = None
 
 
-def get_engine():
+def get_engine() -> "AsyncEngine":
     """Return the async engine, creating it on first call.
 
     Lazy initialisation avoids executing ``create_async_engine`` at module
