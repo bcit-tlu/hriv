@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
 import TextField from '@mui/material/TextField'
@@ -10,6 +11,7 @@ import Typography from '@mui/material/Typography'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import AnnouncementBanner from './AnnouncementBanner'
+import { fetchOidcEnabled, getOidcLoginUrl } from '../api'
 
 interface LoginScreenProps {
   onLogin: (email: string, password: string) => Promise<void>
@@ -22,6 +24,17 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [oidcEnabled, setOidcEnabled] = useState(false)
+
+  useEffect(() => {
+    fetchOidcEnabled()
+      .then((res) => setOidcEnabled(res.enabled))
+      .catch(() => setOidcEnabled(false))
+  }, [])
+
+  const handleOidcLogin = () => {
+    window.location.href = getOidcLoginUrl()
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -72,6 +85,29 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
               Corgi Login
             </Typography>
           </Box>
+
+          {oidcEnabled && (
+            <Box sx={{ mb: 2 }}>
+              <Button
+                variant="contained"
+                fullWidth
+                onClick={handleOidcLogin}
+                sx={{
+                  textTransform: 'none',
+                  fontWeight: 600,
+                  py: 1.25,
+                  fontSize: '0.95rem',
+                }}
+              >
+                Sign in with BCIT
+              </Button>
+              <Divider sx={{ my: 3 }}>
+                <Typography variant="body2" color="text.secondary">
+                  or sign in with email
+                </Typography>
+              </Divider>
+            </Box>
+          )}
 
           <Box
             component="form"

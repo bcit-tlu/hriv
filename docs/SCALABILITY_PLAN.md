@@ -53,23 +53,23 @@ sessions know where to start.
 
 ---
 
-## Phase 3 — Identity (OIDC / OAuth)  `TODO`
+## Phase 3 — Identity (OIDC / OAuth)  `DONE`
 
 > The single most impactful change.  Gives every student their own identity,
 > solves forensic logging, and delegates password management to the IdP.
 
-- [ ] **3.1 Backend OIDC endpoints** — Add `/api/auth/oidc/login` (redirect to
+- [x] **3.1 Backend OIDC endpoints** — Add `/api/auth/oidc/login` (redirect to
   IdP) and `/api/auth/oidc/callback` (exchange code, upsert user, issue JWT).
   Use `authlib` or manual OIDC flow with `httpx`.
-- [ ] **3.2 User model migration** — Add `oidc_subject` column to `users`
+- [x] **3.2 User model migration** — Add `oidc_subject` column to `users`
   table for IdP user mapping.  `password_hash` is already nullable.
-- [ ] **3.3 IdP role mapping** — Map IdP groups/claims to CORGI roles
+- [x] **3.3 IdP role mapping** — Map IdP groups/claims to CORGI roles
   (e.g. `bcit-tlu-instructors` → `instructor`).  Default unmapped users to
   `student`.
-- [ ] **3.4 Frontend OIDC login** — Add "Sign in with BCIT" button on
+- [x] **3.4 Frontend OIDC login** — Add "Sign in with BCIT" button on
   `LoginScreen.tsx`.  Keep local email/password login as a fallback for admin
   bootstrap accounts.
-- [ ] **3.5 Documentation** — Document IdP configuration requirements (client
+- [x] **3.5 Documentation** — Document IdP configuration requirements (client
   ID, client secret, redirect URI, required scopes/claims).
 
 ---

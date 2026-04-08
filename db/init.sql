@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS users (
     name          VARCHAR(255) NOT NULL,
     email         VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255),
+    oidc_subject  VARCHAR(255) UNIQUE,
     role          VARCHAR(50) NOT NULL DEFAULT 'student',
     program_id    INTEGER REFERENCES programs(id) ON DELETE SET NULL,
     last_access   TIMESTAMPTZ,

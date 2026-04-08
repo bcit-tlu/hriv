@@ -47,23 +47,46 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
+  // On mount, check for an OIDC token in the URL fragment (returned after
+  // IdP callback).  A fragment (#) is used instead of a query parameter so
+  // the JWT never appears in server access logs.
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, '')
+    const params = new URLSearchParams(hash)
+    const oidcToken = params.get('oidc_token')
+    if (oidcToken) {
+      setToken(oidcToken)
+      // Remove the token from the URL so it is not bookmarked or shared
+      params.delete('oidc_token')
+      const remaining = params.toString()
+      const cleanUrl = window.location.pathname + window.location.search + (remaining ? `#${remaining}` : '')
+      window.history.replaceState({}, '', cleanUrl)
+    }
+  }, [])
+
   // On mount, validate stored token by calling a protected endpoint.
   // If the token is expired or the DB was recreated, clear session.
   useEffect(() => {
     const stored = localStorage.getItem('corgi_user')
     const token = getToken()
     if (!token || !stored) {
-      setLoading(false)
-      return
+      // If we just got an OIDC token but have no stored user yet, still
+      // attempt validation so the session is bootstrapped.
+      if (!token) {
+        setLoading(false)
+        return
+      }
     }
 
-    try {
-      JSON.parse(stored)
-    } catch {
-      setToken(null)
-      localStorage.removeItem('corgi_user')
-      setLoading(false)
-      return
+    if (stored) {
+      try {
+        JSON.parse(stored)
+      } catch {
+        setToken(null)
+        localStorage.removeItem('corgi_user')
+        setLoading(false)
+        return
+      }
     }
 
     // Validate the token via /auth/me (accessible by any authenticated role)
