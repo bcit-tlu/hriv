@@ -210,7 +210,11 @@ export default function LoginScreen({
                                 type="button"
                                 variant="text"
                                 onClick={() => setForgotPasswordOpen(true)}
-                                sx={{ px: 0, textTransform: "none" }}
+                                sx={{
+                                    px: 0,
+                                    fontWeight: 600,
+                                    letterSpacing: 1,
+                                }}
                             >
                                 Forgot Password?
                             </Button>
