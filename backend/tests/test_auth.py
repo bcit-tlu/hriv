@@ -33,7 +33,6 @@ def test_create_access_token_contains_expected_claims(
     assert "exp" in payload
 
 
-@pytest.mark.asyncio
 async def test_get_user_from_token_returns_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -56,7 +55,6 @@ async def test_get_user_from_token_returns_user(
     db.get.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_get_user_from_token_rejects_scoped_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -83,7 +81,6 @@ async def test_get_user_from_token_rejects_scoped_tokens(
     assert exc.value.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_get_user_from_token_rejects_missing_user(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -105,7 +102,6 @@ async def test_get_user_from_token_rejects_missing_user(
     assert exc.value.status_code == 401
 
 
-@pytest.mark.asyncio
 async def test_require_role_allows_authorized_user() -> None:
     guard = auth.require_role("admin", "instructor")
     current_user = SimpleNamespace(role="admin")
@@ -115,7 +111,6 @@ async def test_require_role_allows_authorized_user() -> None:
     assert result is current_user
 
 
-@pytest.mark.asyncio
 async def test_require_role_rejects_unauthorized_user() -> None:
     guard = auth.require_role("admin")
     current_user = SimpleNamespace(role="student")

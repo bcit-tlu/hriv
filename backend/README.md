@@ -22,7 +22,7 @@ Configuration is defined in `pyproject.toml` under:
 - Async mode: `auto`
 - Coverage target: `app`
 - Coverage report: terminal with missing lines
-- Minimum coverage: **80%** (`--cov-fail-under=80`)
+- Coverage enforcement: not enabled by default (use `--cov-fail-under=80` to enforce)
 
 ---
 
@@ -67,7 +67,7 @@ poetry run pytest tests/test_auth.py::test_hash_password_and_verify_password_rou
 Run with a **strict coverage gate** (recommended for CI or pre-merge checks):
 
 ```sh
-poetry run pytest --cov=app --cov-report=term-missing --cov-fail-under=80
+poetry run pytest --cov-fail-under=80
 ```
 
 ---
@@ -76,10 +76,10 @@ poetry run pytest --cov=app --cov-report=term-missing --cov-fail-under=80
 
 The default `poetry run pytest` command reports coverage but does **not** enforce a fail-under threshold.
 
-Use the strict command below when you want to enforce minimum coverage:
+Use `--cov-fail-under=80` when you want to enforce minimum coverage (aligns with `AGENTS.md` guidance of >80%):
 
 ```sh
-poetry run pytest --cov=app --cov-report=term-missing --cov-fail-under=80
+poetry run pytest --cov-fail-under=80
 ```
 
 ---
@@ -101,5 +101,5 @@ Example files already included:
 ## Notes
 
 - Unit tests should avoid requiring a live database where possible (use mocks/stubs).
-- Async functions should be tested with `@pytest.mark.asyncio` where needed.
+- Async test functions are auto-detected by `pytest-asyncio` (`asyncio_mode = "auto"`); no `@pytest.mark.asyncio` decorator is needed.
 - Keep tests deterministic and independent.
