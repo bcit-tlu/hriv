@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     oidc_scopes: str = "openid email profile"
     oidc_role_mapping: str = "{}"  # JSON: {"idp-group": "corgi-role"}
     oidc_post_login_redirect: str = ""  # Frontend URL to redirect to after OIDC login
+    oidc_trust_email: bool = False  # Skip email_verified check (for IdPs like Vault that don't emit it)
 
     @model_validator(mode="after")
     def _normalize_database_scheme(self) -> "Settings":

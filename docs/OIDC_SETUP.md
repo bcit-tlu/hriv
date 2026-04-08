@@ -19,6 +19,7 @@ admin bootstrap accounts.
 | `OIDC_SCOPES` | No | `openid email profile` | Space-separated list of scopes to request. |
 | `OIDC_ROLE_MAPPING` | No | `{}` | JSON object mapping IdP group names to CORGI roles. See [Role Mapping](#role-mapping). |
 | `OIDC_POST_LOGIN_REDIRECT` | No | — | Frontend URL to redirect to after OIDC login (e.g. `https://corgi.bcit.ca`). Falls back to the first non-wildcard `CORS_ORIGINS` entry. |
+| `OIDC_TRUST_EMAIL` | No | `false` | Set to `true` to skip the `email_verified` check when linking existing accounts by email. **Only enable this with trusted corporate IdPs** (e.g. Vault, internal LDAP) where all emails are known to be valid. Do not enable with public/self-registration IdPs. |
 
 All variables should be provided via Kubernetes Secrets or a `.env` file
 in development.

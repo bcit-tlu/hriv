@@ -171,7 +171,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
         # Only allow email-based linking when the IdP confirms the email is
         # verified; this prevents account takeover via unverified addresses on
         # less restrictive IdPs.
-        email_verified = userinfo.get("email_verified", False)
+        email_verified = _settings.oidc_trust_email or userinfo.get("email_verified", False)
         if email_verified:
             result = await db.execute(
                 select(User)
