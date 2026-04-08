@@ -214,7 +214,7 @@ export default function LoginScreen({
                                     px: 0,
                                     fontWeight: 600,
                                     letterSpacing: 1,
-                                    color: "text.secondary",
+                                    color: "rgba(0, 0, 0, 0.26)",
                                 }}
                             >
                                 Forgot Password?
