@@ -50,6 +50,8 @@ From `backend`:
 poetry run pytest
 ```
 
+This is the **local/default** command and includes coverage reporting from configured `addopts`.
+
 Run a single test file:
 
 ```sh
@@ -62,13 +64,19 @@ Run a single test function:
 poetry run pytest tests/test_auth.py::test_hash_password_and_verify_password_roundtrip
 ```
 
+Run with a **strict coverage gate** (recommended for CI or pre-merge checks):
+
+```sh
+poetry run pytest --cov=app --cov-report=term-missing --cov-fail-under=80
+```
+
 ---
 
 ## Coverage
 
-Coverage is enforced automatically when running `pytest` via configured `addopts`.
+The default `poetry run pytest` command reports coverage but does **not** enforce a fail-under threshold.
 
-You can still run with explicit flags if needed:
+Use the strict command below when you want to enforce minimum coverage:
 
 ```sh
 poetry run pytest --cov=app --cov-report=term-missing --cov-fail-under=80
