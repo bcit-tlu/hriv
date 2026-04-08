@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -20,6 +20,12 @@ export default function AddCategoryDialog({
   currentDepth,
 }: AddCategoryDialogProps) {
   const [label, setLabel] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleEntered = useCallback(() => {
+    // Use a ref + onEntered to reliably focus when stacked inside another dialog
+    inputRef.current?.focus()
+  }, [])
 
   const handleClose = () => {
     setLabel('')
@@ -35,10 +41,11 @@ export default function AddCategoryDialog({
   }
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
+    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth TransitionProps={{ onEntered: handleEntered }}>
       <DialogTitle>New Category (Level {currentDepth + 1})</DialogTitle>
       <DialogContent>
         <TextField
+          inputRef={inputRef}
           autoFocus
           margin="dense"
           label="Category name"
