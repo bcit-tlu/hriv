@@ -31,9 +31,9 @@
 
 ### Frontend
 - Write unit tests for all new functions
-- Use Jest for testing framework
+- Use Vitest for testing framework (with `@testing-library/react` for component tests)
 - Aim for >80% code coverage
-- Run tests before committing
+- Run tests before committing (`npm test`)
 
 ### Backend
 - Write unit tests for all new functions
