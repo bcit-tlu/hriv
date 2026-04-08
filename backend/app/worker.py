@@ -8,6 +8,7 @@ the application keeps working in local-dev / single-container setups.
 
 import logging
 from typing import Any
+from urllib.parse import urlparse
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
@@ -22,19 +23,23 @@ _redis_settings: RedisSettings | None = None
 
 
 def _parse_redis_settings() -> RedisSettings:
-    """Convert the ``REDIS_URL`` env-var into arq ``RedisSettings``."""
+    """Convert the ``REDIS_URL`` env-var into arq ``RedisSettings``.
+
+    Handles full Redis URLs including auth and database, e.g.
+    ``redis://:password@host:6379/1``.
+    """
     global _redis_settings
     if _redis_settings is not None:
         return _redis_settings
-    url = settings.redis_url
-    # arq's RedisSettings accepts host/port, not a URL.
-    # Parse redis://host:port or redis://host into components.
-    after_scheme = url.split("://", 1)[-1]  # strip scheme
-    host_port = after_scheme.split("/", 1)[0]
-    parts = host_port.rsplit(":", 1)
-    host = parts[0] or "localhost"
-    port = int(parts[1]) if len(parts) > 1 else 6379
-    _redis_settings = RedisSettings(host=host, port=port)
+    parsed = urlparse(settings.redis_url)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 6379
+    password = parsed.password
+    # Database number is the first path segment (e.g. /1 → 1)
+    database = int(parsed.path.lstrip("/")) if parsed.path.strip("/") else 0
+    _redis_settings = RedisSettings(
+        host=host, port=port, password=password, database=database,
+    )
     return _redis_settings
 
 
