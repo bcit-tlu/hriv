@@ -103,6 +103,7 @@ async def bulk_update_images(
             setattr(img, key, value)
         if progs is not None:
             img.programs = progs
+        img.version = img.version + 1
     await db.commit()
     # Reload updated images
     stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.name)
