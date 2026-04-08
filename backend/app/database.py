@@ -60,7 +60,7 @@ def get_engine() -> "AsyncEngine":
     return _engine
 
 
-def get_async_session():
+def get_async_session() -> async_sessionmaker[AsyncSession]:
     """Return the session factory, creating it on first call."""
     global _async_session
     if _async_session is None:
