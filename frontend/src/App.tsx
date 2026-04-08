@@ -173,7 +173,12 @@ export default function App() {
   // successive metadata-modifying operations (lock, canvas annotations, clear)
   // don't clobber each other's fields.  Initialised from selectedImage and
   // updated after every successful PATCH.
-  const latestMetadataRef = useRef<Record<string, unknown> | null>(null)
+  // undefined = not yet initialised (use selectedImage); null/object = latest known server state
+  const latestMetadataRef = useRef<Record<string, unknown> | null | undefined>(undefined)
+  // Debounce timer for canvas annotation saves to avoid 409 version conflicts
+  const canvasSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const canvasSaveInFlightRef = useRef(false)
+  const pendingCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null)
 
   // Report issue modal state
   const [reportIssueOpen, setReportIssueOpen] = useState(false)
@@ -607,7 +612,7 @@ export default function App() {
   // Reset version ref when a different image is selected
   useEffect(() => {
     latestVersionRef.current = selectedImage?.version ?? 0
-    latestMetadataRef.current = (selectedImage?.metadataExtra as Record<string, unknown> | undefined) ?? null
+    latestMetadataRef.current = undefined // reset to 'uninitialised' so first read falls back to selectedImage
   }, [selectedImage])
 
   // Memoize initialOverlays: use locked overlays on initial load if no URL overlays
@@ -627,13 +632,15 @@ export default function App() {
     return annotations as CanvasAnnotation[]
   }, [selectedImage])
 
-  // Save canvas annotations to image metadata_extra.
-  // Like handleLockOverlays, refreshes category tree but does NOT call
-  // setSelectedImage to avoid triggering a viewer remount.
-  const handleCanvasAnnotationsChange = useCallback(async (annotations: CanvasAnnotation[]) => {
+  // Persist canvas annotations to server.  Called by the debounced handler below.
+  const saveCanvasAnnotations = useCallback(async (annotations: CanvasAnnotation[]) => {
     if (!selectedImage) return
+    canvasSaveInFlightRef.current = true
     try {
-      const meta = { ...(latestMetadataRef.current ?? selectedImage.metadataExtra ?? {}) } as Record<string, unknown>
+      const base = latestMetadataRef.current === undefined
+        ? (selectedImage.metadataExtra ?? {})
+        : (latestMetadataRef.current ?? {})
+      const meta = { ...base } as Record<string, unknown>
       if (annotations.length > 0) {
         meta.canvas_annotations = annotations
       } else {
@@ -645,13 +652,37 @@ export default function App() {
         metadata_extra: updatedMeta as Record<string, unknown> | undefined,
       }, currentVersion)
       latestVersionRef.current = updated.version
-      latestMetadataRef.current = updatedMeta
+      latestMetadataRef.current = updatedMeta ?? {}
       await loadCategories()
       loadUncategorizedImages()
     } catch (err) {
       console.error('Failed to save canvas annotations', err)
+    } finally {
+      canvasSaveInFlightRef.current = false
+      // If another save was queued while we were in-flight, flush it now
+      if (pendingCanvasAnnotationsRef.current !== null) {
+        const queued = pendingCanvasAnnotationsRef.current
+        pendingCanvasAnnotationsRef.current = null
+        void saveCanvasAnnotations(queued)
+      }
     }
   }, [selectedImage, loadCategories, loadUncategorizedImages])
+
+  // Save canvas annotations to image metadata_extra (debounced).
+  // Rapid edits reset a 600ms timer; if a save is already in-flight the
+  // latest data is queued and flushed when the current request completes.
+  const handleCanvasAnnotationsChange = useCallback((annotations: CanvasAnnotation[]) => {
+    if (canvasSaveTimerRef.current) clearTimeout(canvasSaveTimerRef.current)
+    if (canvasSaveInFlightRef.current) {
+      // A save is in-flight — queue the latest data (replaces any prior queued data)
+      pendingCanvasAnnotationsRef.current = annotations
+      return
+    }
+    canvasSaveTimerRef.current = setTimeout(() => {
+      canvasSaveTimerRef.current = null
+      void saveCanvasAnnotations(annotations)
+    }, 600)
+  }, [saveCanvasAnnotations])
 
   // Build measurement config from the selected image's metadata
   const selectedImageMeasurement = useMemo((): MeasurementConfig | undefined => {
@@ -669,8 +700,10 @@ export default function App() {
   const handleLockOverlays = useCallback(async (rects: OverlayRect[]) => {
     if (!selectedImage) return
     try {
-      const meta = latestMetadataRef.current ?? selectedImage.metadataExtra ?? {}
-      const updatedMeta = { ...meta, locked_overlays: rects }
+      const base = latestMetadataRef.current === undefined
+        ? (selectedImage.metadataExtra ?? {})
+        : (latestMetadataRef.current ?? {})
+      const updatedMeta = { ...base, locked_overlays: rects }
       const currentVersion = latestVersionRef.current || selectedImage.version
       const updated = await apiUpdateImage(selectedImage.id, { metadata_extra: updatedMeta }, currentVersion)
       latestVersionRef.current = updated.version
@@ -696,7 +729,10 @@ export default function App() {
   const handleClearOverlays = useCallback(async () => {
     if (!selectedImage) return
     try {
-      const meta = { ...(latestMetadataRef.current ?? selectedImage.metadataExtra ?? {}) } as Record<string, unknown>
+      const base = latestMetadataRef.current === undefined
+        ? (selectedImage.metadataExtra ?? {})
+        : (latestMetadataRef.current ?? {})
+      const meta = { ...base } as Record<string, unknown>
       delete meta.locked_overlays
       const updatedMeta = Object.keys(meta).length > 0 ? meta : null
       const currentVersion = latestVersionRef.current || selectedImage.version
@@ -704,7 +740,7 @@ export default function App() {
         metadata_extra: updatedMeta as Record<string, unknown> | undefined,
       }, currentVersion)
       latestVersionRef.current = updated.version
-      latestMetadataRef.current = updatedMeta
+      latestMetadataRef.current = updatedMeta ?? {}
       await loadCategories()
       loadUncategorizedImages()
     } catch (err) {

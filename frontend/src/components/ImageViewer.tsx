@@ -131,6 +131,7 @@ export default function ImageViewer({
   const overlaysLockedRef = useRef(overlaysLocked)
   const canEditContentRef = useRef(canEditContent)
   const updateLockUiRef = useRef<(() => void) | null>(null)
+  const updateCanvasEditUiRef = useRef<((active: boolean) => void) | null>(null)
   useEffect(() => {
     onViewportChangeRef.current = onViewportChange
   }, [onViewportChange])
@@ -578,6 +579,12 @@ export default function ImageViewer({
       viewer.addControl(canvasEditButton.element, {
         anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
       })
+
+      // Allow external code (e.g. CanvasOverlay "Done" button) to update the button outline
+      updateCanvasEditUiRef.current = (active: boolean) => {
+        canvasEditButton.element.style.outline = active ? '2px solid #2196F3' : 'none'
+        canvasEditButton.element.style.outlineOffset = active ? '-2px' : ''
+      }
     }
 
     // Expose a function to reactively update lock/clear UI when overlaysLocked changes
@@ -636,6 +643,7 @@ export default function ImageViewer({
     canvasEditModeRef.current = mode
     setCanvasEditMode(mode)
     viewerRef.current?.setMouseNavEnabled(!mode)
+    updateCanvasEditUiRef.current?.(mode)
   }, [])
 
   return (
