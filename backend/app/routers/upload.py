@@ -16,6 +16,7 @@ from ..database import get_db, settings
 from ..models import SourceImage, User
 from ..processing import process_source_image
 from ..schemas import SourceImageOut
+from ..worker import enqueue_process_source_image
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +100,11 @@ async def upload_source_image(
         },
     )
 
-    # Fire off the background processing task
-    background_tasks.add_task(process_source_image, src.id)
+    # Prefer the arq task queue; fall back to in-process BackgroundTasks
+    # when Redis is unavailable (e.g. local development without Redis).
+    enqueued = await enqueue_process_source_image(src.id)
+    if not enqueued:
+        background_tasks.add_task(process_source_image, src.id)
 
     return src
 

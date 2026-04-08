@@ -121,6 +121,7 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
       note: img.note,
       programIds: img.program_ids,
       active: img.active,
+      version: img.version,
       createdAt: img.created_at,
       updatedAt: img.updated_at,
       metadataExtra: img.metadata_extra,
@@ -415,6 +416,7 @@ export default function App() {
           note: img.note,
           programIds: img.program_ids,
           active: img.active,
+          version: img.version,
           createdAt: img.created_at,
           updatedAt: img.updated_at,
           metadataExtra: img.metadata_extra,
@@ -618,7 +620,7 @@ export default function App() {
     try {
       const meta = selectedImage.metadataExtra ?? {}
       const updatedMeta = { ...meta, locked_overlays: rects }
-      await apiUpdateImage(selectedImage.id, { metadata_extra: updatedMeta })
+      await apiUpdateImage(selectedImage.id, { metadata_extra: updatedMeta }, selectedImage.version)
       setLockEngaged(true)
       await loadCategories()
       loadUncategorizedImages()
@@ -645,7 +647,7 @@ export default function App() {
       const updatedMeta = Object.keys(meta).length > 0 ? meta : null
       await apiUpdateImage(selectedImage.id, {
         metadata_extra: updatedMeta as Record<string, unknown> | undefined,
-      })
+      }, selectedImage.version)
       await loadCategories()
       loadUncategorizedImages()
     } catch (err) {
@@ -832,6 +834,7 @@ export default function App() {
         note: selectedImage.note ?? null,
         program_ids: selectedImage.programIds,
         active: selectedImage.active,
+        version: selectedImage.version,
         metadata_extra: selectedImage.metadataExtra ?? null,
         created_at: selectedImage.createdAt ?? '',
         updated_at: selectedImage.updatedAt ?? '',
@@ -850,6 +853,7 @@ export default function App() {
         note: browseEditImage.note ?? null,
         program_ids: browseEditImage.programIds,
         active: browseEditImage.active,
+        version: browseEditImage.version,
         metadata_extra: browseEditImage.metadataExtra ?? null,
         created_at: browseEditImage.createdAt ?? '',
         updated_at: browseEditImage.updatedAt ?? '',
@@ -886,6 +890,7 @@ export default function App() {
           note: updated.note,
           programIds: updated.program_ids,
           active: updated.active,
+          version: updated.version,
           createdAt: updated.created_at,
           updatedAt: updated.updated_at,
           metadataExtra: updated.metadata_extra,
@@ -1108,6 +1113,7 @@ export default function App() {
                   note: img.note,
                   programIds: img.program_ids,
                   active: img.active,
+                  version: img.version,
                   createdAt: img.created_at,
                   updatedAt: img.updated_at,
                   metadataExtra: img.metadata_extra,

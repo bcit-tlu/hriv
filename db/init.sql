@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS images (
     note          VARCHAR(500),
     active        BOOLEAN DEFAULT true,
     metadata      JSONB DEFAULT '{}',
+    version       INTEGER NOT NULL DEFAULT 1,
     created_at    TIMESTAMPTZ DEFAULT now(),
     updated_at    TIMESTAMPTZ DEFAULT now()
 );

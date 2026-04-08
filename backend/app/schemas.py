@@ -122,6 +122,7 @@ class ImageUpdate(BaseModel):
 
 class ImageOut(ImageBase):
     id: int
+    version: int = 1
     created_at: datetime
     updated_at: datetime
 
@@ -142,6 +143,7 @@ class ImageOut(ImageBase):
                 active=data.active,
                 metadata_=data.metadata_,
                 id=data.id,
+                version=data.version,
                 created_at=data.created_at,
                 updated_at=data.updated_at,
                 program_ids=[p.id for p in data.programs],

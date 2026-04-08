@@ -8,6 +8,7 @@ export interface ImageItem {
   note?: string | null
   programIds: number[]
   active: boolean
+  version: number
   createdAt?: string | null
   updatedAt?: string | null
   metadataExtra?: Record<string, unknown> | null

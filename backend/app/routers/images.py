@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -114,12 +114,28 @@ async def bulk_update_images(
 async def update_image(
     image_id: int,
     body: ImageUpdate,
+    request: Request,
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
 ):
     img = await db.get(Image, image_id)
     if not img:
         raise HTTPException(status_code=404, detail="Image not found")
+
+    # Optimistic concurrency: if the client sends If-Match, verify the
+    # version has not changed since the client last read the resource.
+    if_match = request.headers.get("If-Match")
+    if if_match is not None:
+        try:
+            client_version = int(if_match.strip('"'))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid If-Match header")
+        if client_version != img.version:
+            raise HTTPException(
+                status_code=409,
+                detail="Resource has been modified by another client",
+            )
+
     update_data = body.model_dump(exclude_unset=True)
     if "metadata_extra" in update_data:
         update_data["metadata_"] = update_data.pop("metadata_extra")
@@ -129,9 +145,19 @@ async def update_image(
     if program_ids is not None:
         progs = (await db.execute(select(Program).where(Program.id.in_(program_ids)))).scalars().all()
         img.programs = list(progs)
+
+    # Bump the version for optimistic concurrency
+    img.version = img.version + 1
+
     await db.commit()
     await db.refresh(img)
-    return img
+
+    response = Response(
+        content=ImageOut.model_validate(img).model_dump_json(),
+        media_type="application/json",
+    )
+    response.headers["ETag"] = f'"{img.version}"'
+    return response
 
 
 @router.delete("/bulk", status_code=204)

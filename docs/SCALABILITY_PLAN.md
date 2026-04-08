@@ -89,19 +89,19 @@ sessions know where to start.
 
 ---
 
-## Phase 5 — Refinements  `TODO`
+## Phase 5 — Refinements  `DONE`
 
 > Low-urgency improvements with no downstream dependencies.
 
-- [ ] **5.1 Overlay optimistic concurrency** — Add a `version` column to
+- [x] **5.1 Overlay optimistic concurrency** — Add a `version` column to
   `images`.  Frontend sends `If-Match: <version>` on overlay-lock PATCH;
   backend returns `409 Conflict` if the row has been modified since the client
   last read it.
-- [ ] **5.2 Task queue for image processing** — Replace `BackgroundTasks` with
+- [x] **5.2 Task queue for image processing** — Replace `BackgroundTasks` with
   a dedicated task queue (Celery + Redis or arq).  Adds retry, monitoring, and
   independent scaling of workers.  Only pursue if upload volume grows
   significantly beyond current levels.
-- [ ] **5.3 Login rate limiting** — Add rate limiting on `/api/auth/login`
+- [x] **5.3 Login rate limiting** — Add rate limiting on `/api/auth/login`
   (e.g. nginx `limit_req` or Redis-backed middleware) to prevent brute-force
   attacks, especially important while the shared student password exists.
 

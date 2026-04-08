@@ -69,6 +69,7 @@ export interface ApiImage {
   program_ids: number[]
   active: boolean
   metadata_extra: Record<string, unknown> | null
+  version: number
   created_at: string
   updated_at: string
 }
@@ -185,10 +186,17 @@ export function updateImage(
     active?: boolean
     metadata_extra?: Record<string, unknown>
   },
+  /** Pass the current image version for optimistic concurrency control */
+  version?: number,
 ): Promise<ApiImage> {
+  const headers: Record<string, string> = {}
+  if (version !== undefined) {
+    headers['If-Match'] = String(version)
+  }
   return request(`/images/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(body),
+    headers,
   })
 }
 

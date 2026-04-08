@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from ..auth import verify_password, create_access_token, get_current_user
 from ..database import get_db
 from ..models import User
+from ..rate_limit import check_login_rate_limit
 from ..schemas import UserOut
 
 logger = logging.getLogger(__name__)
@@ -32,8 +33,22 @@ class LoginResponse(BaseModel):
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(
+    body: LoginRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
     """Authenticate with email + password. Returns a JWT bearer token."""
+    # Rate limiting (Phase 5.3)
+    client_ip = request.client.host if request.client else "unknown"
+    retry_after = await check_login_rate_limit(client_ip)
+    if retry_after is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Please try again later.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
     result = await db.execute(
         select(User).options(selectinload(User.program_rel)).where(User.email == body.email)
     )

@@ -12,6 +12,13 @@ class Settings(BaseSettings):
     db_pool_size: int = 10
     db_max_overflow: int = 20
 
+    # Redis URL for task queue (Phase 5 — arq worker) and rate limiting
+    redis_url: str = "redis://redis:6379"
+
+    # Login rate limiting (Phase 5)
+    rate_limit_login_max: int = 5
+    rate_limit_login_window: int = 60  # seconds
+
     # OIDC / OAuth settings (Phase 3 — Identity)
     oidc_enabled: bool = False
     oidc_issuer: str = ""
