@@ -1,12 +1,17 @@
 """Tests for the upload router endpoints."""
 
-import json
+import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+
+# Ensure pyvips can be imported even when libvips is not installed (CI)
+if "pyvips" not in sys.modules:
+    sys.modules["pyvips"] = MagicMock()
+    sys.modules["pyvips.enums"] = MagicMock()
 
 from app.routers.upload import _is_valid_image, list_source_images, get_source_image, upload_source_image
 

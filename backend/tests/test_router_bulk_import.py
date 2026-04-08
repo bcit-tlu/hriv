@@ -1,10 +1,16 @@
 """Tests for the bulk_import router helper functions and endpoints."""
 
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
+
+# Ensure pyvips can be imported even when libvips is not installed (CI)
+if "pyvips" not in sys.modules:
+    sys.modules["pyvips"] = MagicMock()
+    sys.modules["pyvips.enums"] = MagicMock()
 
 from app.routers.bulk_import import _is_image_filename, list_bulk_import_jobs, get_bulk_import_job
 

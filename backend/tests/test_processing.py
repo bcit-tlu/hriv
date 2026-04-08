@@ -1,7 +1,13 @@
 """Tests for the image processing pipeline."""
 
+import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+
+# Ensure pyvips can be imported even when libvips is not installed (CI)
+if "pyvips" not in sys.modules:
+    sys.modules["pyvips"] = MagicMock()
+    sys.modules["pyvips.enums"] = MagicMock()
 
 from app.processing import generate_tiles, process_source_image
 
