@@ -24,7 +24,6 @@ from ..database import async_session, get_db, settings
 from ..models import BulkImportJob, Category, SourceImage, User
 from ..processing import process_source_image
 from ..schemas import BulkImportJobOut
-from ..worker import enqueue_process_source_image
 
 router = APIRouter(prefix="/admin/bulk-import", tags=["admin"])
 
@@ -79,13 +78,12 @@ async def _process_bulk_import(job_id: int, file_entries: list[tuple[str, str]])
                 await db.commit()
                 await db.refresh(src)
 
-            # Process through VIPS pipeline (this acquires the semaphore)
+            # Process through VIPS pipeline (this acquires the semaphore).
+            # Note: bulk imports use direct processing (not arq) because the
+            # job-tracking logic below needs synchronous completion status.
             async with semaphore:
                 try:
-                    # Prefer arq queue; fall back to direct call
-                    enqueued = await enqueue_process_source_image(src.id)
-                    if not enqueued:
-                        await process_source_image(src.id)
+                    await process_source_image(src.id)
                 except Exception as exc:
                     logger.exception(
                         "Bulk import: image processing failed",

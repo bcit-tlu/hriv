@@ -164,6 +164,10 @@ export default function App() {
   const pendingViewport = useRef<ViewportState | undefined>(undefined)
   const pendingOverlays = useRef<OverlayRect[] | undefined>(undefined)
   const uncategorizedLoaded = useRef(false)
+  // Track the latest known image version independently from selectedImage
+  // to avoid stale-version 409s when clearing overlays after locking
+  // (lock intentionally does NOT update selectedImage to avoid viewer remount).
+  const latestVersionRef = useRef<number>(0)
 
   // Report issue modal state
   const [reportIssueOpen, setReportIssueOpen] = useState(false)
@@ -594,6 +598,11 @@ export default function App() {
     setLockEngaged(hasLockedOverlays)
   }, [hasLockedOverlays])
 
+  // Reset version ref when a different image is selected
+  useEffect(() => {
+    latestVersionRef.current = selectedImage?.version ?? 0
+  }, [selectedImage])
+
   // Memoize initialOverlays: use locked overlays on initial load if no URL overlays
   const initialOverlays = useMemo(() => {
     if (lockedOverlays && lockedOverlays.length > 0 && overlays.length === 0) {
@@ -620,7 +629,9 @@ export default function App() {
     try {
       const meta = selectedImage.metadataExtra ?? {}
       const updatedMeta = { ...meta, locked_overlays: rects }
-      await apiUpdateImage(selectedImage.id, { metadata_extra: updatedMeta }, selectedImage.version)
+      const currentVersion = latestVersionRef.current || selectedImage.version
+      const updated = await apiUpdateImage(selectedImage.id, { metadata_extra: updatedMeta }, currentVersion)
+      latestVersionRef.current = updated.version
       setLockEngaged(true)
       await loadCategories()
       loadUncategorizedImages()
@@ -645,9 +656,11 @@ export default function App() {
       const meta = { ...(selectedImage.metadataExtra ?? {}) } as Record<string, unknown>
       delete meta.locked_overlays
       const updatedMeta = Object.keys(meta).length > 0 ? meta : null
-      await apiUpdateImage(selectedImage.id, {
+      const currentVersion = latestVersionRef.current || selectedImage.version
+      const updated = await apiUpdateImage(selectedImage.id, {
         metadata_extra: updatedMeta as Record<string, unknown> | undefined,
-      }, selectedImage.version)
+      }, currentVersion)
+      latestVersionRef.current = updated.version
       await loadCategories()
       loadUncategorizedImages()
     } catch (err) {
