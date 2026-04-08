@@ -167,13 +167,23 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
     user = result.scalars().first()
 
     if user is None:
-        # Try matching by email for first-time OIDC login by an existing user
-        result = await db.execute(
-            select(User)
-            .options(selectinload(User.program_rel))
-            .where(User.email == email)
-        )
-        user = result.scalars().first()
+        # Try matching by email for first-time OIDC login by an existing user.
+        # Only allow email-based linking when the IdP confirms the email is
+        # verified; this prevents account takeover via unverified addresses on
+        # less restrictive IdPs.
+        email_verified = userinfo.get("email_verified", False)
+        if email_verified:
+            result = await db.execute(
+                select(User)
+                .options(selectinload(User.program_rel))
+                .where(User.email == email)
+            )
+            user = result.scalars().first()
+        else:
+            logger.info(
+                "OIDC: skipping email-based account linking (email not verified)",
+                extra={"event": "oidc.email_not_verified", "email": email, "sub": sub},
+            )
 
     if user is None:
         # Brand-new user — create account (default to student if no mapping matched)
