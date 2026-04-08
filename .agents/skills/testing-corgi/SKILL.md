@@ -16,6 +16,26 @@ docker compose ps
 - Backend API: http://localhost:8000
 - Database: PostgreSQL on port 5432
 
+### Adding Redis for Rate Limiting & Task Queue Testing
+
+Docker Compose does not include Redis by default. To test rate limiting (Phase 5.3) and arq task queue (Phase 5.2), start a Redis container on the same Docker network:
+
+```bash
+# Start Redis on the corgi_default network with name "redis" (matches default REDIS_URL)
+docker run -d --name redis --network corgi_default -p 6379:6379 redis:7-alpine
+
+# Restart backend to pick up Redis connection
+docker restart corgi-backend-1
+
+# Verify Redis is reachable from backend
+curl -s -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@bcit.ca","password":"wrong"}'
+# Should return 401 (not 500)
+```
+
+Without Redis, rate limiting is a no-op and image processing falls back to BackgroundTasks.
+
 ## Test Credentials
 
 | Email | Password | Role | Permissions |
@@ -32,6 +52,81 @@ Top nav tabs: HOME, IMAGES, MANAGE, PEOPLE, ADMIN
 - PEOPLE: User management table
 - ADMIN: Admin settings
 - Profile dropdown: Click the avatar (initials) at top-right → shows Update and Logout buttons
+
+## Image Viewer Toolbar
+
+When viewing an image, the bottom-left toolbar contains (left to right):
+- Zoom in / Zoom out / Home / Toggle full page
+- Rotate left / Rotate right
+- Draw selection rectangle (creates red overlay rectangles with measurement labels)
+- Lock overlays (padlock icon — persists overlays to image metadata)
+- Clear all selection rectangles (X icon — disabled when overlays are locked)
+
+## Testing Rate Limiting (Phase 5.3)
+
+```bash
+# Flush Redis before testing
+docker exec redis redis-cli flushall
+
+# Send failed login attempts (default limit: 5)
+for i in 1 2 3 4 5; do
+  curl -s -o /dev/null -w "Attempt $i: HTTP %{http_code}\n" \
+    -X POST http://localhost:8000/api/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{"email":"admin@bcit.ca","password":"wrong"}'
+done
+# Expected: first N-1 return 401, Nth returns 429 with Retry-After header
+
+# Verify successful login resets counter
+docker exec redis redis-cli flushall
+# Send some failed attempts, then succeed, then fail again
+# The post-success failure should return 401 (not 429)
+```
+
+Note: With `rate_limit_login_max=5`, blocking may start at the 5th attempt (not 6th) due to how the sliding window counter records attempts.
+
+## Testing Optimistic Concurrency (Phase 5.1)
+
+```bash
+# Get JWT token
+TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@bcit.ca","password":"password"}' | \
+  python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Get current version
+VERSION=$(curl -s http://localhost:8000/api/images/1 \
+  -H "Authorization: Bearer $TOKEN" | \
+  python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+
+# PATCH with correct If-Match → 200 + ETag
+curl -s -D /tmp/headers.txt -X PATCH http://localhost:8000/api/images/1 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "If-Match: $VERSION" \
+  -d '{"note":"test update"}'
+# Check: grep -i etag /tmp/headers.txt
+
+# PATCH with stale If-Match → 409 Conflict
+curl -s -X PATCH http://localhost:8000/api/images/1 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "If-Match: $VERSION" \
+  -d '{"note":"should fail"}'
+# Expected: {"detail":"Resource has been modified by another client"}
+```
+
+## Testing Overlay Lock/Clear (Phase 5.1 UI)
+
+1. Login as admin@bcit.ca
+2. Navigate: Home → Architecture → Italian → click "Duomo di Milano"
+3. Click "Draw selection rectangle" button in toolbar
+4. Drag on the image to draw a rectangle
+5. Click the lock button (padlock icon) — should change to locked state, clear button disabled
+6. Click lock again to unlock
+7. Click clear (X) button — overlays should disappear with no error
+
+This tests the `latestVersionRef` fix: locking bumps the server-side version, and clearing must use the updated version (not the stale `selectedImage.version`) to avoid 409 errors.
 
 ## Image Upload Flow
 
@@ -105,6 +200,8 @@ Note: Even "large" synthetic test images process quickly (2-5 seconds). Real pat
 - **Logout button**: Use `page.get_by_role("button", name="Logout", exact=True)` to avoid matching image names that may contain "Logout" text
 - **Auto-refresh**: On processing completion, `loadCategories()` and `loadUncategorizedImages()` are called automatically
 - **Polling**: Uses `setTimeout` chaining (not `setInterval`) with `AbortController` for clean cancellation
+- **Rate limit flush**: Before testing rate limiting, flush Redis with `docker exec redis redis-cli flushall` to clear previous attempts
+- **Docker network naming**: The Redis container must be named `redis` (not `corgi-redis`) to match the default `REDIS_URL=redis://redis:6379` in `database.py`
 
 ## Devin Secrets Needed
 
