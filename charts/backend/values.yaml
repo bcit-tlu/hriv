@@ -40,6 +40,14 @@ vault:
     dbSuperuserSecretPath: corgi/db-superuser
     githubPatSecretPath: corgi/github-pat
 
+# Nginx sidecar for serving /api/tiles directly from the PVC,
+# bypassing the Python process.  Tiles are immutable and cache-friendly.
+tileSidecar:
+    enabled: false
+    image: nginx:1.27-alpine
+    port: 8001
+    resources: {}
+
 persistence:
     enabled: true
     storageClass: longhorn

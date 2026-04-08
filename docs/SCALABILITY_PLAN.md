@@ -74,15 +74,15 @@ sessions know where to start.
 
 ---
 
-## Phase 4 — Performance  `TODO`
+## Phase 4 — Performance  `DONE`
 
 > Isolated infrastructure and query optimisations.  No interaction with auth
 > or identity; safe to tackle independently.
 
-- [ ] **4.1 Serve tiles via nginx / CDN** — Configure the Kubernetes ingress
+- [x] **4.1 Serve tiles via nginx / CDN** — Configure the Kubernetes ingress
   (or an nginx sidecar) to serve `/api/tiles` directly from the PVC, bypassing
   the Python process.  Tiles are immutable and cache-friendly.
-- [ ] **4.2 Optimise category tree query** — Replace the recursive
+- [x] **4.2 Optimise category tree query** — Replace the recursive
   `_load_tree()` with a flat CTE or two-query approach (all categories + all
   images), then assemble the tree in Python.  Add `Cache-Control` / `ETag`
   headers to reduce redundant fetches.

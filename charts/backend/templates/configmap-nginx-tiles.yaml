@@ -1,0 +1,42 @@
+{{- if .Values.tileSidecar.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "corgi-backend.fullname" . }}-nginx-tiles
+  labels:
+    {{- include "corgi-backend.labels" . | nindent 4 }}
+data:
+  default.conf: |
+    server {
+        listen {{ .Values.tileSidecar.port }};
+        server_name _;
+
+        # Serve DZI tiles directly from the PVC.
+        # Tiles are immutable once written, so aggressive caching is safe.
+        location /api/tiles/ {
+            alias {{ .Values.env.TILES_DIR }}/;
+            autoindex off;
+
+            # Immutable tiles — cache for 30 days, allow CDN / proxy caching.
+            add_header Cache-Control "public, max-age=2592000, immutable";
+
+            # Disable access log for tile requests to reduce I/O.
+            access_log off;
+
+            # Support range requests for large DZI files.
+            sendfile on;
+            tcp_nopush on;
+
+            # Gzip XML descriptors (.dzi / .xml) but skip already-compressed
+            # image formats (JPEG / PNG).
+            gzip on;
+            gzip_types application/xml text/xml;
+        }
+
+        # Health endpoint for the sidecar's own readiness check.
+        location = /healthz {
+            return 200 'ok';
+            add_header Content-Type text/plain;
+        }
+    }
+{{- end }}

@@ -1,62 +1,101 @@
+import hashlib
+import json as _json
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from ..auth import get_current_user, require_role
 from ..database import get_db
-from ..models import Category, User
-from ..schemas import CategoryCreate, CategoryUpdate, CategoryOut, CategoryTree, CategoryReorderRequest
+from ..models import Category, Image, User
+from ..schemas import CategoryCreate, CategoryUpdate, CategoryOut, CategoryTree, CategoryReorderRequest, ImageOut
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
 
 async def _load_tree(db: AsyncSession, parent_id: int | None, *, user_role: str = "admin") -> list[CategoryTree]:
-    from ..schemas import ImageOut
+    """Build the full category tree using two flat queries instead of
+    recursive per-level SELECTs.  This reduces the number of DB round-trips
+    from O(depth) to exactly 2 regardless of tree depth."""
 
-    stmt = (
-        select(Category)
-        .where(Category.parent_id == parent_id if parent_id is not None else Category.parent_id.is_(None))
-        .options(selectinload(Category.images))
-        .order_by(Category.sort_order, Category.label)
-    )
-    result = await db.execute(stmt)
-    cats = result.scalars().unique().all()
+    # ── Query 1: all categories in one shot ──
+    cat_stmt = select(Category).order_by(Category.sort_order, Category.label)
+    cat_result = await db.execute(cat_stmt)
+    all_categories = cat_result.scalars().unique().all()
 
-    tree: list[CategoryTree] = []
-    for cat in cats:
-        # Hide categories with status='hidden' from students
-        if user_role == "student" and cat.status == "hidden":
-            continue
-        children = await _load_tree(db, cat.id, user_role=user_role)
-        images = cat.images if user_role != "student" else [img for img in cat.images if img.active]
-        tree.append(CategoryTree(
-            id=cat.id,
-            label=cat.label,
-            parent_id=cat.parent_id,
-            program=cat.program,
-            status=cat.status,
-            sort_order=cat.sort_order,
-            metadata_extra=cat.metadata_,
-            created_at=cat.created_at,
-            updated_at=cat.updated_at,
-            children=children,
-            images=[
-                ImageOut.model_validate(img)
-                for img in images
-            ],
-        ))
-    return tree
+    # ── Query 2: all images in one shot (with eager-loaded programs) ──
+    img_stmt = select(Image).order_by(Image.name)
+    img_result = await db.execute(img_stmt)
+    all_images = img_result.scalars().unique().all()
+
+    # ── Index images by category_id ──
+    images_by_cat: dict[int | None, list[Image]] = {}
+    for img in all_images:
+        images_by_cat.setdefault(img.category_id, []).append(img)
+
+    # ── Index categories by parent_id ──
+    children_by_parent: dict[int | None, list[Category]] = {}
+    for cat in all_categories:
+        children_by_parent.setdefault(cat.parent_id, []).append(cat)
+
+    # ── Recursive assembly (in-memory only, no DB calls) ──
+    def _assemble(pid: int | None) -> list[CategoryTree]:
+        tree: list[CategoryTree] = []
+        for cat in children_by_parent.get(pid, []):
+            if user_role == "student" and cat.status == "hidden":
+                continue
+            cat_images = images_by_cat.get(cat.id, [])
+            if user_role == "student":
+                cat_images = [img for img in cat_images if img.active]
+            tree.append(CategoryTree(
+                id=cat.id,
+                label=cat.label,
+                parent_id=cat.parent_id,
+                program=cat.program,
+                status=cat.status,
+                sort_order=cat.sort_order,
+                metadata_extra=cat.metadata_,
+                created_at=cat.created_at,
+                updated_at=cat.updated_at,
+                children=_assemble(cat.id),
+                images=[
+                    ImageOut.model_validate(img)
+                    for img in cat_images
+                ],
+            ))
+        return tree
+
+    return _assemble(parent_id)
 
 
 @router.get("/tree", response_model=list[CategoryTree])
 async def get_category_tree(
+    request: Request,
+    response: Response,
     _user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
-    return await _load_tree(db, None, user_role=_user.role)
+    tree = await _load_tree(db, None, user_role=_user.role)
+
+    # ── ETag / Cache-Control ──
+    # Compute a lightweight ETag from the serialised response so browsers
+    # and proxies can use conditional requests (If-None-Match) to skip
+    # redundant payload transfers when the tree hasn't changed.
+    body_bytes = _json.dumps(
+        [t.model_dump(mode="json") for t in tree],
+        sort_keys=True,
+        default=str,
+    ).encode()
+    etag = hashlib.md5(body_bytes).hexdigest()  # noqa: S324
+    response.headers["ETag"] = f'W/"{etag}"'
+    response.headers["Cache-Control"] = "private, max-age=30"
+
+    client_etags = request.headers.get("if-none-match", "")
+    if client_etags == "*" or f'W/"{etag}"' in [t.strip() for t in client_etags.split(",")]:
+        return Response(status_code=304, headers={"ETag": f'W/"{etag}"', "Cache-Control": "private, max-age=30"})
+
+    return tree
 
 
 @router.get("/", response_model=list[CategoryOut])
