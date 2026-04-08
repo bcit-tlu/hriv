@@ -35,6 +35,7 @@ import LinkIcon from '@mui/icons-material/Link'
 import SearchIcon from '@mui/icons-material/Search'
 import ImageViewer from './components/ImageViewer'
 import type { ViewportState, MeasurementConfig, OverlayRect } from './components/ImageViewer'
+import type { CanvasAnnotation } from './components/CanvasOverlay'
 import { MAX_SHARE_OVERLAYS } from './components/ImageViewer'
 import CategoryTile from './components/CategoryTile'
 import ImageTile from './components/ImageTile'
@@ -610,6 +611,40 @@ export default function App() {
     }
     return overlays
   }, [selectedImage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Extract canvas annotations from the selected image's metadata
+  const canvasAnnotations = useMemo((): CanvasAnnotation[] => {
+    const meta = selectedImage?.metadataExtra
+    if (!meta) return []
+    const annotations = meta.canvas_annotations
+    if (!Array.isArray(annotations)) return []
+    return annotations as CanvasAnnotation[]
+  }, [selectedImage])
+
+  // Save canvas annotations to image metadata_extra.
+  // Like handleLockOverlays, refreshes category tree but does NOT call
+  // setSelectedImage to avoid triggering a viewer remount.
+  const handleCanvasAnnotationsChange = useCallback(async (annotations: CanvasAnnotation[]) => {
+    if (!selectedImage) return
+    try {
+      const meta = { ...(selectedImage.metadataExtra ?? {}) } as Record<string, unknown>
+      if (annotations.length > 0) {
+        meta.canvas_annotations = annotations
+      } else {
+        delete meta.canvas_annotations
+      }
+      const updatedMeta = Object.keys(meta).length > 0 ? meta : null
+      const currentVersion = latestVersionRef.current || selectedImage.version
+      const updated = await apiUpdateImage(selectedImage.id, {
+        metadata_extra: updatedMeta as Record<string, unknown> | undefined,
+      }, currentVersion)
+      latestVersionRef.current = updated.version
+      await loadCategories()
+      loadUncategorizedImages()
+    } catch (err) {
+      console.error('Failed to save canvas annotations', err)
+    }
+  }, [selectedImage, loadCategories, loadUncategorizedImages])
 
   // Build measurement config from the selected image's metadata
   const selectedImageMeasurement = useMemo((): MeasurementConfig | undefined => {
@@ -1240,6 +1275,8 @@ export default function App() {
                   onLockOverlays={handleLockOverlays}
                   onUnlockOverlays={handleUnlockOverlays}
                   onClearOverlays={canEditContent ? handleClearOverlays : undefined}
+                  canvasAnnotations={canvasAnnotations}
+                  onCanvasAnnotationsChange={handleCanvasAnnotationsChange}
                 />
               </Paper>
 
