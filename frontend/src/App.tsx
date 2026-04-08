@@ -1703,25 +1703,58 @@ export default function App() {
                     color="inherit"
                     underline="always"
                     sx={{ fontWeight: 'bold', verticalAlign: 'baseline', cursor: 'pointer' }}
-                    onClick={() => {
-                      const result = findImageInTree(categories, job.imageId!)
-                      if (result) {
-                        setPage('browse')
-                        setPath(result.path)
-                        setSelectedImage(result.image)
-                        setViewportState(undefined)
-                        setOverlays([])
-                      } else {
-                        const uncatImg = uncategorizedImages.find((img) => img.id === job.imageId)
-                        if (uncatImg) {
+                    onClick={async () => {
+                      // Categories may not have refreshed yet; reload and search fresh data
+                      let found = false
+                      try {
+                        const freshTree = (await fetchCategoryTree()).map(apiTreeToCategory)
+                        setCategories(freshTree)
+                        const result = findImageInTree(freshTree, job.imageId!)
+                        if (result) {
                           setPage('browse')
-                          setPath([])
-                          setSelectedImage(uncatImg)
+                          setPath(result.path)
+                          setSelectedImage(result.image)
                           setViewportState(undefined)
                           setOverlays([])
+                          found = true
+                        }
+                      } catch {
+                        // Fall through to uncategorized check
+                      }
+                      if (!found) {
+                        try {
+                          const freshUncat = (await fetchUncategorizedImages()).map((img) => ({
+                            id: img.id,
+                            name: img.name,
+                            thumb: img.thumb,
+                            tileSources: img.tile_sources,
+                            categoryId: img.category_id,
+                            copyright: img.copyright,
+                            note: img.note,
+                            programIds: img.program_ids,
+                            active: img.active,
+                            version: img.version,
+                            createdAt: img.created_at,
+                            updatedAt: img.updated_at,
+                            metadataExtra: img.metadata_extra,
+                          }))
+                          setUncategorizedImages(freshUncat)
+                          const uncatImg = freshUncat.find((img) => img.id === job.imageId)
+                          if (uncatImg) {
+                            setPage('browse')
+                            setPath([])
+                            setSelectedImage(uncatImg)
+                            setViewportState(undefined)
+                            setOverlays([])
+                            found = true
+                          }
+                        } catch {
+                          // Image not found
                         }
                       }
-                      setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id))
+                      if (found) {
+                        setProcessingJobs((prev) => prev.filter((j) => j.id !== job.id))
+                      }
                     }}
                   >
                     View
