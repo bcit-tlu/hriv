@@ -35,6 +35,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
   frontend:
     build:
@@ -54,6 +56,18 @@ services:
       - VITE_APP_VERSION=${APP_VERSION:-dev}
     depends_on:
       - backend
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - 6379:6379
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   backup:
     build:
@@ -79,4 +93,5 @@ services:
 volumes:
   pgdata:
   image_data:
+  redisdata:
   backup_data:
