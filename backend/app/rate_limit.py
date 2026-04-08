@@ -51,8 +51,13 @@ async def _get_redis() -> Redis | None:
         return None
 
 
-async def check_login_rate_limit(client_ip: str) -> int | None:
-    """Check whether *client_ip* has exceeded the login rate limit.
+async def check_login_rate_limit(client_ip: str, email: str) -> int | None:
+    """Check whether *client_ip* + *email* has exceeded the login rate limit.
+
+    The key is a composite of IP and email so that one user's successful
+    login does not reset the counter for a different user at the same IP
+    (important when the service is publicly accessible and users may be
+    behind a shared campus NAT).
 
     Returns ``None`` if the request is allowed, otherwise returns the
     number of seconds the client should wait (for a ``Retry-After``
@@ -62,7 +67,7 @@ async def check_login_rate_limit(client_ip: str) -> int | None:
     if redis is None:
         return None  # limiter disabled — allow
 
-    key = f"rate:login:{client_ip}"
+    key = f"rate:login:{client_ip}:{email}"
     window = settings.rate_limit_login_window
     max_attempts = settings.rate_limit_login_max
     now = time.time()
@@ -96,8 +101,8 @@ async def check_login_rate_limit(client_ip: str) -> int | None:
     return None
 
 
-async def reset_login_rate_limit(client_ip: str) -> None:
-    """Clear rate-limit state for *client_ip* (useful in tests)."""
+async def reset_login_rate_limit(client_ip: str, email: str) -> None:
+    """Clear rate-limit state for *client_ip* + *email* after a successful login."""
     redis = await _get_redis()
     if redis is not None:
-        await redis.delete(f"rate:login:{client_ip}")
+        await redis.delete(f"rate:login:{client_ip}:{email}")

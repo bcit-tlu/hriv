@@ -46,7 +46,7 @@ async def login(
         if forwarded_for
         else (request.client.host if request.client else "unknown")
     )
-    retry_after = await check_login_rate_limit(client_ip)
+    retry_after = await check_login_rate_limit(client_ip, body.email)
     if retry_after is not None:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -89,7 +89,7 @@ async def login(
 
     # Clear rate-limit counter on successful login so legitimate users
     # (especially those behind a shared campus NAT IP) aren't locked out.
-    await reset_login_rate_limit(client_ip)
+    await reset_login_rate_limit(client_ip, body.email)
 
     logger.info(
         "Login successful",

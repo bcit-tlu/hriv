@@ -25,7 +25,7 @@ def _make_pipe(count: int) -> MagicMock:
 async def test_rate_limit_allows_when_redis_unavailable() -> None:
     """When Redis is down, rate limiting is a no-op (returns None)."""
     with patch("app.rate_limit._get_redis", new_callable=AsyncMock, return_value=None):
-        result = await check_login_rate_limit("1.2.3.4")
+        result = await check_login_rate_limit("1.2.3.4", "user@example.com")
 
     assert result is None
 
@@ -41,7 +41,7 @@ async def test_rate_limit_allows_under_threshold() -> None:
         patch("app.rate_limit._get_redis", new_callable=AsyncMock, return_value=mock_redis),
         patch("app.rate_limit.settings", _MOCK_SETTINGS),
     ):
-        result = await check_login_rate_limit("1.2.3.4")
+        result = await check_login_rate_limit("1.2.3.4", "user@example.com")
 
     assert result is None
     mock_redis.zadd.assert_awaited_once()
@@ -58,7 +58,7 @@ async def test_rate_limit_blocks_over_threshold() -> None:
         patch("app.rate_limit._get_redis", new_callable=AsyncMock, return_value=mock_redis),
         patch("app.rate_limit.settings", _MOCK_SETTINGS),
     ):
-        result = await check_login_rate_limit("1.2.3.4")
+        result = await check_login_rate_limit("1.2.3.4", "user@example.com")
 
     assert result is not None
     assert result >= 1  # retry-after in seconds
@@ -74,6 +74,6 @@ async def test_rate_limit_returns_retry_after_when_no_oldest() -> None:
         patch("app.rate_limit._get_redis", new_callable=AsyncMock, return_value=mock_redis),
         patch("app.rate_limit.settings", _MOCK_SETTINGS),
     ):
-        result = await check_login_rate_limit("1.2.3.4")
+        result = await check_login_rate_limit("1.2.3.4", "user@example.com")
 
     assert result == 60
