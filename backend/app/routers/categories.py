@@ -89,11 +89,11 @@ async def get_category_tree(
     ).encode()
     etag = hashlib.md5(body_bytes).hexdigest()  # noqa: S324
     response.headers["ETag"] = f'W/"{etag}"'
-    response.headers["Cache-Control"] = "private, max-age=30"
+    response.headers["Cache-Control"] = "private, no-cache"
 
     client_etags = request.headers.get("if-none-match", "")
     if client_etags == "*" or f'W/"{etag}"' in [t.strip() for t in client_etags.split(",")]:
-        return Response(status_code=304, headers={"ETag": f'W/"{etag}"', "Cache-Control": "private, max-age=30"})
+        return Response(status_code=304, headers={"ETag": f'W/"{etag}"', "Cache-Control": "private, no-cache"})
 
     return tree
 

@@ -266,20 +266,23 @@ export default function App() {
       const schedulePoll = () => {
         const controller = new AbortController()
         abortControllers.set(job.id, controller)
+        // Mark as polling immediately so the effect guard (`refs.has`)
+        // prevents duplicate polls if React re-renders during an
+        // in-flight async operation (e.g. the data refresh on completion).
+        if (!refs.has(job.id)) refs.set(job.id, 0 as unknown as ReturnType<typeof setTimeout>)
 
         const poll = async () => {
           try {
             const src = await fetchSourceImage(job.id)
             if (controller.signal.aborted) return
             if (src.status === 'completed') {
+              // Refresh data FIRST so the new image is already in the
+              // category tree when the "View image" snackbar link appears.
+              await Promise.all([loadCategories(), loadUncategorizedImages()])
               refs.delete(job.id)
-              // Mark the job as completed immediately to prevent duplicate
-              // polls if the effect re-runs during the data refresh.
               setProcessingJobs((prev) =>
                 prev.map((j) => j.id === job.id ? { ...j, status: 'completed' as const, imageId: src.image_id ?? undefined } : j),
               )
-              // Refresh data so the new image is visible in the browse view.
-              await Promise.all([loadCategories(), loadUncategorizedImages()])
             } else if (src.status === 'failed') {
               refs.delete(job.id)
               setProcessingJobs((prev) =>
