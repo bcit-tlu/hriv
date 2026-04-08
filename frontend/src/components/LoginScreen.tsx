@@ -250,7 +250,7 @@ export default function LoginScreen({
                 </DialogTitle>
                 <DialogContent>
                     <Typography>
-                        Please contact the TLU Labs via Teams to reset your
+                        Please contact the TLU Lab via Teams to reset your
                         password.
                     </Typography>
                 </DialogContent>
