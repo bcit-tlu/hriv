@@ -53,6 +53,8 @@ interface ImageViewerProps {
   canvasAnnotations?: CanvasAnnotation[]
   /** Called when canvas annotations change — parent should persist to metadata */
   onCanvasAnnotationsChange?: (annotations: CanvasAnnotation[]) => void
+  /** Flush any pending canvas annotation save immediately (bypass debounce) */
+  onFlushCanvasAnnotations?: () => Promise<void>
 }
 
 interface DragState {
@@ -113,6 +115,7 @@ export default function ImageViewer({
   onClearOverlays,
   canvasAnnotations,
   onCanvasAnnotationsChange,
+  onFlushCanvasAnnotations,
 }: ImageViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const viewerRef = useRef<OpenSeadragon.Viewer | null>(null)
@@ -672,6 +675,7 @@ export default function ImageViewer({
           canEdit={canEditContent}
           editMode={canvasEditMode}
           onEditModeChange={handleCanvasEditModeChange}
+          onFlushAnnotations={onFlushCanvasAnnotations}
         />
       )}
     </Box>

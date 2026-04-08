@@ -89,6 +89,8 @@ interface CanvasOverlayProps {
   canEdit: boolean
   editMode: boolean
   onEditModeChange: (mode: boolean) => void
+  /** Flush any pending annotation save immediately (bypass debounce) */
+  onFlushAnnotations?: () => Promise<void>
 }
 
 const LOG_PREFIX = '[CanvasOverlay]'
@@ -157,6 +159,7 @@ export default function CanvasOverlay({
   onAnnotationsChange,
   canEdit: _canEdit,
   editMode,
+  onFlushAnnotations,
   onEditModeChange,
 }: CanvasOverlayProps) {
   // _canEdit reserved for future per-tool gating; edit button visibility is handled by parent
@@ -854,10 +857,16 @@ export default function CanvasOverlay({
   }, [onAnnotationsChange])
 
   const handleDone = useCallback(() => {
-    console.debug(LOG_PREFIX, 'handleDone — emitting and exiting edit mode')
+    console.debug(LOG_PREFIX, 'handleDone — emitting and flushing before exiting edit mode')
     emitAnnotations()
+    // Flush immediately (bypass debounce) so data is persisted before exit
+    if (onFlushAnnotations) {
+      void onFlushAnnotations().then(() => {
+        console.debug(LOG_PREFIX, 'flush complete, exiting edit mode')
+      })
+    }
     onEditModeChange(false)
-  }, [emitAnnotations, onEditModeChange])
+  }, [emitAnnotations, onEditModeChange, onFlushAnnotations])
 
   /** Change active color and apply to any selected fabric objects */
   const handleColorChange = useCallback((color: string) => {

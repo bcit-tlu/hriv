@@ -709,6 +709,36 @@ export default function App() {
     }, 600)
   }, [saveCanvasAnnotations])
 
+  // Flush any pending canvas annotation save immediately (bypass debounce).
+  // Used by the "Done" button to ensure data is persisted before exiting edit mode,
+  // and by lock/clear operations to avoid race conditions.
+  const flushCanvasAnnotations = useCallback(async () => {
+    // Cancel any pending debounce timer
+    if (canvasSaveTimerRef.current) {
+      clearTimeout(canvasSaveTimerRef.current)
+      canvasSaveTimerRef.current = null
+    }
+    // If there's queued data waiting behind an in-flight save, grab it
+    const pending = pendingCanvasAnnotationsRef.current
+    pendingCanvasAnnotationsRef.current = null
+    // If a save is already in-flight we need to wait for it, then save queued data
+    if (canvasSaveInFlightRef.current) {
+      // Re-queue so the in-flight finally block picks it up
+      if (pending) pendingCanvasAnnotationsRef.current = pending
+      // Spin-wait (max ~3s) for the in-flight save to finish
+      for (let i = 0; i < 30 && canvasSaveInFlightRef.current; i++) {
+        await new Promise((r) => setTimeout(r, 100))
+      }
+      return
+    }
+    // If the timer was pending, localCanvasAnnotations has the latest data
+    if (pending) {
+      await saveCanvasAnnotations(pending)
+    } else if (localCanvasAnnotations) {
+      await saveCanvasAnnotations(localCanvasAnnotations)
+    }
+  }, [saveCanvasAnnotations, localCanvasAnnotations])
+
   // Build measurement config from the selected image's metadata
   const selectedImageMeasurement = useMemo((): MeasurementConfig | undefined => {
     const meta = selectedImage?.metadataExtra
@@ -722,8 +752,11 @@ export default function App() {
   // Lock overlays: persist to image metadata_extra and engage lock.
   // Refreshes category tree so re-navigation reflects the update;
   // does NOT call setSelectedImage to avoid triggering a viewer remount.
+  // Flushes any pending canvas annotation save first to prevent race conditions.
   const handleLockOverlays = useCallback(async (rects: OverlayRect[]) => {
     if (!selectedImage) return
+    // Flush any pending canvas annotation save to avoid version conflict
+    await flushCanvasAnnotations()
     try {
       const base = latestMetadataRef.current === undefined
         ? (selectedImage.metadataExtra ?? {})
@@ -739,7 +772,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to lock overlays', err)
     }
-  }, [selectedImage, loadCategories, loadUncategorizedImages])
+  }, [selectedImage, flushCanvasAnnotations, loadCategories, loadUncategorizedImages])
 
   // Unlock: only disengage the lock UI (re-enable clear button).
   // Does NOT remove persisted overlays from metadata.
@@ -751,8 +784,11 @@ export default function App() {
   // Refreshes category tree; does NOT call setSelectedImage.
   // No hasLockedOverlays guard — selectedImage may be stale after a lock
   // in the same session (we intentionally skip setSelectedImage on lock).
+  // Flushes any pending canvas annotation save first to prevent race conditions.
   const handleClearOverlays = useCallback(async () => {
     if (!selectedImage) return
+    // Flush any pending canvas annotation save to avoid version conflict
+    await flushCanvasAnnotations()
     try {
       const base = latestMetadataRef.current === undefined
         ? (selectedImage.metadataExtra ?? {})
@@ -771,7 +807,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed to clear locked overlays', err)
     }
-  }, [selectedImage, loadCategories, loadUncategorizedImages])
+  }, [selectedImage, flushCanvasAnnotations, loadCategories, loadUncategorizedImages])
 
   const copyShareLink = useCallback(() => {
     const url = window.location.href
@@ -1347,6 +1383,7 @@ export default function App() {
                   onClearOverlays={canEditContent ? handleClearOverlays : undefined}
                   canvasAnnotations={localCanvasAnnotations ?? canvasAnnotations}
                   onCanvasAnnotationsChange={handleCanvasAnnotationsChange}
+                  onFlushCanvasAnnotations={flushCanvasAnnotations}
                 />
               </Paper>
 
