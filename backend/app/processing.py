@@ -16,10 +16,10 @@ from .models import Image, Program, SourceImage
 logger = logging.getLogger(__name__)
 
 
-def generate_tiles(source_path: str, output_dir: str) -> tuple[str, str]:
+def generate_tiles(source_path: str, output_dir: str) -> tuple[str, str, int, int]:
     """Use pyvips to generate DZI tiles and a thumbnail from a source image.
 
-    Returns (dzi_path, thumb_path) relative to the output directory.
+    Returns (dzi_path, thumb_path, width, height) relative to the output directory.
     """
     os.makedirs(output_dir, exist_ok=True)
 
@@ -47,7 +47,7 @@ def generate_tiles(source_path: str, output_dir: str) -> tuple[str, str]:
     thumb = pyvips.Image.thumbnail(source_path, 256)
     thumb.jpegsave(thumb_path, Q=85)
 
-    return f"{dzi_basename}.dzi", "thumbnail.jpeg"
+    return f"{dzi_basename}.dzi", "thumbnail.jpeg", image.width, image.height
 
 
 async def process_source_image(source_image_id: int) -> None:
@@ -92,7 +92,7 @@ async def process_source_image(source_image_id: int) -> None:
             src.progress = 10
             await db.commit()
 
-            dzi_rel, thumb_rel = await asyncio.to_thread(
+            dzi_rel, thumb_rel, img_width, img_height = await asyncio.to_thread(
                 generate_tiles, src.stored_path, output_dir
             )
 
@@ -121,6 +121,18 @@ async def process_source_image(source_image_id: int) -> None:
 
             name = src.name or Path(src.original_filename).stem
 
+            # Compute file size in MB from the source image on disk
+            file_size_mb: float | None = None
+            if src.file_size is not None:
+                file_size_mb = round(src.file_size / (1024 * 1024), 2)
+            else:
+                try:
+                    file_size_mb = round(
+                        os.path.getsize(src.stored_path) / (1024 * 1024), 2
+                    )
+                except OSError:
+                    pass
+
             img = Image(
                 name=name,
                 thumb=thumb_url,
@@ -130,6 +142,9 @@ async def process_source_image(source_image_id: int) -> None:
                 note=src.note,
                 active=src.active,
                 metadata_={},
+                width=img_width,
+                height=img_height,
+                file_size=file_size_mb,
             )
             db.add(img)
             await db.flush()

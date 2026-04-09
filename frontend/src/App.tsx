@@ -134,6 +134,9 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
             createdAt: img.created_at,
             updatedAt: img.updated_at,
             metadataExtra: img.metadata_extra,
+            width: img.width,
+            height: img.height,
+            fileSize: img.file_size,
         })),
         program: node.program,
         status: node.status,
@@ -602,6 +605,9 @@ export default function App() {
                     createdAt: img.created_at,
                     updatedAt: img.updated_at,
                     metadataExtra: img.metadata_extra,
+                    width: img.width,
+                    height: img.height,
+                    fileSize: img.file_size,
                 })),
             );
             uncategorizedLoaded.current = true;
@@ -1262,6 +1268,9 @@ export default function App() {
               active: selectedImage.active,
               version: selectedImage.version,
               metadata_extra: selectedImage.metadataExtra ?? null,
+              width: selectedImage.width ?? null,
+              height: selectedImage.height ?? null,
+              file_size: selectedImage.fileSize ?? null,
               created_at: selectedImage.createdAt ?? "",
               updated_at: selectedImage.updatedAt ?? "",
           }
@@ -1281,6 +1290,9 @@ export default function App() {
               active: browseEditImage.active,
               version: browseEditImage.version,
               metadata_extra: browseEditImage.metadataExtra ?? null,
+              width: browseEditImage.width ?? null,
+              height: browseEditImage.height ?? null,
+              file_size: browseEditImage.fileSize ?? null,
               created_at: browseEditImage.createdAt ?? "",
               updated_at: browseEditImage.updatedAt ?? "",
           }
@@ -1320,6 +1332,9 @@ export default function App() {
                     createdAt: updated.created_at,
                     updatedAt: updated.updated_at,
                     metadataExtra: updated.metadata_extra,
+                    width: updated.width,
+                    height: updated.height,
+                    fileSize: updated.file_size,
                 });
                 setImageEditOpen(false);
                 // Refresh categories and update breadcrumb path from the fresh tree
@@ -1628,6 +1643,9 @@ export default function App() {
                                     createdAt: img.created_at,
                                     updatedAt: img.updated_at,
                                     metadataExtra: img.metadata_extra,
+                                    width: img.width,
+                                    height: img.height,
+                                    fileSize: img.file_size,
                                 });
                                 // Build breadcrumb path from the image's category
                                 if (img.category_id != null) {
@@ -2507,6 +2525,10 @@ export default function App() {
                                                             img.updated_at,
                                                         metadataExtra:
                                                             img.metadata_extra,
+                                                        width: img.width,
+                                                        height: img.height,
+                                                        fileSize:
+                                                            img.file_size,
                                                     }));
                                                     setUncategorizedImages(
                                                         freshUncat,
