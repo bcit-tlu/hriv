@@ -49,6 +49,23 @@ spec:
                 secretKeyRef:
                   name: {{ include "hriv-backend.fullname" . }}-jwt
                   key: secret
+            {{- if .Values.oidc.enabled }}
+            - name: OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hriv-backend.fullname" . }}-oidc
+                  key: client-id
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hriv-backend.fullname" . }}-oidc
+                  key: client-secret
+            {{- end }}
+          {{- if .Values.oidc.enabled }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "hriv-backend.fullname" . }}-oidc
+          {{- end }}
           livenessProbe:
             httpGet:
               path: /api/health

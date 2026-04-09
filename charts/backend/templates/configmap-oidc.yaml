@@ -1,0 +1,17 @@
+{{- if .Values.oidc.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hriv-backend.fullname" . }}-oidc
+  labels:
+    {{- include "hriv-backend.labels" . | nindent 4 }}
+data:
+  OIDC_ENABLED: {{ .Values.oidc.enabled | quote }}
+  OIDC_ISSUER: {{ .Values.oidc.issuer | quote }}
+  OIDC_REDIRECT_URI: {{ .Values.oidc.redirectUri | quote }}
+  OIDC_SCOPES: {{ .Values.oidc.scopes | quote }}
+  OIDC_ROLE_MAPPING: {{ .Values.oidc.roleMapping | quote }}
+  OIDC_POST_LOGIN_REDIRECT: {{ .Values.oidc.postLoginRedirect | quote }}
+  OIDC_TRUST_EMAIL: {{ .Values.oidc.trustEmail | quote }}
+  CORS_ORIGINS: {{ .Values.oidc.corsOrigins | quote }}
+{{- end }}
