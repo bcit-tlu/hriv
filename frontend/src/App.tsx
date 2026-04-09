@@ -1462,11 +1462,13 @@ export default function App() {
                             label="Home"
                             value="browse"
                             onClick={() => {
+                                if (page === "browse") {
+                                    loadCategories();
+                                    loadUncategorizedImages();
+                                }
                                 setPage("browse");
                                 clearImage();
                                 setPath([]);
-                                loadCategories();
-                                loadUncategorizedImages();
                             }}
                         />
                         {canEditContent && (
