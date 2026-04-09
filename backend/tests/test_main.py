@@ -98,13 +98,28 @@ async def test_check_oidc_connectivity_http_error(monkeypatch) -> None:
         await _check_oidc_connectivity()  # Should not raise — logs warning instead
 
 
-async def test_check_oidc_connectivity_generic_error(monkeypatch) -> None:
-    """Logs warning for unexpected errors (e.g. timeout, SSL)."""
+async def test_check_oidc_connectivity_timeout(monkeypatch) -> None:
+    """Logs error when the OIDC provider times out (TimeoutException)."""
     from app.database import settings as _settings
     monkeypatch.setattr(_settings, "oidc_issuer", "https://vault.example.com/v1/oidc")
 
     mock_client = AsyncMock()
-    mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
+    mock_client.get = AsyncMock(side_effect=httpx.ConnectTimeout("timed out"))
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.main.httpx.AsyncClient", return_value=mock_client):
+        from app.main import _check_oidc_connectivity
+        await _check_oidc_connectivity()  # Should not raise — logs error instead
+
+
+async def test_check_oidc_connectivity_generic_error(monkeypatch) -> None:
+    """Logs warning for unexpected errors (e.g. SSL, protocol)."""
+    from app.database import settings as _settings
+    monkeypatch.setattr(_settings, "oidc_issuer", "https://vault.example.com/v1/oidc")
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=RuntimeError("something unexpected"))
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
