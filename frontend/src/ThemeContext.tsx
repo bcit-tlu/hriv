@@ -61,7 +61,13 @@ export default function ColorModeProvider({ children }: ColorModeProviderProps) 
         const mq = window.matchMedia("(prefers-color-scheme: dark)");
         const handler = (e: MediaQueryListEvent) => {
             // Only follow the OS if the user hasn't explicitly picked a mode
-            if (!localStorage.getItem(STORAGE_KEY)) {
+            let hasStored = false;
+            try {
+                hasStored = !!localStorage.getItem(STORAGE_KEY);
+            } catch {
+                // localStorage may be unavailable
+            }
+            if (!hasStored) {
                 setMode(e.matches ? "dark" : "light");
             }
         };
