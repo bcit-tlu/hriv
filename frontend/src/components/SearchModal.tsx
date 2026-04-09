@@ -257,19 +257,8 @@ export default function SearchModal({
   onSelectUser,
 }: SearchModalProps) {
   const [query, setQuery] = useState('')
-  const [prevOpen, setPrevOpen] = useState(false)
   const [typeFilters, setTypeFilters] = useState<Set<TypeFilter>>(new Set())
   const [fieldFilters, setFieldFilters] = useState<Set<FieldFilter>>(new Set())
-
-  // Reset state when modal opens (derived state pattern instead of effect)
-  if (open && !prevOpen) {
-    setQuery('')
-    setTypeFilters(new Set())
-    setFieldFilters(new Set())
-  }
-  if (open !== prevOpen) {
-    setPrevOpen(open)
-  }
 
   const toggleTypeFilter = useCallback((key: TypeFilter) => {
     setTypeFilters((prev) => {
