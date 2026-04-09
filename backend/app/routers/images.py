@@ -71,6 +71,9 @@ async def create_image(
         note=body.note,
         active=body.active,
         metadata_=body.metadata_extra or {},
+        width=body.width,
+        height=body.height,
+        file_size=body.file_size,
     )
     if body.program_ids:
         progs = (await db.execute(select(Program).where(Program.id.in_(body.program_ids)))).scalars().all()
