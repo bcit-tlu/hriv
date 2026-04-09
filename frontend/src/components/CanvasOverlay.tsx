@@ -476,12 +476,37 @@ export default function CanvasOverlay({
       const type = (aObj._annotationType as CanvasAnnotation['type']) || 'rect'
 
       if (type === 'arrow' && obj instanceof fabric.Line) {
-        const coords = obj.calcLinePoints()
-        const matrix = obj.calcTransformMatrix()
-        const startPt = fabric.util.transformPoint(new fabric.Point(coords.x1, coords.y1), matrix)
-        const endPt = fabric.util.transformPoint(new fabric.Point(coords.x2, coords.y2), matrix)
-        const vpStart = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(startPt.x, startPt.y))
-        const vpEnd = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(endPt.x, endPt.y))
+        // Use direct fabric properties (left/top/width/height/scaleX/scaleY/angle)
+        // instead of calcLinePoints + calcTransformMatrix + transformPoint.
+        // This aligns arrow serialisation with how rect/circle/text are handled.
+        const left = obj.left ?? 0
+        const top = obj.top ?? 0
+        const sx = obj.scaleX ?? 1
+        const sy = obj.scaleY ?? 1
+        const w = (obj.width ?? 0) * sx
+        const h = (obj.height ?? 0) * sy
+        const rad = ((obj.angle ?? 0) * Math.PI) / 180
+        const cos = Math.cos(rad)
+        const sin = Math.sin(rad)
+
+        // Determine line direction from local x1/y1 → x2/y2 coordinates
+        const goesRight = (obj.x1 ?? 0) <= (obj.x2 ?? 0)
+        const goesDown = (obj.y1 ?? 0) <= (obj.y2 ?? 0)
+
+        // Local start/end relative to origin (left, top)
+        const lsx = goesRight ? 0 : w
+        const lsy = goesDown ? 0 : h
+        const lex = goesRight ? w : 0
+        const ley = goesDown ? h : 0
+
+        // Apply T(left,top) · R(angle) to each local point
+        const startPx = left + lsx * cos - lsy * sin
+        const startPy = top + lsx * sin + lsy * cos
+        const endPx = left + lex * cos - ley * sin
+        const endPy = top + lex * sin + ley * cos
+
+        const vpStart = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(startPx, startPy))
+        const vpEnd = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(endPx, endPy))
         return {
           id,
           type: 'arrow',

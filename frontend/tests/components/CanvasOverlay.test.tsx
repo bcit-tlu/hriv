@@ -708,6 +708,29 @@ describe('CanvasOverlay', () => {
       expect(fillTextCall.args[1]).toBe(0) // x = 0 (origin-based)
     })
 
+    it('renders arrow with moveTo/lineTo from start to end point', () => {
+      const calls = renderAndCaptureCalls([
+        makeAnnotation({
+          type: 'arrow',
+          vpX2: 0.5,
+          vpY2: 0.5,
+        }),
+      ])
+
+      const moveToIdx = calls.findIndex(c => c.method === 'moveTo')
+      const lineToIdx = calls.findIndex(c => c.method === 'lineTo')
+      const strokeIdx = calls.findIndex(c => c.method === 'stroke')
+
+      expect(moveToIdx).toBeGreaterThanOrEqual(0)
+      expect(lineToIdx).toBeGreaterThan(moveToIdx)
+      expect(strokeIdx).toBeGreaterThan(lineToIdx)
+
+      // Verify start point = first pixelFromPoint call (100, 100)
+      expect(calls[moveToIdx].args).toEqual([100, 100])
+      // Verify end point = second pixelFromPoint call (300, 200)
+      expect(calls[lineToIdx].args).toEqual([300, 200])
+    })
+
     it('applies save/translate/rotate for rotated link with underline', () => {
       const calls = renderAndCaptureCalls([
         makeAnnotation({
