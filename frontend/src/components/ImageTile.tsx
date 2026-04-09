@@ -41,14 +41,15 @@ export default function ImageTile({ image, onClick, programs, onEditDetails }: I
             top: 4,
             right: 4,
             zIndex: 1,
-            bgcolor: 'rgba(255,255,255,0.8)',
-            '&:hover': { bgcolor: 'rgba(255,255,255,0.95)' },
+            color: 'white',
+            bgcolor: 'rgba(0,0,0,0.25)',
+            '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
           }}
         >
           <MoreVertIcon fontSize="small" />
         </IconButton>
       )}
-      <CardActionArea onClick={() => onClick(image)}>
+      <CardActionArea onClick={() => onClick(image)} sx={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'stretch' }}>
         <CardMedia
           component="img"
           height="160"
@@ -56,7 +57,7 @@ export default function ImageTile({ image, onClick, programs, onEditDetails }: I
           alt={image.name}
           sx={{ objectFit: 'cover' }}
         />
-        <CardContent>
+        <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Typography variant="h6" noWrap sx={{ opacity: !image.active ? 0.5 : 1 }}>
               {image.name}
@@ -75,10 +76,11 @@ export default function ImageTile({ image, onClick, programs, onEditDetails }: I
             </Box>
           )}
           {image.copyright && (
-            <Typography variant="body2" color="text.secondary" noWrap>
+            <Typography variant="body2" color="text.secondary" noWrap sx={{ mt: 1 }}>
               &copy; {image.copyright}
             </Typography>
           )}
+          <Box sx={{ flexGrow: 1 }} />
           {((image.width != null && image.height != null) || image.fileSize != null) && (
             <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 0.5 }}>
               <Typography variant="body2" color="text.secondary">

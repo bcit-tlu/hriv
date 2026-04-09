@@ -2080,7 +2080,10 @@ export default function App() {
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    bgcolor: "background.default",
+                    bgcolor:
+                        mode === "dark"
+                            ? "background.paper"
+                            : "background.default",
                     borderTop: 1,
                     borderColor: "divider",
                 }}
