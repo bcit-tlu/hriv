@@ -76,6 +76,9 @@ export interface ApiImage {
   active: boolean
   metadata_extra: Record<string, unknown> | null
   version: number
+  width: number | null
+  height: number | null
+  file_size: number | null
   created_at: string
   updated_at: string
 }

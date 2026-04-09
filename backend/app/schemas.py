@@ -102,6 +102,9 @@ class ImageBase(BaseModel):
     program_ids: list[int] = []
     active: bool = True
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
+    width: int | None = None
+    height: int | None = None
+    file_size: float | None = None
 
 
 class ImageCreate(ImageBase):
@@ -144,6 +147,9 @@ class ImageOut(ImageBase):
                 metadata_=data.metadata_,
                 id=data.id,
                 version=data.version,
+                width=data.width,
+                height=data.height,
+                file_size=data.file_size,
                 created_at=data.created_at,
                 updated_at=data.updated_at,
                 program_ids=[p.id for p in data.programs],
