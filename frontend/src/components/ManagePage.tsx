@@ -35,7 +35,7 @@ import FilterListIcon from '@mui/icons-material/FilterList'
 import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityIcon from '@mui/icons-material/Visibility'
-import { fetchImages, fetchPrograms, updateImage, deleteImage, bulkUpdateImages, bulkDeleteImages } from '../api'
+import { fetchImages, updateImage, deleteImage, bulkUpdateImages, bulkDeleteImages } from '../api'
 import type { ApiImage } from '../api'
 import type { Category, Program } from '../types'
 import BulkEditImagesModal from './BulkEditImagesModal'
@@ -114,6 +114,7 @@ type SortDirection = 'asc' | 'desc'
 
 interface ManagePageProps {
   categories: Category[]
+  programs: Program[]
   onViewImage?: (image: ApiImage) => void
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
@@ -122,9 +123,8 @@ interface ManagePageProps {
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
 }
 
-export default function ManagePage({ categories, onViewImage, onNavigateCategory, onCategoriesChanged, onAddCategory, onEditCategory, onToggleVisibility }: ManagePageProps) {
+export default function ManagePage({ categories, programs, onViewImage, onNavigateCategory, onCategoriesChanged, onAddCategory, onEditCategory, onToggleVisibility }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
-  const [programs, setPrograms] = useState<Program[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
@@ -169,9 +169,8 @@ export default function ManagePage({ categories, onViewImage, onNavigateCategory
   const loadImages = useCallback(async () => {
     try {
       setLoading(true)
-      const [data, progs] = await Promise.all([fetchImages(), fetchPrograms()])
+      const data = await fetchImages()
       setImages(data)
-      setPrograms(progs)
     } catch (err) {
       console.error('Failed to load images', err)
     } finally {
