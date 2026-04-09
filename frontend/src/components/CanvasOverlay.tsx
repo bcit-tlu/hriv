@@ -54,6 +54,8 @@ export interface CanvasAnnotation {
   arrowStyle?: 'none' | 'standard' | 'triangle' | 'circle'
   /** Whether shape is filled (rect/circle) */
   filled?: boolean
+  /** Rotation angle in degrees */
+  rotation?: number
 }
 
 const PALETTE = [
@@ -239,18 +241,25 @@ export default function CanvasOverlay({
       if (ann.type === 'rect') {
         const sw = (ann.strokeWidth ?? 2) * viewer.viewport.getZoom()
         ctx.lineWidth = Math.max(1, sw)
+        ctx.save()
+        ctx.translate(topLeft.x, topLeft.y)
+        if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
         if (ann.filled) {
           ctx.fillStyle = ann.color
-          ctx.fillRect(topLeft.x, topLeft.y, pw, ph)
+          ctx.fillRect(0, 0, pw, ph)
         } else {
           ctx.strokeStyle = ann.color
-          ctx.strokeRect(topLeft.x, topLeft.y, pw, ph)
+          ctx.strokeRect(0, 0, pw, ph)
         }
+        ctx.restore()
       } else if (ann.type === 'circle') {
+        ctx.save()
+        ctx.translate(topLeft.x, topLeft.y)
+        if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
         ctx.beginPath()
         ctx.ellipse(
-          topLeft.x + pw / 2,
-          topLeft.y + ph / 2,
+          pw / 2,
+          ph / 2,
           Math.abs(pw / 2),
           Math.abs(ph / 2),
           0,
@@ -266,25 +275,30 @@ export default function CanvasOverlay({
           ctx.strokeStyle = ann.color
           ctx.stroke()
         }
+        ctx.restore()
       } else if (ann.type === 'text' || ann.type === 'link') {
         const vpFontSize = ann.vpFontSize ?? 0.02
         const pxFontSize = Math.abs(vpFontSize * (bottomRight.x - topLeft.x) / (ann.vpWidth || 1))
         const fontSize = Math.max(8, pxFontSize)
         ctx.font = `${fontSize}px sans-serif`
         ctx.fillStyle = ann.color
+        ctx.save()
+        ctx.translate(topLeft.x, topLeft.y)
+        if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
         if (ann.type === 'link') {
           const text = ann.text || ann.url || 'Link'
-          ctx.fillText(text, topLeft.x, topLeft.y + fontSize)
+          ctx.fillText(text, 0, fontSize)
           const textWidth = ctx.measureText(text).width
           ctx.beginPath()
-          ctx.moveTo(topLeft.x, topLeft.y + fontSize + 2)
-          ctx.lineTo(topLeft.x + textWidth, topLeft.y + fontSize + 2)
+          ctx.moveTo(0, fontSize + 2)
+          ctx.lineTo(textWidth, fontSize + 2)
           ctx.strokeStyle = ann.color
           ctx.lineWidth = 1
           ctx.stroke()
         } else {
-          ctx.fillText(ann.text || '', topLeft.x, topLeft.y + fontSize)
+          ctx.fillText(ann.text || '', 0, fontSize)
         }
+        ctx.restore()
       }
     }
   }, [viewer])
@@ -396,6 +410,7 @@ export default function CanvasOverlay({
           stroke: ann.color,
           strokeWidth: Math.max(1, (ann.strokeWidth ?? 2) * viewer.viewport.getZoom()),
           strokeUniform: true,
+          angle: ann.rotation ?? 0,
         })
         const aObj = rect as AnnotatedObject
         aObj._annotationId = ann.id
@@ -415,6 +430,7 @@ export default function CanvasOverlay({
           stroke: ann.color,
           strokeWidth: Math.max(1, (ann.strokeWidth ?? 2) * viewer.viewport.getZoom()),
           strokeUniform: true,
+          angle: ann.rotation ?? 0,
         })
         const aObj = ellipse as AnnotatedObject
         aObj._annotationId = ann.id
@@ -434,6 +450,7 @@ export default function CanvasOverlay({
           fontSize: Math.max(10, pxFontSize),
           fill: ann.color,
           underline: ann.type === 'link',
+          angle: ann.rotation ?? 0,
         })
         const aObj = text as AnnotatedObject
         aObj._annotationId = ann.id
@@ -459,12 +476,37 @@ export default function CanvasOverlay({
       const type = (aObj._annotationType as CanvasAnnotation['type']) || 'rect'
 
       if (type === 'arrow' && obj instanceof fabric.Line) {
-        const coords = obj.calcLinePoints()
-        const matrix = obj.calcTransformMatrix()
-        const startPt = fabric.util.transformPoint(new fabric.Point(coords.x1, coords.y1), matrix)
-        const endPt = fabric.util.transformPoint(new fabric.Point(coords.x2, coords.y2), matrix)
-        const vpStart = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(startPt.x, startPt.y))
-        const vpEnd = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(endPt.x, endPt.y))
+        // Use direct fabric properties (left/top/width/height/scaleX/scaleY/angle)
+        // instead of calcLinePoints + calcTransformMatrix + transformPoint.
+        // This aligns arrow serialisation with how rect/circle/text are handled.
+        const left = obj.left ?? 0
+        const top = obj.top ?? 0
+        const sx = obj.scaleX ?? 1
+        const sy = obj.scaleY ?? 1
+        const w = (obj.width ?? 0) * sx
+        const h = (obj.height ?? 0) * sy
+        const rad = ((obj.angle ?? 0) * Math.PI) / 180
+        const cos = Math.cos(rad)
+        const sin = Math.sin(rad)
+
+        // Determine line direction from local x1/y1 → x2/y2 coordinates
+        const goesRight = (obj.x1 ?? 0) <= (obj.x2 ?? 0)
+        const goesDown = (obj.y1 ?? 0) <= (obj.y2 ?? 0)
+
+        // Local start/end relative to origin (left, top)
+        const lsx = goesRight ? 0 : w
+        const lsy = goesDown ? 0 : h
+        const lex = goesRight ? w : 0
+        const ley = goesDown ? h : 0
+
+        // Apply T(left,top) · R(angle) to each local point
+        const startPx = left + lsx * cos - lsy * sin
+        const startPy = top + lsx * sin + lsy * cos
+        const endPx = left + lex * cos - ley * sin
+        const endPy = top + lex * sin + ley * cos
+
+        const vpStart = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(startPx, startPy))
+        const vpEnd = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(endPx, endPy))
         return {
           id,
           type: 'arrow',
@@ -480,12 +522,19 @@ export default function CanvasOverlay({
         }
       }
 
-      const bound = obj.getBoundingRect()
+      // Use the object's direct properties instead of getBoundingRect() so that
+      // rotation angle and non-uniform scale (e.g. side-handle resize on ellipses)
+      // are captured correctly.  getBoundingRect() returns the axis-aligned bounding
+      // box which loses rotation and can misrepresent scaled ellipse dimensions.
+      const objLeft = obj.left ?? 0
+      const objTop = obj.top ?? 0
+      const scaledW = (obj.width ?? 0) * (obj.scaleX ?? 1)
+      const scaledH = (obj.height ?? 0) * (obj.scaleY ?? 1)
       const vpTopLeft = viewer.viewport.pointFromPixel(
-        new OpenSeadragon.Point(bound.left, bound.top),
+        new OpenSeadragon.Point(objLeft, objTop),
       )
       const vpBottomRight = viewer.viewport.pointFromPixel(
-        new OpenSeadragon.Point(bound.left + bound.width, bound.top + bound.height),
+        new OpenSeadragon.Point(objLeft + scaledW, objTop + scaledH),
       )
 
       const base: CanvasAnnotation = {
@@ -501,12 +550,14 @@ export default function CanvasOverlay({
 
       if (type === 'rect' || type === 'circle') {
         base.filled = aObj._filled ?? false
+        if (obj.angle) base.rotation = obj.angle
       }
 
       if (type === 'text' || type === 'link') {
         const textObj = obj as fabric.IText
         base.text = textObj.text || ''
         base.color = (textObj.fill as string) || '#000000'
+        if (obj.angle) base.rotation = obj.angle
         // Convert visual font size to viewport units using the bounding-box ratio.
         // vpWidth/pixelWidth is the conversion factor from pixels to viewport units.
         // The old formula (fontSize / zoom) was wrong — it produced values in
@@ -514,7 +565,7 @@ export default function CanvasOverlay({
         // (vpFontSize * pw / vpWidth) to multiply by containerWidth and produce
         // enormous pixel sizes (e.g. 60 000 px), rendering text off-screen.
         const visualFontSize = (textObj.fontSize ?? 16) * (textObj.scaleY ?? 1)
-        const pw = bound.width
+        const pw = scaledW
         base.vpFontSize = pw > 0
           ? visualFontSize * base.vpWidth / pw
           : visualFontSize / viewer.viewport.getZoom()
