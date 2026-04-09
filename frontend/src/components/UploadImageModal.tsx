@@ -42,7 +42,7 @@ interface UploadImageModalProps {
   onClose: () => void
   onUploaded: () => void
   /** Called after file upload completes so the parent can track processing. */
-  onProcessingStarted?: (sourceImageId: number, filename: string) => void
+  onProcessingStarted?: (sourceImageId: number, filename: string, fileSize: number) => void
   categoryId?: number | null
   categories: Category[]
   programs: Program[]
@@ -146,7 +146,7 @@ export default function UploadImageModal({
         (fraction) => setUploadProgress(fraction),
       )
       // Hand off processing tracking to the parent and close the modal
-      onProcessingStarted?.(result.id, file.name)
+      onProcessingStarted?.(result.id, file.name, file.size)
       onUploaded()
       onClose()
     } catch (err) {

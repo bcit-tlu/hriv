@@ -79,6 +79,7 @@ def test_source_image_out_parses_program_json_from_orm() -> None:
         id=1,
         original_filename="test.tiff",
         status="completed",
+        progress=100,
         error_message=None,
         name="test",
         category_id=None,
@@ -87,11 +88,14 @@ def test_source_image_out_parses_program_json_from_orm() -> None:
         active=True,
         program="[10, 20]",
         image_id=5,
+        file_size=1048576,
         created_at=now,
         updated_at=now,
     )
     out = SourceImageOut.model_validate(orm_obj)
     assert out.program_ids == [10, 20]
+    assert out.progress == 100
+    assert out.file_size == 1048576
 
 
 def test_source_image_out_handles_null_program() -> None:
@@ -100,6 +104,7 @@ def test_source_image_out_handles_null_program() -> None:
         id=2,
         original_filename="test2.png",
         status="pending",
+        progress=0,
         error_message=None,
         name=None,
         category_id=None,
@@ -108,11 +113,14 @@ def test_source_image_out_handles_null_program() -> None:
         active=True,
         program=None,
         image_id=None,
+        file_size=None,
         created_at=now,
         updated_at=now,
     )
     out = SourceImageOut.model_validate(orm_obj)
     assert out.program_ids == []
+    assert out.progress == 0
+    assert out.file_size is None
 
 
 def test_source_image_out_handles_invalid_json_program() -> None:
@@ -121,6 +129,7 @@ def test_source_image_out_handles_invalid_json_program() -> None:
         id=3,
         original_filename="bad.png",
         status="pending",
+        progress=0,
         error_message=None,
         name=None,
         category_id=None,
@@ -129,6 +138,7 @@ def test_source_image_out_handles_invalid_json_program() -> None:
         active=True,
         program="not-json",
         image_id=None,
+        file_size=None,
         created_at=now,
         updated_at=now,
     )
@@ -164,6 +174,7 @@ def test_source_image_out_non_list_json_program() -> None:
         id=5,
         original_filename="obj.png",
         status="pending",
+        progress=0,
         error_message=None,
         name=None,
         category_id=None,
@@ -172,6 +183,7 @@ def test_source_image_out_non_list_json_program() -> None:
         active=True,
         program='{"key": "value"}',
         image_id=None,
+        file_size=None,
         created_at=now,
         updated_at=now,
     )

@@ -71,6 +71,7 @@ async def process_source_image(source_image_id: int) -> None:
             return
 
         src.status = "processing"
+        src.progress = 5
         await db.commit()
 
         logger.info(
@@ -86,11 +87,21 @@ async def process_source_image(source_image_id: int) -> None:
 
         try:
             output_dir = os.path.join(settings.tiles_dir, str(src.id))
+
+            # Mark tile generation started
+            src.progress = 10
+            await db.commit()
+
             dzi_rel, thumb_rel = await asyncio.to_thread(
                 generate_tiles, src.stored_path, output_dir
             )
 
             t_tiles = time.monotonic()
+
+            # Mark tile generation completed
+            src.progress = 80
+            await db.commit()
+
             logger.info(
                 "Tile generation completed",
                 extra={
@@ -104,6 +115,9 @@ async def process_source_image(source_image_id: int) -> None:
             # Build URLs for serving tiles via the API
             tile_sources_url = f"/api/tiles/{src.id}/{dzi_rel}"
             thumb_url = f"/api/tiles/{src.id}/{thumb_rel}"
+
+            src.progress = 90
+            await db.commit()
 
             name = src.name or Path(src.original_filename).stem
 
@@ -143,6 +157,7 @@ async def process_source_image(source_image_id: int) -> None:
 
             src.image_id = img.id
             src.status = "completed"
+            src.progress = 100
             await db.commit()
 
             duration_ms = round((time.monotonic() - t_start) * 1000)

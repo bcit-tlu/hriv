@@ -364,6 +364,7 @@ export interface ApiSourceImage {
   id: number
   original_filename: string
   status: string
+  progress: number
   error_message: string | null
   name: string | null
   category_id: number | null
@@ -372,6 +373,7 @@ export interface ApiSourceImage {
   active: boolean
   program_ids: number[]
   image_id: number | null
+  file_size: number | null
   created_at: string
   updated_at: string
 }

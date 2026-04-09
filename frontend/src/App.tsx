@@ -6,6 +6,7 @@ import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import CircularProgress from "@mui/material/CircularProgress";
+import LinearProgress from "@mui/material/LinearProgress";
 import Container from "@mui/material/Container";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
@@ -213,11 +214,59 @@ export default function App() {
         status: "processing" | "completed" | "failed";
         errorMessage?: string;
         imageId?: number;
+        /** Server-reported progress (0–100). */
+        serverProgress: number;
+        /** File size in bytes — used for client-side progress estimation. */
+        fileSize: number;
+        /** Timestamp (ms) when the job was first added. */
+        startedAt: number;
     }
     const [processingJobs, setProcessingJobs] = useState<ProcessingJob[]>([]);
     const processingPollRefs = useRef<
         Map<number, ReturnType<typeof setTimeout>>
     >(new Map());
+
+    // Client-side progress interpolation timer — smoothly advances displayed
+    // progress between server polls using a file-size-based estimate.
+    const interpolationTimerRef = useRef<ReturnType<typeof setInterval> | null>(
+        null,
+    );
+
+    /**
+     * Estimate total processing duration (ms) from file size.
+     * Rough heuristic: ~2 s base + ~0.5 s per MB.  Capped at 5 min.
+     */
+    const estimateDuration = useCallback((fileSize: number) => {
+        const mb = fileSize / (1024 * 1024);
+        return Math.min(2000 + mb * 500, 300_000);
+    }, []);
+
+    /**
+     * Compute the interpolated progress for a processing job.
+     * - Uses file-size-based time estimate to gradually fill between server milestones.
+     * - Caps at 75% until the server confirms tile generation is done (≥80%).
+     * - Never goes backwards.
+     */
+    const getDisplayProgress = useCallback(
+        (job: ProcessingJob): number => {
+            if (job.status === "completed") return 100;
+            if (job.status === "failed") return job.serverProgress;
+
+            const elapsed = Date.now() - job.startedAt;
+            const est = estimateDuration(job.fileSize);
+            // Time-based estimate: ramp from 0→90% over estimated duration
+            const timeFraction = Math.min(elapsed / est, 1);
+            const timeProgress = Math.round(timeFraction * 90);
+
+            // Cap interpolated progress at 75% until server confirms tiles done
+            const cap = job.serverProgress >= 80 ? 95 : 75;
+            const interpolated = Math.min(timeProgress, cap);
+
+            // Never go below what the server already reported
+            return Math.max(job.serverProgress, interpolated);
+        },
+        [estimateDuration],
+    );
 
     // Search modal state
     const [searchOpen, setSearchOpen] = useState(false);
@@ -314,6 +363,7 @@ export default function App() {
                                         ? {
                                               ...j,
                                               status: "completed" as const,
+                                              serverProgress: 100,
                                               imageId:
                                                   src.image_id ?? undefined,
                                           }
@@ -328,6 +378,7 @@ export default function App() {
                                         ? {
                                               ...j,
                                               status: "failed" as const,
+                                              serverProgress: src.progress,
                                               errorMessage:
                                                   src.error_message ||
                                                   undefined,
@@ -336,6 +387,17 @@ export default function App() {
                                 ),
                             );
                         } else {
+                            // Update server progress for interpolation
+                            setProcessingJobs((prev) =>
+                                prev.map((j) =>
+                                    j.id === job.id
+                                        ? {
+                                              ...j,
+                                              serverProgress: src.progress,
+                                          }
+                                        : j,
+                                ),
+                            );
                             // Still processing — schedule next poll after this one completes
                             if (!controller.signal.aborted) {
                                 refs.set(
@@ -383,6 +445,30 @@ export default function App() {
             abortControllers.clear();
         };
     }, [processingJobs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Interpolation timer: triggers re-render every 500 ms so the progress bar
+    // advances smoothly between server polls while any job is processing.
+    useEffect(() => {
+        const hasActiveJob = processingJobs.some(
+            (j) => j.status === "processing",
+        );
+        if (hasActiveJob && !interpolationTimerRef.current) {
+            interpolationTimerRef.current = setInterval(() => {
+                // Force a re-render so getDisplayProgress recalculates
+                setProcessingJobs((prev) => [...prev]);
+            }, 500);
+        }
+        if (!hasActiveJob && interpolationTimerRef.current) {
+            clearInterval(interpolationTimerRef.current);
+            interpolationTimerRef.current = null;
+        }
+        return () => {
+            if (interpolationTimerRef.current) {
+                clearInterval(interpolationTimerRef.current);
+                interpolationTimerRef.current = null;
+            }
+        };
+    }, [processingJobs]);
 
     // Load announcement (works for both logged-in and login page)
     const loadAnnouncement = useCallback(async () => {
@@ -2117,7 +2203,7 @@ export default function App() {
                     loadCategories();
                     loadUncategorizedImages();
                 }}
-                onProcessingStarted={(sourceImageId, filename) => {
+                onProcessingStarted={(sourceImageId, filename, fileSize) => {
                     setProcessingJobs((prev) => {
                         if (
                             prev.filter((j) => j.status === "processing")
@@ -2132,6 +2218,9 @@ export default function App() {
                                 id: sourceImageId,
                                 filename,
                                 status: "processing" as const,
+                                serverProgress: 0,
+                                fileSize,
+                                startedAt: Date.now(),
                             },
                         ];
                     });
@@ -2278,13 +2367,15 @@ export default function App() {
                 sx={{
                     zIndex: 1500,
                     bottom: {
-                        xs: `${24 + processingJobs.length * 60}px !important`,
+                        xs: `${24 + processingJobs.length * 80}px !important`,
                     },
                 }}
             />
 
             {/* Image processing snackbars (one per job, stacked above modals) */}
-            {processingJobs.map((job, index) => (
+            {processingJobs.map((job, index) => {
+                const displayProgress = getDisplayProgress(job);
+                return (
                 <Snackbar
                     key={job.id}
                     open
@@ -2298,7 +2389,7 @@ export default function App() {
                     anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
                     sx={{
                         zIndex: 1500,
-                        bottom: { xs: `${24 + index * 60}px !important` },
+                        bottom: { xs: `${24 + index * 80}px !important` },
                     }}
                 >
                     <Alert
@@ -2329,8 +2420,25 @@ export default function App() {
                             )
                         }
                     >
-                        {job.status === "processing" &&
-                            `Processing: ${job.filename}`}
+                        {job.status === "processing" && (
+                            <Box sx={{ width: "100%", minWidth: 220 }}>
+                                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                                    {`Processing: ${job.filename} — ${displayProgress}%`}
+                                </Typography>
+                                <LinearProgress
+                                    variant="determinate"
+                                    value={displayProgress}
+                                    sx={{
+                                        height: 6,
+                                        borderRadius: 1,
+                                        bgcolor: "rgba(255,255,255,0.3)",
+                                        "& .MuiLinearProgress-bar": {
+                                            bgcolor: "#fff",
+                                        },
+                                    }}
+                                />
+                            </Box>
+                        )}
                         {job.status === "completed" && (
                             <>
                                 {`"${job.filename}" processed successfully! `}
@@ -2441,7 +2549,8 @@ export default function App() {
                                 `"${job.filename}" processing failed.`)}
                     </Alert>
                 </Snackbar>
-            ))}
+                );
+            })}
         </Box>
     );
 }
