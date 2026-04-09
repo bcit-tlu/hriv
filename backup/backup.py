@@ -18,6 +18,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -107,6 +108,17 @@ def _azure_configured() -> bool:
 # ---------------------------------------------------------------------------
 # Backup
 # ---------------------------------------------------------------------------
+
+def _backup_sort_key(path: Path) -> str:
+    """Extract the timestamp portion of a backup filename for sorting.
+
+    Handles both ``hriv-backup-YYYYMMDD-HHMMSS.tar.gz`` and legacy
+    ``corgi-backup-YYYYMMDD-HHMMSS.tar.gz`` filenames so that archives
+    with different prefixes are sorted chronologically.
+    """
+    m = re.search(r"(\d{8}-\d{6})", path.name)
+    return m.group(1) if m else path.name
+
 
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
@@ -282,6 +294,7 @@ def _enforce_local_retention() -> None:
 
     archives = sorted(
         list(local_dir.glob("hriv-backup-*.tar.gz")) + list(local_dir.glob("corgi-backup-*.tar.gz")),
+        key=_backup_sort_key,
         reverse=True,
     )
     if len(archives) > BACKUP_RETENTION_COUNT:
@@ -311,6 +324,7 @@ def list_snapshots() -> list[dict]:
         snapshots = []
         for f in sorted(
             list(local_dir.glob("hriv-backup-*.tar.gz")) + list(local_dir.glob("corgi-backup-*.tar.gz")),
+            key=_backup_sort_key,
             reverse=True,
         ):
             snapshots.append({
@@ -388,6 +402,7 @@ def run_restore(snapshot_name: str | None = None) -> bool:
         else:
             archives = sorted(
                 list(local_dir.glob("hriv-backup-*.tar.gz")) + list(local_dir.glob("corgi-backup-*.tar.gz")),
+                key=_backup_sort_key,
                 reverse=True,
             )
             if not archives:
