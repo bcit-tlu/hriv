@@ -121,13 +121,15 @@ async def test_oidc_login_success() -> None:
     assert result == "redirect-response"
 
 
-async def test_oidc_login_provider_unreachable() -> None:
-    """authorize_redirect raising ConnectError returns a 502 with actionable detail."""
+@pytest.mark.parametrize("error", [
+    httpx.ConnectError("All connection attempts failed"),
+    httpx.ConnectTimeout("timed out"),
+])
+async def test_oidc_login_provider_unreachable(error) -> None:
+    """ConnectError or timeout during authorize_redirect returns a 502."""
     request = MagicMock()
     mock_client = AsyncMock()
-    mock_client.authorize_redirect = AsyncMock(
-        side_effect=httpx.ConnectError("All connection attempts failed"),
-    )
+    mock_client.authorize_redirect = AsyncMock(side_effect=error)
 
     with patch("app.routers.oidc._settings") as mock_settings:
         mock_settings.oidc_enabled = True
@@ -138,8 +140,7 @@ async def test_oidc_login_provider_unreachable() -> None:
             with pytest.raises(HTTPException) as exc:
                 await oidc_login(request)
             assert exc.value.status_code == 502
-            assert "OIDC identity provider" in exc.value.detail
-            assert "vault.example.com" in exc.value.detail
+            assert "temporarily unavailable" in exc.value.detail
 
 
 # ── oidc_callback tests ──────────────────────────────────────
@@ -182,14 +183,16 @@ async def test_oidc_callback_token_exchange_failure() -> None:
             assert exc.value.status_code == 401
 
 
-async def test_oidc_callback_provider_unreachable() -> None:
-    """ConnectError during token exchange returns a 502 with actionable detail."""
+@pytest.mark.parametrize("error", [
+    httpx.ConnectError("All connection attempts failed"),
+    httpx.ConnectTimeout("timed out"),
+])
+async def test_oidc_callback_provider_unreachable(error) -> None:
+    """ConnectError or timeout during token exchange returns a 502."""
     request = MagicMock()
     db = AsyncMock()
     mock_client = AsyncMock()
-    mock_client.authorize_access_token = AsyncMock(
-        side_effect=httpx.ConnectError("All connection attempts failed"),
-    )
+    mock_client.authorize_access_token = AsyncMock(side_effect=error)
 
     with patch("app.routers.oidc._settings") as mock_settings:
         mock_settings.oidc_enabled = True
@@ -199,8 +202,7 @@ async def test_oidc_callback_provider_unreachable() -> None:
             with pytest.raises(HTTPException) as exc:
                 await oidc_callback(request, db)
             assert exc.value.status_code == 502
-            assert "token exchange" in exc.value.detail
-            assert "vault.example.com" in exc.value.detail
+            assert "temporarily unavailable" in exc.value.detail
 
 
 async def test_oidc_callback_missing_claims() -> None:

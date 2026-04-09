@@ -100,7 +100,7 @@ async def oidc_login(request: Request):
     redirect_uri = _settings.oidc_redirect_uri
     try:
         return await client.authorize_redirect(request, redirect_uri)
-    except httpx.ConnectError:
+    except (httpx.ConnectError, httpx.TimeoutException):
         metadata_url = f"{_settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"
         logger.error(
             "Cannot reach OIDC provider to fetch metadata — "
@@ -113,12 +113,7 @@ async def oidc_login(request: Request):
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                "Unable to reach the OIDC identity provider. "
-                "The backend cannot connect to the issuer at "
-                f"{_settings.oidc_issuer} — check DNS resolution "
-                "and network/firewall rules from the pod network."
-            ),
+            detail="Login is temporarily unavailable — the identity provider cannot be reached.",
         )
 
 
@@ -138,7 +133,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
 
     try:
         token_data = await client.authorize_access_token(request)
-    except httpx.ConnectError:
+    except (httpx.ConnectError, httpx.TimeoutException):
         logger.error(
             "Cannot reach OIDC provider during token exchange — "
             "verify that the backend pod can connect to the issuer URL",
@@ -149,12 +144,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
         )
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=(
-                "Unable to reach the OIDC identity provider during token exchange. "
-                "The backend cannot connect to the issuer at "
-                f"{_settings.oidc_issuer} — check DNS resolution "
-                "and network/firewall rules from the pod network."
-            ),
+            detail="Login is temporarily unavailable — the identity provider cannot be reached.",
         )
     except Exception as exc:
         logger.error(
