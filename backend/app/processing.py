@@ -95,25 +95,29 @@ def generate_tiles(
 
     def _on_eval(_img: pyvips.Image, progress: pyvips.GValue) -> None:
         nonlocal last_logged_pct
-        pct = progress.percent
-        # Map pyvips 0-100 % -> overall pipeline 10-78 %
-        mapped = 10 + int(pct * 0.68)
-        if tracker:
-            tracker.set(mapped, "Generating tiles")
-        # Log at every 10 % interval
-        rounded = int(pct // 10) * 10
-        if rounded > last_logged_pct:
-            last_logged_pct = rounded
-            logger.info(
-                "Tile generation progress: %d%%",
-                rounded,
-                extra={
-                    "event": "tiles.generation_progress",
-                    "source_path": source_path,
-                    "vips_percent": rounded,
-                    "mapped_progress": mapped,
-                },
-            )
+        try:
+            pct = progress.percent
+            # Map pyvips 0-100 % -> overall pipeline 10-78 %
+            mapped = 10 + int(pct * 0.68)
+            if tracker:
+                tracker.set(mapped, "Generating tiles")
+            # Log at every 10 % interval
+            rounded = int(pct // 10) * 10
+            if rounded > last_logged_pct:
+                last_logged_pct = rounded
+                logger.info(
+                    "Tile generation progress: %d%%",
+                    rounded,
+                    extra={
+                        "event": "tiles.generation_progress",
+                        "source_path": source_path,
+                        "vips_percent": rounded,
+                        "mapped_progress": mapped,
+                    },
+                )
+        except Exception:
+            # Never let a callback error abort tile generation.
+            pass
 
     try:
         image.set_progress(True)

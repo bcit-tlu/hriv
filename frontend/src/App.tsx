@@ -279,11 +279,10 @@ export default function App() {
             const timeFraction = Math.min(elapsed / est, 1);
             const timeProgress = Math.round(timeFraction * 90);
 
-            // When granular server updates are flowing (pyvips eval signals),
-            // cap just above the last report to avoid jumping ahead.
-            // When only coarse milestones arrive (fallback), allow wider
-            // interpolation up to 75% so the bar still feels smooth.
-            const cap = sp >= 80 ? 95 : Math.max(sp + 5, Math.min(75, sp + 20));
+            // Always allow interpolation up to 75 % so the bar feels smooth
+            // even when only coarse milestones arrive.  Once the server
+            // reports ≥ 80 % (tiles done), raise the ceiling to 95 %.
+            const cap = sp >= 80 ? 95 : Math.max(sp + 5, 75);
             const interpolated = Math.min(timeProgress, cap);
 
             // Never go below what the server already reported

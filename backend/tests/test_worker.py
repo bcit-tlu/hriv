@@ -4,7 +4,7 @@ import sys
 from types import ModuleType
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.worker import enqueue_process_source_image, process_source_image_task
+from app.worker import enqueue_process_source_image, on_startup, process_source_image_task
 
 
 async def test_enqueue_falls_back_when_redis_unavailable() -> None:
@@ -50,3 +50,11 @@ async def test_process_source_image_task_calls_processing() -> None:
         await process_source_image_task({}, 7)
 
     mock_process.assert_awaited_once_with(7)
+
+
+async def test_on_startup_calls_setup_logging() -> None:
+    """on_startup initialises structured logging for the arq worker."""
+    with patch("app.worker.setup_logging") as mock_setup:
+        await on_startup({})
+
+    mock_setup.assert_called_once()
