@@ -271,7 +271,8 @@ export default function App() {
     const getDisplayProgress = useCallback(
         (job: ProcessingJob): number => {
             if (job.status === "completed") return 100;
-            const sp = serverProgressRef.current.get(job.id) ?? job.serverProgress;
+            const sp =
+                serverProgressRef.current.get(job.id) ?? job.serverProgress;
             if (job.status === "failed") return sp;
 
             const elapsed = Date.now() - job.startedAt;
@@ -294,7 +295,11 @@ export default function App() {
 
     /** Return the current status message for a processing job. */
     const getStatusMessage = useCallback((job: ProcessingJob): string => {
-        return serverStatusMessageRef.current.get(job.id) ?? job.statusMessage ?? "";
+        return (
+            serverStatusMessageRef.current.get(job.id) ??
+            job.statusMessage ??
+            ""
+        );
     }, []);
 
     // Search modal state
@@ -418,10 +423,7 @@ export default function App() {
                         } else {
                             // Update server progress in ref (avoids
                             // re-triggering this useEffect).
-                            serverProgressRef.current.set(
-                                job.id,
-                                src.progress,
-                            );
+                            serverProgressRef.current.set(job.id, src.progress);
                             if (src.status_message) {
                                 serverStatusMessageRef.current.set(
                                     job.id,
@@ -1519,13 +1521,23 @@ export default function App() {
                         </MenuItem>
                     </Menu>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                        <Tooltip title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
+                        <Tooltip
+                            title={
+                                mode === "dark"
+                                    ? "Switch to light mode"
+                                    : "Switch to dark mode"
+                            }
+                        >
                             <IconButton
                                 onClick={toggleMode}
                                 sx={{ color: "inherit" }}
                                 aria-label="Toggle dark mode"
                             >
-                                {mode === "dark" ? <LightModeIcon /> : <DarkModeIcon />}
+                                {mode === "dark" ? (
+                                    <LightModeIcon />
+                                ) : (
+                                    <DarkModeIcon />
+                                )}
                             </IconButton>
                         </Tooltip>
                         <Tooltip title="Search">
@@ -1664,9 +1676,7 @@ export default function App() {
                     {page === "admin" && canManageUsers ? (
                         <AdminPage />
                     ) : page === "people" && canManageUsers ? (
-                        <PeoplePage
-                            programs={programs}
-                        />
+                        <PeoplePage programs={programs} />
                     ) : page === "manage" && canEditContent ? (
                         <ManagePage
                             categories={categories}
@@ -2128,7 +2138,7 @@ export default function App() {
                 <Typography variant="caption" color="text.secondary">
                     <strong>BCIT</strong>{" "}
                     <Link
-                        href="https://github.com/bcit-tlu"
+                        href="https://www.bcit.ca/learning-teaching-centre/"
                         target="_blank"
                         rel="noopener noreferrer"
                         color="text.secondary"
@@ -2455,158 +2465,122 @@ export default function App() {
                 const displayProgress = getDisplayProgress(job);
                 const statusMsg = getStatusMessage(job);
                 return (
-                <Snackbar
-                    key={job.id}
-                    open
-                    autoHideDuration={job.status !== "processing" ? 6000 : null}
-                    onClose={(_event, reason) => {
-                        if (reason === "clickaway") return;
-                        setProcessingJobs((prev) =>
-                            prev.filter((j) => j.id !== job.id),
-                        );
-                    }}
-                    anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
-                    sx={{
-                        zIndex: 1500,
-                        bottom: { xs: `${24 + index * 80}px !important` },
-                    }}
-                >
-                    <Alert
-                        severity={
-                            job.status === "completed"
-                                ? "success"
-                                : job.status === "failed"
-                                  ? "error"
-                                  : "info"
+                    <Snackbar
+                        key={job.id}
+                        open
+                        autoHideDuration={
+                            job.status !== "processing" ? 6000 : null
                         }
-                        variant="filled"
-                        sx={{
-                            width: "100%",
-                            display: "flex",
-                            alignItems: "center",
-                        }}
-                        icon={
-                            job.status === "processing" ? (
-                                <CircularProgress
-                                    size={20}
-                                    sx={{ color: "inherit" }}
-                                />
-                            ) : undefined
-                        }
-                        onClose={() =>
+                        onClose={(_event, reason) => {
+                            if (reason === "clickaway") return;
                             setProcessingJobs((prev) =>
                                 prev.filter((j) => j.id !== job.id),
-                            )
-                        }
+                            );
+                        }}
+                        anchorOrigin={{
+                            vertical: "bottom",
+                            horizontal: "right",
+                        }}
+                        sx={{
+                            zIndex: 1500,
+                            bottom: { xs: `${24 + index * 80}px !important` },
+                        }}
                     >
-                        {job.status === "processing" && (
-                            <Box sx={{ width: "100%", minWidth: 220 }}>
-                                <Typography variant="body2" sx={{ mb: 0.5 }}>
-                                    {`Processing: ${job.filename} — ${displayProgress}%`}
-                                </Typography>
-                                {statusMsg && (
-                                    <Typography variant="caption" sx={{ opacity: 0.85, display: "block", mb: 0.25 }}>
-                                        {statusMsg}
+                        <Alert
+                            severity={
+                                job.status === "completed"
+                                    ? "success"
+                                    : job.status === "failed"
+                                      ? "error"
+                                      : "info"
+                            }
+                            variant="filled"
+                            sx={{
+                                width: "100%",
+                                display: "flex",
+                                alignItems: "center",
+                            }}
+                            icon={
+                                job.status === "processing" ? (
+                                    <CircularProgress
+                                        size={20}
+                                        sx={{ color: "inherit" }}
+                                    />
+                                ) : undefined
+                            }
+                            onClose={() =>
+                                setProcessingJobs((prev) =>
+                                    prev.filter((j) => j.id !== job.id),
+                                )
+                            }
+                        >
+                            {job.status === "processing" && (
+                                <Box sx={{ width: "100%", minWidth: 220 }}>
+                                    <Typography
+                                        variant="body2"
+                                        sx={{ mb: 0.5 }}
+                                    >
+                                        {`Processing: ${job.filename} — ${displayProgress}%`}
                                     </Typography>
-                                )}
-                                <LinearProgress
-                                    variant="determinate"
-                                    value={displayProgress}
-                                    sx={{
-                                        height: 6,
-                                        borderRadius: 1,
-                                        bgcolor: "rgba(255,255,255,0.3)",
-                                        "& .MuiLinearProgress-bar": {
-                                            bgcolor: "#fff",
-                                        },
-                                    }}
-                                />
-                            </Box>
-                        )}
-                        {job.status === "completed" && (
-                            <>
-                                {`"${job.filename}" processed successfully! `}
-                                {job.imageId != null && (
-                                    <Link
-                                        component="button"
-                                        color="inherit"
-                                        underline="always"
+                                    {statusMsg && (
+                                        <Typography
+                                            variant="caption"
+                                            sx={{
+                                                opacity: 0.85,
+                                                display: "block",
+                                                mb: 0.25,
+                                            }}
+                                        >
+                                            {statusMsg}
+                                        </Typography>
+                                    )}
+                                    <LinearProgress
+                                        variant="determinate"
+                                        value={displayProgress}
                                         sx={{
-                                            fontWeight: "bold",
-                                            verticalAlign: "baseline",
-                                            cursor: "pointer",
-                                            color: "#42a5f5",
-                                            pl: "10px",
+                                            height: 6,
+                                            borderRadius: 1,
+                                            bgcolor: "rgba(255,255,255,0.3)",
+                                            "& .MuiLinearProgress-bar": {
+                                                bgcolor: "#fff",
+                                            },
                                         }}
-                                        onClick={async () => {
-                                            // Categories may not have refreshed yet; reload and search fresh data
-                                            let found = false;
-                                            try {
-                                                const freshTree = (
-                                                    await fetchCategoryTree()
-                                                ).map(apiTreeToCategory);
-                                                setCategories(freshTree);
-                                                const result = findImageInTree(
-                                                    freshTree,
-                                                    job.imageId!,
-                                                );
-                                                if (result) {
-                                                    setPage("browse");
-                                                    setPath(result.path);
-                                                    setSelectedImage(
-                                                        result.image,
-                                                    );
-                                                    setViewportState(undefined);
-                                                    setOverlays([]);
-                                                    found = true;
-                                                }
-                                            } catch {
-                                                // Fall through to uncategorized check
-                                            }
-                                            if (!found) {
+                                    />
+                                </Box>
+                            )}
+                            {job.status === "completed" && (
+                                <>
+                                    {`"${job.filename}" processed successfully! `}
+                                    {job.imageId != null && (
+                                        <Link
+                                            component="button"
+                                            color="inherit"
+                                            underline="always"
+                                            sx={{
+                                                fontWeight: "bold",
+                                                verticalAlign: "baseline",
+                                                cursor: "pointer",
+                                                color: "#42a5f5",
+                                                pl: "10px",
+                                            }}
+                                            onClick={async () => {
+                                                // Categories may not have refreshed yet; reload and search fresh data
+                                                let found = false;
                                                 try {
-                                                    const freshUncat = (
-                                                        await fetchUncategorizedImages()
-                                                    ).map((img) => ({
-                                                        id: img.id,
-                                                        name: img.name,
-                                                        thumb: img.thumb,
-                                                        tileSources:
-                                                            img.tile_sources,
-                                                        categoryId:
-                                                            img.category_id,
-                                                        copyright:
-                                                            img.copyright,
-                                                        note: img.note,
-                                                        programIds:
-                                                            img.program_ids,
-                                                        active: img.active,
-                                                        version: img.version,
-                                                        createdAt:
-                                                            img.created_at,
-                                                        updatedAt:
-                                                            img.updated_at,
-                                                        metadataExtra:
-                                                            img.metadata_extra,
-                                                        width: img.width,
-                                                        height: img.height,
-                                                        fileSize:
-                                                            img.file_size,
-                                                    }));
-                                                    setUncategorizedImages(
-                                                        freshUncat,
-                                                    );
-                                                    const uncatImg =
-                                                        freshUncat.find(
-                                                            (img) =>
-                                                                img.id ===
-                                                                job.imageId,
+                                                    const freshTree = (
+                                                        await fetchCategoryTree()
+                                                    ).map(apiTreeToCategory);
+                                                    setCategories(freshTree);
+                                                    const result =
+                                                        findImageInTree(
+                                                            freshTree,
+                                                            job.imageId!,
                                                         );
-                                                    if (uncatImg) {
+                                                    if (result) {
                                                         setPage("browse");
-                                                        setPath([]);
+                                                        setPath(result.path);
                                                         setSelectedImage(
-                                                            uncatImg,
+                                                            result.image,
                                                         );
                                                         setViewportState(
                                                             undefined,
@@ -2615,28 +2589,84 @@ export default function App() {
                                                         found = true;
                                                     }
                                                 } catch {
-                                                    // Image not found
+                                                    // Fall through to uncategorized check
                                                 }
-                                            }
-                                            if (found) {
-                                                setProcessingJobs((prev) =>
-                                                    prev.filter(
-                                                        (j) => j.id !== job.id,
-                                                    ),
-                                                );
-                                            }
-                                        }}
-                                    >
-                                        View image
-                                    </Link>
-                                )}
-                            </>
-                        )}
-                        {job.status === "failed" &&
-                            (job.errorMessage ||
-                                `"${job.filename}" processing failed.`)}
-                    </Alert>
-                </Snackbar>
+                                                if (!found) {
+                                                    try {
+                                                        const freshUncat = (
+                                                            await fetchUncategorizedImages()
+                                                        ).map((img) => ({
+                                                            id: img.id,
+                                                            name: img.name,
+                                                            thumb: img.thumb,
+                                                            tileSources:
+                                                                img.tile_sources,
+                                                            categoryId:
+                                                                img.category_id,
+                                                            copyright:
+                                                                img.copyright,
+                                                            note: img.note,
+                                                            programIds:
+                                                                img.program_ids,
+                                                            active: img.active,
+                                                            version:
+                                                                img.version,
+                                                            createdAt:
+                                                                img.created_at,
+                                                            updatedAt:
+                                                                img.updated_at,
+                                                            metadataExtra:
+                                                                img.metadata_extra,
+                                                            width: img.width,
+                                                            height: img.height,
+                                                            fileSize:
+                                                                img.file_size,
+                                                        }));
+                                                        setUncategorizedImages(
+                                                            freshUncat,
+                                                        );
+                                                        const uncatImg =
+                                                            freshUncat.find(
+                                                                (img) =>
+                                                                    img.id ===
+                                                                    job.imageId,
+                                                            );
+                                                        if (uncatImg) {
+                                                            setPage("browse");
+                                                            setPath([]);
+                                                            setSelectedImage(
+                                                                uncatImg,
+                                                            );
+                                                            setViewportState(
+                                                                undefined,
+                                                            );
+                                                            setOverlays([]);
+                                                            found = true;
+                                                        }
+                                                    } catch {
+                                                        // Image not found
+                                                    }
+                                                }
+                                                if (found) {
+                                                    setProcessingJobs((prev) =>
+                                                        prev.filter(
+                                                            (j) =>
+                                                                j.id !== job.id,
+                                                        ),
+                                                    );
+                                                }
+                                            }}
+                                        >
+                                            View image
+                                        </Link>
+                                    )}
+                                </>
+                            )}
+                            {job.status === "failed" &&
+                                (job.errorMessage ||
+                                    `"${job.filename}" processing failed.`)}
+                        </Alert>
+                    </Snackbar>
                 );
             })}
         </Box>
