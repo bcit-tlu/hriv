@@ -80,7 +80,13 @@ export default function LoginScreen({
             }}
         >
             {/* Dark mode toggle */}
-            <Tooltip title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
+            <Tooltip
+                title={
+                    mode === "dark"
+                        ? "Switch to light mode"
+                        : "Switch to dark mode"
+                }
+            >
                 <IconButton
                     onClick={toggleMode}
                     aria-label="Toggle dark mode"
@@ -311,7 +317,7 @@ export default function LoginScreen({
             <Box
                 sx={{
                     flex: "0 0 50%",
-                    backgroundImage: "url(/hriv-splash.png)",
+                    backgroundImage: "url(/hriv-splash2.jpg)",
                     backgroundSize: "cover",
                     backgroundPosition: "center",
                     display: { xs: "none", md: "block" },
