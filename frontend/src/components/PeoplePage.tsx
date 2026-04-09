@@ -14,13 +14,9 @@ import Typography from '@mui/material/Typography'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import {
   fetchUsers,
-  fetchPrograms,
   createUser,
   updateUser,
   deleteUser,
-  createProgram,
-  updateProgram,
-  deleteProgram,
   bulkUpdateUserProgram,
 } from '../api'
 import type { ApiUser } from '../api'
@@ -29,9 +25,15 @@ import AddEditPersonModal from './AddEditPersonModal'
 import ProgramManagementModal from './ProgramManagementModal'
 import BulkEditModal from './BulkEditModal'
 
-export default function PeoplePage() {
+interface PeoplePageProps {
+  programs: Program[]
+  onAddProgram: (name: string) => Promise<void>
+  onEditProgram: (id: number, name: string) => Promise<void>
+  onDeleteProgram: (id: number) => Promise<void>
+}
+
+export default function PeoplePage({ programs, onAddProgram, onEditProgram, onDeleteProgram }: PeoplePageProps) {
   const [users, setUsers] = useState<ApiUser[]>([])
-  const [programs, setPrograms] = useState<Program[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
 
@@ -44,12 +46,8 @@ export default function PeoplePage() {
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
-      const [usersData, programsData] = await Promise.all([
-        fetchUsers(),
-        fetchPrograms(),
-      ])
+      const usersData = await fetchUsers()
       setUsers(usersData)
-      setPrograms(programsData)
     } catch (err) {
       console.error('Failed to load data', err)
     } finally {
@@ -132,34 +130,6 @@ export default function PeoplePage() {
       await loadData()
     } catch (err) {
       console.error('Failed to delete person', err)
-    }
-  }
-
-  // Program handlers
-  const handleAddProgram = async (name: string) => {
-    try {
-      await createProgram({ name })
-      await loadData()
-    } catch (err) {
-      console.error('Failed to add program', err)
-    }
-  }
-
-  const handleEditProgram = async (id: number, name: string) => {
-    try {
-      await updateProgram(id, { name })
-      await loadData()
-    } catch (err) {
-      console.error('Failed to edit program', err)
-    }
-  }
-
-  const handleDeleteProgram = async (id: number) => {
-    try {
-      await deleteProgram(id)
-      await loadData()
-    } catch (err) {
-      console.error('Failed to delete program', err)
     }
   }
 
@@ -304,9 +274,9 @@ export default function PeoplePage() {
         open={programModalOpen}
         onClose={() => setProgramModalOpen(false)}
         programs={programs}
-        onAdd={handleAddProgram}
-        onEdit={handleEditProgram}
-        onDelete={handleDeleteProgram}
+        onAdd={onAddProgram}
+        onEdit={onEditProgram}
+        onDelete={onDeleteProgram}
       />
 
       <BulkEditModal

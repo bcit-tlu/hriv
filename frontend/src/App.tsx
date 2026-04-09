@@ -1607,10 +1607,16 @@ export default function App() {
                     {page === "admin" && canManageUsers ? (
                         <AdminPage />
                     ) : page === "people" && canManageUsers ? (
-                        <PeoplePage />
+                        <PeoplePage
+                            programs={programs}
+                            onAddProgram={handleAddProgram}
+                            onEditProgram={handleEditProgram}
+                            onDeleteProgram={handleDeleteProgram}
+                        />
                     ) : page === "manage" && canEditContent ? (
                         <ManagePage
                             categories={categories}
+                            programs={programs}
                             onEditCategory={editCategoryInline}
                             onToggleVisibility={toggleCategoryVisibility}
                             onViewImage={(img) => {
