@@ -12,6 +12,9 @@ export interface ImageItem {
   createdAt?: string | null
   updatedAt?: string | null
   metadataExtra?: Record<string, unknown> | null
+  width?: number | null
+  height?: number | null
+  fileSize?: number | null
 }
 
 export interface Category {

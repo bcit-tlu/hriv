@@ -126,10 +126,12 @@ def test_generate_tiles_calls_pyvips(tmp_path) -> None:
         mock_thumb = MagicMock()
         mock_pyvips.Image.thumbnail.return_value = mock_thumb
 
-        dzi_rel, thumb_rel = generate_tiles(source_path, output_dir)
+        dzi_rel, thumb_rel, width, height = generate_tiles(source_path, output_dir)
 
     assert dzi_rel == "image.dzi"
     assert thumb_rel == "thumbnail.jpeg"
+    assert width == 1024
+    assert height == 768
     mock_image.dzsave.assert_called_once()
     mock_thumb.jpegsave.assert_called_once()
 
@@ -163,6 +165,7 @@ async def test_process_source_image_success() -> None:
         active=True,
         program=None,
         image_id=None,
+        file_size=5242880,
     )
 
     mock_session = AsyncMock()
@@ -172,7 +175,7 @@ async def test_process_source_image_success() -> None:
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
     with patch("app.processing.async_session", return_value=mock_session):
-        with patch("app.processing.generate_tiles", return_value=("image.dzi", "thumbnail.jpeg")):
+        with patch("app.processing.generate_tiles", return_value=("image.dzi", "thumbnail.jpeg", 1024, 768)):
             with patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)):
                 with patch("app.processing.settings") as mock_settings:
                     mock_settings.tiles_dir = "/data/tiles"
@@ -237,6 +240,7 @@ async def test_process_source_image_with_programs() -> None:
         active=True,
         program="[10, 20]",
         image_id=None,
+        file_size=10485760,
     )
 
     mock_img = SimpleNamespace(id=100, programs=[])
@@ -263,7 +267,7 @@ async def test_process_source_image_with_programs() -> None:
     mock_session.refresh = AsyncMock()
 
     with patch("app.processing.async_session", return_value=mock_session):
-        with patch("app.processing.generate_tiles", return_value=("image.dzi", "thumbnail.jpeg")):
+        with patch("app.processing.generate_tiles", return_value=("image.dzi", "thumbnail.jpeg", 2048, 1536)):
             with patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)):
                 with patch("app.processing.settings") as mock_settings:
                     mock_settings.tiles_dir = "/data/tiles"

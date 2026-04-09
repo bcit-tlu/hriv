@@ -33,6 +33,8 @@ import AddPhotoAlternateIcon from "@mui/icons-material/AddPhotoAlternate";
 import EditIcon from "@mui/icons-material/Edit";
 import HomeIcon from "@mui/icons-material/Home";
 import LinkIcon from "@mui/icons-material/Link";
+import DarkModeIcon from "@mui/icons-material/DarkMode";
+import LightModeIcon from "@mui/icons-material/LightMode";
 import SearchIcon from "@mui/icons-material/Search";
 import ImageViewer from "./components/ImageViewer";
 import type {
@@ -80,6 +82,8 @@ import {
 import type { ApiCategoryTree, ApiImage, ApiUser } from "./api";
 import MoveCategoryDialog from "./components/MoveCategoryDialog";
 import type { Category, ImageItem, Program } from "./types";
+import { useColorMode } from "./useColorMode";
+import { getSurfaceVariant } from "./theme";
 
 /** Search the category tree for an image by ID, returning the image and its category path. */
 function findImageInTree(
@@ -134,6 +138,9 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
             createdAt: img.created_at,
             updatedAt: img.updated_at,
             metadataExtra: img.metadata_extra,
+            width: img.width,
+            height: img.height,
+            fileSize: img.file_size,
         })),
         program: node.program,
         status: node.status,
@@ -152,6 +159,7 @@ export default function App() {
         canManageUsers,
         canEditContent,
     } = useAuth();
+    const { mode, toggleMode } = useColorMode();
 
     type Page = "browse" | "manage" | "people" | "admin";
     const [page, setPage] = useState<Page>("browse");
@@ -622,6 +630,9 @@ export default function App() {
                     createdAt: img.created_at,
                     updatedAt: img.updated_at,
                     metadataExtra: img.metadata_extra,
+                    width: img.width,
+                    height: img.height,
+                    fileSize: img.file_size,
                 })),
             );
             uncategorizedLoaded.current = true;
@@ -1282,6 +1293,9 @@ export default function App() {
               active: selectedImage.active,
               version: selectedImage.version,
               metadata_extra: selectedImage.metadataExtra ?? null,
+              width: selectedImage.width ?? null,
+              height: selectedImage.height ?? null,
+              file_size: selectedImage.fileSize ?? null,
               created_at: selectedImage.createdAt ?? "",
               updated_at: selectedImage.updatedAt ?? "",
           }
@@ -1301,6 +1315,9 @@ export default function App() {
               active: browseEditImage.active,
               version: browseEditImage.version,
               metadata_extra: browseEditImage.metadataExtra ?? null,
+              width: browseEditImage.width ?? null,
+              height: browseEditImage.height ?? null,
+              file_size: browseEditImage.fileSize ?? null,
               created_at: browseEditImage.createdAt ?? "",
               updated_at: browseEditImage.updatedAt ?? "",
           }
@@ -1340,6 +1357,9 @@ export default function App() {
                     createdAt: updated.created_at,
                     updatedAt: updated.updated_at,
                     metadataExtra: updated.metadata_extra,
+                    width: updated.width,
+                    height: updated.height,
+                    fileSize: updated.file_size,
                 });
                 setImageEditOpen(false);
                 // Refresh categories and update breadcrumb path from the fresh tree
@@ -1491,6 +1511,15 @@ export default function App() {
                         </MenuItem>
                     </Menu>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <Tooltip title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
+                            <IconButton
+                                onClick={toggleMode}
+                                sx={{ color: "inherit" }}
+                                aria-label="Toggle dark mode"
+                            >
+                                {mode === "dark" ? <LightModeIcon /> : <DarkModeIcon />}
+                            </IconButton>
+                        </Tooltip>
                         <Tooltip title="Search">
                             <IconButton
                                 onClick={() => setSearchOpen(true)}
@@ -1616,7 +1645,7 @@ export default function App() {
                     py: 3,
                     bgcolor:
                         page === "people" || page === "admin"
-                            ? "#DAC7B5"
+                            ? getSurfaceVariant(mode)
                             : undefined,
                 }}
             >
@@ -1651,6 +1680,9 @@ export default function App() {
                                     createdAt: img.created_at,
                                     updatedAt: img.updated_at,
                                     metadataExtra: img.metadata_extra,
+                                    width: img.width,
+                                    height: img.height,
+                                    fileSize: img.file_size,
                                 });
                                 // Build breadcrumb path from the image's category
                                 if (img.category_id != null) {
@@ -2536,6 +2568,10 @@ export default function App() {
                                                             img.updated_at,
                                                         metadataExtra:
                                                             img.metadata_extra,
+                                                        width: img.width,
+                                                        height: img.height,
+                                                        fileSize:
+                                                            img.file_size,
                                                     }));
                                                     setUncategorizedImages(
                                                         freshUncat,

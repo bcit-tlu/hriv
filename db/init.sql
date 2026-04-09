@@ -33,6 +33,9 @@ CREATE TABLE IF NOT EXISTS images (
     active        BOOLEAN DEFAULT true,
     metadata      JSONB DEFAULT '{}',
     version       INTEGER NOT NULL DEFAULT 1,
+    width         INTEGER,
+    height        INTEGER,
+    file_size     DOUBLE PRECISION,
     created_at    TIMESTAMPTZ DEFAULT now(),
     updated_at    TIMESTAMPTZ DEFAULT now()
 );
