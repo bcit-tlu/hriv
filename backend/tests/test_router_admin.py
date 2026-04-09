@@ -319,9 +319,10 @@ async def test_export_database_success() -> None:
     source_images = [
         SimpleNamespace(
             id=1, original_filename="src.tiff", stored_path="/data/src.tiff",
-            status="completed", error_message=None, name="src",
+            status="completed", progress=100, error_message=None, name="src",
             category_id=1, copyright="CC0", note=None, active=True,
-            program=None, image_id=1, created_at=now, updated_at=now,
+            program=None, image_id=1, file_size=1024000,
+            created_at=now, updated_at=now,
         )
     ]
     announcement = SimpleNamespace(

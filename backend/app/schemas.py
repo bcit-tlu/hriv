@@ -157,6 +157,7 @@ class SourceImageOut(BaseModel):
     id: int
     original_filename: str
     status: str
+    progress: int = 0
     error_message: str | None = None
     name: str | None = None
     category_id: int | None = None
@@ -165,6 +166,7 @@ class SourceImageOut(BaseModel):
     active: bool = True
     program_ids: list[int] = []
     image_id: int | None = None
+    file_size: int | None = None
     created_at: datetime
     updated_at: datetime
 

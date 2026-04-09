@@ -74,6 +74,9 @@ async def upload_source_image(
                 break
             f.write(chunk)
 
+    # Get file size from what was written to disk
+    file_size = os.path.getsize(stored_path)
+
     # Create the source image record
     src = SourceImage(
         original_filename=file.filename,
@@ -85,6 +88,7 @@ async def upload_source_image(
         note=note,
         active=active,
         program=json.dumps(program_ids) if program_ids else None,
+        file_size=file_size,
     )
     db.add(src)
     await db.commit()

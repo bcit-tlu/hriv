@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS source_images (
     original_filename VARCHAR(500) NOT NULL,
     stored_path   TEXT NOT NULL,
     status        VARCHAR(50) NOT NULL DEFAULT 'pending',
+    progress      INTEGER NOT NULL DEFAULT 0,
     error_message TEXT,
     name          VARCHAR(255),
     category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS source_images (
     active        BOOLEAN NOT NULL DEFAULT true,
     program       VARCHAR(255),
     image_id      INTEGER REFERENCES images(id) ON DELETE SET NULL,
+    file_size     BIGINT,
     created_at    TIMESTAMPTZ DEFAULT now(),
     updated_at    TIMESTAMPTZ DEFAULT now()
 );
