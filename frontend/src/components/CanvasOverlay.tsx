@@ -410,7 +410,7 @@ export default function CanvasOverlay({
           stroke: ann.color,
           strokeWidth: Math.max(1, (ann.strokeWidth ?? 2) * viewer.viewport.getZoom()),
           strokeUniform: true,
-          angle: ann.rotation || 0,
+          angle: ann.rotation ?? 0,
         })
         const aObj = rect as AnnotatedObject
         aObj._annotationId = ann.id
@@ -430,7 +430,7 @@ export default function CanvasOverlay({
           stroke: ann.color,
           strokeWidth: Math.max(1, (ann.strokeWidth ?? 2) * viewer.viewport.getZoom()),
           strokeUniform: true,
-          angle: ann.rotation || 0,
+          angle: ann.rotation ?? 0,
         })
         const aObj = ellipse as AnnotatedObject
         aObj._annotationId = ann.id
@@ -450,7 +450,7 @@ export default function CanvasOverlay({
           fontSize: Math.max(10, pxFontSize),
           fill: ann.color,
           underline: ann.type === 'link',
-          angle: ann.rotation || 0,
+          angle: ann.rotation ?? 0,
         })
         const aObj = text as AnnotatedObject
         aObj._annotationId = ann.id
