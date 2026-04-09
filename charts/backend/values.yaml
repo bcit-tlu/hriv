@@ -18,6 +18,32 @@ env:
 # Leave blank to auto-generate a random value at install time.
 jwtSecret: ""
 
+# ── OIDC / OAuth 2.0 authentication ─────────────────────────
+oidc:
+    enabled: false
+    # Full issuer URL — the backend appends /.well-known/openid-configuration.
+    # Example (Vault): https://vault.example.com:8200/v1/identity/oidc/provider/vault-provider
+    issuer: ""
+    # Public client identifier (safe for ConfigMap; not a secret per OAuth 2.0 spec).
+    clientId: ""
+    # Client secret — only used when vault.enabled=false (dev mode).
+    # When vault.enabled=true the secret is pulled from Vault via VSO.
+    clientSecret: ""
+    # Backend callback endpoint that the IdP redirects to after authentication.
+    redirectUri: ""
+    # Space-separated OAuth 2.0 scopes to request from the IdP.
+    scopes: "openid email profile"
+    # JSON object mapping IdP group names to HRIV roles (admin/instructor/student).
+    roleMapping: "{}"
+    # Frontend URL to redirect to after successful OIDC login.
+    postLoginRedirect: ""
+    # Trust email from IdP without requiring email_verified claim.
+    # Enable for corporate IdPs (e.g. Vault, Azure AD) that don't emit email_verified.
+    trustEmail: false
+    # CORS origins (comma-separated). Used as fallback redirect target when
+    # postLoginRedirect is empty.
+    corsOrigins: ""
+
 # CloudNative-PG database cluster
 cnpg:
     instances: 1
@@ -39,6 +65,7 @@ vault:
     dbAppSecretPath: hriv/db-app
     dbSuperuserSecretPath: hriv/db-superuser
     githubPatSecretPath: hriv/github-pat
+    oidcSecretPath: hriv/oidc
 
 # Nginx sidecar for serving /api/tiles directly from the PVC,
 # bypassing the Python process.  Tiles are immutable and cache-friendly.
