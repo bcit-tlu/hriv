@@ -167,7 +167,7 @@ function EditImageForm({
           sx={{
             mt: 1,
             border: '2px dashed',
-            borderColor: 'grey.300',
+            borderColor: 'grey.400',
             borderRadius: 2,
             p: 3,
             display: 'flex',
@@ -175,13 +175,13 @@ function EditImageForm({
             alignItems: 'center',
             justifyContent: 'center',
             minHeight: 120,
-            bgcolor: 'grey.100',
+            bgcolor: 'action.hover',
             opacity: 0.6,
             pointerEvents: 'none',
           }}
         >
           <CloudUploadIcon
-            sx={{ fontSize: 36, color: 'grey.400', mb: 0.5 }}
+            sx={{ fontSize: 36, color: 'grey.500', mb: 0.5 }}
           />
           <Typography variant="body2" color="text.disabled">
             Drag and drop to replace image

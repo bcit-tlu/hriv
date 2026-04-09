@@ -41,8 +41,9 @@ export default function ImageTile({ image, onClick, programs, onEditDetails }: I
             top: 4,
             right: 4,
             zIndex: 1,
-            bgcolor: 'rgba(255,255,255,0.8)',
-            '&:hover': { bgcolor: 'rgba(255,255,255,0.95)' },
+            color: 'white',
+            bgcolor: 'rgba(0,0,0,0.25)',
+            '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
           }}
         >
           <MoreVertIcon fontSize="small" />
