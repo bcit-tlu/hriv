@@ -242,24 +242,27 @@ export default function CanvasOverlay({
         const sw = (ann.strokeWidth ?? 2) * viewer.viewport.getZoom()
         ctx.lineWidth = Math.max(1, sw)
         ctx.save()
-        ctx.translate(topLeft.x + pw / 2, topLeft.y + ph / 2)
+        ctx.translate(topLeft.x, topLeft.y)
         if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
         if (ann.filled) {
           ctx.fillStyle = ann.color
-          ctx.fillRect(-pw / 2, -ph / 2, pw, ph)
+          ctx.fillRect(0, 0, pw, ph)
         } else {
           ctx.strokeStyle = ann.color
-          ctx.strokeRect(-pw / 2, -ph / 2, pw, ph)
+          ctx.strokeRect(0, 0, pw, ph)
         }
         ctx.restore()
       } else if (ann.type === 'circle') {
+        ctx.save()
+        ctx.translate(topLeft.x, topLeft.y)
+        if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
         ctx.beginPath()
         ctx.ellipse(
-          topLeft.x + pw / 2,
-          topLeft.y + ph / 2,
+          pw / 2,
+          ph / 2,
           Math.abs(pw / 2),
           Math.abs(ph / 2),
-          ((ann.rotation || 0) * Math.PI) / 180,
+          0,
           0,
           2 * Math.PI,
         )
@@ -272,6 +275,7 @@ export default function CanvasOverlay({
           ctx.strokeStyle = ann.color
           ctx.stroke()
         }
+        ctx.restore()
       } else if (ann.type === 'text' || ann.type === 'link') {
         const vpFontSize = ann.vpFontSize ?? 0.02
         const pxFontSize = Math.abs(vpFontSize * (bottomRight.x - topLeft.x) / (ann.vpWidth || 1))
@@ -279,20 +283,20 @@ export default function CanvasOverlay({
         ctx.font = `${fontSize}px sans-serif`
         ctx.fillStyle = ann.color
         ctx.save()
-        ctx.translate(topLeft.x + pw / 2, topLeft.y + ph / 2)
+        ctx.translate(topLeft.x, topLeft.y)
         if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
         if (ann.type === 'link') {
           const text = ann.text || ann.url || 'Link'
-          ctx.fillText(text, -pw / 2, -ph / 2 + fontSize)
+          ctx.fillText(text, 0, fontSize)
           const textWidth = ctx.measureText(text).width
           ctx.beginPath()
-          ctx.moveTo(-pw / 2, -ph / 2 + fontSize + 2)
-          ctx.lineTo(-pw / 2 + textWidth, -ph / 2 + fontSize + 2)
+          ctx.moveTo(0, fontSize + 2)
+          ctx.lineTo(textWidth, fontSize + 2)
           ctx.strokeStyle = ann.color
           ctx.lineWidth = 1
           ctx.stroke()
         } else {
-          ctx.fillText(ann.text || '', -pw / 2, -ph / 2 + fontSize)
+          ctx.fillText(ann.text || '', 0, fontSize)
         }
         ctx.restore()
       }
