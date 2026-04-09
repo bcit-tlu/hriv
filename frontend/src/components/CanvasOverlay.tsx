@@ -279,20 +279,20 @@ export default function CanvasOverlay({
         ctx.font = `${fontSize}px sans-serif`
         ctx.fillStyle = ann.color
         ctx.save()
-        ctx.translate(topLeft.x, topLeft.y)
+        ctx.translate(topLeft.x + pw / 2, topLeft.y + ph / 2)
         if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
         if (ann.type === 'link') {
           const text = ann.text || ann.url || 'Link'
-          ctx.fillText(text, 0, fontSize)
+          ctx.fillText(text, -pw / 2, -ph / 2 + fontSize)
           const textWidth = ctx.measureText(text).width
           ctx.beginPath()
-          ctx.moveTo(0, fontSize + 2)
-          ctx.lineTo(textWidth, fontSize + 2)
+          ctx.moveTo(-pw / 2, -ph / 2 + fontSize + 2)
+          ctx.lineTo(-pw / 2 + textWidth, -ph / 2 + fontSize + 2)
           ctx.strokeStyle = ann.color
           ctx.lineWidth = 1
           ctx.stroke()
         } else {
-          ctx.fillText(ann.text || '', 0, fontSize)
+          ctx.fillText(ann.text || '', -pw / 2, -ph / 2 + fontSize)
         }
         ctx.restore()
       }
