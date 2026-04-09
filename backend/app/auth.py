@@ -22,6 +22,14 @@ class AuthSettings(Settings):
     jwt_secret: str = ""
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440  # 24 hours
+    # Per-instance epoch embedded in JWTs as a private ``_epoch`` claim.
+    # When left empty a random value is generated at startup, which
+    # automatically invalidates tokens from a previous container instance
+    # (e.g. after ``docker compose down -v``).  For multi-worker /
+    # multi-replica production deployments set this to a shared value so
+    # all workers accept each other's tokens; rotate the value when you
+    # want to force all users to re-authenticate.
+    jwt_instance_epoch: str = ""
 
 
 _auth_settings: AuthSettings | None = None
@@ -42,7 +50,8 @@ def _get_auth_settings() -> AuthSettings:
         # are automatically invalidated.  An explicit ``JWT_SECRET`` env-var
         # still takes precedence for production deployments that need stable
         # tokens.
-        if not _auth_settings.jwt_secret:
+        explicit_secret = bool(_auth_settings.jwt_secret)
+        if not explicit_secret:
             _auth_settings.jwt_secret = secrets.token_urlsafe(32)
             logger.warning(
                 "No JWT_SECRET configured — using an ephemeral random secret. "
@@ -51,6 +60,16 @@ def _get_auth_settings() -> AuthSettings:
                 "for production deployments.",
                 extra={"event": "auth.jwt_secret_missing"},
             )
+        if not _auth_settings.jwt_instance_epoch:
+            _auth_settings.jwt_instance_epoch = secrets.token_urlsafe(16)
+            if explicit_secret:
+                logger.warning(
+                    "No JWT_INSTANCE_EPOCH configured — using an ephemeral random epoch. "
+                    "Sessions will not survive restarts even though JWT_SECRET is set. "
+                    "Set the JWT_INSTANCE_EPOCH environment variable for production "
+                    "deployments that need stable sessions across restarts/replicas.",
+                    extra={"event": "auth.jwt_instance_epoch_missing"},
+                )
     return _auth_settings
 
 
@@ -86,6 +105,7 @@ def create_access_token(user: User) -> str:
         "email": user.email,
         "role": user.role,
         "exp": expire,
+        "_epoch": auth_settings.jwt_instance_epoch,
     }
     return jwt.encode(payload, auth_settings.jwt_secret, algorithm=auth_settings.jwt_algorithm)
 
@@ -105,6 +125,12 @@ async def _get_user_from_token(
         # Reject scoped tokens (e.g. file-export JWTs) from being used
         # as general-purpose Bearer tokens.
         if payload.get("purpose") is not None:
+            raise credentials_exception
+        # Reject tokens minted by a different backend instance.  This
+        # ensures that after a ``docker compose down -v`` cycle (which
+        # recreates the DB with the same seed user IDs), stale JWTs from
+        # the previous instance are not accepted.
+        if payload.get("_epoch") != auth_settings.jwt_instance_epoch:
             raise credentials_exception
         user_id_str: str | None = payload.get("sub")
         if user_id_str is None:

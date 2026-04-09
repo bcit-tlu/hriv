@@ -31,6 +31,7 @@ def test_create_access_token_contains_expected_claims(
     assert payload["email"] == "user@example.com"
     assert payload["role"] == "admin"
     assert "exp" in payload
+    assert payload["_epoch"] == auth.auth_settings.jwt_instance_epoch
 
 
 async def test_get_user_from_token_returns_user(
@@ -41,7 +42,7 @@ async def test_get_user_from_token_returns_user(
 
     user = SimpleNamespace(id=42, email="person@example.com", role="student")
     token = auth.jwt.encode(
-        {"sub": "42", "email": "person@example.com", "role": "student"},
+        {"sub": "42", "email": "person@example.com", "role": "student", "_epoch": auth.auth_settings.jwt_instance_epoch},
         "unit-test-secret",
         algorithm="HS256",
     )
@@ -67,6 +68,7 @@ async def test_get_user_from_token_rejects_scoped_tokens(
             "email": "person@example.com",
             "role": "admin",
             "purpose": "file-export",
+            "_epoch": auth.auth_settings.jwt_instance_epoch,
         },
         "unit-test-secret",
         algorithm="HS256",
@@ -88,13 +90,35 @@ async def test_get_user_from_token_rejects_missing_user(
     monkeypatch.setattr(auth.auth_settings, "jwt_algorithm", "HS256")
 
     token = auth.jwt.encode(
-        {"sub": "999", "email": "missing@example.com", "role": "student"},
+        {"sub": "999", "email": "missing@example.com", "role": "student", "_epoch": auth.auth_settings.jwt_instance_epoch},
         "unit-test-secret",
         algorithm="HS256",
     )
 
     db = AsyncMock()
     db.get.return_value = None
+
+    with pytest.raises(HTTPException) as exc:
+        await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
+
+    assert exc.value.status_code == 401
+
+
+async def test_get_user_from_token_rejects_stale_instance_epoch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tokens from a previous backend instance (different epoch) are rejected."""
+    monkeypatch.setattr(auth.auth_settings, "jwt_secret", "unit-test-secret")
+    monkeypatch.setattr(auth.auth_settings, "jwt_algorithm", "HS256")
+
+    token = auth.jwt.encode(
+        {"sub": "1", "email": "a@b.com", "role": "admin", "_epoch": "old-epoch"},
+        "unit-test-secret",
+        algorithm="HS256",
+    )
+
+    db = AsyncMock()
+    db.get.return_value = SimpleNamespace(id=1)
 
     with pytest.raises(HTTPException) as exc:
         await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
