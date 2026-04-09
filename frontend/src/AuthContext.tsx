@@ -12,6 +12,14 @@ import {
 } from './api'
 import type { ApiUser } from './api'
 
+// Capture the URL fragment immediately at module-load time.  In React,
+// children’s effects fire before their parents’ effects.  App (a child of
+// AuthProvider) has a URL-sync effect that calls
+//   window.history.replaceState(null, "", window.location.pathname)
+// on mount, which strips the hash *before* our useEffect can read it.
+// By snapshotting the hash here we guarantee we see the original value.
+const _initialHash = window.location.hash.replace(/^#/, '')
+
 function toUser(u: ApiUser): User {
   return {
     id: u.id,
@@ -51,8 +59,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   // IdP callback).  A fragment (#) is used instead of a query parameter so
   // the JWT never appears in server access logs.
   useEffect(() => {
-    const hash = window.location.hash.replace(/^#/, '')
-    const params = new URLSearchParams(hash)
+    const params = new URLSearchParams(_initialHash)
     const oidcToken = params.get('oidc_token')
     if (oidcToken) {
       setToken(oidcToken)
