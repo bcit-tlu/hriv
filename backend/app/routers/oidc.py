@@ -4,6 +4,7 @@ Provides ``/api/auth/oidc/login`` (redirect to IdP) and
 ``/api/auth/oidc/callback`` (exchange code, upsert user, issue JWT).
 """
 
+import html as _html
 import json
 import logging
 from datetime import datetime, timezone
@@ -313,9 +314,9 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
         '<!DOCTYPE html>'
         '<html><head><meta charset="utf-8"><title>Signing in\u2026</title></head>'
         '<body><p>Signing in\u2026</p>'
-        '<script>window.location.replace("' + target_url + '");</script>'
+        '<script>window.location.replace(' + json.dumps(target_url) + ');</script>'
         '<noscript><p>JavaScript is required. '
-        '<a href="' + frontend_origin.rstrip('/') + '/">Return to application</a>'
+        '<a href="' + _html.escape(frontend_origin.rstrip('/'), quote=True) + '/">Return to application</a>'
         '</p></noscript></body></html>'
     )
     return HTMLResponse(
