@@ -3,6 +3,11 @@ import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
 import CircularProgress from '@mui/material/CircularProgress'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
+import Divider from '@mui/material/Divider'
 import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
@@ -165,6 +170,12 @@ export default function ManagePage({ categories, programs, onViewImage, onNaviga
   // Action menu state
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const [menuImage, setMenuImage] = useState<ApiImage | null>(null)
+
+  // Delete confirmation dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteDialogImage, setDeleteDialogImage] = useState<ApiImage | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const loadImages = useCallback(async () => {
     try {
@@ -448,8 +459,37 @@ export default function ManagePage({ categories, programs, onViewImage, onNaviga
     const image = menuImage
     handleMenuClose()
     if (image) {
-      handleDeleteImage(image).then(() => onCategoriesChanged?.())
+      setDeleteDialogImage(image)
+      setDeleteDialogOpen(true)
+      setConfirmDelete(false)
+      setDeleting(false)
     }
+  }
+
+  const handleConfirmDeleteImage = async () => {
+    if (!deleteDialogImage) return
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      return
+    }
+    setDeleting(true)
+    try {
+      await handleDeleteImage(deleteDialogImage)
+      onCategoriesChanged?.()
+      setDeleteDialogOpen(false)
+      setDeleteDialogImage(null)
+      setConfirmDelete(false)
+      setDeleting(false)
+    } catch {
+      setDeleting(false)
+    }
+  }
+
+  const handleCloseDeleteDialog = () => {
+    setDeleteDialogOpen(false)
+    setDeleteDialogImage(null)
+    setConfirmDelete(false)
+    setDeleting(false)
   }
 
   if (loading) {
@@ -880,6 +920,51 @@ export default function ManagePage({ categories, programs, onViewImage, onNaviga
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
       />
+
+      {/* Delete confirmation dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleCloseDeleteDialog}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Delete Image</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            You are about to delete <strong>{deleteDialogImage?.name}</strong>.
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            To delete multiple images at once, select them and use the{' '}
+            <strong>Bulk Edit</strong> option.
+          </Typography>
+          <Divider />
+          <Box>
+            <Button
+              color="error"
+              variant={confirmDelete ? 'contained' : 'outlined'}
+              onClick={handleConfirmDeleteImage}
+              disabled={deleting}
+              fullWidth
+            >
+              {confirmDelete
+                ? 'Confirm Delete Image'
+                : 'Delete Image'}
+            </Button>
+            {confirmDelete && (
+              <Typography
+                variant="caption"
+                color="error"
+                sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
+              >
+                This action cannot be undone. Click again to confirm.
+              </Typography>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDeleteDialog} disabled={deleting}>Cancel</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Move image modal */}
       <MoveImageDialog
