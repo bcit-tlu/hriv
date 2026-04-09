@@ -14,6 +14,7 @@ from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
 
 from .database import settings
+from .logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,15 @@ async def process_source_image_task(ctx: dict[str, Any], source_image_id: int) -
     await process_source_image(source_image_id)
 
 
+# ── arq lifecycle hooks ───────────────────────────────────
+
+
+async def on_startup(ctx: dict[str, Any]) -> None:
+    """Initialise structured JSON logging when the arq worker boots."""
+    setup_logging()
+    logger.info("arq worker started", extra={"event": "worker.started"})
+
+
 # ── arq WorkerSettings ───────────────────────────────────
 
 class WorkerSettings:
@@ -112,5 +122,6 @@ class WorkerSettings:
 
     functions = [process_source_image_task]
     redis_settings = _parse_redis_settings()
+    on_startup = on_startup
     max_jobs = 4  # Match the existing _MAX_CONCURRENCY
     job_timeout = 600  # 10 minutes — large TIFFs can take a while

@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS source_images (
     status        VARCHAR(50) NOT NULL DEFAULT 'pending',
     progress      INTEGER NOT NULL DEFAULT 0,
     error_message TEXT,
+    status_message VARCHAR(255),
     name          VARCHAR(255),
     category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     copyright     VARCHAR(500),

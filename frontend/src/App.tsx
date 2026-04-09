@@ -228,6 +228,8 @@ export default function App() {
         fileSize: number;
         /** Timestamp (ms) when the job was first added. */
         startedAt: number;
+        /** Server-reported status message describing the current phase. */
+        statusMessage?: string;
     }
     const [processingJobs, setProcessingJobs] = useState<ProcessingJob[]>([]);
     const processingPollRefs = useRef<
@@ -237,6 +239,9 @@ export default function App() {
     // Server-reported progress stored in a ref to avoid re-triggering the
     // polling useEffect when intermediate progress updates arrive.
     const serverProgressRef = useRef<Map<number, number>>(new Map());
+
+    // Server-reported status message stored in a ref (same reason as above).
+    const serverStatusMessageRef = useRef<Map<number, string>>(new Map());
 
     // Client-side progress interpolation — a simple tick counter that
     // increments every 500 ms to trigger re-renders without mutating
@@ -256,10 +261,11 @@ export default function App() {
     }, []);
 
     /**
-     * Compute the interpolated progress for a processing job.
-     * - Uses file-size-based time estimate to gradually fill between server milestones.
-     * - Caps at 75% until the server confirms tile generation is done (≥80%).
-     * - Never goes backwards.
+     * Compute the display progress for a processing job.
+     * With granular server-side progress (via pyvips eval signals), the
+     * server now reports fine-grained percentages during tile generation.
+     * We still use time-based interpolation to fill gaps between polls,
+     * but the server value is the primary source of truth.
      */
     const getDisplayProgress = useCallback(
         (job: ProcessingJob): number => {
@@ -273,8 +279,10 @@ export default function App() {
             const timeFraction = Math.min(elapsed / est, 1);
             const timeProgress = Math.round(timeFraction * 90);
 
-            // Cap interpolated progress at 75% until server confirms tiles done
-            const cap = sp >= 80 ? 95 : 75;
+            // Always allow interpolation up to 75 % so the bar feels smooth
+            // even when only coarse milestones arrive.  Once the server
+            // reports ≥ 80 % (tiles done), raise the ceiling to 95 %.
+            const cap = sp >= 80 ? 95 : Math.max(sp + 5, 75);
             const interpolated = Math.min(timeProgress, cap);
 
             // Never go below what the server already reported
@@ -282,6 +290,11 @@ export default function App() {
         },
         [estimateDuration],
     );
+
+    /** Return the current status message for a processing job. */
+    const getStatusMessage = useCallback((job: ProcessingJob): string => {
+        return serverStatusMessageRef.current.get(job.id) ?? job.statusMessage ?? "";
+    }, []);
 
     // Search modal state
     const [searchOpen, setSearchOpen] = useState(false);
@@ -408,6 +421,12 @@ export default function App() {
                                 job.id,
                                 src.progress,
                             );
+                            if (src.status_message) {
+                                serverStatusMessageRef.current.set(
+                                    job.id,
+                                    src.status_message,
+                                );
+                            }
                             // Still processing — schedule next poll after this one completes
                             if (!controller.signal.aborted) {
                                 refs.set(
@@ -2416,6 +2435,7 @@ export default function App() {
             {/* Image processing snackbars (one per job, stacked above modals) */}
             {processingJobs.map((job, index) => {
                 const displayProgress = getDisplayProgress(job);
+                const statusMsg = getStatusMessage(job);
                 return (
                 <Snackbar
                     key={job.id}
@@ -2466,6 +2486,11 @@ export default function App() {
                                 <Typography variant="body2" sx={{ mb: 0.5 }}>
                                     {`Processing: ${job.filename} — ${displayProgress}%`}
                                 </Typography>
+                                {statusMsg && (
+                                    <Typography variant="caption" sx={{ opacity: 0.85, display: "block", mb: 0.25 }}>
+                                        {statusMsg}
+                                    </Typography>
+                                )}
                                 <LinearProgress
                                     variant="determinate"
                                     value={displayProgress}

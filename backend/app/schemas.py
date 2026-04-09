@@ -165,6 +165,7 @@ class SourceImageOut(BaseModel):
     status: str
     progress: int = 0
     error_message: str | None = None
+    status_message: str | None = None
     name: str | None = None
     category_id: int | None = None
     copyright: str | None = None
