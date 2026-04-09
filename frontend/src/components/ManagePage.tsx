@@ -916,7 +916,7 @@ export default function ManagePage({ categories, programs, onViewImage, onNaviga
       {/* Delete confirmation dialog */}
       <Dialog
         open={deleteDialogOpen}
-        onClose={handleCloseDeleteDialog}
+        onClose={() => { if (!deleting) handleCloseDeleteDialog() }}
         maxWidth="xs"
         fullWidth
       >
