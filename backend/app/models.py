@@ -95,6 +95,7 @@ class SourceImage(Base):
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
     progress: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status_message: Mapped[str | None] = mapped_column(String(255), nullable=True)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     category_id: Mapped[int | None] = mapped_column(
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True

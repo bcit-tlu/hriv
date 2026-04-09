@@ -372,6 +372,7 @@ export interface ApiSourceImage {
   status: string
   progress: number
   error_message: string | null
+  status_message: string | null
   name: string | null
   category_id: number | null
   copyright: string | null
