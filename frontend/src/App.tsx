@@ -1609,9 +1609,6 @@ export default function App() {
                     ) : page === "people" && canManageUsers ? (
                         <PeoplePage
                             programs={programs}
-                            onAddProgram={handleAddProgram}
-                            onEditProgram={handleEditProgram}
-                            onDeleteProgram={handleDeleteProgram}
                         />
                     ) : page === "manage" && canEditContent ? (
                         <ManagePage

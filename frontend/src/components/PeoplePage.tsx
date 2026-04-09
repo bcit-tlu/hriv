@@ -22,17 +22,13 @@ import {
 import type { ApiUser } from '../api'
 import type { Role, Program } from '../types'
 import AddEditPersonModal from './AddEditPersonModal'
-import ProgramManagementModal from './ProgramManagementModal'
 import BulkEditModal from './BulkEditModal'
 
 interface PeoplePageProps {
   programs: Program[]
-  onAddProgram: (name: string) => Promise<void>
-  onEditProgram: (id: number, name: string) => Promise<void>
-  onDeleteProgram: (id: number) => Promise<void>
 }
 
-export default function PeoplePage({ programs, onAddProgram, onEditProgram, onDeleteProgram }: PeoplePageProps) {
+export default function PeoplePage({ programs }: PeoplePageProps) {
   const [users, setUsers] = useState<ApiUser[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -40,7 +36,6 @@ export default function PeoplePage({ programs, onAddProgram, onEditProgram, onDe
   // Modal state
   const [addEditOpen, setAddEditOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<ApiUser | null>(null)
-  const [programModalOpen, setProgramModalOpen] = useState(false)
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
 
   const loadData = useCallback(async () => {
@@ -268,15 +263,6 @@ export default function PeoplePage({ programs, onAddProgram, onEditProgram, onDe
         onSave={handleSavePerson}
         programs={programs}
         user={editingUser}
-      />
-
-      <ProgramManagementModal
-        open={programModalOpen}
-        onClose={() => setProgramModalOpen(false)}
-        programs={programs}
-        onAdd={onAddProgram}
-        onEdit={onEditProgram}
-        onDelete={onDeleteProgram}
       />
 
       <BulkEditModal
