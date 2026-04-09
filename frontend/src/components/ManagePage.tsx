@@ -474,13 +474,20 @@ export default function ManagePage({ categories, programs, onViewImage, onNaviga
     }
     setDeleting(true)
     try {
-      await handleDeleteImage(deleteDialogImage)
-      onCategoriesChanged?.()
+      await deleteImage(deleteDialogImage.id)
+      setSelected((prev) => {
+        const next = new Set(prev)
+        next.delete(deleteDialogImage.id)
+        return next
+      })
       setDeleteDialogOpen(false)
       setDeleteDialogImage(null)
       setConfirmDelete(false)
       setDeleting(false)
-    } catch {
+      await loadImages()
+      onCategoriesChanged?.()
+    } catch (err) {
+      console.error('Failed to delete image', err)
       setDeleting(false)
     }
   }
