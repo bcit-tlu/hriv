@@ -5,7 +5,9 @@ import CardMedia from '@mui/material/CardMedia'
 import CardContent from '@mui/material/CardContent'
 import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
+import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import type { ImageItem, Program } from '../types'
 
@@ -55,9 +57,16 @@ export default function ImageTile({ image, onClick, programs, onEditDetails }: I
           sx={{ objectFit: 'cover' }}
         />
         <CardContent>
-          <Typography variant="h6" noWrap>
-            {image.name}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Typography variant="h6" noWrap sx={{ opacity: !image.active ? 0.5 : 1 }}>
+              {image.name}
+            </Typography>
+            {!image.active && (
+              <Tooltip title="Inactive">
+                <DisabledVisibleIcon fontSize="small" color="disabled" />
+              </Tooltip>
+            )}
+          </Box>
           {programChips.length > 0 && (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
               {programChips.map((p) => (
