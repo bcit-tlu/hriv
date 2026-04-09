@@ -54,6 +54,8 @@ export interface CanvasAnnotation {
   arrowStyle?: 'none' | 'standard' | 'triangle' | 'circle'
   /** Whether shape is filled (rect/circle) */
   filled?: boolean
+  /** Rotation angle in degrees */
+  rotation?: number
 }
 
 const PALETTE = [
@@ -239,13 +241,17 @@ export default function CanvasOverlay({
       if (ann.type === 'rect') {
         const sw = (ann.strokeWidth ?? 2) * viewer.viewport.getZoom()
         ctx.lineWidth = Math.max(1, sw)
+        ctx.save()
+        ctx.translate(topLeft.x + pw / 2, topLeft.y + ph / 2)
+        if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
         if (ann.filled) {
           ctx.fillStyle = ann.color
-          ctx.fillRect(topLeft.x, topLeft.y, pw, ph)
+          ctx.fillRect(-pw / 2, -ph / 2, pw, ph)
         } else {
           ctx.strokeStyle = ann.color
-          ctx.strokeRect(topLeft.x, topLeft.y, pw, ph)
+          ctx.strokeRect(-pw / 2, -ph / 2, pw, ph)
         }
+        ctx.restore()
       } else if (ann.type === 'circle') {
         ctx.beginPath()
         ctx.ellipse(
@@ -253,7 +259,7 @@ export default function CanvasOverlay({
           topLeft.y + ph / 2,
           Math.abs(pw / 2),
           Math.abs(ph / 2),
-          0,
+          ((ann.rotation || 0) * Math.PI) / 180,
           0,
           2 * Math.PI,
         )
@@ -272,19 +278,23 @@ export default function CanvasOverlay({
         const fontSize = Math.max(8, pxFontSize)
         ctx.font = `${fontSize}px sans-serif`
         ctx.fillStyle = ann.color
+        ctx.save()
+        ctx.translate(topLeft.x, topLeft.y)
+        if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
         if (ann.type === 'link') {
           const text = ann.text || ann.url || 'Link'
-          ctx.fillText(text, topLeft.x, topLeft.y + fontSize)
+          ctx.fillText(text, 0, fontSize)
           const textWidth = ctx.measureText(text).width
           ctx.beginPath()
-          ctx.moveTo(topLeft.x, topLeft.y + fontSize + 2)
-          ctx.lineTo(topLeft.x + textWidth, topLeft.y + fontSize + 2)
+          ctx.moveTo(0, fontSize + 2)
+          ctx.lineTo(textWidth, fontSize + 2)
           ctx.strokeStyle = ann.color
           ctx.lineWidth = 1
           ctx.stroke()
         } else {
-          ctx.fillText(ann.text || '', topLeft.x, topLeft.y + fontSize)
+          ctx.fillText(ann.text || '', 0, fontSize)
         }
+        ctx.restore()
       }
     }
   }, [viewer])
@@ -396,6 +406,7 @@ export default function CanvasOverlay({
           stroke: ann.color,
           strokeWidth: Math.max(1, (ann.strokeWidth ?? 2) * viewer.viewport.getZoom()),
           strokeUniform: true,
+          angle: ann.rotation || 0,
         })
         const aObj = rect as AnnotatedObject
         aObj._annotationId = ann.id
@@ -415,6 +426,7 @@ export default function CanvasOverlay({
           stroke: ann.color,
           strokeWidth: Math.max(1, (ann.strokeWidth ?? 2) * viewer.viewport.getZoom()),
           strokeUniform: true,
+          angle: ann.rotation || 0,
         })
         const aObj = ellipse as AnnotatedObject
         aObj._annotationId = ann.id
@@ -434,6 +446,7 @@ export default function CanvasOverlay({
           fontSize: Math.max(10, pxFontSize),
           fill: ann.color,
           underline: ann.type === 'link',
+          angle: ann.rotation || 0,
         })
         const aObj = text as AnnotatedObject
         aObj._annotationId = ann.id
@@ -480,12 +493,19 @@ export default function CanvasOverlay({
         }
       }
 
-      const bound = obj.getBoundingRect()
+      // Use the object's direct properties instead of getBoundingRect() so that
+      // rotation angle and non-uniform scale (e.g. side-handle resize on ellipses)
+      // are captured correctly.  getBoundingRect() returns the axis-aligned bounding
+      // box which loses rotation and can misrepresent scaled ellipse dimensions.
+      const objLeft = obj.left ?? 0
+      const objTop = obj.top ?? 0
+      const scaledW = (obj.width ?? 0) * (obj.scaleX ?? 1)
+      const scaledH = (obj.height ?? 0) * (obj.scaleY ?? 1)
       const vpTopLeft = viewer.viewport.pointFromPixel(
-        new OpenSeadragon.Point(bound.left, bound.top),
+        new OpenSeadragon.Point(objLeft, objTop),
       )
       const vpBottomRight = viewer.viewport.pointFromPixel(
-        new OpenSeadragon.Point(bound.left + bound.width, bound.top + bound.height),
+        new OpenSeadragon.Point(objLeft + scaledW, objTop + scaledH),
       )
 
       const base: CanvasAnnotation = {
@@ -501,12 +521,14 @@ export default function CanvasOverlay({
 
       if (type === 'rect' || type === 'circle') {
         base.filled = aObj._filled ?? false
+        if (obj.angle) base.rotation = obj.angle
       }
 
       if (type === 'text' || type === 'link') {
         const textObj = obj as fabric.IText
         base.text = textObj.text || ''
         base.color = (textObj.fill as string) || '#000000'
+        if (obj.angle) base.rotation = obj.angle
         // Convert visual font size to viewport units using the bounding-box ratio.
         // vpWidth/pixelWidth is the conversion factor from pixels to viewport units.
         // The old formula (fontSize / zoom) was wrong — it produced values in
@@ -514,7 +536,7 @@ export default function CanvasOverlay({
         // (vpFontSize * pw / vpWidth) to multiply by containerWidth and produce
         // enormous pixel sizes (e.g. 60 000 px), rendering text off-screen.
         const visualFontSize = (textObj.fontSize ?? 16) * (textObj.scaleY ?? 1)
-        const pw = bound.width
+        const pw = scaledW
         base.vpFontSize = pw > 0
           ? visualFontSize * base.vpWidth / pw
           : visualFontSize / viewer.viewport.getZoom()
