@@ -1,6 +1,6 @@
-# Corgi Test Plan
+# HRIV Test Plan
 
-This document describes the manual test cases used to verify the Corgi application. All tests assume the app is running via `docker compose up --build` with a freshly seeded database (`docker compose down -v` first if needed).
+This document describes the manual test cases used to verify the HRIV application. All tests assume the app is running via `docker compose up --build` with a freshly seeded database (`docker compose down -v` first if needed).
 
 ## Prerequisites
 

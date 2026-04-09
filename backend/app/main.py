@@ -37,11 +37,11 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutting down", extra={"event": "app.shutdown"})
 
 
-app = FastAPI(title="Corgi Image Library API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="HRIV Image Library API", version="0.1.0", lifespan=lifespan)
 
 # CORS: read allowed origins from the CORS_ORIGINS env var (comma-separated).
 # Defaults to "*" for local development; production deployments should set
-# this to the actual frontend origin(s), e.g. "https://corgi.bcit.ca".
+# this to the actual frontend origin(s), e.g. "https://hriv.bcit.ca".
 _cors_origins = [
     o.strip() for o in settings.cors_origins.split(",") if o.strip()
 ] or ["*"]

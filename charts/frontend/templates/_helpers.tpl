@@ -1,8 +1,8 @@
-{{- define "corgi-frontend.name" -}}
+{{- define "hriv-frontend.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "corgi-frontend.fullname" -}}
+{{- define "hriv-frontend.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
@@ -15,15 +15,15 @@
 {{- end -}}
 {{- end -}}
 
-{{- define "corgi-frontend.labels" -}}
+{{- define "hriv-frontend.labels" -}}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
-app.kubernetes.io/name: {{ include "corgi-frontend.name" . }}
+app.kubernetes.io/name: {{ include "hriv-frontend.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
-{{- define "corgi-frontend.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "corgi-frontend.name" . }}
+{{- define "hriv-frontend.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "hriv-frontend.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}

@@ -1,18 +1,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "corgi-frontend.fullname" . }}
+  name: {{ include "hriv-frontend.fullname" . }}
   labels:
-    {{- include "corgi-frontend.labels" . | nindent 4 }}
+    {{- include "hriv-frontend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "corgi-frontend.selectorLabels" . | nindent 6 }}
+      {{- include "hriv-frontend.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "corgi-frontend.selectorLabels" . | nindent 8 }}
+        {{- include "hriv-frontend.selectorLabels" . | nindent 8 }}
       annotations:
         {{- /* Restart pods automatically when ConfigMap content changes */}}
         {{- range $m := (.Values.configMounts | default list) }}

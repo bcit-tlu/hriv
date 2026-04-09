@@ -1,6 +1,6 @@
 # OIDC / OAuth 2.0 — Identity Provider Setup
 
-CORGI supports OpenID Connect (OIDC) single sign-on so that every user
+HRIV supports OpenID Connect (OIDC) single sign-on so that every user
 authenticates through an external Identity Provider (IdP) instead of
 local email/password credentials.  Local login is kept as a fallback for
 admin bootstrap accounts.
@@ -15,10 +15,10 @@ admin bootstrap accounts.
 | `OIDC_ISSUER` | Yes (when enabled) | — | The IdP issuer URL, e.g. `https://login.microsoftonline.com/{tenant}/v2.0`. Must expose `/.well-known/openid-configuration`. |
 | `OIDC_CLIENT_ID` | Yes | — | OAuth 2.0 client / application ID registered with the IdP. |
 | `OIDC_CLIENT_SECRET` | Yes | — | OAuth 2.0 client secret. |
-| `OIDC_REDIRECT_URI` | Yes | — | The callback URL registered with the IdP, e.g. `https://corgi.bcit.ca/api/auth/oidc/callback`. |
+| `OIDC_REDIRECT_URI` | Yes | — | The callback URL registered with the IdP, e.g. `https://hriv.bcit.ca/api/auth/oidc/callback`. |
 | `OIDC_SCOPES` | No | `openid email profile` | Space-separated list of scopes to request. |
-| `OIDC_ROLE_MAPPING` | No | `{}` | JSON object mapping IdP group names to CORGI roles. See [Role Mapping](#role-mapping). |
-| `OIDC_POST_LOGIN_REDIRECT` | No | — | Frontend URL to redirect to after OIDC login (e.g. `https://corgi.bcit.ca`). Falls back to the first non-wildcard `CORS_ORIGINS` entry. |
+| `OIDC_ROLE_MAPPING` | No | `{}` | JSON object mapping IdP group names to HRIV roles. See [Role Mapping](#role-mapping). |
+| `OIDC_POST_LOGIN_REDIRECT` | No | — | Frontend URL to redirect to after OIDC login (e.g. `https://hriv.bcit.ca`). Falls back to the first non-wildcard `CORS_ORIGINS` entry. |
 | `OIDC_TRUST_EMAIL` | No | `false` | Set to `true` to skip the `email_verified` check when linking existing accounts by email. **Only enable this with trusted corporate IdPs** (e.g. Vault, internal LDAP) where all emails are known to be valid. Do not enable with public/self-registration IdPs. |
 
 All variables should be provided via Kubernetes Secrets or a `.env` file
@@ -32,7 +32,7 @@ in development.
    Keycloak, Okta, etc.).
 2. Set the **redirect / callback URI** to:
    ```
-   https://<your-corgi-domain>/api/auth/oidc/callback
+   https://<your-hriv-domain>/api/auth/oidc/callback
    ```
 3. Request the following **scopes**: `openid`, `email`, `profile`.
    If your IdP supports a `groups` claim, also request the scope that
@@ -45,12 +45,12 @@ in development.
 
 ## Role Mapping
 
-CORGI maps IdP group memberships to its three roles: `admin`,
+HRIV maps IdP group memberships to its three roles: `admin`,
 `instructor`, and `student`.  Users whose groups do not match any entry
 default to `student`.
 
 Configure `OIDC_ROLE_MAPPING` as a JSON object where keys are IdP group
-names and values are CORGI roles:
+names and values are HRIV roles:
 
 ```json
 {
@@ -66,7 +66,7 @@ group maps to exactly one role.
 > **Tip:** If the IdP does not emit a `groups` claim in the ID token,
 > existing users keep their current role and new users default to
 > `student`.  You can promote individual users to `admin` or
-> `instructor` through the CORGI admin UI and those promotions will be
+> `instructor` through the HRIV admin UI and those promotions will be
 > preserved across OIDC logins as long as the IdP does not supply
 > groups.
 
@@ -81,7 +81,7 @@ group maps to exactly one role.
    `GET /api/auth/oidc/callback` with an authorization code.
 4. The backend exchanges the code for tokens, extracts user info (sub,
    email, name, groups), upserts the user in the database (linking by
-   `oidc_subject`), and issues a CORGI JWT.
+   `oidc_subject`), and issues a HRIV JWT.
 5. The backend redirects to the frontend with the JWT in a URL
    fragment (`#oidc_token=...`) so the token is never sent to the
    server or recorded in access logs.  The frontend stores the token

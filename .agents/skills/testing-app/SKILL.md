@@ -1,4 +1,4 @@
-# Testing the Corgi Frontend
+# Testing the HRIV Frontend
 
 ## Local Development Setup
 

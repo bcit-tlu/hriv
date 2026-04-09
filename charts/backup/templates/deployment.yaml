@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "corgi-backup.fullname" . }}
+  name: {{ include "hriv-backup.fullname" . }}
   labels:
-    {{- include "corgi-backup.labels" . | nindent 4 }}
+    {{- include "hriv-backup.labels" . | nindent 4 }}
 spec:
   replicas: 1
   strategy:
     type: Recreate
   selector:
     matchLabels:
-      {{- include "corgi-backup.selectorLabels" . | nindent 6 }}
+      {{- include "hriv-backup.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "corgi-backup.selectorLabels" . | nindent 8 }}
+        {{- include "hriv-backup.selectorLabels" . | nindent 8 }}
     spec:
       containers:
         - name: backup
@@ -36,7 +36,7 @@ spec:
             - name: AZURE_STORAGE_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "corgi-backup.fullname" . }}-azure
+                  name: {{ include "hriv-backup.fullname" . }}-azure
                   key: AZURE_STORAGE_CONNECTION_STRING
             - name: AZURE_STORAGE_CONTAINER
               value: {{ .Values.env.AZURE_STORAGE_CONTAINER | quote }}
@@ -59,12 +59,12 @@ spec:
         {{- if .Values.persistence.data.enabled }}
         - name: data
           persistentVolumeClaim:
-            claimName: {{ .Values.persistence.data.existingClaim | default (printf "%s-data" (include "corgi-backup.fullname" .)) }}
+            claimName: {{ .Values.persistence.data.existingClaim | default (printf "%s-data" (include "hriv-backup.fullname" .)) }}
         {{- end }}
         {{- if .Values.persistence.backups.enabled }}
         - name: backups
           persistentVolumeClaim:
-            claimName: {{ include "corgi-backup.fullname" . }}-backups
+            claimName: {{ include "hriv-backup.fullname" . }}-backups
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

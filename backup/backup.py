@@ -1,4 +1,4 @@
-"""Corgi Disaster Recovery Backup Service.
+"""HRIV Disaster Recovery Backup Service.
 
 Standalone service that snapshots the PostgreSQL database and image
 filesystem on a cron schedule, uploads archives to Azure Blob Storage,
@@ -38,7 +38,7 @@ from croniter import croniter
 
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 logging.basicConfig(format=LOG_FORMAT, level=logging.INFO, stream=sys.stdout)
-log = logging.getLogger("corgi-backup")
+log = logging.getLogger("hriv-backup")
 
 
 def _env(name: str, default: str | None = None, required: bool = False) -> str:
@@ -50,7 +50,7 @@ def _env(name: str, default: str | None = None, required: bool = False) -> str:
 
 
 # Database
-DATABASE_URL: str = _env("DATABASE_URL", "postgresql://corgi:corgi@db:5432/corgi")
+DATABASE_URL: str = _env("DATABASE_URL", "postgresql://hriv:hriv@db:5432/hriv")
 
 # Filesystem
 DATA_DIR: str = _env("DATA_DIR", "/data")
@@ -58,7 +58,7 @@ DATA_DIR: str = _env("DATA_DIR", "/data")
 # Azure Blob Storage
 AZURE_STORAGE_CONNECTION_STRING: str = _env("AZURE_STORAGE_CONNECTION_STRING", "")
 AZURE_STORAGE_CONTAINER: str = _env("AZURE_STORAGE_CONTAINER", "")
-AZURE_BLOB_PREFIX: str = _env("AZURE_BLOB_PREFIX", "corgi-backups")
+AZURE_BLOB_PREFIX: str = _env("AZURE_BLOB_PREFIX", "hriv-backups")
 
 # Schedule & retention
 BACKUP_CRON_SCHEDULE: str = _env("BACKUP_CRON_SCHEDULE", "0 2 * * *")
@@ -77,9 +77,9 @@ def _parse_db_url(url: str) -> dict[str, str]:
     return {
         "host": parsed.hostname or "db",
         "port": str(parsed.port or 5432),
-        "user": parsed.username or "corgi",
+        "user": parsed.username or "hriv",
         "password": parsed.password or "",
-        "dbname": parsed.path.lstrip("/") or "corgi",
+        "dbname": parsed.path.lstrip("/") or "hriv",
     }
 
 
@@ -122,13 +122,13 @@ def run_backup() -> Path | None:
     Returns the local path to the archive, or *None* on failure.
     """
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    snapshot_name = f"corgi-backup-{timestamp}"
+    snapshot_name = f"hriv-backup-{timestamp}"
     log.info("Starting backup: %s", snapshot_name)
 
     db = _parse_db_url(DATABASE_URL)
     pg = _pg_env(db)
 
-    with tempfile.TemporaryDirectory(prefix="corgi-bak-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="hriv-bak-") as tmpdir:
         work = Path(tmpdir) / snapshot_name
         work.mkdir()
 
@@ -280,7 +280,7 @@ def _enforce_local_retention() -> None:
     if not local_dir.exists():
         return
 
-    archives = sorted(local_dir.glob("corgi-backup-*.tar.gz"), reverse=True)
+    archives = sorted(local_dir.glob("hriv-backup-*.tar.gz"), reverse=True)
     if len(archives) > BACKUP_RETENTION_COUNT:
         to_delete = archives[BACKUP_RETENTION_COUNT:]
         log.info(
@@ -306,7 +306,7 @@ def list_snapshots() -> list[dict]:
             log.info("No local backups found")
             return []
         snapshots = []
-        for f in sorted(local_dir.glob("corgi-backup-*.tar.gz"), reverse=True):
+        for f in sorted(local_dir.glob("hriv-backup-*.tar.gz"), reverse=True):
             snapshots.append({
                 "name": f.name,
                 "size": f.stat().st_size,
@@ -364,7 +364,7 @@ def run_restore(snapshot_name: str | None = None) -> bool:
             log.info("Using latest snapshot: %s", target["name"])
 
         # Download ---------------------------------------------------------------
-        with tempfile.TemporaryDirectory(prefix="corgi-restore-") as tmpdir:
+        with tempfile.TemporaryDirectory(prefix="hriv-restore-") as tmpdir:
             archive_path = Path(tmpdir) / target["name"]
             log.info("Downloading azure://%s/%s …", AZURE_STORAGE_CONTAINER, target["blob_name"])
             container = _blob_container_client()
@@ -380,7 +380,7 @@ def run_restore(snapshot_name: str | None = None) -> bool:
             fname = snapshot_name if snapshot_name.endswith(".tar.gz") else f"{snapshot_name}.tar.gz"
             archive_path = local_dir / fname
         else:
-            archives = sorted(local_dir.glob("corgi-backup-*.tar.gz"), reverse=True)
+            archives = sorted(local_dir.glob("hriv-backup-*.tar.gz"), reverse=True)
             if not archives:
                 log.error("No local backups found in %s", local_dir)
                 return False
@@ -397,7 +397,7 @@ def _restore_from_archive(archive_path: Path) -> bool:
     """Extract an archive and restore database + filesystem."""
     log.info("Restoring from %s …", archive_path.name)
 
-    with tempfile.TemporaryDirectory(prefix="corgi-restore-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="hriv-restore-") as tmpdir:
         # Extract ---------------------------------------------------------------
         log.info("Extracting archive …")
         with tarfile.open(str(archive_path), "r:gz") as tar:
@@ -515,7 +515,7 @@ def run_cron() -> None:
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
 
-    log.info("Corgi Backup Service started")
+    log.info("HRIV Backup Service started")
     log.info("  Schedule : %s", BACKUP_CRON_SCHEDULE)
     log.info("  Retention: %d snapshots", BACKUP_RETENTION_COUNT)
     log.info("  Azure container: %s", AZURE_STORAGE_CONTAINER or "(not configured – local only)")

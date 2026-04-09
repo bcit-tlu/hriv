@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-    repository: ghcr.io/bcit-tlu/corgi/backend
+    repository: ghcr.io/bcit-tlu/hriv/backend
     tag: 0.3
     pullPolicy: IfNotPresent
 
@@ -12,7 +12,7 @@ service:
 env:
     SOURCE_IMAGES_DIR: /data/source_images
     TILES_DIR: /data/tiles
-    GITHUB_REPO: "https://github.com/bcit-tlu/corgi"
+    GITHUB_REPO: "https://github.com/bcit-tlu/hriv"
 
 # Stable JWT signing secret shared across all Uvicorn workers.
 # Leave blank to auto-generate a random value at install time.
@@ -22,8 +22,8 @@ jwtSecret: ""
 cnpg:
     instances: 1
     imageName: ghcr.io/cloudnative-pg/postgresql:16
-    database: corgi
-    owner: corgi
+    database: hriv
+    owner: hriv
     devPassword: password1234
     enableSuperuserAccess: true
     storage:
@@ -36,9 +36,9 @@ vault:
     kvMount: secret
     authRef: vault-auth
     refreshAfter: 1h
-    dbAppSecretPath: corgi/db-app
-    dbSuperuserSecretPath: corgi/db-superuser
-    githubPatSecretPath: corgi/github-pat
+    dbAppSecretPath: hriv/db-app
+    dbSuperuserSecretPath: hriv/db-superuser
+    githubPatSecretPath: hriv/github-pat
 
 # Nginx sidecar for serving /api/tiles directly from the PVC,
 # bypassing the Python process.  Tiles are immutable and cache-friendly.

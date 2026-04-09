@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-    repository: ghcr.io/bcit-tlu/corgi/frontend
+    repository: ghcr.io/bcit-tlu/hriv/frontend
     tag: 0.6
     pullPolicy: IfNotPresent
 
@@ -15,7 +15,7 @@ service:
 # that block non-443 traffic on public/node IPs.
 # Set env.BACKEND_URL to override the auto-constructed URL entirely.
 backend:
-    host: corgi-backend
+    host: hriv-backend
     port: 8000
     # Namespace where the backend service lives.  When empty the chart
     # uses .Release.Namespace (i.e. the namespace you pass to

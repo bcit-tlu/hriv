@@ -1,4 +1,4 @@
--- Corgi Image Library – seed data
+-- HRIV Image Library – seed data
 -- This file is mounted into the PostgreSQL container at
 -- /docker-entrypoint-initdb.d/ and executed automatically on first startup.
 

@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "corgi-backup"
+name = "hriv-backup"
 version = "0.1.0"
-description = "Corgi Disaster Recovery Backup Service"
+description = "HRIV Disaster Recovery Backup Service"
 authors = ["Devin AI"]
 
 [tool.poetry.dependencies]

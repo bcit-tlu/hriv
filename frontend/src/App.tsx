@@ -1995,8 +1995,8 @@ export default function App() {
                         href={
                             import.meta.env.VITE_APP_VERSION &&
                             import.meta.env.VITE_APP_VERSION !== "dev"
-                                ? `https://github.com/bcit-tlu/corgi/releases`
-                                : `https://github.com/bcit-tlu/corgi`
+                                ? `https://github.com/bcit-tlu/hriv/releases`
+                                : `https://github.com/bcit-tlu/hriv`
                         }
                         target="_blank"
                         rel="noopener noreferrer"

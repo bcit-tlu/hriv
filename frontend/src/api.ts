@@ -1,6 +1,6 @@
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
-let _token: string | null = localStorage.getItem('corgi_token')
+let _token: string | null = localStorage.getItem('hriv_token')
 
 // Unique per browser-tab identifier sent on every API call.  Allows the
 // backend audit log to correlate all requests from a single tab, even when
@@ -10,9 +10,9 @@ const SESSION_ID = crypto.randomUUID()
 export function setToken(token: string | null): void {
   _token = token
   if (token) {
-    localStorage.setItem('corgi_token', token)
+    localStorage.setItem('hriv_token', token)
   } else {
-    localStorage.removeItem('corgi_token')
+    localStorage.removeItem('hriv_token')
   }
 }
 
@@ -528,7 +528,7 @@ export function exportDatabase(): Promise<void> {
     .then((blob) => {
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob)
-      a.download = 'corgi-export.json'
+      a.download = 'hriv-export.json'
       a.click()
       URL.revokeObjectURL(a.href)
     })

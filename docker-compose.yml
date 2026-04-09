@@ -2,9 +2,9 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: corgi
-      POSTGRES_USER: corgi
-      POSTGRES_PASSWORD: corgi
+      POSTGRES_DB: hriv
+      POSTGRES_USER: hriv
+      POSTGRES_PASSWORD: hriv
     ports:
       - 5432:5432
     volumes:
@@ -12,7 +12,7 @@ services:
       - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
       - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U corgi"]
+      test: ["CMD-SHELL", "pg_isready -U hriv"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -29,7 +29,7 @@ services:
     env_file:
       - ./backend/.env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://corgi:corgi@db:5432/corgi
+      - DATABASE_URL=postgresql+asyncpg://hriv:hriv@db:5432/hriv
       - REDIS_URL=redis://redis:6379
       - SOURCE_IMAGES_DIR=/data/source_images
       - TILES_DIR=/data/tiles
@@ -92,14 +92,14 @@ services:
       - image_data:/data
       - backup_data:/backups
     environment:
-      - DATABASE_URL=postgresql://corgi:corgi@db:5432/corgi
+      - DATABASE_URL=postgresql://hriv:hriv@db:5432/hriv
       - DATA_DIR=/data
       - BACKUP_CRON_SCHEDULE=0 2 * * *
       - BACKUP_RETENTION_COUNT=30
       # Azure Blob Storage – uncomment and fill in to enable cloud storage:
       # - AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net
-      # - AZURE_STORAGE_CONTAINER=corgi-backups
-      # - AZURE_BLOB_PREFIX=corgi-backups
+      # - AZURE_STORAGE_CONTAINER=hriv-backups
+      # - AZURE_BLOB_PREFIX=hriv-backups
     depends_on:
       db:
         condition: service_healthy
