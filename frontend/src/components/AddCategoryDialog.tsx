@@ -54,7 +54,11 @@ export default function AddCategoryDialog({
           value={label}
           onChange={(e) => setLabel(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') handleSubmit()
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              e.stopPropagation()
+              handleSubmit()
+            }
           }}
         />
       </DialogContent>
