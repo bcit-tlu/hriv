@@ -7,11 +7,12 @@ RUN apt-get update \
        libvips-dev pkg-config gcc \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir poetry \
-    && poetry config virtualenvs.create false
+RUN python -m venv /opt/poetry-venv \
+    && /opt/poetry-venv/bin/pip install --no-cache-dir poetry poetry-plugin-export
 
 COPY pyproject.toml poetry.lock ./
-RUN poetry install --only main --no-root --no-interaction
+RUN /opt/poetry-venv/bin/poetry export --only main -f requirements.txt -o requirements.txt \
+    && pip install --no-cache-dir -r requirements.txt
 
 # ── Stage 2: Runtime base (slim, no compiler or dev headers) ─
 FROM python:3.13-slim AS base
