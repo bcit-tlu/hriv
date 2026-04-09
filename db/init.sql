@@ -1,4 +1,4 @@
--- Corgi Image Library – schema initialization
+-- HRIV Image Library – schema initialization
 -- Executed before seed.sql by PostgreSQL on first startup.
 
 CREATE TABLE IF NOT EXISTS programs (

@@ -1,6 +1,6 @@
-# Testing Corgi Frontend
+# Testing HRIV Frontend
 
-How to run and test the Corgi frontend application locally.
+How to run and test the HRIV frontend application locally.
 
 ## Prerequisites
 

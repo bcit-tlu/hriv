@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# cli-upload.sh — Upload images (including large TIFFs) to Corgi via the API.
+# cli-upload.sh — Upload images (including large TIFFs) to HRIV via the API.
 #
 # Usage:
 #   # Single image upload
@@ -36,9 +36,9 @@
 #
 set -euo pipefail
 
-BASE_URL="${CORGI_URL:-http://localhost:8000}"
-EMAIL="${CORGI_EMAIL:-admin@bcit.ca}"
-PASSWORD="${CORGI_PASSWORD:-password}"
+BASE_URL="${HRIV_URL:-http://localhost:8000}"
+EMAIL="${HRIV_EMAIL:-admin@bcit.ca}"
+PASSWORD="${HRIV_PASSWORD:-password}"
 NAME=""
 CATEGORY_ID=""
 COPYRIGHT=""

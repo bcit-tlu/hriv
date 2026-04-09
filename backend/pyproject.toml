@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "corgi-backend"
+name = "hriv-backend"
 version = "0.1.0"
-description = "Corgi Image Library API"
+description = "HRIV Image Library API"
 authors = ["Devin AI"]
 package-mode = false
 

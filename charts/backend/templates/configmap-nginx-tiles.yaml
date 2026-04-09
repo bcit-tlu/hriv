@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "corgi-backend.fullname" . }}-nginx-tiles
+  name: {{ include "hriv-backend.fullname" . }}-nginx-tiles
   labels:
-    {{- include "corgi-backend.labels" . | nindent 4 }}
+    {{- include "hriv-backend.labels" . | nindent 4 }}
 data:
   default.conf: |
     server {

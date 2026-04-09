@@ -1,6 +1,6 @@
-# Corgi Disaster Recovery Backup Service
+# HRIV Disaster Recovery Backup Service
 
-Standalone service that snapshots the Corgi PostgreSQL database and image filesystem on a configurable cron schedule, stores archives in Azure Blob Storage, and supports full restore after a fresh redeployment.
+Standalone service that snapshots the HRIV PostgreSQL database and image filesystem on a configurable cron schedule, stores archives in Azure Blob Storage, and supports full restore after a fresh redeployment.
 
 ## Quick Start
 
@@ -35,7 +35,7 @@ docker compose --profile backup run --rm backup restore
 ### Restore a specific snapshot
 
 ```bash
-docker compose --profile backup run --rm backup restore corgi-backup-20260101-020000
+docker compose --profile backup run --rm backup restore hriv-backup-20260101-020000
 ```
 
 ## What's in a Snapshot
@@ -54,13 +54,13 @@ All settings are controlled via environment variables in `docker-compose.yml`:
 
 | Variable | Default | Description |
 |---|---|---|
-| `DATABASE_URL` | `postgresql://corgi:corgi@db:5432/corgi` | PostgreSQL connection string |
+| `DATABASE_URL` | `postgresql://hriv:hriv@db:5432/hriv` | PostgreSQL connection string |
 | `DATA_DIR` | `/data` | Path to the image data volume |
 | `BACKUP_CRON_SCHEDULE` | `0 2 * * *` | Cron expression for scheduled backups |
 | `BACKUP_RETENTION_COUNT` | `30` | Number of snapshots to keep (older ones are deleted) |
 | `AZURE_STORAGE_CONNECTION_STRING` | *(empty)* | Azure Blob Storage connection string |
 | `AZURE_STORAGE_CONTAINER` | *(empty)* | Azure Blob Storage container name |
-| `AZURE_BLOB_PREFIX` | `corgi-backups` | Blob name prefix (folder) inside the container |
+| `AZURE_BLOB_PREFIX` | `hriv-backups` | Blob name prefix (folder) inside the container |
 
 ### Local-Only Mode
 
@@ -83,7 +83,7 @@ After a fresh redeployment (new server, new Docker volumes):
 docker compose up -d db
 
 # 2. Wait for it to be healthy
-docker compose exec db pg_isready -U corgi
+docker compose exec db pg_isready -U hriv
 
 # 3. Restore the latest snapshot (database + filesystem)
 docker compose --profile backup run --rm backup restore

@@ -1,4 +1,4 @@
-# Testing Corgi App
+# Testing HRIV App
 
 ## Local Setup
 
@@ -50,7 +50,7 @@ All use password: `password`
    from playwright.async_api import async_playwright
    async with async_playwright() as p:
        browser = await p.chromium.connect_over_cdp("http://localhost:29229")
-       # Find the Corgi page
+       # Find the HRIV page
        page = [pg for ctx in browser.contexts for pg in ctx.pages if "localhost:5173" in pg.url][0]
        async with page.expect_file_chooser() as fc_info:
            await page.click('text=browse to upload')

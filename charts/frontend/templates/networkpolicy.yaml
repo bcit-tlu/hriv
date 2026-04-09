@@ -2,13 +2,13 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: {{ include "corgi-frontend.fullname" . }}
+  name: {{ include "hriv-frontend.fullname" . }}
   labels:
-    {{- include "corgi-frontend.labels" . | nindent 4 }}
+    {{- include "hriv-frontend.labels" . | nindent 4 }}
 spec:
   podSelector:
     matchLabels:
-      {{- include "corgi-frontend.selectorLabels" . | nindent 6 }}
+      {{- include "hriv-frontend.selectorLabels" . | nindent 6 }}
   policyTypes:
     - Ingress
     - Egress

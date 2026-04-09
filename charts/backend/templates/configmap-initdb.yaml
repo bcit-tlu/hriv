@@ -1,12 +1,12 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "corgi-backend.fullname" . }}-initdb
+  name: {{ include "hriv-backend.fullname" . }}-initdb
   labels:
-    {{- include "corgi-backend.labels" . | nindent 4 }}
+    {{- include "hriv-backend.labels" . | nindent 4 }}
 data:
   init.sql: |
-    -- Corgi Image Library – schema initialization
+    -- HRIV Image Library – schema initialization
     CREATE TABLE IF NOT EXISTS programs (
         id            SERIAL PRIMARY KEY,
         name          VARCHAR(255) NOT NULL UNIQUE,
@@ -115,7 +115,7 @@ data:
       GRANT ALL PRIVILEGES ON SEQUENCES TO {{ .Values.cnpg.owner | quote }};
 
   seed.sql: |
-    -- Corgi Image Library – seed data
+    -- HRIV Image Library – seed data
 
     -- Programs
     INSERT INTO programs (id, name)

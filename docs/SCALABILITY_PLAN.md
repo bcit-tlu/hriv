@@ -1,4 +1,4 @@
-# CORGI Scalability Implementation Plan
+# HRIV Scalability Implementation Plan
 
 **Target load:** ~30 concurrent students (shared account) + 2–3 instructors,
 with peak doubling to ~60 students + 5–6 instructors.
@@ -63,7 +63,7 @@ sessions know where to start.
   Use `authlib` or manual OIDC flow with `httpx`.
 - [x] **3.2 User model migration** — Add `oidc_subject` column to `users`
   table for IdP user mapping.  `password_hash` is already nullable.
-- [x] **3.3 IdP role mapping** — Map IdP groups/claims to CORGI roles
+- [x] **3.3 IdP role mapping** — Map IdP groups/claims to HRIV roles
   (e.g. `bcit-tlu-instructors` → `instructor`).  Default unmapped users to
   `student`.
 - [x] **3.4 Frontend OIDC login** — Add "Sign in with BCIT" button on
@@ -115,5 +115,5 @@ sessions know where to start.
    check off all sub-items, and commit the update in the same PR as the code
    changes.
 3. **Need context?**  The full analysis is in the PR description of the Phase 1
-   PR and in the attached `corgi-scalability-analysis.md` shared with the
+   PR and in the attached `hriv-scalability-analysis.md` shared with the
    project owner.

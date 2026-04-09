@@ -4,18 +4,18 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "corgi-backend.fullname" . }}
+  name: {{ include "hriv-backend.fullname" . }}
   labels:
-    {{- include "corgi-backend.labels" . | nindent 4 }}
+    {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "corgi-backend.selectorLabels" . | nindent 6 }}
+      {{- include "hriv-backend.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "corgi-backend.selectorLabels" . | nindent 8 }}
+        {{- include "hriv-backend.selectorLabels" . | nindent 8 }}
     spec:
       containers:
         - name: backend
@@ -29,7 +29,7 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "corgi-backend.fullname" . }}-db-app
+                  name: {{ include "hriv-backend.fullname" . }}-db-app
                   key: uri
             - name: SOURCE_IMAGES_DIR
               value: {{ .Values.env.SOURCE_IMAGES_DIR | quote }}
@@ -39,7 +39,7 @@ spec:
             - name: GITHUB_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "corgi-backend.fullname" . }}-github-pat
+                  name: {{ include "hriv-backend.fullname" . }}-github-pat
                   key: token
             {{- end }}
             - name: GITHUB_REPO
@@ -47,7 +47,7 @@ spec:
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "corgi-backend.fullname" . }}-jwt
+                  name: {{ include "hriv-backend.fullname" . }}-jwt
                   key: secret
           livenessProbe:
             httpGet:
@@ -106,12 +106,12 @@ spec:
         {{- if .Values.persistence.enabled }}
         - name: data
           persistentVolumeClaim:
-            claimName: {{ include "corgi-backend.fullname" . }}-data
+            claimName: {{ include "hriv-backend.fullname" . }}-data
         {{- end }}
         {{- if .Values.tileSidecar.enabled }}
         - name: nginx-tiles-config
           configMap:
-            name: {{ include "corgi-backend.fullname" . }}-nginx-tiles
+            name: {{ include "hriv-backend.fullname" . }}-nginx-tiles
         {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}

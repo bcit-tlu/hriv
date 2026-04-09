@@ -1,4 +1,4 @@
-"""Structured JSON logging configuration for the Corgi backend.
+"""Structured JSON logging configuration for the HRIV backend.
 
 Emits newline-delimited JSON (NDJSON) to stdout so that cluster operators can
 easily differentiate application logs from nginx access logs and feed them

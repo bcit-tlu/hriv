@@ -38,7 +38,7 @@ if _settings.oidc_enabled:
 
 
 def _parse_role_mapping() -> dict[str, str]:
-    """Return the IdP-group → CORGI-role mapping from settings."""
+    """Return the IdP-group → HRIV-role mapping from settings."""
     try:
         mapping = json.loads(_settings.oidc_role_mapping)
         if isinstance(mapping, dict):
@@ -52,7 +52,7 @@ def _parse_role_mapping() -> dict[str, str]:
 
 
 def _resolve_role(groups: list[str]) -> str | None:
-    """Map IdP groups/claims to a CORGI role.
+    """Map IdP groups/claims to a HRIV role.
 
     The first matching group in the mapping wins.  Returns ``None`` when
     no group matched any mapping entry so callers can distinguish

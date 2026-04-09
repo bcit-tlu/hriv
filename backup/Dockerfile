@@ -1,4 +1,4 @@
-# Corgi Disaster Recovery Backup Service
+# HRIV Disaster Recovery Backup Service
 FROM python:3.13-slim-bookworm
 
 WORKDIR /app

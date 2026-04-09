@@ -1,8 +1,8 @@
-{{- define "corgi-backup.name" -}}
+{{- define "hriv-backup.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" -}}
 {{- end -}}
 
-{{- define "corgi-backup.fullname" -}}
+{{- define "hriv-backup.fullname" -}}
 {{- if .Values.fullnameOverride -}}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" -}}
 {{- else -}}
@@ -15,15 +15,15 @@
 {{- end -}}
 {{- end -}}
 
-{{- define "corgi-backup.labels" -}}
+{{- define "hriv-backup.labels" -}}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
-app.kubernetes.io/name: {{ include "corgi-backup.name" . }}
+app.kubernetes.io/name: {{ include "hriv-backup.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end -}}
 
-{{- define "corgi-backup.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "corgi-backup.name" . }}
+{{- define "hriv-backup.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "hriv-backup.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}

@@ -66,8 +66,16 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   // On mount, validate stored token by calling a protected endpoint.
   // If the token is expired or the DB was recreated, clear session.
+  // Migrate legacy localStorage key from previous "corgi" branding
   useEffect(() => {
-    const stored = localStorage.getItem('corgi_user')
+    if (localStorage.getItem('corgi_user') && !localStorage.getItem('hriv_user')) {
+      localStorage.setItem('hriv_user', localStorage.getItem('corgi_user')!)
+      localStorage.removeItem('corgi_user')
+    }
+  }, [])
+
+  useEffect(() => {
+    const stored = localStorage.getItem('hriv_user')
     const token = getToken()
     if (!token || !stored) {
       // If we just got an OIDC token but have no stored user yet, still
@@ -83,7 +91,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         JSON.parse(stored)
       } catch {
         setToken(null)
-        localStorage.removeItem('corgi_user')
+        localStorage.removeItem('hriv_user')
         setLoading(false)
         return
       }
@@ -98,17 +106,17 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           const data = await res.json()
           const freshUser = toUser(data)
           setCurrentUser(freshUser)
-          localStorage.setItem('corgi_user', JSON.stringify(freshUser))
+          localStorage.setItem('hriv_user', JSON.stringify(freshUser))
         } else {
           // Token invalid or user no longer exists — clear session
           setToken(null)
-          localStorage.removeItem('corgi_user')
+          localStorage.removeItem('hriv_user')
         }
       })
       .catch(() => {
         // Network error — clear session to be safe
         setToken(null)
-        localStorage.removeItem('corgi_user')
+        localStorage.removeItem('hriv_user')
       })
       .finally(() => {
         setLoading(false)
@@ -128,7 +136,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       setToken(resp.access_token)
       const user = toUser(resp.user)
       setCurrentUser(user)
-      localStorage.setItem('corgi_user', JSON.stringify(user))
+      localStorage.setItem('hriv_user', JSON.stringify(user))
     },
     [],
   )
@@ -136,7 +144,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setCurrentUser(null)
     setToken(null)
-    localStorage.removeItem('corgi_user')
+    localStorage.removeItem('hriv_user')
   }, [])
 
   const addUser = useCallback(
@@ -160,7 +168,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         if (currentUser?.id === userId) {
           setCurrentUser(null)
           setToken(null)
-          localStorage.removeItem('corgi_user')
+          localStorage.removeItem('hriv_user')
         }
       } catch (err) {
         console.error('Failed to delete user', err)

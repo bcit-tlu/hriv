@@ -1,22 +1,22 @@
 image:
-  repository: ghcr.io/bcit-tlu/corgi-backup
+  repository: ghcr.io/bcit-tlu/hriv-backup
   tag: latest
   pullPolicy: IfNotPresent
 
 # Name of the CNPG-generated Secret containing the database URI.
 # This is the <cluster>-app secret created by the backend chart's CNPG Cluster.
-cnpgSecretName: corgi-backend-db-app
+cnpgSecretName: hriv-backend-db-app
 
 # Pod label used for pod affinity when sharing the backend's RWO data PVC.
 # Ensures the backup pod is co-located on the same node as the backend.
-colocateWithPodLabel: corgi-backend
+colocateWithPodLabel: hriv-backend
 
 env:
   DATA_DIR: /data
   BACKUP_CRON_SCHEDULE: "0 2 * * *"
   BACKUP_RETENTION_COUNT: "30"
   AZURE_STORAGE_CONTAINER: ""
-  AZURE_BLOB_PREFIX: corgi-backups
+  AZURE_BLOB_PREFIX: hriv-backups
 
 # Vault Secrets Operator integration
 vault:
@@ -24,7 +24,7 @@ vault:
   kvMount: secret
   authRef: vault-auth
   refreshAfter: 1h
-  azureSecretPath: corgi/azure-storage
+  azureSecretPath: hriv/azure-storage
 
 persistence:
   data:

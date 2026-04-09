@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    database_url: str = "postgresql+asyncpg://corgi:corgi@db:5432/corgi"
+    database_url: str = "postgresql+asyncpg://hriv:hriv@db:5432/hriv"
     source_images_dir: str = "/data/source_images"
     tiles_dir: str = "/data/tiles"
     cors_origins: str = "*"
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     oidc_client_secret: str = ""
     oidc_redirect_uri: str = ""
     oidc_scopes: str = "openid email profile"
-    oidc_role_mapping: str = "{}"  # JSON: {"idp-group": "corgi-role"}
+    oidc_role_mapping: str = "{}"  # JSON: {"idp-group": "hriv-role"}
     oidc_post_login_redirect: str = ""  # Frontend URL to redirect to after OIDC login
     oidc_trust_email: bool = False  # Skip email_verified check (for IdPs like Vault that don't emit it)
 

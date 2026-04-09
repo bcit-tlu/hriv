@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "corgi-backend.fullname" . }}-data
+  name: {{ include "hriv-backend.fullname" . }}-data
   labels:
-    {{- include "corgi-backend.labels" . | nindent 4 }}
+    {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
   storageClassName: {{ .Values.persistence.storageClass }}
   accessModes:

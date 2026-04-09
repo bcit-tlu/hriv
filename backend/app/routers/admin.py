@@ -172,7 +172,7 @@ async def export_database(
         content=content,
         media_type="application/json",
         headers={
-            "Content-Disposition": "attachment; filename=corgi-export.json",
+            "Content-Disposition": "attachment; filename=hriv-export.json",
         },
     )
 
@@ -545,7 +545,7 @@ async def export_files(
         )
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    filename = f"corgi-files-{timestamp}.tar.gz"
+    filename = f"hriv-files-{timestamp}.tar.gz"
 
     # Write the archive to a temp file in a worker thread so we don't
     # block the async event loop or hold the full archive in memory.
@@ -597,7 +597,7 @@ async def import_files(
 
     data_dir = Path(settings.tiles_dir).parent  # /data
 
-    with tempfile.TemporaryDirectory(prefix="corgi-import-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="hriv-import-") as tmpdir:
         # Stream the upload to a temporary file (handles large archives).
         # This uses ``await file.read()`` and must stay in the async handler.
         tmp_archive = Path(tmpdir) / "upload.tar.gz"

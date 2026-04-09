@@ -1,4 +1,4 @@
-# Corgi
+# HRIV
 
 High-resolution image viewer powered by [OpenSeaDragon](https://openseadragon.github.io/).
 
