@@ -129,12 +129,35 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
     # the ID token and populates token_data["userinfo"] when available.
     userinfo = token_data.get("userinfo")
 
+    # Log the raw token keys and userinfo for debugging IdP claim issues.
+    _token_keys = sorted(k for k in token_data if k != "userinfo")
+    logger.info(
+        "OIDC token exchange succeeded",
+        extra={
+            "event": "oidc.token_received",
+            "token_keys": _token_keys,
+            "userinfo_present": userinfo is not None,
+            "userinfo_claims": sorted(userinfo.keys()) if userinfo and hasattr(userinfo, "keys") else None,
+        },
+    )
+
     if userinfo is None:
         # Fall back to the userinfo endpoint
         try:
             resp = await client.get("userinfo", token=token_data)
             userinfo = resp.json()
-        except Exception:
+            logger.info(
+                "OIDC userinfo fallback succeeded",
+                extra={
+                    "event": "oidc.userinfo_fallback",
+                    "claims": sorted(userinfo.keys()) if hasattr(userinfo, "keys") else None,
+                },
+            )
+        except Exception as exc:
+            logger.error(
+                "OIDC userinfo endpoint fallback failed",
+                extra={"event": "oidc.userinfo_fallback_failed", "error": str(exc)},
+            )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Could not retrieve user information from IdP",
@@ -145,9 +168,23 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
     name: str = userinfo.get("name") or userinfo.get("preferred_username") or email
 
     if not sub or not email:
+        # Log all available claim keys so admins can diagnose IdP template
+        # configuration issues without needing to decode the raw ID token.
+        _available = sorted(userinfo.keys()) if hasattr(userinfo, "keys") else []
         logger.warning(
             "OIDC callback missing required claims",
-            extra={"event": "oidc.missing_claims", "sub": sub, "email": email},
+            extra={
+                "event": "oidc.missing_claims",
+                "sub": sub,
+                "email": email,
+                "display_name": name,
+                "available_claims": _available,
+                "hint": "Ensure the IdP OIDC scope templates include 'email' "
+                        "and 'sub' claims. For Vault, check that "
+                        "vault_identity_oidc_scope resources exist for 'email' "
+                        "and 'profile', and that the provider's "
+                        "scopes_supported includes them.",
+            },
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
