@@ -50,6 +50,7 @@ coverage/
 # Package managers
 composer.lock
 package-lock.json
+!frontend/package-lock.json
 yarn.lock
 
 # Local scratch / caches
@@ -69,6 +70,7 @@ app-chart/**
 # Secrets
 #**/secrets*
 .env
+!backend/.env
 
 # Logs
 *.log
