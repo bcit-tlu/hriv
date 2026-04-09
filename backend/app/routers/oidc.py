@@ -122,7 +122,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"OIDC authentication failed: {exc}",
+            detail="OIDC authentication failed",
         )
 
     # Extract user info — authlib's authorize_access_token already parses
@@ -188,8 +188,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="IdP did not return required claims (sub, email). "
-                   f"Available claims: {_available}",
+            detail="IdP did not return required claims (sub, email)",
         )
 
     # Resolve role from IdP groups — None means no group matched a mapping
