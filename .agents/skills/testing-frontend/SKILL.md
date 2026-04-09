@@ -72,7 +72,7 @@ How to run and test the HRIV frontend application locally.
 - Category dropdown works the same way
 
 ### Footer
-- The footer contains a link "BCIT Teaching and Learning Unit" pointing to https://github.com/bcit-tlu
+- The footer contains a link "BCIT Teaching and Learning Unit" pointing to https://www.bcit.ca/learning-teaching-centre/
 - Visible on all pages
 
 ## Testing Tips
