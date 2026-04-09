@@ -9,7 +9,107 @@ if "pyvips" not in sys.modules:
     sys.modules["pyvips"] = MagicMock()
     sys.modules["pyvips.enums"] = MagicMock()
 
-from app.processing import generate_tiles, process_source_image
+from app.processing import (
+    ProgressTracker,
+    _estimate_tile_count,
+    generate_tiles,
+    process_source_image,
+)
+
+
+# ── ProgressTracker tests ────────────────────────────────
+
+
+def test_progress_tracker_initial_values() -> None:
+    """ProgressTracker starts at 0 with empty message."""
+    tracker = ProgressTracker()
+    progress, message = tracker.get()
+    assert progress == 0
+    assert message == ""
+
+
+def test_progress_tracker_set_and_get() -> None:
+    """set() updates progress and message; get() returns them."""
+    tracker = ProgressTracker()
+    tracker.set(42, "Generating tiles")
+    progress, message = tracker.get()
+    assert progress == 42
+    assert message == "Generating tiles"
+
+
+def test_progress_tracker_empty_message_preserves_previous() -> None:
+    """set() with empty message keeps the previous message."""
+    tracker = ProgressTracker()
+    tracker.set(10, "Loading")
+    tracker.set(50)  # no message
+    progress, message = tracker.get()
+    assert progress == 50
+    assert message == "Loading"
+
+
+def test_progress_tracker_thread_safety() -> None:
+    """Concurrent set/get calls don't corrupt state."""
+    import threading
+
+    tracker = ProgressTracker()
+    errors: list[str] = []
+
+    def writer() -> None:
+        for i in range(200):
+            tracker.set(i % 101, f"step-{i}")
+
+    def reader() -> None:
+        for _ in range(200):
+            p, m = tracker.get()
+            if not (0 <= p <= 200):
+                errors.append(f"bad progress: {p}")
+            if not isinstance(m, str):
+                errors.append(f"bad message type: {type(m)}")
+
+    threads = [threading.Thread(target=writer) for _ in range(3)]
+    threads += [threading.Thread(target=reader) for _ in range(3)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert errors == []
+
+
+# ── _estimate_tile_count tests ───────────────────────────
+
+
+def test_estimate_tile_count_1x1() -> None:
+    """A 1x1 image has exactly 1 tile (the level-0 tile)."""
+    assert _estimate_tile_count(1, 1) == 1
+
+
+def test_estimate_tile_count_small_image() -> None:
+    """An image smaller than tile_size produces 1 tile per level."""
+    # 100x100 with default tile_size=254 -> each level is a single tile
+    count = _estimate_tile_count(100, 100)
+    assert count >= 1
+    # 100x100 -> levels: 100x100, 50x50, 25x25, 13x13, 7x7, 4x4, 2x2, 1x1
+    # each level has exactly 1 tile since all <= 254
+    assert count == 8
+
+
+def test_estimate_tile_count_large_image() -> None:
+    """A 1024x768 image produces a reasonable number of tiles."""
+    count = _estimate_tile_count(1024, 768)
+    # Should have multiple tiles at the highest resolution level
+    assert count > 10
+
+
+def test_estimate_tile_count_custom_tile_size() -> None:
+    """Custom tile_size changes the count."""
+    default = _estimate_tile_count(1024, 1024)
+    smaller_tiles = _estimate_tile_count(1024, 1024, tile_size=128)
+    # Smaller tiles -> more tiles
+    assert smaller_tiles > default
+
+
+# ── generate_tiles tests ─────────────────────────────────
 
 
 def test_generate_tiles_calls_pyvips(tmp_path) -> None:
