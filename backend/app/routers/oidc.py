@@ -4,13 +4,14 @@ Provides ``/api/auth/oidc/login`` (redirect to IdP) and
 ``/api/auth/oidc/callback`` (exchange code, upsert user, issue JWT).
 """
 
+import html as _html
 import json
 import logging
 from datetime import datetime, timezone
 
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
+from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -299,8 +300,29 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
             detail="OIDC post-login redirect is not configured. "
                    "Set OIDC_POST_LOGIN_REDIRECT or a non-wildcard CORS_ORIGINS.",
         )
-    # Use a URL fragment (#) instead of a query parameter (?) so the JWT
-    # is never sent to the server and does not appear in access logs.
-    redirect_url = f"{frontend_origin.rstrip('/')}/#oidc_token={jwt_token}"
+    # Deliver the JWT to the frontend via a URL fragment (#oidc_token=…).
+    # A fragment is used instead of a query parameter so the token never
+    # appears in server access logs.
+    #
+    # We use a small HTML page with a client-side redirect rather than an
+    # HTTP 302 because some browsers / proxy configurations strip the
+    # fragment identifier from the Location header of a 302 response,
+    # which causes the frontend to never receive the token.
+    target_url = f"{frontend_origin.rstrip('/')}/#oidc_token={jwt_token}"
 
-    return RedirectResponse(url=redirect_url, status_code=status.HTTP_302_FOUND)
+    html = (
+        '<!DOCTYPE html>'
+        '<html><head><meta charset="utf-8"><title>Signing in\u2026</title></head>'
+        '<body><p>Signing in\u2026</p>'
+        '<script>window.location.replace(' + json.dumps(target_url).replace('<', '\\u003c') + ');</script>'
+        '<noscript><p>JavaScript is required. '
+        '<a href="' + _html.escape(frontend_origin.rstrip('/'), quote=True) + '/">Return to application</a>'
+        '</p></noscript></body></html>'
+    )
+    return HTMLResponse(
+        content=html,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, private",
+            "Pragma": "no-cache",
+        },
+    )

@@ -217,8 +217,8 @@ async def test_oidc_callback_new_user_created() -> None:
             with patch("app.routers.oidc.create_access_token", return_value="jwt-token"):
                 result = await oidc_callback(request, db)
 
-    assert result.status_code == 302
-    assert "jwt-token" in result.headers["location"]
+    assert result.status_code == 200
+    assert "jwt-token" in result.body.decode()
 
 
 async def test_oidc_callback_existing_user_login() -> None:
@@ -257,7 +257,7 @@ async def test_oidc_callback_existing_user_login() -> None:
             with patch("app.routers.oidc.create_access_token", return_value="jwt-token"):
                 result = await oidc_callback(request, db)
 
-    assert result.status_code == 302
+    assert result.status_code == 200
 
 
 async def test_oidc_callback_subject_mismatch() -> None:
@@ -376,7 +376,7 @@ async def test_oidc_callback_userinfo_fallback() -> None:
             with patch("app.routers.oidc.create_access_token", return_value="jwt"):
                 result = await oidc_callback(request, db)
 
-    assert result.status_code == 302
+    assert result.status_code == 200
 
 
 async def test_oidc_callback_userinfo_fallback_failure() -> None:
@@ -438,7 +438,7 @@ async def test_oidc_callback_email_linking_with_trusted_email() -> None:
             with patch("app.routers.oidc.create_access_token", return_value="jwt"):
                 result = await oidc_callback(request, db)
 
-    assert result.status_code == 302
+    assert result.status_code == 200
     assert existing_user.oidc_subject == "new-oidc-sub"
 
 
@@ -520,5 +520,5 @@ async def test_oidc_callback_cors_origin_fallback() -> None:
             with patch("app.routers.oidc.create_access_token", return_value="jwt"):
                 result = await oidc_callback(request, db)
 
-    assert result.status_code == 302
-    assert "frontend.example.com" in result.headers["location"]
+    assert result.status_code == 200
+    assert "frontend.example.com" in result.body.decode()
