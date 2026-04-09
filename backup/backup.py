@@ -280,7 +280,10 @@ def _enforce_local_retention() -> None:
     if not local_dir.exists():
         return
 
-    archives = sorted(local_dir.glob("hriv-backup-*.tar.gz"), reverse=True)
+    archives = sorted(
+        list(local_dir.glob("hriv-backup-*.tar.gz")) + list(local_dir.glob("corgi-backup-*.tar.gz")),
+        reverse=True,
+    )
     if len(archives) > BACKUP_RETENTION_COUNT:
         to_delete = archives[BACKUP_RETENTION_COUNT:]
         log.info(
@@ -306,7 +309,10 @@ def list_snapshots() -> list[dict]:
             log.info("No local backups found")
             return []
         snapshots = []
-        for f in sorted(local_dir.glob("hriv-backup-*.tar.gz"), reverse=True):
+        for f in sorted(
+            list(local_dir.glob("hriv-backup-*.tar.gz")) + list(local_dir.glob("corgi-backup-*.tar.gz")),
+            reverse=True,
+        ):
             snapshots.append({
                 "name": f.name,
                 "size": f.stat().st_size,
@@ -380,7 +386,10 @@ def run_restore(snapshot_name: str | None = None) -> bool:
             fname = snapshot_name if snapshot_name.endswith(".tar.gz") else f"{snapshot_name}.tar.gz"
             archive_path = local_dir / fname
         else:
-            archives = sorted(local_dir.glob("hriv-backup-*.tar.gz"), reverse=True)
+            archives = sorted(
+                list(local_dir.glob("hriv-backup-*.tar.gz")) + list(local_dir.glob("corgi-backup-*.tar.gz")),
+                reverse=True,
+            )
             if not archives:
                 log.error("No local backups found in %s", local_dir)
                 return False
