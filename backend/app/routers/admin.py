@@ -133,6 +133,7 @@ async def export_database(
                 "original_filename": s.original_filename,
                 "stored_path": s.stored_path,
                 "status": s.status,
+                "progress": s.progress,
                 "error_message": s.error_message,
                 "name": s.name,
                 "category_id": s.category_id,
@@ -141,6 +142,7 @@ async def export_database(
                 "active": s.active,
                 "program": s.program,
                 "image_id": s.image_id,
+                "file_size": s.file_size,
                 "created_at": dt(s.created_at),
                 "updated_at": dt(s.updated_at),
             }
@@ -307,6 +309,7 @@ async def import_database(
                 original_filename=s["original_filename"],
                 stored_path=s["stored_path"],
                 status=s.get("status", "pending"),
+                progress=s.get("progress", 0),
                 error_message=s.get("error_message"),
                 name=s.get("name"),
                 category_id=s.get("category_id"),
@@ -315,6 +318,7 @@ async def import_database(
                 active=s.get("active", True),
                 program=s.get("program"),
                 image_id=s.get("image_id"),
+                file_size=s.get("file_size"),
                 created_at=_parse_dt(s.get("created_at")),
                 updated_at=_parse_dt(s.get("updated_at")),
             )
