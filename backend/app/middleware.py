@@ -123,7 +123,16 @@ class AuditMiddleware(BaseHTTPMiddleware):
             if user_role:
                 extra["user_role"] = user_role
 
-            logger.info(
+            # Health-check endpoints are hit every few seconds by Docker /
+            # Kubernetes probes.  Log them at DEBUG to keep local-dev and
+            # production logs free of noise (DEBUG is below the default INFO
+            # threshold so they won't appear unless explicitly enabled).
+            _log = (
+                logger.debug
+                if request.url.path in ("/api/health", "/api/health/ready")
+                else logger.info
+            )
+            _log(
                 "%s %s %s %dms",
                 request.method,
                 request.url.path,
