@@ -121,3 +121,132 @@ backend is running).
 The local email/password login form is always available below the OIDC
 button, so admin bootstrap accounts continue to work regardless of OIDC
 configuration.
+
+---
+
+## HashiCorp Vault as OIDC Provider
+
+BCIT uses HashiCorp Vault's [OIDC identity
+provider](https://developer.hashicorp.com/vault/docs/secrets/identity/oidc-provider)
+for SSO.  This section documents the Vault-specific configuration
+required for local testing.
+
+### Vault OIDC provider details
+
+| Field | Value |
+|---|---|
+| Issuer | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider` |
+| Discovery URL | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/openid-configuration` |
+| Authorization endpoint | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/authorize` |
+| Token endpoint | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/token` |
+| JWKS URI | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/keys` |
+| Client ID (HRIV) | `hkPdYUJqqEYWxiVwIrgrAjiS8fLja2ip` |
+
+> **Important:** `OIDC_ISSUER` must be the **full provider path**
+> including port 8200 and `/v1/identity/oidc/provider/vault-provider`.
+> The backend appends `/.well-known/openid-configuration` automatically.
+> Using a short URL like `https://vault.ltc.bcit.ca` will fail because
+> the discovery document will not be found at that path.
+
+### Quick start (local Docker)
+
+```bash
+# 1. Copy the Vault-specific example env
+cp backend/.env.vault-example backend/.env
+
+# 2. Edit backend/.env — replace the OIDC_CLIENT_SECRET placeholder
+#    with the real secret from Vault (ask your Vault admin, or retrieve
+#    it from Terraform output / Vault UI).
+$EDITOR backend/.env
+
+# 3. Start the stack
+docker compose up --build
+
+# 4. Open the app
+open http://localhost:5173
+```
+
+Click **"Sign in with BCIT"** on the login page.  The browser will
+redirect to the Vault authorization endpoint.  After authenticating,
+Vault redirects back to
+`http://localhost:8000/api/auth/oidc/callback`, which exchanges the
+code for tokens, upserts your user, and redirects to the frontend with
+a JWT fragment.
+
+### Retrieving the client secret from Vault
+
+The client secret is set when the OIDC client is created in Vault.  If
+you manage Vault via Terraform, the secret is in the Terraform state or
+output:
+
+```bash
+# If using Terraform
+terraform output -raw hriv_oidc_client_secret
+
+# If using Vault CLI
+vault read identity/oidc/client/hriv
+```
+
+If you do not have access to either, ask your Vault administrator for
+the client secret associated with client ID
+`hkPdYUJqqEYWxiVwIrgrAjiS8fLja2ip`.
+
+### Vault-specific notes
+
+- **No `email_verified` claim:** Vault's OIDC provider does not emit
+  `email_verified` in the ID token.  Set `OIDC_TRUST_EMAIL=true` so
+  that first-time OIDC users can be linked to existing accounts by
+  email.  This is safe because Vault is a trusted corporate IdP where
+  all email addresses are administrator-managed.
+
+- **No dedicated userinfo endpoint:** Vault returns all claims in the
+  ID token itself.  The backend handles this correctly — it reads
+  `userinfo` from the parsed ID token first, and only falls back to the
+  userinfo endpoint if that is missing.
+
+- **Groups claim:** To enable role mapping, the Vault OIDC scope /
+  template must include a `groups` claim.  If it is not present, all
+  new users default to `student` and existing users keep their current
+  role.
+
+### Verifying the OIDC flow step by step
+
+You can test each stage of the OIDC flow independently:
+
+```bash
+# 1. Check that OIDC is enabled
+curl -s http://localhost:8000/api/auth/oidc/enabled | python3 -m json.tool
+# Expected: {"enabled": true}
+
+# 2. Verify Vault discovery is reachable from the backend container
+docker compose exec backend python3 -c "
+import urllib.request, json
+url = 'https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/openid-configuration'
+data = json.loads(urllib.request.urlopen(url).read())
+print(json.dumps(data, indent=2))
+"
+
+# 3. Initiate the login flow (browser redirect — open in browser)
+#    This will redirect to Vault's authorize endpoint.
+open "http://localhost:8000/api/auth/oidc/login"
+
+# 4. After successful login, the frontend URL will briefly contain:
+#    http://localhost:5173/#oidc_token=eyJhbG...
+#    The token is extracted automatically by the frontend and stored.
+
+# 5. Validate the resulting JWT
+TOKEN="<paste the oidc_token value here>"
+curl -s http://localhost:8000/api/auth/me \
+  -H "Authorization: Bearer $TOKEN" | python3 -m json.tool
+```
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| 404 on `/api/auth/oidc/login` | `OIDC_ENABLED` is not `true` | Check `backend/.env` is mounted and has `OIDC_ENABLED=true` |
+| `OIDC client not configured` (500) | Authlib could not register the client at startup | Check backend logs for discovery URL errors; verify `OIDC_ISSUER` is the full Vault path |
+| `OIDC authentication failed` (401) | Token exchange failed | Verify `OIDC_CLIENT_SECRET` is correct; check that `OIDC_REDIRECT_URI` matches what is registered in Vault |
+| Redirect loop or blank page | Frontend redirect misconfigured | Verify `OIDC_POST_LOGIN_REDIRECT=http://localhost:5173` and `CORS_ORIGINS` includes it |
+| `IdP did not return required claims` (401) | ID token missing `sub` or `email` | Check Vault OIDC scope template includes `email` and `sub` claims |
+| `email_verified` linking skipped | `OIDC_TRUST_EMAIL` not set | Set `OIDC_TRUST_EMAIL=true` for Vault |
