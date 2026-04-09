@@ -4,20 +4,20 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..auth import require_role
+from ..auth import get_current_user, require_role
 from ..database import get_db
 from ..models import Program, User
 from ..schemas import ProgramCreate, ProgramUpdate, ProgramOut
 
 router = APIRouter(prefix="/programs", tags=["programs"])
 
-_admin = require_role("admin")
+_any_authenticated = get_current_user
 _editor = require_role("admin", "instructor")
 
 
 @router.get("/", response_model=list[ProgramOut])
 async def list_programs(
-    _user: Annotated[User, Depends(_editor)],
+    _user: Annotated[User, Depends(_any_authenticated)],
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(Program).order_by(Program.name)
@@ -28,7 +28,7 @@ async def list_programs(
 @router.get("/{program_id}", response_model=ProgramOut)
 async def get_program(
     program_id: int,
-    _user: Annotated[User, Depends(_editor)],
+    _user: Annotated[User, Depends(_any_authenticated)],
     db: AsyncSession = Depends(get_db),
 ):
     program = await db.get(Program, program_id)
