@@ -25,9 +25,16 @@ oidc:
     issuer: "https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider"
     # Public client identifier (safe for ConfigMap; not a secret per OAuth 2.0 spec).
     clientId: "hkPdYUJqqEYWxiVwIrgrAjiS8fLja2ip"
-    # Client secret — only used when vault.enabled=false (dev mode).
+    # Client secret — only used when vault.enabled=false and existingSecret is empty.
     # When vault.enabled=true the secret is pulled from Vault via VSO.
+    # When existingSecret is set the chart-managed secret is not created at all.
     clientSecret: ""
+    # Name of a pre-existing K8s Secret that contains 'client-id' and
+    # 'client-secret' keys.  When set, the chart does not create its own
+    # OIDC secret — use this to manage the secret outside of Helm/Vault
+    # (e.g. kubectl create secret generic <name> ...).  Leave empty to
+    # let the chart create the secret from clientId/clientSecret above.
+    existingSecret: ""
     # Backend callback endpoint that the IdP redirects to after authentication.
     redirectUri: "https://hriv.bcit.ca/api/auth/oidc/callback"
     # Space-separated OAuth 2.0 scopes to request from the IdP.
