@@ -50,15 +50,16 @@ spec:
                   name: {{ include "hriv-backend.fullname" . }}-jwt
                   key: secret
             {{- if .Values.oidc.enabled }}
+            {{- $oidcSecret := .Values.oidc.existingSecret | default (printf "%s-oidc" (include "hriv-backend.fullname" .)) }}
             - name: OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "hriv-backend.fullname" . }}-oidc
+                  name: {{ $oidcSecret }}
                   key: client-id
             - name: OIDC_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "hriv-backend.fullname" . }}-oidc
+                  name: {{ $oidcSecret }}
                   key: client-secret
             {{- end }}
           {{- if .Values.oidc.enabled }}

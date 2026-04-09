@@ -20,29 +20,35 @@ jwtSecret: ""
 
 # ── OIDC / OAuth 2.0 authentication ─────────────────────────
 oidc:
-    enabled: false
+    enabled: true
     # Full issuer URL — the backend appends /.well-known/openid-configuration.
-    # Example (Vault): https://vault.example.com:8200/v1/identity/oidc/provider/vault-provider
-    issuer: ""
+    issuer: "https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider"
     # Public client identifier (safe for ConfigMap; not a secret per OAuth 2.0 spec).
-    clientId: ""
-    # Client secret — only used when vault.enabled=false (dev mode).
+    clientId: "hkPdYUJqqEYWxiVwIrgrAjiS8fLja2ip"
+    # Client secret — only used when vault.enabled=false and existingSecret is empty.
     # When vault.enabled=true the secret is pulled from Vault via VSO.
+    # When existingSecret is set the chart-managed secret is not created at all.
     clientSecret: ""
+    # Name of a pre-existing K8s Secret that contains 'client-id' and
+    # 'client-secret' keys.  When set, the chart does not create its own
+    # OIDC secret — use this to manage the secret outside of Helm/Vault
+    # (e.g. kubectl create secret generic <name> ...).  Leave empty to
+    # let the chart create the secret from clientId/clientSecret above.
+    existingSecret: ""
     # Backend callback endpoint that the IdP redirects to after authentication.
-    redirectUri: ""
+    redirectUri: "https://hriv.bcit.ca/api/auth/oidc/callback"
     # Space-separated OAuth 2.0 scopes to request from the IdP.
     scopes: "openid email profile"
     # JSON object mapping IdP group names to HRIV roles (admin/instructor/student).
-    roleMapping: "{}"
+    roleMapping: '{"bcit-tlu-admins":"admin","bcit-tlu-instructors":"instructor","bcit-tlu-students":"student"}'
     # Frontend URL to redirect to after successful OIDC login.
-    postLoginRedirect: ""
+    postLoginRedirect: "https://hriv.bcit.ca"
     # Trust email from IdP without requiring email_verified claim.
-    # Enable for corporate IdPs (e.g. Vault, Azure AD) that don't emit email_verified.
-    trustEmail: false
+    # Vault does not emit email_verified; safe for trusted corporate IdP.
+    trustEmail: true
     # CORS origins (comma-separated). Used as fallback redirect target when
     # postLoginRedirect is empty.
-    corsOrigins: ""
+    corsOrigins: "https://hriv.bcit.ca"
 
 # CloudNative-PG database cluster
 cnpg:
