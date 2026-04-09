@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Boolean, Column, Integer, String, Text, ForeignKey, DateTime, Table, func
+from sqlalchemy import BigInteger, Boolean, Column, Integer, String, Text, ForeignKey, DateTime, Table, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
@@ -106,7 +106,7 @@ class SourceImage(Base):
     image_id: Mapped[int | None] = mapped_column(
         ForeignKey("images.id", ondelete="SET NULL"), nullable=True
     )
-    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
