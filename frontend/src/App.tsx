@@ -30,6 +30,7 @@ import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import AddPhotoAlternateIcon from "@mui/icons-material/AddPhotoAlternate";
+import DisabledVisibleIcon from "@mui/icons-material/DisabledVisible";
 import EditIcon from "@mui/icons-material/Edit";
 import HomeIcon from "@mui/icons-material/Home";
 import LinkIcon from "@mui/icons-material/Link";
@@ -1445,6 +1446,10 @@ export default function App() {
                                 setPage(v);
                                 clearImage();
                                 setPath([]);
+                                if (v === "browse") {
+                                    loadCategories();
+                                    loadUncategorizedImages();
+                                }
                             }
                         }}
                         textColor="inherit"
@@ -1460,6 +1465,8 @@ export default function App() {
                                 setPage("browse");
                                 clearImage();
                                 setPath([]);
+                                loadCategories();
+                                loadUncategorizedImages();
                             }}
                         />
                         {canEditContent && (
@@ -1767,8 +1774,17 @@ export default function App() {
                                         display: "flex",
                                         gap: 2,
                                         flexShrink: 0,
+                                        alignItems: "center",
                                     }}
                                 >
+                                    {!selectedImage.active && (
+                                        <Tooltip title="This image is inactive">
+                                            <DisabledVisibleIcon
+                                                color="disabled"
+                                                sx={{ fontSize: 32 }}
+                                            />
+                                        </Tooltip>
+                                    )}
                                     {canEditContent && (
                                         <Tooltip
                                             title={
