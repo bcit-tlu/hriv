@@ -1,115 +1,69 @@
-# Testing the Corgi Image Library
+# Testing Corgi App
 
-## Local Dev Environment
+## Local Setup
 
-```bash
-# Start all services (PostgreSQL, backend, frontend)
-docker compose up -d
-# Frontend: http://localhost:5173
-# Backend: http://localhost:8000
-```
-
-Wait for all containers to be healthy before testing:
-```bash
-docker compose ps
-```
-
-After code changes, rebuild with:
-```bash
-docker compose up -d --build frontend  # or backend
-```
-
-## Seed User Credentials
-
-All seed users share the password: `password`
-
-| Email | Role | Program |
-|---|---|---|
-| admin@bcit.ca | admin | Administration |
-| instructor@bcit.ca | instructor | Digital Design |
-| student@bcit.ca | student | Digital Design |
-
-Use `admin@bcit.ca` for full access to all features (Images tab, Manage menu, Admin tab, People tab).
-
-## Navigation
-
-- **Images tab**: Click "IMAGES" in the top nav bar. Requires `admin` or `instructor` role (`canEditContent`).
-  - **Add Image modal**: Click "ADD IMAGE" button (top right of Images page)
-  - **Bulk Import modal**: Click "BULK IMPORT" button (top right of Images page)
-  - **Edit Details modal**: Click the 3-dot menu (Actions column) on any image row -> "Details"
-- **Manage menu**: Click "MANAGE" tab -> dropdown with Categories, Programs, Announcements
-- **Admin tab**: Click "ADMIN" in the top nav. Requires `admin` role.
-- **People tab**: Click "PEOPLE" in the top nav. Requires `admin` role.
-- **Profile dropdown**: Click the avatar (initials) at top-right -> shows Update and Logout buttons
-
-## Image Viewer Toolbar
-
-When viewing an image, the bottom-left toolbar contains (left to right):
-- Zoom in / Zoom out / Home / Toggle full page
-- Rotate left / Rotate right
-- Draw selection rectangle (creates red overlay rectangles with measurement labels)
-- Lock overlays (padlock icon - persists overlays to image metadata)
-- Clear all selection rectangles (X icon - disabled when overlays are locked)
-
-## File Uploads in Testing
-
-The native file chooser may not open in the testing environment. Use Playwright via CDP to set files on hidden `<input type="file">` elements:
-
-```python
-import asyncio
-from playwright.async_api import async_playwright
-
-async def main():
-    async with async_playwright() as p:
-        browser = await p.chromium.connect_over_cdp("http://localhost:29229")
-        context = browser.contexts[0]
-        page = None
-        for pg in context.pages:
-            if "localhost:5173" in pg.url:
-                page = pg
-                break
-        if not page:
-            print("ERROR: Could not find Corgi page")
-            return
-        # Use .last to get the most recently rendered file input (in the open modal)
-        file_input = page.locator('input[type="file"]').last
-        await file_input.set_input_files(['/tmp/test_image.png'])
-        print("File uploaded successfully")
-
-asyncio.run(main())
-```
-
-## Creating Test Images
-
-```python
-from PIL import Image
-img = Image.new('RGB', (100, 100), color='red')
-img.save('/tmp/test_image.png')
-```
-
-## Seed Data
-
-- **Programs**: Administration (1), Digital Design (2), Photography (3)
-- **Categories**: Architecture (root), Panoramas (root), Italian (under Architecture), American (under Architecture), Gothic (under Italian)
-- **Images**: 4 seed images (Duomo di Milano, Gothic Detail, Highsmith Panorama, Library of Congress)
-
-## Key Testing Flows
-
-1. **Image Upload (Add Image)**: Login -> Images tab -> ADD IMAGE -> select file (via Playwright) -> fill Name, Category, Copyright, Note, Program, Active -> ADD
-2. **Bulk Import**: Login -> Images tab -> BULK IMPORT -> select files (via Playwright) -> pick Category + metadata -> IMPORT N FILES -> wait for job completion -> DONE
-3. **Edit Image Details**: Images tab -> right-click image row -> Details -> verify/modify fields -> SAVE
-4. **Category Management**: Both Add Image and Bulk Import modals have inline category management (add/edit/toggle visibility) via icons in the Category dropdown. The "None (root level)" row has a "+" button for adding root-level categories.
-5. **User Management**: People tab (admin only)
-
-## Important Notes
-
-- The session/auth may expire after `docker compose up --build` rebuilds containers. You'll need to log in again.
-- The CategoryPickerSelect component is shared across Add Image, Bulk Import, and Move modals. Changes to it affect all three.
-- `wmctrl` may need to be installed for maximizing browser windows: `sudo apt-get install -y wmctrl`
-- **Snackbars**: Processing indicators are rendered at the App root level (`App.tsx`), so they persist across all page/tab switches
-- **Auto-refresh**: On processing completion, `loadCategories()` and `loadUncategorizedImages()` are called automatically
-- **Logout button**: Use `page.get_by_role("button", name="Logout", exact=True)` to avoid matching image names that may contain "Logout" text
+1. Create an empty `backend/.env` file if it doesn't exist (docker-compose references it):
+   ```bash
+   touch backend/.env
+   ```
+2. Start the full stack:
+   ```bash
+   docker compose up -d
+   ```
+3. Wait for all services to be healthy (db, redis, backend, frontend).
+4. **Important:** The arq background worker is NOT included in `docker-compose.yml`. You must start it manually for image processing to work:
+   ```bash
+   docker compose exec -d backend arq app.worker.WorkerSettings
+   ```
+   Without this, uploaded images will be enqueued to Redis but never processed.
+5. Frontend: http://localhost:5173
+6. Backend API: http://localhost:8000
 
 ## Devin Secrets Needed
 
-No secrets required for local testing -- all credentials are in the seed data.
+No external secrets needed. Seed users are created automatically.
+
+## Seed Test Accounts
+
+All use password: `password`
+
+| Email | Role | Can Edit Content | Can Manage Users |
+|---|---|---|---|
+| admin@bcit.ca | admin | Yes | Yes |
+| instructor@bcit.ca | instructor | Yes | No |
+| student@bcit.ca | student | No | No |
+
+## Key UI Navigation Paths
+
+- **Browse page (Home):** Shows category tiles and uncategorized image tiles
+- **Upload image:** Click "ADD IMAGE" button (top-right on browse page, requires admin/instructor role)
+- **Add category:** Manage menu (top nav) → Categories → click "+" button next to level → enter name → Create
+- **Image viewer:** Click any image tile on browse page to open OpenSeadragon viewer
+- **Manage page:** Click "MANAGE" tab, then use the manage interface for bulk operations
+
+## Testing Image Upload + Processing Flow
+
+1. Log in as admin@bcit.ca
+2. Click "ADD IMAGE" on browse page
+3. Use Playwright CDP to handle file selection (native file chooser doesn't work well with computer-use tools):
+   ```python
+   from playwright.async_api import async_playwright
+   async with async_playwright() as p:
+       browser = await p.chromium.connect_over_cdp("http://localhost:29229")
+       # Find the Corgi page
+       page = [pg for ctx in browser.contexts for pg in ctx.pages if "localhost:5173" in pg.url][0]
+       async with page.expect_file_chooser() as fc_info:
+           await page.click('text=browse to upload')
+       fc = await fc_info.value
+       await fc.set_files('/path/to/image.jpg')
+   ```
+4. Click "ADD" to upload
+5. Watch for processing snackbar at bottom-right
+6. The snackbar auto-dismisses after 6 seconds — use Playwright to reliably catch and click the "View image" link
+
+## Testing Tips
+
+- The snackbar "View image" link has a 6-second auto-hide timer. For automated testing, use Playwright's `wait_for` to detect when the link appears and click it programmatically.
+- Small test images (e.g., 1024x1024 solid-color JPEG) process much faster than large medical images.
+- The `/api/categories/tree` endpoint uses ETag-based caching. To verify cache behavior, check the `Cache-Control` and `ETag` response headers with curl.
+- Category tree changes (add/move/delete) should be immediately visible on the browse page without browser refresh.
