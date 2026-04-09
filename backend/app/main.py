@@ -2,6 +2,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+import httpx
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +17,62 @@ from .middleware import AuditMiddleware
 from .routers import admin, announcement, auth, bulk_import, categories, images, issues, oidc, programs, upload, users
 
 logger = logging.getLogger(__name__)
+
+
+async def _check_oidc_connectivity() -> None:
+    """Best-effort startup probe for the OIDC provider.
+
+    Fetches the OpenID Connect discovery document so operators see a clear
+    log message immediately at boot when the pod cannot reach the IdP,
+    rather than discovering the problem only when a user clicks *Sign in*.
+    """
+    metadata_url = (
+        f"{settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(metadata_url)
+            resp.raise_for_status()
+        logger.info(
+            "OIDC provider is reachable",
+            extra={
+                "event": "oidc.connectivity_ok",
+                "metadata_url": metadata_url,
+            },
+        )
+    except httpx.ConnectError:
+        logger.error(
+            "OIDC provider is UNREACHABLE — login will fail. "
+            "Verify that the pod can connect to %s "
+            "(DNS resolution, network policies, firewall rules).",
+            settings.oidc_issuer,
+            extra={
+                "event": "oidc.connectivity_failed",
+                "metadata_url": metadata_url,
+                "issuer": settings.oidc_issuer,
+            },
+        )
+    except httpx.HTTPStatusError as exc:
+        logger.warning(
+            "OIDC metadata endpoint returned HTTP %s — "
+            "the provider may be misconfigured.",
+            exc.response.status_code,
+            extra={
+                "event": "oidc.metadata_http_error",
+                "metadata_url": metadata_url,
+                "status": exc.response.status_code,
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "OIDC connectivity check failed: %s",
+            exc,
+            extra={
+                "event": "oidc.connectivity_error",
+                "metadata_url": metadata_url,
+                "error": str(exc),
+            },
+        )
 
 
 @asynccontextmanager
@@ -33,6 +90,10 @@ async def lifespan(app: FastAPI):
             "source_images_dir": settings.source_images_dir,
         },
     )
+
+    if settings.oidc_enabled:
+        await _check_oidc_connectivity()
+
     yield
     logger.info("Application shutting down", extra={"event": "app.shutdown"})
 

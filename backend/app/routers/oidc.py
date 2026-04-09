@@ -9,6 +9,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
+import httpx
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
@@ -97,7 +98,28 @@ async def oidc_login(request: Request):
             detail="OIDC client not configured",
         )
     redirect_uri = _settings.oidc_redirect_uri
-    return await client.authorize_redirect(request, redirect_uri)
+    try:
+        return await client.authorize_redirect(request, redirect_uri)
+    except httpx.ConnectError:
+        metadata_url = f"{_settings.oidc_issuer.rstrip('/')}/.well-known/openid-configuration"
+        logger.error(
+            "Cannot reach OIDC provider to fetch metadata — "
+            "verify that the backend pod can connect to the issuer URL",
+            extra={
+                "event": "oidc.provider_unreachable",
+                "metadata_url": metadata_url,
+                "issuer": _settings.oidc_issuer,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                "Unable to reach the OIDC identity provider. "
+                "The backend cannot connect to the issuer at "
+                f"{_settings.oidc_issuer} — check DNS resolution "
+                "and network/firewall rules from the pod network."
+            ),
+        )
 
 
 # ── Step 2: handle callback from IdP ────────────────────
@@ -116,6 +138,24 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
 
     try:
         token_data = await client.authorize_access_token(request)
+    except httpx.ConnectError:
+        logger.error(
+            "Cannot reach OIDC provider during token exchange — "
+            "verify that the backend pod can connect to the issuer URL",
+            extra={
+                "event": "oidc.provider_unreachable",
+                "issuer": _settings.oidc_issuer,
+            },
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                "Unable to reach the OIDC identity provider during token exchange. "
+                "The backend cannot connect to the issuer at "
+                f"{_settings.oidc_issuer} — check DNS resolution "
+                "and network/firewall rules from the pod network."
+            ),
+        )
     except Exception as exc:
         logger.error(
             "OIDC token exchange failed",
