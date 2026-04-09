@@ -226,8 +226,14 @@ export default function App() {
         Map<number, ReturnType<typeof setTimeout>>
     >(new Map());
 
-    // Client-side progress interpolation timer — smoothly advances displayed
-    // progress between server polls using a file-size-based estimate.
+    // Server-reported progress stored in a ref to avoid re-triggering the
+    // polling useEffect when intermediate progress updates arrive.
+    const serverProgressRef = useRef<Map<number, number>>(new Map());
+
+    // Client-side progress interpolation — a simple tick counter that
+    // increments every 500 ms to trigger re-renders without mutating
+    // processingJobs (which would restart the polling useEffect).
+    const [, setProgressTick] = useState(0);
     const interpolationTimerRef = useRef<ReturnType<typeof setInterval> | null>(
         null,
     );
@@ -250,7 +256,8 @@ export default function App() {
     const getDisplayProgress = useCallback(
         (job: ProcessingJob): number => {
             if (job.status === "completed") return 100;
-            if (job.status === "failed") return job.serverProgress;
+            const sp = serverProgressRef.current.get(job.id) ?? job.serverProgress;
+            if (job.status === "failed") return sp;
 
             const elapsed = Date.now() - job.startedAt;
             const est = estimateDuration(job.fileSize);
@@ -259,11 +266,11 @@ export default function App() {
             const timeProgress = Math.round(timeFraction * 90);
 
             // Cap interpolated progress at 75% until server confirms tiles done
-            const cap = job.serverProgress >= 80 ? 95 : 75;
+            const cap = sp >= 80 ? 95 : 75;
             const interpolated = Math.min(timeProgress, cap);
 
             // Never go below what the server already reported
-            return Math.max(job.serverProgress, interpolated);
+            return Math.max(sp, interpolated);
         },
         [estimateDuration],
     );
@@ -387,16 +394,11 @@ export default function App() {
                                 ),
                             );
                         } else {
-                            // Update server progress for interpolation
-                            setProcessingJobs((prev) =>
-                                prev.map((j) =>
-                                    j.id === job.id
-                                        ? {
-                                              ...j,
-                                              serverProgress: src.progress,
-                                          }
-                                        : j,
-                                ),
+                            // Update server progress in ref (avoids
+                            // re-triggering this useEffect).
+                            serverProgressRef.current.set(
+                                job.id,
+                                src.progress,
                             );
                             // Still processing — schedule next poll after this one completes
                             if (!controller.signal.aborted) {
@@ -448,14 +450,15 @@ export default function App() {
 
     // Interpolation timer: triggers re-render every 500 ms so the progress bar
     // advances smoothly between server polls while any job is processing.
+    // Uses a tick counter instead of mutating processingJobs to avoid
+    // re-triggering the polling useEffect.
     useEffect(() => {
         const hasActiveJob = processingJobs.some(
             (j) => j.status === "processing",
         );
         if (hasActiveJob && !interpolationTimerRef.current) {
             interpolationTimerRef.current = setInterval(() => {
-                // Force a re-render so getDisplayProgress recalculates
-                setProcessingJobs((prev) => [...prev]);
+                setProgressTick((t) => t + 1);
             }, 500);
         }
         if (!hasActiveJob && interpolationTimerRef.current) {
