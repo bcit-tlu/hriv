@@ -129,7 +129,7 @@ export default function AdminPage() {
 
       <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 4 }}>
         {/* Export card */}
-        <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: '#fff' }}>
+        <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: 'background.paper' }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
               Export Database
@@ -151,7 +151,7 @@ export default function AdminPage() {
         </Card>
 
         {/* Import card */}
-        <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: '#fff' }}>
+        <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: 'background.paper' }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
               Import Database
@@ -190,7 +190,7 @@ export default function AdminPage() {
 
       <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
         {/* Export Files card */}
-        <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: '#fff' }}>
+        <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: 'background.paper' }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
               Export Files
@@ -212,7 +212,7 @@ export default function AdminPage() {
         </Card>
 
         {/* Import Files card */}
-        <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: '#fff' }}>
+        <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: 'background.paper' }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
               Import Files

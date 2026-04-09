@@ -33,6 +33,8 @@ import AddPhotoAlternateIcon from "@mui/icons-material/AddPhotoAlternate";
 import EditIcon from "@mui/icons-material/Edit";
 import HomeIcon from "@mui/icons-material/Home";
 import LinkIcon from "@mui/icons-material/Link";
+import DarkModeIcon from "@mui/icons-material/DarkMode";
+import LightModeIcon from "@mui/icons-material/LightMode";
 import SearchIcon from "@mui/icons-material/Search";
 import ImageViewer from "./components/ImageViewer";
 import type {
@@ -80,6 +82,8 @@ import {
 import type { ApiCategoryTree, ApiImage, ApiUser } from "./api";
 import MoveCategoryDialog from "./components/MoveCategoryDialog";
 import type { Category, ImageItem, Program } from "./types";
+import { useColorMode } from "./useColorMode";
+import { getSurfaceVariant } from "./theme";
 
 /** Search the category tree for an image by ID, returning the image and its category path. */
 function findImageInTree(
@@ -152,6 +156,7 @@ export default function App() {
         canManageUsers,
         canEditContent,
     } = useAuth();
+    const { mode, toggleMode } = useColorMode();
 
     type Page = "browse" | "manage" | "people" | "admin";
     const [page, setPage] = useState<Page>("browse");
@@ -1471,6 +1476,15 @@ export default function App() {
                         </MenuItem>
                     </Menu>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        <Tooltip title={mode === "dark" ? "Switch to light mode" : "Switch to dark mode"}>
+                            <IconButton
+                                onClick={toggleMode}
+                                sx={{ color: "inherit" }}
+                                aria-label="Toggle dark mode"
+                            >
+                                {mode === "dark" ? <LightModeIcon /> : <DarkModeIcon />}
+                            </IconButton>
+                        </Tooltip>
                         <Tooltip title="Search">
                             <IconButton
                                 onClick={() => setSearchOpen(true)}
@@ -1596,7 +1610,7 @@ export default function App() {
                     py: 3,
                     bgcolor:
                         page === "people" || page === "admin"
-                            ? "#DAC7B5"
+                            ? getSurfaceVariant(mode)
                             : undefined,
                 }}
             >

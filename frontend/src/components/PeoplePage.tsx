@@ -222,7 +222,7 @@ export default function PeoplePage() {
           No people found.
         </Typography>
       ) : (
-        <TableContainer component={Paper} variant="outlined" sx={{ bgcolor: '#fff' }}>
+        <TableContainer component={Paper} variant="outlined" sx={{ bgcolor: 'background.paper' }}>
           <Table size="small">
             <TableHead>
               <TableRow>
