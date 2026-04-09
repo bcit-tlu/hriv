@@ -40,7 +40,7 @@ async def _check_oidc_connectivity() -> None:
                 "metadata_url": metadata_url,
             },
         )
-    except httpx.ConnectError:
+    except (httpx.ConnectError, httpx.TimeoutException):
         logger.error(
             "OIDC provider is UNREACHABLE — login will fail. "
             "Verify that the pod can connect to %s "
