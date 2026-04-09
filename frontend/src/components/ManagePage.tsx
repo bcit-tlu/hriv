@@ -389,21 +389,6 @@ export default function ManagePage({ categories, programs, onViewImage, onNaviga
     }
   }
 
-  // Delete image
-  const handleDeleteImage = async (image: ApiImage) => {
-    try {
-      await deleteImage(image.id)
-      setSelected((prev) => {
-        const next = new Set(prev)
-        next.delete(image.id)
-        return next
-      })
-      await loadImages()
-    } catch (err) {
-      console.error('Failed to delete image', err)
-    }
-  }
-
   // Move image handler
   const handleMoveImage = async (categoryId: number | null) => {
     if (!movingImage) return
