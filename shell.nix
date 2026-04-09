@@ -10,7 +10,6 @@ pkgs.mkShell {
     krew
     git
     jq
-    vault
     poetry
     nixd
   ];

@@ -27,7 +27,8 @@ services:
       - ./backend/app:/app/app
       - image_data:/data
     env_file:
-      - ./backend/.env
+      - path: ./backend/.env
+        required: false
     environment:
       - DATABASE_URL=postgresql+asyncpg://hriv:hriv@db:5432/hriv
       - REDIS_URL=redis://redis:6379
