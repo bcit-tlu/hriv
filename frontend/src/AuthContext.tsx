@@ -66,6 +66,14 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   // On mount, validate stored token by calling a protected endpoint.
   // If the token is expired or the DB was recreated, clear session.
+  // Migrate legacy localStorage key from previous "corgi" branding
+  useEffect(() => {
+    if (localStorage.getItem('corgi_user') && !localStorage.getItem('hriv_user')) {
+      localStorage.setItem('hriv_user', localStorage.getItem('corgi_user')!)
+      localStorage.removeItem('corgi_user')
+    }
+  }, [])
+
   useEffect(() => {
     const stored = localStorage.getItem('hriv_user')
     const token = getToken()
