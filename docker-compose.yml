@@ -13,7 +13,7 @@ services:
       - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hriv"]
-      interval: 5s
+      interval: 30s
       timeout: 3s
       retries: 10
 
@@ -49,7 +49,7 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health').read()",
         ]
-      interval: 5s
+      interval: 30s
       timeout: 3s
       retries: 20
       start_period: 10s
@@ -104,7 +104,7 @@ services:
       - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
+      interval: 30s
       timeout: 3s
       retries: 5
 

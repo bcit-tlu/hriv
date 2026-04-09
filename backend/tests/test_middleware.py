@@ -239,3 +239,52 @@ async def test_dispatch_handles_exception_in_call_next() -> None:
     with pytest.raises(RuntimeError, match="boom"):
         with patch("app.middleware.logger"):
             await middleware.dispatch(request, call_next)
+
+
+async def test_dispatch_logs_health_check_at_debug() -> None:
+    """Health-check endpoints should be logged at DEBUG, not INFO."""
+    middleware = AuditMiddleware(app=MagicMock())
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.headers = {}
+
+    async def call_next(request):
+        return mock_response
+
+    for path in ("/api/health", "/api/health/ready"):
+        request = MagicMock()
+        request.headers = {}
+        request.method = "GET"
+        request.url.path = path
+        request.client = MagicMock()
+        request.client.host = "127.0.0.1"
+
+        with patch("app.middleware.logger") as mock_logger:
+            await middleware.dispatch(request, call_next)
+            mock_logger.debug.assert_called_once()
+            mock_logger.info.assert_not_called()
+
+
+async def test_dispatch_logs_non_health_at_info() -> None:
+    """Non-health-check endpoints should still be logged at INFO."""
+    middleware = AuditMiddleware(app=MagicMock())
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.headers = {}
+
+    async def call_next(request):
+        return mock_response
+
+    request = MagicMock()
+    request.headers = {}
+    request.method = "GET"
+    request.url.path = "/api/images"
+    request.client = MagicMock()
+    request.client.host = "127.0.0.1"
+
+    with patch("app.middleware.logger") as mock_logger:
+        await middleware.dispatch(request, call_next)
+        mock_logger.info.assert_called_once()
+        mock_logger.debug.assert_not_called()
