@@ -61,6 +61,14 @@ def _get_auth_settings() -> AuthSettings:
             )
         if not _auth_settings.jwt_instance_epoch:
             _auth_settings.jwt_instance_epoch = secrets.token_urlsafe(16)
+            if _auth_settings.jwt_secret:
+                logger.warning(
+                    "No JWT_INSTANCE_EPOCH configured — using an ephemeral random epoch. "
+                    "Sessions will not survive restarts even though JWT_SECRET is set. "
+                    "Set the JWT_INSTANCE_EPOCH environment variable for production "
+                    "deployments that need stable sessions across restarts/replicas.",
+                    extra={"event": "auth.jwt_instance_epoch_missing"},
+                )
     return _auth_settings
 
 
