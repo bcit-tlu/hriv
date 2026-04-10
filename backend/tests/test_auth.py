@@ -1,3 +1,4 @@
+import hashlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -124,6 +125,56 @@ async def test_get_user_from_token_rejects_stale_instance_epoch(
         await auth._get_user_from_token(token, db)  # type: ignore[arg-type]
 
     assert exc.value.status_code == 401
+
+
+def test_get_auth_settings_derives_epoch_from_explicit_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When JWT_SECRET is set explicitly, the epoch is derived deterministically
+    from it via SHA-256 so all Uvicorn workers share the same value."""
+    # Reset the singleton so _get_auth_settings() reinitialises
+    monkeypatch.setattr(auth, "_auth_settings", None)
+    monkeypatch.setenv("JWT_SECRET", "stable-test-secret")
+    monkeypatch.delenv("JWT_INSTANCE_EPOCH", raising=False)
+
+    settings = auth._get_auth_settings()
+
+    expected = hashlib.sha256(b"stable-test-secret").hexdigest()[:22]
+    assert settings.jwt_instance_epoch == expected
+
+    # Calling again returns the same singleton with the same epoch
+    assert auth._get_auth_settings().jwt_instance_epoch == expected
+
+
+def test_get_auth_settings_uses_random_epoch_without_secret(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When JWT_SECRET is not set (local dev), the epoch is random."""
+    monkeypatch.setattr(auth, "_auth_settings", None)
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    monkeypatch.delenv("JWT_INSTANCE_EPOCH", raising=False)
+
+    settings = auth._get_auth_settings()
+
+    # Epoch should be set (non-empty) but NOT a SHA-256 hex prefix
+    assert settings.jwt_instance_epoch
+    # The random secret was generated, so deriving from it should NOT match
+    # (because the random secret is generated first, then epoch is random too)
+    derived = hashlib.sha256(settings.jwt_secret.encode()).hexdigest()[:22]
+    assert settings.jwt_instance_epoch != derived
+
+
+def test_get_auth_settings_respects_explicit_epoch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An explicit JWT_INSTANCE_EPOCH env var takes precedence."""
+    monkeypatch.setattr(auth, "_auth_settings", None)
+    monkeypatch.setenv("JWT_SECRET", "stable-test-secret")
+    monkeypatch.setenv("JWT_INSTANCE_EPOCH", "my-custom-epoch")
+
+    settings = auth._get_auth_settings()
+
+    assert settings.jwt_instance_epoch == "my-custom-epoch"
 
 
 async def test_require_role_allows_authorized_user() -> None:
