@@ -1,5 +1,6 @@
 """JWT authentication and RBAC utilities."""
 
+import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -23,12 +24,12 @@ class AuthSettings(Settings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440  # 24 hours
     # Per-instance epoch embedded in JWTs as a private ``_epoch`` claim.
-    # When left empty a random value is generated at startup, which
-    # automatically invalidates tokens from a previous container instance
-    # (e.g. after ``docker compose down -v``).  For multi-worker /
-    # multi-replica production deployments set this to a shared value so
-    # all workers accept each other's tokens; rotate the value when you
-    # want to force all users to re-authenticate.
+    # When left empty **and** JWT_SECRET is set, the epoch is derived
+    # deterministically from the secret so all Uvicorn workers and
+    # replicas share the same value automatically.  When JWT_SECRET is
+    # also empty (local dev), a random value is generated per process,
+    # which invalidates tokens on every restart.  Set this explicitly
+    # only when you need to rotate sessions independently of the secret.
     jwt_instance_epoch: str = ""
 
 
@@ -61,15 +62,24 @@ def _get_auth_settings() -> AuthSettings:
                 extra={"event": "auth.jwt_secret_missing"},
             )
         if not _auth_settings.jwt_instance_epoch:
-            _auth_settings.jwt_instance_epoch = secrets.token_urlsafe(16)
             if explicit_secret:
-                logger.warning(
-                    "No JWT_INSTANCE_EPOCH configured — using an ephemeral random epoch. "
-                    "Sessions will not survive restarts even though JWT_SECRET is set. "
-                    "Set the JWT_INSTANCE_EPOCH environment variable for production "
-                    "deployments that need stable sessions across restarts/replicas.",
-                    extra={"event": "auth.jwt_instance_epoch_missing"},
+                # Derive a deterministic epoch from the JWT secret so that
+                # all Uvicorn workers (``--workers N``) and all replicas
+                # share the same value without requiring an extra env var.
+                # Without this, each OS process generates a random epoch
+                # and JWTs minted by one worker are rejected by another.
+                _auth_settings.jwt_instance_epoch = hashlib.sha256(
+                    _auth_settings.jwt_secret.encode()
+                ).hexdigest()[:22]
+                logger.info(
+                    "JWT_INSTANCE_EPOCH derived from JWT_SECRET — tokens are "
+                    "stable across workers and restarts.  To force "
+                    "re-authentication rotate JWT_SECRET or set "
+                    "JWT_INSTANCE_EPOCH explicitly.",
+                    extra={"event": "auth.jwt_instance_epoch_derived"},
                 )
+            else:
+                _auth_settings.jwt_instance_epoch = secrets.token_urlsafe(16)
     return _auth_settings
 
 
