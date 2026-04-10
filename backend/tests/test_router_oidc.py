@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from fastapi import HTTPException
 
@@ -120,6 +121,28 @@ async def test_oidc_login_success() -> None:
     assert result == "redirect-response"
 
 
+@pytest.mark.parametrize("error", [
+    httpx.ConnectError("All connection attempts failed"),
+    httpx.ConnectTimeout("timed out"),
+])
+async def test_oidc_login_provider_unreachable(error) -> None:
+    """ConnectError or timeout during authorize_redirect returns a 502."""
+    request = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.authorize_redirect = AsyncMock(side_effect=error)
+
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_enabled = True
+        mock_settings.oidc_redirect_uri = "http://localhost/callback"
+        mock_settings.oidc_issuer = "https://vault.example.com:8200/v1/identity/oidc/provider/test"
+        with patch("app.routers.oidc.oauth") as mock_oauth:
+            mock_oauth.create_client.return_value = mock_client
+            with pytest.raises(HTTPException) as exc:
+                await oidc_login(request)
+            assert exc.value.status_code == 502
+            assert "temporarily unavailable" in exc.value.detail
+
+
 # ── oidc_callback tests ──────────────────────────────────────
 
 
@@ -158,6 +181,28 @@ async def test_oidc_callback_token_exchange_failure() -> None:
             with pytest.raises(HTTPException) as exc:
                 await oidc_callback(request, db)
             assert exc.value.status_code == 401
+
+
+@pytest.mark.parametrize("error", [
+    httpx.ConnectError("All connection attempts failed"),
+    httpx.ConnectTimeout("timed out"),
+])
+async def test_oidc_callback_provider_unreachable(error) -> None:
+    """ConnectError or timeout during token exchange returns a 502."""
+    request = MagicMock()
+    db = AsyncMock()
+    mock_client = AsyncMock()
+    mock_client.authorize_access_token = AsyncMock(side_effect=error)
+
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_enabled = True
+        mock_settings.oidc_issuer = "https://vault.example.com:8200/v1/identity/oidc/provider/test"
+        with patch("app.routers.oidc.oauth") as mock_oauth:
+            mock_oauth.create_client.return_value = mock_client
+            with pytest.raises(HTTPException) as exc:
+                await oidc_callback(request, db)
+            assert exc.value.status_code == 502
+            assert "temporarily unavailable" in exc.value.detail
 
 
 async def test_oidc_callback_missing_claims() -> None:

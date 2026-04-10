@@ -7,6 +7,8 @@ metadata:
 data:
   init.sql: |
     -- HRIV Image Library – schema initialization
+    -- Executed before seed.sql by PostgreSQL on first startup.
+
     CREATE TABLE IF NOT EXISTS programs (
         id            SERIAL PRIMARY KEY,
         name          VARCHAR(255) NOT NULL UNIQUE,
@@ -20,6 +22,7 @@ data:
         parent_id     INTEGER REFERENCES categories(id) ON DELETE CASCADE,
         program       VARCHAR(255),
         status        VARCHAR(50) DEFAULT 'active',
+        sort_order    INTEGER NOT NULL DEFAULT 0,
         metadata      JSONB DEFAULT '{}',
         created_at    TIMESTAMPTZ DEFAULT now(),
         updated_at    TIMESTAMPTZ DEFAULT now()
@@ -37,6 +40,10 @@ data:
         note          VARCHAR(500),
         active        BOOLEAN DEFAULT true,
         metadata      JSONB DEFAULT '{}',
+        version       INTEGER NOT NULL DEFAULT 1,
+        width         INTEGER,
+        height        INTEGER,
+        file_size     DOUBLE PRECISION,
         created_at    TIMESTAMPTZ DEFAULT now(),
         updated_at    TIMESTAMPTZ DEFAULT now()
     );
@@ -54,7 +61,9 @@ data:
         original_filename VARCHAR(500) NOT NULL,
         stored_path   TEXT NOT NULL,
         status        VARCHAR(50) NOT NULL DEFAULT 'pending',
+        progress      INTEGER NOT NULL DEFAULT 0,
         error_message TEXT,
+        status_message VARCHAR(255),
         name          VARCHAR(255),
         category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
         copyright     VARCHAR(500),
@@ -62,6 +71,7 @@ data:
         active        BOOLEAN NOT NULL DEFAULT true,
         program       VARCHAR(255),
         image_id      INTEGER REFERENCES images(id) ON DELETE SET NULL,
+        file_size     BIGINT,
         created_at    TIMESTAMPTZ DEFAULT now(),
         updated_at    TIMESTAMPTZ DEFAULT now()
     );
@@ -95,6 +105,7 @@ data:
         name          VARCHAR(255) NOT NULL,
         email         VARCHAR(255) NOT NULL UNIQUE,
         password_hash VARCHAR(255),
+        oidc_subject  VARCHAR(255) UNIQUE,
         role          VARCHAR(50) NOT NULL DEFAULT 'student',
         program_id    INTEGER REFERENCES programs(id) ON DELETE SET NULL,
         last_access   TIMESTAMPTZ,
@@ -102,6 +113,19 @@ data:
         created_at    TIMESTAMPTZ DEFAULT now(),
         updated_at    TIMESTAMPTZ DEFAULT now()
     );
+
+    -- ── Migrations for existing databases ──────────────────────────────
+    -- These ALTER statements are idempotent (IF NOT EXISTS) so they are
+    -- safe to run on both fresh and pre-existing databases.
+    ALTER TABLE categories  ADD COLUMN IF NOT EXISTS sort_order      INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE images      ADD COLUMN IF NOT EXISTS version         INTEGER NOT NULL DEFAULT 1;
+    ALTER TABLE images      ADD COLUMN IF NOT EXISTS width           INTEGER;
+    ALTER TABLE images      ADD COLUMN IF NOT EXISTS height          INTEGER;
+    ALTER TABLE images      ADD COLUMN IF NOT EXISTS file_size       DOUBLE PRECISION;
+    ALTER TABLE source_images ADD COLUMN IF NOT EXISTS progress      INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE source_images ADD COLUMN IF NOT EXISTS status_message VARCHAR(255);
+    ALTER TABLE source_images ADD COLUMN IF NOT EXISTS file_size     BIGINT;
+    ALTER TABLE users       ADD COLUMN IF NOT EXISTS oidc_subject    VARCHAR(255) UNIQUE;
 
     -- Grant the CNPG application owner full access to all tables and
     -- sequences.  postInitApplicationSQLRefs may execute as the superuser,
