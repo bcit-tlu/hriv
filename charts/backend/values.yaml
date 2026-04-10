@@ -36,19 +36,19 @@ oidc:
     # let the chart create the secret from clientId/clientSecret above.
     existingSecret: "hriv-oidc"
     # Backend callback endpoint that the IdP redirects to after authentication.
-    redirectUri: "https://hriv.latest.bcit.ca/api/auth/oidc/callback"
+    redirectUri: "https://hriv.latest.ltc.bcit.ca/api/auth/oidc/callback"
     # Space-separated OAuth 2.0 scopes to request from the IdP.
     scopes: "openid email profile"
     # JSON object mapping IdP group names to HRIV roles (admin/instructor/student).
     roleMapping: '{"bcit-tlu-admins":"admin","bcit-tlu-instructors":"instructor","bcit-tlu-students":"student"}'
     # Frontend URL to redirect to after successful OIDC login.
-    postLoginRedirect: "https://hriv.latest.bcit.ca"
+    postLoginRedirect: "https://hriv.latest.ltc.bcit.ca"
     # Trust email from IdP without requiring email_verified claim.
     # Vault does not emit email_verified; safe for trusted corporate IdP.
     trustEmail: true
     # CORS origins (comma-separated). Used as fallback redirect target when
     # postLoginRedirect is empty.
-    corsOrigins: "https://hriv.latest.bcit.ca"
+    corsOrigins: "https://hriv.latest.ltc.bcit.ca"
 
 # CloudNative-PG database cluster
 cnpg:
