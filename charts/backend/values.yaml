@@ -90,6 +90,16 @@ persistence:
 
 resources: {}
 
+# ── High-availability / topology spreading ────────────────────
+# When enabled, adds a required pod anti-affinity rule so that no two
+# backend replicas land in the same topology zone (e.g. datacenter).
+# Requires nodes to be labeled with the chosen topologyKey.
+#   kubectl label node <name> topology.kubernetes.io/zone=dtc
+#   kubectl label node <name> topology.kubernetes.io/zone=bby
+zoneAntiAffinity:
+    enabled: false
+    topologyKey: topology.kubernetes.io/zone
+
 nodeSelector: {}
 tolerations: []
 affinity: {}

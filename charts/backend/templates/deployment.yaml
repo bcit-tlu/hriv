@@ -1,6 +1,9 @@
 {{- if and .Values.tileSidecar.enabled (not .Values.persistence.enabled) }}
 {{- fail "tileSidecar.enabled requires persistence.enabled — the sidecar serves tiles from the PVC" }}
 {{- end }}
+{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (has "ReadWriteOnce" .Values.persistence.accessModes) }}
+{{- fail "replicaCount > 1 with a ReadWriteOnce PVC is not supported — multiple pods cannot mount the same RWO volume" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,6 +12,10 @@ metadata:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  {{- if and .Values.persistence.enabled (has "ReadWriteOnce" .Values.persistence.accessModes) }}
+  strategy:
+    type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "hriv-backend.selectorLabels" . | nindent 6 }}
@@ -140,7 +147,17 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
+      {{- $aff := deepCopy (.Values.affinity | default dict) }}
+      {{- if .Values.zoneAntiAffinity.enabled }}
+        {{- $zoneRule := dict "labelSelector" (dict "matchLabels" (include "hriv-backend.selectorLabels" . | fromYaml)) "topologyKey" .Values.zoneAntiAffinity.topologyKey }}
+        {{- $existing := list }}
+        {{- if hasKey $aff "podAntiAffinity" }}
+          {{- $existing = $aff.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution | default list }}
+        {{- end }}
+        {{- $merged := dict "podAntiAffinity" (dict "requiredDuringSchedulingIgnoredDuringExecution" (append $existing $zoneRule)) }}
+        {{- $aff = mustMergeOverwrite $aff $merged }}
+      {{- end }}
+      {{- if $aff }}
       affinity:
-        {{- toYaml . | nindent 8 }}
+        {{- toYaml $aff | nindent 8 }}
       {{- end }}
