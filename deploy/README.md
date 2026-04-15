@@ -7,12 +7,15 @@ Container Registry (GHCR).
 ## Architecture Overview
 
 ```
-Developer → PR → main → Release Please PR → merge → GitHub Release (v1.2.3)
+Developer → PR → main → Release Please PR → merge → GitHub Releases
                    │                                        │
-                   ▼                                        ▼
-            CI builds images                         CI builds images
-            tagged: sha, main-*                      tagged: 1.2.3, latest
-            Charts: 0.1.0-dev.*                      Charts: 1.2.3
+                   ▼                                    per-component tags:
+            CI builds images                      frontend-v1.2.0, backend-v1.1.0, …
+            tagged: sha, main-*                         │
+            Charts: 0.1.0-dev.*                         ▼
+                   │                             CI builds images
+                   │                             tagged: 1.2.0 (matching component)
+                   │                             Charts: 1.2.0 (from Chart.yaml)
                    │                                        │
                    ▼                                        ▼
          ┌─────────────────┐                     ┌─────────────────┐
@@ -29,7 +32,7 @@ Developer → PR → main → Release Please PR → merge → GitHub Release (v1
 |---|---|---|---|---|
 | PR opened | Built (not pushed) | Linted only | No change | No change |
 | PR merged to `main` | `sha`, `main-*`, `latest` | `0.1.0-dev.<ts>` | Auto-deploys | No change |
-| Release PR merged | `1.2.3`, `latest` | `1.2.3` | Auto-deploys | Auto-deploys |
+| Release PR merged | `<semver>` per component, `latest` | `<semver>` per chart | Auto-deploys | Auto-deploys |
 
 **latest** accepts any chart version (`>=0.0.0-0`), including `dev` pre-releases.
 **stable** accepts only stable semver releases (`>=1.0.0`).
@@ -122,8 +125,8 @@ To switch to Slack-native formatting, change the Provider `spec.type` from
 
 ## Promoting to Stable (Production)
 
-When a new release is created (e.g., `v1.2.3`), the **stable** cluster will
-auto-deploy it because its HelmReleases use `version: ">=1.0.0"`.
+When a new release is created (e.g., `frontend-v1.2.0`), the **stable** cluster will
+auto-deploy the updated chart because its HelmReleases use `version: ">=1.0.0"`.
 
 If you prefer manual promotion, pin the version in the stable HelmReleases:
 
@@ -141,19 +144,26 @@ Commit and push — Flux reconciles within 5 minutes.
 
 ## Versioning (Release Please)
 
-Versions are managed automatically by [Release Please](https://github.com/googleapis/release-please).
+Versions are managed automatically by [Release Please](https://github.com/googleapis/release-please)
+using **per-component packages**. Each component (frontend, backend, backup) has
+its own independent version — a backend bug fix won't bump the frontend version.
 
 1. Developers write **Conventional Commits** (`feat:`, `fix:`, `chore:`, etc.)
-2. On every push to `main`, Release Please opens or updates a **Release PR**
-3. The Release PR shows the calculated next version and changelog
-4. **Merging the Release PR** creates a GitHub Release + git tag (`v1.2.3`)
-5. The tag triggers CI which builds and publishes release-versioned images and charts
+2. Release Please detects which component directories were touched and calculates
+   per-component version bumps
+3. On every push to `main`, Release Please opens or updates a **Release PR**
+   that may include multiple component bumps
+4. **Merging the Release PR** creates separate GitHub Releases + tags per component
+   (e.g., `frontend-v1.2.0`, `backend-v1.1.0`)
+5. Each tag triggers CI which builds the matching image with a semver tag and
+   publishes all charts with their Chart.yaml versions
 
 Files updated automatically by Release Please:
-- `version.txt`
-- `charts/*/Chart.yaml` (version + appVersion)
+- `frontend/version.txt`, `backend/version.txt`, `backup/version.txt`
+- `charts/*/Chart.yaml` (version + appVersion, per component)
+- `charts/*/values.yaml` (image tag, per component)
 - `frontend/package.json` (version)
-- `CHANGELOG.md`
+- Per-component `CHANGELOG.md` files
 
 ---
 

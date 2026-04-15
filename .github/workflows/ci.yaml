@@ -3,7 +3,7 @@ name: CI – test, build & publish
 on:
   push:
     branches: [main]
-    tags: ["v*"]
+    tags: ["frontend-v*", "backend-v*", "backup-v*"]
   pull_request:
     branches: [main]
 
@@ -87,8 +87,10 @@ jobs:
       - name: Determine app version
         id: app-version
         run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            echo "value=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          COMPONENT="${{ matrix.component }}"
+          TAG="${GITHUB_REF#refs/tags/}"
+          if [[ "$TAG" =~ ^${COMPONENT}-v(.+)$ ]]; then
+            echo "value=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
           else
             echo "value=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
           fi
@@ -101,7 +103,7 @@ jobs:
             type=sha,prefix=
             type=raw,value=main-{{date 'YYYYMMDDHHmmss'}}-{{sha}},enable={{is_default_branch}}
             type=ref,event=branch
-            type=semver,pattern={{version}}
+            type=match,pattern=${{ matrix.component }}-v(.*),group=1
             type=raw,value=latest,enable={{is_default_branch}}
 
       - uses: docker/build-push-action@v6
@@ -164,46 +166,35 @@ jobs:
             helm registry login ${{ env.REGISTRY }} \
               -u ${{ github.actor }} --password-stdin
 
-      - name: Determine chart version
-        id: version
-        run: |
-          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
-            VERSION="${GITHUB_REF#refs/tags/v}"
-          else
-            BASE=$(grep '^version:' charts/backend/Chart.yaml | awk '{print $2}')
-            VERSION="${BASE}-dev.$(date +%s)"
-          fi
-          SHA=$(git rev-parse --short HEAD)
-          echo "chart=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
-          echo "is_release=${{ startsWith(github.ref, 'refs/tags/v') }}" >> "$GITHUB_OUTPUT"
-
-      - name: Stamp chart metadata
-        run: |
-          VERSION="${{ steps.version.outputs.chart }}"
-          SHA="${{ steps.version.outputs.sha }}"
-          IS_RELEASE="${{ steps.version.outputs.is_release }}"
-
-          for dir in charts/*/; do
-            chart=$(basename "$dir")
-            # Set chart + app version
-            sed -i "s/^version:.*/version: ${VERSION}/" "${dir}Chart.yaml"
-            sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" "${dir}Chart.yaml"
-
-            # On dev builds, bake the SHA as the default image tag so Flux
-            # deploys the exact commit that was just built.
-            if [ "$IS_RELEASE" != "true" ]; then
-              sed -i "s/^\(\s*tag:\).*/\1 ${SHA}/" "${dir}values.yaml"
-            fi
-          done
-
       - name: Package, push & sign charts
         run: |
           OCI_BASE="oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
+          TAG="${GITHUB_REF#refs/tags/}"
+          SHA=$(git rev-parse --short HEAD)
+          IS_TAG=${{ startsWith(github.ref, 'refs/tags/') }}
+          TIMESTAMP=$(date +%s)
 
           for dir in charts/*/; do
             chart=$(basename "$dir")
             echo "::group::${chart}"
+
+            # Read the version that Release Please set in Chart.yaml
+            BASE_VERSION=$(grep '^version:' "${dir}Chart.yaml" | awk '{print $2}')
+
+            if [ "$IS_TAG" = "true" ]; then
+              # Release build: use Chart.yaml version as-is
+              VERSION="${BASE_VERSION}"
+            else
+              # Dev build: append dev suffix
+              VERSION="${BASE_VERSION}-dev.${TIMESTAMP}"
+              # Set image tag to SHA so Flux deploys the exact commit
+              sed -i "s/^\(\s*tag:\).*/\1 ${SHA}/" "${dir}values.yaml"
+            fi
+
+            # Stamp version into Chart.yaml (overwrites annotation comment)
+            sed -i "s/^version:.*/version: ${VERSION}/" "${dir}Chart.yaml"
+            sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" "${dir}Chart.yaml"
+
             helm package "$dir" -d /tmp/charts
 
             PUSH_OUT=$(helm push /tmp/charts/hriv-${chart}-*.tgz "${OCI_BASE}" 2>&1)
