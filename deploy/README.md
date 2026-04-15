@@ -178,7 +178,7 @@ All container images and Helm charts are signed with
 cosign verify \
   --certificate-identity-regexp="https://github.com/bcit-tlu/hriv/" \
   --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-  ghcr.io/bcit-tlu/hriv/frontend:1.2.3
+  ghcr.io/bcit-tlu/hriv/hriv-frontend:1.2.3
 
 # Verify a Helm chart
 cosign verify \
