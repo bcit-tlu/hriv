@@ -1,0 +1,13 @@
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: HelmRepository
+metadata:
+  name: hriv
+  namespace: hriv
+spec:
+  type: oci
+  url: oci://ghcr.io/bcit-tlu/hriv/charts
+  interval: 5m
+  provider: generic
+  # Uncomment and create the Secret if GHCR packages are private:
+  # secretRef:
+  #   name: ghcr-auth

@@ -1,4 +1,4 @@
-name: CI – test & build
+name: CI – test, build & publish
 
 on:
   push:
@@ -13,9 +13,11 @@ env:
 permissions:
   contents: read
   packages: write
+  id-token: write          # Cosign keyless (Sigstore OIDC)
+  security-events: write   # Trivy SARIF upload to GitHub Security tab
 
 jobs:
-  # ── Backend tests ──────────────────────────────────────
+  # ── Quality gates ─────────────────────────────────────────
   backend-tests:
     runs-on: ubuntu-latest
     defaults:
@@ -37,9 +39,39 @@ jobs:
       - name: Run pytest
         run: poetry run pytest
 
-  # ── Frontend ────────────────────────────────────────────
-  frontend:
+  helm-lint:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: Lint and template-render all charts
+        run: |
+          for chart in charts/*/; do
+            name=$(basename "$chart")
+            echo "::group::${name}"
+            helm lint "$chart"
+            helm template test "$chart"
+            echo "::endgroup::"
+          done
+
+  # ── Container images (matrix: frontend, backend, backup) ──
+  images:
+    runs-on: ubuntu-latest
+    needs: [backend-tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: frontend
+            context: ./frontend
+            target: prod
+          - component: backend
+            context: ./backend
+            target: prod
+          - component: backup
+            context: ./backup
     steps:
       - uses: actions/checkout@v4
 
@@ -52,57 +84,134 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determine app version
+        id: app-version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "value=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/frontend
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.component }}
           tags: |
             type=sha,prefix=
+            type=raw,value=main-{{date 'YYYYMMDDHHmmss'}}-{{sha}},enable={{is_default_branch}}
             type=ref,event=branch
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - uses: docker/build-push-action@v6
+        id: build
         with:
-          context: ./frontend
-          target: prod
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+          sbom: ${{ github.event_name != 'pull_request' }}
+          provenance: ${{ github.event_name != 'pull_request' }}
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+          build-args: |
+            VITE_APP_VERSION=${{ steps.app-version.outputs.value }}
 
-  # ── Backend ─────────────────────────────────────────────
-  backend:
+      # ── Sign with Cosign (keyless / Sigstore) ──────────────
+      - uses: sigstore/cosign-installer@v3
+        if: github.event_name != 'pull_request'
+
+      - name: Sign image
+        if: github.event_name != 'pull_request'
+        run: |
+          cosign sign --yes \
+            ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.component }}@${{ steps.build.outputs.digest }}
+
+      # ── Trivy vulnerability scan → GitHub Security tab ─────
+      - name: Scan image for vulnerabilities
+        if: github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.component }}@${{ steps.build.outputs.digest }}
+          format: sarif
+          output: trivy-${{ matrix.component }}.sarif
+          severity: CRITICAL,HIGH
+
+      - name: Upload scan results to GitHub Security
+        if: github.event_name != 'pull_request' && always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-${{ matrix.component }}.sarif
+          category: trivy-${{ matrix.component }}
+
+  # ── Helm charts → OCI registry ────────────────────────────
+  helm-publish:
     runs-on: ubuntu-latest
+    needs: [helm-lint, images]
+    if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v4
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: azure/setup-helm@v4
 
-      - uses: docker/login-action@v3
-        if: github.event_name != 'pull_request'
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: sigstore/cosign-installer@v3
 
-      - uses: docker/metadata-action@v5
-        id: meta
-        with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}/backend
-          tags: |
-            type=sha,prefix=
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Log in to GHCR (Helm OCI)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login ${{ env.REGISTRY }} \
+              -u ${{ github.actor }} --password-stdin
 
-      - uses: docker/build-push-action@v6
-        with:
-          context: ./backend
-          target: prod
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=backend
-          cache-to: type=gha,mode=max,scope=backend
+      - name: Determine chart version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          else
+            BASE=$(grep '^version:' charts/backend/Chart.yaml | awk '{print $2}')
+            VERSION="${BASE}-dev.$(date +%s)"
+          fi
+          SHA=$(git rev-parse --short HEAD)
+          echo "chart=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "is_release=${{ startsWith(github.ref, 'refs/tags/v') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp chart metadata
+        run: |
+          VERSION="${{ steps.version.outputs.chart }}"
+          SHA="${{ steps.version.outputs.sha }}"
+          IS_RELEASE="${{ steps.version.outputs.is_release }}"
+
+          for dir in charts/*/; do
+            chart=$(basename "$dir")
+            # Set chart + app version
+            sed -i "s/^version:.*/version: ${VERSION}/" "${dir}Chart.yaml"
+            sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" "${dir}Chart.yaml"
+
+            # On dev builds, bake the SHA as the default image tag so Flux
+            # deploys the exact commit that was just built.
+            if [ "$IS_RELEASE" != "true" ]; then
+              sed -i "s/^\(    tag:\).*/\1 ${SHA}/" "${dir}values.yaml"
+            fi
+          done
+
+      - name: Package, push & sign charts
+        run: |
+          OCI_BASE="oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
+
+          for dir in charts/*/; do
+            chart=$(basename "$dir")
+            echo "::group::${chart}"
+            helm package "$dir" -d /tmp/charts
+
+            PUSH_OUT=$(helm push /tmp/charts/hriv-${chart}-*.tgz "${OCI_BASE}" 2>&1)
+            echo "$PUSH_OUT"
+
+            DIGEST=$(echo "$PUSH_OUT" | awk '/^Digest:/{print $2}')
+            cosign sign --yes \
+              "${{ env.REGISTRY }}/${{ github.repository }}/charts/hriv-${chart}@${DIGEST}"
+
+            echo "::endgroup::"
+          done
