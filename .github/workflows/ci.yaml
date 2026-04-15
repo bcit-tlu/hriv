@@ -132,7 +132,7 @@ jobs:
       # ── Trivy vulnerability scan → GitHub Security tab ─────
       - name: Scan image for vulnerabilities
         if: github.event_name != 'pull_request'
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.component }}@${{ steps.build.outputs.digest }}
           format: sarif
