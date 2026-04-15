@@ -193,7 +193,7 @@ jobs:
             # On dev builds, bake the SHA as the default image tag so Flux
             # deploys the exact commit that was just built.
             if [ "$IS_RELEASE" != "true" ]; then
-              sed -i "s/^\(    tag:\).*/\1 ${SHA}/" "${dir}values.yaml"
+              sed -i "s/^\(\s*tag:\).*/\1 ${SHA}/" "${dir}values.yaml"
             fi
           done
 

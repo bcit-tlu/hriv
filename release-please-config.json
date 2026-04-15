@@ -9,6 +9,9 @@
         "charts/frontend/Chart.yaml",
         "charts/backend/Chart.yaml",
         "charts/backup/Chart.yaml",
+        "charts/frontend/values.yaml",
+        "charts/backend/values.yaml",
+        "charts/backup/values.yaml",
         "frontend/package.json"
       ]
     }
