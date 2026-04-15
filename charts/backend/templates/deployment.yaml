@@ -151,7 +151,7 @@ spec:
       {{- if .Values.zoneAntiAffinity.enabled }}
         {{- $zoneRule := dict "labelSelector" (dict "matchLabels" (include "hriv-backend.selectorLabels" . | fromYaml)) "topologyKey" .Values.zoneAntiAffinity.topologyKey }}
         {{- $existing := list }}
-        {{- if hasKey $aff "podAntiAffinity" }}
+        {{- if and (hasKey $aff "podAntiAffinity") $aff.podAntiAffinity }}
           {{- $existing = $aff.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution | default list }}
         {{- end }}
         {{- $merged := dict "podAntiAffinity" (dict "requiredDuringSchedulingIgnoredDuringExecution" (append $existing $zoneRule)) }}

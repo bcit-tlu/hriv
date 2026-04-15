@@ -126,6 +126,8 @@ resources: {}
 # When enabled, adds a required pod anti-affinity rule so that no two
 # frontend replicas land in the same topology zone (e.g. datacenter).
 # Requires nodes to be labeled with the chosen topologyKey.
+# NOTE: replicaCount must not exceed the number of distinct zones,
+# otherwise excess pods will remain Pending (hard scheduling constraint).
 zoneAntiAffinity:
     enabled: false
     topologyKey: topology.kubernetes.io/zone
