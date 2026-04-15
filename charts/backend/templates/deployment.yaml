@@ -147,17 +147,15 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if or .Values.zoneAntiAffinity.enabled .Values.affinity }}
+      {{- $aff := dict }}
+      {{- if .Values.zoneAntiAffinity.enabled }}
+        {{- $zoneRule := dict "podAntiAffinity" (dict "requiredDuringSchedulingIgnoredDuringExecution" (list (dict "labelSelector" (dict "matchLabels" (include "hriv-backend.selectorLabels" . | fromYaml)) "topologyKey" .Values.zoneAntiAffinity.topologyKey))) }}
+        {{- $aff = mustMergeOverwrite $aff $zoneRule }}
+      {{- end }}
+      {{- with .Values.affinity }}
+        {{- $aff = mustMergeOverwrite $aff . }}
+      {{- end }}
+      {{- if $aff }}
       affinity:
-        {{- if .Values.zoneAntiAffinity.enabled }}
-        podAntiAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector:
-                matchLabels:
-                  {{- include "hriv-backend.selectorLabels" . | nindent 18 }}
-              topologyKey: {{ .Values.zoneAntiAffinity.topologyKey }}
-        {{- end }}
-        {{- with .Values.affinity }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- toYaml $aff | nindent 8 }}
       {{- end }}
