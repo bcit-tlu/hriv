@@ -12,7 +12,7 @@ metadata:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  {{- if .Values.persistence.enabled }}
+  {{- if and .Values.persistence.enabled (has "ReadWriteOnce" .Values.persistence.accessModes) }}
   strategy:
     type: Recreate
   {{- end }}
