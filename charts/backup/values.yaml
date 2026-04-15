@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/bcit-tlu/hriv/backup
+  repository: ghcr.io/bcit-tlu/hriv/hriv-backup
   tag: 0.1.0 # x-release-please-version
   pullPolicy: IfNotPresent
 
