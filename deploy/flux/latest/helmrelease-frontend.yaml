@@ -1,0 +1,40 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: hriv-frontend
+  namespace: hriv
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: hriv-frontend
+      # Accept any version including dev pre-releases (0.1.0-dev.*)
+      version: ">=0.0.0-0"
+      sourceRef:
+        kind: HelmRepository
+        name: hriv
+  driftDetection:
+    mode: enabled
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  values:
+    ingress:
+      enabled: true
+      className: nginx
+      annotations:
+        nginx.ingress.kubernetes.io/proxy-body-size: "0"
+      hosts:
+        - host: hriv.latest.ltc.bcit.ca
+          paths:
+            - path: /
+              pathType: Prefix
+      tls:
+        - hosts:
+            - hriv.latest.ltc.bcit.ca
+          secretName: hriv-latest-tls

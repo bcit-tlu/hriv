@@ -1,0 +1,28 @@
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: hriv-backup
+  namespace: hriv
+spec:
+  interval: 5m
+  chart:
+    spec:
+      chart: hriv-backup
+      # Pinned to stable releases only — bump manually or via promotion PR.
+      version: ">=1.0.0"
+      sourceRef:
+        kind: HelmRepository
+        name: hriv
+  driftDetection:
+    mode: enabled
+  install:
+    remediation:
+      retries: 3
+  upgrade:
+    cleanupOnFail: true
+    remediation:
+      retries: 3
+      remediateLastFailure: true
+  values:
+    vault:
+      enabled: true
