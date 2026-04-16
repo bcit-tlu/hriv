@@ -83,7 +83,9 @@ def test_apply_strategy_runs_stamp_for_stamp_strategy(
 
     migrations_bootstrap._apply_strategy("stamp", fake_cfg)
 
-    stamp.assert_called_once_with(fake_cfg, "head")
+    stamp.assert_called_once_with(
+        fake_cfg, migrations_bootstrap._LEGACY_BASELINE_REVISION
+    )
     upgrade.assert_not_called()
 
 

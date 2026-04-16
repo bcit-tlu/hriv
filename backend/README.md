@@ -103,7 +103,6 @@ Example files already included:
 - Unit tests should avoid requiring a live database where possible (use mocks/stubs).
 - Async test functions are auto-detected by `pytest-asyncio` (`asyncio_mode = "auto"`); no `@pytest.mark.asyncio` decorator is needed.
 - Keep tests deterministic and independent.
-<<<<<<< HEAD
 
 ---
 
@@ -214,4 +213,3 @@ if the Secret is missing or empty.
 To supply your own pre-existing secret, set `jwtSecret` in `values.yaml` (or
 manage the `<release>-jwt` Secret out-of-band and the chart will honour the
 existing value).
->>>>>>> origin/main
