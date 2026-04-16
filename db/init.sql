@@ -4,8 +4,8 @@
 CREATE TABLE IF NOT EXISTS programs (
     id            SERIAL PRIMARY KEY,
     name          VARCHAR(255) NOT NULL UNIQUE,
-    created_at    TIMESTAMPTZ DEFAULT now(),
-    updated_at    TIMESTAMPTZ DEFAULT now()
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS categories (
@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS categories (
     status        VARCHAR(50) DEFAULT 'active',
     sort_order    INTEGER NOT NULL DEFAULT 0,
     metadata      JSONB DEFAULT '{}',
-    created_at    TIMESTAMPTZ DEFAULT now(),
-    updated_at    TIMESTAMPTZ DEFAULT now()
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_categories_parent ON categories(parent_id);
@@ -30,14 +30,14 @@ CREATE TABLE IF NOT EXISTS images (
     category_id   INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     copyright     VARCHAR(500),
     note          VARCHAR(500),
-    active        BOOLEAN DEFAULT true,
+    active        BOOLEAN NOT NULL DEFAULT true,
     metadata      JSONB DEFAULT '{}',
     version       INTEGER NOT NULL DEFAULT 1,
     width         INTEGER,
     height        INTEGER,
     file_size     DOUBLE PRECISION,
-    created_at    TIMESTAMPTZ DEFAULT now(),
-    updated_at    TIMESTAMPTZ DEFAULT now()
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_images_category ON images(category_id);
@@ -64,8 +64,8 @@ CREATE TABLE IF NOT EXISTS source_images (
     program       VARCHAR(255),
     image_id      INTEGER REFERENCES images(id) ON DELETE SET NULL,
     file_size     BIGINT,
-    created_at    TIMESTAMPTZ DEFAULT now(),
-    updated_at    TIMESTAMPTZ DEFAULT now()
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_source_images_status ON source_images(status);
@@ -78,18 +78,19 @@ CREATE TABLE IF NOT EXISTS bulk_import_jobs (
     completed_count INTEGER NOT NULL DEFAULT 0,
     failed_count  INTEGER NOT NULL DEFAULT 0,
     errors        JSONB DEFAULT '[]',
-    created_at    TIMESTAMPTZ DEFAULT now(),
-    updated_at    TIMESTAMPTZ DEFAULT now()
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_bulk_import_jobs_status ON bulk_import_jobs(status);
+CREATE INDEX IF NOT EXISTS ix_bulk_import_jobs_category_id ON bulk_import_jobs(category_id);
 
 CREATE TABLE IF NOT EXISTS announcements (
     id            SERIAL PRIMARY KEY,
     message       TEXT NOT NULL DEFAULT '',
     enabled       BOOLEAN NOT NULL DEFAULT false,
-    created_at    TIMESTAMPTZ DEFAULT now(),
-    updated_at    TIMESTAMPTZ DEFAULT now()
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -102,6 +103,6 @@ CREATE TABLE IF NOT EXISTS users (
     program_id    INTEGER REFERENCES programs(id) ON DELETE SET NULL,
     last_access   TIMESTAMPTZ,
     metadata      JSONB DEFAULT '{}',
-    created_at    TIMESTAMPTZ DEFAULT now(),
-    updated_at    TIMESTAMPTZ DEFAULT now()
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );

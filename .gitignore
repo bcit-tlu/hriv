@@ -33,10 +33,19 @@ public/mix-manifest.json
 __pycache__/
 *.pyc
 *.cpython-36.pyc
+.coverage
+.coverage.*
+coverage.xml
 migrations/
 # …but do track Alembic migrations for the backend.
 !backend/app/migrations/
 !backend/app/migrations/**
+# …yet still exclude build artifacts that live under the re-included tree.
+backend/app/migrations/**/__pycache__/
+backend/app/migrations/**/*.pyc
+# Same for the re-included backend/tests tree below.
+backend/tests/**/__pycache__/
+backend/tests/**/*.pyc
 
 # Java / ANTLR
 *.class
@@ -61,6 +70,10 @@ tmp/
 .dockerignore-local
 temp/
 output*.txt
+
+# direnv / nix-direnv (developer-local; never commit)
+.direnv/
+.envrc.local
 
 # Kubernetes
 charts/**/.tgz
