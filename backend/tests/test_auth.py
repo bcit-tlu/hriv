@@ -146,6 +146,52 @@ def test_get_auth_settings_derives_epoch_from_explicit_secret(
     assert auth._get_auth_settings().jwt_instance_epoch == expected
 
 
+def test_get_auth_settings_raises_when_require_jwt_secret_and_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When REQUIRE_JWT_SECRET=true and JWT_SECRET is unset, startup must
+    fail hard instead of silently generating an ephemeral per-worker secret."""
+    monkeypatch.setattr(auth, "_auth_settings", None)
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    monkeypatch.setenv("REQUIRE_JWT_SECRET", "true")
+
+    with pytest.raises(RuntimeError, match="JWT_SECRET is required"):
+        auth._get_auth_settings()
+
+    # The singleton stays unset so a retry after fixing the env doesn't
+    # reuse a half-initialised object.
+    assert auth._auth_settings is None
+
+
+def test_get_auth_settings_accepts_require_jwt_secret_when_secret_provided(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """REQUIRE_JWT_SECRET=true must not raise when JWT_SECRET is explicitly set."""
+    monkeypatch.setattr(auth, "_auth_settings", None)
+    monkeypatch.setenv("JWT_SECRET", "stable-test-secret")
+    monkeypatch.setenv("REQUIRE_JWT_SECRET", "true")
+
+    settings = auth._get_auth_settings()
+
+    assert settings.jwt_secret == "stable-test-secret"
+    assert settings.require_jwt_secret is True
+
+
+def test_get_auth_settings_generates_ephemeral_secret_when_not_required(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without REQUIRE_JWT_SECRET, a missing JWT_SECRET still falls back to
+    an ephemeral random secret (preserving local-dev convenience)."""
+    monkeypatch.setattr(auth, "_auth_settings", None)
+    monkeypatch.delenv("JWT_SECRET", raising=False)
+    monkeypatch.delenv("REQUIRE_JWT_SECRET", raising=False)
+
+    settings = auth._get_auth_settings()
+
+    assert settings.jwt_secret  # non-empty ephemeral secret
+    assert settings.require_jwt_secret is False
+
+
 def test_get_auth_settings_uses_random_epoch_without_secret(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
