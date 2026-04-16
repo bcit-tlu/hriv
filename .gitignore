@@ -34,6 +34,9 @@ __pycache__/
 *.pyc
 *.cpython-36.pyc
 migrations/
+# …but do track Alembic migrations for the backend.
+!backend/app/migrations/
+!backend/app/migrations/**
 
 # Java / ANTLR
 *.class

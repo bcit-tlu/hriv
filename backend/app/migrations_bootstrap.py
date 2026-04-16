@@ -1,0 +1,142 @@
+"""Bootstrap Alembic against either a fresh or a pre-existing database.
+
+This module is intended to run at deployment time (Dockerfile CMD entrypoint,
+Helm initContainer, docker-compose ``command`` override, etc.) before the
+FastAPI app is started.
+
+It safely handles three cases:
+
+1. **Fresh database** — no ``alembic_version`` table and no application
+   tables.  Runs ``alembic upgrade head`` to create the full schema from
+   scratch.
+2. **Legacy database** — application tables already exist (e.g. because
+   ``db/init.sql`` was applied via a Postgres initdb script or CNPG
+   ``postInitApplicationSQL``) but ``alembic_version`` does not.  Stamps
+   ``head`` on the database so Alembic records it as already migrated
+   without attempting a duplicate ``CREATE TABLE`` — then any subsequent
+   migrations still get applied.
+3. **Already-managed database** — ``alembic_version`` exists.  Runs
+   ``alembic upgrade head`` to apply any pending revisions.
+
+The detection query looks for a sentinel table (``images``) rather than
+enumerating every model, so adding new models in future migrations does
+not break the legacy-DB stamp path.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import sys
+from pathlib import Path
+
+from alembic import command
+from alembic.config import Config
+from sqlalchemy import inspect
+from sqlalchemy.ext.asyncio import create_async_engine
+
+from app.database import settings
+
+logger = logging.getLogger(__name__)
+
+# Tables we treat as a signal that the schema was created outside of
+# Alembic (i.e. ``db/init.sql``).  ``images`` is the most central table
+# in the schema and predates every version of this application, so it
+# is a reliable sentinel.
+_LEGACY_SENTINEL_TABLE = "images"
+_ALEMBIC_VERSION_TABLE = "alembic_version"
+
+
+def _alembic_config() -> Config:
+    """Return a Config pointing at ``backend/alembic.ini``."""
+    ini_path = Path(__file__).resolve().parent.parent / "alembic.ini"
+    if not ini_path.exists():
+        raise RuntimeError(f"alembic.ini not found at {ini_path}")
+    return Config(str(ini_path))
+
+
+async def _existing_tables() -> set[str]:
+    """Inspect the target database and return the set of existing table names.
+
+    Uses the same async driver (asyncpg) the application already depends on,
+    so we don't need to install a second Postgres driver just for bootstrap.
+    """
+    engine = create_async_engine(settings.database_url)
+    try:
+        async with engine.connect() as conn:
+            return set(
+                await conn.run_sync(lambda sync_conn: inspect(sync_conn).get_table_names())
+            )
+    finally:
+        await engine.dispose()
+
+
+async def _decide_strategy() -> str:
+    """Return ``"upgrade"`` or ``"stamp"`` based on the current DB state."""
+    try:
+        tables = await _existing_tables()
+    except Exception:  # pragma: no cover — DB connection failure
+        logger.exception(
+            "Could not inspect database to decide between upgrade/stamp. "
+            "Falling back to 'upgrade' which will surface the underlying error."
+        )
+        return "upgrade"
+
+    has_alembic = _ALEMBIC_VERSION_TABLE in tables
+    has_legacy_schema = _LEGACY_SENTINEL_TABLE in tables
+
+    if has_alembic:
+        logger.info(
+            "alembic_version exists — will run 'alembic upgrade head' to apply "
+            "any pending revisions.",
+            extra={"event": "alembic.upgrade"},
+        )
+        return "upgrade"
+
+    if has_legacy_schema:
+        logger.warning(
+            "Detected legacy schema (table '%s' exists without alembic_version). "
+            "Will stamp 'head' so future migrations are tracked, without "
+            "re-creating existing tables.",
+            _LEGACY_SENTINEL_TABLE,
+            extra={"event": "alembic.stamp_head_legacy"},
+        )
+        return "stamp"
+
+    logger.info(
+        "Fresh database — will run 'alembic upgrade head' to create the full "
+        "schema.",
+        extra={"event": "alembic.upgrade_fresh"},
+    )
+    return "upgrade"
+
+
+def _apply_strategy(strategy: str, cfg: Config) -> None:
+    """Dispatch to the appropriate Alembic command for ``strategy``."""
+    if strategy == "stamp":
+        command.stamp(cfg, "head")
+    else:
+        command.upgrade(cfg, "head")
+
+
+def bootstrap() -> None:
+    """Run the right Alembic command for this deployment's DB state."""
+    cfg = _alembic_config()
+    strategy = asyncio.run(_decide_strategy())
+    _apply_strategy(strategy, cfg)
+
+
+def main() -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
+    )
+    try:
+        bootstrap()
+    except Exception:
+        logger.exception("Alembic bootstrap failed")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":  # pragma: no cover
+    sys.exit(main())
