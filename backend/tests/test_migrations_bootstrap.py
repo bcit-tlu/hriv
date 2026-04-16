@@ -70,10 +70,12 @@ def test_apply_strategy_runs_upgrade_for_upgrade_strategy(
     stamp.assert_not_called()
 
 
-def test_apply_strategy_runs_stamp_for_stamp_strategy(
+def test_apply_strategy_runs_stamp_then_upgrade_for_stamp_strategy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``_apply_strategy('stamp', ...)`` dispatches to ``alembic.command.stamp``."""
+    """``_apply_strategy('stamp', ...)`` stamps the baseline then upgrades to head,
+    so any migrations beyond the baseline (``0002_*`` and later) are applied in
+    the same bootstrap pass rather than being deferred to the next restart."""
     fake_cfg = MagicMock(name="Config")
     upgrade = MagicMock()
     stamp = MagicMock()
@@ -86,7 +88,7 @@ def test_apply_strategy_runs_stamp_for_stamp_strategy(
     stamp.assert_called_once_with(
         fake_cfg, migrations_bootstrap._LEGACY_BASELINE_REVISION
     )
-    upgrade.assert_not_called()
+    upgrade.assert_called_once_with(fake_cfg, "head")
 
 
 def test_bootstrap_wires_decide_and_apply(monkeypatch: pytest.MonkeyPatch) -> None:

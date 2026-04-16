@@ -12,9 +12,11 @@ It safely handles three cases:
 2. **Legacy database** — application tables already exist (e.g. because
    ``db/init.sql`` was applied via a Postgres initdb script or CNPG
    ``postInitApplicationSQL``) but ``alembic_version`` does not.  Stamps
-   ``head`` on the database so Alembic records it as already migrated
-   without attempting a duplicate ``CREATE TABLE`` — then any subsequent
-   migrations still get applied.
+   the baseline revision (``_LEGACY_BASELINE_REVISION``) so Alembic
+   records the pre-existing schema as already migrated without
+   attempting a duplicate ``CREATE TABLE``, then runs
+   ``alembic upgrade head`` in the same bootstrap pass so any migrations
+   beyond the baseline are applied immediately.
 3. **Already-managed database** — ``alembic_version`` exists.  Runs
    ``alembic upgrade head`` to apply any pending revisions.
 
@@ -101,10 +103,11 @@ async def _decide_strategy() -> str:
     if has_legacy_schema:
         logger.warning(
             "Detected legacy schema (table '%s' exists without alembic_version). "
-            "Will stamp 'head' so future migrations are tracked, without "
-            "re-creating existing tables.",
+            "Will stamp baseline revision '%s' and then run 'alembic upgrade head' "
+            "so pending migrations apply without re-creating existing tables.",
             _LEGACY_SENTINEL_TABLE,
-            extra={"event": "alembic.stamp_head_legacy"},
+            _LEGACY_BASELINE_REVISION,
+            extra={"event": "alembic.stamp_baseline_legacy"},
         )
         return "stamp"
 
@@ -120,12 +123,15 @@ def _apply_strategy(strategy: str, cfg: Config) -> None:
     """Dispatch to the appropriate Alembic command for ``strategy``.
 
     For the ``stamp`` path we stamp the specific baseline revision
-    (``_LEGACY_BASELINE_REVISION``) rather than ``"head"`` so that a
-    legacy DB which is only at the initial-schema state doesn't get
-    falsely marked as already-at-head when newer migrations exist.
+    (``_LEGACY_BASELINE_REVISION``) rather than ``"head"`` — so that a
+    legacy DB which only has the initial-schema state isn't falsely
+    marked as already-at-head when newer migrations exist — and then
+    immediately run ``upgrade head`` so any migrations beyond the
+    baseline are applied in the same bootstrap pass.
     """
     if strategy == "stamp":
         command.stamp(cfg, _LEGACY_BASELINE_REVISION)
+        command.upgrade(cfg, "head")
     else:
         command.upgrade(cfg, "head")
 
