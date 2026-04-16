@@ -68,7 +68,6 @@
 * increase share view overlay limit from 5 to 10 ([b23dd52](https://github.com/bcit-tlu/hriv/commit/b23dd525a7fb04a13389703c01aa2c31d22db839))
 * maximize MUI Container to use full viewport width for widescreen displays ([491ccaf](https://github.com/bcit-tlu/hriv/commit/491ccaf7905ecadae05e1dfc37b6cc841461a407))
 * mirror Add Image fields in Bulk Import modal via shared ImageMetadataFields component ([6a73c6b](https://github.com/bcit-tlu/hriv/commit/6a73c6bd65cfa7467bbb789ae234f53a3ac53fa8))
-* pass current category to UploadImageModal so browse-page uploads are auto-assigned ([292b157](https://github.com/bcit-tlu/hriv/commit/292b15777607f08827ae7a34fd31e0d874068f9d))
 * persist search query and filters across modal open/close cycles ([7697062](https://github.com/bcit-tlu/hriv/commit/7697062cba81b2f8ef39ab0fe24388f4f9b0a0b4))
 * Phase 5 — Refinements (optimistic concurrency, task queue, rate limiting) ([178de9c](https://github.com/bcit-tlu/hriv/commit/178de9cb51a476ebdc0942178a755783d2cc0e42))
 * Rancher-style OIDC login toggle and fix session persistence ([d68a3ae](https://github.com/bcit-tlu/hriv/commit/d68a3ae047b25370a9b0377ca5aa6eac451fea57))
@@ -88,7 +87,6 @@
 
 * add active field to ApiSourceImage TypeScript interface ([146d07a](https://github.com/bcit-tlu/hriv/commit/146d07a5df7c59e8bbe69ce7a44612faca4ac67a))
 * add matching zIndex to share-link snackbar for consistent layering ([2b66993](https://github.com/bcit-tlu/hriv/commit/2b669939ba65abfb21877b8fdfc64a2ee7aeb98f))
-* add MAX_DEPTH guard to New Category button in viewer toolbar ([675d329](https://github.com/bcit-tlu/hriv/commit/675d3290b2461b2ba61bf4dd84288f463f1e3335))
 * add missing onEditCategory and onToggleVisibility to browse-view EditImageModal ([77ee7d1](https://github.com/bcit-tlu/hriv/commit/77ee7d147955e553384891cdf9dc1d81080d2a53))
 * add NaN guards for URL param parsing ([6b16465](https://github.com/bcit-tlu/hriv/commit/6b1646516d2ecc0d8d74b7c9bf91f926dde55790))
 * add saving state to MoveImageDialog to prevent duplicate submissions ([8eda740](https://github.com/bcit-tlu/hriv/commit/8eda7406fea4596b383d9d9e6a944d2b740fce44))
