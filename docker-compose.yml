@@ -55,17 +55,16 @@ services:
       retries: 5
       start_period: 10s
 
-# When poetry is updated run this to update poetry.lock
-  # backend_poetry:
-  #   build:
-  #     context: ./backend
-  #     target: poetry-tools
-  #   volumes:
-  #     - ./backend:/app
-  #   working_dir: /app
-  #   entrypoint: ["/opt/poetry-venv/bin/poetry"]
-  #   profiles:
-  #     - tools
+  backend_poetry:
+    build:
+      context: ./backend
+      target: poetry-tools
+    volumes:
+      - ./backend:/app
+    working_dir: /app
+    entrypoint: ["/opt/poetry-venv/bin/poetry"]
+    profiles:
+      - tools
 
   frontend:
     build:
