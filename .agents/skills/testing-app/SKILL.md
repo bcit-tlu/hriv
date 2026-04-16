@@ -9,7 +9,7 @@
 
 ## Seed Data
 
-- **Login**: See `db/init.sql` for seed credentials (admin user with canEditContent and canManageUsers)
+- **Login**: See `db/seed.sql` for seed credentials (admin user with canEditContent and canManageUsers)
 - **Categories**: Architecture (parent) > Italian > Gothic, Architecture > American, Panoramas
 - **Images**: Duomo di Milano (Italian), Duomo di Milano Gothic Detail (Gothic), Highsmith Panorama (American), Library of Congress (Panoramas)
 

@@ -9,8 +9,6 @@ services:
       - 5432:5432
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql
-      - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U hriv"]
       interval: 30s
@@ -19,9 +17,12 @@ services:
       start_period: 5s
 
   migrate:
-    # Runs Alembic migrations (or stamps head on legacy schemas) before the
-    # backend starts.  The container exits 0 once the DB is at the target
-    # revision, which unblocks ``backend``/``worker`` via ``service_completed_successfully``.
+    # Runs ``alembic upgrade head`` against the database before the backend
+    # starts.  Alembic is the sole source of truth for the schema; on a
+    # fresh DB ``upgrade head`` creates every table, on an already-managed
+    # DB it applies any pending revisions.  The container exits 0 once the
+    # DB is at head, unblocking ``backend``/``worker``/``seed`` via
+    # ``service_completed_successfully``.
     build:
       context: ./backend
       target: dev
@@ -37,6 +38,30 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    restart: "no"
+
+  seed:
+    # Loads idempotent demo data (``db/seed.sql``) for local development.
+    # Runs after ``migrate`` so the Alembic-managed schema exists; uses the
+    # official postgres client rather than adding psql to the backend image.
+    # All INSERTs are ``ON CONFLICT DO NOTHING`` so re-runs are no-ops.
+    image: postgres:16-alpine
+    command:
+      [
+        "psql",
+        "postgresql://hriv:hriv@db:5432/hriv",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-f",
+        "/seed.sql",
+      ]
+    volumes:
+      - ./db/seed.sql:/seed.sql:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: "no"
 
   backend:
@@ -64,6 +89,8 @@ services:
       redis:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      seed:
         condition: service_completed_successfully
     healthcheck:
       test:
@@ -131,6 +158,8 @@ services:
       redis:
         condition: service_healthy
       migrate:
+        condition: service_completed_successfully
+      seed:
         condition: service_completed_successfully
 
   redis:

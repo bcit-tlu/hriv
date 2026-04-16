@@ -114,16 +114,18 @@ scripts in `backend/app/migrations/versions/`.
 
 ### Running migrations
 
-At deployment time, prefer the bootstrap helper which auto-detects
-legacy databases (created via `db/init.sql` / CNPG `postInitApplicationSQL`)
-and stamps `head` on them instead of re-creating existing tables:
+Alembic is the sole source of truth for the schema.  At deployment time,
+prefer the bootstrap helper which runs ``alembic upgrade head`` under a
+``pg_advisory_lock`` so concurrent pods (Helm ``replicaCount > 1``)
+serialize on the database rather than racing on the baseline
+``CREATE TABLE``:
 
 ```sh
 DATABASE_URL=postgresql+asyncpg://... poetry run python -m app.migrations_bootstrap
 ```
 
 The helper is wired into `docker-compose.yml` as a `migrate` service
-(the `backend` and `worker` services depend on it completing
+(the `backend`, `worker` and `seed` services depend on it completing
 successfully) and into the Helm chart as an `initContainer` on the
 backend Deployment.
 
@@ -132,15 +134,13 @@ For manual ops you can invoke Alembic directly from `backend/`:
 ```sh
 DATABASE_URL=postgresql+asyncpg://... poetry run alembic upgrade head      # apply migrations
 DATABASE_URL=postgresql+asyncpg://... poetry run alembic current           # show current revision
-DATABASE_URL=postgresql+asyncpg://... poetry run alembic stamp head        # mark pre-existing schema as migrated
 DATABASE_URL=postgresql+asyncpg://... poetry run alembic downgrade -1      # revert the latest migration
 ```
 
 ### Authoring a new migration
 
 Any schema change (new table, new column, index, default, etc.) goes
-through a new Alembic revision — do **not** edit `db/init.sql` or the
-Helm `configmap-initdb.yaml` by hand anymore.
+through a new Alembic revision.
 
 1. Make the change in `backend/app/models.py`.
 2. Generate a revision (requires a live DB at `DATABASE_URL` pointing at
@@ -166,6 +166,8 @@ helper once.  It detects the legacy schema — presence of the `images`
 table without an `alembic_version` table — and stamps `head` so that
 future migrations apply on top of the existing schema without
 re-creating any tables.
+---
+
 ## JWT_SECRET
 
 The backend signs access tokens with `JWT_SECRET`. Setting it correctly is
