@@ -1,4 +1,7 @@
 {{- if .Values.seedAdmin.enabled }}
+{{- if not .Values.seedAdmin.passwordHash }}
+{{- fail "seedAdmin.enabled=true but seedAdmin.passwordHash is blank — supply a bcrypt hash (see values.yaml)" }}
+{{- end }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -47,9 +50,9 @@ spec:
               INSERT INTO users (id, name, email, password_hash, role, program_id, metadata)
               VALUES (
                 1,
-                {{ .Values.seedAdmin.name | squote }},
-                {{ .Values.seedAdmin.email | squote }},
-                {{ .Values.seedAdmin.passwordHash | squote }},
+                {{ .Values.seedAdmin.name         | replace "'" "''" | squote }},
+                {{ .Values.seedAdmin.email        | replace "'" "''" | squote }},
+                {{ .Values.seedAdmin.passwordHash | replace "'" "''" | squote }},
                 'admin',
                 1,
                 '{}'
