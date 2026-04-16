@@ -111,10 +111,17 @@ async def test_advisory_lock_acquires_and_releases(
     fake_engine.connect.return_value = connect_cm
     fake_engine.dispose = AsyncMock()
 
+    captured: dict[str, object] = {}
+
+    def _fake_create_async_engine(*args: object, **kwargs: object) -> MagicMock:
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return fake_engine
+
     monkeypatch.setattr(
         migrations_bootstrap,
         "create_async_engine",
-        lambda *a, **kw: fake_engine,
+        _fake_create_async_engine,
     )
 
     async with migrations_bootstrap._advisory_lock():
@@ -127,6 +134,10 @@ async def test_advisory_lock_acquires_and_releases(
     assert "pg_advisory_unlock" in second_sql
     lock_params = fake_conn.execute.await_args_list[0].args[1]
     assert lock_params == {"key": migrations_bootstrap._ADVISORY_LOCK_KEY}
+    # AUTOCOMMIT keeps the lock connection from sitting idle-in-transaction
+    # while Alembic runs its migrations on a separate connection — otherwise
+    # ``idle_in_transaction_session_timeout`` could silently release the lock.
+    assert captured["kwargs"].get("isolation_level") == "AUTOCOMMIT"
     fake_engine.dispose.assert_awaited_once()
 
 
