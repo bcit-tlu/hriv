@@ -24,6 +24,21 @@ spec:
       labels:
         {{- include "hriv-backend.selectorLabels" . | nindent 8 }}
     spec:
+      initContainers:
+        # Run Alembic migrations (or stamp head on a legacy schema) before
+        # the FastAPI app starts.  Idempotent: once the DB is at ``head`` the
+        # bootstrap simply no-ops.  Keeps the pod deployment self-sufficient
+        # without requiring a separate Job/post-upgrade hook.
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "app.migrations_bootstrap"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hriv-backend.fullname" . }}-db-app
+                  key: uri
       containers:
         - name: backend
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
