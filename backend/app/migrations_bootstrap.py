@@ -197,11 +197,24 @@ async def _advisory_lock() -> AsyncIterator[None]:
 
 
 async def _async_bootstrap() -> None:
-    """Async entrypoint holding the advisory lock across the full flow."""
+    """Async entrypoint holding the advisory lock across the full flow.
+
+    ``_apply_strategy`` is dispatched via :func:`asyncio.to_thread` because
+    Alembic's ``env.py`` (`run_migrations_online`) calls ``asyncio.run()``
+    internally, and a nested ``asyncio.run()`` on the same thread raises
+    ``RuntimeError: asyncio.run() cannot be called from a running event
+    loop``.  Running Alembic in a worker thread gives ``env.py`` a clean
+    thread with no active event loop.
+
+    The advisory lock remains valid because ``pg_advisory_lock`` is
+    *session-scoped* in Postgres — the lock held by the asyncpg session on
+    this thread is respected by the separate synchronous connection
+    Alembic opens on the worker thread.
+    """
     cfg = _alembic_config()
     async with _advisory_lock():
         strategy = await _decide_strategy()
-        _apply_strategy(strategy, cfg)
+        await asyncio.to_thread(_apply_strategy, strategy, cfg)
 
 
 def bootstrap() -> None:
