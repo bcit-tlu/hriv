@@ -46,13 +46,22 @@ jobs:
 
       - uses: azure/setup-helm@v4
 
-      - name: Lint and template-render all charts
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | sudo tar xz -C /usr/local/bin kubeconform
+
+      - name: Lint, template-render & validate all charts
         run: |
           for chart in charts/*/; do
             name=$(basename "$chart")
             echo "::group::${name}"
             helm lint "$chart"
-            helm template test "$chart"
+            helm template test "$chart" \
+              | kubeconform -strict -summary \
+                  -schema-location default \
+                  -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+                  -ignore-missing-schemas
             echo "::endgroup::"
           done
 
