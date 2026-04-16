@@ -31,12 +31,12 @@ import contextlib
 import hashlib
 import logging
 import sys
-from collections.abc import Iterator
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.database import settings
@@ -67,17 +67,6 @@ _ADVISORY_LOCK_KEY = int.from_bytes(
     byteorder="big",
     signed=True,
 )
-
-
-def _sync_database_url() -> str:
-    """Return a synchronous SQLAlchemy URL for advisory-lock / inspector use.
-
-    ``settings.database_url`` is configured for the asyncpg driver but
-    ``pg_advisory_lock`` is held for the lifetime of a *session*, and
-    Alembic's own commands open synchronous connections — so we map the URL
-    back to the default sync ``psycopg2`` / ``psycopg`` driver.
-    """
-    return settings.database_url.replace("+asyncpg", "")
 
 
 def _alembic_config() -> Config:
@@ -162,8 +151,8 @@ def _apply_strategy(strategy: str, cfg: Config) -> None:
         command.upgrade(cfg, "head")
 
 
-@contextlib.contextmanager
-def _advisory_lock() -> Iterator[None]:
+@contextlib.asynccontextmanager
+async def _advisory_lock() -> AsyncIterator[None]:
     """Serialize concurrent bootstrap runs via ``pg_advisory_lock``.
 
     Alembic itself doesn't acquire an advisory lock, so with ``replicaCount
@@ -172,23 +161,29 @@ def _advisory_lock() -> Iterator[None]:
     advisory lock makes concurrent bootstrap safe: the waiters simply block
     until the first pod finishes, then observe an already-managed DB and
     run ``upgrade head`` as a no-op.
+
+    Implemented with the same asyncpg engine the rest of the app uses so
+    we don't need a second (synchronous) Postgres driver as a dependency.
+    Advisory locks are session-scoped in Postgres, not connection-type
+    scoped, so the lock held here is visible to the separate sync
+    connection Alembic opens for its migrations.
     """
-    engine = create_engine(_sync_database_url(), future=True)
+    engine = create_async_engine(settings.database_url)
     try:
-        with engine.connect() as conn:
+        async with engine.connect() as conn:
             logger.info(
                 "Acquiring pg_advisory_lock(%d) for Alembic bootstrap.",
                 _ADVISORY_LOCK_KEY,
                 extra={"event": "alembic.lock_acquire"},
             )
-            conn.execute(
+            await conn.execute(
                 text("SELECT pg_advisory_lock(:key)"),
                 {"key": _ADVISORY_LOCK_KEY},
             )
             try:
                 yield
             finally:
-                conn.execute(
+                await conn.execute(
                     text("SELECT pg_advisory_unlock(:key)"),
                     {"key": _ADVISORY_LOCK_KEY},
                 )
@@ -198,19 +193,24 @@ def _advisory_lock() -> Iterator[None]:
                     extra={"event": "alembic.lock_release"},
                 )
     finally:
-        engine.dispose()
+        await engine.dispose()
+
+
+async def _async_bootstrap() -> None:
+    """Async entrypoint holding the advisory lock across the full flow."""
+    cfg = _alembic_config()
+    async with _advisory_lock():
+        strategy = await _decide_strategy()
+        _apply_strategy(strategy, cfg)
 
 
 def bootstrap() -> None:
     """Run the right Alembic command for this deployment's DB state.
 
-    Wrapped in :func:`_advisory_lock` so multiple replicas can safely race
-    on the same database.
+    The decide + apply flow runs under a :func:`_advisory_lock` so multiple
+    replicas can safely race on the same database.
     """
-    cfg = _alembic_config()
-    with _advisory_lock():
-        strategy = asyncio.run(_decide_strategy())
-        _apply_strategy(strategy, cfg)
+    asyncio.run(_async_bootstrap())
 
 
 def main() -> int:

@@ -8,15 +8,15 @@ require a live Postgres server.
 from __future__ import annotations
 
 import contextlib
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app import migrations_bootstrap
 
 
-@contextlib.contextmanager
-def _noop_advisory_lock():
+@contextlib.asynccontextmanager
+async def _noop_advisory_lock():
     """Stand-in for ``_advisory_lock`` that skips the real Postgres round-trip."""
     yield
 
@@ -126,8 +126,8 @@ def test_bootstrap_holds_advisory_lock_across_apply(
     exit of the lock and the moment ``_apply_strategy`` fires."""
     events: list[str] = []
 
-    @contextlib.contextmanager
-    def _tracking_lock():
+    @contextlib.asynccontextmanager
+    async def _tracking_lock():
         events.append("lock_acquired")
         try:
             yield
@@ -153,49 +153,40 @@ def test_bootstrap_holds_advisory_lock_across_apply(
     assert events == ["lock_acquired", "decide", "apply:upgrade", "lock_released"]
 
 
-def test_sync_database_url_strips_asyncpg_driver() -> None:
-    """The sync helper must strip ``+asyncpg`` so ``create_engine`` picks
-    the default sync driver for ``pg_advisory_lock``."""
-    async_url = "postgresql+asyncpg://u:p@h/db"
-    with patch.object(migrations_bootstrap.settings, "database_url", async_url):
-        assert (
-            migrations_bootstrap._sync_database_url()
-            == "postgresql://u:p@h/db"
-        )
-
-
-def test_advisory_lock_acquires_and_releases(
+async def test_advisory_lock_acquires_and_releases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``_advisory_lock`` must SELECT pg_advisory_lock before yielding and
-    SELECT pg_advisory_unlock on exit, using the fixed ``_ADVISORY_LOCK_KEY``."""
-    fake_conn = MagicMock(name="Connection")
-    fake_engine = MagicMock(name="Engine")
-    fake_engine.connect.return_value.__enter__.return_value = fake_conn
-    fake_engine.connect.return_value.__exit__.return_value = False
+    SELECT pg_advisory_unlock on exit, using the fixed ``_ADVISORY_LOCK_KEY``.
+
+    Uses the existing asyncpg engine so no synchronous Postgres driver is
+    needed as a dependency."""
+    fake_conn = AsyncMock(name="AsyncConnection")
+    fake_engine = MagicMock(name="AsyncEngine")
+    # ``async with engine.connect() as conn`` yields ``fake_conn``.
+    connect_cm = MagicMock(name="ConnectCM")
+    connect_cm.__aenter__ = AsyncMock(return_value=fake_conn)
+    connect_cm.__aexit__ = AsyncMock(return_value=False)
+    fake_engine.connect.return_value = connect_cm
+    fake_engine.dispose = AsyncMock()
 
     monkeypatch.setattr(
         migrations_bootstrap,
-        "create_engine",
+        "create_async_engine",
         lambda *a, **kw: fake_engine,
     )
-    monkeypatch.setattr(
-        migrations_bootstrap,
-        "_sync_database_url",
-        lambda: "postgresql://u:p@h/db",
-    )
 
-    with migrations_bootstrap._advisory_lock():
+    async with migrations_bootstrap._advisory_lock():
         pass
 
-    assert fake_conn.execute.call_count == 2
-    first_sql = str(fake_conn.execute.call_args_list[0].args[0])
-    second_sql = str(fake_conn.execute.call_args_list[1].args[0])
+    assert fake_conn.execute.await_count == 2
+    first_sql = str(fake_conn.execute.await_args_list[0].args[0])
+    second_sql = str(fake_conn.execute.await_args_list[1].args[0])
     assert "pg_advisory_lock" in first_sql
     assert "pg_advisory_unlock" in second_sql
-    lock_params = fake_conn.execute.call_args_list[0].args[1]
+    lock_params = fake_conn.execute.await_args_list[0].args[1]
     assert lock_params == {"key": migrations_bootstrap._ADVISORY_LOCK_KEY}
-    fake_engine.dispose.assert_called_once()
+    fake_engine.dispose.assert_awaited_once()
 
 
 def test_alembic_config_points_at_repo_ini() -> None:
