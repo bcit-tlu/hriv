@@ -45,6 +45,12 @@ logger = logging.getLogger(__name__)
 _LEGACY_SENTINEL_TABLE = "images"
 _ALEMBIC_VERSION_TABLE = "alembic_version"
 
+# Revision a legacy database (db/init.sql-style bootstrap) matches.  We stamp
+# this specific revision rather than ``"head"`` so that adding a future
+# migration (``0002_*``, ``0003_*``, ...) after someone's initial ``stamp``
+# never causes a later ``upgrade`` to silently skip pending migrations.
+_LEGACY_BASELINE_REVISION = "0001_initial_schema"
+
 
 def _alembic_config() -> Config:
     """Return a Config pointing at ``backend/alembic.ini``."""
@@ -111,9 +117,15 @@ async def _decide_strategy() -> str:
 
 
 def _apply_strategy(strategy: str, cfg: Config) -> None:
-    """Dispatch to the appropriate Alembic command for ``strategy``."""
+    """Dispatch to the appropriate Alembic command for ``strategy``.
+
+    For the ``stamp`` path we stamp the specific baseline revision
+    (``_LEGACY_BASELINE_REVISION``) rather than ``"head"`` so that a
+    legacy DB which is only at the initial-schema state doesn't get
+    falsely marked as already-at-head when newer migrations exist.
+    """
     if strategy == "stamp":
-        command.stamp(cfg, "head")
+        command.stamp(cfg, _LEGACY_BASELINE_REVISION)
     else:
         command.upgrade(cfg, "head")
 
