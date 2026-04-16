@@ -103,6 +103,12 @@ class Image(Base):
 
 class SourceImage(Base):
     __tablename__ = "source_images"
+    __table_args__ = (
+        # Name matches db/init.sql and the Alembic baseline migration so
+        # that ``alembic revision --autogenerate`` does not propose
+        # dropping and recreating this index under a different name.
+        Index("idx_source_images_status", "status"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     original_filename: Mapped[str] = mapped_column(String(500), nullable=False)
@@ -135,6 +141,12 @@ class SourceImage(Base):
 
 class BulkImportJob(Base):
     __tablename__ = "bulk_import_jobs"
+    __table_args__ = (
+        # Name matches db/init.sql and the Alembic baseline migration so
+        # that ``alembic revision --autogenerate`` does not propose
+        # dropping and recreating this index under a different name.
+        Index("idx_bulk_import_jobs_status", "status"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
