@@ -27,13 +27,16 @@ not break the legacy-DB stamp path.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import hashlib
 import logging
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import inspect
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.database import settings
@@ -52,6 +55,29 @@ _ALEMBIC_VERSION_TABLE = "alembic_version"
 # migration (``0002_*``, ``0003_*``, ...) after someone's initial ``stamp``
 # never causes a later ``upgrade`` to silently skip pending migrations.
 _LEGACY_BASELINE_REVISION = "0001_initial_schema"
+
+# Deterministic signed 64-bit key used with ``pg_advisory_lock`` so that
+# multiple pods racing to bootstrap (Helm ``replicaCount > 1`` or parallel
+# docker-compose ``up``) serialize on the database itself.  The first pod
+# to acquire the lock runs the strategy; subsequent waiters see
+# ``alembic_version`` already populated when they acquire the lock and
+# their ``upgrade head`` becomes a cheap no-op.
+_ADVISORY_LOCK_KEY = int.from_bytes(
+    hashlib.sha256(b"hriv-alembic-bootstrap").digest()[:8],
+    byteorder="big",
+    signed=True,
+)
+
+
+def _sync_database_url() -> str:
+    """Return a synchronous SQLAlchemy URL for advisory-lock / inspector use.
+
+    ``settings.database_url`` is configured for the asyncpg driver but
+    ``pg_advisory_lock`` is held for the lifetime of a *session*, and
+    Alembic's own commands open synchronous connections — so we map the URL
+    back to the default sync ``psycopg2`` / ``psycopg`` driver.
+    """
+    return settings.database_url.replace("+asyncpg", "")
 
 
 def _alembic_config() -> Config:
@@ -136,11 +162,55 @@ def _apply_strategy(strategy: str, cfg: Config) -> None:
         command.upgrade(cfg, "head")
 
 
+@contextlib.contextmanager
+def _advisory_lock() -> Iterator[None]:
+    """Serialize concurrent bootstrap runs via ``pg_advisory_lock``.
+
+    Alembic itself doesn't acquire an advisory lock, so with ``replicaCount
+    > 1`` multiple pods could race on the baseline ``CREATE TABLE`` and
+    produce transient ``DuplicateTable`` errors on all-but-one pods.  The
+    advisory lock makes concurrent bootstrap safe: the waiters simply block
+    until the first pod finishes, then observe an already-managed DB and
+    run ``upgrade head`` as a no-op.
+    """
+    engine = create_engine(_sync_database_url(), future=True)
+    try:
+        with engine.connect() as conn:
+            logger.info(
+                "Acquiring pg_advisory_lock(%d) for Alembic bootstrap.",
+                _ADVISORY_LOCK_KEY,
+                extra={"event": "alembic.lock_acquire"},
+            )
+            conn.execute(
+                text("SELECT pg_advisory_lock(:key)"),
+                {"key": _ADVISORY_LOCK_KEY},
+            )
+            try:
+                yield
+            finally:
+                conn.execute(
+                    text("SELECT pg_advisory_unlock(:key)"),
+                    {"key": _ADVISORY_LOCK_KEY},
+                )
+                logger.info(
+                    "Released pg_advisory_lock(%d) after Alembic bootstrap.",
+                    _ADVISORY_LOCK_KEY,
+                    extra={"event": "alembic.lock_release"},
+                )
+    finally:
+        engine.dispose()
+
+
 def bootstrap() -> None:
-    """Run the right Alembic command for this deployment's DB state."""
+    """Run the right Alembic command for this deployment's DB state.
+
+    Wrapped in :func:`_advisory_lock` so multiple replicas can safely race
+    on the same database.
+    """
     cfg = _alembic_config()
-    strategy = asyncio.run(_decide_strategy())
-    _apply_strategy(strategy, cfg)
+    with _advisory_lock():
+        strategy = asyncio.run(_decide_strategy())
+        _apply_strategy(strategy, cfg)
 
 
 def main() -> int:

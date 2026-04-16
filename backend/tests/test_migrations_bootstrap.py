@@ -7,11 +7,18 @@ require a live Postgres server.
 """
 from __future__ import annotations
 
+import contextlib
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app import migrations_bootstrap
+
+
+@contextlib.contextmanager
+def _noop_advisory_lock():
+    """Stand-in for ``_advisory_lock`` that skips the real Postgres round-trip."""
+    yield
 
 
 async def test_decide_strategy_upgrades_when_alembic_version_exists() -> None:
@@ -103,10 +110,92 @@ def test_bootstrap_wires_decide_and_apply(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setattr(migrations_bootstrap, "_alembic_config", lambda: fake_cfg)
     monkeypatch.setattr(migrations_bootstrap, "_decide_strategy", _fake_decide)
     monkeypatch.setattr(migrations_bootstrap, "_apply_strategy", apply_strategy)
+    monkeypatch.setattr(migrations_bootstrap, "_advisory_lock", _noop_advisory_lock)
 
     migrations_bootstrap.bootstrap()
 
     apply_strategy.assert_called_once_with("stamp", fake_cfg)
+
+
+def test_bootstrap_holds_advisory_lock_across_apply(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The advisory lock must be held for the *entire* decide+apply flow so
+    concurrent pods serialize on pg_advisory_lock rather than racing on the
+    baseline ``CREATE TABLE``.  We assert the ordering by recording entry /
+    exit of the lock and the moment ``_apply_strategy`` fires."""
+    events: list[str] = []
+
+    @contextlib.contextmanager
+    def _tracking_lock():
+        events.append("lock_acquired")
+        try:
+            yield
+        finally:
+            events.append("lock_released")
+
+    def _tracking_apply(strategy: str, cfg: MagicMock) -> None:
+        events.append(f"apply:{strategy}")
+
+    async def _fake_decide() -> str:
+        events.append("decide")
+        return "upgrade"
+
+    monkeypatch.setattr(
+        migrations_bootstrap, "_alembic_config", lambda: MagicMock(name="Config")
+    )
+    monkeypatch.setattr(migrations_bootstrap, "_decide_strategy", _fake_decide)
+    monkeypatch.setattr(migrations_bootstrap, "_apply_strategy", _tracking_apply)
+    monkeypatch.setattr(migrations_bootstrap, "_advisory_lock", _tracking_lock)
+
+    migrations_bootstrap.bootstrap()
+
+    assert events == ["lock_acquired", "decide", "apply:upgrade", "lock_released"]
+
+
+def test_sync_database_url_strips_asyncpg_driver() -> None:
+    """The sync helper must strip ``+asyncpg`` so ``create_engine`` picks
+    the default sync driver for ``pg_advisory_lock``."""
+    async_url = "postgresql+asyncpg://u:p@h/db"
+    with patch.object(migrations_bootstrap.settings, "database_url", async_url):
+        assert (
+            migrations_bootstrap._sync_database_url()
+            == "postgresql://u:p@h/db"
+        )
+
+
+def test_advisory_lock_acquires_and_releases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_advisory_lock`` must SELECT pg_advisory_lock before yielding and
+    SELECT pg_advisory_unlock on exit, using the fixed ``_ADVISORY_LOCK_KEY``."""
+    fake_conn = MagicMock(name="Connection")
+    fake_engine = MagicMock(name="Engine")
+    fake_engine.connect.return_value.__enter__.return_value = fake_conn
+    fake_engine.connect.return_value.__exit__.return_value = False
+
+    monkeypatch.setattr(
+        migrations_bootstrap,
+        "create_engine",
+        lambda *a, **kw: fake_engine,
+    )
+    monkeypatch.setattr(
+        migrations_bootstrap,
+        "_sync_database_url",
+        lambda: "postgresql://u:p@h/db",
+    )
+
+    with migrations_bootstrap._advisory_lock():
+        pass
+
+    assert fake_conn.execute.call_count == 2
+    first_sql = str(fake_conn.execute.call_args_list[0].args[0])
+    second_sql = str(fake_conn.execute.call_args_list[1].args[0])
+    assert "pg_advisory_lock" in first_sql
+    assert "pg_advisory_unlock" in second_sql
+    lock_params = fake_conn.execute.call_args_list[0].args[1]
+    assert lock_params == {"key": migrations_bootstrap._ADVISORY_LOCK_KEY}
+    fake_engine.dispose.assert_called_once()
 
 
 def test_alembic_config_points_at_repo_ini() -> None:

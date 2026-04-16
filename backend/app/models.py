@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, Boolean, Column, Float, Integer, String, Text, ForeignKey, DateTime, Table, func
+from sqlalchemy import BigInteger, Boolean, Column, Float, Index, Integer, String, Text, ForeignKey, DateTime, Table, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
@@ -30,11 +30,17 @@ class Program(Base):
 
 class Category(Base):
     __tablename__ = "categories"
+    __table_args__ = (
+        # Name matches db/init.sql and the Alembic baseline migration so that
+        # ``alembic revision --autogenerate`` does not propose renaming the
+        # default-generated ``ix_categories_parent_id`` to/from this index.
+        Index("idx_categories_parent", "parent_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     label: Mapped[str] = mapped_column(String(255), nullable=False)
     parent_id: Mapped[int | None] = mapped_column(
-        ForeignKey("categories.id", ondelete="CASCADE"), nullable=True, index=True
+        ForeignKey("categories.id", ondelete="CASCADE"), nullable=True
     )
     program: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str | None] = mapped_column(String(50), nullable=True, default="active")
@@ -60,13 +66,19 @@ class Category(Base):
 
 class Image(Base):
     __tablename__ = "images"
+    __table_args__ = (
+        # Name matches db/init.sql and the Alembic baseline migration so that
+        # ``alembic revision --autogenerate`` does not propose renaming the
+        # default-generated ``ix_images_category_id`` to/from this index.
+        Index("idx_images_category", "category_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     thumb: Mapped[str] = mapped_column(Text, nullable=False)
     tile_sources: Mapped[str] = mapped_column(Text, nullable=False)
     category_id: Mapped[int | None] = mapped_column(
-        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True, index=True
+        ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )
     copyright: Mapped[str | None] = mapped_column(String(500), nullable=True)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
