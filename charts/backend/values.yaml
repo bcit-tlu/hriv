@@ -18,7 +18,7 @@ env:
     # Note: exporting traces typically also requires starting the process via
     # opentelemetry-instrument (or using operator-based injection).
     OTEL_SERVICE_NAME: "hriv-backend"
-    OTEL_TRACES_EXPORTER: "otlp"
+    OTEL_TRACES_EXPORTER: "none"
     OTEL_METRICS_EXPORTER: "none"
     OTEL_LOGS_EXPORTER: "none"
     OTEL_EXPORTER_OTLP_ENDPOINT: ""
