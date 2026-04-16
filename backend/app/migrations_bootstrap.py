@@ -1,28 +1,19 @@
-"""Bootstrap Alembic against either a fresh or a pre-existing database.
+"""Bootstrap Alembic at deployment time.
 
 This module is intended to run at deployment time (Dockerfile CMD entrypoint,
 Helm initContainer, docker-compose ``command`` override, etc.) before the
 FastAPI app is started.
 
-It safely handles three cases:
+Because Alembic is the sole source of truth for the schema, bootstrap is a
+single operation: ``alembic upgrade head``.  That handles both fresh and
+already-managed databases — on a fresh DB, ``upgrade head`` creates every
+table and stamps ``alembic_version``; on an already-managed DB, it applies
+any pending revisions and is a no-op if already at head.
 
-1. **Fresh database** — no ``alembic_version`` table and no application
-   tables.  Runs ``alembic upgrade head`` to create the full schema from
-   scratch.
-2. **Legacy database** — application tables already exist (e.g. because
-   ``db/init.sql`` was applied via a Postgres initdb script or CNPG
-   ``postInitApplicationSQL``) but ``alembic_version`` does not.  Stamps
-   the baseline revision (``_LEGACY_BASELINE_REVISION``) so Alembic
-   records the pre-existing schema as already migrated without
-   attempting a duplicate ``CREATE TABLE``, then runs
-   ``alembic upgrade head`` in the same bootstrap pass so any migrations
-   beyond the baseline are applied immediately.
-3. **Already-managed database** — ``alembic_version`` exists.  Runs
-   ``alembic upgrade head`` to apply any pending revisions.
-
-The detection query looks for a sentinel table (``images``) rather than
-enumerating every model, so adding new models in future migrations does
-not break the legacy-DB stamp path.
+To make multi-replica deployments safe (Helm ``replicaCount > 1`` or
+parallel ``docker-compose up``), the upgrade runs under a PostgreSQL
+advisory lock so concurrent pods serialize on the database itself rather
+than racing on the baseline ``CREATE TABLE``.
 """
 from __future__ import annotations
 
@@ -36,32 +27,19 @@ from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import inspect, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.database import settings
 
 logger = logging.getLogger(__name__)
 
-# Tables we treat as a signal that the schema was created outside of
-# Alembic (i.e. ``db/init.sql``).  ``images`` is the most central table
-# in the schema and predates every version of this application, so it
-# is a reliable sentinel.
-_LEGACY_SENTINEL_TABLE = "images"
-_ALEMBIC_VERSION_TABLE = "alembic_version"
-
-# Revision a legacy database (db/init.sql-style bootstrap) matches.  We stamp
-# this specific revision rather than ``"head"`` so that adding a future
-# migration (``0002_*``, ``0003_*``, ...) after someone's initial ``stamp``
-# never causes a later ``upgrade`` to silently skip pending migrations.
-_LEGACY_BASELINE_REVISION = "0001_initial_schema"
-
 # Deterministic signed 64-bit key used with ``pg_advisory_lock`` so that
 # multiple pods racing to bootstrap (Helm ``replicaCount > 1`` or parallel
 # docker-compose ``up``) serialize on the database itself.  The first pod
-# to acquire the lock runs the strategy; subsequent waiters see
-# ``alembic_version`` already populated when they acquire the lock and
-# their ``upgrade head`` becomes a cheap no-op.
+# to acquire the lock runs ``upgrade head``; waiters block until release,
+# then observe ``alembic_version`` already at head and their own
+# ``upgrade head`` is a cheap no-op.
 _ADVISORY_LOCK_KEY = int.from_bytes(
     hashlib.sha256(b"hriv-alembic-bootstrap").digest()[:8],
     byteorder="big",
@@ -75,80 +53,6 @@ def _alembic_config() -> Config:
     if not ini_path.exists():
         raise RuntimeError(f"alembic.ini not found at {ini_path}")
     return Config(str(ini_path))
-
-
-async def _existing_tables() -> set[str]:
-    """Inspect the target database and return the set of existing table names.
-
-    Uses the same async driver (asyncpg) the application already depends on,
-    so we don't need to install a second Postgres driver just for bootstrap.
-    """
-    engine = create_async_engine(settings.database_url)
-    try:
-        async with engine.connect() as conn:
-            return set(
-                await conn.run_sync(lambda sync_conn: inspect(sync_conn).get_table_names())
-            )
-    finally:
-        await engine.dispose()
-
-
-async def _decide_strategy() -> str:
-    """Return ``"upgrade"`` or ``"stamp"`` based on the current DB state."""
-    try:
-        tables = await _existing_tables()
-    except Exception:  # pragma: no cover — DB connection failure
-        logger.exception(
-            "Could not inspect database to decide between upgrade/stamp. "
-            "Falling back to 'upgrade' which will surface the underlying error."
-        )
-        return "upgrade"
-
-    has_alembic = _ALEMBIC_VERSION_TABLE in tables
-    has_legacy_schema = _LEGACY_SENTINEL_TABLE in tables
-
-    if has_alembic:
-        logger.info(
-            "alembic_version exists — will run 'alembic upgrade head' to apply "
-            "any pending revisions.",
-            extra={"event": "alembic.upgrade"},
-        )
-        return "upgrade"
-
-    if has_legacy_schema:
-        logger.warning(
-            "Detected legacy schema (table '%s' exists without alembic_version). "
-            "Will stamp baseline revision '%s' and then run 'alembic upgrade head' "
-            "so pending migrations apply without re-creating existing tables.",
-            _LEGACY_SENTINEL_TABLE,
-            _LEGACY_BASELINE_REVISION,
-            extra={"event": "alembic.stamp_baseline_legacy"},
-        )
-        return "stamp"
-
-    logger.info(
-        "Fresh database — will run 'alembic upgrade head' to create the full "
-        "schema.",
-        extra={"event": "alembic.upgrade_fresh"},
-    )
-    return "upgrade"
-
-
-def _apply_strategy(strategy: str, cfg: Config) -> None:
-    """Dispatch to the appropriate Alembic command for ``strategy``.
-
-    For the ``stamp`` path we stamp the specific baseline revision
-    (``_LEGACY_BASELINE_REVISION``) rather than ``"head"`` — so that a
-    legacy DB which only has the initial-schema state isn't falsely
-    marked as already-at-head when newer migrations exist — and then
-    immediately run ``upgrade head`` so any migrations beyond the
-    baseline are applied in the same bootstrap pass.
-    """
-    if strategy == "stamp":
-        command.stamp(cfg, _LEGACY_BASELINE_REVISION)
-        command.upgrade(cfg, "head")
-    else:
-        command.upgrade(cfg, "head")
 
 
 @contextlib.asynccontextmanager
@@ -196,15 +100,24 @@ async def _advisory_lock() -> AsyncIterator[None]:
         await engine.dispose()
 
 
-async def _async_bootstrap() -> None:
-    """Async entrypoint holding the advisory lock across the full flow.
+def _run_upgrade(cfg: Config) -> None:
+    """Run ``alembic upgrade head``.  Factored out for test injection."""
+    logger.info(
+        "Running 'alembic upgrade head'.",
+        extra={"event": "alembic.upgrade"},
+    )
+    command.upgrade(cfg, "head")
 
-    ``_apply_strategy`` is dispatched via :func:`asyncio.to_thread` because
-    Alembic's ``env.py`` (`run_migrations_online`) calls ``asyncio.run()``
-    internally, and a nested ``asyncio.run()`` on the same thread raises
-    ``RuntimeError: asyncio.run() cannot be called from a running event
-    loop``.  Running Alembic in a worker thread gives ``env.py`` a clean
-    thread with no active event loop.
+
+async def _async_bootstrap() -> None:
+    """Async entrypoint holding the advisory lock across the upgrade.
+
+    The Alembic command is dispatched via :func:`asyncio.to_thread` because
+    ``app/migrations/env.py`` (``run_migrations_online``) calls
+    ``asyncio.run()`` internally, and a nested ``asyncio.run()`` on the
+    same thread raises ``RuntimeError: asyncio.run() cannot be called from
+    a running event loop``.  Running Alembic in a worker thread gives
+    ``env.py`` a clean thread with no active event loop.
 
     The advisory lock remains valid because ``pg_advisory_lock`` is
     *session-scoped* in Postgres — the lock held by the asyncpg session on
@@ -213,15 +126,14 @@ async def _async_bootstrap() -> None:
     """
     cfg = _alembic_config()
     async with _advisory_lock():
-        strategy = await _decide_strategy()
-        await asyncio.to_thread(_apply_strategy, strategy, cfg)
+        await asyncio.to_thread(_run_upgrade, cfg)
 
 
 def bootstrap() -> None:
-    """Run the right Alembic command for this deployment's DB state.
+    """Run ``alembic upgrade head`` for this deployment's database.
 
-    The decide + apply flow runs under a :func:`_advisory_lock` so multiple
-    replicas can safely race on the same database.
+    Runs under a :func:`_advisory_lock` so multiple replicas can safely
+    race on the same database.
     """
     asyncio.run(_async_bootstrap())
 

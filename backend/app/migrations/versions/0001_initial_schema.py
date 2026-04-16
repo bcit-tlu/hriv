@@ -1,27 +1,14 @@
-"""Initial schema — baseline of all tables currently maintained via db/init.sql.
+"""Initial schema — baseline of all application tables.
 
 Revision ID: 0001_initial_schema
 Revises:
 Create Date: 2026-04-16
 
-This migration establishes the Alembic baseline for existing and future
-deployments.  Every table, index, and column it creates matches the state
-produced by ``db/init.sql`` and the application's SQLAlchemy models as of
-this commit — so the two remain equivalent during the transition period.
-
-For **existing deployments** that were provisioned directly from
-``init.sql`` (docker-compose, CNPG `postInitApplicationSQL`, or an older
-HRIV release) the expected upgrade path is::
-
-    alembic -c backend/alembic.ini stamp head
-
-which tells Alembic "the schema is already at this revision — don't
-re-apply it".  Running ``alembic upgrade head`` on a DB that already has
-these tables would otherwise fail with ``DuplicateTable``.
-
-For **fresh deployments** (new CNPG cluster, new PostgreSQL instance) use
-``alembic upgrade head`` which executes the table/index creation below
-in a single transaction.
+This migration establishes the Alembic baseline and is the sole source of
+truth for the initial schema.  Running ``alembic upgrade head`` against a
+fresh database creates every table, index, and column below in a single
+transaction and stamps ``alembic_version`` so subsequent rollouts apply
+only newer revisions.
 """
 from __future__ import annotations
 

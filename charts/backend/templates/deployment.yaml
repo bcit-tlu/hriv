@@ -25,10 +25,13 @@ spec:
         {{- include "hriv-backend.selectorLabels" . | nindent 8 }}
     spec:
       initContainers:
-        # Run Alembic migrations (or stamp head on a legacy schema) before
-        # the FastAPI app starts.  Idempotent: once the DB is at ``head`` the
-        # bootstrap simply no-ops.  Keeps the pod deployment self-sufficient
-        # without requiring a separate Job/post-upgrade hook.
+        # Run ``alembic upgrade head`` against the database before the
+        # FastAPI app starts.  On a fresh CNPG cluster this creates every
+        # application table; on a subsequent rollout it applies any pending
+        # revisions.  Idempotent — once the DB is at ``head`` the bootstrap
+        # simply no-ops.  Keeps the pod deployment self-sufficient without
+        # requiring a separate Job or post-upgrade hook.  Serialized across
+        # replicas via ``pg_advisory_lock`` (see ``app.migrations_bootstrap``).
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}

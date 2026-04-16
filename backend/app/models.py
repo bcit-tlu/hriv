@@ -31,7 +31,7 @@ class Program(Base):
 class Category(Base):
     __tablename__ = "categories"
     __table_args__ = (
-        # Name matches db/init.sql and the Alembic baseline migration so that
+        # Named explicitly (matches the Alembic baseline) so that
         # ``alembic revision --autogenerate`` does not propose renaming the
         # default-generated ``ix_categories_parent_id`` to/from this index.
         Index("idx_categories_parent", "parent_id"),
@@ -78,7 +78,7 @@ class Category(Base):
 class Image(Base):
     __tablename__ = "images"
     __table_args__ = (
-        # Name matches db/init.sql and the Alembic baseline migration so that
+        # Named explicitly (matches the Alembic baseline) so that
         # ``alembic revision --autogenerate`` does not propose renaming the
         # default-generated ``ix_images_category_id`` to/from this index.
         Index("idx_images_category", "category_id"),
@@ -121,9 +121,9 @@ class Image(Base):
 class SourceImage(Base):
     __tablename__ = "source_images"
     __table_args__ = (
-        # Name matches db/init.sql and the Alembic baseline migration so
-        # that ``alembic revision --autogenerate`` does not propose
-        # dropping and recreating this index under a different name.
+        # Named explicitly (matches the Alembic baseline) so that
+        # ``alembic revision --autogenerate`` does not propose dropping
+        # and recreating this index under a different name.
         Index("idx_source_images_status", "status"),
     )
 
@@ -164,9 +164,9 @@ class SourceImage(Base):
 class BulkImportJob(Base):
     __tablename__ = "bulk_import_jobs"
     __table_args__ = (
-        # Name matches db/init.sql and the Alembic baseline migration so
-        # that ``alembic revision --autogenerate`` does not propose
-        # dropping and recreating this index under a different name.
+        # Named explicitly (matches the Alembic baseline) so that
+        # ``alembic revision --autogenerate`` does not propose dropping
+        # and recreating this index under a different name.
         Index("idx_bulk_import_jobs_status", "status"),
     )
 
