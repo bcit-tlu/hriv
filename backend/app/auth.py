@@ -31,6 +31,12 @@ class AuthSettings(Settings):
     # which invalidates tokens on every restart.  Set this explicitly
     # only when you need to rotate sessions independently of the secret.
     jwt_instance_epoch: str = ""
+    # When true, the application refuses to start unless ``JWT_SECRET``
+    # is set explicitly.  Multi-worker (``uvicorn --workers N``) and
+    # multi-replica deployments MUST enable this, otherwise each worker
+    # generates its own ephemeral secret and tokens signed by one worker
+    # fail validation on another — causing random authentication errors.
+    require_jwt_secret: bool = False
 
 
 _auth_settings: AuthSettings | None = None
@@ -45,15 +51,29 @@ def _get_auth_settings() -> AuthSettings:
     """
     global _auth_settings
     if _auth_settings is None:
-        _auth_settings = AuthSettings()
+        # Build the settings object locally first so that any misconfiguration
+        # raises before we publish the singleton. Otherwise a failed startup
+        # check could leave a half-initialised object behind that later calls
+        # (e.g. test fixtures, retries) would happily reuse.
+        candidate = AuthSettings()
         # Generate a random secret on each backend startup so that tokens from
         # a previous container instance (e.g. after ``docker compose down -v``)
         # are automatically invalidated.  An explicit ``JWT_SECRET`` env-var
         # still takes precedence for production deployments that need stable
         # tokens.
-        explicit_secret = bool(_auth_settings.jwt_secret)
+        explicit_secret = bool(candidate.jwt_secret)
         if not explicit_secret:
-            _auth_settings.jwt_secret = secrets.token_urlsafe(32)
+            if candidate.require_jwt_secret:
+                # Fail hard: multi-worker/multi-replica deployments require a
+                # stable, shared secret. Without it tokens signed by one worker
+                # fail validation on another, producing random 401s.
+                raise RuntimeError(
+                    "JWT_SECRET is required (REQUIRE_JWT_SECRET=true) but is not "
+                    "set. Configure a stable, shared JWT_SECRET for all workers "
+                    "and replicas before starting the application. See "
+                    "backend/README.md#jwt_secret for details."
+                )
+            candidate.jwt_secret = secrets.token_urlsafe(32)
             logger.warning(
                 "No JWT_SECRET configured — using an ephemeral random secret. "
                 "Sessions will not survive restarts and tokens will not be valid "
@@ -61,15 +81,15 @@ def _get_auth_settings() -> AuthSettings:
                 "for production deployments.",
                 extra={"event": "auth.jwt_secret_missing"},
             )
-        if not _auth_settings.jwt_instance_epoch:
+        if not candidate.jwt_instance_epoch:
             if explicit_secret:
                 # Derive a deterministic epoch from the JWT secret so that
                 # all Uvicorn workers (``--workers N``) and all replicas
                 # share the same value without requiring an extra env var.
                 # Without this, each OS process generates a random epoch
                 # and JWTs minted by one worker are rejected by another.
-                _auth_settings.jwt_instance_epoch = hashlib.sha256(
-                    _auth_settings.jwt_secret.encode()
+                candidate.jwt_instance_epoch = hashlib.sha256(
+                    candidate.jwt_secret.encode()
                 ).hexdigest()[:22]
                 logger.info(
                     "JWT_INSTANCE_EPOCH derived from JWT_SECRET — tokens are "
@@ -79,7 +99,8 @@ def _get_auth_settings() -> AuthSettings:
                     extra={"event": "auth.jwt_instance_epoch_derived"},
                 )
             else:
-                _auth_settings.jwt_instance_epoch = secrets.token_urlsafe(16)
+                candidate.jwt_instance_epoch = secrets.token_urlsafe(16)
+        _auth_settings = candidate
     return _auth_settings
 
 
