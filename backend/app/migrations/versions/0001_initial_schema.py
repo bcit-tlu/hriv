@@ -45,13 +45,13 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
     )
 
@@ -88,13 +88,13 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
     )
     op.create_index(
@@ -119,7 +119,7 @@ def upgrade() -> None:
             "active",
             sa.Boolean(),
             server_default=sa.text("true"),
-            nullable=True,
+            nullable=False,
         ),
         sa.Column(
             "metadata",
@@ -140,13 +140,13 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
     )
     op.create_index("idx_images_category", "images", ["category_id"], unique=False)
@@ -215,13 +215,13 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
     )
     op.create_index(
@@ -271,19 +271,25 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
     )
     op.create_index(
         "idx_bulk_import_jobs_status",
         "bulk_import_jobs",
         ["status"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_bulk_import_jobs_category_id",
+        "bulk_import_jobs",
+        ["category_id"],
         unique=False,
     )
 
@@ -306,13 +312,13 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
     )
 
@@ -346,13 +352,13 @@ def upgrade() -> None:
             "created_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.text("now()"),
-            nullable=True,
+            nullable=False,
         ),
     )
 
@@ -360,6 +366,7 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("users")
     op.drop_table("announcements")
+    op.drop_index("ix_bulk_import_jobs_category_id", table_name="bulk_import_jobs")
     op.drop_index("idx_bulk_import_jobs_status", table_name="bulk_import_jobs")
     op.drop_table("bulk_import_jobs")
     op.drop_index("idx_source_images_status", table_name="source_images")
