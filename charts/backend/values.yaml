@@ -106,3 +106,20 @@ zoneAntiAffinity:
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+# ── Initial admin seed (post-install hook) ───────────────────
+# When enabled=true, Helm renders a one-shot post-install Job
+# (``templates/job-seed-admin.yaml``) that inserts a single admin
+# user + bootstrap program on the very first install (``helm.sh/hook:
+# post-install`` — not re-run on upgrades or rollbacks).  Opt-in and
+# off by default; production deployments should normally rely on
+# OIDC group-to-role mapping instead (see ``oidc.roleMapping`` above).
+seedAdmin:
+    enabled: false
+    name: "Admin"
+    email: "admin@example.com"
+    # bcrypt hash of the desired bootstrap password.
+    # Generate with: ``python -c "import bcrypt; print(bcrypt.hashpw(b'<password>', bcrypt.gensalt()).decode())"``
+    # Intentionally blank so ``helm install`` fails loudly if seedAdmin is
+    # enabled without an operator-supplied password hash.
+    passwordHash: ""
