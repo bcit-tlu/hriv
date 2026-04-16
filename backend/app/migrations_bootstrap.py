@@ -71,8 +71,18 @@ async def _advisory_lock() -> AsyncIterator[None]:
     Advisory locks are session-scoped in Postgres, not connection-type
     scoped, so the lock held here is visible to the separate sync
     connection Alembic opens for its migrations.
+
+    Uses ``isolation_level="AUTOCOMMIT"`` so the lock-holding connection
+    never sits idle-in-transaction while Alembic runs on its own
+    connection in a worker thread — otherwise a Postgres-server-side
+    ``idle_in_transaction_session_timeout`` (commonly configured in
+    production) could terminate the session and silently release the
+    advisory lock mid-migration.
     """
-    engine = create_async_engine(settings.database_url)
+    engine = create_async_engine(
+        settings.database_url,
+        isolation_level="AUTOCOMMIT",
+    )
     try:
         async with engine.connect() as conn:
             logger.info(
