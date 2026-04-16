@@ -16,6 +16,9 @@ env:
 
 # Stable JWT signing secret shared across all Uvicorn workers.
 # Leave blank to auto-generate a random value at install time.
+# The chart enforces a non-empty JWT_SECRET is supplied to the backend
+# (auto-generated if unset) and sets REQUIRE_JWT_SECRET=true so the pod
+# refuses to start if the secret is missing at runtime.
 jwtSecret: ""
 
 # ── OIDC / OAuth 2.0 authentication ─────────────────────────

@@ -71,6 +71,11 @@ spec:
                 secretKeyRef:
                   name: {{ include "hriv-backend.fullname" . }}-jwt
                   key: secret
+            # Enforce a stable, shared JWT_SECRET at runtime.
+            # With multiple replicas and/or uvicorn workers this is required
+            # so tokens signed by one worker validate on every other worker.
+            - name: REQUIRE_JWT_SECRET
+              value: "true"
             {{- if .Values.oidc.enabled }}
             {{- $oidcSecret := .Values.oidc.existingSecret | default (printf "%s-oidc" (include "hriv-backend.fullname" .)) }}
             - name: OIDC_CLIENT_ID
