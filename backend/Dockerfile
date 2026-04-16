@@ -1,3 +1,8 @@
+FROM python:3.13-slim AS poetry-tools
+WORKDIR /app
+RUN python -m venv /opt/poetry-venv \
+    && /opt/poetry-venv/bin/pip install --no-cache-dir poetry poetry-plugin-export
+
 # ── Stage 1: Builder (install deps, then discarded) ──────
 FROM python:3.13-slim AS builder
 WORKDIR /app
@@ -23,7 +28,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
-COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/arq /usr/local/bin/
+COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/arq /usr/local/bin/opentelemetry-instrument /usr/local/bin/
 
 COPY app ./app
 
