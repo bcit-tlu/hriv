@@ -189,14 +189,14 @@ def test_run_stamp_dispatches_to_alembic_command(
 
 
 async def test_should_stamp_legacy_returns_true_for_pre_alembic_db() -> None:
-    """When ``alembic_version`` is absent but ``programs`` exists, the DB
+    """When ``programs`` exists but ``alembic_version`` is absent, the DB
     was bootstrapped before Alembic and needs a stamp instead of upgrade."""
     conn = AsyncMock(name="AsyncConnection")
-    # First call: to_regclass('public.alembic_version') → None (absent)
-    # Second call: to_regclass('public.programs') → 'programs' (present)
+    # 1st call: to_regclass('public.programs') → 'programs' (present)
+    # 2nd call: to_regclass('public.alembic_version') → None (absent)
     conn.execute = AsyncMock(side_effect=[
-        MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
         MagicMock(scalar_one_or_none=MagicMock(return_value="programs")),
+        MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
     ])
 
     result = await migrations_bootstrap._should_stamp_legacy(conn)
@@ -205,33 +205,58 @@ async def test_should_stamp_legacy_returns_true_for_pre_alembic_db() -> None:
     assert conn.execute.await_count == 2
 
 
-async def test_should_stamp_legacy_returns_false_when_alembic_version_exists() -> None:
-    """When ``alembic_version`` already exists the DB is Alembic-managed
-    and should use normal ``upgrade head``."""
+async def test_should_stamp_legacy_returns_true_when_alembic_version_empty() -> None:
+    """When ``programs`` exists and ``alembic_version`` exists but is empty
+    (left over from a previous failed migration attempt), the DB still
+    needs a stamp."""
     conn = AsyncMock(name="AsyncConnection")
-    conn.execute = AsyncMock(return_value=MagicMock(
-        scalar_one_or_none=MagicMock(return_value="alembic_version"),
-    ))
+    # 1st call: to_regclass('public.programs') → 'programs' (present)
+    # 2nd call: to_regclass('public.alembic_version') → 'alembic_version'
+    # 3rd call: SELECT count(*) FROM alembic_version → 0
+    conn.execute = AsyncMock(side_effect=[
+        MagicMock(scalar_one_or_none=MagicMock(return_value="programs")),
+        MagicMock(scalar_one_or_none=MagicMock(return_value="alembic_version")),
+        MagicMock(scalar_one=MagicMock(return_value=0)),
+    ])
 
     result = await migrations_bootstrap._should_stamp_legacy(conn)
 
-    assert result is False
-    # Only one query needed — early return after finding alembic_version
-    assert conn.execute.await_count == 1
+    assert result is True
+    assert conn.execute.await_count == 3
 
 
-async def test_should_stamp_legacy_returns_false_for_fresh_db() -> None:
-    """A completely fresh DB (no ``alembic_version``, no ``programs``)
-    should use normal ``upgrade head`` to create all tables."""
+async def test_should_stamp_legacy_returns_false_when_alembic_version_populated() -> None:
+    """When ``alembic_version`` exists and has rows, the DB is properly
+    Alembic-managed and should use normal ``upgrade head``."""
     conn = AsyncMock(name="AsyncConnection")
+    # 1st call: to_regclass('public.programs') → 'programs' (present)
+    # 2nd call: to_regclass('public.alembic_version') → 'alembic_version'
+    # 3rd call: SELECT count(*) FROM alembic_version → 1
     conn.execute = AsyncMock(side_effect=[
-        MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
-        MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+        MagicMock(scalar_one_or_none=MagicMock(return_value="programs")),
+        MagicMock(scalar_one_or_none=MagicMock(return_value="alembic_version")),
+        MagicMock(scalar_one=MagicMock(return_value=1)),
     ])
 
     result = await migrations_bootstrap._should_stamp_legacy(conn)
 
     assert result is False
+
+
+async def test_should_stamp_legacy_returns_false_for_fresh_db() -> None:
+    """A completely fresh DB (no ``programs``) should use normal
+    ``upgrade head`` to create all tables."""
+    conn = AsyncMock(name="AsyncConnection")
+    # 1st call: to_regclass('public.programs') → None (absent)
+    conn.execute = AsyncMock(return_value=MagicMock(
+        scalar_one_or_none=MagicMock(return_value=None),
+    ))
+
+    result = await migrations_bootstrap._should_stamp_legacy(conn)
+
+    assert result is False
+    # Only one query needed — early return when programs doesn't exist
+    assert conn.execute.await_count == 1
 
 
 def test_bootstrap_stamps_then_upgrades_legacy_db(
