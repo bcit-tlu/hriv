@@ -1,0 +1,77 @@
+{{- if .Values.seedAdmin.enabled }}
+{{- if not .Values.seedAdmin.passwordHash }}
+{{- fail "seedAdmin.enabled=true but seedAdmin.passwordHash is blank — supply a bcrypt hash (see values.yaml)" }}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "hriv-backend.fullname" . }}-seed-admin
+  labels:
+    {{- include "hriv-backend.labels" . | nindent 4 }}
+  annotations:
+    # Run only on initial install — never on upgrades or rollbacks.
+    helm.sh/hook: post-install
+    helm.sh/hook-weight: "10"
+    helm.sh/hook-delete-policy: hook-succeeded
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "hriv-backend.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      initContainers:
+        # Reuse the migrate initContainer so the schema exists before seeding.
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "app.migrations_bootstrap"]
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hriv-backend.fullname" . }}-db-app
+                  key: uri
+      containers:
+        - name: seed-admin
+          image: {{ .Values.cnpg.imageName }}
+          command:
+            - sh
+            - -c
+            - |
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+              INSERT INTO programs (id, name) VALUES
+                (1, 'Administration')
+              ON CONFLICT (id) DO NOTHING;
+              SELECT setval('programs_id_seq',
+                GREATEST((SELECT MAX(id) FROM programs), 1));
+
+              INSERT INTO users (id, name, email, password_hash, role, program_id, metadata)
+              VALUES (
+                1,
+                {{ .Values.seedAdmin.name         | replace "'" "''" | squote }},
+                {{ .Values.seedAdmin.email        | replace "'" "''" | squote }},
+                {{ .Values.seedAdmin.passwordHash | replace "'" "''" | squote }},
+                'admin',
+                1,
+                '{}'
+              ) ON CONFLICT (id) DO NOTHING;
+              SELECT setval('users_id_seq',
+                GREATEST((SELECT MAX(id) FROM users), 1));
+              SQL
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "hriv-backend.fullname" . }}-db-app
+                  key: uri
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

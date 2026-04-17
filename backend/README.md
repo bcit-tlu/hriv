@@ -106,6 +106,60 @@ Example files already included:
 
 ---
 
+## Database migrations (Alembic)
+
+The backend uses [Alembic](https://alembic.sqlalchemy.org/) for schema
+migrations.  The config lives in `backend/alembic.ini` and the migration
+scripts in `backend/app/migrations/versions/`.
+
+### Running migrations
+
+Alembic is the sole source of truth for the schema.  At deployment time,
+prefer the bootstrap helper which runs ``alembic upgrade head`` under a
+``pg_advisory_lock`` so concurrent pods (Helm ``replicaCount > 1``)
+serialize on the database rather than racing on the baseline
+``CREATE TABLE``:
+
+```sh
+DATABASE_URL=postgresql+asyncpg://... poetry run python -m app.migrations_bootstrap
+```
+
+The helper is wired into `docker-compose.yml` as a `migrate` service
+(the `backend`, `worker` and `seed` services depend on it completing
+successfully) and into the Helm chart as an `initContainer` on the
+backend Deployment.
+
+For manual ops you can invoke Alembic directly from `backend/`:
+
+```sh
+DATABASE_URL=postgresql+asyncpg://... poetry run alembic upgrade head      # apply migrations
+DATABASE_URL=postgresql+asyncpg://... poetry run alembic current           # show current revision
+DATABASE_URL=postgresql+asyncpg://... poetry run alembic downgrade -1      # revert the latest migration
+```
+
+### Authoring a new migration
+
+Any schema change (new table, new column, index, default, etc.) goes
+through a new Alembic revision.
+
+1. Make the change in `backend/app/models.py`.
+2. Generate a revision (requires a live DB at `DATABASE_URL` pointing at
+   the current `head` state):
+
+   ```sh
+   DATABASE_URL=postgresql+asyncpg://... \
+     poetry run alembic revision --autogenerate -m "add_foo_column_to_bar"
+   ```
+
+3. Review the generated file in `app/migrations/versions/`.  Autogenerate
+   is a heuristic — always check it captures the change you intended
+   and no spurious drops.
+4. Run `poetry run alembic upgrade head` locally against a test DB to
+   make sure the migration applies cleanly.
+5. Commit the migration alongside the model change.
+
+---
+
 ## JWT_SECRET
 
 The backend signs access tokens with `JWT_SECRET`. Setting it correctly is

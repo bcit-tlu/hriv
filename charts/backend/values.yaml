@@ -106,3 +106,36 @@ zoneAntiAffinity:
 nodeSelector: {}
 tolerations: []
 affinity: {}
+
+# ── Initial admin seed (post-install hook) ───────────────────
+# When enabled=true, Helm renders a one-shot post-install Job
+# (``templates/job-seed-admin.yaml``) that inserts a single admin
+# user + bootstrap program on the very first install (``helm.sh/hook:
+# post-install`` — not re-run on upgrades or rollbacks).
+#
+# Enabled by default so fresh ``helm install`` runs produce a working
+# local admin login even when OIDC isn't wired up yet.  The default
+# ``passwordHash`` below is the same development hash used by
+# ``db/seed.sql`` in docker-compose; the operator's very first task
+# after the pods are healthy should be to log in as this account and
+# rotate the password via the normal change-password flow (or disable
+# the account once real admins are created through OIDC).
+#
+# Set ``seedAdmin.enabled: false`` to skip the Job entirely for
+# deployments that rely exclusively on OIDC from day one (see
+# ``oidc.roleMapping`` above).
+seedAdmin:
+    enabled: true
+    name: "Admin"
+    email: "admin@example.com"
+    # bcrypt hash of the bootstrap password.  Defaults to the same
+    # development hash shared by docker-compose seed users (intended
+    # to be rotated immediately after first login).  Override with
+    # ``--set seedAdmin.passwordHash=...`` or in a values file for a
+    # stronger initial password.
+    # Generate a new hash with:
+    #   python -c "import bcrypt; print(bcrypt.hashpw(b'<password>', bcrypt.gensalt()).decode())"
+    # Setting this to an empty string while ``enabled: true`` makes
+    # ``helm install`` fail loudly at render time rather than silently
+    # inserting an unusable empty hash.
+    passwordHash: "$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C"

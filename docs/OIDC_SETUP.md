@@ -99,15 +99,11 @@ When an OIDC user logs in for the first time and their email matches an
 existing local account, the accounts are linked automatically by
 populating `oidc_subject`.
 
-### Migrating an existing database
+### Schema provenance
 
-The `db/init.sql` change only runs on **fresh** database creation.  If
-you are upgrading an existing deployment, run the following migration
-manually (or via a Kubernetes Job):
-
-```sql
-ALTER TABLE users ADD COLUMN IF NOT EXISTS oidc_subject VARCHAR(255) UNIQUE;
-```
+The `oidc_subject` column is part of the Alembic baseline
+(`0001_initial_schema`), so every deployment picks it up automatically
+via `alembic upgrade head`.  No manual SQL is required.
 
 ---
 

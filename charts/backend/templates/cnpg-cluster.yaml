@@ -9,6 +9,12 @@ spec:
   imageName: {{ .Values.cnpg.imageName }}
 
   bootstrap:
+    # Schema is managed by Alembic, not by CNPG.  The backend Deployment's
+    # ``migrate`` initContainer runs ``alembic upgrade head`` against this
+    # database on every rollout (see ``charts/backend/templates/deployment.yaml``).
+    # CNPG therefore only needs to create the empty database + owner role
+    # and grant schema privileges; the tables themselves are created by
+    # the initContainer on first install.
     initdb:
       database: {{ .Values.cnpg.database }}
       owner: {{ .Values.cnpg.owner }}
@@ -18,12 +24,6 @@ spec:
         - GRANT ALL ON SCHEMA public TO {{ .Values.cnpg.owner | quote }}
         - ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO {{ .Values.cnpg.owner | quote }}
         - ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO {{ .Values.cnpg.owner | quote }}
-      postInitApplicationSQLRefs:
-        configMapRefs:
-          - name: {{ include "hriv-backend.fullname" . }}-initdb
-            key: init.sql
-          - name: {{ include "hriv-backend.fullname" . }}-initdb
-            key: seed.sql
 
   superuserSecret:
     name: {{ include "hriv-backend.fullname" . }}-db-superuser-bootstrap
