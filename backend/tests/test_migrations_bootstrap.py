@@ -178,14 +178,14 @@ def test_alembic_config_raises_when_ini_missing(
 def test_run_stamp_dispatches_to_alembic_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``_run_stamp`` must call ``alembic.command.stamp(cfg, 'head')``."""
+    """``_run_stamp`` must call ``alembic.command.stamp(cfg, _BASELINE_REVISION)``."""
     fake_cfg = MagicMock(name="Config")
     stamp = MagicMock()
     monkeypatch.setattr(migrations_bootstrap.command, "stamp", stamp)
 
     migrations_bootstrap._run_stamp(fake_cfg)
 
-    stamp.assert_called_once_with(fake_cfg, "head")
+    stamp.assert_called_once_with(fake_cfg, migrations_bootstrap._BASELINE_REVISION)
 
 
 async def test_should_stamp_legacy_returns_true_for_pre_alembic_db() -> None:
@@ -234,11 +234,12 @@ async def test_should_stamp_legacy_returns_false_for_fresh_db() -> None:
     assert result is False
 
 
-def test_bootstrap_stamps_legacy_db_instead_of_upgrading(
+def test_bootstrap_stamps_then_upgrades_legacy_db(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When ``_should_stamp_legacy`` returns True, bootstrap must call
-    ``_run_stamp`` instead of ``_run_upgrade``."""
+    """When ``_should_stamp_legacy`` returns True, bootstrap must stamp the
+    baseline revision *and then* run ``upgrade head`` so that any migrations
+    added after the baseline are still applied."""
     events: list[str] = []
 
     @contextlib.asynccontextmanager
@@ -267,8 +268,7 @@ def test_bootstrap_stamps_legacy_db_instead_of_upgrading(
 
     migrations_bootstrap.bootstrap()
 
-    assert events == ["lock_acquired", "stamp", "lock_released"]
-    assert "upgrade" not in events
+    assert events == ["lock_acquired", "stamp", "upgrade", "lock_released"]
 
 
 def test_main_returns_zero_on_success(monkeypatch: pytest.MonkeyPatch) -> None:

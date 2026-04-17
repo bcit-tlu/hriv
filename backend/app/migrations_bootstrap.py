@@ -119,13 +119,21 @@ def _run_upgrade(cfg: Config) -> None:
     command.upgrade(cfg, "head")
 
 
+#: The revision that mirrors the legacy ``db/init.sql`` schema exactly.
+#: Legacy databases are stamped at this specific revision — not ``head`` — so
+#: that any migrations added *after* the baseline are still applied by the
+#: subsequent ``upgrade head`` call.
+_BASELINE_REVISION = "0001_initial_schema"
+
+
 def _run_stamp(cfg: Config) -> None:
-    """Stamp the database with the current head revision without running migrations."""
+    """Stamp the database at the baseline revision without running migrations."""
     logger.info(
-        "Stamping database with Alembic head revision.",
+        "Stamping database at baseline revision %s.",
+        _BASELINE_REVISION,
         extra={"event": "alembic.stamp"},
     )
-    command.stamp(cfg, "head")
+    command.stamp(cfg, _BASELINE_REVISION)
 
 
 async def _should_stamp_legacy(conn: AsyncConnection) -> bool:
@@ -134,8 +142,10 @@ async def _should_stamp_legacy(conn: AsyncConnection) -> bool:
     Returns ``True`` when the database has no ``alembic_version`` table
     (never been managed by Alembic) **and** the ``programs`` table exists
     (schema was created by the legacy ``db/init.sql`` bootstrap).  In that
-    case the caller should *stamp* head instead of *upgrading*, so the
-    initial migration isn't re-applied on top of existing tables.
+    case the caller should *stamp* the baseline revision instead of
+    *upgrading*, so the initial migration isn't re-applied on top of
+    existing tables.  A subsequent ``upgrade head`` then applies any
+    migrations added after the baseline.
     """
     version_table = (
         await conn.execute(text("SELECT to_regclass('public.alembic_version')"))
@@ -168,12 +178,16 @@ async def _async_bootstrap() -> None:
     async with _advisory_lock() as conn:
         if await _should_stamp_legacy(conn):
             logger.info(
-                "Detected legacy database schema without alembic_version; stamping head.",
+                "Detected legacy database schema without alembic_version; "
+                "stamping baseline revision %s then upgrading.",
+                _BASELINE_REVISION,
                 extra={"event": "alembic.legacy_stamp"},
             )
             await asyncio.to_thread(_run_stamp, cfg)
-        else:
-            await asyncio.to_thread(_run_upgrade, cfg)
+        # Always run upgrade head — on a freshly-stamped legacy DB this
+        # applies any migrations added after the baseline; on all other
+        # databases it's the normal path (fresh or already-managed).
+        await asyncio.to_thread(_run_upgrade, cfg)
 
 
 def bootstrap() -> None:
