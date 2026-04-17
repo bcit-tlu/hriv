@@ -104,7 +104,7 @@ jobs:
           else
             BASE_VERSION=$(grep '^version:' "charts/${COMPONENT}/Chart.yaml" | awk '{print $2}')
             TIMESTAMP=$(git log -1 --format=%ct)
-            echo "value=${BASE_VERSION}-dev.${TIMESTAMP}" >> "$GITHUB_OUTPUT"
+            echo "value=${BASE_VERSION}-rc.${TIMESTAMP}" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: docker/metadata-action@v6
@@ -202,10 +202,10 @@ jobs:
               # Release build: use Chart.yaml version as-is
               VERSION="${BASE_VERSION}"
             else
-              # Dev build: append dev suffix
-              VERSION="${BASE_VERSION}-dev.${TIMESTAMP}"
+              # Dev build: append rc (release-candidate) suffix
+              VERSION="${BASE_VERSION}-rc.${TIMESTAMP}"
               # image.tag defaults to appVersion via the template;
-              # no sed override needed — Flux deploys the dev version.
+              # no sed override needed — Flux deploys the rc version.
             fi
 
             # Stamp version into Chart.yaml (overwrites annotation comment)
