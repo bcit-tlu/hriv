@@ -49,6 +49,10 @@ def _ensure_tasks_dir() -> str:
 # ── Helpers ────────────────────────────────────────────────
 
 
+class TaskCancelled(Exception):
+    """Raised when an admin task detects a cancellation request."""
+
+
 async def _update_task(
     session: AsyncSession,
     task: AdminTask,
@@ -59,8 +63,20 @@ async def _update_task(
     result_filename: str | None = None,
     result_path: str | None = None,
     error_message: str | None = None,
+    check_cancelled: bool = False,
 ) -> None:
-    """Persist incremental updates to an AdminTask record."""
+    """Persist incremental updates to an AdminTask record.
+
+    When *check_cancelled* is ``True`` the helper re-reads the task from
+    the database before applying changes.  If the status has been set to
+    ``cancelling`` (by the cancel endpoint) a :class:`TaskCancelled`
+    exception is raised so the caller can abort cleanly.
+    """
+    if check_cancelled:
+        await session.refresh(task, attribute_names=["status"])
+        if task.status == "cancelling":
+            raise TaskCancelled("Task cancelled by admin")
+
     if status is not None:
         task.status = status
     if progress is not None:
@@ -101,32 +117,32 @@ async def run_db_export(task_id: int) -> None:
 
         try:
             # Programs
-            await _update_task(session, task, log_line="Exporting programs…", progress=10)
+            await _update_task(session, task, log_line="Exporting programs…", progress=10, check_cancelled=True)
             result = await session.execute(select(Program).order_by(Program.id))
             programs = result.scalars().all()
 
             # Categories
-            await _update_task(session, task, log_line="Exporting categories…", progress=20)
+            await _update_task(session, task, log_line="Exporting categories…", progress=20, check_cancelled=True)
             result = await session.execute(select(Category).order_by(Category.id))
             categories = result.scalars().all()
 
             # Images
-            await _update_task(session, task, log_line="Exporting images…", progress=40)
+            await _update_task(session, task, log_line="Exporting images…", progress=40, check_cancelled=True)
             result = await session.execute(select(Image).order_by(Image.id))
             images = result.scalars().all()
 
             # Users
-            await _update_task(session, task, log_line="Exporting users…", progress=55)
+            await _update_task(session, task, log_line="Exporting users…", progress=55, check_cancelled=True)
             result = await session.execute(select(User).order_by(User.id))
             users = result.scalars().all()
 
             # Source images
-            await _update_task(session, task, log_line="Exporting source images…", progress=65)
+            await _update_task(session, task, log_line="Exporting source images…", progress=65, check_cancelled=True)
             result = await session.execute(select(SourceImage).order_by(SourceImage.id))
             source_images = result.scalars().all()
 
             # Announcement
-            await _update_task(session, task, log_line="Exporting announcement…", progress=75)
+            await _update_task(session, task, log_line="Exporting announcement…", progress=75, check_cancelled=True)
             result = await session.execute(
                 select(Announcement).where(Announcement.id == 1)
             )
@@ -222,7 +238,7 @@ async def run_db_export(task_id: int) -> None:
             }
 
             # Write JSON to file
-            await _update_task(session, task, log_line="Writing JSON file…", progress=85)
+            await _update_task(session, task, log_line="Writing JSON file…", progress=85, check_cancelled=True)
             tasks_dir = _ensure_tasks_dir()
             timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
             filename = f"hriv-export-{timestamp}.json"
@@ -247,6 +263,17 @@ async def run_db_export(task_id: int) -> None:
             logger.info(
                 "Background DB export completed",
                 extra={"event": "admin_task.db_export_done", "task_id": task_id},
+            )
+
+        except TaskCancelled:
+            logger.info(
+                "Background DB export cancelled",
+                extra={"event": "admin_task.db_export_cancelled", "task_id": task_id},
+            )
+            await _update_task(
+                session, task,
+                status="cancelled",
+                log_line="Task cancelled.",
             )
 
         except Exception as exc:
@@ -300,7 +327,7 @@ async def run_db_import(task_id: int) -> None:
         async with session_factory() as data_session:
             try:
                 # Read and validate JSON
-                await _update_task(status_session, task, log_line="Reading JSON file…", progress=5)
+                await _update_task(status_session, task, log_line="Reading JSON file…", progress=5, check_cancelled=True)
                 raw = await asyncio.to_thread(_read_file, input_path)
                 dump = json.loads(raw)
 
@@ -321,7 +348,7 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.execute(text("DELETE FROM programs"))
 
                 # Import programs
-                await _update_task(status_session, task, log_line="Importing programs…", progress=15)
+                await _update_task(status_session, task, log_line="Importing programs…", progress=15, check_cancelled=True)
                 for p in dump.get("programs", []):
                     program = Program(
                         id=p["id"],
@@ -383,7 +410,7 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.flush()
 
                 # Import images
-                await _update_task(status_session, task, log_line="Importing images…", progress=50)
+                await _update_task(status_session, task, log_line="Importing images…", progress=50, check_cancelled=True)
                 for i in dump["images"]:
                     img = Image(
                         id=i["id"],
@@ -432,7 +459,7 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.flush()
 
                 # Import announcement
-                await _update_task(status_session, task, log_line="Importing announcement…", progress=75)
+                await _update_task(status_session, task, log_line="Importing announcement…", progress=75, check_cancelled=True)
                 ann_data = dump.get("announcement")
                 if ann_data:
                     ann = Announcement(
@@ -476,6 +503,19 @@ async def run_db_import(task_id: int) -> None:
                 logger.info(
                     "Background DB import completed",
                     extra={"event": "admin_task.db_import_done", "task_id": task_id},
+                )
+
+            except TaskCancelled:
+                await data_session.rollback()
+                logger.info(
+                    "Background DB import cancelled",
+                    extra={"event": "admin_task.db_import_cancelled", "task_id": task_id},
+                )
+                await status_session.refresh(task)
+                await _update_task(
+                    status_session, task,
+                    status="cancelled",
+                    log_line="Task cancelled. All changes rolled back.",
                 )
 
             except Exception as exc:
@@ -540,6 +580,7 @@ async def run_files_export(task_id: int) -> None:
             await _update_task(
                 session, task, progress=10,
                 log_line=f"Archiving data directory: {data_dir}",
+                check_cancelled=True,
             )
 
             tasks_dir = _ensure_tasks_dir()
@@ -552,7 +593,7 @@ async def run_files_export(task_id: int) -> None:
             tmp = tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False)
             tmp.close()
 
-            await _update_task(session, task, progress=20, log_line="Creating tar.gz archive (this may take a while)…")
+            await _update_task(session, task, progress=20, log_line="Creating tar.gz archive (this may take a while)…", check_cancelled=True)
             try:
                 await asyncio.to_thread(_create_tar_file, str(data_dir), tmp.name)
                 shutil.move(tmp.name, filepath)
@@ -581,6 +622,17 @@ async def run_files_export(task_id: int) -> None:
                     "task_id": task_id,
                     "size_bytes": file_size,
                 },
+            )
+
+        except TaskCancelled:
+            logger.info(
+                "Background files export cancelled",
+                extra={"event": "admin_task.files_export_cancelled", "task_id": task_id},
+            )
+            await _update_task(
+                session, task,
+                status="cancelled",
+                log_line="Task cancelled.",
             )
 
         except Exception as exc:
@@ -677,6 +729,7 @@ async def run_files_import(task_id: int) -> None:
             await _update_task(
                 session, task, progress=10,
                 log_line="Extracting and restoring files (this may take a while)…",
+                check_cancelled=True,
             )
 
             with tempfile.TemporaryDirectory(prefix="hriv-import-") as tmpdir:
@@ -705,6 +758,17 @@ async def run_files_import(task_id: int) -> None:
                     "task_id": task_id,
                     "restored": restored,
                 },
+            )
+
+        except TaskCancelled:
+            logger.info(
+                "Background files import cancelled",
+                extra={"event": "admin_task.files_import_cancelled", "task_id": task_id},
+            )
+            await _update_task(
+                session, task,
+                status="cancelled",
+                log_line="Task cancelled.",
             )
 
         except Exception as exc:

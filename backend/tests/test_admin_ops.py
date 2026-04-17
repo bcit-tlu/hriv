@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.admin_ops import (
+    TaskCancelled,
     _ensure_tasks_dir,
     _extract_and_restore,
     _parse_dt,
@@ -149,6 +150,41 @@ async def test_update_task_sets_result() -> None:
     assert task.status == "completed"
     assert task.result_filename == "export.json"
     assert task.result_path == "/tmp/export.json"
+
+
+async def test_update_task_check_cancelled_raises() -> None:
+    session = AsyncMock()
+    task = SimpleNamespace(
+        status="cancelling", progress=50, log="",
+        result_filename=None, result_path=None, error_message=None,
+    )
+    session.refresh = AsyncMock()
+
+    with pytest.raises(TaskCancelled):
+        await _update_task(
+            session, task,
+            log_line="next step",
+            check_cancelled=True,
+        )
+
+
+async def test_update_task_check_cancelled_passes_when_running() -> None:
+    session = AsyncMock()
+    task = SimpleNamespace(
+        status="running", progress=50, log="",
+        result_filename=None, result_path=None, error_message=None,
+    )
+    session.refresh = AsyncMock()
+
+    await _update_task(
+        session, task,
+        log_line="next step",
+        progress=60,
+        check_cancelled=True,
+    )
+
+    assert task.progress == 60
+    assert "next step" in task.log
 
 
 # ── run_db_export tests ────────────────────────────────────

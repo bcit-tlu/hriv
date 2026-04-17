@@ -21,6 +21,7 @@ import DownloadIcon from '@mui/icons-material/Download'
 import FolderZipIcon from '@mui/icons-material/FolderZip'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
+import CancelIcon from '@mui/icons-material/Cancel'
 import {
   startDbExport,
   startDbImport,
@@ -28,6 +29,7 @@ import {
   startFilesImport,
   fetchAdminTask,
   fetchAdminTasks,
+  cancelAdminTask,
   downloadAdminTaskResult,
 } from '../api'
 import type { AdminTask } from '../api'
@@ -179,11 +181,27 @@ export default function AdminPage() {
     setActiveTasks((prev) => prev.filter((t) => t.id !== taskId))
   }
 
+  // Request cancellation of a running/pending task
+  const handleCancel = async (taskId: number) => {
+    try {
+      const updated = await cancelAdminTask(taskId)
+      setActiveTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? updated : t)),
+      )
+      setTaskHistory((prev) =>
+        prev.map((t) => (t.id === taskId ? updated : t)),
+      )
+      if (logTask?.id === taskId) setLogTask(updated)
+    } catch {
+      setError('Failed to cancel task')
+    }
+  }
+
   const busy = starting !== null
 
   // Active (in-flight) tasks for the progress banner
   const runningTasks = activeTasks.filter(
-    (t) => t.status === 'pending' || t.status === 'running',
+    (t) => t.status === 'pending' || t.status === 'running' || t.status === 'cancelling',
   )
 
   return (
@@ -202,28 +220,42 @@ export default function AdminPage() {
       {runningTasks.map((task) => (
         <Alert
           key={task.id}
-          severity="info"
+          severity={task.status === 'cancelling' ? 'warning' : 'info'}
           icon={<CircularProgress size={20} />}
           sx={{ mb: 2 }}
           action={
-            <Link
-              component="button"
-              variant="body2"
-              underline="always"
-              sx={{ mr: 1, cursor: 'pointer' }}
-              onClick={() => setLogTask(task)}
-            >
-              Details
-            </Link>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              {task.status !== 'cancelling' && (
+                <Button
+                  size="small"
+                  color="warning"
+                  startIcon={<CancelIcon />}
+                  onClick={() => handleCancel(task.id)}
+                >
+                  Cancel
+                </Button>
+              )}
+              <Link
+                component="button"
+                variant="body2"
+                underline="always"
+                sx={{ mr: 1, cursor: 'pointer' }}
+                onClick={() => setLogTask(task)}
+              >
+                Details
+              </Link>
+            </Box>
           }
         >
           <Box sx={{ width: '100%' }}>
             <Typography variant="body2" sx={{ mb: 0.5 }}>
-              {TASK_LABELS[task.task_type] ?? task.task_type} — {task.progress}%
+              {TASK_LABELS[task.task_type] ?? task.task_type}
+              {task.status === 'cancelling' ? ' — Cancelling…' : ` — ${task.progress}%`}
             </Typography>
             <LinearProgress
-              variant="determinate"
+              variant={task.status === 'cancelling' ? 'indeterminate' : 'determinate'}
               value={task.progress}
+              color={task.status === 'cancelling' ? 'warning' : 'primary'}
               sx={{ height: 6, borderRadius: 1 }}
             />
           </Box>
@@ -381,7 +413,9 @@ export default function AdminPage() {
                         ? 'error'
                         : task.status === 'running'
                           ? 'info'
-                          : 'default'
+                          : task.status === 'cancelling' || task.status === 'cancelled'
+                            ? 'warning'
+                            : 'default'
                   }
                   sx={{ minWidth: 80 }}
                 />
@@ -393,6 +427,16 @@ export default function AdminPage() {
                     ? new Date(task.created_at).toLocaleString()
                     : ''}
                 </Typography>
+                {(task.status === 'pending' || task.status === 'running') && (
+                  <IconButton
+                    size="small"
+                    color="warning"
+                    onClick={() => handleCancel(task.id)}
+                    title="Cancel"
+                  >
+                    <CancelIcon fontSize="small" />
+                  </IconButton>
+                )}
                 {task.status === 'completed' && task.result_filename && (
                   <IconButton
                     size="small"
@@ -498,20 +542,23 @@ export default function AdminPage() {
                       ? 'error'
                       : logTask.status === 'running'
                         ? 'info'
-                        : 'default'
+                        : logTask.status === 'cancelling' || logTask.status === 'cancelled'
+                          ? 'warning'
+                          : 'default'
                 }
                 sx={{ ml: 2, verticalAlign: 'middle' }}
               />
             </DialogTitle>
             <DialogContent dividers>
-              {(logTask.status === 'running' || logTask.status === 'pending') && (
+              {(logTask.status === 'running' || logTask.status === 'pending' || logTask.status === 'cancelling') && (
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
-                    Progress: {logTask.progress}%
+                    {logTask.status === 'cancelling' ? 'Cancelling…' : `Progress: ${logTask.progress}%`}
                   </Typography>
                   <LinearProgress
-                    variant="determinate"
+                    variant={logTask.status === 'cancelling' ? 'indeterminate' : 'determinate'}
                     value={logTask.progress}
+                    color={logTask.status === 'cancelling' ? 'warning' : 'primary'}
                     sx={{ height: 6, borderRadius: 1 }}
                   />
                 </Box>
@@ -543,6 +590,15 @@ export default function AdminPage() {
               </Box>
             </DialogContent>
             <DialogActions>
+              {(logTask.status === 'pending' || logTask.status === 'running') && (
+                <Button
+                  color="warning"
+                  startIcon={<CancelIcon />}
+                  onClick={() => handleCancel(logTask.id)}
+                >
+                  Cancel
+                </Button>
+              )}
               {logTask.status === 'completed' && logTask.result_filename && (
                 <Button
                   onClick={() => downloadAdminTaskResult(logTask.id)}

@@ -664,6 +664,10 @@ export function fetchAdminTask(taskId: number): Promise<AdminTask> {
   return request(`/admin/tasks/${taskId}`)
 }
 
+export function cancelAdminTask(taskId: number): Promise<AdminTask> {
+  return request(`/admin/tasks/${taskId}/cancel`, { method: 'POST' })
+}
+
 export async function downloadAdminTaskResult(taskId: number): Promise<void> {
   // Obtain a short-lived download token, then navigate the browser to the
   // token-authenticated download URL (no JS buffering needed).

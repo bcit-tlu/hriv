@@ -804,6 +804,32 @@ async def get_task(
     return _task_to_dict(task)
 
 
+@router.post("/tasks/{task_id}/cancel")
+async def cancel_task(
+    task_id: int,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Request cancellation of a running or pending admin task.
+
+    Sets the task status to ``cancelling``.  The background runner checks
+    for this status at each progress checkpoint and aborts early.
+    """
+    task = await db.get(AdminTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status not in ("pending", "running"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot cancel task in '{task.status}' state",
+        )
+    task.status = "cancelling"
+    task.log = (task.log or "") + "Cancellation requested by admin.\n"
+    await db.commit()
+    await db.refresh(task)
+    return _task_to_dict(task)
+
+
 @router.post("/tasks/{task_id}/download-token")
 async def create_task_download_token(
     task_id: int,

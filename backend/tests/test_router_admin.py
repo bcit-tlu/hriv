@@ -30,6 +30,7 @@ from app.routers.admin import (
     start_files_import,
     list_tasks,
     get_task,
+    cancel_task,
     create_task_download_token,
     download_task_result,
 )
@@ -575,6 +576,46 @@ async def test_get_task_not_found() -> None:
     with pytest.raises(HTTPException) as exc:
         await get_task(999, MagicMock(), db=db)
     assert exc.value.status_code == 404
+
+
+async def test_cancel_task_success() -> None:
+    task = _make_admin_task(status="running")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    db.refresh = AsyncMock()
+
+    result = await cancel_task(1, MagicMock(), db=db)
+    assert result["status"] == "cancelling"
+    assert "Cancellation requested" in (task.log or "")
+
+
+async def test_cancel_task_not_found() -> None:
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+
+    with pytest.raises(HTTPException) as exc:
+        await cancel_task(999, MagicMock(), db=db)
+    assert exc.value.status_code == 404
+
+
+async def test_cancel_task_already_completed() -> None:
+    task = _make_admin_task(status="completed")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+
+    with pytest.raises(HTTPException) as exc:
+        await cancel_task(1, MagicMock(), db=db)
+    assert exc.value.status_code == 400
+
+
+async def test_cancel_task_pending() -> None:
+    task = _make_admin_task(status="pending")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    db.refresh = AsyncMock()
+
+    result = await cancel_task(1, MagicMock(), db=db)
+    assert result["status"] == "cancelling"
 
 
 async def test_create_task_download_token_success(tmp_path) -> None:
