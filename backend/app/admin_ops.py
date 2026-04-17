@@ -547,8 +547,22 @@ async def run_files_export(task_id: int) -> None:
             filename = f"hriv-files-{timestamp}.tar.gz"
             filepath = os.path.join(tasks_dir, filename)
 
+            # Write to /tmp first so the archive doesn't include itself
+            # (_TASKS_DIR lives inside the data directory being archived).
+            tmp = tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False)
+            tmp.close()
+
             await _update_task(session, task, progress=20, log_line="Creating tar.gz archive (this may take a while)…")
-            await asyncio.to_thread(_create_tar_file, str(data_dir), filepath)
+            try:
+                await asyncio.to_thread(_create_tar_file, str(data_dir), tmp.name)
+                shutil.move(tmp.name, filepath)
+            except Exception:
+                # Clean up temp file on failure before re-raising
+                try:
+                    os.unlink(tmp.name)
+                except OSError:
+                    pass
+                raise
 
             file_size = os.path.getsize(filepath)
             size_mb = file_size / (1024 * 1024)
