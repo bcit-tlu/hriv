@@ -1517,6 +1517,27 @@ wrapt = ">=1.0.0,<2.0.0"
 instruments = ["httpx (>=0.18.0)"]
 
 [[package]]
+name = "opentelemetry-instrumentation-redis"
+version = "0.57b0"
+description = "OpenTelemetry Redis instrumentation"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "opentelemetry_instrumentation_redis-0.57b0-py3-none-any.whl", hash = "sha256:4e988016e74d8fabc0be93a30462bce223423874c3fa53f0a154b0fe050041f9"},
+    {file = "opentelemetry_instrumentation_redis-0.57b0.tar.gz", hash = "sha256:54fcd749dee6eebcd137c0f2d840d810fc4225368caf5f4cc91bfe0d13eb9176"},
+]
+
+[package.dependencies]
+opentelemetry-api = ">=1.12,<2.0"
+opentelemetry-instrumentation = "0.57b0"
+opentelemetry-semantic-conventions = "0.57b0"
+wrapt = ">=1.12.1"
+
+[package.extras]
+instruments = ["redis (>=2.6)"]
+
+[[package]]
 name = "opentelemetry-instrumentation-sqlalchemy"
 version = "0.57b0"
 description = "OpenTelemetry SQLAlchemy instrumentation"
@@ -2741,4 +2762,4 @@ type = ["pytest-mypy"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.12"
-content-hash = "41f9b734f935c4557c83681aa4858de953d58470661d8a25de25c718ee491b4f"
+content-hash = "8c8a658dc8614f29282736dff08e0be2c30da2c2057c6f36bdc431196ee6333c"
