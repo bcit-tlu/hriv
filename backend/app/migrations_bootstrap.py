@@ -28,7 +28,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 from app.database import settings
 
@@ -56,7 +56,7 @@ def _alembic_config() -> Config:
 
 
 @contextlib.asynccontextmanager
-async def _advisory_lock() -> AsyncIterator[None]:
+async def _advisory_lock() -> AsyncIterator[AsyncConnection]:
     """Serialize concurrent bootstrap runs via ``pg_advisory_lock``.
 
     Alembic itself doesn't acquire an advisory lock, so with ``replicaCount
@@ -95,7 +95,7 @@ async def _advisory_lock() -> AsyncIterator[None]:
                 {"key": _ADVISORY_LOCK_KEY},
             )
             try:
-                yield
+                yield conn
             finally:
                 await conn.execute(
                     text("SELECT pg_advisory_unlock(:key)"),
@@ -119,6 +119,27 @@ def _run_upgrade(cfg: Config) -> None:
     command.upgrade(cfg, "head")
 
 
+def _run_stamp(cfg: Config) -> None:
+    logger.info(
+        "Stamping database with Alembic head revision.",
+        extra={"event": "alembic.stamp"},
+    )
+    command.stamp(cfg, "head")
+
+
+async def _should_stamp_legacy(conn: AsyncConnection) -> bool:
+    version_table = (
+        await conn.execute(text("SELECT to_regclass('public.alembic_version')"))
+    ).scalar_one_or_none()
+    if version_table is not None:
+        return False
+
+    programs_table = (
+        await conn.execute(text("SELECT to_regclass('public.programs')"))
+    ).scalar_one_or_none()
+    return programs_table is not None
+
+
 async def _async_bootstrap() -> None:
     """Async entrypoint holding the advisory lock across the upgrade.
 
@@ -135,8 +156,15 @@ async def _async_bootstrap() -> None:
     Alembic opens on the worker thread.
     """
     cfg = _alembic_config()
-    async with _advisory_lock():
-        await asyncio.to_thread(_run_upgrade, cfg)
+    async with _advisory_lock() as conn:
+        if await _should_stamp_legacy(conn):
+            logger.info(
+                "Detected legacy database schema without alembic_version; stamping head.",
+                extra={"event": "alembic.legacy_stamp"},
+            )
+            await asyncio.to_thread(_run_stamp, cfg)
+        else:
+            await asyncio.to_thread(_run_upgrade, cfg)
 
 
 def bootstrap() -> None:

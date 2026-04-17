@@ -28,9 +28,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /usr/local/lib/python3.13/site-packages /usr/local/lib/python3.13/site-packages
-COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/arq /usr/local/bin/opentelemetry-instrument /usr/local/bin/
-COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/arq /usr/local/bin/alembic /usr/local/bin/
-COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/arq /usr/local/bin/opentelemetry-instrument /usr/local/bin/
+COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/arq /usr/local/bin/alembic /usr/local/bin/opentelemetry-instrument /usr/local/bin/
 
 COPY app ./app
 COPY alembic.ini ./alembic.ini
