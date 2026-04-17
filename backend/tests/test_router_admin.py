@@ -16,11 +16,21 @@ from app.routers.admin import (
     _parse_dt,
     _create_tar_file,
     _extract_and_restore,
+    _create_task,
+    _kick_off,
+    _task_to_dict,
     export_database,
     import_database,
     create_export_files_token,
     export_files,
     import_files,
+    start_db_export,
+    start_db_import,
+    start_files_export,
+    start_files_import,
+    list_tasks,
+    get_task,
+    download_task_result,
 )
 
 
@@ -390,3 +400,247 @@ async def test_export_database_empty() -> None:
     assert body["source_images"] == []
     assert body["announcement"]["message"] == ""
     assert body["announcement"]["enabled"] is False
+
+
+# ── Background task endpoint tests ─────────────────────────
+
+
+def _make_admin_task(
+    id=1,
+    task_type="db_export",
+    status="pending",
+    progress=0,
+    log="",
+    result_filename=None,
+    result_path=None,
+    input_path=None,
+    error_message=None,
+    created_by=1,
+    created_at=None,
+    updated_at=None,
+):
+    now = created_at or datetime.now(timezone.utc)
+    return SimpleNamespace(
+        id=id,
+        task_type=task_type,
+        status=status,
+        progress=progress,
+        log=log,
+        result_filename=result_filename,
+        result_path=result_path,
+        input_path=input_path,
+        error_message=error_message,
+        created_by=created_by,
+        created_at=now,
+        updated_at=updated_at or now,
+    )
+
+
+def test_task_to_dict() -> None:
+    now = datetime.now(timezone.utc)
+    task = _make_admin_task(created_at=now, updated_at=now)
+    d = _task_to_dict(task)
+    assert d["id"] == 1
+    assert d["task_type"] == "db_export"
+    assert d["status"] == "pending"
+    assert d["progress"] == 0
+    assert d["created_at"] == now.isoformat()
+
+
+async def test_create_task() -> None:
+    db = AsyncMock()
+    user = SimpleNamespace(id=42)
+
+    # Mock refresh to set the id
+    async def mock_refresh(obj):
+        obj.id = 1
+        obj.task_type = "db_export"
+        obj.status = "pending"
+        obj.progress = 0
+        obj.log = ""
+        obj.result_filename = None
+        obj.error_message = None
+        obj.created_by = 42
+        obj.created_at = datetime.now(timezone.utc)
+        obj.updated_at = datetime.now(timezone.utc)
+
+    db.refresh = AsyncMock(side_effect=mock_refresh)
+
+    task = await _create_task(db, "db_export", user)
+    db.add.assert_called_once()
+    db.commit.assert_awaited_once()
+    assert task.task_type == "db_export"
+    assert task.created_by == 42
+
+
+async def test_kick_off_redis_available() -> None:
+    task = _make_admin_task(task_type="db_export")
+    bg = MagicMock()
+
+    with patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True):
+        await _kick_off(task, bg)
+
+    # Should NOT add to BackgroundTasks when Redis is available
+    bg.add_task.assert_not_called()
+
+
+async def test_kick_off_redis_unavailable() -> None:
+    task = _make_admin_task(task_type="db_export")
+    bg = MagicMock()
+
+    with patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=False):
+        await _kick_off(task, bg)
+
+    # Falls back to BackgroundTasks
+    bg.add_task.assert_called_once()
+
+
+async def test_start_db_export() -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+
+    task = _make_admin_task()
+
+    async def mock_refresh(obj):
+        for k, v in vars(task).items():
+            setattr(obj, k, v)
+
+    db.refresh = AsyncMock(side_effect=mock_refresh)
+
+    with patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True):
+        result = await start_db_export(user, bg, db=db)
+
+    assert result["task_type"] == "db_export"
+    assert result["status"] == "pending"
+
+
+async def test_start_db_import_rejects_non_json() -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+
+    upload = MagicMock()
+    upload.filename = "data.csv"
+
+    with pytest.raises(HTTPException) as exc:
+        await start_db_import(user, bg, file=upload, db=AsyncMock())
+    assert exc.value.status_code == 400
+    assert "json" in exc.value.detail.lower()
+
+
+async def test_start_files_import_rejects_non_tar() -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+
+    upload = MagicMock()
+    upload.filename = "data.zip"
+
+    with pytest.raises(HTTPException) as exc:
+        await start_files_import(user, bg, file=upload, db=AsyncMock())
+    assert exc.value.status_code == 400
+    assert "tar.gz" in exc.value.detail.lower()
+
+
+async def test_list_tasks() -> None:
+    task1 = _make_admin_task(id=1)
+    task2 = _make_admin_task(id=2, task_type="files_export")
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [task2, task1]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    result = await list_tasks(MagicMock(), db=db)
+    assert len(result) == 2
+    assert result[0]["id"] == 2
+    assert result[1]["id"] == 1
+
+
+async def test_get_task_found() -> None:
+    task = _make_admin_task(id=5)
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+
+    result = await get_task(5, MagicMock(), db=db)
+    assert result["id"] == 5
+
+
+async def test_get_task_not_found() -> None:
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+
+    with pytest.raises(HTTPException) as exc:
+        await get_task(999, MagicMock(), db=db)
+    assert exc.value.status_code == 404
+
+
+async def test_download_task_not_found() -> None:
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+
+    with pytest.raises(HTTPException) as exc:
+        await download_task_result(999, MagicMock(), db=db)
+    assert exc.value.status_code == 404
+
+
+async def test_download_task_not_completed() -> None:
+    task = _make_admin_task(status="running")
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+
+    with pytest.raises(HTTPException) as exc:
+        await download_task_result(1, MagicMock(), db=db)
+    assert exc.value.status_code == 400
+
+
+async def test_download_task_result_file_missing() -> None:
+    task = _make_admin_task(
+        status="completed",
+        result_path="/nonexistent/file.json",
+        result_filename="export.json",
+    )
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+
+    with pytest.raises(HTTPException) as exc:
+        await download_task_result(1, MagicMock(), db=db)
+    assert exc.value.status_code == 404
+
+
+async def test_download_task_success(tmp_path) -> None:
+    filepath = tmp_path / "export.json"
+    filepath.write_text('{"test": true}')
+
+    task = _make_admin_task(
+        status="completed",
+        result_path=str(filepath),
+        result_filename="export.json",
+    )
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+
+    response = await download_task_result(1, MagicMock(), db=db)
+    assert response.media_type == "application/json"
+    assert "export.json" in response.headers.get("content-disposition", "")
+
+
+async def test_download_task_tar_gz(tmp_path) -> None:
+    filepath = tmp_path / "export.tar.gz"
+    filepath.write_bytes(b"\x00" * 100)
+
+    task = _make_admin_task(
+        status="completed",
+        result_path=str(filepath),
+        result_filename="hriv-files.tar.gz",
+    )
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+
+    response = await download_task_result(1, MagicMock(), db=db)
+    assert response.media_type == "application/gzip"

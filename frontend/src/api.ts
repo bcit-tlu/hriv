@@ -602,3 +602,68 @@ export async function importFiles(file: File): Promise<FilesImportResult> {
   }
   return res.json() as Promise<FilesImportResult>
 }
+
+// ── Background Admin Tasks ──────────────────────────────
+
+export interface AdminTask {
+  id: number
+  task_type: string
+  status: string
+  progress: number
+  log: string
+  result_filename: string | null
+  error_message: string | null
+  created_by: number | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export function startDbExport(): Promise<AdminTask> {
+  return request('/admin/tasks/db-export', { method: 'POST' })
+}
+
+export async function startDbImport(file: File): Promise<AdminTask> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${BASE}/api/admin/tasks/db-import`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: form,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(`Import failed: ${text}`)
+  }
+  return res.json() as Promise<AdminTask>
+}
+
+export function startFilesExport(): Promise<AdminTask> {
+  return request('/admin/tasks/files-export', { method: 'POST' })
+}
+
+export async function startFilesImport(file: File): Promise<AdminTask> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${BASE}/api/admin/tasks/files-import`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: form,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new Error(`Import failed: ${text}`)
+  }
+  return res.json() as Promise<AdminTask>
+}
+
+export function fetchAdminTasks(): Promise<AdminTask[]> {
+  return request('/admin/tasks')
+}
+
+export function fetchAdminTask(taskId: number): Promise<AdminTask> {
+  return request(`/admin/tasks/${taskId}`)
+}
+
+export function getAdminTaskDownloadUrl(taskId: number): string {
+  return `${BASE}/api/admin/tasks/${taskId}/download`
+}

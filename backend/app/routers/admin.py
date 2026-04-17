@@ -9,15 +9,23 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import Response, StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..admin_ops import (
+    _ensure_tasks_dir,
+    run_db_export,
+    run_db_import,
+    run_files_export,
+    run_files_import,
+)
 from ..auth import auth_settings, require_role
 from ..database import get_db, settings
-from ..models import Announcement, Category, Image, Program, SourceImage, User
+from ..models import AdminTask, Announcement, Category, Image, Program, SourceImage, User
+from ..worker import enqueue_admin_task
 
 logger = logging.getLogger(__name__)
 
@@ -634,3 +642,200 @@ async def import_files(
         "status": "ok",
         "restored": restored,
     }
+
+
+# ---------------------------------------------------------------------------
+# Background admin tasks
+# ---------------------------------------------------------------------------
+
+_TASK_UPLOAD_CHUNK = 1024 * 1024  # 1 MiB
+
+
+async def _create_task(
+    db: AsyncSession,
+    task_type: str,
+    user: User,
+    input_path: str | None = None,
+) -> AdminTask:
+    task = AdminTask(
+        task_type=task_type,
+        status="pending",
+        created_by=user.id,
+        input_path=input_path,
+    )
+    db.add(task)
+    await db.commit()
+    await db.refresh(task)
+    return task
+
+
+async def _kick_off(
+    task: AdminTask,
+    bg: BackgroundTasks,
+) -> None:
+    """Enqueue the task via arq, falling back to BackgroundTasks."""
+    enqueued = await enqueue_admin_task(task.id, task.task_type)
+    if not enqueued:
+        # Redis unavailable — run in-process
+        runner = {
+            "db_export": run_db_export,
+            "db_import": run_db_import,
+            "files_export": run_files_export,
+            "files_import": run_files_import,
+        }[task.task_type]
+        bg.add_task(runner, task.id)
+
+
+def _task_to_dict(task: AdminTask) -> dict:
+    return {
+        "id": task.id,
+        "task_type": task.task_type,
+        "status": task.status,
+        "progress": task.progress,
+        "log": task.log,
+        "result_filename": task.result_filename,
+        "error_message": task.error_message,
+        "created_by": task.created_by,
+        "created_at": task.created_at.isoformat() if task.created_at else None,
+        "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+    }
+
+
+@router.post("/tasks/db-export")
+async def start_db_export(
+    user: Annotated[User, Depends(_admin)],
+    bg: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Kick off a background database export."""
+    task = await _create_task(db, "db_export", user)
+    await _kick_off(task, bg)
+    return _task_to_dict(task)
+
+
+@router.post("/tasks/db-import")
+async def start_db_import(
+    user: Annotated[User, Depends(_admin)],
+    bg: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept a JSON file and kick off a background database import."""
+    if not file.filename or not file.filename.endswith(".json"):
+        raise HTTPException(status_code=400, detail="Only .json files are accepted")
+
+    # Save uploaded file to staging area
+    tasks_dir = _ensure_tasks_dir()
+    input_path = os.path.join(tasks_dir, f"import-{int(datetime.now(timezone.utc).timestamp())}.json")
+    with open(input_path, "wb") as f:
+        while True:
+            chunk = await file.read(_TASK_UPLOAD_CHUNK)
+            if not chunk:
+                break
+            f.write(chunk)
+
+    task = await _create_task(db, "db_import", user, input_path=input_path)
+    await _kick_off(task, bg)
+    return _task_to_dict(task)
+
+
+@router.post("/tasks/files-export")
+async def start_files_export(
+    user: Annotated[User, Depends(_admin)],
+    bg: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Kick off a background filesystem archive export."""
+    task = await _create_task(db, "files_export", user)
+    await _kick_off(task, bg)
+    return _task_to_dict(task)
+
+
+@router.post("/tasks/files-import")
+async def start_files_import(
+    user: Annotated[User, Depends(_admin)],
+    bg: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Accept a tar.gz file and kick off a background filesystem import."""
+    if not file.filename or not (
+        file.filename.endswith(".tar.gz") or file.filename.endswith(".tgz")
+    ):
+        raise HTTPException(status_code=400, detail="Only .tar.gz / .tgz files are accepted")
+
+    tasks_dir = _ensure_tasks_dir()
+    input_path = os.path.join(tasks_dir, f"import-{int(datetime.now(timezone.utc).timestamp())}.tar.gz")
+    with open(input_path, "wb") as f:
+        while True:
+            chunk = await file.read(_TASK_UPLOAD_CHUNK)
+            if not chunk:
+                break
+            f.write(chunk)
+
+    task = await _create_task(db, "files_import", user, input_path=input_path)
+    await _kick_off(task, bg)
+    return _task_to_dict(task)
+
+
+@router.get("/tasks")
+async def list_tasks(
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """List recent admin tasks (newest first)."""
+    result = await db.execute(
+        select(AdminTask).order_by(AdminTask.id.desc()).limit(50)
+    )
+    tasks = result.scalars().all()
+    return [_task_to_dict(t) for t in tasks]
+
+
+@router.get("/tasks/{task_id}")
+async def get_task(
+    task_id: int,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the status of a single admin task."""
+    task = await db.get(AdminTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return _task_to_dict(task)
+
+
+@router.get("/tasks/{task_id}/download")
+async def download_task_result(
+    task_id: int,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Download the result file of a completed export task."""
+    task = await db.get(AdminTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != "completed":
+        raise HTTPException(status_code=400, detail="Task has not completed")
+    if not task.result_path or not os.path.exists(task.result_path):
+        raise HTTPException(status_code=404, detail="Result file not found")
+
+    filename = task.result_filename or "download"
+    media = (
+        "application/gzip"
+        if filename.endswith(".tar.gz")
+        else "application/json"
+    )
+
+    def _stream():
+        with open(task.result_path, "rb") as fh:
+            while True:
+                chunk = fh.read(_CHUNK_SIZE)
+                if not chunk:
+                    break
+                yield chunk
+
+    return StreamingResponse(
+        _stream(),
+        media_type=media,
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )

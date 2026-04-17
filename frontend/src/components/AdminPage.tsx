@@ -1,99 +1,190 @@
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
+import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
+import IconButton from '@mui/material/IconButton'
+import LinearProgress from '@mui/material/LinearProgress'
+import Link from '@mui/material/Link'
+import Snackbar from '@mui/material/Snackbar'
 import Typography from '@mui/material/Typography'
+import CloseIcon from '@mui/icons-material/Close'
 import DownloadIcon from '@mui/icons-material/Download'
 import FolderZipIcon from '@mui/icons-material/FolderZip'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
-import { exportDatabase, importDatabase, exportFiles, importFiles } from '../api'
-import type { ImportResult, FilesImportResult } from '../api'
+import {
+  startDbExport,
+  startDbImport,
+  startFilesExport,
+  startFilesImport,
+  fetchAdminTask,
+  fetchAdminTasks,
+  getAdminTaskDownloadUrl,
+} from '../api'
+import type { AdminTask } from '../api'
+
+const POLL_INTERVAL = 2000 // ms
+
+const TASK_LABELS: Record<string, string> = {
+  db_export: 'Database Export',
+  db_import: 'Database Import',
+  files_export: 'Filesystem Export',
+  files_import: 'Filesystem Import',
+}
+
+/** Snackbar notification for a completed/failed task. */
+interface TaskNotification {
+  id: number
+  task: AdminTask
+}
 
 export default function AdminPage() {
   const fileRef = useRef<HTMLInputElement>(null)
   const filesRef = useRef<HTMLInputElement>(null)
-  const [exporting, setExporting] = useState(false)
-  const [importing, setImporting] = useState(false)
-  const [exportingFiles, setExportingFiles] = useState(false)
-  const [importingFiles, setImportingFiles] = useState(false)
-  const [result, setResult] = useState<ImportResult | null>(null)
-  const [filesResult, setFilesResult] = useState<FilesImportResult | null>(null)
+
+  // Active background tasks being polled
+  const [activeTasks, setActiveTasks] = useState<AdminTask[]>([])
+  // Completed/failed task history (loaded once)
+  const [taskHistory, setTaskHistory] = useState<AdminTask[]>([])
+  // Snackbar notifications
+  const [notifications, setNotifications] = useState<TaskNotification[]>([])
+  // Log viewer modal
+  const [logTask, setLogTask] = useState<AdminTask | null>(null)
+
   const [error, setError] = useState<string | null>(null)
+  const [starting, setStarting] = useState<string | null>(null) // task_type being kicked off
 
-  const busy = exporting || importing || exportingFiles || importingFiles
+  const pollRefs = useRef(new Map<number, ReturnType<typeof setTimeout>>())
 
-  const handleExport = async () => {
-    setError(null)
-    setExporting(true)
-    try {
-      await exportDatabase()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Export failed')
-    } finally {
-      setExporting(false)
+  // Load task history on mount
+  useEffect(() => {
+    fetchAdminTasks()
+      .then(setTaskHistory)
+      .catch(() => {/* ignore */})
+  }, [])
+
+  // ── Polling ──────────────────────────────────────────────
+
+  const stopPolling = useCallback((taskId: number) => {
+    const ref = pollRefs.current.get(taskId)
+    if (ref !== undefined) {
+      clearTimeout(ref)
+      pollRefs.current.delete(taskId)
     }
-  }
+  }, [])
 
-  const handleImportClick = () => {
-    fileRef.current?.click()
-  }
+  const pollTask = useCallback(
+    (taskId: number) => {
+      if (pollRefs.current.has(taskId)) return // already polling
+
+      const schedule = () => {
+        const handle = setTimeout(async () => {
+          try {
+            const updated = await fetchAdminTask(taskId)
+
+            // Update active tasks list
+            setActiveTasks((prev) =>
+              prev.map((t) => (t.id === taskId ? updated : t)),
+            )
+
+            // Also update the log modal if it's viewing this task
+            setLogTask((prev) => (prev?.id === taskId ? updated : prev))
+
+            if (updated.status === 'completed' || updated.status === 'failed') {
+              stopPolling(taskId)
+              setNotifications((prev) => [...prev, { id: taskId, task: updated }])
+              // Refresh history
+              fetchAdminTasks()
+                .then(setTaskHistory)
+                .catch(() => {/* ignore */})
+            } else {
+              schedule()
+            }
+          } catch {
+            // Network error — retry
+            schedule()
+          }
+        }, POLL_INTERVAL)
+        pollRefs.current.set(taskId, handle)
+      }
+
+      schedule()
+    },
+    [stopPolling],
+  )
+
+  // Clean up polling on unmount
+  useEffect(() => {
+    const refs = pollRefs.current
+    return () => {
+      for (const handle of refs.values()) clearTimeout(handle)
+      refs.clear()
+    }
+  }, [])
+
+  // ── Kick-off helpers ─────────────────────────────────────
+
+  const kickOff = useCallback(
+    async (
+      taskType: string,
+      starter: () => Promise<AdminTask>,
+    ) => {
+      setError(null)
+      setStarting(taskType)
+      try {
+        const task = await starter()
+        setActiveTasks((prev) => [...prev, task])
+        pollTask(task.id)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Operation failed')
+      } finally {
+        setStarting(null)
+      }
+    },
+    [pollTask],
+  )
+
+  const handleExport = () => kickOff('db_export', startDbExport)
+  const handleExportFiles = () => kickOff('files_export', startFilesExport)
+
+  const handleImportClick = () => fileRef.current?.click()
+  const handleImportFilesClick = () => filesRef.current?.click()
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
-    // Reset the input so the same file can be re-selected
     e.target.value = ''
-
-    setError(null)
-    setResult(null)
-    setImporting(true)
-    try {
-      const res = await importDatabase(file)
-      setResult(res)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Import failed')
-    } finally {
-      setImporting(false)
-    }
-  }
-
-  const handleExportFiles = async () => {
-    setError(null)
-    setExportingFiles(true)
-    try {
-      await exportFiles()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'File export failed')
-    } finally {
-      setExportingFiles(false)
-    }
-  }
-
-  const handleImportFilesClick = () => {
-    filesRef.current?.click()
+    await kickOff('db_import', () => startDbImport(file))
   }
 
   const handleFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
-
-    setError(null)
-    setFilesResult(null)
-    setImportingFiles(true)
-    try {
-      const res = await importFiles(file)
-      setFilesResult(res)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'File import failed')
-    } finally {
-      setImportingFiles(false)
-    }
+    await kickOff('files_import', () => startFilesImport(file))
   }
+
+  // Dismiss a snackbar notification and remove the task from activeTasks
+  const dismissNotification = (taskId: number) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== taskId))
+    setActiveTasks((prev) => prev.filter((t) => t.id !== taskId))
+  }
+
+  const busy = starting !== null
+
+  // Active (in-flight) tasks for the progress banner
+  const runningTasks = activeTasks.filter(
+    (t) => t.status === 'pending' || t.status === 'running',
+  )
 
   return (
     <Box>
@@ -107,20 +198,37 @@ export default function AdminPage() {
         </Alert>
       )}
 
-      {result && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setResult(null)}>
-          Database import complete — {result.imported.categories} categories,{' '}
-          {result.imported.images} images, {result.imported.users} users
-          {result.imported.source_images ? `, ${result.imported.source_images} source images` : ''} loaded.
+      {/* ── Active task progress banners ────────────────── */}
+      {runningTasks.map((task) => (
+        <Alert
+          key={task.id}
+          severity="info"
+          icon={<CircularProgress size={20} />}
+          sx={{ mb: 2 }}
+          action={
+            <Link
+              component="button"
+              variant="body2"
+              underline="always"
+              sx={{ mr: 1, cursor: 'pointer' }}
+              onClick={() => setLogTask(task)}
+            >
+              Details
+            </Link>
+          }
+        >
+          <Box sx={{ width: '100%' }}>
+            <Typography variant="body2" sx={{ mb: 0.5 }}>
+              {TASK_LABELS[task.task_type] ?? task.task_type} — {task.progress}%
+            </Typography>
+            <LinearProgress
+              variant="determinate"
+              value={task.progress}
+              sx={{ height: 6, borderRadius: 1 }}
+            />
+          </Box>
         </Alert>
-      )}
-
-      {filesResult && (
-        <Alert severity="success" sx={{ mb: 2 }} onClose={() => setFilesResult(null)}>
-          File import complete — {filesResult.restored.tile_files} tile files,{' '}
-          {filesResult.restored.source_files} source files restored.
-        </Alert>
-      )}
+      ))}
 
       {/* ── Database Section ──────────────────────────────── */}
       <Typography variant="h6" sx={{ mb: 2 }}>
@@ -136,16 +244,16 @@ export default function AdminPage() {
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Download a JSON snapshot of all categories, images, users, and
-              source image records. This file can be used to restore the
-              database later.
+              source image records. The export runs in the background — you will
+              be notified when it is ready to download.
             </Typography>
             <Button
               variant="contained"
-              startIcon={exporting ? <CircularProgress size={18} color="inherit" /> : <DownloadIcon />}
+              startIcon={starting === 'db_export' ? <CircularProgress size={18} color="inherit" /> : <DownloadIcon />}
               onClick={handleExport}
               disabled={busy}
             >
-              {exporting ? 'Exporting…' : 'Export'}
+              {starting === 'db_export' ? 'Starting…' : 'Export'}
             </Button>
           </CardContent>
         </Card>
@@ -159,16 +267,16 @@ export default function AdminPage() {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Upload a previously exported JSON file to replace all current
               data. This action is destructive — existing records will be
-              overwritten.
+              overwritten. The import runs in the background.
             </Typography>
             <Button
               variant="contained"
               color="warning"
-              startIcon={importing ? <CircularProgress size={18} color="inherit" /> : <UploadFileIcon />}
+              startIcon={starting === 'db_import' ? <CircularProgress size={18} color="inherit" /> : <UploadFileIcon />}
               onClick={handleImportClick}
               disabled={busy}
             >
-              {importing ? 'Importing…' : 'Import'}
+              {starting === 'db_import' ? 'Starting…' : 'Import'}
             </Button>
             <input
               ref={fileRef}
@@ -188,7 +296,7 @@ export default function AdminPage() {
         Filesystem
       </Typography>
 
-      <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+      <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 4 }}>
         {/* Export Files card */}
         <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: 'background.paper' }}>
           <CardContent>
@@ -196,17 +304,17 @@ export default function AdminPage() {
               Export Files
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Download a compressed archive (.tar.gz) of all image tiles,
-              thumbnails, and uploaded source files. Use together with the
-              database export for a complete system backup.
+              Create a compressed archive (.tar.gz) of all image tiles,
+              thumbnails, and uploaded source files. The archive is built in the
+              background — you will be notified when it is ready to download.
             </Typography>
             <Button
               variant="contained"
-              startIcon={exportingFiles ? <CircularProgress size={18} color="inherit" /> : <FolderZipIcon />}
+              startIcon={starting === 'files_export' ? <CircularProgress size={18} color="inherit" /> : <FolderZipIcon />}
               onClick={handleExportFiles}
               disabled={busy}
             >
-              {exportingFiles ? 'Exporting…' : 'Export'}
+              {starting === 'files_export' ? 'Starting…' : 'Export'}
             </Button>
           </CardContent>
         </Card>
@@ -220,16 +328,16 @@ export default function AdminPage() {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
               Upload a previously exported .tar.gz file to replace all tiles
               and source files on disk. This action is destructive — existing
-              files will be overwritten.
+              files will be overwritten. The import runs in the background.
             </Typography>
             <Button
               variant="contained"
               color="warning"
-              startIcon={importingFiles ? <CircularProgress size={18} color="inherit" /> : <UploadFileIcon />}
+              startIcon={starting === 'files_import' ? <CircularProgress size={18} color="inherit" /> : <UploadFileIcon />}
               onClick={handleImportFilesClick}
               disabled={busy}
             >
-              {importingFiles ? 'Importing…' : 'Import'}
+              {starting === 'files_import' ? 'Starting…' : 'Import'}
             </Button>
             <input
               ref={filesRef}
@@ -241,6 +349,213 @@ export default function AdminPage() {
           </CardContent>
         </Card>
       </Box>
+
+      {/* ── Recent Tasks ──────────────────────────────────── */}
+      {taskHistory.length > 0 && (
+        <>
+          <Divider sx={{ mb: 4 }} />
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            Recent Tasks
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {taskHistory.slice(0, 20).map((task) => (
+              <Box
+                key={task.id}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 2,
+                  px: 2,
+                  py: 1,
+                  borderRadius: 1,
+                  bgcolor: 'background.paper',
+                }}
+              >
+                <Chip
+                  size="small"
+                  label={task.status}
+                  color={
+                    task.status === 'completed'
+                      ? 'success'
+                      : task.status === 'failed'
+                        ? 'error'
+                        : task.status === 'running'
+                          ? 'info'
+                          : 'default'
+                  }
+                  sx={{ minWidth: 80 }}
+                />
+                <Typography variant="body2" sx={{ flex: 1 }}>
+                  {TASK_LABELS[task.task_type] ?? task.task_type}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {task.created_at
+                    ? new Date(task.created_at).toLocaleString()
+                    : ''}
+                </Typography>
+                {task.status === 'completed' && task.result_filename && (
+                  <IconButton
+                    size="small"
+                    href={getAdminTaskDownloadUrl(task.id)}
+                    title="Download"
+                  >
+                    <DownloadIcon fontSize="small" />
+                  </IconButton>
+                )}
+                <IconButton
+                  size="small"
+                  onClick={() => setLogTask(task)}
+                  title="View details"
+                >
+                  <InfoOutlinedIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            ))}
+          </Box>
+        </>
+      )}
+
+      {/* ── Snackbar notifications ────────────────────────── */}
+      {notifications.map((n, index) => (
+        <Snackbar
+          key={n.id}
+          open
+          autoHideDuration={n.task.status === 'failed' ? null : 10000}
+          onClose={(_event, reason) => {
+            if (reason === 'clickaway') return
+            dismissNotification(n.id)
+          }}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          sx={{
+            zIndex: 1500,
+            bottom: { xs: `${24 + index * 80}px !important` },
+          }}
+        >
+          <Alert
+            severity={n.task.status === 'completed' ? 'success' : 'error'}
+            variant="filled"
+            sx={{ width: '100%', alignItems: 'center' }}
+            onClose={() => dismissNotification(n.id)}
+            action={
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                {n.task.status === 'completed' && n.task.result_filename && (
+                  <Button
+                    color="inherit"
+                    size="small"
+                    href={getAdminTaskDownloadUrl(n.id)}
+                    startIcon={<DownloadIcon />}
+                  >
+                    Download
+                  </Button>
+                )}
+                <Link
+                  component="button"
+                  color="inherit"
+                  variant="body2"
+                  underline="always"
+                  sx={{ cursor: 'pointer' }}
+                  onClick={() => {
+                    setLogTask(n.task)
+                  }}
+                >
+                  Details
+                </Link>
+                <IconButton
+                  size="small"
+                  color="inherit"
+                  onClick={() => dismissNotification(n.id)}
+                >
+                  <CloseIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            }
+          >
+            {TASK_LABELS[n.task.task_type] ?? n.task.task_type}{' '}
+            {n.task.status === 'completed' ? 'completed' : 'failed'}
+            {n.task.error_message ? `: ${n.task.error_message}` : ''}
+          </Alert>
+        </Snackbar>
+      ))}
+
+      {/* ── Log viewer modal ──────────────────────────────── */}
+      <Dialog
+        open={logTask !== null}
+        onClose={() => setLogTask(null)}
+        maxWidth="md"
+        fullWidth
+      >
+        {logTask && (
+          <>
+            <DialogTitle>
+              {TASK_LABELS[logTask.task_type] ?? logTask.task_type} — Task #{logTask.id}
+              <Chip
+                size="small"
+                label={logTask.status}
+                color={
+                  logTask.status === 'completed'
+                    ? 'success'
+                    : logTask.status === 'failed'
+                      ? 'error'
+                      : logTask.status === 'running'
+                        ? 'info'
+                        : 'default'
+                }
+                sx={{ ml: 2, verticalAlign: 'middle' }}
+              />
+            </DialogTitle>
+            <DialogContent dividers>
+              {(logTask.status === 'running' || logTask.status === 'pending') && (
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="body2" sx={{ mb: 0.5 }}>
+                    Progress: {logTask.progress}%
+                  </Typography>
+                  <LinearProgress
+                    variant="determinate"
+                    value={logTask.progress}
+                    sx={{ height: 6, borderRadius: 1 }}
+                  />
+                </Box>
+              )}
+              {logTask.error_message && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {logTask.error_message}
+                </Alert>
+              )}
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Log Output
+              </Typography>
+              <Box
+                component="pre"
+                sx={{
+                  p: 2,
+                  bgcolor: 'grey.900',
+                  color: 'grey.100',
+                  borderRadius: 1,
+                  fontSize: '0.85rem',
+                  fontFamily: 'monospace',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  maxHeight: 400,
+                  overflow: 'auto',
+                }}
+              >
+                {logTask.log || '(no output yet)'}
+              </Box>
+            </DialogContent>
+            <DialogActions>
+              {logTask.status === 'completed' && logTask.result_filename && (
+                <Button
+                  href={getAdminTaskDownloadUrl(logTask.id)}
+                  startIcon={<DownloadIcon />}
+                >
+                  Download
+                </Button>
+              )}
+              <Button onClick={() => setLogTask(null)}>Close</Button>
+            </DialogActions>
+          </>
+        )}
+      </Dialog>
     </Box>
   )
 }
