@@ -166,6 +166,7 @@ helper once.  It detects the legacy schema — presence of the `images`
 table without an `alembic_version` table — and stamps `head` so that
 future migrations apply on top of the existing schema without
 re-creating any tables.
+
 ---
 
 ## JWT_SECRET
