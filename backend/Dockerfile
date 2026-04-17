@@ -41,4 +41,9 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload
 # ── Stage 4: Production ─────────────────────────────────
 FROM base AS prod
 EXPOSE 8000
-CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+# Use --workers 1 and scale horizontally via Kubernetes replicas
+# (charts/backend/values.yaml: replicaCount).  OpenTelemetry auto-instrumentation
+# initialises SDK state (exporter connections, batch processors) in the parent
+# process before uvicorn's multi-worker fork, which can corrupt gRPC/HTTP
+# exporter connections and produce duplicate/lost telemetry in forked children.
+CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
