@@ -139,24 +139,45 @@ def _run_stamp(cfg: Config) -> None:
 async def _should_stamp_legacy(conn: AsyncConnection) -> bool:
     """Detect a pre-Alembic database that already has application tables.
 
-    Returns ``True`` when the database has no ``alembic_version`` table
-    (never been managed by Alembic) **and** the ``programs`` table exists
-    (schema was created by the legacy ``db/init.sql`` bootstrap).  In that
-    case the caller should *stamp* the baseline revision instead of
-    *upgrading*, so the initial migration isn't re-applied on top of
+    Returns ``True`` when the ``programs`` table exists (schema was created
+    by the legacy ``db/init.sql`` bootstrap) **and** either:
+
+    * ``alembic_version`` does not exist at all, **or**
+    * ``alembic_version`` exists but contains no rows (left over from a
+      previous failed migration attempt — Alembic may create the table
+      before the migration transaction, so a rollback leaves it behind
+      empty).
+
+    In both cases the caller should *stamp* the baseline revision instead
+    of *upgrading*, so the initial migration isn't re-applied on top of
     existing tables.  A subsequent ``upgrade head`` then applies any
     migrations added after the baseline.
     """
-    version_table = (
-        await conn.execute(text("SELECT to_regclass('public.alembic_version')"))
-    ).scalar_one_or_none()
-    if version_table is not None:
-        return False
-
+    # Quick check: do the application tables exist at all?
     programs_table = (
         await conn.execute(text("SELECT to_regclass('public.programs')"))
     ).scalar_one_or_none()
-    return programs_table is not None
+    if programs_table is None:
+        # Fresh database — let upgrade create everything from scratch.
+        return False
+
+    # Application tables exist.  Is Alembic already tracking this DB?
+    version_table = (
+        await conn.execute(text("SELECT to_regclass('public.alembic_version')"))
+    ).scalar_one_or_none()
+    if version_table is None:
+        # No version table at all — classic legacy DB.
+        return True
+
+    # The version table exists — but a previous failed migration may have
+    # left it empty (Alembic creates the table before the migration
+    # transaction, so a DDL failure rolls back the version INSERT but not
+    # the table itself).  An empty table with existing app tables means we
+    # still need to stamp.
+    row_count = (
+        await conn.execute(text("SELECT count(*) FROM alembic_version"))
+    ).scalar_one()
+    return row_count == 0
 
 
 async def _async_bootstrap() -> None:
@@ -178,7 +199,7 @@ async def _async_bootstrap() -> None:
     async with _advisory_lock() as conn:
         if await _should_stamp_legacy(conn):
             logger.info(
-                "Detected legacy database schema without alembic_version; "
+                "Detected legacy database schema (alembic_version missing or empty); "
                 "stamping baseline revision %s then upgrading.",
                 _BASELINE_REVISION,
                 extra={"event": "alembic.legacy_stamp"},
