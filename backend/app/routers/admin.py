@@ -5,6 +5,7 @@ import os
 import shutil
 import tarfile
 import tempfile
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
@@ -726,7 +727,7 @@ async def start_db_import(
 
     # Save uploaded file to staging area
     tasks_dir = _ensure_tasks_dir()
-    input_path = os.path.join(tasks_dir, f"import-{int(datetime.now(timezone.utc).timestamp())}.json")
+    input_path = os.path.join(tasks_dir, f"import-{uuid.uuid4().hex}.json")
     with open(input_path, "wb") as f:
         while True:
             chunk = await file.read(_TASK_UPLOAD_CHUNK)
@@ -765,7 +766,7 @@ async def start_files_import(
         raise HTTPException(status_code=400, detail="Only .tar.gz / .tgz files are accepted")
 
     tasks_dir = _ensure_tasks_dir()
-    input_path = os.path.join(tasks_dir, f"import-{int(datetime.now(timezone.utc).timestamp())}.tar.gz")
+    input_path = os.path.join(tasks_dir, f"import-{uuid.uuid4().hex}.tar.gz")
     with open(input_path, "wb") as f:
         while True:
             chunk = await file.read(_TASK_UPLOAD_CHUNK)
