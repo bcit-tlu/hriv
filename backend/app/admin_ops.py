@@ -343,6 +343,11 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.execute(text("DELETE FROM image_programs"))
                 await data_session.execute(text("DELETE FROM images"))
                 await data_session.execute(text("DELETE FROM categories"))
+                # Detach admin_tasks.created_by FK before deleting users to
+                # avoid a deadlock: DELETE FROM users cascades SET NULL on the
+                # admin_tasks row, locking it in data_session, which would
+                # block status_session from updating the same row.
+                await data_session.execute(text("UPDATE admin_tasks SET created_by = NULL"))
                 await data_session.execute(text("DELETE FROM users"))
                 await data_session.execute(text("DELETE FROM announcements"))
                 await data_session.execute(text("DELETE FROM programs"))
