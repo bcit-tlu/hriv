@@ -188,8 +188,6 @@ jobs:
       - name: Package, push & sign charts
         run: |
           OCI_BASE="oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
-          TAG="${GITHUB_REF#refs/tags/}"
-          SHA=$(git rev-parse --short HEAD)
           IS_TAG=${{ startsWith(github.ref, 'refs/tags/') }}
           TIMESTAMP=$(git log -1 --format=%ct)
 
