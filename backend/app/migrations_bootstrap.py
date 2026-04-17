@@ -199,7 +199,7 @@ async def _async_bootstrap() -> None:
     async with _advisory_lock() as conn:
         if await _should_stamp_legacy(conn):
             logger.info(
-                "Detected legacy database schema without alembic_version; "
+                "Detected legacy database schema (alembic_version missing or empty); "
                 "stamping baseline revision %s then upgrading.",
                 _BASELINE_REVISION,
                 extra={"event": "alembic.legacy_stamp"},
