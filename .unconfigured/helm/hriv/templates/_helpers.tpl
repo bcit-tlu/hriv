@@ -41,7 +41,6 @@ Selector labels for the frontend
 */}}
 {{- define "corgi.frontend.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "corgi.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/component: frontend
 {{- end }}
 
@@ -50,7 +49,6 @@ Selector labels for the backend
 */}}
 {{- define "corgi.backend.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "corgi.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/component: backend
 {{- end }}
 
