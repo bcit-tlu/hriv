@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/bcit-tlu/hriv/hriv-backup
-  tag: 0.1.0 # x-release-please-version
+  tag: "" # Defaults to .Chart.AppVersion
   pullPolicy: IfNotPresent
 
 # Name of the CNPG-generated Secret containing the database URI.
