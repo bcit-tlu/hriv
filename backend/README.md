@@ -158,6 +158,15 @@ through a new Alembic revision.
    make sure the migration applies cleanly.
 5. Commit the migration alongside the model change.
 
+### Legacy / existing deployments
+
+Deployments whose database was bootstrapped before Alembic existed
+(i.e. produced by `db/init.sql` directly) should run the bootstrap
+helper once.  It detects the legacy schema — presence of the `programs`
+table without an `alembic_version` table — and stamps `head` so that
+future migrations apply on top of the existing schema without
+re-creating any tables.
+
 ---
 
 ## JWT_SECRET

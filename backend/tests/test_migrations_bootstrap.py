@@ -19,7 +19,7 @@ from app import migrations_bootstrap
 @contextlib.asynccontextmanager
 async def _noop_advisory_lock():
     """Stand-in for ``_advisory_lock`` that skips the real Postgres round-trip."""
-    yield
+    yield AsyncMock(name="FakeConn")
 
 
 def test_run_upgrade_dispatches_to_alembic_command(
@@ -50,17 +50,21 @@ def test_bootstrap_runs_upgrade_under_advisory_lock(
     async def _tracking_lock():
         events.append("lock_acquired")
         try:
-            yield
+            yield AsyncMock(name="FakeConn")
         finally:
             events.append("lock_released")
 
     def _tracking_upgrade(cfg: MagicMock) -> None:
         events.append("upgrade")
 
+    async def _no_stamp(_conn):
+        return False
+
     fake_cfg = MagicMock(name="Config")
     monkeypatch.setattr(migrations_bootstrap, "_alembic_config", lambda: fake_cfg)
     monkeypatch.setattr(migrations_bootstrap, "_run_upgrade", _tracking_upgrade)
     monkeypatch.setattr(migrations_bootstrap, "_advisory_lock", _tracking_lock)
+    monkeypatch.setattr(migrations_bootstrap, "_should_stamp_legacy", _no_stamp)
 
     migrations_bootstrap.bootstrap()
 
@@ -79,11 +83,15 @@ def test_bootstrap_runs_upgrade_in_worker_thread(
         to_thread_calls.append((func, args, kwargs))
         return func(*args, **kwargs)
 
+    async def _no_stamp(_conn):
+        return False
+
     fake_cfg = MagicMock(name="Config")
     upgrade = MagicMock()
     monkeypatch.setattr(migrations_bootstrap, "_alembic_config", lambda: fake_cfg)
     monkeypatch.setattr(migrations_bootstrap, "_run_upgrade", upgrade)
     monkeypatch.setattr(migrations_bootstrap, "_advisory_lock", _noop_advisory_lock)
+    monkeypatch.setattr(migrations_bootstrap, "_should_stamp_legacy", _no_stamp)
     monkeypatch.setattr(migrations_bootstrap.asyncio, "to_thread", _fake_to_thread)
 
     migrations_bootstrap.bootstrap()
@@ -124,8 +132,8 @@ async def test_advisory_lock_acquires_and_releases(
         _fake_create_async_engine,
     )
 
-    async with migrations_bootstrap._advisory_lock():
-        pass
+    async with migrations_bootstrap._advisory_lock() as conn:
+        assert conn is fake_conn
 
     assert fake_conn.execute.await_count == 2
     first_sql = str(fake_conn.execute.await_args_list[0].args[0])
@@ -165,6 +173,102 @@ def test_alembic_config_raises_when_ini_missing(
 
     with pytest.raises(RuntimeError, match="alembic.ini not found"):
         migrations_bootstrap._alembic_config()
+
+
+def test_run_stamp_dispatches_to_alembic_command(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_run_stamp`` must call ``alembic.command.stamp(cfg, _BASELINE_REVISION)``."""
+    fake_cfg = MagicMock(name="Config")
+    stamp = MagicMock()
+    monkeypatch.setattr(migrations_bootstrap.command, "stamp", stamp)
+
+    migrations_bootstrap._run_stamp(fake_cfg)
+
+    stamp.assert_called_once_with(fake_cfg, migrations_bootstrap._BASELINE_REVISION)
+
+
+async def test_should_stamp_legacy_returns_true_for_pre_alembic_db() -> None:
+    """When ``alembic_version`` is absent but ``programs`` exists, the DB
+    was bootstrapped before Alembic and needs a stamp instead of upgrade."""
+    conn = AsyncMock(name="AsyncConnection")
+    # First call: to_regclass('public.alembic_version') → None (absent)
+    # Second call: to_regclass('public.programs') → 'programs' (present)
+    conn.execute = AsyncMock(side_effect=[
+        MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+        MagicMock(scalar_one_or_none=MagicMock(return_value="programs")),
+    ])
+
+    result = await migrations_bootstrap._should_stamp_legacy(conn)
+
+    assert result is True
+    assert conn.execute.await_count == 2
+
+
+async def test_should_stamp_legacy_returns_false_when_alembic_version_exists() -> None:
+    """When ``alembic_version`` already exists the DB is Alembic-managed
+    and should use normal ``upgrade head``."""
+    conn = AsyncMock(name="AsyncConnection")
+    conn.execute = AsyncMock(return_value=MagicMock(
+        scalar_one_or_none=MagicMock(return_value="alembic_version"),
+    ))
+
+    result = await migrations_bootstrap._should_stamp_legacy(conn)
+
+    assert result is False
+    # Only one query needed — early return after finding alembic_version
+    assert conn.execute.await_count == 1
+
+
+async def test_should_stamp_legacy_returns_false_for_fresh_db() -> None:
+    """A completely fresh DB (no ``alembic_version``, no ``programs``)
+    should use normal ``upgrade head`` to create all tables."""
+    conn = AsyncMock(name="AsyncConnection")
+    conn.execute = AsyncMock(side_effect=[
+        MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+        MagicMock(scalar_one_or_none=MagicMock(return_value=None)),
+    ])
+
+    result = await migrations_bootstrap._should_stamp_legacy(conn)
+
+    assert result is False
+
+
+def test_bootstrap_stamps_then_upgrades_legacy_db(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When ``_should_stamp_legacy`` returns True, bootstrap must stamp the
+    baseline revision *and then* run ``upgrade head`` so that any migrations
+    added after the baseline are still applied."""
+    events: list[str] = []
+
+    @contextlib.asynccontextmanager
+    async def _tracking_lock():
+        events.append("lock_acquired")
+        try:
+            yield AsyncMock(name="FakeConn")
+        finally:
+            events.append("lock_released")
+
+    def _tracking_stamp(cfg: MagicMock) -> None:
+        events.append("stamp")
+
+    def _tracking_upgrade(cfg: MagicMock) -> None:
+        events.append("upgrade")
+
+    async def _yes_stamp(_conn):
+        return True
+
+    fake_cfg = MagicMock(name="Config")
+    monkeypatch.setattr(migrations_bootstrap, "_alembic_config", lambda: fake_cfg)
+    monkeypatch.setattr(migrations_bootstrap, "_run_stamp", _tracking_stamp)
+    monkeypatch.setattr(migrations_bootstrap, "_run_upgrade", _tracking_upgrade)
+    monkeypatch.setattr(migrations_bootstrap, "_advisory_lock", _tracking_lock)
+    monkeypatch.setattr(migrations_bootstrap, "_should_stamp_legacy", _yes_stamp)
+
+    migrations_bootstrap.bootstrap()
+
+    assert events == ["lock_acquired", "stamp", "upgrade", "lock_released"]
 
 
 def test_main_returns_zero_on_success(monkeypatch: pytest.MonkeyPatch) -> None:
