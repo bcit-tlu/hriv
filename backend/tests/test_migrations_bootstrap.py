@@ -19,7 +19,7 @@ from app import migrations_bootstrap
 @contextlib.asynccontextmanager
 async def _noop_advisory_lock():
     """Stand-in for ``_advisory_lock`` that skips the real Postgres round-trip."""
-    yield
+    yield AsyncMock(name="FakeConn")
 
 
 def test_run_upgrade_dispatches_to_alembic_command(
@@ -50,17 +50,21 @@ def test_bootstrap_runs_upgrade_under_advisory_lock(
     async def _tracking_lock():
         events.append("lock_acquired")
         try:
-            yield
+            yield AsyncMock(name="FakeConn")
         finally:
             events.append("lock_released")
 
     def _tracking_upgrade(cfg: MagicMock) -> None:
         events.append("upgrade")
 
+    async def _no_stamp(_conn):
+        return False
+
     fake_cfg = MagicMock(name="Config")
     monkeypatch.setattr(migrations_bootstrap, "_alembic_config", lambda: fake_cfg)
     monkeypatch.setattr(migrations_bootstrap, "_run_upgrade", _tracking_upgrade)
     monkeypatch.setattr(migrations_bootstrap, "_advisory_lock", _tracking_lock)
+    monkeypatch.setattr(migrations_bootstrap, "_should_stamp_legacy", _no_stamp)
 
     migrations_bootstrap.bootstrap()
 
@@ -79,11 +83,15 @@ def test_bootstrap_runs_upgrade_in_worker_thread(
         to_thread_calls.append((func, args, kwargs))
         return func(*args, **kwargs)
 
+    async def _no_stamp(_conn):
+        return False
+
     fake_cfg = MagicMock(name="Config")
     upgrade = MagicMock()
     monkeypatch.setattr(migrations_bootstrap, "_alembic_config", lambda: fake_cfg)
     monkeypatch.setattr(migrations_bootstrap, "_run_upgrade", upgrade)
     monkeypatch.setattr(migrations_bootstrap, "_advisory_lock", _noop_advisory_lock)
+    monkeypatch.setattr(migrations_bootstrap, "_should_stamp_legacy", _no_stamp)
     monkeypatch.setattr(migrations_bootstrap.asyncio, "to_thread", _fake_to_thread)
 
     migrations_bootstrap.bootstrap()
@@ -124,8 +132,8 @@ async def test_advisory_lock_acquires_and_releases(
         _fake_create_async_engine,
     )
 
-    async with migrations_bootstrap._advisory_lock():
-        pass
+    async with migrations_bootstrap._advisory_lock() as conn:
+        assert conn is fake_conn
 
     assert fake_conn.execute.await_count == 2
     first_sql = str(fake_conn.execute.await_args_list[0].args[0])
