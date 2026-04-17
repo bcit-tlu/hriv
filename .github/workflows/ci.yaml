@@ -102,7 +102,9 @@ jobs:
           if [[ "$TAG" =~ ^${COMPONENT}-v(.+)$ ]]; then
             echo "value=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
           else
-            echo "value=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+            BASE_VERSION=$(grep '^version:' "charts/${COMPONENT}/Chart.yaml" | awk '{print $2}')
+            TIMESTAMP=$(git log -1 --format=%ct)
+            echo "value=${BASE_VERSION}-rc.${TIMESTAMP}" >> "$GITHUB_OUTPUT"
           fi
 
       - uses: docker/metadata-action@v6
@@ -114,6 +116,7 @@ jobs:
             type=raw,value=main-{{date 'YYYYMMDDHHmmss'}}-{{sha}},enable={{is_default_branch}}
             type=ref,event=branch
             type=match,pattern=${{ matrix.component }}-v(.*),group=1
+            type=raw,value=${{ steps.app-version.outputs.value }}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - uses: docker/build-push-action@v7
@@ -185,10 +188,8 @@ jobs:
       - name: Package, push & sign charts
         run: |
           OCI_BASE="oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
-          TAG="${GITHUB_REF#refs/tags/}"
-          SHA=$(git rev-parse --short HEAD)
           IS_TAG=${{ startsWith(github.ref, 'refs/tags/') }}
-          TIMESTAMP=$(date +%s)
+          TIMESTAMP=$(git log -1 --format=%ct)
 
           for dir in charts/*/; do
             chart=$(basename "$dir")
@@ -201,10 +202,10 @@ jobs:
               # Release build: use Chart.yaml version as-is
               VERSION="${BASE_VERSION}"
             else
-              # Dev build: append dev suffix
-              VERSION="${BASE_VERSION}-dev.${TIMESTAMP}"
-              # Set image tag to SHA so Flux deploys the exact commit
-              sed -i "s/^\(\s*tag:\).*/\1 ${SHA}/" "${dir}values.yaml"
+              # Dev build: append rc (release-candidate) suffix
+              VERSION="${BASE_VERSION}-rc.${TIMESTAMP}"
+              # image.tag defaults to appVersion via the template;
+              # no sed override needed — Flux deploys the rc version.
             fi
 
             # Stamp version into Chart.yaml (overwrites annotation comment)

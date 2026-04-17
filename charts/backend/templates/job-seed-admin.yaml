@@ -24,7 +24,7 @@ spec:
       initContainers:
         # Reuse the migrate initContainer so the schema exists before seeding.
         - name: migrate
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["python", "-m", "app.migrations_bootstrap"]
           env:

@@ -33,7 +33,7 @@ spec:
         # requiring a separate Job or post-upgrade hook.  Serialized across
         # replicas via ``pg_advisory_lock`` (see ``app.migrations_bootstrap``).
         - name: migrate
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command: ["python", "-m", "app.migrations_bootstrap"]
           env:
@@ -44,7 +44,7 @@ spec:
                   key: uri
       containers:
         - name: backend
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
