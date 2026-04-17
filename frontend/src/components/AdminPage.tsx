@@ -101,7 +101,7 @@ export default function AdminPage() {
             // Also update the log modal if it's viewing this task
             setLogTask((prev) => (prev?.id === taskId ? updated : prev))
 
-            if (updated.status === 'completed' || updated.status === 'failed') {
+            if (updated.status === 'completed' || updated.status === 'failed' || updated.status === 'cancelled') {
               stopPolling(taskId)
               setNotifications((prev) => [...prev, { id: taskId, task: updated }])
               // Refresh history
