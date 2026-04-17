@@ -271,221 +271,234 @@ def _write_file(path: str, content: str) -> None:
 
 
 async def run_db_import(task_id: int) -> None:
-    """Import a previously exported JSON dump in the background."""
-    async with get_async_session()() as session:
-        task = await session.get(AdminTask, task_id)
+    """Import a previously exported JSON dump in the background.
+
+    Uses two separate database sessions:
+    - ``status_session``: for AdminTask progress updates (committed freely)
+    - ``data_session``: for the actual import data (committed only once at the end)
+    This ensures the import is atomic — a mid-import failure rolls back all data
+    changes without losing task status visibility.
+    """
+    session_factory = get_async_session()
+
+    # Status session — used only for AdminTask updates, committed freely
+    async with session_factory() as status_session:
+        task = await status_session.get(AdminTask, task_id)
         if task is None:
             logger.error("AdminTask %d not found", task_id)
             return
 
         await _update_task(
-            session, task,
+            status_session, task,
             status="running", progress=0,
             log_line="Starting database import…",
         )
 
         input_path = task.input_path
-        try:
-            # Read and validate JSON
-            await _update_task(session, task, log_line="Reading JSON file…", progress=5)
-            raw = await asyncio.to_thread(_read_file, input_path)
-            dump = json.loads(raw)
 
-            if not isinstance(dump, dict):
-                raise ValueError("Expected a JSON object")
-            for key in ("categories", "images", "users"):
-                if key not in dump:
-                    raise ValueError(f"Missing required key: {key}")
+        # Data session — used for all import DML, committed once at the end
+        async with session_factory() as data_session:
+            try:
+                # Read and validate JSON
+                await _update_task(status_session, task, log_line="Reading JSON file…", progress=5)
+                raw = await asyncio.to_thread(_read_file, input_path)
+                dump = json.loads(raw)
 
-            # Clear existing data in dependency order
-            await _update_task(session, task, log_line="Clearing existing data…", progress=10)
-            await session.execute(text("DELETE FROM source_images"))
-            await session.execute(text("DELETE FROM image_programs"))
-            await session.execute(text("DELETE FROM images"))
-            await session.execute(text("DELETE FROM categories"))
-            await session.execute(text("DELETE FROM users"))
-            await session.execute(text("DELETE FROM announcements"))
-            await session.execute(text("DELETE FROM programs"))
+                if not isinstance(dump, dict):
+                    raise ValueError("Expected a JSON object")
+                for key in ("categories", "images", "users"):
+                    if key not in dump:
+                        raise ValueError(f"Missing required key: {key}")
 
-            # Import programs
-            await _update_task(session, task, log_line="Importing programs…", progress=15)
-            for p in dump.get("programs", []):
-                program = Program(
-                    id=p["id"],
-                    name=p["name"],
-                    created_at=_parse_dt(p.get("created_at")),
-                    updated_at=_parse_dt(p.get("updated_at")),
-                )
-                session.add(program)
-            await session.flush()
+                # Clear existing data in dependency order
+                await _update_task(status_session, task, log_line="Clearing existing data…", progress=10)
+                await data_session.execute(text("DELETE FROM source_images"))
+                await data_session.execute(text("DELETE FROM image_programs"))
+                await data_session.execute(text("DELETE FROM images"))
+                await data_session.execute(text("DELETE FROM categories"))
+                await data_session.execute(text("DELETE FROM users"))
+                await data_session.execute(text("DELETE FROM announcements"))
+                await data_session.execute(text("DELETE FROM programs"))
 
-            # Import users
-            await _update_task(session, task, log_line="Importing users…", progress=25)
-            for u in dump["users"]:
-                user = User(
-                    id=u["id"],
-                    name=u["name"],
-                    email=u["email"],
-                    password_hash=u.get("password_hash"),
-                    role=u.get("role", "student"),
-                    program_id=u.get("program_id"),
-                    last_access=_parse_dt(u.get("last_access")),
-                    metadata_=u.get("metadata", {}),
-                    created_at=_parse_dt(u.get("created_at")),
-                    updated_at=_parse_dt(u.get("updated_at")),
-                )
-                session.add(user)
-
-            # Import categories (topologically sorted)
-            await _update_task(session, task, log_line="Importing categories…", progress=35)
-            inserted_ids: set[int] = set()
-            remaining = list(dump["categories"])
-            while remaining:
-                progress_made = False
-                next_remaining = []
-                for c in remaining:
-                    pid = c.get("parent_id")
-                    if pid is None or pid in inserted_ids:
-                        cat = Category(
-                            id=c["id"],
-                            label=c["label"],
-                            parent_id=pid,
-                            program=c.get("program"),
-                            status=c.get("status", "active"),
-                            sort_order=c.get("sort_order", 0),
-                            metadata_=c.get("metadata", {}),
-                            created_at=_parse_dt(c.get("created_at")),
-                            updated_at=_parse_dt(c.get("updated_at")),
-                        )
-                        session.add(cat)
-                        inserted_ids.add(c["id"])
-                        progress_made = True
-                    else:
-                        next_remaining.append(c)
-                if not progress_made:
-                    raise ValueError("Circular or broken parent_id references in categories")
-                remaining = next_remaining
-                await session.flush()
-
-            await session.flush()
-
-            # Import images
-            await _update_task(session, task, log_line="Importing images…", progress=50)
-            for i in dump["images"]:
-                img = Image(
-                    id=i["id"],
-                    name=i.get("name") or i.get("label", ""),
-                    thumb=i["thumb"],
-                    tile_sources=i["tile_sources"],
-                    category_id=i.get("category_id"),
-                    copyright=i.get("copyright"),
-                    note=i.get("note") or i.get("origin"),
-                    active=i.get("active", True),
-                    metadata_=i.get("metadata", {}),
-                    created_at=_parse_dt(i.get("created_at")),
-                    updated_at=_parse_dt(i.get("updated_at")),
-                )
-                prog_ids = i.get("program_ids", [])
-                if prog_ids:
-                    progs = (await session.execute(
-                        select(Program).where(Program.id.in_(prog_ids))
-                    )).scalars().all()
-                    img.programs = list(progs)
-                session.add(img)
-            await session.flush()
-
-            # Import source images
-            await _update_task(session, task, log_line="Importing source images…", progress=65)
-            for s in dump.get("source_images", []):
-                src = SourceImage(
-                    id=s["id"],
-                    original_filename=s["original_filename"],
-                    stored_path=s["stored_path"],
-                    status=s.get("status", "pending"),
-                    progress=s.get("progress", 0),
-                    error_message=s.get("error_message"),
-                    name=s.get("name"),
-                    category_id=s.get("category_id"),
-                    copyright=s.get("copyright"),
-                    note=s.get("note"),
-                    active=s.get("active", True),
-                    program=s.get("program"),
-                    image_id=s.get("image_id"),
-                    file_size=s.get("file_size"),
-                    created_at=_parse_dt(s.get("created_at")),
-                    updated_at=_parse_dt(s.get("updated_at")),
-                )
-                session.add(src)
-            await session.flush()
-
-            # Import announcement
-            await _update_task(session, task, log_line="Importing announcement…", progress=75)
-            ann_data = dump.get("announcement")
-            if ann_data:
-                ann = Announcement(
-                    id=1,
-                    message=ann_data.get("message", ""),
-                    enabled=ann_data.get("enabled", False),
-                    created_at=_parse_dt(ann_data.get("created_at")),
-                    updated_at=_parse_dt(ann_data.get("updated_at")),
-                )
-                session.add(ann)
-            else:
-                session.add(Announcement(id=1, message="", enabled=False))
-            await session.flush()
-
-            # Reset sequences
-            await _update_task(session, task, log_line="Resetting sequences…", progress=85)
-            for tbl in ("programs", "categories", "images", "users", "announcements", "source_images"):
-                await session.execute(
-                    text(
-                        f"SELECT setval('{tbl}_id_seq', "
-                        f"GREATEST(COALESCE((SELECT MAX(id) FROM {tbl}), 1), 1), "
-                        f"EXISTS(SELECT 1 FROM {tbl}))"
+                # Import programs
+                await _update_task(status_session, task, log_line="Importing programs…", progress=15)
+                for p in dump.get("programs", []):
+                    program = Program(
+                        id=p["id"],
+                        name=p["name"],
+                        created_at=_parse_dt(p.get("created_at")),
+                        updated_at=_parse_dt(p.get("updated_at")),
                     )
+                    data_session.add(program)
+                await data_session.flush()
+
+                # Import users
+                await _update_task(status_session, task, log_line="Importing users…", progress=25)
+                for u in dump["users"]:
+                    user = User(
+                        id=u["id"],
+                        name=u["name"],
+                        email=u["email"],
+                        password_hash=u.get("password_hash"),
+                        role=u.get("role", "student"),
+                        program_id=u.get("program_id"),
+                        last_access=_parse_dt(u.get("last_access")),
+                        metadata_=u.get("metadata", {}),
+                        created_at=_parse_dt(u.get("created_at")),
+                        updated_at=_parse_dt(u.get("updated_at")),
+                    )
+                    data_session.add(user)
+
+                # Import categories (topologically sorted)
+                await _update_task(status_session, task, log_line="Importing categories…", progress=35)
+                inserted_ids: set[int] = set()
+                remaining = list(dump["categories"])
+                while remaining:
+                    progress_made = False
+                    next_remaining = []
+                    for c in remaining:
+                        pid = c.get("parent_id")
+                        if pid is None or pid in inserted_ids:
+                            cat = Category(
+                                id=c["id"],
+                                label=c["label"],
+                                parent_id=pid,
+                                program=c.get("program"),
+                                status=c.get("status", "active"),
+                                sort_order=c.get("sort_order", 0),
+                                metadata_=c.get("metadata", {}),
+                                created_at=_parse_dt(c.get("created_at")),
+                                updated_at=_parse_dt(c.get("updated_at")),
+                            )
+                            data_session.add(cat)
+                            inserted_ids.add(c["id"])
+                            progress_made = True
+                        else:
+                            next_remaining.append(c)
+                    if not progress_made:
+                        raise ValueError("Circular or broken parent_id references in categories")
+                    remaining = next_remaining
+                    await data_session.flush()
+
+                await data_session.flush()
+
+                # Import images
+                await _update_task(status_session, task, log_line="Importing images…", progress=50)
+                for i in dump["images"]:
+                    img = Image(
+                        id=i["id"],
+                        name=i.get("name") or i.get("label", ""),
+                        thumb=i["thumb"],
+                        tile_sources=i["tile_sources"],
+                        category_id=i.get("category_id"),
+                        copyright=i.get("copyright"),
+                        note=i.get("note") or i.get("origin"),
+                        active=i.get("active", True),
+                        metadata_=i.get("metadata", {}),
+                        created_at=_parse_dt(i.get("created_at")),
+                        updated_at=_parse_dt(i.get("updated_at")),
+                    )
+                    prog_ids = i.get("program_ids", [])
+                    if prog_ids:
+                        progs = (await data_session.execute(
+                            select(Program).where(Program.id.in_(prog_ids))
+                        )).scalars().all()
+                        img.programs = list(progs)
+                    data_session.add(img)
+                await data_session.flush()
+
+                # Import source images
+                await _update_task(status_session, task, log_line="Importing source images…", progress=65)
+                for s in dump.get("source_images", []):
+                    src = SourceImage(
+                        id=s["id"],
+                        original_filename=s["original_filename"],
+                        stored_path=s["stored_path"],
+                        status=s.get("status", "pending"),
+                        progress=s.get("progress", 0),
+                        error_message=s.get("error_message"),
+                        name=s.get("name"),
+                        category_id=s.get("category_id"),
+                        copyright=s.get("copyright"),
+                        note=s.get("note"),
+                        active=s.get("active", True),
+                        program=s.get("program"),
+                        image_id=s.get("image_id"),
+                        file_size=s.get("file_size"),
+                        created_at=_parse_dt(s.get("created_at")),
+                        updated_at=_parse_dt(s.get("updated_at")),
+                    )
+                    data_session.add(src)
+                await data_session.flush()
+
+                # Import announcement
+                await _update_task(status_session, task, log_line="Importing announcement…", progress=75)
+                ann_data = dump.get("announcement")
+                if ann_data:
+                    ann = Announcement(
+                        id=1,
+                        message=ann_data.get("message", ""),
+                        enabled=ann_data.get("enabled", False),
+                        created_at=_parse_dt(ann_data.get("created_at")),
+                        updated_at=_parse_dt(ann_data.get("updated_at")),
+                    )
+                    data_session.add(ann)
+                else:
+                    data_session.add(Announcement(id=1, message="", enabled=False))
+                await data_session.flush()
+
+                # Reset sequences
+                await _update_task(status_session, task, log_line="Resetting sequences…", progress=85)
+                for tbl in ("programs", "categories", "images", "users", "announcements", "source_images"):
+                    await data_session.execute(
+                        text(
+                            f"SELECT setval('{tbl}_id_seq', "
+                            f"GREATEST(COALESCE((SELECT MAX(id) FROM {tbl}), 1), 1), "
+                            f"EXISTS(SELECT 1 FROM {tbl}))"
+                        )
+                    )
+
+                # Single atomic commit for all data changes
+                await data_session.commit()
+
+                summary = (
+                    f"Imported {len(dump.get('programs', []))} programs, "
+                    f"{len(dump['categories'])} categories, "
+                    f"{len(dump['images'])} images, "
+                    f"{len(dump['users'])} users, "
+                    f"{len(dump.get('source_images', []))} source images."
+                )
+                await _update_task(
+                    status_session, task,
+                    status="completed", progress=100,
+                    log_line=f"Import complete. {summary}",
+                )
+                logger.info(
+                    "Background DB import completed",
+                    extra={"event": "admin_task.db_import_done", "task_id": task_id},
                 )
 
-            await session.commit()
-
-            summary = (
-                f"Imported {len(dump.get('programs', []))} programs, "
-                f"{len(dump['categories'])} categories, "
-                f"{len(dump['images'])} images, "
-                f"{len(dump['users'])} users, "
-                f"{len(dump.get('source_images', []))} source images."
-            )
-            await _update_task(
-                session, task,
-                status="completed", progress=100,
-                log_line=f"Import complete. {summary}",
-            )
-            logger.info(
-                "Background DB import completed",
-                extra={"event": "admin_task.db_import_done", "task_id": task_id},
-            )
-
-        except Exception as exc:
-            await session.rollback()
-            logger.exception(
-                "Background DB import failed",
-                extra={"event": "admin_task.db_import_failed", "task_id": task_id},
-            )
-            # Re-fetch task after rollback to avoid stale state
-            task = await session.get(AdminTask, task_id)
-            if task is not None:
+            except Exception as exc:
+                await data_session.rollback()
+                logger.exception(
+                    "Background DB import failed",
+                    extra={"event": "admin_task.db_import_failed", "task_id": task_id},
+                )
+                # Refresh task from status_session (not affected by data rollback)
+                await status_session.refresh(task)
                 await _update_task(
-                    session, task,
+                    status_session, task,
                     status="failed", progress=0,
                     log_line=f"ERROR: {exc}",
                     error_message=str(exc),
                 )
-        finally:
-            # Clean up the uploaded input file
-            if input_path:
-                try:
-                    os.unlink(input_path)
-                except OSError:
-                    pass
+            finally:
+                # Clean up the uploaded input file
+                if input_path:
+                    try:
+                        os.unlink(input_path)
+                    except OSError:
+                        pass
 
 
 def _read_file(path: str | None) -> str:

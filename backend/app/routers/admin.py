@@ -804,13 +804,78 @@ async def get_task(
     return _task_to_dict(task)
 
 
+@router.post("/tasks/{task_id}/download-token")
+async def create_task_download_token(
+    task_id: int,
+    user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a short-lived signed JWT for downloading a task result.
+
+    The token is valid for 60 seconds and allows a single browser-native
+    download via ``GET /admin/tasks/{id}/download?token=<token>``.
+    """
+    task = await db.get(AdminTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != "completed":
+        raise HTTPException(status_code=400, detail="Task has not completed")
+    if not task.result_path or not os.path.exists(task.result_path):
+        raise HTTPException(status_code=404, detail="Result file not found")
+
+    expire = datetime.now(timezone.utc) + timedelta(seconds=_DOWNLOAD_TOKEN_EXPIRE_SECONDS)
+    payload = {
+        "sub": str(user.id),
+        "purpose": "task-download",
+        "task_id": task_id,
+        "exp": expire,
+    }
+    token = jwt.encode(
+        payload, auth_settings.jwt_secret, algorithm=auth_settings.jwt_algorithm
+    )
+    return {"token": token}
+
+
 @router.get("/tasks/{task_id}/download")
 async def download_task_result(
     task_id: int,
-    _user: Annotated[User, Depends(_admin)],
+    token: str = Query(...),
     db: AsyncSession = Depends(get_db),
 ):
-    """Download the result file of a completed export task."""
+    """Download the result file of a completed export task.
+
+    Authentication is via a short-lived download token obtained from
+    ``POST /admin/tasks/{id}/download-token``.  This allows the browser
+    to perform a native download without buffering in JS memory.
+    """
+    # Validate the signed download token (JWT)
+    try:
+        payload = jwt.decode(
+            token,
+            auth_settings.jwt_secret,
+            algorithms=[auth_settings.jwt_algorithm],
+        )
+    except JWTError:
+        raise HTTPException(
+            status_code=401, detail="Invalid or expired download token"
+        )
+    if payload.get("purpose") != "task-download":
+        raise HTTPException(
+            status_code=401, detail="Invalid or expired download token"
+        )
+    if payload.get("task_id") != task_id:
+        raise HTTPException(
+            status_code=401, detail="Token does not match this task"
+        )
+    user_id_str = payload.get("sub")
+    if not user_id_str:
+        raise HTTPException(
+            status_code=401, detail="Invalid or expired download token"
+        )
+    user = await db.get(User, int(user_id_str))
+    if user is None or user.role != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden")
+
     task = await db.get(AdminTask, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")

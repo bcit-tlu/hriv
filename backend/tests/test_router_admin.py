@@ -30,6 +30,7 @@ from app.routers.admin import (
     start_files_import,
     list_tasks,
     get_task,
+    create_task_download_token,
     download_task_result,
 )
 
@@ -576,24 +577,126 @@ async def test_get_task_not_found() -> None:
     assert exc.value.status_code == 404
 
 
-async def test_download_task_not_found() -> None:
+async def test_create_task_download_token_success(tmp_path) -> None:
+    filepath = tmp_path / "export.json"
+    filepath.write_text('{"data": true}')
+    task = _make_admin_task(
+        status="completed",
+        result_path=str(filepath),
+        result_filename="export.json",
+    )
+    user = SimpleNamespace(id=1, role="admin")
     db = AsyncMock()
-    db.get = AsyncMock(return_value=None)
+    db.get = AsyncMock(return_value=task)
 
-    with pytest.raises(HTTPException) as exc:
-        await download_task_result(999, MagicMock(), db=db)
-    assert exc.value.status_code == 404
+    with patch("app.routers.admin.auth_settings") as mock_settings:
+        mock_settings.jwt_secret = "test-secret"
+        mock_settings.jwt_algorithm = "HS256"
+        result = await create_task_download_token(1, user, db=db)
+
+    assert "token" in result
 
 
-async def test_download_task_not_completed() -> None:
+async def test_create_task_download_token_not_completed() -> None:
     task = _make_admin_task(status="running")
-
+    user = SimpleNamespace(id=1, role="admin")
     db = AsyncMock()
     db.get = AsyncMock(return_value=task)
 
     with pytest.raises(HTTPException) as exc:
-        await download_task_result(1, MagicMock(), db=db)
+        await create_task_download_token(1, user, db=db)
     assert exc.value.status_code == 400
+
+
+def _make_download_token(task_id: int, user_id: int = 1) -> str:
+    """Create a valid task-download JWT for testing."""
+    from jose import jwt as jose_jwt
+
+    return jose_jwt.encode(
+        {"sub": str(user_id), "purpose": "task-download", "task_id": task_id},
+        "test-secret",
+        algorithm="HS256",
+    )
+
+
+async def test_download_task_invalid_token() -> None:
+    db = AsyncMock()
+
+    with patch("app.routers.admin.auth_settings") as mock_settings:
+        mock_settings.jwt_secret = "test-secret"
+        mock_settings.jwt_algorithm = "HS256"
+        with pytest.raises(HTTPException) as exc:
+            await download_task_result(1, token="invalid-jwt", db=db)
+        assert exc.value.status_code == 401
+
+
+async def test_download_task_wrong_purpose() -> None:
+    from jose import jwt as jose_jwt
+
+    token = jose_jwt.encode(
+        {"sub": "1", "purpose": "general", "task_id": 1},
+        "test-secret",
+        algorithm="HS256",
+    )
+    db = AsyncMock()
+
+    with patch("app.routers.admin.auth_settings") as mock_settings:
+        mock_settings.jwt_secret = "test-secret"
+        mock_settings.jwt_algorithm = "HS256"
+        with pytest.raises(HTTPException) as exc:
+            await download_task_result(1, token=token, db=db)
+        assert exc.value.status_code == 401
+
+
+async def test_download_task_wrong_task_id() -> None:
+    token = _make_download_token(task_id=99)
+    db = AsyncMock()
+
+    with patch("app.routers.admin.auth_settings") as mock_settings:
+        mock_settings.jwt_secret = "test-secret"
+        mock_settings.jwt_algorithm = "HS256"
+        with pytest.raises(HTTPException) as exc:
+            await download_task_result(1, token=token, db=db)
+        assert exc.value.status_code == 401
+
+
+async def test_download_task_not_found() -> None:
+    token = _make_download_token(task_id=999)
+    admin_user = SimpleNamespace(id=1, role="admin")
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=lambda model, id_: admin_user if model.__name__ == "User" else None)
+
+    with patch("app.routers.admin.auth_settings") as mock_settings:
+        mock_settings.jwt_secret = "test-secret"
+        mock_settings.jwt_algorithm = "HS256"
+        with pytest.raises(HTTPException) as exc:
+            await download_task_result(999, token=token, db=db)
+        assert exc.value.status_code == 404
+
+
+async def test_download_task_not_completed() -> None:
+    task = _make_admin_task(status="running")
+    admin_user = SimpleNamespace(id=1, role="admin")
+    token = _make_download_token(task_id=1)
+
+    db = AsyncMock()
+    call_count = 0
+
+    async def _get(model, id_):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return admin_user  # User lookup
+        return task  # AdminTask lookup
+
+    db.get = AsyncMock(side_effect=_get)
+
+    with patch("app.routers.admin.auth_settings") as mock_settings:
+        mock_settings.jwt_secret = "test-secret"
+        mock_settings.jwt_algorithm = "HS256"
+        with pytest.raises(HTTPException) as exc:
+            await download_task_result(1, token=token, db=db)
+        assert exc.value.status_code == 400
 
 
 async def test_download_task_result_file_missing() -> None:
@@ -602,13 +705,27 @@ async def test_download_task_result_file_missing() -> None:
         result_path="/nonexistent/file.json",
         result_filename="export.json",
     )
+    admin_user = SimpleNamespace(id=1, role="admin")
+    token = _make_download_token(task_id=1)
 
     db = AsyncMock()
-    db.get = AsyncMock(return_value=task)
+    call_count = 0
 
-    with pytest.raises(HTTPException) as exc:
-        await download_task_result(1, MagicMock(), db=db)
-    assert exc.value.status_code == 404
+    async def _get(model, id_):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return admin_user
+        return task
+
+    db.get = AsyncMock(side_effect=_get)
+
+    with patch("app.routers.admin.auth_settings") as mock_settings:
+        mock_settings.jwt_secret = "test-secret"
+        mock_settings.jwt_algorithm = "HS256"
+        with pytest.raises(HTTPException) as exc:
+            await download_task_result(1, token=token, db=db)
+        assert exc.value.status_code == 404
 
 
 async def test_download_task_success(tmp_path) -> None:
@@ -620,11 +737,25 @@ async def test_download_task_success(tmp_path) -> None:
         result_path=str(filepath),
         result_filename="export.json",
     )
+    admin_user = SimpleNamespace(id=1, role="admin")
+    token = _make_download_token(task_id=1)
 
     db = AsyncMock()
-    db.get = AsyncMock(return_value=task)
+    call_count = 0
 
-    response = await download_task_result(1, MagicMock(), db=db)
+    async def _get(model, id_):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return admin_user
+        return task
+
+    db.get = AsyncMock(side_effect=_get)
+
+    with patch("app.routers.admin.auth_settings") as mock_settings:
+        mock_settings.jwt_secret = "test-secret"
+        mock_settings.jwt_algorithm = "HS256"
+        response = await download_task_result(1, token=token, db=db)
     assert response.media_type == "application/json"
     assert "export.json" in response.headers.get("content-disposition", "")
 
@@ -638,9 +769,23 @@ async def test_download_task_tar_gz(tmp_path) -> None:
         result_path=str(filepath),
         result_filename="hriv-files.tar.gz",
     )
+    admin_user = SimpleNamespace(id=1, role="admin")
+    token = _make_download_token(task_id=1)
 
     db = AsyncMock()
-    db.get = AsyncMock(return_value=task)
+    call_count = 0
 
-    response = await download_task_result(1, MagicMock(), db=db)
+    async def _get(model, id_):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return admin_user
+        return task
+
+    db.get = AsyncMock(side_effect=_get)
+
+    with patch("app.routers.admin.auth_settings") as mock_settings:
+        mock_settings.jwt_secret = "test-secret"
+        mock_settings.jwt_algorithm = "HS256"
+        response = await download_task_result(1, token=token, db=db)
     assert response.media_type == "application/gzip"

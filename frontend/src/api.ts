@@ -664,6 +664,12 @@ export function fetchAdminTask(taskId: number): Promise<AdminTask> {
   return request(`/admin/tasks/${taskId}`)
 }
 
-export function getAdminTaskDownloadUrl(taskId: number): string {
-  return `${BASE}/api/admin/tasks/${taskId}/download`
+export async function downloadAdminTaskResult(taskId: number): Promise<void> {
+  // Obtain a short-lived download token, then navigate the browser to the
+  // token-authenticated download URL (no JS buffering needed).
+  const { token } = await request<{ token: string }>(
+    `/admin/tasks/${taskId}/download-token`,
+    { method: 'POST' },
+  )
+  window.location.href = `${BASE}/api/admin/tasks/${taskId}/download?token=${encodeURIComponent(token)}`
 }

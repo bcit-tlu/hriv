@@ -28,7 +28,7 @@ import {
   startFilesImport,
   fetchAdminTask,
   fetchAdminTasks,
-  getAdminTaskDownloadUrl,
+  downloadAdminTaskResult,
 } from '../api'
 import type { AdminTask } from '../api'
 
@@ -396,7 +396,7 @@ export default function AdminPage() {
                 {task.status === 'completed' && task.result_filename && (
                   <IconButton
                     size="small"
-                    href={getAdminTaskDownloadUrl(task.id)}
+                    onClick={() => downloadAdminTaskResult(task.id)}
                     title="Download"
                   >
                     <DownloadIcon fontSize="small" />
@@ -442,7 +442,7 @@ export default function AdminPage() {
                   <Button
                     color="inherit"
                     size="small"
-                    href={getAdminTaskDownloadUrl(n.id)}
+                    onClick={() => downloadAdminTaskResult(n.id)}
                     startIcon={<DownloadIcon />}
                   >
                     Download
@@ -545,7 +545,7 @@ export default function AdminPage() {
             <DialogActions>
               {logTask.status === 'completed' && logTask.result_filename && (
                 <Button
-                  href={getAdminTaskDownloadUrl(logTask.id)}
+                  onClick={() => downloadAdminTaskResult(logTask.id)}
                   startIcon={<DownloadIcon />}
                 >
                   Download
