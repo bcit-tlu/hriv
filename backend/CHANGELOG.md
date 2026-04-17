@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.3.0...backend-v0.3.1) (2026-04-17)
+
+
+### Bug Fixes
+
+* **backend:** handle empty alembic_version left by failed prior migration ([a8c910b](https://github.com/bcit-tlu/hriv/commit/a8c910b452107879ba9e9325e2cae48f73b2c8b0))
+* **backend:** restore legacy-schema stamp in Alembic bootstrap ([1fb998f](https://github.com/bcit-tlu/hriv/commit/1fb998fa649a9fafd915442bfb7bf7ea4e00e738))
+* **backend:** stamp baseline revision instead of head for legacy DBs ([e8ee93c](https://github.com/bcit-tlu/hriv/commit/e8ee93c79852c92c844cf84aeba1edefd86657fc))
+* **backend:** update log message to reflect both legacy detection cases ([a9e55e7](https://github.com/bcit-tlu/hriv/commit/a9e55e7dbc82e46fbf053f01aa14a595f7a9c024))
+
 ## [0.3.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.2.0...backend-v0.3.0) (2026-04-17)
 
 
