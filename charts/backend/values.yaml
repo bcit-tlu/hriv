@@ -14,6 +14,21 @@ env:
     TILES_DIR: /data/tiles
     GITHUB_REPO: "https://github.com/bcit-tlu/hriv"
 
+# ── OpenTelemetry observability ─────────────────────────────
+# When enabled=true, the backend Deployment renders six OTEL_* env vars
+# read by the OpenTelemetry Python SDK / auto-instrumentation (the prod
+# image wraps uvicorn with ``opentelemetry-instrument``).  Disabled by
+# default so deployments without an OTLP collector don't carry six
+# always-empty env vars in the pod spec.
+otel:
+    enabled: false
+    serviceName: "hriv-backend"
+    tracesExporter: "none"
+    metricsExporter: "none"
+    logsExporter: "none"
+    exporterEndpoint: ""
+    exporterProtocol: "http/protobuf"
+
 # Stable JWT signing secret shared across all Uvicorn workers.
 # Leave blank to auto-generate a random value at install time.
 # The chart enforces a non-empty JWT_SECRET is supplied to the backend

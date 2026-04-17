@@ -69,6 +69,20 @@ spec:
             {{- end }}
             - name: GITHUB_REPO
               value: {{ .Values.env.GITHUB_REPO | quote }}
+            {{- if .Values.otel.enabled }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.otel.serviceName | quote }}
+            - name: OTEL_TRACES_EXPORTER
+              value: {{ .Values.otel.tracesExporter | quote }}
+            - name: OTEL_METRICS_EXPORTER
+              value: {{ .Values.otel.metricsExporter | quote }}
+            - name: OTEL_LOGS_EXPORTER
+              value: {{ .Values.otel.logsExporter | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.exporterEndpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{ .Values.otel.exporterProtocol | quote }}
+            {{- end }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
