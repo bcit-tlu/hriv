@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.3.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.2.0...backend-v0.3.0) (2026-04-17)
+
+
+### Features
+
+* **auth:** enforce JWT_SECRET via REQUIRE_JWT_SECRET flag ([6106b03](https://github.com/bcit-tlu/hriv/commit/6106b03482b19e6c538bb3773b3b860117b1eafa))
+* **auth:** enforce JWT_SECRET via REQUIRE_JWT_SECRET flag ([d9ba89d](https://github.com/bcit-tlu/hriv/commit/d9ba89da7f8e58f05bc1e52fe6cd79bd513e0973))
+* **backend:** adopt Alembic for database migrations ([68685c2](https://github.com/bcit-tlu/hriv/commit/68685c23f50f060fdef18854c77b8a7039b77117))
+* **backend:** adopt Alembic for database migrations ([72d8115](https://github.com/bcit-tlu/hriv/commit/72d811577e58b8a190f18e93449d2f0ca8b63353))
+* **backend:** wrap uvicorn with opentelemetry-instrument in production ([0e7b7e7](https://github.com/bcit-tlu/hriv/commit/0e7b7e7a639bb8fb39db5a8de1c4eb53aae99f9d))
+
+
+### Bug Fixes
+
+* **backend:** align Alembic baseline with SQLAlchemy model nullability/indexes ([9e594e3](https://github.com/bcit-tlu/hriv/commit/9e594e34356667ce09ce5354b8a53098feb07829))
+* **backend:** align Alembic baseline with SQLAlchemy model nullability/indexes ([ba7c746](https://github.com/bcit-tlu/hriv/commit/ba7c7463d0398fae4c7c9927b82e271d3b18f91c))
+* **backend:** async advisory lock + name remaining status indexes ([97eb523](https://github.com/bcit-tlu/hriv/commit/97eb5235bbe61ec2839fb833e837ba687fbc63bc))
+* **backend:** async advisory lock + name remaining status indexes ([2e93f70](https://github.com/bcit-tlu/hriv/commit/2e93f7049db59fe9f0c7cab685b96b4cbc9c3a13))
+* **backend:** clean up merge markers in README + stamp specific baseline ([92c706a](https://github.com/bcit-tlu/hriv/commit/92c706a8fc9ff4480597953765732de1b4620fc1))
+* **backend:** clean up merge markers in README + stamp specific baseline ([d9752a0](https://github.com/bcit-tlu/hriv/commit/d9752a04c2c682d11e56482b4c9fb85983fc58e1))
+* **backend:** dedupe COPY and OpenTelemetry deps, restore legacy-stamp branch ([3dc2bfc](https://github.com/bcit-tlu/hriv/commit/3dc2bfc2524b12fa337cd0aa26e46f1000e1542d))
+* **backend:** disable OTEL exporters by default in Docker image ([24baf4f](https://github.com/bcit-tlu/hriv/commit/24baf4f3af1e947c49b75cb088aa693979e4e40d))
+* **backend:** offload Alembic to worker thread + align server_defaults ([1778bb9](https://github.com/bcit-tlu/hriv/commit/1778bb93172cc9f093383b4401b600934917f6db))
+* **backend:** offload Alembic to worker thread + align server_defaults ([dd51d7f](https://github.com/bcit-tlu/hriv/commit/dd51d7f7788df0ba13c704a4a7e48bdc53d47247))
+* **backend:** pg_advisory_lock bootstrap + name indexes to match baseline ([1abdf82](https://github.com/bcit-tlu/hriv/commit/1abdf82eb302375c9b59877bf438dd06829281ee))
+* **backend:** pg_advisory_lock bootstrap + name indexes to match baseline ([f6549be](https://github.com/bcit-tlu/hriv/commit/f6549bef8c98abce2615f4eefb37183a75bcb65f))
+* **backend:** run 'upgrade head' after stamping baseline on legacy DBs ([2040d7b](https://github.com/bcit-tlu/hriv/commit/2040d7b1cc251cc299f97aba5ac1e331d2f9617e))
+* **backend:** run 'upgrade head' after stamping baseline on legacy DBs ([1f5aabc](https://github.com/bcit-tlu/hriv/commit/1f5aabc398d4140111bdd1933b605753b2358212))
+* **backend:** use --workers 1 in prod Dockerfile for OTEL fork safety ([e0636a8](https://github.com/bcit-tlu/hriv/commit/e0636a825327c8af7cfd0003222cedcb3d6e86f5))
+* **migrations:** run advisory-lock connection with AUTOCOMMIT isolation ([10bdd8e](https://github.com/bcit-tlu/hriv/commit/10bdd8eb87b5104633de47a804418ce29878bb88))
+* **migrations:** run advisory-lock connection with AUTOCOMMIT isolation ([3e91748](https://github.com/bcit-tlu/hriv/commit/3e91748c8b2f930cb31a04b60009d7e4369720c9))
+* **otel,docker:** address Devin Review info findings on PR [#75](https://github.com/bcit-tlu/hriv/issues/75) ([19c853c](https://github.com/bcit-tlu/hriv/commit/19c853cf48d26f25a27b3b27491bf1643dd7fa8f))
+* **tests:** update migrations_bootstrap tests for legacy stamp interface ([243ccfc](https://github.com/bcit-tlu/hriv/commit/243ccfc8fb7b01d8c5a34d34db61f636ca4c35cd))
+
 ## [0.2.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.1.0...backend-v0.2.0) (2026-04-15)
 
 
