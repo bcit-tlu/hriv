@@ -85,9 +85,19 @@ CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0",
 # ── Stage 4: Production ─────────────────────────────────
 FROM base AS prod
 EXPOSE 8000
-# Use --workers 1 and scale horizontally via Kubernetes replicas
-# (charts/backend/values.yaml: replicaCount).  OpenTelemetry auto-instrumentation
-# initialises SDK state (exporter connections, batch processors) in the parent
-# process before uvicorn's multi-worker fork, which can corrupt gRPC/HTTP
-# exporter connections and produce duplicate/lost telemetry in forked children.
+# Run uvicorn in single-process mode (--workers 1) and scale horizontally
+# via Kubernetes replicas (charts/backend/values.yaml: replicaCount)
+# instead of uvicorn's multi-worker mode.
+#
+# Why single-process: with --workers 1 uvicorn takes its single-process
+# code path entirely (the Multiprocess manager is only started when
+# ``config.workers > 1``), so there is no fork/spawn of worker children
+# at all.  This is the OTel-safe configuration: ``opentelemetry-instrument``
+# initialises the SDK (exporter connections, batch processors, gRPC
+# channels, background threads) in the parent process at startup, and
+# those stateful resources are not safe to inherit across fork.  If we
+# ran --workers >1, uvicorn would spawn worker children that inherit
+# the already-initialised exporter state from the parent, which can
+# corrupt gRPC/HTTP exporter connections and produce duplicate or lost
+# telemetry.  --workers 1 avoids the problem by never forking.
 CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
