@@ -802,11 +802,13 @@ async def run_files_import(task_id: int) -> None:
                 f"Restored {restored['tile_files']} tile files, "
                 f"{restored['source_files']} source files."
             )
+            # Do NOT check_cancelled here — files have already been
+            # extracted to disk and cannot be rolled back.  Marking the
+            # task "cancelled" at this point would be misleading.
             await _update_task(
                 session, task,
                 status="completed", progress=100,
                 log_line=f"Import complete. {summary}",
-                check_cancelled=True,
             )
             logger.info(
                 "Background files import completed",
