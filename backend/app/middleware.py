@@ -10,8 +10,22 @@ from jose import jwt
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 
 from .auth import auth_settings
+from .database import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_exclude_prefixes(raw: str) -> tuple[str, ...]:
+    """Normalise a comma-separated path-prefix list into a tuple."""
+    return tuple(p.strip() for p in raw.split(",") if p.strip())
+
+
+# Snapshot the configured prefixes at import time so the per-request
+# comparison is a single tuple-membership walk rather than a re-parse
+# of the env var on every call.
+_EXCLUDE_PREFIXES: tuple[str, ...] = _parse_exclude_prefixes(
+    settings.audit_exclude_prefixes
+)
 
 # ── Correlation ID context ──────────────────────────────
 # Available to any code running within the same async task so that downstream
@@ -123,15 +137,14 @@ class AuditMiddleware(BaseHTTPMiddleware):
             if user_role:
                 extra["user_role"] = user_role
 
-            # Health-check endpoints are hit every few seconds by Docker /
-            # Kubernetes probes.  Log them at DEBUG to keep local-dev and
-            # production logs free of noise (DEBUG is below the default INFO
-            # threshold so they won't appear unless explicitly enabled).
-            _log = (
-                logger.debug
-                if request.url.path in ("/api/health", "/api/health/ready")
-                else logger.info
-            )
+            # High-volume, low-signal endpoints (container healthchecks,
+            # tile serving, …) are logged at DEBUG to keep local-dev and
+            # production audit logs free of noise. DEBUG is below the
+            # default INFO threshold so they won't appear unless explicitly
+            # enabled. The list is configurable via AUDIT_EXCLUDE_PREFIXES.
+            path = request.url.path
+            is_excluded = any(path.startswith(p) for p in _EXCLUDE_PREFIXES)
+            _log = logger.debug if is_excluded else logger.info
             _log(
                 "%s %s %s %dms",
                 request.method,
