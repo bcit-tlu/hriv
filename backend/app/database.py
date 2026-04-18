@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     # Redis URL for task queue (Phase 5 — arq worker) and rate limiting
     redis_url: str = "redis://redis:6379"
 
+    # Audit middleware: comma-separated list of URL path prefixes whose
+    # request logs are emitted at DEBUG instead of INFO. Intended for
+    # high-volume, low-signal endpoints (container healthchecks, tile
+    # serving, etc.) that would otherwise drown out real traffic in the
+    # audit log. Operators can extend the list per deployment without a
+    # code change by setting the AUDIT_EXCLUDE_PREFIXES env var.
+    audit_exclude_prefixes: str = "/api/health,/api/health/ready,/api/tiles/"
+
     # Login rate limiting (Phase 5)
     rate_limit_login_max: int = 5
     rate_limit_login_window: int = 60  # seconds

@@ -2,7 +2,12 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.middleware import AuditMiddleware, get_request_id, request_id_ctx
+from app.middleware import (
+    AuditMiddleware,
+    _parse_exclude_prefixes,
+    get_request_id,
+    request_id_ctx,
+)
 
 
 def test_get_request_id_returns_empty_string_by_default() -> None:
@@ -287,4 +292,61 @@ async def test_dispatch_logs_non_health_at_info() -> None:
     with patch("app.middleware.logger") as mock_logger:
         await middleware.dispatch(request, call_next)
         mock_logger.info.assert_called_once()
-        mock_logger.debug.assert_not_called()
+
+
+def test_parse_exclude_prefixes_strips_whitespace_and_blanks() -> None:
+    """Exclude-prefix parsing should ignore empty entries and strip padding."""
+    assert _parse_exclude_prefixes("") == ()
+    assert _parse_exclude_prefixes(" , , ") == ()
+    assert _parse_exclude_prefixes("/a,/b") == ("/a", "/b")
+    assert _parse_exclude_prefixes(" /a , /b , ") == ("/a", "/b")
+
+
+async def test_dispatch_logs_tiles_at_debug() -> None:
+    """Tile-serving endpoints match the default prefix list and log at DEBUG."""
+    middleware = AuditMiddleware(app=MagicMock())
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.headers = {}
+
+    async def call_next(request):
+        return mock_response
+
+    request = MagicMock()
+    request.headers = {}
+    request.method = "GET"
+    request.url.path = "/api/tiles/123/4/2/2.jpg"
+    request.client = MagicMock()
+    request.client.host = "127.0.0.1"
+
+    with patch("app.middleware._EXCLUDE_PREFIXES", ("/api/tiles/",)):
+        with patch("app.middleware.logger") as mock_logger:
+            await middleware.dispatch(request, call_next)
+            mock_logger.debug.assert_called_once()
+            mock_logger.info.assert_not_called()
+
+
+async def test_dispatch_respects_configured_exclude_prefixes() -> None:
+    """Paths not matching any configured prefix are still logged at INFO."""
+    middleware = AuditMiddleware(app=MagicMock())
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.headers = {}
+
+    async def call_next(request):
+        return mock_response
+
+    request = MagicMock()
+    request.headers = {}
+    request.method = "GET"
+    request.url.path = "/api/images/42"
+    request.client = MagicMock()
+    request.client.host = "127.0.0.1"
+
+    with patch("app.middleware._EXCLUDE_PREFIXES", ("/api/tiles/", "/api/health")):
+        with patch("app.middleware.logger") as mock_logger:
+            await middleware.dispatch(request, call_next)
+            mock_logger.info.assert_called_once()
+            mock_logger.debug.assert_not_called()
