@@ -77,6 +77,83 @@ def _ensure_oidc_enabled() -> None:
         )
 
 
+def _resolve_frontend_origin() -> str:
+    """Return the configured frontend origin, or empty string.
+
+    Prefer ``oidc_post_login_redirect``; fall back to the first
+    non-wildcard entry in ``cors_origins``. Returns ``""`` when nothing
+    is configured (caller must handle this — we can't build a redirect
+    without somewhere to redirect to).
+    """
+    origin = _settings.oidc_post_login_redirect
+    if origin:
+        return origin
+    origins = [o.strip() for o in _settings.cors_origins.split(",") if o.strip()]
+    return next((o for o in origins if o != "*"), "")
+
+
+def _fragment_redirect(origin: str, fragment: str) -> HTMLResponse:
+    """Return an HTML page that client-side redirects to
+    ``{origin}/#{fragment}``.
+
+    We deliver the payload via a URL fragment (never a query string) so
+    it does not land in access logs, and we use a client-side redirect
+    rather than HTTP 302 because some proxies strip the fragment from
+    ``Location`` headers.
+    """
+    target_url = f"{origin.rstrip('/')}/#{fragment}"
+    body = (
+        '<!DOCTYPE html>'
+        '<html><head><meta charset="utf-8"><title>Signing in\u2026</title></head>'
+        '<body><p>Signing in\u2026</p>'
+        '<script>window.location.replace('
+        + json.dumps(target_url).replace('<', '\\u003c')
+        + ');</script>'
+        '<noscript><p>JavaScript is required. '
+        '<a href="' + _html.escape(origin.rstrip('/'), quote=True) + '/">Return to application</a>'
+        '</p></noscript></body></html>'
+    )
+    return HTMLResponse(
+        content=body,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, private",
+            "Pragma": "no-cache",
+        },
+    )
+
+
+# Short, stable, URL-safe error codes the frontend can recognise.
+# These are intentionally NOT user-facing error messages — the frontend
+# maps them to localised strings.
+_OIDC_ERR_CLIENT_MISCONFIGURED = "client_misconfigured"
+_OIDC_ERR_PROVIDER_UNREACHABLE = "provider_unreachable"
+_OIDC_ERR_TOKEN_EXCHANGE_FAILED = "token_exchange_failed"
+_OIDC_ERR_USERINFO_FAILED = "userinfo_failed"
+_OIDC_ERR_MISSING_CLAIMS = "missing_claims"
+_OIDC_ERR_SUBJECT_MISMATCH = "subject_mismatch"
+
+
+def _oidc_callback_error(error_code: str, *, log_detail: str) -> HTMLResponse:
+    """Redirect the browser to the frontend with ``#oidc_error=<code>``.
+
+    Falling back to ``HTTPException`` when no frontend origin is
+    configured would leave the user staring at raw JSON on the backend
+    domain; instead we still raise a plain HTTPException in that narrow
+    case so an operator can diagnose the missing configuration.
+    """
+    origin = _resolve_frontend_origin()
+    if not origin:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "OIDC post-login redirect is not configured. "
+                "Set OIDC_POST_LOGIN_REDIRECT or a non-wildcard CORS_ORIGINS. "
+                f"Underlying error: {log_detail}"
+            ),
+        )
+    return _fragment_redirect(origin, f"oidc_error={error_code}")
+
+
 # ── Public endpoint: is OIDC available? ──────────────────
 
 @router.get("/enabled")
@@ -126,14 +203,14 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
     _ensure_oidc_enabled()
     client = oauth.create_client("oidc")
     if client is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="OIDC client not configured",
+        return _oidc_callback_error(
+            _OIDC_ERR_CLIENT_MISCONFIGURED,
+            log_detail="oauth.create_client('oidc') returned None",
         )
 
     try:
         token_data = await client.authorize_access_token(request)
-    except (httpx.ConnectError, httpx.TimeoutException):
+    except (httpx.ConnectError, httpx.TimeoutException) as exc:
         logger.error(
             "Cannot reach OIDC provider during token exchange — "
             "verify that the backend pod can connect to the issuer URL",
@@ -142,18 +219,16 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 "issuer": _settings.oidc_issuer,
             },
         )
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Login is temporarily unavailable — the identity provider cannot be reached.",
+        return _oidc_callback_error(
+            _OIDC_ERR_PROVIDER_UNREACHABLE, log_detail=str(exc)
         )
     except Exception as exc:
         logger.error(
             "OIDC token exchange failed",
             extra={"event": "oidc.token_exchange_failed", "error": str(exc)},
         )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="OIDC authentication failed",
+        return _oidc_callback_error(
+            _OIDC_ERR_TOKEN_EXCHANGE_FAILED, log_detail=str(exc)
         )
 
     # Extract user info — authlib's authorize_access_token already parses
@@ -189,9 +264,8 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 "OIDC userinfo endpoint fallback failed",
                 extra={"event": "oidc.userinfo_fallback_failed", "error": str(exc)},
             )
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not retrieve user information from IdP",
+            return _oidc_callback_error(
+                _OIDC_ERR_USERINFO_FAILED, log_detail=str(exc)
             )
 
     sub: str = userinfo.get("sub", "")
@@ -217,9 +291,9 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         "scopes_supported includes them.",
             },
         )
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="IdP did not return required claims (sub, email)",
+        return _oidc_callback_error(
+            _OIDC_ERR_MISSING_CLAIMS,
+            log_detail=f"sub={bool(sub)} email={bool(email)}",
         )
 
     # Resolve role from IdP groups — None means no group matched a mapping
@@ -286,9 +360,9 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                     "incoming_sub": sub,
                 },
             )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="This email is already linked to a different identity",
+            return _oidc_callback_error(
+                _OIDC_ERR_SUBJECT_MISMATCH,
+                log_detail=f"email={email} existing_sub≠incoming_sub",
             )
         if not user.oidc_subject:
             user.oidc_subject = sub
@@ -316,10 +390,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
     # Redirect to the frontend with the JWT so AuthContext can bootstrap
     # the session.  Use the dedicated setting if provided; otherwise fall
     # back to the first non-wildcard CORS origin.
-    frontend_origin = _settings.oidc_post_login_redirect
-    if not frontend_origin:
-        origins = [o.strip() for o in _settings.cors_origins.split(",") if o.strip()]
-        frontend_origin = next((o for o in origins if o != "*"), "")
+    frontend_origin = _resolve_frontend_origin()
     if not frontend_origin:
         logger.error(
             "OIDC post-login redirect target not configured",
@@ -330,29 +401,6 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
             detail="OIDC post-login redirect is not configured. "
                    "Set OIDC_POST_LOGIN_REDIRECT or a non-wildcard CORS_ORIGINS.",
         )
-    # Deliver the JWT to the frontend via a URL fragment (#oidc_token=…).
-    # A fragment is used instead of a query parameter so the token never
-    # appears in server access logs.
-    #
-    # We use a small HTML page with a client-side redirect rather than an
-    # HTTP 302 because some browsers / proxy configurations strip the
-    # fragment identifier from the Location header of a 302 response,
-    # which causes the frontend to never receive the token.
-    target_url = f"{frontend_origin.rstrip('/')}/#oidc_token={jwt_token}"
-
-    html = (
-        '<!DOCTYPE html>'
-        '<html><head><meta charset="utf-8"><title>Signing in\u2026</title></head>'
-        '<body><p>Signing in\u2026</p>'
-        '<script>window.location.replace(' + json.dumps(target_url).replace('<', '\\u003c') + ');</script>'
-        '<noscript><p>JavaScript is required. '
-        '<a href="' + _html.escape(frontend_origin.rstrip('/'), quote=True) + '/">Return to application</a>'
-        '</p></noscript></body></html>'
-    )
-    return HTMLResponse(
-        content=html,
-        headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate, private",
-            "Pragma": "no-cache",
-        },
+    return _fragment_redirect(
+        frontend_origin, f"oidc_token={jwt_token}"
     )

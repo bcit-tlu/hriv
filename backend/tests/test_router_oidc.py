@@ -8,10 +8,22 @@ import httpx
 import pytest
 from fastapi import HTTPException
 
+from fastapi.responses import HTMLResponse
+
 from app.routers.oidc import (
     _parse_role_mapping, _resolve_role, _ensure_oidc_enabled,
+    _resolve_frontend_origin, _fragment_redirect,
     oidc_enabled, oidc_login, oidc_callback,
 )
+
+
+def _assert_oidc_error_redirect(resp, expected_code: str, origin: str) -> None:
+    """Helper: assert ``resp`` is a client-side redirect to
+    ``{origin}/#oidc_error={expected_code}``."""
+    assert isinstance(resp, HTMLResponse)
+    body = resp.body.decode("utf-8")
+    assert f"{origin.rstrip('/')}/#oidc_error={expected_code}" in body
+    assert resp.headers.get("Cache-Control", "").startswith("no-store")
 
 
 def test_parse_role_mapping_valid_json() -> None:
@@ -156,19 +168,39 @@ async def test_oidc_callback_disabled() -> None:
         assert exc.value.status_code == 404
 
 
-async def test_oidc_callback_no_client() -> None:
+async def test_oidc_callback_no_client_redirects_with_error() -> None:
+    """When OAuth client can't be built, redirect to frontend with
+    ``#oidc_error=client_misconfigured`` instead of returning raw JSON."""
     request = MagicMock()
     db = AsyncMock()
     with patch("app.routers.oidc._settings") as mock_settings:
         mock_settings.oidc_enabled = True
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
+        with patch("app.routers.oidc.oauth") as mock_oauth:
+            mock_oauth.create_client.return_value = None
+            resp = await oidc_callback(request, db)
+    _assert_oidc_error_redirect(resp, "client_misconfigured", "http://localhost:3000")
+
+
+async def test_oidc_callback_no_client_no_origin_falls_back_to_500() -> None:
+    """If neither OIDC_POST_LOGIN_REDIRECT nor a non-wildcard CORS origin
+    is configured, the helper has nowhere to redirect — raise 500 so an
+    operator notices the missing configuration."""
+    request = MagicMock()
+    db = AsyncMock()
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_enabled = True
+        mock_settings.oidc_post_login_redirect = ""
+        mock_settings.cors_origins = "*"
         with patch("app.routers.oidc.oauth") as mock_oauth:
             mock_oauth.create_client.return_value = None
             with pytest.raises(HTTPException) as exc:
                 await oidc_callback(request, db)
-            assert exc.value.status_code == 500
+    assert exc.value.status_code == 500
 
 
-async def test_oidc_callback_token_exchange_failure() -> None:
+async def test_oidc_callback_token_exchange_failure_redirects() -> None:
     request = MagicMock()
     db = AsyncMock()
     mock_client = AsyncMock()
@@ -176,19 +208,21 @@ async def test_oidc_callback_token_exchange_failure() -> None:
 
     with patch("app.routers.oidc._settings") as mock_settings:
         mock_settings.oidc_enabled = True
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
         with patch("app.routers.oidc.oauth") as mock_oauth:
             mock_oauth.create_client.return_value = mock_client
-            with pytest.raises(HTTPException) as exc:
-                await oidc_callback(request, db)
-            assert exc.value.status_code == 401
+            resp = await oidc_callback(request, db)
+    _assert_oidc_error_redirect(resp, "token_exchange_failed", "http://localhost:3000")
 
 
 @pytest.mark.parametrize("error", [
     httpx.ConnectError("All connection attempts failed"),
     httpx.ConnectTimeout("timed out"),
 ])
-async def test_oidc_callback_provider_unreachable(error) -> None:
-    """ConnectError or timeout during token exchange returns a 502."""
+async def test_oidc_callback_provider_unreachable_redirects(error) -> None:
+    """ConnectError or timeout during token exchange redirects the
+    browser to the frontend with ``#oidc_error=provider_unreachable``."""
     request = MagicMock()
     db = AsyncMock()
     mock_client = AsyncMock()
@@ -196,16 +230,16 @@ async def test_oidc_callback_provider_unreachable(error) -> None:
 
     with patch("app.routers.oidc._settings") as mock_settings:
         mock_settings.oidc_enabled = True
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
         mock_settings.oidc_issuer = "https://vault.example.com:8200/v1/identity/oidc/provider/test"
         with patch("app.routers.oidc.oauth") as mock_oauth:
             mock_oauth.create_client.return_value = mock_client
-            with pytest.raises(HTTPException) as exc:
-                await oidc_callback(request, db)
-            assert exc.value.status_code == 502
-            assert "temporarily unavailable" in exc.value.detail
+            resp = await oidc_callback(request, db)
+    _assert_oidc_error_redirect(resp, "provider_unreachable", "http://localhost:3000")
 
 
-async def test_oidc_callback_missing_claims() -> None:
+async def test_oidc_callback_missing_claims_redirects() -> None:
     request = MagicMock()
     db = AsyncMock()
     mock_client = AsyncMock()
@@ -215,12 +249,46 @@ async def test_oidc_callback_missing_claims() -> None:
 
     with patch("app.routers.oidc._settings") as mock_settings:
         mock_settings.oidc_enabled = True
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
         with patch("app.routers.oidc.oauth") as mock_oauth:
             mock_oauth.create_client.return_value = mock_client
-            with pytest.raises(HTTPException) as exc:
-                await oidc_callback(request, db)
-            assert exc.value.status_code == 401
-            assert "claims" in exc.value.detail.lower()
+            resp = await oidc_callback(request, db)
+    _assert_oidc_error_redirect(resp, "missing_claims", "http://localhost:3000")
+
+
+def test_resolve_frontend_origin_prefers_post_login_setting() -> None:
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_post_login_redirect = "http://frontend.example.com"
+        mock_settings.cors_origins = "http://fallback.example.com"
+        assert _resolve_frontend_origin() == "http://frontend.example.com"
+
+
+def test_resolve_frontend_origin_falls_back_to_non_wildcard_cors() -> None:
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_post_login_redirect = ""
+        mock_settings.cors_origins = "*, http://fallback.example.com"
+        assert _resolve_frontend_origin() == "http://fallback.example.com"
+
+
+def test_resolve_frontend_origin_empty_when_only_wildcard() -> None:
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_post_login_redirect = ""
+        mock_settings.cors_origins = "*"
+        assert _resolve_frontend_origin() == ""
+
+
+def test_fragment_redirect_escapes_html_and_js() -> None:
+    """Angle brackets in the origin must not break out of the <script>
+    block or the <noscript> <a href> attribute."""
+    resp = _fragment_redirect("http://evil.example.com</script>", "oidc_error=x")
+    body = resp.body.decode("utf-8")
+    # Exactly one legitimate </script> — our own closing tag.
+    assert body.count("</script>") == 1
+    # The attacker payload inside the JS string must be angle-escaped.
+    assert "\\u003c/script>" in body
+    # Inside the <a href> attribute it must be HTML-entity escaped.
+    assert "&lt;/script&gt;" in body
 
 
 async def test_oidc_callback_new_user_created() -> None:
@@ -337,12 +405,12 @@ async def test_oidc_callback_subject_mismatch() -> None:
     with patch("app.routers.oidc._settings") as mock_settings:
         mock_settings.oidc_enabled = True
         mock_settings.oidc_trust_email = True
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
         with patch("app.routers.oidc.oauth") as mock_oauth:
             mock_oauth.create_client.return_value = mock_client
-            with pytest.raises(HTTPException) as exc:
-                await oidc_callback(request, db)
-            assert exc.value.status_code == 403
-            assert "different identity" in exc.value.detail.lower()
+            resp = await oidc_callback(request, db)
+    _assert_oidc_error_redirect(resp, "subject_mismatch", "http://localhost:3000")
 
 
 async def test_oidc_callback_no_redirect_configured() -> None:
@@ -425,7 +493,8 @@ async def test_oidc_callback_userinfo_fallback() -> None:
 
 
 async def test_oidc_callback_userinfo_fallback_failure() -> None:
-    """When both token_data userinfo and fallback endpoint fail."""
+    """When both token_data userinfo and fallback endpoint fail, redirect
+    to the frontend with ``#oidc_error=userinfo_failed``."""
     request = MagicMock()
     mock_client = AsyncMock()
     mock_client.authorize_access_token = AsyncMock(return_value={})
@@ -435,11 +504,12 @@ async def test_oidc_callback_userinfo_fallback_failure() -> None:
 
     with patch("app.routers.oidc._settings") as mock_settings:
         mock_settings.oidc_enabled = True
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
         with patch("app.routers.oidc.oauth") as mock_oauth:
             mock_oauth.create_client.return_value = mock_client
-            with pytest.raises(HTTPException) as exc:
-                await oidc_callback(request, db)
-            assert exc.value.status_code == 401
+            resp = await oidc_callback(request, db)
+    _assert_oidc_error_redirect(resp, "userinfo_failed", "http://localhost:3000")
 
 
 async def test_oidc_callback_email_linking_with_trusted_email() -> None:

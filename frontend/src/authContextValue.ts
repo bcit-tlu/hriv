@@ -12,6 +12,11 @@ export interface AuthContextValue {
   refreshUsers: () => void
   canManageUsers: boolean
   canEditContent: boolean
+  // Short, stable error code returned by the backend OIDC callback
+  // (via ``#oidc_error=<code>`` in the URL fragment). ``null`` when the
+  // last callback succeeded or no callback has run this session.
+  oidcError: string | null
+  clearOidcError: () => void
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null)
