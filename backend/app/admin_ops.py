@@ -732,8 +732,20 @@ async def run_files_export(task_id: int) -> None:
                     poll_task.cancel()
                     tar_task.result()  # propagate exceptions
                 else:
-                    # Poll exited (cancellation detected) — wait briefly
-                    # for tar thread to notice the event and raise.
+                    # Poll exited first — distinguish DB error from
+                    # genuine cancellation detection.
+                    poll_exc = poll_task.exception() if poll_task.done() else None
+                    if poll_exc is not None:
+                        cancel_event.set()  # stop the tar thread
+                        try:
+                            await asyncio.wait_for(tar_task, timeout=5)
+                        except asyncio.TimeoutError:
+                            pass
+                        if not tar_task.done():
+                            tar_task.cancel()
+                        raise poll_exc
+                    # Poll returned normally → cancellation detected.
+                    # Wait briefly for tar thread to notice the event.
                     try:
                         await asyncio.wait_for(tar_task, timeout=5)
                     except asyncio.TimeoutError:

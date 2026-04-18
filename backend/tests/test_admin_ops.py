@@ -542,12 +542,13 @@ async def test_run_files_export_verbose_log(tmp_path) -> None:
 
 
 async def test_run_files_export_cancellation(tmp_path) -> None:
-    """Cancelling during archive creation terminates promptly."""
+    """Cancelling during archive creation terminates promptly via cancel_event."""
+    import time
+
     data_dir = tmp_path / "data"
     tiles_dir = data_dir / "tiles"
     tiles_dir.mkdir(parents=True)
-    for i in range(10):
-        (tiles_dir / f"f{i}.txt").write_text(str(i))
+    (tiles_dir / "f0.txt").write_text("0")
 
     task = SimpleNamespace(
         id=1, task_type="files_export", status="pending", progress=0, log="",
@@ -559,9 +560,21 @@ async def test_run_files_export_cancellation(tmp_path) -> None:
     async def _refresh(obj, attribute_names=None):
         nonlocal refresh_count
         refresh_count += 1
-        # Simulate cancel after a couple of poll cycles
-        if refresh_count >= 3:
+        # There are 3 check_cancelled=True calls before the archive
+        # starts, so trigger cancellation later to exercise the
+        # during-archiving _flush_and_poll path.
+        if refresh_count >= 6:
             task.status = "cancelling"
+
+    def _slow_tar(data_dir, dest, *, cancel_event=None, on_entry=None):
+        """Simulate a long-running archive that blocks until cancelled."""
+        import tarfile as _tf
+        with _tf.open(dest, "w:gz"):
+            pass
+        if cancel_event is not None:
+            while not cancel_event.is_set():
+                time.sleep(0.01)
+            raise TaskCancelled("Task cancelled by admin")
 
     mock_session = AsyncMock()
     mock_session.get = AsyncMock(return_value=task)
@@ -579,6 +592,7 @@ async def test_run_files_export_cancellation(tmp_path) -> None:
         patch("app.admin_ops.settings") as mock_settings,
         patch("app.admin_ops._TASKS_DIR", tasks_dir),
         patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.05),
+        patch("app.admin_ops._create_tar_file", side_effect=_slow_tar),
     ):
         mock_settings.tiles_dir = str(tiles_dir)
         await run_files_export(1)
