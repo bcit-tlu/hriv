@@ -453,6 +453,11 @@ async def test_create_task() -> None:
     db = AsyncMock()
     user = SimpleNamespace(id=42)
 
+    # No existing task of the same type
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = None
+    db.execute = AsyncMock(return_value=mock_result)
+
     # Mock refresh to set the id
     async def mock_refresh(obj):
         obj.id = 1
@@ -473,6 +478,23 @@ async def test_create_task() -> None:
     db.commit.assert_awaited_once()
     assert task.task_type == "db_export"
     assert task.created_by == 42
+
+
+async def test_create_task_rejects_concurrent() -> None:
+    """_create_task returns 409 if a task of the same type is already active."""
+    db = AsyncMock()
+    user = SimpleNamespace(id=42)
+
+    existing = _make_admin_task(id=7, task_type="db_import", status="running")
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = existing
+    db.execute = AsyncMock(return_value=mock_result)
+
+    with pytest.raises(HTTPException) as exc:
+        await _create_task(db, "db_import", user)
+    assert exc.value.status_code == 409
+    assert "already running" in exc.value.detail
+    assert "#7" in exc.value.detail
 
 
 async def test_kick_off_redis_available() -> None:
@@ -501,6 +523,11 @@ async def test_start_db_export() -> None:
     user = SimpleNamespace(id=1)
     bg = MagicMock()
     db = AsyncMock()
+
+    # No existing task of the same type (concurrency check)
+    mock_exec_result = MagicMock()
+    mock_exec_result.scalars.return_value.first.return_value = None
+    db.execute = AsyncMock(return_value=mock_exec_result)
 
     task = _make_admin_task()
 
