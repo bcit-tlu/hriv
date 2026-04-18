@@ -262,6 +262,35 @@ async def test_cancel_task_pending() -> None:
     assert result["status"] == "cancelling"
 
 
+async def test_cancel_task_force_transitions_from_cancelling() -> None:
+    """A task stuck in ``cancelling`` can be force-cancelled to ``cancelled``.
+
+    This is the recovery path when the original runner died before it
+    could observe the cancellation flag, which would otherwise block the
+    concurrency guard in ``_create_task`` indefinitely.
+    """
+    task = _make_admin_task(status="cancelling", log="Cancellation requested by admin.\n")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    db.refresh = AsyncMock()
+
+    result = await cancel_task(1, MagicMock(), db=db)
+    assert result["status"] == "cancelled"
+    assert "Force-cancelled by admin" in task.log
+
+
+async def test_cancel_task_already_cancelled_rejected() -> None:
+    """Once a task is terminal (``cancelled``) it cannot be cancelled again."""
+    task = _make_admin_task(status="cancelled")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+
+    with pytest.raises(HTTPException) as exc:
+        await cancel_task(1, MagicMock(), db=db)
+    assert exc.value.status_code == 400
+    assert "cancelled" in exc.value.detail
+
+
 async def test_create_task_download_token_success(tmp_path) -> None:
     filepath = tmp_path / "export.json"
     filepath.write_text('{"data": true}')

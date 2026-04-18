@@ -231,21 +231,36 @@ async def cancel_task(
     _user: Annotated[User, Depends(_admin)],
     db: AsyncSession = Depends(get_db),
 ):
-    """Request cancellation of a running or pending admin task.
+    """Request cancellation of an in-flight admin task.
 
-    Sets the task status to ``cancelling``.  The background runner checks
-    for this status at each progress checkpoint and aborts early.
+    * ``pending`` / ``running`` → transitions to ``cancelling``; the
+      background runner observes the status change at its next progress
+      checkpoint and aborts cleanly.
+    * ``cancelling`` → force-transitions to ``cancelled``.  This handles
+      the case where a previous cancel request was issued but the runner
+      died (pod crash, rollout) before it could finalise cleanup, which
+      would otherwise leave the concurrency guard in ``_create_task``
+      permanently blocked.  The live ``_update_task`` helper also treats
+      ``cancelled`` as a cancellation signal, so a still-alive runner
+      will abort on its next checkpoint as well.
     """
     task = await db.get(AdminTask, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    if task.status not in ("pending", "running"):
+    if task.status in ("pending", "running"):
+        task.status = "cancelling"
+        task.log = (task.log or "") + "Cancellation requested by admin.\n"
+    elif task.status == "cancelling":
+        task.status = "cancelled"
+        task.log = (
+            (task.log or "")
+            + "Force-cancelled by admin (task was stuck in 'cancelling').\n"
+        )
+    else:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot cancel task in '{task.status}' state",
         )
-    task.status = "cancelling"
-    task.log = (task.log or "") + "Cancellation requested by admin.\n"
     await db.commit()
     await db.refresh(task)
     return _task_to_dict(task)

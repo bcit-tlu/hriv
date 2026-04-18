@@ -20,6 +20,7 @@ from app.admin_ops import (
     _read_file,
     _update_task,
     _write_file,
+    reconcile_stale_tasks,
     run_db_export,
     run_db_import,
     run_files_export,
@@ -295,6 +296,64 @@ async def test_update_task_check_cancelled_passes_when_running() -> None:
 
     assert task.progress == 60
     assert "next step" in task.log
+
+
+async def test_reconcile_stale_tasks_marks_stale_as_failed() -> None:
+    """Stale in-flight tasks are updated to ``failed`` and ids are returned."""
+    session = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.all = MagicMock(return_value=[(2,), (5,)])
+    session.execute = AsyncMock(return_value=exec_result)
+    session.commit = AsyncMock()
+
+    count = await reconcile_stale_tasks(session, stale_after_seconds=900)
+
+    assert count == 2
+    # The reconciler must issue an UPDATE and commit the transaction.
+    assert session.execute.await_count == 1
+    stmt = session.execute.await_args.args[0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "UPDATE admin_tasks" in compiled
+    assert "status='failed'" in compiled.replace(" ", "")
+    assert "'pending'" in compiled and "'running'" in compiled and "'cancelling'" in compiled
+    session.commit.assert_awaited_once()
+
+
+async def test_reconcile_stale_tasks_no_stale_returns_zero() -> None:
+    """When no tasks are stale the reconciler is a no-op counter-wise."""
+    session = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.all = MagicMock(return_value=[])
+    session.execute = AsyncMock(return_value=exec_result)
+    session.commit = AsyncMock()
+
+    count = await reconcile_stale_tasks(session, stale_after_seconds=900)
+
+    assert count == 0
+    session.commit.assert_awaited_once()
+
+
+async def test_update_task_check_cancelled_also_raises_on_cancelled_status() -> None:
+    """A status of ``cancelled`` (force-cancel) also aborts a live runner.
+
+    This guards against the race where an admin force-cancels a stuck
+    task while its original runner is somehow still alive: on the next
+    checkpoint the runner sees the terminal status and exits cleanly
+    rather than overwriting it.
+    """
+    session = AsyncMock()
+    task = SimpleNamespace(
+        status="cancelled", progress=50, log="",
+        result_filename=None, result_path=None, error_message=None,
+    )
+    session.refresh = AsyncMock()
+
+    with pytest.raises(TaskCancelled):
+        await _update_task(
+            session, task,
+            log_line="next step",
+            check_cancelled=True,
+        )
 
 
 # ── run_db_export tests ────────────────────────────────────

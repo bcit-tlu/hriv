@@ -16,10 +16,10 @@ import tarfile
 import tempfile
 import threading
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import get_async_session, settings
@@ -49,11 +49,75 @@ def _ensure_tasks_dir() -> str:
     return _TASKS_DIR
 
 
+# Threshold (seconds) after which an in-flight admin task with no
+# ``updated_at`` progress is considered abandoned and eligible for the
+# startup reconciler to mark as ``failed``.  Every task runner writes to
+# ``updated_at`` at least every few seconds via ``_update_task`` (see the
+# verbose archive poller in ``run_files_export`` for example), so 15 min
+# is generously large.  Configurable via env for clusters with unusually
+# long individual checkpoints.
+_STALE_TASK_THRESHOLD_SECONDS = int(
+    os.environ.get("ADMIN_TASK_STALE_SECONDS", "900")
+)
+
+
 # ── Helpers ────────────────────────────────────────────────
 
 
 class TaskCancelled(Exception):
     """Raised when an admin task detects a cancellation request."""
+
+
+async def reconcile_stale_tasks(
+    session: AsyncSession,
+    stale_after_seconds: int = _STALE_TASK_THRESHOLD_SECONDS,
+) -> int:
+    """Mark orphaned in-flight admin tasks as ``failed``.
+
+    A task is considered stale when its status is still ``pending``,
+    ``running`` or ``cancelling`` but its ``updated_at`` timestamp is
+    older than *stale_after_seconds*.  This runs on backend startup so
+    tasks whose runner process died (pod crash, OOM kill, rollout) are
+    cleared up instead of blocking the ``_create_task`` concurrency
+    guard indefinitely.
+
+    The threshold guards against multi-replica deployments: a freshly
+    starting pod will not clobber a task actively running on a sibling
+    pod because that sibling pod is writing progress to ``updated_at``.
+
+    Returns the number of rows updated.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
+    stmt = (
+        update(AdminTask)
+        .where(
+            AdminTask.status.in_(["pending", "running", "cancelling"]),
+            AdminTask.updated_at < cutoff,
+        )
+        .values(
+            status="failed",
+            error_message=(
+                "Task marked as failed on backend startup — no progress "
+                f"update for more than {stale_after_seconds}s; the runner "
+                "likely crashed before it could finalise the task."
+            ),
+        )
+        .returning(AdminTask.id)
+    )
+    result = await session.execute(stmt)
+    ids = [row[0] for row in result.all()]
+    await session.commit()
+    if ids:
+        logger.warning(
+            "Reconciled %d stale admin task(s) to 'failed' on startup",
+            len(ids),
+            extra={
+                "event": "admin_task.reconciled_stale",
+                "task_ids": ids,
+                "stale_after_seconds": stale_after_seconds,
+            },
+        )
+    return len(ids)
 
 
 async def _update_task(
@@ -77,7 +141,7 @@ async def _update_task(
     """
     if check_cancelled:
         await session.refresh(task, attribute_names=["status"])
-        if task.status == "cancelling":
+        if task.status in ("cancelling", "cancelled"):
             raise TaskCancelled("Task cancelled by admin")
 
     if status is not None:
