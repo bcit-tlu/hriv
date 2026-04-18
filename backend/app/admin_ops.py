@@ -339,15 +339,24 @@ async def run_db_import(task_id: int) -> None:
 
                 # Clear existing data in dependency order
                 await _update_task(status_session, task, log_line="Clearing existing data…", progress=10)
+
+                # Detach admin_tasks.created_by FK *via status_session*
+                # before deleting users.  DELETE FROM users cascades
+                # ON DELETE SET NULL to admin_tasks.created_by, which would
+                # lock the task row inside data_session.  Because both
+                # sessions run in the same coroutine, status_session could
+                # never acquire the same row lock to commit progress
+                # updates — a self-deadlock.  By NULLing created_by through
+                # status_session (which commits immediately), the FK
+                # references are gone before data_session touches users,
+                # so the cascade has nothing to lock.
+                await status_session.execute(text("UPDATE admin_tasks SET created_by = NULL"))
+                await status_session.commit()
+
                 await data_session.execute(text("DELETE FROM source_images"))
                 await data_session.execute(text("DELETE FROM image_programs"))
                 await data_session.execute(text("DELETE FROM images"))
                 await data_session.execute(text("DELETE FROM categories"))
-                # Detach admin_tasks.created_by FK before deleting users to
-                # avoid a deadlock: DELETE FROM users cascades SET NULL on the
-                # admin_tasks row, locking it in data_session, which would
-                # block status_session from updating the same row.
-                await data_session.execute(text("UPDATE admin_tasks SET created_by = NULL"))
                 await data_session.execute(text("DELETE FROM users"))
                 await data_session.execute(text("DELETE FROM announcements"))
                 await data_session.execute(text("DELETE FROM programs"))
