@@ -4,6 +4,7 @@ import json
 import os
 import tarfile
 import tempfile
+import threading
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -12,6 +13,7 @@ import pytest
 
 from app.admin_ops import (
     TaskCancelled,
+    _create_tar_file,
     _ensure_tasks_dir,
     _extract_and_restore,
     _parse_dt,
@@ -146,6 +148,78 @@ def test_extract_and_restore_empty_archive(tmp_path) -> None:
                 str(tmp_path / "tiles"),
                 str(tmp_path / "sources"),
             )
+
+
+# ── _create_tar_file tests ─────────────────────────────────
+
+
+def test_create_tar_file_on_entry_reports_members(tmp_path) -> None:
+    """on_entry callback receives every archive member name."""
+    data_dir = tmp_path / "data"
+    tiles = data_dir / "tiles"
+    tiles.mkdir(parents=True)
+    (tiles / "a.jpg").write_text("a")
+    (tiles / "b.jpg").write_text("b")
+
+    dest = str(tmp_path / "out.tar.gz")
+    entries: list[str] = []
+
+    with patch("app.admin_ops._TASKS_DIR", str(data_dir / "admin_tasks")):
+        _create_tar_file(str(data_dir), dest, on_entry=entries.append)
+
+    assert any(e.endswith("a.jpg") for e in entries)
+    assert any(e.endswith("b.jpg") for e in entries)
+    # Directory entries should end with /
+    assert any(e.endswith("/") for e in entries)
+
+
+def test_create_tar_file_excludes_admin_tasks(tmp_path) -> None:
+    """admin_tasks directory must be excluded from the archive."""
+    data_dir = tmp_path / "data"
+    tiles = data_dir / "tiles"
+    tiles.mkdir(parents=True)
+    (tiles / "tile.jpg").write_text("tile")
+    tasks = data_dir / "admin_tasks"
+    tasks.mkdir()
+    (tasks / "old.json").write_text("stale")
+
+    dest = str(tmp_path / "out.tar.gz")
+    entries: list[str] = []
+
+    with patch("app.admin_ops._TASKS_DIR", str(tasks)):
+        _create_tar_file(str(data_dir), dest, on_entry=entries.append)
+
+    assert not any("admin_tasks" in e for e in entries)
+    with tarfile.open(dest, "r:gz") as tar:
+        assert not any("admin_tasks" in m for m in tar.getnames())
+
+
+def test_create_tar_file_cancel_event_aborts(tmp_path) -> None:
+    """Setting cancel_event stops archiving promptly."""
+    data_dir = tmp_path / "data"
+    sub = data_dir / "many"
+    sub.mkdir(parents=True)
+    for i in range(20):
+        (sub / f"f{i}.txt").write_text(str(i))
+
+    dest = str(tmp_path / "out.tar.gz")
+    cancel = threading.Event()
+    entries: list[str] = []
+
+    def _on_entry(name: str) -> None:
+        entries.append(name)
+        if len(entries) >= 3:
+            cancel.set()
+
+    with patch("app.admin_ops._TASKS_DIR", str(data_dir / "admin_tasks")):
+        with pytest.raises(TaskCancelled):
+            _create_tar_file(
+                str(data_dir), dest,
+                cancel_event=cancel, on_entry=_on_entry,
+            )
+
+    # Should have stopped well before processing all 20 files
+    assert len(entries) < 20
 
 
 # ── _update_task tests ─────────────────────────────────────
@@ -430,6 +504,101 @@ async def test_run_files_export_success(tmp_path) -> None:
     assert task.progress == 100
     assert task.result_filename is not None
     assert task.result_filename.endswith(".tar.gz")
+
+
+async def test_run_files_export_verbose_log(tmp_path) -> None:
+    """Verbose archive entries appear in the task log."""
+    data_dir = tmp_path / "data"
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir(parents=True)
+    (tiles_dir / "img.jpg").write_text("pixel")
+
+    task = SimpleNamespace(
+        id=1, task_type="files_export", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=None, error_message=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    tasks_dir = str(tmp_path / "admin_tasks")
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.05),
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        await run_files_export(1)
+
+    assert task.status == "completed"
+    assert "adding" in task.log
+    assert "img.jpg" in task.log
+
+
+async def test_run_files_export_cancellation(tmp_path) -> None:
+    """Cancelling during archive creation terminates promptly via cancel_event."""
+    import time
+
+    data_dir = tmp_path / "data"
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir(parents=True)
+    (tiles_dir / "f0.txt").write_text("0")
+
+    task = SimpleNamespace(
+        id=1, task_type="files_export", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=None, error_message=None,
+    )
+
+    refresh_count = 0
+
+    async def _refresh(obj, attribute_names=None):
+        nonlocal refresh_count
+        refresh_count += 1
+        # There are 3 check_cancelled=True calls before the archive
+        # starts, so trigger cancellation later to exercise the
+        # during-archiving _flush_and_poll path.
+        if refresh_count >= 6:
+            task.status = "cancelling"
+
+    def _slow_tar(data_dir, dest, *, cancel_event=None, on_entry=None):
+        """Simulate a long-running archive that blocks until cancelled."""
+        import tarfile as _tf
+        with _tf.open(dest, "w:gz"):
+            pass
+        if cancel_event is not None:
+            while not cancel_event.is_set():
+                time.sleep(0.01)
+            raise TaskCancelled("Task cancelled by admin")
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session.refresh = AsyncMock(side_effect=_refresh)
+    mock_session.rollback = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    tasks_dir = str(tmp_path / "admin_tasks")
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.05),
+        patch("app.admin_ops._create_tar_file", side_effect=_slow_tar),
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        await run_files_export(1)
+
+    assert task.status == "cancelled"
+    assert "cancelled" in task.log.lower()
 
 
 # ── run_files_import tests ─────────────────────────────────
