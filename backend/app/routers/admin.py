@@ -749,7 +749,14 @@ async def start_db_import(
                 break
             f.write(chunk)
 
-    task = await _create_task(db, "db_import", user, input_path=input_path)
+    try:
+        task = await _create_task(db, "db_import", user, input_path=input_path)
+    except Exception:
+        try:
+            os.unlink(input_path)
+        except OSError:
+            pass
+        raise
     await _kick_off(task, bg)
     return _task_to_dict(task)
 
@@ -788,7 +795,14 @@ async def start_files_import(
                 break
             f.write(chunk)
 
-    task = await _create_task(db, "files_import", user, input_path=input_path)
+    try:
+        task = await _create_task(db, "files_import", user, input_path=input_path)
+    except Exception:
+        try:
+            os.unlink(input_path)
+        except OSError:
+            pass
+        raise
     await _kick_off(task, bg)
     return _task_to_dict(task)
 

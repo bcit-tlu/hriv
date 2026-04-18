@@ -548,7 +548,7 @@ async def run_db_import(task_id: int) -> None:
                 await _update_task(
                     status_session, task,
                     status="cancelled",
-                    log_line="Task cancelled. All changes rolled back.",
+                    log_line="Task cancelled. Data changes rolled back (admin task ownership references were cleared).",
                 )
 
             except Exception as exc:
