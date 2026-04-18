@@ -56,9 +56,8 @@ async def test_update_image_bumps_version() -> None:
     img = _make_image(version=3)
     db = AsyncMock()
     db.get.return_value = img
-    db.execute.return_value = MagicMock(
-        scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
-    )
+    # Atomic CAS matches the current version → rowcount=1 → proceed
+    db.execute.return_value = MagicMock(rowcount=1)
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
 
@@ -82,6 +81,8 @@ async def test_update_image_conflict_returns_409() -> None:
     img = _make_image(version=5)
     db = AsyncMock()
     db.get.return_value = img
+    # CAS WHERE version=3 matches zero rows because the row is now version=5
+    db.execute.return_value = MagicMock(rowcount=0)
 
     request = _make_request(if_match='"3"')
     body = _make_body(name="updated")
@@ -125,9 +126,7 @@ async def test_update_image_no_if_match_still_bumps_version() -> None:
     img = _make_image(version=2)
     db = AsyncMock()
     db.get.return_value = img
-    db.execute.return_value = MagicMock(
-        scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))
-    )
+    # No CAS executed when If-Match absent; execute is unused in this path.
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
 
