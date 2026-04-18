@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.5.0...backend-v0.5.1) (2026-04-18)
+
+
+### Bug Fixes
+
+* **admin_ops:** keep os.rename for same-fs sibling moves to preserve rollback safety ([c23d18a](https://github.com/bcit-tlu/hriv/commit/c23d18a45bff4a3eb9826c87460bbcae689bea8a))
+* **admin_ops:** use shutil.move for cross-filesystem safe renames ([d611574](https://github.com/bcit-tlu/hriv/commit/d611574609f9477cb7e4137c12b6f70d0bdf4c43))
+* **images:** atomic compare-and-swap for optimistic concurrency ([c32bd70](https://github.com/bcit-tlu/hriv/commit/c32bd7048dbb7c1a7beb9ab2ab9f40e7aacf7c99)), closes [#16](https://github.com/bcit-tlu/hriv/issues/16)
+* **middleware:** make audit-log path exclusions configurable ([30fad53](https://github.com/bcit-tlu/hriv/commit/30fad532464ef3c2aafb15f3dec74611981a5264))
+* **oidc:** always log callback errors server-side; stop leaking log_detail in HTTPException body ([c433a06](https://github.com/bcit-tlu/hriv/commit/c433a06cfafc74a7496dd1be59c472d000a3ac2d))
+* **oidc:** redirect to frontend with error codes instead of raw JSON (P20) ([1b56b17](https://github.com/bcit-tlu/hriv/commit/1b56b1742ff793770380a20afec37aa2c5750d99))
+
 ## [0.5.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.4.1...backend-v0.5.0) (2026-04-18)
 
 
