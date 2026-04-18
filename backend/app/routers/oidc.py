@@ -136,11 +136,25 @@ _OIDC_ERR_SUBJECT_MISMATCH = "subject_mismatch"
 def _oidc_callback_error(error_code: str, *, log_detail: str) -> HTMLResponse:
     """Redirect the browser to the frontend with ``#oidc_error=<code>``.
 
+    Always logs the error server-side (at ``error`` level) so that
+    OIDC callback failures remain observable even though they no
+    longer surface as HTTP 4xx/5xx in access logs. ``log_detail`` is
+    logged but never sent to the browser.
+
     Falling back to ``HTTPException`` when no frontend origin is
     configured would leave the user staring at raw JSON on the backend
     domain; instead we still raise a plain HTTPException in that narrow
-    case so an operator can diagnose the missing configuration.
+    case so an operator can diagnose the missing configuration. The
+    underlying ``log_detail`` is deliberately excluded from the
+    response body — callers may pass ``str(exc)`` from the provider
+    which can contain URLs, IPs, or other internal context.
     """
+    logger.error(
+        "OIDC callback error (%s): %s",
+        error_code,
+        log_detail,
+        extra={"event": "oidc.callback_error", "oidc_error_code": error_code},
+    )
     origin = _resolve_frontend_origin()
     if not origin:
         raise HTTPException(
@@ -148,7 +162,7 @@ def _oidc_callback_error(error_code: str, *, log_detail: str) -> HTMLResponse:
             detail=(
                 "OIDC post-login redirect is not configured. "
                 "Set OIDC_POST_LOGIN_REDIRECT or a non-wildcard CORS_ORIGINS. "
-                f"Underlying error: {log_detail}"
+                "See server logs for details."
             ),
         )
     return _fragment_redirect(origin, f"oidc_error={error_code}")
