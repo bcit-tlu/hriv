@@ -50,10 +50,12 @@ def _make_user(role: str = "admin") -> SimpleNamespace:
     return SimpleNamespace(id=1, role=role, email="u@example.com")
 
 
-def _mock_request() -> MagicMock:
+def _mock_request(if_match: str | None = None) -> MagicMock:
     """Build a mock Request with headers for optimistic concurrency."""
     req = MagicMock()
-    req.headers.get.return_value = None  # no If-Match header
+    req.headers.get.side_effect = lambda key, default=None: (
+        if_match if key == "If-Match" else default
+    )
     return req
 
 
@@ -224,6 +226,62 @@ async def test_update_image_with_metadata() -> None:
     body = ImageUpdate(metadata_extra={"key": "val"})
     result = await update_image(1, body, _mock_request(), _make_user(), db)
     assert img.metadata_ == {"key": "val"}
+
+
+async def test_update_image_if_match_success() -> None:
+    """When If-Match matches the current version, the atomic CAS should
+    succeed and the row's version should be incremented."""
+    img = _make_image()
+    img.version = 3
+
+    cas_result = MagicMock()
+    cas_result.rowcount = 1
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.execute = AsyncMock(return_value=cas_result)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = ImageUpdate(name="updated")
+    await update_image(1, body, _mock_request(if_match='"3"'), _make_user(), db)
+    assert img.version == 4
+    assert img.name == "updated"
+
+
+async def test_update_image_if_match_stale_version() -> None:
+    """When If-Match does not match the current version, the atomic CAS
+    should return rowcount=0 and the handler should raise 409."""
+    img = _make_image()
+    img.version = 5
+
+    cas_result = MagicMock()
+    cas_result.rowcount = 0  # no row matched WHERE id=? AND version=?
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.execute = AsyncMock(return_value=cas_result)
+    db.commit = AsyncMock()
+
+    body = ImageUpdate(name="should-not-apply")
+    with pytest.raises(HTTPException) as exc:
+        await update_image(1, body, _mock_request(if_match='"3"'), _make_user(), db)
+    assert exc.value.status_code == 409
+    # The in-memory image should not have been mutated
+    assert img.name == "test-img"
+    db.commit.assert_not_awaited()
+
+
+async def test_update_image_if_match_invalid() -> None:
+    """A non-integer If-Match value should be rejected with 400."""
+    img = _make_image()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    body = ImageUpdate(name="x")
+    with pytest.raises(HTTPException) as exc:
+        await update_image(1, body, _mock_request(if_match="not-a-number"), _make_user(), db)
+    assert exc.value.status_code == 400
 
 
 async def test_update_image_with_programs() -> None:

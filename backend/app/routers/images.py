@@ -1,7 +1,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from sqlalchemy import select
+from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
@@ -128,17 +128,34 @@ async def update_image(
 
     # Optimistic concurrency: if the client sends If-Match, verify the
     # version has not changed since the client last read the resource.
+    # The version check and increment are performed atomically via a
+    # single UPDATE … WHERE version = :client_version statement. Doing
+    # the compare-and-swap in one database round-trip closes the TOCTOU
+    # window where two concurrent writers could both observe version=N,
+    # both pass an in-memory check, and both commit version=N+1 —
+    # silently losing one update.
     if_match = request.headers.get("If-Match")
     if if_match is not None:
         try:
             client_version = int(if_match.strip('"'))
         except (ValueError, TypeError):
             raise HTTPException(status_code=400, detail="Invalid If-Match header")
-        if client_version != img.version:
+        cas = await db.execute(
+            sql_update(Image)
+            .where(Image.id == image_id, Image.version == client_version)
+            .values(version=Image.version + 1)
+        )
+        if cas.rowcount == 0:
             raise HTTPException(
                 status_code=409,
                 detail="Resource has been modified by another client",
             )
+        # Sync the in-memory instance so that SQLAlchemy's subsequent
+        # UPDATE for field changes doesn't revert the version bump.
+        img.version = client_version + 1
+    else:
+        # No optimistic concurrency requested — bump version unconditionally.
+        img.version = img.version + 1
 
     update_data = body.model_dump(exclude_unset=True)
     if "metadata_extra" in update_data:
@@ -149,9 +166,6 @@ async def update_image(
     if program_ids is not None:
         progs = (await db.execute(select(Program).where(Program.id.in_(program_ids)))).scalars().all()
         img.programs = list(progs)
-
-    # Bump the version for optimistic concurrency
-    img.version = img.version + 1
 
     await db.commit()
     await db.refresh(img)
