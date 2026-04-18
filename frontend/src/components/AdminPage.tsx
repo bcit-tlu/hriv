@@ -33,6 +33,9 @@ import {
   downloadAdminTaskResult,
 } from '../api'
 import type { AdminTask } from '../api'
+import ConfirmImportDialog, {
+  type ConfirmImportKind,
+} from './ConfirmImportDialog'
 
 const POLL_INTERVAL = 2000 // ms
 
@@ -200,18 +203,40 @@ export default function AdminPage() {
   const handleImportClick = () => fileRef.current?.click()
   const handleImportFilesClick = () => filesRef.current?.click()
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // File selected → queue a confirmation dialog rather than firing the
+  // destructive import immediately. The dialog requires the admin to
+  // acknowledge that a recent backup exists before the API call fires
+  // (see ConfirmImportDialog).
+  const [pendingImport, setPendingImport] = useState<{
+    kind: ConfirmImportKind
+    file: File
+  } | null>(null)
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
-    await kickOff('db_import', () => startDbImport(file))
+    setPendingImport({ kind: 'db_import', file })
   }
 
-  const handleFilesChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
-    await kickOff('files_import', () => startFilesImport(file))
+    setPendingImport({ kind: 'files_import', file })
+  }
+
+  const handleCancelImport = () => setPendingImport(null)
+
+  const handleConfirmImport = async () => {
+    if (!pendingImport) return
+    const { kind, file } = pendingImport
+    setPendingImport(null)
+    if (kind === 'db_import') {
+      await kickOff('db_import', () => startDbImport(file))
+    } else {
+      await kickOff('files_import', () => startFilesImport(file))
+    }
   }
 
   // Dismiss a snackbar notification and remove the task from activeTasks
@@ -698,6 +723,15 @@ export default function AdminPage() {
           </>
         )}
       </Dialog>
+
+      {/* Destructive-import confirmation (P18). */}
+      <ConfirmImportDialog
+        open={pendingImport !== null}
+        kind={pendingImport?.kind ?? 'db_import'}
+        file={pendingImport?.file ?? null}
+        onCancel={handleCancelImport}
+        onConfirm={handleConfirmImport}
+      />
     </Box>
   )
 }
