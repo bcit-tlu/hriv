@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.4.0...backend-v0.4.1) (2026-04-18)
+
+
+### Bug Fixes
+
+* handle poll_task exceptions separately from cancellation, improve cancel test ([1d7fca6](https://github.com/bcit-tlu/hriv/commit/1d7fca609328fc059048e800a1d205fde248cf1f))
+* verbose archive output and responsive cancellation for filesystem export ([5ef2419](https://github.com/bcit-tlu/hriv/commit/5ef2419c288dbce0076566082f7d782e232e09f0)), closes [#97](https://github.com/bcit-tlu/hriv/issues/97) [#98](https://github.com/bcit-tlu/hriv/issues/98)
+
 ## [0.4.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.3.1...backend-v0.4.0) (2026-04-18)
 
 
