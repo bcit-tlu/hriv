@@ -416,9 +416,23 @@ _DOWNLOAD_TOKEN_EXPIRE_SECONDS = 60
 
 
 def _create_tar_file(data_dir: str, dest: str) -> None:
-    """Write a tar.gz archive of *data_dir* to *dest* (runs in a thread)."""
+    """Write a tar.gz archive of *data_dir* to *dest* (runs in a thread).
+
+    The ``admin_tasks`` subdirectory is excluded so that previously
+    generated export artefacts do not bloat the archive.
+    """
+    from ..admin_ops import _TASKS_DIR  # noqa: WPS433 – avoid circular at module level
+
+    tasks_basename = os.path.basename(_TASKS_DIR)
+
+    def _tar_filter(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        parts = info.name.split("/")
+        if len(parts) > 1 and parts[1] == tasks_basename:
+            return None
+        return info
+
     with tarfile.open(dest, mode="w:gz") as tar:
-        tar.add(data_dir, arcname="data")
+        tar.add(data_dir, arcname="data", filter=_tar_filter)
 
 
 def _extract_and_restore(
