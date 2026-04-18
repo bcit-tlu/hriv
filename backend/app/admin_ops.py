@@ -353,18 +353,21 @@ async def run_db_import(task_id: int) -> None:
                 # Clear existing data in dependency order
                 await _update_task(status_session, task, log_line="Clearing existing data…", progress=10)
 
-                # Detach admin_tasks.created_by FK *via status_session*
+                # Detach this task's created_by FK *via status_session*
                 # before deleting users.  DELETE FROM users cascades
                 # ON DELETE SET NULL to admin_tasks.created_by, which would
-                # lock the task row inside data_session.  Because both
+                # lock THIS task's row inside data_session.  Because both
                 # sessions run in the same coroutine, status_session could
                 # never acquire the same row lock to commit progress
-                # updates — a self-deadlock.  By NULLing created_by through
-                # status_session (which commits immediately), the FK
-                # references are gone before data_session touches users,
-                # so the cascade has nothing to lock.
+                # updates — a self-deadlock.  By NULLing only the current
+                # task's created_by through status_session (which commits
+                # immediately), the FK reference is gone before
+                # data_session touches users.  Other tasks' created_by
+                # values are left intact — they will be SET NULL by the
+                # CASCADE inside data_session (and restored on rollback).
                 await status_session.execute(
-                    text("UPDATE admin_tasks SET created_by = NULL WHERE created_by IS NOT NULL")
+                    text("UPDATE admin_tasks SET created_by = NULL WHERE id = :tid"),
+                    {"tid": task_id},
                 )
                 await status_session.commit()
 
@@ -548,7 +551,7 @@ async def run_db_import(task_id: int) -> None:
                 await _update_task(
                     status_session, task,
                     status="cancelled",
-                    log_line="Task cancelled. Data changes rolled back (admin task ownership references were cleared).",
+                    log_line="Task cancelled. Data changes rolled back.",
                 )
 
             except Exception as exc:
