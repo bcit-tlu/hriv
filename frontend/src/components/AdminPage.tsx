@@ -67,6 +67,24 @@ export default function AdminPage() {
 
   const pollRefs = useRef(new Map<number, ReturnType<typeof setTimeout>>())
 
+  // Log viewer auto-scroll: the pre element that holds the streaming
+  // task log, and a sticky-bottom flag that pauses auto-scroll if the
+  // user scrolls up to read earlier output and resumes once they scroll
+  // back to the bottom.  Stored in a ref so scrolling doesn't trigger
+  // re-renders on every wheel event.
+  const logBoxRef = useRef<HTMLElement | null>(null)
+  const stickToBottomRef = useRef(true)
+
+  const handleLogScroll = useCallback(() => {
+    const el = logBoxRef.current
+    if (el === null) return
+    // Treat "within 16px of bottom" as still docked — keeps kinetic
+    // scroll/touchpad overshoot from detaching the autoscroll.
+    const distanceFromBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight
+    stickToBottomRef.current = distanceFromBottom <= 16
+  }, [])
+
   // Load task history on mount
   useEffect(() => {
     fetchAdminTasks()
@@ -132,6 +150,27 @@ export default function AdminPage() {
       refs.clear()
     }
   }, [])
+
+  // Re-dock the log viewer to the bottom whenever a new log panel is
+  // opened so the most recent output is visible immediately.
+  useEffect(() => {
+    if (logTask === null) return
+    stickToBottomRef.current = true
+    const el = logBoxRef.current
+    if (el !== null) {
+      el.scrollTop = el.scrollHeight
+    }
+  }, [logTask?.id])
+
+  // Keep the log pinned to the bottom as new content streams in — but
+  // only when the user hasn't scrolled up to read older lines.
+  useEffect(() => {
+    if (!stickToBottomRef.current) return
+    const el = logBoxRef.current
+    if (el !== null) {
+      el.scrollTop = el.scrollHeight
+    }
+  }, [logTask?.log])
 
   // ── Kick-off helpers ─────────────────────────────────────
 
@@ -573,6 +612,9 @@ export default function AdminPage() {
               </Typography>
               <Box
                 component="pre"
+                ref={logBoxRef}
+                onScroll={handleLogScroll}
+                data-testid="admin-task-log"
                 sx={{
                   p: 2,
                   bgcolor: 'grey.900',
