@@ -10,9 +10,12 @@ import asyncio
 import json
 import logging
 import os
+import queue
 import shutil
 import tarfile
 import tempfile
+import threading
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -589,24 +592,59 @@ def _read_file(path: str | None) -> str:
 # ── Filesystem Export ──────────────────────────────────────
 
 
-def _create_tar_file(data_dir: str, dest: str) -> None:
+def _create_tar_file(
+    data_dir: str,
+    dest: str,
+    *,
+    cancel_event: threading.Event | None = None,
+    on_entry: Callable[[str], None] | None = None,
+) -> None:
     """Write a tar.gz archive of *data_dir* to *dest*.
 
     The ``admin_tasks`` subdirectory is excluded so that previously
     generated export artefacts (JSON dumps, tar.gz archives) do not
     bloat successive filesystem exports.
+
+    If *cancel_event* is set while walking the tree, :class:`TaskCancelled`
+    is raised so the caller can abort promptly.  *on_entry* is called with
+    the archive member name for every entry added, giving callers a
+    streaming progress feed.
     """
     tasks_basename = os.path.basename(_TASKS_DIR)
 
-    def _tar_filter(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
-        # Exclude the admin_tasks directory and its contents
-        parts = info.name.split("/")
-        if len(parts) > 1 and parts[1] == tasks_basename:
-            return None
-        return info
+    def _check_cancel() -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            raise TaskCancelled("Task cancelled by admin")
 
     with tarfile.open(dest, mode="w:gz") as tar:
-        tar.add(data_dir, arcname="data", filter=_tar_filter)
+        for dirpath, dirnames, filenames in os.walk(data_dir):
+            _check_cancel()
+
+            rel = os.path.relpath(dirpath, data_dir)
+            top = rel.split(os.sep)[0]
+            if top == tasks_basename:
+                dirnames.clear()
+                continue
+
+            # Prune admin_tasks from child list so os.walk skips it
+            if tasks_basename in dirnames:
+                dirnames.remove(tasks_basename)
+
+            arcname = os.path.join("data", rel) if rel != "." else "data"
+            tar.add(dirpath, arcname=arcname, recursive=False)
+            if on_entry is not None:
+                on_entry(arcname + "/")
+
+            for fname in filenames:
+                _check_cancel()
+                fpath = os.path.join(dirpath, fname)
+                arc_fpath = os.path.join(arcname, fname)
+                tar.add(fpath, arcname=arc_fpath)
+                if on_entry is not None:
+                    on_entry(arc_fpath)
+
+
+_LOG_FLUSH_INTERVAL = 2  # seconds between verbose-log DB flushes
 
 
 async def run_files_export(task_id: int) -> None:
@@ -649,9 +687,75 @@ async def run_files_export(task_id: int) -> None:
             tmp.close()
             tmp_name = tmp.name
 
-            await _update_task(session, task, progress=20, log_line="Creating tar.gz archive (this may take a while)…", check_cancelled=True)
+            await _update_task(session, task, progress=20, log_line="Creating tar.gz archive…", check_cancelled=True)
+
+            # -- verbose archive with cancellation support --
+            cancel_event = threading.Event()
+            entry_queue: queue.Queue[str] = queue.Queue()
+
+            def _on_entry(arcname: str) -> None:
+                entry_queue.put(arcname)
+
+            async def _flush_and_poll() -> None:
+                """Flush queued entry names to the task log and check for cancellation."""
+                while True:
+                    await asyncio.sleep(_LOG_FLUSH_INTERVAL)
+                    lines: list[str] = []
+                    while not entry_queue.empty():
+                        try:
+                            lines.append(entry_queue.get_nowait())
+                        except queue.Empty:
+                            break
+                    if lines:
+                        batch = "\n".join(f"  adding {e}" for e in lines)
+                        await _update_task(session, task, log_line=batch)
+                    # Check DB for cancellation request
+                    await session.refresh(task, attribute_names=["status"])
+                    if task.status == "cancelling":
+                        cancel_event.set()
+                        return
+
+            tar_task = asyncio.ensure_future(
+                asyncio.to_thread(
+                    _create_tar_file, str(data_dir), tmp_name,
+                    cancel_event=cancel_event, on_entry=_on_entry,
+                )
+            )
+            poll_task = asyncio.ensure_future(_flush_and_poll())
+
             try:
-                await asyncio.to_thread(_create_tar_file, str(data_dir), tmp_name)
+                done, _pending = await asyncio.wait(
+                    [tar_task, poll_task], return_when=asyncio.FIRST_COMPLETED,
+                )
+                # If tar finished first, cancel the poll loop
+                if tar_task in done:
+                    poll_task.cancel()
+                    tar_task.result()  # propagate exceptions
+                else:
+                    # Poll exited (cancellation detected) — wait briefly
+                    # for tar thread to notice the event and raise.
+                    try:
+                        await asyncio.wait_for(tar_task, timeout=5)
+                    except asyncio.TimeoutError:
+                        pass
+                    if tar_task.done():
+                        tar_task.result()
+                    else:
+                        tar_task.cancel()
+                    raise TaskCancelled("Task cancelled by admin")
+            finally:
+                # Flush any remaining queued entries
+                remaining: list[str] = []
+                while not entry_queue.empty():
+                    try:
+                        remaining.append(entry_queue.get_nowait())
+                    except queue.Empty:
+                        break
+                if remaining:
+                    batch = "\n".join(f"  adding {e}" for e in remaining)
+                    await _update_task(session, task, log_line=batch)
+
+            try:
                 shutil.move(tmp_name, filepath)
                 tmp_name = None  # moved successfully; no temp to clean up
             except Exception:
