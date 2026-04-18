@@ -1,8 +1,8 @@
 {{- if and .Values.tileSidecar.enabled (not .Values.persistence.enabled) }}
 {{- fail "tileSidecar.enabled requires persistence.enabled — the sidecar serves tiles from the PVC" }}
 {{- end }}
-{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (has "ReadWriteOnce" .Values.persistence.accessModes) }}
-{{- fail "replicaCount > 1 with a ReadWriteOnce PVC is not supported — multiple pods cannot mount the same RWO volume" }}
+{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" .Values.persistence.accessModes)) }}
+{{- fail "replicaCount > 1 requires a ReadWriteMany PVC — background admin tasks write result files to the shared volume that any replica must be able to serve" }}
 {{- end }}
 apiVersion: apps/v1
 kind: Deployment
