@@ -885,7 +885,10 @@ def test_extract_and_restore_handles_cross_device_tmpdir(tmp_path, monkeypatch) 
             raise OSError(18, "Invalid cross-device link")  # EXDEV
         real_rename(src_s, dst_s)
 
-    monkeypatch.setattr("app.admin_ops.os.rename", _cross_device_rename)
+    # Patch ``os.rename`` at the module level so ``shutil.move``'s
+    # internal rename attempt is also intercepted (``shutil`` imports
+    # ``os`` directly, not through ``app.admin_ops``).
+    monkeypatch.setattr(os, "rename", _cross_device_rename)
 
     result = _extract_and_restore(
         tmp_archive=str(archive),
