@@ -220,8 +220,24 @@ export default function AdminPage() {
     setActiveTasks((prev) => prev.filter((t) => t.id !== taskId))
   }
 
-  // Request cancellation of a running/pending task
-  const handleCancel = async (taskId: number) => {
+  // Request cancellation of a running/pending task, or force-cancel a
+  // task already stuck in ``cancelling`` (same endpoint — backend
+  // transitions ``cancelling`` → ``cancelled`` when called a second
+  // time).  ``force`` only controls the confirmation prompt; destructive
+  // enough to warrant one because it abandons any in-flight cleanup.
+  const handleCancel = async (taskId: number, force = false) => {
+    if (
+      force &&
+      !window.confirm(
+        'Force-cancel this task?\n\n' +
+          'The runner appears to be stuck. Marking it as cancelled will ' +
+          'abandon any in-flight cleanup and unblock new tasks of the ' +
+          'same type. Only do this if you are sure the task is no longer ' +
+          'making progress.',
+      )
+    ) {
+      return
+    }
     try {
       const updated = await cancelAdminTask(taskId)
       setActiveTasks((prev) =>
@@ -232,7 +248,7 @@ export default function AdminPage() {
       )
       if (logTask?.id === taskId) setLogTask(updated)
     } catch {
-      setError('Failed to cancel task')
+      setError(force ? 'Failed to force-cancel task' : 'Failed to cancel task')
     }
   }
 
@@ -264,7 +280,7 @@ export default function AdminPage() {
           sx={{ mb: 2 }}
           action={
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              {task.status !== 'cancelling' && (
+              {task.status !== 'cancelling' ? (
                 <Button
                   size="small"
                   color="warning"
@@ -272,6 +288,15 @@ export default function AdminPage() {
                   onClick={() => handleCancel(task.id)}
                 >
                   Cancel
+                </Button>
+              ) : (
+                <Button
+                  size="small"
+                  color="error"
+                  startIcon={<CancelIcon />}
+                  onClick={() => handleCancel(task.id, true)}
+                >
+                  Force cancel
                 </Button>
               )}
               <Link
@@ -476,6 +501,16 @@ export default function AdminPage() {
                     <CancelIcon fontSize="small" />
                   </IconButton>
                 )}
+                {task.status === 'cancelling' && (
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() => handleCancel(task.id, true)}
+                    title="Force cancel (runner appears stuck)"
+                  >
+                    <CancelIcon fontSize="small" />
+                  </IconButton>
+                )}
                 {task.status === 'completed' && task.result_filename && (
                   <IconButton
                     size="small"
@@ -639,6 +674,15 @@ export default function AdminPage() {
                   onClick={() => handleCancel(logTask.id)}
                 >
                   Cancel
+                </Button>
+              )}
+              {logTask.status === 'cancelling' && (
+                <Button
+                  color="error"
+                  startIcon={<CancelIcon />}
+                  onClick={() => handleCancel(logTask.id, true)}
+                >
+                  Force cancel
                 </Button>
               )}
               {logTask.status === 'completed' && logTask.result_filename && (
