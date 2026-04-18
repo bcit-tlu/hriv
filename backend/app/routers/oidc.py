@@ -8,6 +8,7 @@ import html as _html
 import json
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
 import httpx
 from authlib.integrations.starlette_client import OAuth
@@ -133,13 +134,23 @@ _OIDC_ERR_MISSING_CLAIMS = "missing_claims"
 _OIDC_ERR_SUBJECT_MISMATCH = "subject_mismatch"
 
 
-def _oidc_callback_error(error_code: str, *, log_detail: str) -> HTMLResponse:
+def _oidc_callback_error(
+    error_code: str,
+    *,
+    log_detail: str,
+    extra: dict[str, Any] | None = None,
+) -> HTMLResponse:
     """Redirect the browser to the frontend with ``#oidc_error=<code>``.
 
-    Always logs the error server-side (at ``error`` level) so that
-    OIDC callback failures remain observable even though they no
-    longer surface as HTTP 4xx/5xx in access logs. ``log_detail`` is
-    logged but never sent to the browser.
+    Emits a single ``error``-level log entry so OIDC callback failures
+    remain observable even though they no longer surface as HTTP 4xx/5xx
+    in access logs. ``log_detail`` (short free-text context — often
+    ``str(exc)``) is logged but never sent to the browser. ``extra``
+    merges caller-specific structured fields (issuer URL, available
+    claims, etc.) into the same log record, so callers should emit
+    diagnostic context via this parameter rather than calling
+    ``logger.error`` themselves — a second upstream log entry would
+    just duplicate what this helper already records.
 
     Falling back to ``HTTPException`` when no frontend origin is
     configured would leave the user staring at raw JSON on the backend
@@ -149,11 +160,19 @@ def _oidc_callback_error(error_code: str, *, log_detail: str) -> HTMLResponse:
     response body — callers may pass ``str(exc)`` from the provider
     which can contain URLs, IPs, or other internal context.
     """
+    merged_extra: dict[str, Any] = {
+        "event": "oidc.callback_error",
+        "oidc_error_code": error_code,
+    }
+    if extra:
+        # Caller-provided keys win so they can override ``event`` with a
+        # more specific value (e.g. ``oidc.missing_claims``) when useful.
+        merged_extra.update(extra)
     logger.error(
         "OIDC callback error (%s): %s",
         error_code,
         log_detail,
-        extra={"event": "oidc.callback_error", "oidc_error_code": error_code},
+        extra=merged_extra,
     )
     origin = _resolve_frontend_origin()
     if not origin:
@@ -225,24 +244,20 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
     try:
         token_data = await client.authorize_access_token(request)
     except (httpx.ConnectError, httpx.TimeoutException) as exc:
-        logger.error(
-            "Cannot reach OIDC provider during token exchange — "
-            "verify that the backend pod can connect to the issuer URL",
+        return _oidc_callback_error(
+            _OIDC_ERR_PROVIDER_UNREACHABLE,
+            log_detail=str(exc),
             extra={
                 "event": "oidc.provider_unreachable",
                 "issuer": _settings.oidc_issuer,
+                "phase": "token_exchange",
             },
         )
-        return _oidc_callback_error(
-            _OIDC_ERR_PROVIDER_UNREACHABLE, log_detail=str(exc)
-        )
     except Exception as exc:
-        logger.error(
-            "OIDC token exchange failed",
-            extra={"event": "oidc.token_exchange_failed", "error": str(exc)},
-        )
         return _oidc_callback_error(
-            _OIDC_ERR_TOKEN_EXCHANGE_FAILED, log_detail=str(exc)
+            _OIDC_ERR_TOKEN_EXCHANGE_FAILED,
+            log_detail=str(exc),
+            extra={"event": "oidc.token_exchange_failed"},
         )
 
     # Extract user info — authlib's authorize_access_token already parses
@@ -274,12 +289,10 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 },
             )
         except Exception as exc:
-            logger.error(
-                "OIDC userinfo endpoint fallback failed",
-                extra={"event": "oidc.userinfo_fallback_failed", "error": str(exc)},
-            )
             return _oidc_callback_error(
-                _OIDC_ERR_USERINFO_FAILED, log_detail=str(exc)
+                _OIDC_ERR_USERINFO_FAILED,
+                log_detail=str(exc),
+                extra={"event": "oidc.userinfo_fallback_failed"},
             )
 
     sub: str = userinfo.get("sub", "")
@@ -290,8 +303,9 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
         # Log all available claim keys so admins can diagnose IdP template
         # configuration issues without needing to decode the raw ID token.
         _available = sorted(userinfo.keys()) if hasattr(userinfo, "keys") else []
-        logger.warning(
-            "OIDC callback missing required claims",
+        return _oidc_callback_error(
+            _OIDC_ERR_MISSING_CLAIMS,
+            log_detail=f"sub={bool(sub)} email={bool(email)}",
             extra={
                 "event": "oidc.missing_claims",
                 "sub": sub,
@@ -304,10 +318,6 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         "and 'profile', and that the provider's "
                         "scopes_supported includes them.",
             },
-        )
-        return _oidc_callback_error(
-            _OIDC_ERR_MISSING_CLAIMS,
-            log_detail=f"sub={bool(sub)} email={bool(email)}",
         )
 
     # Resolve role from IdP groups — None means no group matched a mapping
@@ -365,18 +375,15 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
     else:
         # Existing user — reject if already linked to a *different* OIDC identity
         if user.oidc_subject and user.oidc_subject != sub:
-            logger.warning(
-                "OIDC subject mismatch for email-matched user",
+            return _oidc_callback_error(
+                _OIDC_ERR_SUBJECT_MISMATCH,
+                log_detail=f"email={email} existing_sub≠incoming_sub",
                 extra={
                     "event": "oidc.subject_mismatch",
                     "email": email,
                     "existing_sub": user.oidc_subject,
                     "incoming_sub": sub,
                 },
-            )
-            return _oidc_callback_error(
-                _OIDC_ERR_SUBJECT_MISMATCH,
-                log_detail=f"email={email} existing_sub≠incoming_sub",
             )
         if not user.oidc_subject:
             user.oidc_subject = sub
