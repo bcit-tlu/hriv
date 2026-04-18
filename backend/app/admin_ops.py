@@ -1032,10 +1032,13 @@ def _extract_and_restore(
 
     try:
         if tasks_src.exists():
-            os.rename(str(tasks_src), str(tasks_shelter))
+            # shutil.move falls back to copy+delete across filesystems; the
+            # tmpdir may live on a different device than data_dir (e.g. when
+            # /tmp is a tmpfs), which would trip os.rename with EXDEV.
+            shutil.move(str(tasks_src), str(tasks_shelter))
 
         if data_path.exists():
-            os.rename(str(data_path), str(backup_path))
+            shutil.move(str(data_path), str(backup_path))
         os.makedirs(str(data_path), exist_ok=True)
         shutil.copytree(str(extracted), str(data_path), dirs_exist_ok=True)
         # Restore the preserved admin_tasks directory.  The restored archive
@@ -1061,7 +1064,7 @@ def _extract_and_restore(
         if backup_path.exists():
             if data_path.exists():
                 shutil.rmtree(str(data_path), ignore_errors=True)
-            os.rename(str(backup_path), str(data_path))
+            shutil.move(str(backup_path), str(data_path))
         raise
 
     if backup_path.exists():

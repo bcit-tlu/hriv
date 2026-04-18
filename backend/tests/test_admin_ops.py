@@ -850,6 +850,57 @@ async def test_run_files_import_missing_archive() -> None:
     assert "not found" in (task.error_message or "")
 
 
+def test_extract_and_restore_handles_cross_device_tmpdir(tmp_path, monkeypatch) -> None:
+    """``tmpdir`` may live on a different filesystem than ``data_dir``
+    (e.g. when /tmp is a tmpfs and data lives on a PVC). ``os.rename``
+    would raise EXDEV; ``shutil.move`` must fall back to copy+delete.
+    We simulate this by making ``os.rename`` refuse paths that cross the
+    fake device boundary, and verify the import still succeeds."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "old.txt").write_text("old")
+    tasks_sub = data_dir / "admin_tasks"
+    tasks_sub.mkdir()
+    (tasks_sub / "keep.txt").write_text("keep-me")
+
+    staging_src = tmp_path / "src"
+    (staging_src / "tiles").mkdir(parents=True)
+    (staging_src / "tiles" / "t.jpg").write_text("tile")
+    archive = tmp_path / "upload.tar.gz"
+    with tarfile.open(str(archive), "w:gz") as tar:
+        tar.add(str(staging_src), arcname="data")
+
+    tmpdir = tmp_path / "tmp_other_fs"
+    tmpdir.mkdir()
+
+    real_rename = os.rename
+
+    def _cross_device_rename(src: str, dst: str) -> None:
+        # Simulate EXDEV whenever src and dst straddle the data_dir/tmpdir
+        # boundary. Intra-directory renames (used inside shutil.copytree
+        # and friends) still succeed.
+        src_s, dst_s = str(src), str(dst)
+        spans_tmp = (str(tmpdir) in src_s) ^ (str(tmpdir) in dst_s)
+        if spans_tmp:
+            raise OSError(18, "Invalid cross-device link")  # EXDEV
+        real_rename(src_s, dst_s)
+
+    monkeypatch.setattr("app.admin_ops.os.rename", _cross_device_rename)
+
+    result = _extract_and_restore(
+        tmp_archive=str(archive),
+        tmpdir=str(tmpdir),
+        data_dir=str(data_dir),
+        tiles_dir=str(data_dir / "tiles"),
+        source_images_dir=str(data_dir / "source_images"),
+    )
+
+    # admin_tasks sheltering + data swap + restoration all survived EXDEV.
+    assert (data_dir / "tiles" / "t.jpg").read_text() == "tile"
+    assert (data_dir / "admin_tasks" / "keep.txt").read_text() == "keep-me"
+    assert result["tile_files"] >= 1
+
+
 async def test_run_files_import_success(tmp_path) -> None:
     # Create a valid archive
     data_dir = tmp_path / "orig"
