@@ -522,11 +522,14 @@ async def run_db_import(task_id: int) -> None:
                     f"{len(dump['users'])} users, "
                     f"{len(dump.get('source_images', []))} source images."
                 )
+                # Do NOT check_cancelled here — data_session.commit() already
+                # succeeded so the import data is permanently persisted.
+                # Marking the task "cancelled" at this point would be
+                # misleading ("All changes rolled back" when they weren't).
                 await _update_task(
                     status_session, task,
                     status="completed", progress=100,
                     log_line=f"Import complete. {summary}",
-                    check_cancelled=True,
                 )
                 logger.info(
                     "Background DB import completed",
