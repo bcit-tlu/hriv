@@ -324,7 +324,7 @@ async def test_export_database_success() -> None:
     users = [
         SimpleNamespace(
             id=1, name="Admin", email="admin@example.com",
-            password_hash="hashed", role="admin", program_id=None,
+            password_hash="hashed", oidc_subject=None, role="admin", program_id=None,
             last_access=now, metadata_={}, created_at=now, updated_at=now,
         )
     ]
