@@ -10,8 +10,9 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .admin_ops import reconcile_stale_tasks
 from .auth import auth_settings
-from .database import get_db, settings
+from .database import get_async_session, get_db, settings
 from .logging_config import setup_logging
 from .middleware import AuditMiddleware
 from .routers import admin, announcement, auth, bulk_import, categories, images, issues, oidc, programs, upload, users
@@ -93,6 +94,20 @@ async def lifespan(app: FastAPI):
 
     if settings.oidc_enabled:
         await _check_oidc_connectivity()
+
+    # Reconcile admin tasks orphaned by a previous pod crash/rollout so
+    # their concurrency guard doesn't permanently block new imports or
+    # exports.  Stale-timestamp protection keeps multi-replica deployments
+    # safe (sibling pods still writing progress will not be clobbered).
+    try:
+        async with get_async_session()() as session:
+            await reconcile_stale_tasks(session)
+    except Exception as exc:  # pragma: no cover - best effort on startup
+        logger.warning(
+            "Stale admin task reconciliation failed: %s",
+            exc,
+            extra={"event": "admin_task.reconcile_failed", "error": str(exc)},
+        )
 
     yield
     logger.info("Application shutting down", extra={"event": "app.shutdown"})

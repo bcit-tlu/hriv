@@ -15,11 +15,11 @@ import shutil
 import tarfile
 import tempfile
 import threading
-from collections.abc import Callable
-from datetime import datetime, timezone
+from collections.abc import Callable, Iterator
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .database import get_async_session, settings
@@ -49,11 +49,80 @@ def _ensure_tasks_dir() -> str:
     return _TASKS_DIR
 
 
+# Threshold (seconds) after which an in-flight admin task with no
+# ``updated_at`` progress is considered abandoned and eligible for the
+# startup reconciler to mark as ``failed``.  Every task runner writes to
+# ``updated_at`` at least every few seconds via ``_update_task`` (see the
+# verbose archive poller in ``run_files_export`` for example), so 15 min
+# is generously large.  Configurable via env for clusters with unusually
+# long individual checkpoints.
+_STALE_TASK_THRESHOLD_SECONDS = int(
+    os.environ.get("ADMIN_TASK_STALE_SECONDS", "900")
+)
+
+
 # ── Helpers ────────────────────────────────────────────────
 
 
 class TaskCancelled(Exception):
     """Raised when an admin task detects a cancellation request."""
+
+
+async def reconcile_stale_tasks(
+    session: AsyncSession,
+    stale_after_seconds: int = _STALE_TASK_THRESHOLD_SECONDS,
+) -> int:
+    """Mark orphaned in-flight admin tasks as ``failed``.
+
+    A task is considered stale when its status is still ``pending``,
+    ``running`` or ``cancelling`` but its ``updated_at`` timestamp is
+    older than *stale_after_seconds*.  This runs on backend startup so
+    tasks whose runner process died (pod crash, OOM kill, rollout) are
+    cleared up instead of blocking the ``_create_task`` concurrency
+    guard indefinitely.
+
+    The threshold guards against multi-replica deployments: a freshly
+    starting pod will not clobber a task actively running on a sibling
+    pod because that sibling pod is writing progress to ``updated_at``.
+
+    Returns the number of rows updated.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
+    stmt = (
+        update(AdminTask)
+        .where(
+            AdminTask.status.in_(["pending", "running", "cancelling"]),
+            AdminTask.updated_at < cutoff,
+        )
+        .values(
+            status="failed",
+            error_message=(
+                "Task marked as failed on backend startup — no progress "
+                f"update for more than {stale_after_seconds}s; the runner "
+                "likely crashed before it could finalise the task."
+            ),
+            # Core-level ``update()`` skips SQLAlchemy's ``onupdate``
+            # hooks on ``updated_at``; set it explicitly so the row
+            # reflects the reconciliation time rather than the moment
+            # the original runner last wrote progress.
+            updated_at=func.now(),
+        )
+        .returning(AdminTask.id)
+    )
+    result = await session.execute(stmt)
+    ids = [row[0] for row in result.all()]
+    await session.commit()
+    if ids:
+        logger.warning(
+            "Reconciled %d stale admin task(s) to 'failed' on startup",
+            len(ids),
+            extra={
+                "event": "admin_task.reconciled_stale",
+                "task_ids": ids,
+                "stale_after_seconds": stale_after_seconds,
+            },
+        )
+    return len(ids)
 
 
 async def _update_task(
@@ -77,7 +146,7 @@ async def _update_task(
     """
     if check_cancelled:
         await session.refresh(task, attribute_names=["status"])
-        if task.status == "cancelling":
+        if task.status in ("cancelling", "cancelled"):
             raise TaskCancelled("Task cancelled by admin")
 
     if status is not None:
@@ -592,12 +661,41 @@ def _read_file(path: str | None) -> str:
 # ── Filesystem Export ──────────────────────────────────────
 
 
+def _iter_export_files(data_dir: str) -> Iterator[tuple[str, int]]:
+    """Yield ``(absolute_path, size_bytes)`` for every file that would
+    be included in a filesystem export of *data_dir*.
+
+    Mirrors the traversal logic in :func:`_create_tar_file` so callers
+    can pre-compute the total payload size for accurate progress
+    reporting without actually opening the tar archive.
+    """
+    tasks_basename = os.path.basename(_TASKS_DIR)
+    for dirpath, dirnames, filenames in os.walk(data_dir):
+        rel = os.path.relpath(dirpath, data_dir)
+        top = rel.split(os.sep)[0]
+        if top == tasks_basename:
+            dirnames.clear()
+            continue
+        if tasks_basename in dirnames:
+            dirnames.remove(tasks_basename)
+        for fname in filenames:
+            fpath = os.path.join(dirpath, fname)
+            try:
+                size = os.path.getsize(fpath)
+            except OSError:
+                # Symlink to missing target, race with deletion, etc.
+                # Skip silently — the archive will either include a
+                # zero-byte entry or skip it on its own.
+                continue
+            yield fpath, size
+
+
 def _create_tar_file(
     data_dir: str,
     dest: str,
     *,
     cancel_event: threading.Event | None = None,
-    on_entry: Callable[[str], None] | None = None,
+    on_entry: Callable[[str, int], None] | None = None,
 ) -> None:
     """Write a tar.gz archive of *data_dir* to *dest*.
 
@@ -606,9 +704,10 @@ def _create_tar_file(
     bloat successive filesystem exports.
 
     If *cancel_event* is set while walking the tree, :class:`TaskCancelled`
-    is raised so the caller can abort promptly.  *on_entry* is called with
-    the archive member name for every entry added, giving callers a
-    streaming progress feed.
+    is raised so the caller can abort promptly.  *on_entry* is called
+    as ``on_entry(arcname, size_bytes)`` for every entry added, giving
+    callers both a streaming activity feed and byte counts suitable for
+    progress estimation.  ``size_bytes`` is ``0`` for directory entries.
     """
     tasks_basename = os.path.basename(_TASKS_DIR)
 
@@ -633,15 +732,19 @@ def _create_tar_file(
             arcname = os.path.join("data", rel) if rel != "." else "data"
             tar.add(dirpath, arcname=arcname, recursive=False)
             if on_entry is not None:
-                on_entry(arcname + "/")
+                on_entry(arcname + "/", 0)
 
             for fname in filenames:
                 _check_cancel()
                 fpath = os.path.join(dirpath, fname)
                 arc_fpath = os.path.join(arcname, fname)
+                try:
+                    size = os.path.getsize(fpath)
+                except OSError:
+                    size = 0
                 tar.add(fpath, arcname=arc_fpath)
                 if on_entry is not None:
-                    on_entry(arc_fpath)
+                    on_entry(arc_fpath, size)
 
 
 _LOG_FLUSH_INTERVAL = 2  # seconds between verbose-log DB flushes
@@ -687,31 +790,80 @@ async def run_files_export(task_id: int) -> None:
             tmp.close()
             tmp_name = tmp.name
 
-            await _update_task(session, task, progress=20, log_line="Creating tar.gz archive…", check_cancelled=True)
+            # Pre-walk to sum total bytes so we can report accurate
+            # progress during archiving (the slow phase — without this
+            # the bar sits at 20% for the duration).  Runs in a thread
+            # because walking millions of files is CPU/IO-bound.
+            await _update_task(
+                session, task, progress=15,
+                log_line="Calculating total export size…",
+                check_cancelled=True,
+            )
+            total_bytes = await asyncio.to_thread(
+                lambda: sum(sz for _p, sz in _iter_export_files(str(data_dir)))
+            )
+            total_mb = total_bytes / (1024 * 1024)
+            await _update_task(
+                session, task, progress=20,
+                log_line=(
+                    f"Total to archive: {total_mb:.1f} MB. "
+                    "Creating tar.gz archive…"
+                ),
+                check_cancelled=True,
+            )
 
             # -- verbose archive with cancellation support --
             cancel_event = threading.Event()
-            entry_queue: queue.Queue[str] = queue.Queue()
+            entry_queue: queue.Queue[tuple[str, int]] = queue.Queue()
+            bytes_added = 0
 
-            def _on_entry(arcname: str) -> None:
-                entry_queue.put(arcname)
+            def _on_entry(arcname: str, size_bytes: int) -> None:
+                entry_queue.put((arcname, size_bytes))
+
+            # Progress is mapped across 20% → 95% during archiving;
+            # the final 5% is reserved for the post-archive finalise
+            # step (move to tasks_dir + commit).  If ``total_bytes`` is
+            # zero (empty export) we hold progress at 20 to avoid a
+            # divide-by-zero and let the completion step jump to 100.
+            _ARCHIVE_PROGRESS_START = 20
+            _ARCHIVE_PROGRESS_END = 95
 
             async def _flush_and_poll() -> None:
-                """Flush queued entry names to the task log and check for cancellation."""
+                """Flush queued entry names / progress and check for cancellation."""
+                nonlocal bytes_added
                 while True:
                     await asyncio.sleep(_LOG_FLUSH_INTERVAL)
-                    lines: list[str] = []
+                    entries: list[tuple[str, int]] = []
                     while not entry_queue.empty():
                         try:
-                            lines.append(entry_queue.get_nowait())
+                            entries.append(entry_queue.get_nowait())
                         except queue.Empty:
                             break
-                    if lines:
-                        batch = "\n".join(f"  adding {e}" for e in lines)
-                        await _update_task(session, task, log_line=batch)
-                    # Check DB for cancellation request
+                    progress_update: int | None = None
+                    if entries:
+                        bytes_added += sum(sz for _name, sz in entries)
+                        if total_bytes > 0:
+                            span = _ARCHIVE_PROGRESS_END - _ARCHIVE_PROGRESS_START
+                            progress_update = min(
+                                _ARCHIVE_PROGRESS_END,
+                                _ARCHIVE_PROGRESS_START + int(
+                                    span * bytes_added / total_bytes
+                                ),
+                            )
+                        batch = "\n".join(f"  adding {name}" for name, _ in entries)
+                        await _update_task(
+                            session, task,
+                            log_line=batch,
+                            progress=progress_update,
+                        )
+                    # Check DB for cancellation request.  Both
+                    # ``cancelling`` (normal path) and ``cancelled``
+                    # (force-cancel when a previous cancel got stuck)
+                    # must trip the tar thread's cancel_event; otherwise
+                    # the archive continues to completion and this poll
+                    # loop spins forever waiting for it.
                     await session.refresh(task, attribute_names=["status"])
-                    if task.status == "cancelling":
+                    if task.status in ("cancelling", "cancelled"):
                         cancel_event.set()
                         return
 
@@ -757,14 +909,16 @@ async def run_files_export(task_id: int) -> None:
                     raise TaskCancelled("Task cancelled by admin")
             finally:
                 # Flush any remaining queued entries
-                remaining: list[str] = []
+                remaining: list[tuple[str, int]] = []
                 while not entry_queue.empty():
                     try:
                         remaining.append(entry_queue.get_nowait())
                     except queue.Empty:
                         break
                 if remaining:
-                    batch = "\n".join(f"  adding {e}" for e in remaining)
+                    batch = "\n".join(
+                        f"  adding {name}" for name, _size in remaining
+                    )
                     await _update_task(session, task, log_line=batch)
 
             try:

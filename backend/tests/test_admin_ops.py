@@ -16,10 +16,12 @@ from app.admin_ops import (
     _create_tar_file,
     _ensure_tasks_dir,
     _extract_and_restore,
+    _iter_export_files,
     _parse_dt,
     _read_file,
     _update_task,
     _write_file,
+    reconcile_stale_tasks,
     run_db_export,
     run_db_import,
     run_files_export,
@@ -162,15 +164,24 @@ def test_create_tar_file_on_entry_reports_members(tmp_path) -> None:
     (tiles / "b.jpg").write_text("b")
 
     dest = str(tmp_path / "out.tar.gz")
-    entries: list[str] = []
+    entries: list[tuple[str, int]] = []
 
     with patch("app.admin_ops._TASKS_DIR", str(data_dir / "admin_tasks")):
-        _create_tar_file(str(data_dir), dest, on_entry=entries.append)
+        _create_tar_file(
+            str(data_dir), dest,
+            on_entry=lambda name, size: entries.append((name, size)),
+        )
 
-    assert any(e.endswith("a.jpg") for e in entries)
-    assert any(e.endswith("b.jpg") for e in entries)
+    names = [n for n, _ in entries]
+    assert any(n.endswith("a.jpg") for n in names)
+    assert any(n.endswith("b.jpg") for n in names)
     # Directory entries should end with /
-    assert any(e.endswith("/") for e in entries)
+    assert any(n.endswith("/") for n in names)
+    # File entries report their size; directory entries report 0.
+    file_sizes = {n: s for n, s in entries if not n.endswith("/")}
+    assert file_sizes and all(s >= 1 for s in file_sizes.values())
+    dir_sizes = [s for n, s in entries if n.endswith("/")]
+    assert dir_sizes and all(s == 0 for s in dir_sizes)
 
 
 def test_create_tar_file_excludes_admin_tasks(tmp_path) -> None:
@@ -187,7 +198,10 @@ def test_create_tar_file_excludes_admin_tasks(tmp_path) -> None:
     entries: list[str] = []
 
     with patch("app.admin_ops._TASKS_DIR", str(tasks)):
-        _create_tar_file(str(data_dir), dest, on_entry=entries.append)
+        _create_tar_file(
+            str(data_dir), dest,
+            on_entry=lambda name, _size: entries.append(name),
+        )
 
     assert not any("admin_tasks" in e for e in entries)
     with tarfile.open(dest, "r:gz") as tar:
@@ -206,7 +220,7 @@ def test_create_tar_file_cancel_event_aborts(tmp_path) -> None:
     cancel = threading.Event()
     entries: list[str] = []
 
-    def _on_entry(name: str) -> None:
+    def _on_entry(name: str, _size: int) -> None:
         entries.append(name)
         if len(entries) >= 3:
             cancel.set()
@@ -295,6 +309,64 @@ async def test_update_task_check_cancelled_passes_when_running() -> None:
 
     assert task.progress == 60
     assert "next step" in task.log
+
+
+async def test_reconcile_stale_tasks_marks_stale_as_failed() -> None:
+    """Stale in-flight tasks are updated to ``failed`` and ids are returned."""
+    session = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.all = MagicMock(return_value=[(2,), (5,)])
+    session.execute = AsyncMock(return_value=exec_result)
+    session.commit = AsyncMock()
+
+    count = await reconcile_stale_tasks(session, stale_after_seconds=900)
+
+    assert count == 2
+    # The reconciler must issue an UPDATE and commit the transaction.
+    assert session.execute.await_count == 1
+    stmt = session.execute.await_args.args[0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "UPDATE admin_tasks" in compiled
+    assert "status='failed'" in compiled.replace(" ", "")
+    assert "'pending'" in compiled and "'running'" in compiled and "'cancelling'" in compiled
+    session.commit.assert_awaited_once()
+
+
+async def test_reconcile_stale_tasks_no_stale_returns_zero() -> None:
+    """When no tasks are stale the reconciler is a no-op counter-wise."""
+    session = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.all = MagicMock(return_value=[])
+    session.execute = AsyncMock(return_value=exec_result)
+    session.commit = AsyncMock()
+
+    count = await reconcile_stale_tasks(session, stale_after_seconds=900)
+
+    assert count == 0
+    session.commit.assert_awaited_once()
+
+
+async def test_update_task_check_cancelled_also_raises_on_cancelled_status() -> None:
+    """A status of ``cancelled`` (force-cancel) also aborts a live runner.
+
+    This guards against the race where an admin force-cancels a stuck
+    task while its original runner is somehow still alive: on the next
+    checkpoint the runner sees the terminal status and exits cleanly
+    rather than overwriting it.
+    """
+    session = AsyncMock()
+    task = SimpleNamespace(
+        status="cancelled", progress=50, log="",
+        result_filename=None, result_path=None, error_message=None,
+    )
+    session.refresh = AsyncMock()
+
+    with pytest.raises(TaskCancelled):
+        await _update_task(
+            session, task,
+            log_line="next step",
+            check_cancelled=True,
+        )
 
 
 # ── run_db_export tests ────────────────────────────────────
@@ -506,6 +578,80 @@ async def test_run_files_export_success(tmp_path) -> None:
     assert task.result_filename.endswith(".tar.gz")
 
 
+def test_iter_export_files_skips_admin_tasks(tmp_path) -> None:
+    """``_iter_export_files`` reports sizes and omits ``admin_tasks``."""
+    data_dir = tmp_path / "data"
+    tiles = data_dir / "tiles"
+    tiles.mkdir(parents=True)
+    (tiles / "a.bin").write_bytes(b"0123456789")  # 10 bytes
+    (tiles / "b.bin").write_bytes(b"xy")          # 2 bytes
+    tasks = data_dir / "admin_tasks"
+    tasks.mkdir()
+    (tasks / "stale.tar.gz").write_bytes(b"A" * 1000)
+
+    with patch("app.admin_ops._TASKS_DIR", str(tasks)):
+        results = list(_iter_export_files(str(data_dir)))
+
+    names = {os.path.basename(p): sz for p, sz in results}
+    assert names == {"a.bin": 10, "b.bin": 2}
+
+
+async def test_run_files_export_reports_byte_progress(tmp_path) -> None:
+    """Progress advances between 20% and 95% as bytes are archived.
+
+    Previously the bar jumped from 20 to 100 when the tar completed,
+    leaving users staring at a stuck progress indicator during the slow
+    archiving phase.  The new pre-walk + per-entry byte accounting
+    should produce at least one intermediate progress update above 20
+    and below 95.
+    """
+    data_dir = tmp_path / "data"
+    tiles = data_dir / "tiles"
+    tiles.mkdir(parents=True)
+    # Write files large enough that the byte-based progress calculation
+    # produces observable motion.
+    for i in range(5):
+        (tiles / f"blob{i}.bin").write_bytes(b"X" * 1024)
+
+    task = SimpleNamespace(
+        id=1, task_type="files_export", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=None, error_message=None,
+    )
+
+    progress_history: list[int] = []
+
+    async def _commit_noop() -> None:
+        progress_history.append(task.progress)
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock(side_effect=_commit_noop)
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    tasks_dir = str(tmp_path / "admin_tasks")
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        # Flush every tick so we capture several intermediate updates
+        # before the archive finishes.
+        patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.0),
+    ):
+        mock_settings.tiles_dir = str(tiles)
+        await run_files_export(1)
+
+    assert task.status == "completed"
+    # We expect at least one progress sample strictly inside the
+    # archiving band (20 < p <= 95) — proof that the bar actually moves
+    # while the tar is being written, not just jumps from 20 → 100.
+    mid_band = [p for p in progress_history if 20 < p <= 95]
+    assert mid_band, f"expected intermediate progress; saw {progress_history}"
+    assert 100 in progress_history
+
+
 async def test_run_files_export_verbose_log(tmp_path) -> None:
     """Verbose archive entries appear in the task log."""
     data_dir = tmp_path / "data"
@@ -571,6 +717,8 @@ async def test_run_files_export_cancellation(tmp_path) -> None:
         import tarfile as _tf
         with _tf.open(dest, "w:gz"):
             pass
+        if on_entry is not None:
+            on_entry("data/probe", 0)
         if cancel_event is not None:
             while not cancel_event.is_set():
                 time.sleep(0.01)
@@ -599,6 +747,72 @@ async def test_run_files_export_cancellation(tmp_path) -> None:
 
     assert task.status == "cancelled"
     assert "cancelled" in task.log.lower()
+
+
+async def test_run_files_export_force_cancelled_during_archive(tmp_path) -> None:
+    """Force-cancel (``cancelled``) detected mid-archive also trips the tar thread.
+
+    Mirrors ``test_run_files_export_cancellation`` but sets the status
+    directly to ``cancelled`` — the force-cancel path added in this PR —
+    to prove that ``_flush_and_poll`` honours it and doesn't hang
+    waiting for a tar thread that will never finish.
+    """
+    import time
+
+    data_dir = tmp_path / "data"
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir(parents=True)
+    (tiles_dir / "f0.txt").write_text("0")
+
+    task = SimpleNamespace(
+        id=1, task_type="files_export", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=None, error_message=None,
+    )
+
+    refresh_count = 0
+
+    async def _refresh(obj, attribute_names=None):
+        nonlocal refresh_count
+        refresh_count += 1
+        if refresh_count >= 6:
+            task.status = "cancelled"  # force-cancel, not "cancelling"
+
+    def _slow_tar(data_dir, dest, *, cancel_event=None, on_entry=None):
+        import tarfile as _tf
+        with _tf.open(dest, "w:gz"):
+            pass
+        if on_entry is not None:
+            on_entry("data/probe", 0)
+        if cancel_event is not None:
+            while not cancel_event.is_set():
+                time.sleep(0.01)
+            raise TaskCancelled("Task cancelled by admin")
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session.refresh = AsyncMock(side_effect=_refresh)
+    mock_session.rollback = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    tasks_dir = str(tmp_path / "admin_tasks")
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.05),
+        patch("app.admin_ops._create_tar_file", side_effect=_slow_tar),
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        await run_files_export(1)
+
+    # The force-cancel propagates through TaskCancelled handling, which
+    # sets the task to ``cancelled``; whichever terminal state wins the
+    # race, the point is we exited promptly rather than hung.
+    assert task.status == "cancelled"
 
 
 # ── run_files_import tests ─────────────────────────────────

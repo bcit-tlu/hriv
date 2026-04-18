@@ -67,6 +67,24 @@ export default function AdminPage() {
 
   const pollRefs = useRef(new Map<number, ReturnType<typeof setTimeout>>())
 
+  // Log viewer auto-scroll: the pre element that holds the streaming
+  // task log, and a sticky-bottom flag that pauses auto-scroll if the
+  // user scrolls up to read earlier output and resumes once they scroll
+  // back to the bottom.  Stored in a ref so scrolling doesn't trigger
+  // re-renders on every wheel event.
+  const logBoxRef = useRef<HTMLElement | null>(null)
+  const stickToBottomRef = useRef(true)
+
+  const handleLogScroll = useCallback(() => {
+    const el = logBoxRef.current
+    if (el === null) return
+    // Treat "within 16px of bottom" as still docked — keeps kinetic
+    // scroll/touchpad overshoot from detaching the autoscroll.
+    const distanceFromBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight
+    stickToBottomRef.current = distanceFromBottom <= 16
+  }, [])
+
   // Load task history on mount
   useEffect(() => {
     fetchAdminTasks()
@@ -133,6 +151,27 @@ export default function AdminPage() {
     }
   }, [])
 
+  // Re-dock the log viewer to the bottom whenever a new log panel is
+  // opened so the most recent output is visible immediately.
+  useEffect(() => {
+    if (logTask === null) return
+    stickToBottomRef.current = true
+    const el = logBoxRef.current
+    if (el !== null) {
+      el.scrollTop = el.scrollHeight
+    }
+  }, [logTask?.id])
+
+  // Keep the log pinned to the bottom as new content streams in — but
+  // only when the user hasn't scrolled up to read older lines.
+  useEffect(() => {
+    if (!stickToBottomRef.current) return
+    const el = logBoxRef.current
+    if (el !== null) {
+      el.scrollTop = el.scrollHeight
+    }
+  }, [logTask?.log])
+
   // ── Kick-off helpers ─────────────────────────────────────
 
   const kickOff = useCallback(
@@ -181,8 +220,24 @@ export default function AdminPage() {
     setActiveTasks((prev) => prev.filter((t) => t.id !== taskId))
   }
 
-  // Request cancellation of a running/pending task
-  const handleCancel = async (taskId: number) => {
+  // Request cancellation of a running/pending task, or force-cancel a
+  // task already stuck in ``cancelling`` (same endpoint — backend
+  // transitions ``cancelling`` → ``cancelled`` when called a second
+  // time).  ``force`` only controls the confirmation prompt; destructive
+  // enough to warrant one because it abandons any in-flight cleanup.
+  const handleCancel = async (taskId: number, force = false) => {
+    if (
+      force &&
+      !window.confirm(
+        'Force-cancel this task?\n\n' +
+          'The runner appears to be stuck. Marking it as cancelled will ' +
+          'abandon any in-flight cleanup and unblock new tasks of the ' +
+          'same type. Only do this if you are sure the task is no longer ' +
+          'making progress.',
+      )
+    ) {
+      return
+    }
     try {
       const updated = await cancelAdminTask(taskId)
       setActiveTasks((prev) =>
@@ -193,7 +248,7 @@ export default function AdminPage() {
       )
       if (logTask?.id === taskId) setLogTask(updated)
     } catch {
-      setError('Failed to cancel task')
+      setError(force ? 'Failed to force-cancel task' : 'Failed to cancel task')
     }
   }
 
@@ -225,7 +280,7 @@ export default function AdminPage() {
           sx={{ mb: 2 }}
           action={
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              {task.status !== 'cancelling' && (
+              {task.status !== 'cancelling' ? (
                 <Button
                   size="small"
                   color="warning"
@@ -233,6 +288,15 @@ export default function AdminPage() {
                   onClick={() => handleCancel(task.id)}
                 >
                   Cancel
+                </Button>
+              ) : (
+                <Button
+                  size="small"
+                  color="error"
+                  startIcon={<CancelIcon />}
+                  onClick={() => handleCancel(task.id, true)}
+                >
+                  Force cancel
                 </Button>
               )}
               <Link
@@ -437,6 +501,16 @@ export default function AdminPage() {
                     <CancelIcon fontSize="small" />
                   </IconButton>
                 )}
+                {task.status === 'cancelling' && (
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() => handleCancel(task.id, true)}
+                    title="Force cancel (runner appears stuck)"
+                  >
+                    <CancelIcon fontSize="small" />
+                  </IconButton>
+                )}
                 {task.status === 'completed' && task.result_filename && (
                   <IconButton
                     size="small"
@@ -573,6 +647,9 @@ export default function AdminPage() {
               </Typography>
               <Box
                 component="pre"
+                ref={logBoxRef}
+                onScroll={handleLogScroll}
+                data-testid="admin-task-log"
                 sx={{
                   p: 2,
                   bgcolor: 'grey.900',
@@ -597,6 +674,15 @@ export default function AdminPage() {
                   onClick={() => handleCancel(logTask.id)}
                 >
                   Cancel
+                </Button>
+              )}
+              {logTask.status === 'cancelling' && (
+                <Button
+                  color="error"
+                  startIcon={<CancelIcon />}
+                  onClick={() => handleCancel(logTask.id, true)}
+                >
+                  Force cancel
                 </Button>
               )}
               {logTask.status === 'completed' && logTask.result_filename && (
