@@ -1038,7 +1038,12 @@ def _extract_and_restore(
             shutil.move(str(tasks_src), str(tasks_shelter))
 
         if data_path.exists():
-            shutil.move(str(data_path), str(backup_path))
+            # ``backup_path`` is ``data_path.with_name(...)`` so they are
+            # always siblings on the same filesystem — ``os.rename`` is
+            # sufficient here. Using ``shutil.move`` would be unsafe in
+            # the rollback path below because its "if dst is a directory,
+            # move src inside it" fallback could silently nest the backup.
+            os.rename(str(data_path), str(backup_path))
         os.makedirs(str(data_path), exist_ok=True)
         shutil.copytree(str(extracted), str(data_path), dirs_exist_ok=True)
         # Restore the preserved admin_tasks directory.  The restored archive
@@ -1064,7 +1069,15 @@ def _extract_and_restore(
         if backup_path.exists():
             if data_path.exists():
                 shutil.rmtree(str(data_path), ignore_errors=True)
-            shutil.move(str(backup_path), str(data_path))
+            # Use ``os.rename`` — never ``shutil.move`` — for the rollback.
+            # ``shutil.rmtree(..., ignore_errors=True)`` above may leave
+            # ``data_path`` behind (permission issues, file locks). With
+            # ``shutil.move`` that would silently nest the backup inside
+            # the leftover directory, consuming ``backup_path`` and
+            # leaving no recoverable copy. ``os.rename`` instead fails
+            # loudly ("Directory not empty") and preserves ``backup_path``
+            # so an operator can recover manually.
+            os.rename(str(backup_path), str(data_path))
         raise
 
     if backup_path.exists():
