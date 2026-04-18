@@ -18,12 +18,33 @@ import VisibilityOff from "@mui/icons-material/VisibilityOff";
 import Tooltip from "@mui/material/Tooltip";
 import AnnouncementBanner from "./AnnouncementBanner";
 import { fetchOidcEnabled, getOidcLoginUrl } from "../api";
+import { useAuth } from "../useAuth";
 import { useColorMode } from "../useColorMode";
 
 interface LoginScreenProps {
     onLogin: (email: string, password: string) => Promise<void>;
     announcement?: string;
 }
+
+// Map short, stable error codes returned by the backend OIDC callback
+// to user-facing messages. Keep the set in sync with the constants in
+// ``backend/app/routers/oidc.py``. Unknown codes fall through to a
+// generic message so a future backend addition never leaves the user
+// with a blank alert.
+const OIDC_ERROR_MESSAGES: Record<string, string> = {
+    client_misconfigured:
+        "Single sign-on is misconfigured. Please contact an administrator.",
+    provider_unreachable:
+        "The identity provider is currently unreachable. Please try again in a moment.",
+    token_exchange_failed:
+        "We couldn't complete sign-in with the identity provider. Please try again.",
+    userinfo_failed:
+        "We couldn't read your profile from the identity provider. Please try again.",
+    missing_claims:
+        "Your account is missing required information from the identity provider. Please contact an administrator.",
+    subject_mismatch:
+        "This email is already linked to a different identity. Please contact an administrator.",
+};
 
 export default function LoginScreen({
     onLogin,
@@ -38,12 +59,18 @@ export default function LoginScreen({
     const [showLocalForm, setShowLocalForm] = useState(false);
     const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
     const { mode, toggleMode } = useColorMode();
+    const { oidcError, clearOidcError } = useAuth();
 
     useEffect(() => {
         fetchOidcEnabled()
             .then((res) => setOidcEnabled(res.enabled))
             .catch(() => setOidcEnabled(false));
     }, []);
+
+    const oidcErrorMessage = oidcError
+        ? (OIDC_ERROR_MESSAGES[oidcError] ??
+          "Sign-in failed. Please try again.")
+        : null;
 
     const handleOidcLogin = () => {
         window.location.href = getOidcLoginUrl();
@@ -139,6 +166,16 @@ export default function LoginScreen({
                             High Resolution Image Viewer (HRIV) Login
                         </Typography>
                     </Box>
+
+                    {oidcErrorMessage && (
+                        <Alert
+                            severity="error"
+                            onClose={clearOidcError}
+                            sx={{ mb: 2 }}
+                        >
+                            {oidcErrorMessage}
+                        </Alert>
+                    )}
 
                     {showOidcDefault ? (
                         /* ── OIDC-primary view ─────────────────── */

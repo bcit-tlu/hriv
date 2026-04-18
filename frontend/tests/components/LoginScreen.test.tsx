@@ -27,7 +27,19 @@ vi.mock('../../src/api', () => ({
   getOidcLoginUrl: vi.fn(() => '/api/auth/oidc/login'),
 }))
 
+// LoginScreen reads the OIDC error code from useAuth; stub the hook so
+// these tests don't need an AuthProvider wrapper. Individual tests that
+// care about the error path override the return value before rendering.
+const mockClearOidcError = vi.fn()
+vi.mock('../../src/useAuth', () => ({
+  useAuth: vi.fn(() => ({
+    oidcError: null,
+    clearOidcError: mockClearOidcError,
+  })),
+}))
+
 import { fetchOidcEnabled } from '../../src/api'
+import { useAuth } from '../../src/useAuth'
 
 // ---------------------------------------------------------------------------
 // Helpers — use placeholders to find MUI TextFields since MUI required labels
@@ -76,6 +88,12 @@ async function renderOidcEnabled(props: { onLogin?: () => Promise<void>; announc
 describe('LoginScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Reset useAuth to its default (no error) between tests so the
+    // OIDC error branch is opt-in per test.
+    vi.mocked(useAuth).mockReturnValue({
+      oidcError: null,
+      clearOidcError: mockClearOidcError,
+    } as unknown as ReturnType<typeof useAuth>)
   })
 
   // ─── OIDC disabled ─────────────────────────────────────────────────
@@ -238,6 +256,51 @@ describe('LoginScreen', () => {
         expect(getUsernameField()).toBeInTheDocument()
       })
       expect(screen.queryByRole('button', { name: /Sign in with BCIT/i })).not.toBeInTheDocument()
+    })
+  })
+
+  // ─── OIDC error banner ────────────────────────────────────────────
+
+  describe('when the OIDC callback returned an error', () => {
+    function renderWithOidcError(code: string | null) {
+      vi.mocked(useAuth).mockReturnValue({
+        oidcError: code,
+        clearOidcError: mockClearOidcError,
+      } as unknown as ReturnType<typeof useAuth>)
+      vi.mocked(fetchOidcEnabled).mockResolvedValue({ enabled: true })
+      return render(<LoginScreen onLogin={vi.fn()} />)
+    }
+
+    it('renders a user-facing message for a known error code', async () => {
+      renderWithOidcError('subject_mismatch')
+      expect(
+        await screen.findByText(/already linked to a different identity/i),
+      ).toBeInTheDocument()
+    })
+
+    it('falls back to a generic message for an unknown code', async () => {
+      renderWithOidcError('some_future_code')
+      expect(
+        await screen.findByText(/Sign-in failed\. Please try again\./i),
+      ).toBeInTheDocument()
+    })
+
+    it('dismisses the banner by calling clearOidcError', async () => {
+      const user = userEvent.setup()
+      renderWithOidcError('provider_unreachable')
+      const closeBtn = await screen.findByRole('button', { name: /close/i })
+      await user.click(closeBtn)
+      expect(mockClearOidcError).toHaveBeenCalledTimes(1)
+    })
+
+    it('renders nothing when oidcError is null', async () => {
+      renderWithOidcError(null)
+      await waitFor(() => {
+        expect(fetchOidcEnabled).toHaveBeenCalled()
+      })
+      expect(
+        screen.queryByText(/already linked to a different identity/i),
+      ).not.toBeInTheDocument()
     })
   })
 })

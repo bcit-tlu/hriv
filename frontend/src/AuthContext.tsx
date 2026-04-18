@@ -36,6 +36,16 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<User[]>([])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  // Read the OIDC error code (if any) from the URL fragment synchronously
+  // during initial render. This avoids calling ``setState`` inside a
+  // ``useEffect`` (which the react-hooks/set-state-in-effect rule flags
+  // as a cascading render). The effect below is responsible for
+  // stripping the fragment from the URL — no state update required
+  // since the initial value is already captured here.
+  const [oidcError, setOidcError] = useState<string | null>(() => {
+    const params = new URLSearchParams(_initialHash)
+    return params.get('oidc_error')
+  })
 
   // On mount, try to restore session from stored token by fetching users
   // If the token is invalid the API will 401 and we clear it
@@ -55,20 +65,37 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // On mount, check for an OIDC token in the URL fragment (returned after
-  // IdP callback).  A fragment (#) is used instead of a query parameter so
-  // the JWT never appears in server access logs.
+  // On mount, check the URL fragment (returned after an IdP callback)
+  // for either the success JWT (``oidc_token``) or an error code
+  // (``oidc_error``). A fragment is used for both so neither lands in
+  // server access logs. Whichever arrives, we strip it from the URL
+  // afterwards so it can't be bookmarked, shared, or replayed. The
+  // error code itself is captured in the ``oidcError`` state initializer
+  // above; here we only handle side effects (persisting the token,
+  // logging, and URL cleanup).
   useEffect(() => {
     const params = new URLSearchParams(_initialHash)
     const oidcToken = params.get('oidc_token')
+    const oidcErr = params.get('oidc_error')
     if (oidcToken) {
       setToken(oidcToken)
-      // Remove the token from the URL so it is not bookmarked or shared
       params.delete('oidc_token')
+    }
+    if (oidcErr) {
+      // Log the raw code for developer debugging; LoginScreen maps the
+      // code to a user-facing message.
+      console.warn('OIDC callback returned error:', oidcErr)
+      params.delete('oidc_error')
+    }
+    if (oidcToken || oidcErr) {
       const remaining = params.toString()
       const cleanUrl = window.location.pathname + window.location.search + (remaining ? `#${remaining}` : '')
       window.history.replaceState({}, '', cleanUrl)
     }
+  }, [])
+
+  const clearOidcError = useCallback(() => {
+    setOidcError(null)
   }, [])
 
   // On mount, validate stored token by calling a protected endpoint.
@@ -201,6 +228,8 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         refreshUsers: loadUsers,
         canManageUsers,
         canEditContent,
+        oidcError,
+        clearOidcError,
       }}
     >
       {children}
