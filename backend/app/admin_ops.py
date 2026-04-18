@@ -616,6 +616,7 @@ async def run_files_export(task_id: int) -> None:
             return
 
         filepath: str | None = None
+        tmp_name: str | None = None
         try:
             await _update_task(
                 session, task,
@@ -644,17 +645,20 @@ async def run_files_export(task_id: int) -> None:
             # (_TASKS_DIR lives inside the data directory being archived).
             tmp = tempfile.NamedTemporaryFile(suffix=".tar.gz", delete=False)
             tmp.close()
+            tmp_name = tmp.name
 
             await _update_task(session, task, progress=20, log_line="Creating tar.gz archive (this may take a while)…", check_cancelled=True)
             try:
-                await asyncio.to_thread(_create_tar_file, str(data_dir), tmp.name)
-                shutil.move(tmp.name, filepath)
+                await asyncio.to_thread(_create_tar_file, str(data_dir), tmp_name)
+                shutil.move(tmp_name, filepath)
+                tmp_name = None  # moved successfully; no temp to clean up
             except Exception:
                 # Clean up temp file on failure before re-raising
                 try:
-                    os.unlink(tmp.name)
+                    os.unlink(tmp_name)
                 except OSError:
                     pass
+                tmp_name = None
                 raise
 
             file_size = os.path.getsize(filepath)
@@ -682,12 +686,13 @@ async def run_files_export(task_id: int) -> None:
                 "Background files export cancelled",
                 extra={"event": "admin_task.files_export_cancelled", "task_id": task_id},
             )
-            # Clean up result file if it was already written
-            if filepath and os.path.exists(filepath):
-                try:
-                    os.unlink(filepath)
-                except OSError:
-                    pass
+            # Clean up temp file and/or result file
+            for path in (tmp_name, filepath):
+                if path:
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
             await session.refresh(task)
             await _update_task(
                 session, task,
@@ -700,6 +705,12 @@ async def run_files_export(task_id: int) -> None:
                 "Background files export failed",
                 extra={"event": "admin_task.files_export_failed", "task_id": task_id},
             )
+            # Clean up temp file if it wasn't already handled
+            if tmp_name:
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
             await session.rollback()
             await session.refresh(task)
             await _update_task(
