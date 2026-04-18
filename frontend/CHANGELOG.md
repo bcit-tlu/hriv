@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.3.0...frontend-v0.4.0) (2026-04-18)
+
+
+### Features
+
+* **admin:** auto-scroll log viewer, byte-based export progress, force-cancel fix ([3a4d240](https://github.com/bcit-tlu/hriv/commit/3a4d24095b96f1ad0c6dfef963d24a83c5e702c2))
+* **admin:** expose force-cancel in the UI for tasks stuck in 'cancelling' ([abf8cfe](https://github.com/bcit-tlu/hriv/commit/abf8cfe59f5c5a9f087e6682ecd57b67d7b355f3))
+
 ## [0.3.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.2.0...frontend-v0.3.0) (2026-04-18)
 
 
