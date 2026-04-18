@@ -476,7 +476,7 @@ export default function AdminPage() {
           }}
         >
           <Alert
-            severity={n.task.status === 'completed' ? 'success' : 'error'}
+            severity={n.task.status === 'completed' ? 'success' : n.task.status === 'cancelled' ? 'warning' : 'error'}
             variant="filled"
             sx={{ width: '100%', alignItems: 'center' }}
             onClose={() => dismissNotification(n.id)}
@@ -515,7 +515,7 @@ export default function AdminPage() {
             }
           >
             {TASK_LABELS[n.task.task_type] ?? n.task.task_type}{' '}
-            {n.task.status === 'completed' ? 'completed' : 'failed'}
+            {n.task.status === 'completed' ? 'completed' : n.task.status === 'cancelled' ? 'cancelled' : 'failed'}
             {n.task.error_message ? `: ${n.task.error_message}` : ''}
           </Alert>
         </Snackbar>
