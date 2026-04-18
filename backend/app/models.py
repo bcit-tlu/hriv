@@ -258,3 +258,44 @@ class User(Base):
     )
 
     program_rel: Mapped["Program | None"] = relationship("Program", back_populates="users")
+
+
+class AdminTask(Base):
+    """Tracks long-running admin operations (import/export) executed in the background."""
+
+    __tablename__ = "admin_tasks"
+    __table_args__ = (
+        Index("idx_admin_tasks_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_type: Mapped[str] = mapped_column(
+        String(50), nullable=False,
+    )  # db_export, db_import, files_export, files_import
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="pending",
+        server_default=text("'pending'"),
+    )  # pending, running, completed, failed
+    progress: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0",
+    )
+    log: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=text("''"),
+    )
+    result_filename: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    result_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    input_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(),
+    )
+
+    creator: Mapped["User | None"] = relationship("User")

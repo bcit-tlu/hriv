@@ -88,6 +88,30 @@ async def enqueue_process_source_image(source_image_id: int) -> bool:
         return False
 
 
+async def enqueue_admin_task(task_id: int, task_type: str) -> bool:
+    """Enqueue a background admin task via arq.
+
+    Returns ``True`` if the job was enqueued, ``False`` if Redis is
+    unavailable (caller should fall back to ``BackgroundTasks``).
+    """
+    pool = await get_pool()
+    if pool is None:
+        return False
+    try:
+        await pool.enqueue_job("admin_task_runner", task_id, task_type)
+        return True
+    except Exception:
+        logger.warning(
+            "Failed to enqueue admin task — falling back to BackgroundTasks",
+            extra={
+                "event": "worker.enqueue_admin_failed",
+                "task_id": task_id,
+                "task_type": task_type,
+            },
+        )
+        return False
+
+
 # ── arq task functions ────────────────────────────────────
 
 async def process_source_image_task(ctx: dict[str, Any], source_image_id: int) -> None:
@@ -106,6 +130,36 @@ async def process_source_image_task(ctx: dict[str, Any], source_image_id: int) -
     await process_source_image(source_image_id)
 
 
+async def admin_task_runner(ctx: dict[str, Any], task_id: int, task_type: str) -> None:
+    """arq task wrapper for background admin import/export operations."""
+    from .admin_ops import run_db_export, run_db_import, run_files_export, run_files_import
+
+    runners = {
+        "db_export": run_db_export,
+        "db_import": run_db_import,
+        "files_export": run_files_export,
+        "files_import": run_files_import,
+    }
+    runner = runners.get(task_type)
+    if runner is None:
+        logger.error(
+            "Unknown admin task type: %s",
+            task_type,
+            extra={"event": "worker.unknown_admin_task", "task_id": task_id},
+        )
+        return
+
+    logger.info(
+        "arq worker running admin task",
+        extra={
+            "event": "worker.admin_task_started",
+            "task_id": task_id,
+            "task_type": task_type,
+        },
+    )
+    await runner(task_id)
+
+
 # ── arq lifecycle hooks ───────────────────────────────────
 
 
@@ -120,8 +174,8 @@ async def on_startup(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """Configuration class consumed by ``arq worker``."""
 
-    functions = [process_source_image_task]
+    functions = [process_source_image_task, admin_task_runner]
     redis_settings = _parse_redis_settings()
     on_startup = on_startup
     max_jobs = 4  # Match the existing _MAX_CONCURRENCY
-    job_timeout = 600  # 10 minutes — large TIFFs can take a while
+    job_timeout = 1800  # 30 minutes — filesystem archives can be very large

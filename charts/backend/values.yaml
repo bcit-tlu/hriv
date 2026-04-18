@@ -103,6 +103,10 @@ persistence:
     enabled: true
     storageClass: longhorn
     size: 10Gi
+    # ReadWriteOnce is fine for single-replica dev/staging.
+    # Production with replicaCount > 1 MUST use ReadWriteMany so that
+    # background admin task result files written by one pod are accessible
+    # from every other pod's download endpoint.
     accessModes:
         - ReadWriteOnce
 

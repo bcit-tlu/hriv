@@ -528,33 +528,29 @@ export function reportIssue(body: {
   })
 }
 
-// ── Admin ───────────────────────────────────────────────
+// ── Background Admin Tasks ──────────────────────────────
 
-export function exportDatabase(): Promise<void> {
-  const url = `${BASE}/api/admin/export`
-  return fetch(url, { headers: authHeaders() })
-    .then((res) => {
-      if (!res.ok) throw new Error(`Export failed: ${res.status}`)
-      return res.blob()
-    })
-    .then((blob) => {
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = 'hriv-export.json'
-      a.click()
-      URL.revokeObjectURL(a.href)
-    })
-}
-
-export interface ImportResult {
+export interface AdminTask {
+  id: number
+  task_type: string
   status: string
-  imported: { programs?: number; categories: number; images: number; users: number; source_images?: number }
+  progress: number
+  log: string
+  result_filename: string | null
+  error_message: string | null
+  created_by: number | null
+  created_at: string | null
+  updated_at: string | null
 }
 
-export async function importDatabase(file: File): Promise<ImportResult> {
+export function startDbExport(): Promise<AdminTask> {
+  return request('/admin/tasks/db-export', { method: 'POST' })
+}
+
+export async function startDbImport(file: File): Promise<AdminTask> {
   const form = new FormData()
   form.append('file', file)
-  const res = await fetch(`${BASE}/api/admin/import`, {
+  const res = await fetch(`${BASE}/api/admin/tasks/db-import`, {
     method: 'POST',
     headers: authHeaders(),
     body: form,
@@ -563,42 +559,46 @@ export async function importDatabase(file: File): Promise<ImportResult> {
     const text = await res.text().catch(() => res.statusText)
     throw new Error(`Import failed: ${text}`)
   }
-  return res.json() as Promise<ImportResult>
+  return res.json() as Promise<AdminTask>
 }
 
-// ── Filesystem Snapshots ────────────────────────────────
-
-export async function exportFiles(): Promise<void> {
-  // Obtain a short-lived download token so we can hand the URL directly
-  // to the browser.  This avoids buffering the entire archive in JS memory
-  // (res.blob()) which would crash on multi-GB datasets.
-  const tokenRes = await fetch(`${BASE}/api/admin/export-files-token`, {
-    method: 'POST',
-    headers: authHeaders(),
-  })
-  if (!tokenRes.ok) throw new Error(`Failed to obtain download token: ${tokenRes.status}`)
-  const { token } = (await tokenRes.json()) as { token: string }
-
-  // Browser-native download — no JS buffering required
-  window.location.href = `${BASE}/api/admin/export-files?token=${encodeURIComponent(token)}`
+export function startFilesExport(): Promise<AdminTask> {
+  return request('/admin/tasks/files-export', { method: 'POST' })
 }
 
-export interface FilesImportResult {
-  status: string
-  restored: { tile_files: number; source_files: number }
-}
-
-export async function importFiles(file: File): Promise<FilesImportResult> {
+export async function startFilesImport(file: File): Promise<AdminTask> {
   const form = new FormData()
   form.append('file', file)
-  const res = await fetch(`${BASE}/api/admin/import-files`, {
+  const res = await fetch(`${BASE}/api/admin/tasks/files-import`, {
     method: 'POST',
     headers: authHeaders(),
     body: form,
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new Error(`File import failed: ${text}`)
+    throw new Error(`Import failed: ${text}`)
   }
-  return res.json() as Promise<FilesImportResult>
+  return res.json() as Promise<AdminTask>
+}
+
+export function fetchAdminTasks(): Promise<AdminTask[]> {
+  return request('/admin/tasks')
+}
+
+export function fetchAdminTask(taskId: number): Promise<AdminTask> {
+  return request(`/admin/tasks/${taskId}`)
+}
+
+export function cancelAdminTask(taskId: number): Promise<AdminTask> {
+  return request(`/admin/tasks/${taskId}/cancel`, { method: 'POST' })
+}
+
+export async function downloadAdminTaskResult(taskId: number): Promise<void> {
+  // Obtain a short-lived download token, then navigate the browser to the
+  // token-authenticated download URL (no JS buffering needed).
+  const { token } = await request<{ token: string }>(
+    `/admin/tasks/${taskId}/download-token`,
+    { method: 'POST' },
+  )
+  window.location.href = `${BASE}/api/admin/tasks/${taskId}/download?token=${encodeURIComponent(token)}`
 }
