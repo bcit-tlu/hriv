@@ -29,11 +29,23 @@ env:
 # Volume mounts backed by ConfigMaps.  Each entry creates a ConfigMap
 # resource and is mounted into the container at the given mountPath.
 # Override the nginx config at deploy time without rebuilding the image.
+#
+# NOTE: The nginx config below must stay byte-for-byte in sync with
+# `frontend/nginx.conf.template` (the Docker-image fallback copy).
+# A CI check runs `scripts/check_nginx_configs_in_sync.py` on every
+# push and fails the build if the two copies drift.  See issue #37.
 configMounts:
     - name: nginx-config
       mountPath: /etc/nginx/templates
       data:
           default.conf.template: |-
+              ##
+              ## NOTE: This file must stay byte-for-byte in sync with the inline
+              ## ConfigMap template in `charts/frontend/values.yaml`
+              ## (`configMounts[0].data."default.conf.template"`).  A CI check runs
+              ## `scripts/check_nginx_configs_in_sync.py` on every push and fails the
+              ## build if the two copies drift.  See issue #37.
+              ##
               server {
                   listen       8080;
                   server_name  _;
@@ -76,14 +88,30 @@ configMounts:
                       proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
                       proxy_set_header   X-Forwarded-Proto $scheme;
 
-                      # Allow large image uploads (high-res pathology TIFFs can be
-                      # hundreds of megabytes).  0 = unlimited.
-                      client_max_body_size 0;
+                      # Default request-body cap for the API surface. Only the upload
+                      # endpoints below lift this to "unlimited"; every other route
+                      # (login, metadata PATCH/POST, admin actions, etc.) must stay
+                      # capped so a malicious or buggy client cannot stream
+                      # arbitrarily large payloads at non-upload handlers.
+                      client_max_body_size 10m;
 
                       # Extend timeouts for slow uploads / large tile-generation responses.
                       proxy_read_timeout    600s;
                       proxy_send_timeout    600s;
                       proxy_connect_timeout 60s;
+
+                      # Upload endpoints (unlimited body size). Nested prefix
+                      # locations inherit proxy_pass / headers / timeouts from the
+                      # enclosing /api/ block; only client_max_body_size is overridden.
+                      #
+                      # - /api/source-images/upload        single high-res TIFF/SVS
+                      # - /api/admin/bulk-import           multi-file bulk ingest
+                      # - /api/admin/tasks/db-import       admin DB JSON import
+                      # - /api/admin/tasks/files-import    admin tar.gz filesystem import
+                      location = /api/source-images/upload  { client_max_body_size 0; }
+                      location  /api/admin/bulk-import      { client_max_body_size 0; }
+                      location  /api/admin/tasks/db-import  { client_max_body_size 0; }
+                      location  /api/admin/tasks/files-import { client_max_body_size 0; }
                   }
 
                   # ── SPA fallback ─────────────────────────────────────
