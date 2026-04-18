@@ -672,6 +672,25 @@ async def _create_task(
     user: User,
     input_path: str | None = None,
 ) -> AdminTask:
+    # Reject if a task of the same type is already pending or running
+    existing = (
+        await db.execute(
+            select(AdminTask).where(
+                AdminTask.task_type == task_type,
+                AdminTask.status.in_(["pending", "running", "cancelling"]),
+            )
+        )
+    ).scalars().first()
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"A {task_type.replace('_', ' ')} task is already "
+                f"{existing.status} (task #{existing.id}). "
+                "Please wait for it to finish or cancel it first."
+            ),
+        )
+
     task = AdminTask(
         task_type=task_type,
         status="pending",
