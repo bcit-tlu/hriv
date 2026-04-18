@@ -909,14 +909,16 @@ async def run_files_export(task_id: int) -> None:
                     raise TaskCancelled("Task cancelled by admin")
             finally:
                 # Flush any remaining queued entries
-                remaining: list[str] = []
+                remaining: list[tuple[str, int]] = []
                 while not entry_queue.empty():
                     try:
                         remaining.append(entry_queue.get_nowait())
                     except queue.Empty:
                         break
                 if remaining:
-                    batch = "\n".join(f"  adding {e}" for e in remaining)
+                    batch = "\n".join(
+                        f"  adding {name}" for name, _size in remaining
+                    )
                     await _update_task(session, task, log_line=batch)
 
             try:
