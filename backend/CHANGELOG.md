@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.4.1...backend-v0.5.0) (2026-04-18)
+
+
+### Features
+
+* **admin:** auto-scroll log viewer, byte-based export progress, force-cancel fix ([3a4d240](https://github.com/bcit-tlu/hriv/commit/3a4d24095b96f1ad0c6dfef963d24a83c5e702c2))
+
+
+### Bug Fixes
+
+* **admin:** allow force-cancel and reconcile orphaned admin tasks on startup ([f6b5434](https://github.com/bcit-tlu/hriv/commit/f6b5434f421f6b348827ec5c07c97daefb708e56))
+* **admin:** format leftover queue entries as 'adding &lt;name&gt;' not tuples ([6e4a774](https://github.com/bcit-tlu/hriv/commit/6e4a774c91965968c1778ec2e901e7f16af6b099))
+
 ## [0.4.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.4.0...backend-v0.4.1) (2026-04-18)
 
 
