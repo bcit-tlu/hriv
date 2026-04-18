@@ -81,10 +81,8 @@ def _extract_block_scalar(yaml_text: str, sentinel: str) -> Optional[str]:
     if base_indent is None:
         return ""
 
-    # ``|-`` strips the final trailing newline; emulate that.
-    text = "\n".join(scalar_lines)
-    # Strip only the single trailing newline, not any internal blank
-    # lines that happen to fall at the end.
+    # ``|-`` strips the final trailing newline; emulate that by popping
+    # any trailing blank lines before re-joining.
     while scalar_lines and scalar_lines[-1] == "":
         scalar_lines.pop()
     return "\n".join(scalar_lines) + "\n"
