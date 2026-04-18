@@ -91,6 +91,22 @@ describe('ConfirmImportDialog', () => {
     expect(screen.getByText('2.0 MB')).toBeInTheDocument()
   })
 
+  it.each<[number, string]>([
+    [0, '0 B'],
+    [1, '1 B'],
+    [1023, '1023 B'],
+    [1024, '1.0 KB'],
+    [10189, '10 KB'], // under 10 → round to 10, then no decimal
+    [1048064, '1.0 MB'], // near KB→MB boundary, must promote
+    [1048575, '1.0 MB'], // just below 1 MiB, must promote
+    [1048576, '1.0 MB'],
+    [2 * 1024 * 1024, '2.0 MB'],
+    [1024 * 1024 * 1024, '1.0 GB'],
+  ])('formats %d bytes as %s', (size, expected) => {
+    renderDialog({ file: makeFile('x', size) })
+    expect(screen.getByText(expected)).toBeInTheDocument()
+  })
+
   it('keeps the confirm button disabled until the backup checkbox is ticked', async () => {
     const user = userEvent.setup()
     renderDialog()

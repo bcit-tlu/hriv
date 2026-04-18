@@ -49,7 +49,18 @@ function formatBytes(n: number): string {
     v /= 1024
     i += 1
   }
-  return `${v.toFixed(v >= 10 ? 0 : 1)} ${units[i]}`
+  // Round to the number of decimal places we intend to show *before*
+  // checking against the next unit boundary. Otherwise a value like
+  // 1,048,575 B (v = 1023.999… KB) renders as "1024 KB" because
+  // ``toFixed(1)`` rounds up past the KB→MB boundary after the unit has
+  // already been chosen. Doing the rounding first lets us promote to
+  // the next unit when the rounded value crosses 1024.
+  const rounded = v >= 10 ? Math.round(v) : Math.round(v * 10) / 10
+  if (rounded >= 1024 && i < units.length - 1) {
+    const promoted = rounded / 1024
+    return `${promoted >= 10 ? Math.round(promoted) : (Math.round(promoted * 10) / 10).toFixed(1)} ${units[i + 1]}`
+  }
+  return `${rounded >= 10 ? rounded.toString() : rounded.toFixed(1)} ${units[i]}`
 }
 
 export default function ConfirmImportDialog(props: ConfirmImportDialogProps) {
