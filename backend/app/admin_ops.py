@@ -759,13 +759,13 @@ def _extract_and_restore(
     tasks_basename = os.path.basename(_TASKS_DIR)
     tasks_src = data_path / tasks_basename
     tasks_shelter = Path(tmpdir) / tasks_basename
-    if tasks_src.exists():
-        os.rename(str(tasks_src), str(tasks_shelter))
-
-    if data_path.exists():
-        os.rename(str(data_path), str(backup_path))
 
     try:
+        if tasks_src.exists():
+            os.rename(str(tasks_src), str(tasks_shelter))
+
+        if data_path.exists():
+            os.rename(str(data_path), str(backup_path))
         os.makedirs(str(data_path), exist_ok=True)
         shutil.copytree(str(extracted), str(data_path), dirs_exist_ok=True)
         # Restore the preserved admin_tasks directory.  The restored archive
