@@ -96,6 +96,42 @@ def test_extract_and_restore(tmp_path) -> None:
     assert result["source_files"] >= 1
 
 
+def test_extract_and_restore_preserves_admin_tasks(tmp_path) -> None:
+    """admin_tasks/ inside the data dir must survive a filesystem restore."""
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir()
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir()
+    (tiles_dir / "tile1.jpeg").write_text("tile data")
+    (source_dir / "src1.tiff").write_text("source data")
+
+    # Simulate an existing admin_tasks dir with a prior export result
+    tasks_dir = data_dir / "admin_tasks"
+    tasks_dir.mkdir()
+    (tasks_dir / "prior-export.json").write_text('{"old": true}')
+
+    archive = str(tmp_path / "test.tar.gz")
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(str(data_dir), arcname="data")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        result = _extract_and_restore(
+            archive,
+            tmpdir,
+            str(data_dir),
+            str(tiles_dir),
+            str(source_dir),
+        )
+
+    assert result["tile_files"] >= 1
+    # admin_tasks dir and its contents must still exist
+    assert tasks_dir.exists()
+    assert (tasks_dir / "prior-export.json").exists()
+    assert (tasks_dir / "prior-export.json").read_text() == '{"old": true}'
+
+
 def test_extract_and_restore_empty_archive(tmp_path) -> None:
     archive = str(tmp_path / "empty.tar.gz")
     with tarfile.open(archive, "w:gz") as tar:

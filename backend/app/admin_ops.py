@@ -750,13 +750,42 @@ def _extract_and_restore(
         data_path.name + f".bak-{int(datetime.now(timezone.utc).timestamp())}"
     )
 
+    # Preserve admin_tasks directory — it contains result files from prior
+    # export tasks and the input file for this very import.  The archive
+    # won't contain it (exports exclude admin_tasks/), so the swap would
+    # otherwise destroy it.
+    tasks_basename = os.path.basename(_TASKS_DIR)
+    tasks_src = data_path / tasks_basename
+    tasks_shelter = Path(tmpdir) / tasks_basename
+    if tasks_src.exists():
+        os.rename(str(tasks_src), str(tasks_shelter))
+
     if data_path.exists():
         os.rename(str(data_path), str(backup_path))
 
     try:
         os.makedirs(str(data_path), exist_ok=True)
         shutil.copytree(str(extracted), str(data_path), dirs_exist_ok=True)
+        # Restore the preserved admin_tasks directory.  The restored archive
+        # should not contain admin_tasks (exports exclude it), but handle
+        # the edge case where it does by merging.
+        restored_tasks = data_path / tasks_basename
+        if tasks_shelter.exists():
+            if restored_tasks.exists():
+                # Archive unexpectedly contained admin_tasks — merge our
+                # preserved files into it (ours win on conflict).
+                shutil.copytree(str(tasks_shelter), str(restored_tasks), dirs_exist_ok=True)
+                shutil.rmtree(str(tasks_shelter), ignore_errors=True)
+            else:
+                shutil.move(str(tasks_shelter), str(restored_tasks))
     except Exception:
+        # Restore admin_tasks back into backup before rolling back
+        if tasks_shelter.exists():
+            backup_tasks = backup_path / tasks_basename if backup_path.exists() else tasks_src
+            try:
+                shutil.move(str(tasks_shelter), str(backup_tasks))
+            except OSError:
+                pass
         if backup_path.exists():
             if data_path.exists():
                 shutil.rmtree(str(data_path), ignore_errors=True)
