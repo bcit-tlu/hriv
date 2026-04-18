@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.4.0...frontend-v0.5.0) (2026-04-18)
+
+
+### Features
+
+* **admin:** confirm destructive import before firing API call (P18) ([212bc7f](https://github.com/bcit-tlu/hriv/commit/212bc7f3cec68addc9d42499df550db18f1fc8ed))
+
+
+### Bug Fixes
+
+* **admin:** round formatBytes before unit selection to avoid '1024 KB' ([33f729d](https://github.com/bcit-tlu/hriv/commit/33f729d238501536c40f48dba46e73a08e3d501e))
+* **oidc:** redirect to frontend with error codes instead of raw JSON (P20) ([1b56b17](https://github.com/bcit-tlu/hriv/commit/1b56b1742ff793770380a20afec37aa2c5750d99))
+
 ## [0.4.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.3.0...frontend-v0.4.0) (2026-04-18)
 
 
