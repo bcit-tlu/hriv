@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.4.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.3.1...backend-v0.4.0) (2026-04-18)
+
+
+### Features
+
+* add server-side concurrency guard for background admin tasks ([c47b775](https://github.com/bcit-tlu/hriv/commit/c47b775f0dcd4449235bc67c1979b3209588f23d))
+* add task cancellation with cancel button in UI ([1a60d7d](https://github.com/bcit-tlu/hriv/commit/1a60d7dfc79b90de07f7b69510f8e4128d15f339))
+* decouple admin import/export into background tasks with snackbar notifications ([374a197](https://github.com/bcit-tlu/hriv/commit/374a197318125f062b5ee214b964935cffc8b80a))
+
+
+### Bug Fixes
+
+* add session.rollback() before error handlers in single-session task runners ([7df7361](https://github.com/bcit-tlu/hriv/commit/7df7361c9da906ee1014a59340172fcbae4f788b))
+* check for cancellation after long-running operations in all task runners ([4408653](https://github.com/bcit-tlu/hriv/commit/44086533f4d791166a2b736b654fc6b6c3b430e7))
+* check for pre-start cancellation in all 4 background task runners ([5c0084d](https://github.com/bcit-tlu/hriv/commit/5c0084db7f082c7b44aeaefef4a77bac08d2dbfa))
+* clean up temp file in run_files_export on cancellation/error ([52b1936](https://github.com/bcit-tlu/hriv/commit/52b1936f5da03a256e4fecc95b07da21056b16c6))
+* correct misleading rollback message and clean up leaked files on task creation failure ([34cc9d9](https://github.com/bcit-tlu/hriv/commit/34cc9d9f960448d8911391430f16301feada026f))
+* exclude admin_tasks/ from filesystem export archive ([2127d6f](https://github.com/bcit-tlu/hriv/commit/2127d6f8d2e796b4fad27a5f82f274235e0a78e6))
+* exclude admin_tasks/ from legacy sync filesystem export endpoint ([8b0fd6f](https://github.com/bcit-tlu/hriv/commit/8b0fd6f35050782cc27eb3602f4c8090416c98c4))
+* make db import atomic and use token-based download auth ([b65cc80](https://github.com/bcit-tlu/hriv/commit/b65cc805c2ba924b307d01ab1b93262db8041a30))
+* move admin_tasks shelter inside try block to prevent data loss ([5596f6f](https://github.com/bcit-tlu/hriv/commit/5596f6f5032d78727c0c6f62ccf074cecf47279e))
+* move admin_tasks.created_by NULL to status_session to prevent deadlock ([829e9f6](https://github.com/bcit-tlu/hriv/commit/829e9f6e58977f79481f8faa89e5cde2b6bb08a1))
+* preserve admin_tasks directory during filesystem import restore ([48b2440](https://github.com/bcit-tlu/hriv/commit/48b2440ba0d501f2b15aef2d93b180c317d85d10))
+* preserve oidc_subject in user export/import round-trips ([9bec1f5](https://github.com/bcit-tlu/hriv/commit/9bec1f5f7d09153e5646935025677344148c40c4))
+* prevent deadlock in run_db_import by NULLing admin_tasks.created_by before DELETE FROM users ([0f9bff6](https://github.com/bcit-tlu/hriv/commit/0f9bff624252f87dc52566842387efe4864635fe))
+* refresh task after rollback in error handlers to prevent MissingGreenlet ([3a2f70e](https://github.com/bcit-tlu/hriv/commit/3a2f70e2d53d34d41e9419a3151ea31d829f3d36))
+* refresh task before cancel handlers to preserve log; scope created_by NULL ([40346db](https://github.com/bcit-tlu/hriv/commit/40346db6ee1fa77b8386280045f987780353f0aa))
+* remove post-commit cancellation check from import runners ([8cca834](https://github.com/bcit-tlu/hriv/commit/8cca834d40698095fb0a09ea9ee9b9a3d432978c))
+* remove post-restore cancellation check from run_files_import ([ad5a5fa](https://github.com/bcit-tlu/hriv/commit/ad5a5fa447b86eaf1caa6bb45775a221ea5fee38))
+* scope created_by NULLing to current task only in run_db_import ([7d0bf2c](https://github.com/bcit-tlu/hriv/commit/7d0bf2c85121df5b62a2f277fa947f659c040d24))
+* use uuid for import staging filenames to prevent collisions ([54ccd89](https://github.com/bcit-tlu/hriv/commit/54ccd89de104e575594213a79e41dcf300313235))
+* write files export archive to /tmp before moving to _TASKS_DIR ([88aaed7](https://github.com/bcit-tlu/hriv/commit/88aaed7bb3828dc1f2e2def9773eb9ce0a72f6d2))
+
 ## [0.3.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.3.0...backend-v0.3.1) (2026-04-17)
 
 

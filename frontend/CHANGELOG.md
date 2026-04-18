@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.3.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.2.0...frontend-v0.3.0) (2026-04-18)
+
+
+### Features
+
+* add task cancellation with cancel button in UI ([1a60d7d](https://github.com/bcit-tlu/hriv/commit/1a60d7dfc79b90de07f7b69510f8e4128d15f339))
+* decouple admin import/export into background tasks with snackbar notifications ([374a197](https://github.com/bcit-tlu/hriv/commit/374a197318125f062b5ee214b964935cffc8b80a))
+
+
+### Bug Fixes
+
+* add 'cancelled' to terminal state check in pollTask ([f4abe02](https://github.com/bcit-tlu/hriv/commit/f4abe021cbe012c6f811138f42e3491627959731))
+* make db import atomic and use token-based download auth ([b65cc80](https://github.com/bcit-tlu/hriv/commit/b65cc805c2ba924b307d01ab1b93262db8041a30))
+* show cancelled tasks with warning severity and correct text in snackbar ([1f46ad5](https://github.com/bcit-tlu/hriv/commit/1f46ad5b00a10513e4b6f02736534ad8eb4a62d2))
+
 ## [0.2.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.1.0...frontend-v0.2.0) (2026-04-15)
 
 
