@@ -66,10 +66,50 @@ jobs:
             echo "::endgroup::"
           done
 
+  # ── Compute per-component versions once (see issue #102) ──
+  # Centralising this guarantees the rc timestamp embedded in the app-image
+  # tag matches the chart's appVersion for the same commit, even though the
+  # images and helm-publish jobs run at different wall-clock times.
+  versions:
+    runs-on: ubuntu-latest
+    outputs:
+      json: ${{ steps.compute.outputs.json }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0    # need full history + tags for rc version derivation
+      - name: Compute component versions
+        id: compute
+        shell: bash
+        # Release tag push (<component>-v<X.Y.Z>) → VERSION = X.Y.Z, is_release=true
+        # Any other ref                          → VERSION = <last reachable stable>-rc.<UTC YYYYMMDDHHMMSS>.<sha7>
+        run: |
+          set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA::7}"
+          TS="$(date -u +%Y%m%d%H%M%S)"
+          TAG_REF="${GITHUB_REF#refs/tags/}"
+          OUT='{}'
+          for COMPONENT in frontend backend backup; do
+            if [[ "${GITHUB_REF}" == refs/tags/* && "${TAG_REF}" =~ ^${COMPONENT}-v(.+)$ ]]; then
+              VERSION="${BASH_REMATCH[1]}"
+              IS_RELEASE=true
+            else
+              BASE_TAG="$(git tag -l "${COMPONENT}-v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname --merged HEAD | head -n1 || true)"
+              BASE="${BASE_TAG#${COMPONENT}-v}"
+              [[ -z "${BASE}" ]] && BASE="0.0.0"
+              VERSION="${BASE}-rc.${TS}.${SHORT_SHA}"
+              IS_RELEASE=false
+            fi
+            OUT="$(jq -c --arg c "${COMPONENT}" --arg v "${VERSION}" --argjson r "${IS_RELEASE}" \
+              '. + {($c): {version: $v, is_release: $r}}' <<<"${OUT}")"
+            echo "  ${COMPONENT}: ${VERSION} (release=${IS_RELEASE})"
+          done
+          echo "json=${OUT}" >> "$GITHUB_OUTPUT"
+
   # ── Container images (matrix: frontend, backend, backup) ──
   images:
     runs-on: ubuntu-latest
-    needs: [backend-tests]
+    needs: [backend-tests, versions]
     strategy:
       fail-fast: false
       matrix:
@@ -84,8 +124,6 @@ jobs:
             context: ./backup
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0    # need full history + tags for rc version derivation
 
       - uses: docker/setup-buildx-action@v4
 
@@ -96,45 +134,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Compute version & release flag per component (see issue #102) ──
-      # Release tag push (<component>-v<X.Y.Z>) → VERSION = X.Y.Z, IS_RELEASE=true
-      # Any other ref                          → VERSION = <last reachable stable>-rc.<UTC YYYYMMDDHHMMSS>.<sha7>
-      - name: Determine app version
-        id: app-version
-        shell: bash
-        run: |
-          set -euo pipefail
-          COMPONENT="${{ matrix.component }}"
-          SHORT_SHA="${GITHUB_SHA::7}"
-          TS="$(date -u +%Y%m%d%H%M%S)"
-          TAG_REF="${GITHUB_REF#refs/tags/}"
-
-          if [[ "${GITHUB_REF}" == refs/tags/* && "${TAG_REF}" =~ ^${COMPONENT}-v(.+)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-            IS_RELEASE=true
-          else
-            BASE_TAG="$(git tag -l "${COMPONENT}-v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname --merged HEAD | head -n1 || true)"
-            BASE="${BASE_TAG#${COMPONENT}-v}"
-            [[ -z "${BASE}" ]] && BASE="0.0.0"
-            VERSION="${BASE}-rc.${TS}.${SHORT_SHA}"
-            IS_RELEASE=false
-          fi
-
-          {
-            echo "value=${VERSION}"
-            echo "is_release=${IS_RELEASE}"
-          } | tee -a "$GITHUB_OUTPUT"
-
       # Publish ONLY the tags defined in issue #102 — no raw SHA, branch name, etc.
       # Release:          X.Y.Z, stable, latest
       # Non-release:      latest, X.Y.Z-rc.<TS>.<SHA>
+      # Version + is_release come from the shared `versions` job so the tag
+      # stamped on the image matches the chart's appVersion byte-for-byte.
       - uses: docker/metadata-action@v6
         id: meta
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
           tags: |
-            type=raw,value=${{ steps.app-version.outputs.value }}
-            type=raw,value=stable,enable=${{ steps.app-version.outputs.is_release == 'true' }}
+            type=raw,value=${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }}
+            type=raw,value=stable,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].is_release }}
             type=raw,value=latest
           flavor: |
             latest=false
@@ -152,7 +163,7 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
           build-args: |
-            VITE_APP_VERSION=${{ steps.app-version.outputs.value }}
+            VITE_APP_VERSION=${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }}
 
       # ── Sign with Cosign (keyless / Sigstore) ──────────────
       - uses: sigstore/cosign-installer@v3
@@ -184,12 +195,10 @@ jobs:
   # ── Helm charts → OCI registry ────────────────────────────
   helm-publish:
     runs-on: ubuntu-latest
-    needs: [helm-lint, images]
+    needs: [helm-lint, images, versions]
     if: github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0    # need full history + tags for rc version derivation
 
       - uses: azure/setup-helm@v5
 
@@ -214,30 +223,24 @@ jobs:
       # Chart OCI tag schema (per issue #102, mirrored from app images):
       #   Release tag push  (<chart>-v<X.Y.Z>) → X.Y.Z, stable, latest
       #   Non-release push  (main, etc.)      → latest, <last-reachable-stable>-rc.<UTC YYYYMMDDHHMMSS>.<sha7>
+      # Version + is_release come from the shared `versions` job so chart
+      # appVersion matches the app image tag byte-for-byte for the same commit.
       - name: Package, push, tag & sign charts
         shell: bash
+        env:
+          VERSIONS_JSON: ${{ needs.versions.outputs.json }}
         run: |
           set -euo pipefail
           OCI_BASE="oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
           IMAGE_BASE="${{ env.REGISTRY }}/${{ github.repository }}/charts"
-          SHORT_SHA="${GITHUB_SHA::7}"
-          TS="$(date -u +%Y%m%d%H%M%S)"
-          TAG_REF="${GITHUB_REF#refs/tags/}"
 
           for dir in charts/*/; do
             chart=$(basename "$dir")      # e.g. frontend
             echo "::group::${chart}"
 
-            if [[ "${GITHUB_REF}" == refs/tags/* && "${TAG_REF}" =~ ^${chart}-v(.+)$ ]]; then
-              VERSION="${BASH_REMATCH[1]}"
-              IS_RELEASE=true
-            else
-              BASE_TAG="$(git tag -l "${chart}-v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname --merged HEAD | head -n1 || true)"
-              BASE="${BASE_TAG#${chart}-v}"
-              [[ -z "${BASE}" ]] && BASE="0.0.0"
-              VERSION="${BASE}-rc.${TS}.${SHORT_SHA}"
-              IS_RELEASE=false
-            fi
+            VERSION="$(jq -r --arg c "${chart}" '.[$c].version' <<<"${VERSIONS_JSON}")"
+            IS_RELEASE="$(jq -r --arg c "${chart}" '.[$c].is_release' <<<"${VERSIONS_JSON}")"
+            [[ -n "${VERSION}" && "${VERSION}" != "null" ]] || { echo "No version for chart ${chart}" >&2; exit 1; }
 
             # Stamp version into Chart.yaml so the packaged chart matches the tag.
             sed -i "s/^version:.*/version: ${VERSION}/" "${dir}Chart.yaml"
