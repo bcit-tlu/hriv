@@ -37,9 +37,70 @@ All use password: `password`
 
 - **Browse page (Home):** Shows category tiles and uncategorized image tiles
 - **Upload image:** Click "ADD IMAGE" button (top-right on browse page, requires admin/instructor role)
-- **Add category:** Manage menu (top nav) → Categories → click "+" button next to level → enter name → Create
+- **Add category:** Manage menu (top nav) > Categories > click "+" button next to level > enter name > Create
 - **Image viewer:** Click any image tile on browse page to open OpenSeadragon viewer
 - **Manage page:** Click "MANAGE" tab, then use the manage interface for bulk operations
+- **Admin page:** Click "ADMIN" tab (admin role required) for database/filesystem export/import
+
+## Testing Admin Export/Import
+
+### Filesystem Export UI Flow
+
+1. Log in as `admin@bcit.ca`
+2. Navigate to ADMIN tab
+3. Scroll to "Filesystem" section
+4. Click "EXPORT" button to start a filesystem export task
+5. The task appears in "Recent Tasks" at the bottom of the page
+6. Click the info (i) icon on the task row to open the log dialog
+7. The log dialog shows:
+   - Task title with status badge (running/completed/cancelled)
+   - Progress bar (determinate while running, indeterminate while cancelling)
+   - Log output with streaming entries
+   - CANCEL button (while running) or CLOSE button (when done)
+8. Completed tasks show a download (arrow) icon in the task row
+
+### Seeding Test Data for Export Testing
+
+The default seed data may not contain enough files for meaningful export testing. To test cancellation responsiveness, you need enough data that archiving takes several seconds. Create test files inside the Docker container:
+
+```bash
+# Create ~1GB of test files (20 dirs x 500 files x 100KB each)
+docker exec hriv-backend-1 python3 -c "
+import os, random
+for d in range(20):
+    path = f'/data/tiles/large_test/dir_{d}'
+    os.makedirs(path, exist_ok=True)
+    for f in range(500):
+        with open(f'{path}/file_{f}.bin', 'wb') as fh:
+            fh.write(random.randbytes(102400))
+"
+```
+
+This creates incompressible random data that forces the tar.gz archiver to work slowly, making it possible to test cancellation mid-archive.
+
+### Verifying Archive Contents
+
+Exported archives are stored at `/data/admin_tasks/` inside the backend container. To verify contents:
+
+```bash
+# List archive files
+docker exec hriv-backend-1 find /data/admin_tasks -name "*.tar.gz" -type f
+
+# Check archive contents (should have tiles/ and source_images/, no admin_tasks/)
+docker exec hriv-backend-1 tar -tzf /data/admin_tasks/<filename>.tar.gz | head -20
+
+# Verify admin_tasks/ exclusion
+docker exec hriv-backend-1 tar -tzf /data/admin_tasks/<filename>.tar.gz | grep admin_tasks
+# (should return no output)
+```
+
+### Key Backend Implementation Notes
+
+- Export archiving runs in a background thread via `asyncio.to_thread`
+- A concurrent polling coroutine checks for cancellation every 2 seconds
+- Cancellation uses `threading.Event` to bridge async/sync boundaries
+- Verbose log entries are buffered in a `queue.Queue` and flushed every 2 seconds
+- The `admin_tasks/` directory is excluded from archives to avoid re-archiving previous exports
 
 ## Testing Image Upload + Processing Flow
 
@@ -67,3 +128,5 @@ All use password: `password`
 - Small test images (e.g., 1024x1024 solid-color JPEG) process much faster than large medical images.
 - The `/api/categories/tree` endpoint uses ETag-based caching. To verify cache behavior, check the `Cache-Control` and `ETag` response headers with curl.
 - Category tree changes (add/move/delete) should be immediately visible on the browse page without browser refresh.
+- For export cancellation testing, the data volume needs to be large enough (~1GB+) that archiving takes more than a few seconds, otherwise the archive completes before you can click Cancel.
+- The frontend polls for task status every 2 seconds, so UI status transitions may lag slightly behind the actual backend state.
