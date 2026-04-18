@@ -580,9 +580,23 @@ def _read_file(path: str | None) -> str:
 
 
 def _create_tar_file(data_dir: str, dest: str) -> None:
-    """Write a tar.gz archive of *data_dir* to *dest*."""
+    """Write a tar.gz archive of *data_dir* to *dest*.
+
+    The ``admin_tasks`` subdirectory is excluded so that previously
+    generated export artefacts (JSON dumps, tar.gz archives) do not
+    bloat successive filesystem exports.
+    """
+    tasks_basename = os.path.basename(_TASKS_DIR)
+
+    def _tar_filter(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        # Exclude the admin_tasks directory and its contents
+        parts = info.name.split("/")
+        if len(parts) > 1 and parts[1] == tasks_basename:
+            return None
+        return info
+
     with tarfile.open(dest, mode="w:gz") as tar:
-        tar.add(data_dir, arcname="data")
+        tar.add(data_dir, arcname="data", filter=_tar_filter)
 
 
 async def run_files_export(task_id: int) -> None:
