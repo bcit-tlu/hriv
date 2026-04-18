@@ -1,4 +1,15 @@
-name: CI – test, build & publish
+name: "[CI] Test, build & publish"
+
+# Give each run a role-specific title so PR runs, main RC builds and tag
+# release builds are distinguishable at a glance in the Actions list (the
+# default run title is the commit subject, which is identical for every
+# workflow triggered by the same push).
+run-name: >-
+  ${{ github.event_name == 'pull_request'
+      && format('PR #{0} — {1}', github.event.pull_request.number, github.event.pull_request.title)
+      || startsWith(github.ref, 'refs/tags/')
+      && format('Release {0}', github.ref_name)
+      || format('RC build — {0}', github.event.head_commit.message) }}
 
 on:
   push:
