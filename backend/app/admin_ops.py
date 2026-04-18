@@ -270,6 +270,7 @@ async def run_db_export(task_id: int) -> None:
                 "Background DB export cancelled",
                 extra={"event": "admin_task.db_export_cancelled", "task_id": task_id},
             )
+            await session.refresh(task)
             await _update_task(
                 session, task,
                 status="cancelled",
@@ -350,7 +351,9 @@ async def run_db_import(task_id: int) -> None:
                 # status_session (which commits immediately), the FK
                 # references are gone before data_session touches users,
                 # so the cascade has nothing to lock.
-                await status_session.execute(text("UPDATE admin_tasks SET created_by = NULL"))
+                await status_session.execute(
+                    text("UPDATE admin_tasks SET created_by = NULL WHERE created_by IS NOT NULL")
+                )
                 await status_session.commit()
 
                 await data_session.execute(text("DELETE FROM source_images"))
@@ -643,6 +646,7 @@ async def run_files_export(task_id: int) -> None:
                 "Background files export cancelled",
                 extra={"event": "admin_task.files_export_cancelled", "task_id": task_id},
             )
+            await session.refresh(task)
             await _update_task(
                 session, task,
                 status="cancelled",
@@ -779,6 +783,7 @@ async def run_files_import(task_id: int) -> None:
                 "Background files import cancelled",
                 extra={"event": "admin_task.files_import_cancelled", "task_id": task_id},
             )
+            await session.refresh(task)
             await _update_task(
                 session, task,
                 status="cancelled",
