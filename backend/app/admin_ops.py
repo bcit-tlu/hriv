@@ -283,6 +283,7 @@ async def run_db_export(task_id: int) -> None:
                 extra={"event": "admin_task.db_export_failed", "task_id": task_id},
             )
             await session.rollback()
+            await session.refresh(task)
             await _update_task(
                 session, task,
                 status="failed", progress=0,
@@ -660,6 +661,7 @@ async def run_files_export(task_id: int) -> None:
                 extra={"event": "admin_task.files_export_failed", "task_id": task_id},
             )
             await session.rollback()
+            await session.refresh(task)
             await _update_task(
                 session, task,
                 status="failed", progress=0,
@@ -798,6 +800,7 @@ async def run_files_import(task_id: int) -> None:
                 extra={"event": "admin_task.files_import_failed", "task_id": task_id},
             )
             await session.rollback()
+            await session.refresh(task)
             await _update_task(
                 session, task,
                 status="failed", progress=0,
