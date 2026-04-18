@@ -115,6 +115,7 @@ async def run_db_export(task_id: int) -> None:
             log_line="Starting database export…",
         )
 
+        filepath: str | None = None
         try:
             # Programs
             await _update_task(session, task, log_line="Exporting programs…", progress=10, check_cancelled=True)
@@ -259,6 +260,7 @@ async def run_db_export(task_id: int) -> None:
                 log_line=f"Export complete. {summary}",
                 result_filename=filename,
                 result_path=filepath,
+                check_cancelled=True,
             )
             logger.info(
                 "Background DB export completed",
@@ -270,6 +272,12 @@ async def run_db_export(task_id: int) -> None:
                 "Background DB export cancelled",
                 extra={"event": "admin_task.db_export_cancelled", "task_id": task_id},
             )
+            # Clean up result file if it was already written
+            if filepath and os.path.exists(filepath):
+                try:
+                    os.unlink(filepath)
+                except OSError:
+                    pass
             await session.refresh(task)
             await _update_task(
                 session, task,
@@ -518,6 +526,7 @@ async def run_db_import(task_id: int) -> None:
                     status_session, task,
                     status="completed", progress=100,
                     log_line=f"Import complete. {summary}",
+                    check_cancelled=True,
                 )
                 logger.info(
                     "Background DB import completed",
@@ -590,6 +599,7 @@ async def run_files_export(task_id: int) -> None:
             log_line="Starting filesystem export…",
         )
 
+        filepath: str | None = None
         try:
             data_dir = Path(settings.tiles_dir).parent  # /data
 
@@ -633,6 +643,7 @@ async def run_files_export(task_id: int) -> None:
                 log_line=f"Export complete. Archive size: {size_mb:.1f} MB",
                 result_filename=filename,
                 result_path=filepath,
+                check_cancelled=True,
             )
             logger.info(
                 "Background files export completed",
@@ -648,6 +659,12 @@ async def run_files_export(task_id: int) -> None:
                 "Background files export cancelled",
                 extra={"event": "admin_task.files_export_cancelled", "task_id": task_id},
             )
+            # Clean up result file if it was already written
+            if filepath and os.path.exists(filepath):
+                try:
+                    os.unlink(filepath)
+                except OSError:
+                    pass
             await session.refresh(task)
             await _update_task(
                 session, task,
@@ -772,6 +789,7 @@ async def run_files_import(task_id: int) -> None:
                 session, task,
                 status="completed", progress=100,
                 log_line=f"Import complete. {summary}",
+                check_cancelled=True,
             )
             logger.info(
                 "Background files import completed",
