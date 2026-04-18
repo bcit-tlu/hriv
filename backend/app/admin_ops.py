@@ -109,14 +109,15 @@ async def run_db_export(task_id: int) -> None:
             logger.error("AdminTask %d not found", task_id)
             return
 
-        await _update_task(
-            session, task,
-            status="running", progress=0,
-            log_line="Starting database export…",
-        )
-
         filepath: str | None = None
         try:
+            await _update_task(
+                session, task,
+                status="running", progress=0,
+                log_line="Starting database export…",
+                check_cancelled=True,
+            )
+
             # Programs
             await _update_task(session, task, log_line="Exporting programs…", progress=10, check_cancelled=True)
             result = await session.execute(select(Program).order_by(Program.id))
@@ -326,17 +327,18 @@ async def run_db_import(task_id: int) -> None:
             logger.error("AdminTask %d not found", task_id)
             return
 
-        await _update_task(
-            status_session, task,
-            status="running", progress=0,
-            log_line="Starting database import…",
-        )
-
         input_path = task.input_path
 
         # Data session — used for all import DML, committed once at the end
         async with session_factory() as data_session:
             try:
+                await _update_task(
+                    status_session, task,
+                    status="running", progress=0,
+                    log_line="Starting database import…",
+                    check_cancelled=True,
+                )
+
                 # Read and validate JSON
                 await _update_task(status_session, task, log_line="Reading JSON file…", progress=5, check_cancelled=True)
                 raw = await asyncio.to_thread(_read_file, input_path)
@@ -610,14 +612,15 @@ async def run_files_export(task_id: int) -> None:
             logger.error("AdminTask %d not found", task_id)
             return
 
-        await _update_task(
-            session, task,
-            status="running", progress=0,
-            log_line="Starting filesystem export…",
-        )
-
         filepath: str | None = None
         try:
+            await _update_task(
+                session, task,
+                status="running", progress=0,
+                log_line="Starting filesystem export…",
+                check_cancelled=True,
+            )
+
             data_dir = Path(settings.tiles_dir).parent  # /data
 
             if not data_dir.exists() or not any(data_dir.iterdir()):
@@ -769,14 +772,15 @@ async def run_files_import(task_id: int) -> None:
             logger.error("AdminTask %d not found", task_id)
             return
 
-        await _update_task(
-            session, task,
-            status="running", progress=0,
-            log_line="Starting filesystem import…",
-        )
-
         input_path = task.input_path
         try:
+            await _update_task(
+                session, task,
+                status="running", progress=0,
+                log_line="Starting filesystem import…",
+                check_cancelled=True,
+            )
+
             if not input_path or not os.path.exists(input_path):
                 raise ValueError("Uploaded archive file not found")
 
