@@ -140,9 +140,12 @@ jobs:
                   # Highest full-release SemVer for this component wins the
                   # `stable` and `latest` moving pointers. Backports of older
                   # lines won't displace them.
+                  # sed must strip the `${COMPONENT}-v` prefix *before* the
+                  # prerelease filter — the prefix contains a hyphen that
+                  # would otherwise swallow every line.
                   ALL_STABLE=$(git tag -l "${COMPONENT}-v[0-9]*.[0-9]*.[0-9]*" \
-                    | grep -v -- '-' \
                     | sed "s/^${COMPONENT}-v//" \
+                    | grep -v -- '-' \
                     || true)
                   HIGHEST_STABLE=$(printf '%s\n' "${ALL_STABLE}" | sort -V | tail -n1)
                   if [[ "${VERSION}" == "${HIGHEST_STABLE}" ]]; then
@@ -229,7 +232,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
           tags: |
-            type=raw,value=${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }},enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'release' || fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'pr' }}
+            type=raw,value=${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }},enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' }}
             type=raw,value=head,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'head' }}
             type=raw,value=stable,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'release' && fromJSON(needs.versions.outputs.json)[matrix.component].is_prerelease == false && fromJSON(needs.versions.outputs.json)[matrix.component].is_highest_stable == true }}
             type=raw,value=latest,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'release' && fromJSON(needs.versions.outputs.json)[matrix.component].is_prerelease == false && fromJSON(needs.versions.outputs.json)[matrix.component].is_highest_stable == true }}
