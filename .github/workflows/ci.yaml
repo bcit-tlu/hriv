@@ -1,6 +1,6 @@
 name: "[CI] Test, build & publish"
 
-# Give each run a role-specific title so PR runs, main RC builds and tag
+# Give each run a role-specific title so PR runs, main `head` builds and tag
 # release builds are distinguishable at a glance in the Actions list (the
 # default run title is the commit subject, which is identical for every
 # workflow triggered by the same push).
@@ -9,7 +9,7 @@ run-name: >-
       && format('PR #{0} — {1}', github.event.pull_request.number, github.event.pull_request.title)
       || startsWith(github.ref, 'refs/tags/')
       && format('Release {0}', github.ref_name)
-      || format('RC build — {0}', github.event.head_commit.message) }}
+      || format('Head build — {0}', github.event.head_commit.message) }}
 
 on:
   push:
@@ -84,10 +84,24 @@ jobs:
             echo "::endgroup::"
           done
 
-  # ── Compute per-component versions once (see issue #102) ──
-  # Centralising this guarantees the rc timestamp embedded in the app-image
-  # tag matches the chart's appVersion for the same commit, even though the
-  # images and helm-publish jobs run at different wall-clock times.
+  # ── Compute per-component publish plan (Vault/Rancher-style) ──
+  #
+  # Tag model (strict-D — matches hashicorp/vault & rancher/rancher):
+  #   <component>-v<X.Y.Z>-rcN  → "pre-release" git tag (release-please in
+  #                               prerelease mode). Published as the immutable
+  #                               OCI tag X.Y.Z-rcN only; NO moving pointer
+  #                               follows rcs. Consumers opt into an rc by
+  #                               pinning its version tag.
+  #   <component>-v<X.Y.Z>      → "full release" git tag (graduated from an
+  #                               rc via `Release-As:` footer). Published as
+  #                               the immutable X.Y.Z plus, iff this is the
+  #                               highest full-release SemVer for the
+  #                               component, the moving `stable` and `latest`
+  #                               OCI pointers.
+  #
+  # Non-tag pushes to main publish only the moving `head` OCI pointer — the
+  # continuous-integration artifact (mirrors rancher/rancher:head). No SemVer
+  # is stamped; no helm chart is published; nothing is "released".
   versions:
     runs-on: ubuntu-latest
     outputs:
@@ -95,48 +109,75 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0    # need full history + tags for rc version derivation
-      - name: Compute component versions
+          fetch-depth: 0    # need full history + tags for highest-stable check
+
+      - name: Compute component publish plan
         id: compute
         shell: bash
-        # Release tag push (<component>-v<X.Y.Z>) → VERSION = X.Y.Z, is_release=true
-        # Any other ref                          → VERSION = <last reachable stable>-rc.<UTC YYYYMMDDHHMMSS>.<sha7>
         run: |
           set -euo pipefail
           SHORT_SHA="${GITHUB_SHA::7}"
-          TS="$(date -u +%Y%m%d%H%M%S)"
           TAG_REF="${GITHUB_REF#refs/tags/}"
           OUT='{}'
+
           for COMPONENT in frontend backend backup; do
-            # should_build gates per-component work in `images` and
-            # `helm-publish`. On tag pushes, only the matching component is
-            # (re)built — otherwise a `<c>-v<X.Y.Z>` release would move the
-            # unrelated components' `latest` tag to a fresh rc digest for
-            # no reason. On main/branch pushes, every component builds.
+            MODE="skip"
+            VERSION=""
+            IS_PRERELEASE=false
+            IS_HIGHEST_STABLE=false
+
             if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+              # ── Tag push ────────────────────────────────────
+              # Only the matching component builds on a tag push so a
+              # release of one component doesn't drag unrelated components'
+              # moving tags onto new digests.
               if [[ "${TAG_REF}" =~ ^${COMPONENT}-v(.+)$ ]]; then
+                MODE="release"
                 VERSION="${BASH_REMATCH[1]}"
-                IS_RELEASE=true
-                SHOULD_BUILD=true
-              else
-                # Not the tagged component → skip; version is irrelevant.
-                VERSION="0.0.0"
-                IS_RELEASE=false
-                SHOULD_BUILD=false
+                if [[ "${VERSION}" == *-* ]]; then
+                  IS_PRERELEASE=true
+                else
+                  # Highest full-release SemVer for this component wins the
+                  # `stable` and `latest` moving pointers. Backports of older
+                  # lines won't displace them.
+                  # sed must strip the `${COMPONENT}-v` prefix *before* the
+                  # prerelease filter — the prefix contains a hyphen that
+                  # would otherwise swallow every line.
+                  ALL_STABLE=$(git tag -l "${COMPONENT}-v[0-9]*.[0-9]*.[0-9]*" \
+                    | sed "s/^${COMPONENT}-v//" \
+                    | grep -v -- '-' \
+                    || true)
+                  HIGHEST_STABLE=$(printf '%s\n' "${ALL_STABLE}" | sort -V | tail -n1)
+                  if [[ "${VERSION}" == "${HIGHEST_STABLE}" ]]; then
+                    IS_HIGHEST_STABLE=true
+                  fi
+                fi
               fi
+            elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+              # ── main branch push ────────────────────────────
+              # Use a SemVer-valid prerelease string so the same value can
+              # be stamped into Chart.yaml (helm package requires SemVer)
+              # and piped through the image pipeline.
+              MODE="head"
+              VERSION="0.0.0-head.${SHORT_SHA}"
             else
-              BASE_TAG="$(git tag -l "${COMPONENT}-v[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname --merged HEAD | head -n1 || true)"
-              BASE="${BASE_TAG#${COMPONENT}-v}"
-              [[ -z "${BASE}" ]] && BASE="0.0.0"
-              VERSION="${BASE}-rc.${TS}.${SHORT_SHA}"
-              IS_RELEASE=false
-              SHOULD_BUILD=true
+              # ── PR: build-only sanity check, no push ────────
+              MODE="pr"
+              VERSION="0.0.0-pr.${SHORT_SHA}"
             fi
-            OUT="$(jq -c --arg c "${COMPONENT}" --arg v "${VERSION}" \
-              --argjson r "${IS_RELEASE}" --argjson b "${SHOULD_BUILD}" \
-              '. + {($c): {version: $v, is_release: $r, should_build: $b}}' <<<"${OUT}")"
-            echo "  ${COMPONENT}: ${VERSION} (release=${IS_RELEASE}, build=${SHOULD_BUILD})"
+
+            OUT=$(jq -c \
+              --arg c "${COMPONENT}" \
+              --arg mode "${MODE}" \
+              --arg v "${VERSION}" \
+              --argjson pre "${IS_PRERELEASE}" \
+              --argjson hs "${IS_HIGHEST_STABLE}" \
+              '. + {($c): {mode: $mode, version: $v, is_prerelease: $pre, is_highest_stable: $hs}}' \
+              <<<"${OUT}")
+
+            echo "  ${COMPONENT}: mode=${MODE} version=${VERSION} prerelease=${IS_PRERELEASE} highest_stable=${IS_HIGHEST_STABLE}"
           done
+
           echo "json=${OUT}" >> "$GITHUB_OUTPUT"
 
   # ── Container images (matrix: frontend, backend, backup) ──
@@ -156,48 +197,51 @@ jobs:
           - component: backup
             context: ./backup
     steps:
-      # Tag pushes for one component (e.g. frontend-v1.0.0) must not drag
-      # unrelated components' moving tags onto new rc digests. Skip the
-      # whole job when versions.should_build is false for this matrix entry.
       - name: Skip non-matching components on tag pushes
         id: guard
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].should_build != true
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'skip'
         run: |
           echo "Skipping ${{ matrix.component }}: this is a tag push for a different component."
 
       - uses: actions/checkout@v6
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].should_build
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
 
       - uses: docker/setup-buildx-action@v4
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].should_build
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
 
       - uses: docker/login-action@v4
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].should_build && github.event_name != 'pull_request'
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name != 'pull_request'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Publish ONLY the tags defined in issue #102 — no raw SHA, branch name, etc.
-      # Release:          X.Y.Z, stable, latest
-      # Non-release:      latest, X.Y.Z-rc.<TS>.<SHA>
-      # Version + is_release come from the shared `versions` job so the tag
-      # stamped on the image matches the chart's appVersion byte-for-byte.
+      # Publish tags by mode (matches hashicorp/vault, rancher/rancher):
+      #   mode=release (any tag push):
+      #     always → <version>
+      #     if full release + highest stable semver → stable, latest
+      #   mode=head (main branch push):
+      #     always → head
+      #   mode=pr (pull request):
+      #     always → pr-<sha>  (not pushed to registry)
       - uses: docker/metadata-action@v6
         id: meta
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].should_build
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
+        env:
+          PLAN: ${{ toJSON(fromJSON(needs.versions.outputs.json)[matrix.component]) }}
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
           tags: |
-            type=raw,value=${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }}
-            type=raw,value=stable,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].is_release }}
-            type=raw,value=latest
+            type=raw,value=${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }},enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' }}
+            type=raw,value=head,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'head' }}
+            type=raw,value=stable,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'release' && fromJSON(needs.versions.outputs.json)[matrix.component].is_prerelease == false && fromJSON(needs.versions.outputs.json)[matrix.component].is_highest_stable == true }}
+            type=raw,value=latest,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'release' && fromJSON(needs.versions.outputs.json)[matrix.component].is_prerelease == false && fromJSON(needs.versions.outputs.json)[matrix.component].is_highest_stable == true }}
           flavor: |
             latest=false
 
       - uses: docker/build-push-action@v7
         id: build
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].should_build
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
         with:
           context: ${{ matrix.context }}
           target: ${{ matrix.target }}
@@ -213,17 +257,17 @@ jobs:
 
       # ── Sign with Cosign (keyless / Sigstore) ──────────────
       - uses: sigstore/cosign-installer@v3
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].should_build && github.event_name != 'pull_request'
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name != 'pull_request'
 
       - name: Sign image
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].should_build && github.event_name != 'pull_request'
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name != 'pull_request'
         run: |
           cosign sign --yes \
             ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}@${{ steps.build.outputs.digest }}
 
       # ── Trivy vulnerability scan → GitHub Security tab ─────
       - name: Scan image for vulnerabilities
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].should_build && github.event_name != 'pull_request'
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}@${{ steps.build.outputs.digest }}
@@ -232,13 +276,22 @@ jobs:
           severity: CRITICAL,HIGH
 
       - name: Upload scan results to GitHub Security
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].should_build && github.event_name != 'pull_request'
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name != 'pull_request'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-${{ matrix.component }}.sarif
           category: trivy-${{ matrix.component }}
 
   # ── Helm charts → OCI registry ────────────────────────────
+  #
+  # Charts are published on:
+  #   * tag push (mode=release) — versioned artifact + conditional
+  #     stable/latest moving tags (when highest full-release SemVer).
+  #   * main push (mode=head)   — 0.0.0-head.<sha> versioned artifact +
+  #     the moving `head` OCI tag. Lets flux-fleet's latest overlay
+  #     track main HEAD continuously.
+  #
+  # PR builds do not publish.
   helm-publish:
     runs-on: ubuntu-latest
     needs: [helm-lint, images, versions]
@@ -251,8 +304,8 @@ jobs:
       - uses: sigstore/cosign-installer@v3
 
       - uses: imjasonh/setup-crane@v0.5
-        # crane is used to attach the `latest` / `stable` moving tags to the
-        # same OCI digest that `helm push` produces, without repackaging.
+        # crane attaches the `stable` / `latest` moving tags to the same
+        # OCI digest that `helm push` produces, without repackaging.
 
       - uses: docker/login-action@v4
         with:
@@ -266,15 +319,10 @@ jobs:
             helm registry login ${{ env.REGISTRY }} \
               -u ${{ github.actor }} --password-stdin
 
-      # Chart OCI tag schema (per issue #102, mirrored from app images):
-      #   Release tag push  (<chart>-v<X.Y.Z>) → X.Y.Z, stable, latest
-      #   Non-release push  (main, etc.)      → latest, <last-reachable-stable>-rc.<UTC YYYYMMDDHHMMSS>.<sha7>
-      # Version + is_release come from the shared `versions` job so chart
-      # appVersion matches the app image tag byte-for-byte for the same commit.
       - name: Package, push, tag & sign charts
         shell: bash
         env:
-          VERSIONS_JSON: ${{ needs.versions.outputs.json }}
+          PLAN_JSON: ${{ needs.versions.outputs.json }}
         run: |
           set -euo pipefail
           OCI_BASE="oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
@@ -284,32 +332,60 @@ jobs:
             chart=$(basename "$dir")      # e.g. frontend
             echo "::group::${chart}"
 
-            SHOULD_BUILD="$(jq -r --arg c "${chart}" '.[$c].should_build' <<<"${VERSIONS_JSON}")"
-            if [[ "${SHOULD_BUILD}" != "true" ]]; then
+            MODE=$(jq -r --arg c "${chart}" '.[$c].mode'              <<<"${PLAN_JSON}")
+            if [[ "${MODE}" == "skip" ]]; then
               echo "Skipping ${chart}: tag push is for a different component."
               echo "::endgroup::"
               continue
             fi
 
-            VERSION="$(jq -r --arg c "${chart}" '.[$c].version' <<<"${VERSIONS_JSON}")"
-            IS_RELEASE="$(jq -r --arg c "${chart}" '.[$c].is_release' <<<"${VERSIONS_JSON}")"
+            VERSION=$(jq -r --arg c "${chart}" '.[$c].version'           <<<"${PLAN_JSON}")
+            IS_PRE=$(jq -r  --arg c "${chart}" '.[$c].is_prerelease'     <<<"${PLAN_JSON}")
+            IS_HS=$(jq -r   --arg c "${chart}" '.[$c].is_highest_stable' <<<"${PLAN_JSON}")
             [[ -n "${VERSION}" && "${VERSION}" != "null" ]] || { echo "No version for chart ${chart}" >&2; exit 1; }
 
-            # Stamp version into Chart.yaml so the packaged chart matches the tag.
-            sed -i "s/^version:.*/version: ${VERSION}/" "${dir}Chart.yaml"
+            # ── Independent chart vs app version ──────────────────
+            # * Chart version: committed in Chart.yaml, bumped by hand
+            #   when templates or values schema change. On head builds
+            #   we append a unique SemVer prerelease segment so every
+            #   main commit yields its own immutable tarball digest.
+            # * App version: the release-please / head-mode VERSION
+            #   computed above; equals the image tag the chart will
+            #   default to via {{ .Values.image.tag | default
+            #   .Chart.AppVersion }}.
+            COMMITTED_CHART_VERSION=$(awk '/^version:/{print $2; exit}' "${dir}Chart.yaml")
+            case "${MODE}" in
+              head)    CHART_VERSION="${COMMITTED_CHART_VERSION}-head.${GITHUB_SHA::7}" ;;
+              release) CHART_VERSION="${COMMITTED_CHART_VERSION}" ;;
+              *)       echo "Unexpected mode for helm-publish: ${MODE}" >&2; exit 1 ;;
+            esac
+
+            sed -i "s/^version:.*/version: ${CHART_VERSION}/" "${dir}Chart.yaml"
             sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" "${dir}Chart.yaml"
 
             helm package "$dir" -d /tmp/charts
-            PUSH_OUT=$(helm push "/tmp/charts/hriv-${chart}-${VERSION}.tgz" "${OCI_BASE}" 2>&1)
+            PUSH_OUT=$(helm push "/tmp/charts/hriv-${chart}-${CHART_VERSION}.tgz" "${OCI_BASE}" 2>&1)
             echo "${PUSH_OUT}"
 
             DIGEST=$(printf '%s\n' "${PUSH_OUT}" | awk '/^Digest:/{print $2}')
             [[ -n "${DIGEST}" ]] || { echo "Failed to capture digest from helm push" >&2; exit 1; }
 
-            # Attach moving tags to the same digest (no repackage → identical content).
-            crane tag "${IMAGE_BASE}/hriv-${chart}:${VERSION}" latest
-            if [[ "${IS_RELEASE}" == "true" ]]; then
-              crane tag "${IMAGE_BASE}/hriv-${chart}:${VERSION}" stable
+            # Moving-tag rules (strict-D — matches hashicorp/vault &
+            # rancher/rancher). Tags are applied to the chart artifact
+            # at CHART_VERSION (the chart axis), not VERSION (the app
+            # axis). `is_highest_stable` is still computed from the app
+            # axis; chart `stable`/`latest` move in lockstep with app
+            # releases, so the stable chart is always the one wrapping
+            # the latest stable app.
+            #   mode=head            → add `head`
+            #   mode=release rc      → no moving tag (immutable only)
+            #   mode=release stable  → add `stable` + `latest` iff highest
+            #                          full-release SemVer on the app axis
+            if [[ "${MODE}" == "head" ]]; then
+              crane tag "${IMAGE_BASE}/hriv-${chart}:${CHART_VERSION}" head
+            elif [[ "${MODE}" == "release" && "${IS_PRE}" != "true" && "${IS_HS}" == "true" ]]; then
+              crane tag "${IMAGE_BASE}/hriv-${chart}:${CHART_VERSION}" stable
+              crane tag "${IMAGE_BASE}/hriv-${chart}:${CHART_VERSION}" latest
             fi
 
             cosign sign --yes "${IMAGE_BASE}/hriv-${chart}@${DIGEST}"

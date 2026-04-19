@@ -1,6 +1,12 @@
 apiVersion: v2
 name: hriv-frontend
 description: HRIV Frontend – React/Vite SPA served by nginx
-version: 0.1.0 # x-release-please-version
+# Chart version — independent of app version. Bump by hand in a PR
+# when chart templates / values schema change. release-please does
+# NOT touch this line.
+version: 0.1.0
+# App version — stamped by CI from the release-please version (= image
+# tag). Marked so release-please keeps the committed value in sync for
+# local `helm template` / `helm install` runs against the source tree.
 appVersion: "0.1.0" # x-release-please-version
 type: application
