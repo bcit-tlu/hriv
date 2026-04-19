@@ -344,28 +344,48 @@ jobs:
             IS_HS=$(jq -r   --arg c "${chart}" '.[$c].is_highest_stable' <<<"${PLAN_JSON}")
             [[ -n "${VERSION}" && "${VERSION}" != "null" ]] || { echo "No version for chart ${chart}" >&2; exit 1; }
 
-            # Stamp version into Chart.yaml so the packaged chart matches the tag.
-            sed -i "s/^version:.*/version: ${VERSION}/" "${dir}Chart.yaml"
+            # ── Independent chart vs app version ──────────────────
+            # * Chart version: committed in Chart.yaml, bumped by hand
+            #   when templates or values schema change. On head builds
+            #   we append a unique SemVer prerelease segment so every
+            #   main commit yields its own immutable tarball digest.
+            # * App version: the release-please / head-mode VERSION
+            #   computed above; equals the image tag the chart will
+            #   default to via {{ .Values.image.tag | default
+            #   .Chart.AppVersion }}.
+            COMMITTED_CHART_VERSION=$(awk '/^version:/{print $2; exit}' "${dir}Chart.yaml")
+            case "${MODE}" in
+              head)    CHART_VERSION="${COMMITTED_CHART_VERSION}-head.${GITHUB_SHA::7}" ;;
+              release) CHART_VERSION="${COMMITTED_CHART_VERSION}" ;;
+              *)       echo "Unexpected mode for helm-publish: ${MODE}" >&2; exit 1 ;;
+            esac
+
+            sed -i "s/^version:.*/version: ${CHART_VERSION}/" "${dir}Chart.yaml"
             sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" "${dir}Chart.yaml"
 
             helm package "$dir" -d /tmp/charts
-            PUSH_OUT=$(helm push "/tmp/charts/hriv-${chart}-${VERSION}.tgz" "${OCI_BASE}" 2>&1)
+            PUSH_OUT=$(helm push "/tmp/charts/hriv-${chart}-${CHART_VERSION}.tgz" "${OCI_BASE}" 2>&1)
             echo "${PUSH_OUT}"
 
             DIGEST=$(printf '%s\n' "${PUSH_OUT}" | awk '/^Digest:/{print $2}')
             [[ -n "${DIGEST}" ]] || { echo "Failed to capture digest from helm push" >&2; exit 1; }
 
             # Moving-tag rules (strict-D — matches hashicorp/vault &
-            # rancher/rancher):
+            # rancher/rancher). Tags are applied to the chart artifact
+            # at CHART_VERSION (the chart axis), not VERSION (the app
+            # axis). `is_highest_stable` is still computed from the app
+            # axis; chart `stable`/`latest` move in lockstep with app
+            # releases, so the stable chart is always the one wrapping
+            # the latest stable app.
             #   mode=head            → add `head`
             #   mode=release rc      → no moving tag (immutable only)
             #   mode=release stable  → add `stable` + `latest` iff highest
-            #                          full-release SemVer
+            #                          full-release SemVer on the app axis
             if [[ "${MODE}" == "head" ]]; then
-              crane tag "${IMAGE_BASE}/hriv-${chart}:${VERSION}" head
+              crane tag "${IMAGE_BASE}/hriv-${chart}:${CHART_VERSION}" head
             elif [[ "${MODE}" == "release" && "${IS_PRE}" != "true" && "${IS_HS}" == "true" ]]; then
-              crane tag "${IMAGE_BASE}/hriv-${chart}:${VERSION}" stable
-              crane tag "${IMAGE_BASE}/hriv-${chart}:${VERSION}" latest
+              crane tag "${IMAGE_BASE}/hriv-${chart}:${CHART_VERSION}" stable
+              crane tag "${IMAGE_BASE}/hriv-${chart}:${CHART_VERSION}" latest
             fi
 
             cosign sign --yes "${IMAGE_BASE}/hriv-${chart}@${DIGEST}"
