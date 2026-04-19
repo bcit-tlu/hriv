@@ -67,7 +67,7 @@ interface DragState {
 }
 
 /** Format a measurement value with appropriate precision */
-function formatMeasurement(
+export function formatMeasurement(
   viewportDim: number,
   imageSize: number,
   config: MeasurementConfig | undefined,
@@ -86,7 +86,7 @@ function formatMeasurement(
 }
 
 /** Create a styled label element for measurement display */
-function createMeasurementLabel(): HTMLDivElement {
+export function createMeasurementLabel(): HTMLDivElement {
   const label = document.createElement('div')
   label.style.position = 'absolute'
   label.style.color = '#ff0000'

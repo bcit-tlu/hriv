@@ -81,6 +81,7 @@ import {
     reorderCategories as apiReorderCategories,
 } from "./api";
 import type { ApiCategoryTree, ApiImage, ApiUser } from "./api";
+import { pollProcessingJob, type PollHandle } from "./pollProcessingJob";
 import MoveCategoryDialog from "./components/MoveCategoryDialog";
 import type { Category, ImageItem, Program } from "./types";
 import { useColorMode } from "./useColorMode";
@@ -233,9 +234,7 @@ export default function App() {
         statusMessage?: string;
     }
     const [processingJobs, setProcessingJobs] = useState<ProcessingJob[]>([]);
-    const processingPollRefs = useRef<
-        Map<number, ReturnType<typeof setTimeout>>
-    >(new Map());
+    const processingPollRefs = useRef<Map<number, PollHandle>>(new Map());
 
     // Server-reported progress stored in a ref to avoid re-triggering the
     // polling useEffect when intermediate progress updates arrive.
@@ -358,123 +357,85 @@ export default function App() {
           }
         : null;
 
-    // Start polling for each new processing job (uses setTimeout chaining to avoid overlapping calls)
+    // Start polling for each new processing job.  The per-job state machine
+    // (fetch -> dispatch -> reschedule / cancel) lives in `pollProcessingJob`;
+    // this effect only tracks which jobs have an active handle.
     useEffect(() => {
         const refs = processingPollRefs.current;
-        const abortControllers = new Map<number, AbortController>();
 
         for (const job of processingJobs) {
             if (job.status !== "processing") continue; // only poll active jobs
             if (refs.has(job.id)) continue; // already polling
 
-            const schedulePoll = () => {
-                const controller = new AbortController();
-                abortControllers.set(job.id, controller);
-                // Mark as polling immediately so the effect guard (`refs.has`)
-                // prevents duplicate polls if React re-renders during an
-                // in-flight async operation (e.g. the data refresh on completion).
-                if (!refs.has(job.id))
-                    refs.set(
-                        job.id,
-                        0 as unknown as ReturnType<typeof setTimeout>,
+            const handle = pollProcessingJob(job.id, {
+                fetchStatus: fetchSourceImage,
+                onCompleted: async (imageId) => {
+                    // Refresh data FIRST so the new image is already in the
+                    // category tree when the "View image" snackbar link appears.
+                    await Promise.all([
+                        loadCategories(),
+                        loadUncategorizedImages(),
+                    ]);
+                    refs.delete(job.id);
+                    setProcessingJobs((prev) =>
+                        prev.map((j) =>
+                            j.id === job.id
+                                ? {
+                                      ...j,
+                                      status: "completed" as const,
+                                      serverProgress: 100,
+                                      imageId: imageId ?? undefined,
+                                  }
+                                : j,
+                        ),
                     );
-
-                const poll = async () => {
-                    try {
-                        const src = await fetchSourceImage(job.id);
-                        if (controller.signal.aborted) return;
-                        if (src.status === "completed") {
-                            // Refresh data FIRST so the new image is already in the
-                            // category tree when the "View image" snackbar link appears.
-                            await Promise.all([
-                                loadCategories(),
-                                loadUncategorizedImages(),
-                            ]);
-                            refs.delete(job.id);
-                            setProcessingJobs((prev) =>
-                                prev.map((j) =>
-                                    j.id === job.id
-                                        ? {
-                                              ...j,
-                                              status: "completed" as const,
-                                              serverProgress: 100,
-                                              imageId:
-                                                  src.image_id ?? undefined,
-                                          }
-                                        : j,
-                                ),
-                            );
-                        } else if (src.status === "failed") {
-                            refs.delete(job.id);
-                            setProcessingJobs((prev) =>
-                                prev.map((j) =>
-                                    j.id === job.id
-                                        ? {
-                                              ...j,
-                                              status: "failed" as const,
-                                              serverProgress: src.progress,
-                                              errorMessage:
-                                                  src.error_message ||
-                                                  undefined,
-                                          }
-                                        : j,
-                                ),
-                            );
-                        } else {
-                            // Update server progress in ref (avoids
-                            // re-triggering this useEffect).
-                            serverProgressRef.current.set(job.id, src.progress);
-                            if (src.status_message) {
-                                serverStatusMessageRef.current.set(
-                                    job.id,
-                                    src.status_message,
-                                );
-                            }
-                            // Still processing — schedule next poll after this one completes
-                            if (!controller.signal.aborted) {
-                                refs.set(
-                                    job.id,
-                                    setTimeout(schedulePoll, 3000),
-                                );
-                            }
-                        }
-                    } catch {
-                        // Network error — schedule retry if not aborted
-                        if (!controller.signal.aborted) {
-                            refs.set(job.id, setTimeout(schedulePoll, 3000));
-                        }
+                },
+                onFailed: (progress, errorMessage) => {
+                    refs.delete(job.id);
+                    setProcessingJobs((prev) =>
+                        prev.map((j) =>
+                            j.id === job.id
+                                ? {
+                                      ...j,
+                                      status: "failed" as const,
+                                      serverProgress: progress,
+                                      errorMessage: errorMessage || undefined,
+                                  }
+                                : j,
+                        ),
+                    );
+                },
+                onProgress: (progress, statusMessage) => {
+                    serverProgressRef.current.set(job.id, progress);
+                    if (statusMessage) {
+                        serverStatusMessageRef.current.set(
+                            job.id,
+                            statusMessage,
+                        );
                     }
-                };
-
-                poll();
-            };
-
-            schedulePoll();
+                },
+            });
+            refs.set(job.id, handle);
         }
 
-        // Clean up timeouts for jobs that were removed
-        for (const [id, timeout] of refs) {
+        // Cancel handles for jobs that were removed or transitioned away
+        // from "processing" (e.g. user dismissed a completed snackbar).
+        for (const [id, handle] of refs) {
             if (
                 !processingJobs.some(
                     (j) => j.id === id && j.status === "processing",
                 )
             ) {
-                clearTimeout(timeout);
+                handle.cancel();
                 refs.delete(id);
-                abortControllers.get(id)?.abort();
-                abortControllers.delete(id);
             }
         }
 
         return () => {
-            for (const [, timeout] of refs) {
-                clearTimeout(timeout);
+            for (const [, handle] of refs) {
+                handle.cancel();
             }
             refs.clear();
-            for (const [, controller] of abortControllers) {
-                controller.abort();
-            }
-            abortControllers.clear();
         };
     }, [processingJobs]); // eslint-disable-line react-hooks/exhaustive-deps
 
