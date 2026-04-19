@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.5.0...frontend-v0.5.1) (2026-04-19)
+
+
+### Bug Fixes
+
+* **frontend:** move upload config to top-level regex location ([8acc84c](https://github.com/bcit-tlu/hriv/commit/8acc84c7966cf19bc7dd6e49e17ecad5b92908c1))
+* **frontend:** scope client_max_body_size to upload endpoints (P8/[#21](https://github.com/bcit-tlu/hriv/issues/21)) ([b229072](https://github.com/bcit-tlu/hriv/commit/b229072c393601f96b558d1c819306dc1f1ad989))
+
 ## [0.5.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.4.0...frontend-v0.5.0) (2026-04-18)
 
 
