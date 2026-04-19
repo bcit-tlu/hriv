@@ -63,6 +63,13 @@ jobs:
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
             | sudo tar xz -C /usr/local/bin kubeconform
 
+      - name: Check nginx configs are in sync (issue #37)
+        # The frontend nginx config exists in two places — the baked-in
+        # fallback at `frontend/nginx.conf.template` and the Helm
+        # ConfigMap template inlined in `charts/frontend/values.yaml`.
+        # This guard fails the build if the two copies drift.
+        run: python3 scripts/check_nginx_configs_in_sync.py
+
       - name: Lint, template-render & validate all charts
         run: |
           for chart in charts/*/; do
