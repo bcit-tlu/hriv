@@ -33,6 +33,20 @@ All use password: `password`
 | instructor@bcit.ca | instructor | Yes | No |
 | student@bcit.ca | student | No | No |
 
+## Getting an API Auth Token
+
+Many tests require authenticated API calls. Get a token:
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@bcit.ca","password":"password"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+```
+
+Use it in subsequent requests:
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1
+```
+
 ## Key UI Navigation Paths
 
 - **Browse page (Home):** Shows category tiles and uncategorized image tiles
@@ -41,6 +55,74 @@ All use password: `password`
 - **Image viewer:** Click any image tile on browse page to open OpenSeadragon viewer
 - **Manage page:** Click "MANAGE" tab, then use the manage interface for bulk operations
 - **Admin page:** Click "ADMIN" tab (admin role required) for database/filesystem export/import
+
+## OpenSeadragon Viewer Toolbar
+
+The image viewer toolbar is at the bottom-left of the viewer area. Buttons from left to right:
+
+| Position | Icon | Function |
+|----------|------|----------|
+| 1 | + | Zoom in |
+| 2 | - | Zoom out |
+| 3 | House | Home (reset view) |
+| 4 | Arrows | Fullscreen toggle |
+| 5 | CCW arrow | Rotate left |
+| 6 | CW arrow | Rotate right |
+| 7 | Diagonal arrow | Selection tool (draw rectangles) |
+| 8 | Padlock | Lock/unlock overlays |
+| 9 | X | Clear overlays |
+| 10 | Pencil | Canvas annotation edit |
+
+**Warning:** The fullscreen button (position 4) is easy to accidentally click when trying to reach the selection tool. If the viewer goes fullscreen, press Escape to exit.
+
+## Testing Metadata Operations
+
+### Optimistic Concurrency
+
+Images use version-based optimistic concurrency. Always include `If-Match` header when PATCHing:
+```bash
+# Get current version
+VERSION=$(curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1 | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+
+# PATCH with version
+curl -X PATCH http://localhost:8000/api/images/1 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "If-Match: $VERSION" \
+  -d '{"name": "New Name"}'
+```
+
+### metadata_extra_merge (Partial Metadata Updates)
+
+The `metadata_extra_merge` field allows partial updates to `metadata_extra` without overwriting other keys. This is how the frontend updates locked overlays and measurement settings independently.
+
+```bash
+# Add locked_overlays without overwriting measurement settings
+curl -X PATCH http://localhost:8000/api/images/1 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "If-Match: $VERSION" \
+  -d '{"metadata_extra_merge": {"locked_overlays": [{"x":0.1,"y":0.2,"w":0.3,"h":0.4}]}}'
+
+# Remove a key by setting it to null
+curl -X PATCH http://localhost:8000/api/images/1 \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "If-Match: $VERSION" \
+  -d '{"metadata_extra_merge": {"locked_overlays": null}}'
+```
+
+**Important:** `metadata_extra` and `metadata_extra_merge` are mutually exclusive — sending both in one request returns HTTP 422.
+
+### Injecting Test Data into DB
+
+To test frontend validation of malformed data, inject directly into PostgreSQL:
+```bash
+docker exec hriv-db-1 psql -U hriv -d hriv -c \
+  "UPDATE images SET metadata = jsonb_set(COALESCE(metadata,'{}'), '{locked_overlays}', '[{\"x\":0.1,\"y\":0.2,\"w\":0.3,\"h\":0.4},{\"garbage\":true},{\"x\":\"str\",\"y\":0,\"w\":0,\"h\":0}]') WHERE id=2"
+```
+
+Then navigate to that image in the browser to verify the frontend handles it gracefully.
 
 ## Testing Admin Export/Import
 
@@ -130,3 +212,7 @@ docker exec hriv-backend-1 tar -tzf /data/admin_tasks/<filename>.tar.gz | grep a
 - Category tree changes (add/move/delete) should be immediately visible on the browse page without browser refresh.
 - For export cancellation testing, the data volume needs to be large enough (~1GB+) that archiving takes more than a few seconds, otherwise the archive completes before you can click Cancel.
 - The frontend polls for task status every 2 seconds, so UI status transitions may lag slightly behind the actual backend state.
+- Seed images use external DZI tile sources (openseadragon.github.io). If tiles appear dark/black on initial load, wait a few seconds for the CDN to respond.
+- When testing viewer stability (e.g., after metadata edits), check the URL bar for `zoom=` and `x=`/`y=` parameters — they should remain unchanged if the viewport was preserved.
+- For API-based tests of metadata operations, always re-fetch the current version before each PATCH to avoid 409 Conflict errors.
+- The `locked_overlays` field in `metadata_extra` is validated by `OverlayRectSchema` — each entry must have numeric `x`, `y`, `w`, `h` fields. Malformed entries are silently filtered on both backend and frontend.
