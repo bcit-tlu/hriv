@@ -940,10 +940,9 @@ export default function CanvasOverlay({
     console.debug(LOG_PREFIX, 'colorChange applied to', active.length, 'objects')
     for (const obj of active) {
       if (obj instanceof fabric.IText) {
+        obj.set('fill', color)
         if (obj.isEditing && obj.selectionStart !== obj.selectionEnd) {
           obj.setSelectionStyles({ fill: color })
-        } else {
-          obj.set('fill', color)
         }
       } else {
         obj.set('stroke', color)
