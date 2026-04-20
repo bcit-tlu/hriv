@@ -32,9 +32,13 @@ _editor = require_role("admin", "instructor")
 
 logger = logging.getLogger(__name__)
 
-# Image extensions we accept (lowercase)
+# Image extensions we accept (lowercase).
+# BMP is intentionally excluded: libvips has no native BMP loader and the
+# ImageMagick delegate (the only path that can decode BMP in libvips) is
+# disabled in the backend image's libvips source build. See
+# backend/Dockerfile and backend/app/routers/upload.py for details.
 _IMAGE_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp", ".svs",
+    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".gif", ".webp", ".svs",
 }
 
 # Maximum concurrent tile-generation tasks per bulk import

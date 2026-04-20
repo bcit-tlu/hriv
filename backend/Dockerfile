@@ -53,11 +53,15 @@ WORKDIR /build/vips-${VIPS_VERSION}
 #                      fftw, orc, cgif(gif), hwy, imagequant, archive(dzsave)
 # Delegates disabled:  magick, heif, jpeg-xl, openexr, matio, poppler,
 #                      pdfium, nifti, quantizr, openjpeg, rsvg, pangocairo,
-#                      fontconfig, cfitsio — none of these formats are in
-#                      HRIV's accepted upload set (``backend/app/routers/
-#                      upload.py::_IMAGE_EXTENSIONS``) and libopenslide is
-#                      the only codec in the allow-list that isn't a
-#                      simple libtiff / libjpeg / libpng / libwebp path.
+#                      fontconfig, cfitsio — none of the disabled delegates'
+#                      formats are in HRIV's accepted upload set (see
+#                      ``backend/app/routers/upload.py::_IMAGE_EXTENSIONS``;
+#                      note that ``.bmp`` was removed from that set alongside
+#                      this build change because libvips has no native BMP
+#                      loader and the only delegate that can decode BMP is
+#                      ``magick``, which is disabled here).  libopenslide is
+#                      the only codec in the allow-list that isn't a simple
+#                      libtiff / libjpeg / libpng / libwebp path.
 RUN meson setup build --prefix=/usr/local --libdir=lib --buildtype=release \
       -Ddeprecated=false -Dintrospection=disabled -Dexamples=false \
       -Dcplusplus=false -Ddocs=false -Dmodules=disabled \

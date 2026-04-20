@@ -22,9 +22,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/source-images", tags=["source-images"])
 
-# Recognised image extensions (lowercase, with dot)
+# Recognised image extensions (lowercase, with dot).
+# BMP is intentionally excluded: libvips has no native BMP loader and the
+# ImageMagick delegate (the only path that can decode BMP in libvips) is
+# disabled in the backend image's libvips source build to drop ~24
+# non-reachable magickcore CVEs. See backend/Dockerfile for details.
 _IMAGE_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp", ".svs",
+    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".gif", ".webp", ".svs",
 }
 
 # 1 MiB chunks for streaming large uploads to disk

@@ -39,7 +39,6 @@ def test_is_image_filename_valid() -> None:
     assert _is_image_filename("photo.png") is True
     assert _is_image_filename("photo.tif") is True
     assert _is_image_filename("photo.tiff") is True
-    assert _is_image_filename("photo.bmp") is True
     assert _is_image_filename("photo.gif") is True
     assert _is_image_filename("photo.webp") is True
     assert _is_image_filename("photo.svs") is True
@@ -50,6 +49,9 @@ def test_is_image_filename_invalid() -> None:
     assert _is_image_filename("readme.txt") is False
     assert _is_image_filename("archive.zip") is False
     assert _is_image_filename("script.py") is False
+    # BMP is intentionally rejected: no native libvips loader and the
+    # ImageMagick delegate is disabled in the backend image.
+    assert _is_image_filename("photo.bmp") is False
 
 
 def test_is_image_filename_case_insensitive() -> None:

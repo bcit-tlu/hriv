@@ -14,7 +14,7 @@ const ACCEPTED_IMAGE_TYPES = 'image/*,.tif,.tiff'
 
 /** Recognised image extensions for drag-and-drop validation. */
 const IMAGE_EXTENSIONS = new Set([
-  '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff', '.svs',
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.tif', '.tiff', '.svs',
 ])
 
 function isImageFile(file: File): boolean {

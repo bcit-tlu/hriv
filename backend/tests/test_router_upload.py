@@ -22,10 +22,12 @@ def test_is_valid_image_by_extension() -> None:
     assert _is_valid_image("photo.png", None) is True
     assert _is_valid_image("photo.tif", None) is True
     assert _is_valid_image("photo.tiff", None) is True
-    assert _is_valid_image("photo.bmp", None) is True
     assert _is_valid_image("photo.gif", None) is True
     assert _is_valid_image("photo.webp", None) is True
     assert _is_valid_image("photo.svs", None) is True
+    # BMP is intentionally rejected: no native libvips loader and the
+    # ImageMagick delegate is disabled in the backend image.
+    assert _is_valid_image("photo.bmp", None) is False
     assert _is_valid_image("photo.txt", None) is False
     assert _is_valid_image("photo.pdf", None) is False
 

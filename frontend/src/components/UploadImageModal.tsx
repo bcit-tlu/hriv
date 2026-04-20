@@ -21,7 +21,7 @@ const ACCEPTED_IMAGE_TYPES = 'image/*,.tif,.tiff'
 
 /** Recognised image extensions for drag-and-drop validation. */
 const IMAGE_EXTENSIONS = new Set([
-  '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff', '.svs',
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.tif', '.tiff', '.svs',
 ])
 
 function isImageFile(file: File): boolean {
@@ -230,7 +230,7 @@ export default function UploadImageModal({
                 </Typography>
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
-                Supports JPEG, PNG, TIFF, BMP, GIF, WebP, and SVS files.
+                Supports JPEG, PNG, TIFF, GIF, WebP, and SVS files.
               </Typography>
             </>
           )}
