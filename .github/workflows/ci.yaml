@@ -401,6 +401,12 @@ jobs:
           format: table
           severity: CRITICAL,HIGH
           ignore-unfixed: true
+          # Suppress the documented, non-reachable / accepted CVEs listed in
+          # .trivyignore at the repo root (codec families transitively pulled
+          # in by libvips, the util-linux chfn/chsh info leak that can't fire
+          # inside a non-interactive container, and the two backup-image
+          # criticals). Each entry is justified and dated for review.
+          trivyignores: .trivyignore
           # TODO: flip to '1' once the base-image cleanup items from the
           # code-scanning mitigation plan have landed, so new regressions
           # block merges.
@@ -415,6 +421,9 @@ jobs:
           output: trivy-${{ matrix.component }}.sarif
           severity: CRITICAL,HIGH
           ignore-unfixed: false
+          # Same .trivyignore as the PR-table scan above, so the Security tab
+          # reflects the same accepted-risk decisions.
+          trivyignores: .trivyignore
           exit-code: '0'
 
       - name: Upload scan results to GitHub Security
