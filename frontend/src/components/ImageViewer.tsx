@@ -622,6 +622,11 @@ export default function ImageViewer({
       }
     })
 
+    // Reset rotation to 0 when the home button is clicked
+    viewer.addHandler('home', () => {
+      viewer.viewport.setRotation(0)
+    })
+
     // Report viewport changes after animations finish
     viewer.addHandler('animation-finish', emitViewport)
 
