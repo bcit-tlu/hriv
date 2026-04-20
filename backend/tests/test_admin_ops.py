@@ -503,6 +503,343 @@ async def test_run_db_import_missing_keys(tmp_path) -> None:
     assert "users" in (task.error_message or "")
 
 
+def _make_import_task(input_path: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=1,
+        task_type="db_import",
+        status="pending",
+        progress=0,
+        log="",
+        result_filename=None,
+        result_path=None,
+        input_path=input_path,
+        error_message=None,
+    )
+
+
+def _make_import_session(task: SimpleNamespace | None) -> tuple[AsyncMock, MagicMock]:
+    """Build a mock session + session-factory pair for run_db_import.
+
+    The same session instance is returned for both ``status_session`` and
+    ``data_session`` because ``MagicMock.return_value`` is cached — any
+    ``add``/``flush``/``commit``/``rollback`` call made by the importer can
+    therefore be asserted against a single object.
+
+    ``execute`` returns a :class:`MagicMock` whose ``scalars().all()`` is
+    an empty list so the image→program lookup path inside the importer
+    resolves to an empty program set.  Individual tests can override this
+    via ``mock_session.execute.side_effect``.
+    """
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.refresh = AsyncMock()
+    mock_session.flush = AsyncMock()
+    mock_session.commit = AsyncMock()
+    mock_session.rollback = AsyncMock()
+
+    exec_result = MagicMock()
+    exec_result.scalars.return_value.all.return_value = []
+    mock_session.execute = AsyncMock(return_value=exec_result)
+
+    # add() is not awaited in the importer — use a sync MagicMock so it
+    # records calls without returning a coroutine.
+    mock_session.add = MagicMock()
+
+    factory = MagicMock()
+    factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    return mock_session, factory
+
+
+def _full_dump() -> dict:
+    return {
+        "programs": [
+            {"id": 1, "name": "P1"},
+            {"id": 2, "name": "P2"},
+        ],
+        "users": [
+            {
+                "id": 1,
+                "name": "Alice",
+                "email": "alice@example.com",
+                "role": "admin",
+                "program_id": 1,
+                "last_access": "2025-01-01T00:00:00+00:00",
+            },
+            {
+                "id": 2,
+                "name": "Bob",
+                "email": "bob@example.com",
+                "password_hash": "hashed",
+                "oidc_subject": "sub-2",
+            },
+        ],
+        "categories": [
+            # Intentionally out-of-order: child appears before parent.
+            {"id": 3, "label": "grandchild", "parent_id": 2},
+            {"id": 2, "label": "child", "parent_id": 1},
+            {"id": 1, "label": "root", "parent_id": None, "sort_order": 0},
+        ],
+        "images": [
+            {
+                "id": 1,
+                "name": "img1",
+                "thumb": "/t",
+                "tile_sources": "/ts",
+                "category_id": 1,
+                "active": True,
+                "program_ids": [1, 2],
+            },
+            {
+                # Uses legacy keys (`label`, `origin`) to cover the
+                # fallback branches.
+                "id": 2,
+                "label": "img2",
+                "thumb": "/t2",
+                "tile_sources": "/ts2",
+                "origin": "somewhere",
+            },
+        ],
+        "source_images": [
+            {
+                "id": 1,
+                "original_filename": "o.tiff",
+                "stored_path": "/s",
+                "status": "completed",
+                "progress": 100,
+                "image_id": 1,
+            }
+        ],
+        "announcement": {"message": "hello", "enabled": True},
+    }
+
+
+async def test_run_db_import_happy_path(tmp_path) -> None:
+    """Full import drives all flush/commit calls and marks the task completed."""
+    input_file = tmp_path / "dump.json"
+    input_file.write_text(json.dumps(_full_dump()))
+    task = _make_import_task(str(input_file))
+
+    mock_session, factory = _make_import_session(task)
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "completed"
+    assert task.progress == 100
+    assert "Imported" in (task.log or "")
+    # Exactly one atomic data-session commit + a handful of status commits.
+    assert mock_session.commit.await_count >= 2
+    # The importer unlinks the uploaded file on the `finally` branch.
+    assert not input_file.exists()
+
+
+async def test_run_db_import_without_optional_sections(tmp_path) -> None:
+    """`programs`, `source_images`, and `announcement` are optional."""
+    dump = {
+        "users": [{"id": 1, "name": "U", "email": "u@e.com"}],
+        "categories": [{"id": 1, "label": "root", "parent_id": None}],
+        "images": [
+            {
+                "id": 1,
+                "name": "img",
+                "thumb": "/t",
+                "tile_sources": "/ts",
+            }
+        ],
+    }
+    input_file = tmp_path / "minimal.json"
+    input_file.write_text(json.dumps(dump))
+    task = _make_import_task(str(input_file))
+
+    mock_session, factory = _make_import_session(task)
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "completed"
+    # When `announcement` is absent the importer still inserts a default
+    # empty row so the singleton exists.
+    add_calls = [c.args[0] for c in mock_session.add.call_args_list]
+    assert any(type(obj).__name__ == "Announcement" for obj in add_calls)
+
+
+async def test_run_db_import_circular_categories(tmp_path) -> None:
+    """Category rows that can't be topologically sorted surface a clear error."""
+    dump = {
+        "programs": [],
+        "users": [{"id": 1, "name": "U", "email": "u@e.com"}],
+        # Two categories whose parents refer only to each other — no root.
+        "categories": [
+            {"id": 1, "label": "a", "parent_id": 2},
+            {"id": 2, "label": "b", "parent_id": 1},
+        ],
+        "images": [],
+    }
+    input_file = tmp_path / "circular.json"
+    input_file.write_text(json.dumps(dump))
+    task = _make_import_task(str(input_file))
+
+    mock_session, factory = _make_import_session(task)
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "failed"
+    assert "Circular" in (task.error_message or "")
+    mock_session.rollback.assert_awaited()
+
+
+async def test_run_db_import_non_dict_payload(tmp_path) -> None:
+    """A JSON array (not an object) at the top level is rejected."""
+    input_file = tmp_path / "array.json"
+    input_file.write_text(json.dumps([1, 2, 3]))
+    task = _make_import_task(str(input_file))
+
+    mock_session, factory = _make_import_session(task)
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "failed"
+    assert "JSON object" in (task.error_message or "")
+
+
+async def test_run_db_import_cancelled_midway(tmp_path) -> None:
+    """A cancel flipped on status_session.refresh aborts and rolls back."""
+    input_file = tmp_path / "cancel.json"
+    input_file.write_text(json.dumps(_full_dump()))
+    task = _make_import_task(str(input_file))
+
+    mock_session, factory = _make_import_session(task)
+
+    # The importer calls `session.refresh` from every `_update_task` with
+    # `check_cancelled=True`.  Flip the task status to "cancelling" on the
+    # second call so we enter the import mid-flight before aborting.
+    refresh_calls = {"count": 0}
+
+    async def refresh_side_effect(_task, **_kwargs):
+        refresh_calls["count"] += 1
+        if refresh_calls["count"] == 2:
+            _task.status = "cancelling"
+
+    mock_session.refresh.side_effect = refresh_side_effect
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "cancelled"
+    mock_session.rollback.assert_awaited()
+    assert "rolled back" in (task.log or "")
+
+
+async def test_run_db_import_image_program_lookup(tmp_path) -> None:
+    """Images with `program_ids` trigger a Program lookup + relationship set."""
+    dump = {
+        "programs": [{"id": 1, "name": "P1"}],
+        "users": [{"id": 1, "name": "U", "email": "u@e.com"}],
+        "categories": [{"id": 1, "label": "root", "parent_id": None}],
+        "images": [
+            {
+                "id": 1,
+                "name": "img",
+                "thumb": "/t",
+                "tile_sources": "/ts",
+                "category_id": 1,
+                "program_ids": [1],
+            }
+        ],
+    }
+    input_file = tmp_path / "imgprog.json"
+    input_file.write_text(json.dumps(dump))
+    task = _make_import_task(str(input_file))
+
+    mock_session, factory = _make_import_session(task)
+
+    # Return a fake Program row when the importer does
+    #   select(Program).where(Program.id.in_([1]))
+    fake_program = SimpleNamespace(id=1, name="P1")
+    program_result = MagicMock()
+    program_result.scalars.return_value.all.return_value = [fake_program]
+
+    default_result = MagicMock()
+    default_result.scalars.return_value.all.return_value = []
+
+    def execute_side_effect(stmt, *args, **kwargs):
+        compiled = str(stmt).upper() if not hasattr(stmt, "text") else ""
+        # The only SELECT the importer emits is the Program lookup; other
+        # execute() calls are DELETE/UPDATE/SELECT setval text() statements.
+        if "SELECT" in compiled and "PROGRAM" in compiled:
+            return program_result
+        return default_result
+
+    mock_session.execute.side_effect = execute_side_effect
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "completed"
+
+
+async def test_run_db_import_data_session_failure(tmp_path) -> None:
+    """A data-session exception is caught, rolled back, and surfaced on the task."""
+    input_file = tmp_path / "dump.json"
+    input_file.write_text(json.dumps(_full_dump()))
+    task = _make_import_task(str(input_file))
+
+    mock_session, factory = _make_import_session(task)
+
+    # Explode on the first DELETE so the importer enters the generic
+    # `except Exception` branch.
+    call = {"count": 0}
+
+    async def execute_side_effect(stmt, *args, **kwargs):
+        call["count"] += 1
+        if call["count"] >= 2:  # let the initial UPDATE admin_tasks succeed
+            raise RuntimeError("simulated data-session failure")
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = []
+        return result
+
+    mock_session.execute.side_effect = execute_side_effect
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "failed"
+    assert "simulated data-session failure" in (task.error_message or "")
+    mock_session.rollback.assert_awaited()
+    # Even on failure the uploaded input file is cleaned up.
+    assert not input_file.exists()
+
+
+async def test_run_db_import_unlink_missing_input(tmp_path) -> None:
+    """The `finally` clean-up swallows OSError when the input file is gone."""
+    input_file = tmp_path / "dump.json"
+    input_file.write_text(json.dumps(_full_dump()))
+    task = _make_import_task(str(input_file))
+
+    mock_session, factory = _make_import_session(task)
+
+    # Pre-delete the input file so the happy-path still runs but the
+    # finally `os.unlink` hits ENOENT.
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        # Read the JSON into memory via the real _read_file, then delete
+        # the file after the reader is dispatched but before `finally`.
+        original_read = __import__("app.admin_ops", fromlist=["_read_file"])._read_file
+
+        def read_then_delete(path):
+            data = original_read(path)
+            os.unlink(path)
+            return data
+
+        with patch("app.admin_ops._read_file", side_effect=read_then_delete):
+            await run_db_import(1)
+
+    assert task.status == "completed"
+    assert not input_file.exists()
+
+
 # ── run_files_export tests ─────────────────────────────────
 
 
