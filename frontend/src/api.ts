@@ -1,11 +1,5 @@
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
-// Migrate legacy localStorage key from previous "corgi" branding
-if (localStorage.getItem('corgi_token') && !localStorage.getItem('hriv_token')) {
-  localStorage.setItem('hriv_token', localStorage.getItem('corgi_token')!)
-  localStorage.removeItem('corgi_token')
-}
-
 let _token: string | null = localStorage.getItem('hriv_token')
 
 // Unique per browser-tab identifier sent on every API call.  Allows the
@@ -109,11 +103,6 @@ export function fetchCategoryTree(): Promise<ApiCategoryTree[]> {
   return request('/categories/tree')
 }
 
-export function fetchCategories(parentId?: number): Promise<ApiCategory[]> {
-  const qs = parentId != null ? `?parent_id=${parentId}` : ''
-  return request(`/categories/${qs}`)
-}
-
 export function createCategory(body: {
   label: string
   parent_id?: number | null
@@ -164,22 +153,6 @@ export function fetchImages(categoryId?: number): Promise<ApiImage[]> {
 
 export function fetchUncategorizedImages(): Promise<ApiImage[]> {
   return request('/images/?uncategorized=true')
-}
-
-export function createImage(body: {
-  name: string
-  thumb: string
-  tile_sources: string
-  category_id?: number | null
-  copyright?: string
-  note?: string
-  program_ids?: number[]
-  active?: boolean
-}): Promise<ApiImage> {
-  return request('/images/', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
 }
 
 export function updateImage(
@@ -450,10 +423,6 @@ export async function uploadSourceImage(
   })
 }
 
-export function fetchSourceImages(): Promise<ApiSourceImage[]> {
-  return request('/source-images/')
-}
-
 export function fetchSourceImage(id: number): Promise<ApiSourceImage> {
   return request(`/source-images/${id}`)
 }
@@ -507,10 +476,6 @@ export async function bulkImportImages(
 
 export function fetchBulkImportJob(jobId: number): Promise<ApiBulkImportJob> {
   return request(`/admin/bulk-import/${jobId}`)
-}
-
-export function fetchBulkImportJobs(): Promise<ApiBulkImportJob[]> {
-  return request('/admin/bulk-import/')
 }
 
 // ── Issues ──────────────────────────────────────────────

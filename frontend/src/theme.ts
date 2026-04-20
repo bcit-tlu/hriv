@@ -85,6 +85,3 @@ export function buildTheme(mode: 'light' | 'dark') {
 export function getSurfaceVariant(mode: 'light' | 'dark'): string {
   return mode === 'dark' ? darkPalette.surfaceVariant : lightPalette.surfaceVariant
 }
-
-/** Backwards-compatible default export (light theme). */
-export const theme = buildTheme('light')

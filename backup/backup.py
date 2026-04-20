@@ -110,12 +110,8 @@ def _azure_configured() -> bool:
 # ---------------------------------------------------------------------------
 
 def _backup_sort_key(path: Path) -> str:
-    """Extract the timestamp portion of a backup filename for sorting.
-
-    Handles both ``hriv-backup-YYYYMMDD-HHMMSS.tar.gz`` and legacy
-    ``corgi-backup-YYYYMMDD-HHMMSS.tar.gz`` filenames so that archives
-    with different prefixes are sorted chronologically.
-    """
+    """Extract the ``YYYYMMDD-HHMMSS`` timestamp from an
+    ``hriv-backup-*.tar.gz`` filename so archives sort chronologically."""
     m = re.search(r"(\d{8}-\d{6})", path.name)
     return m.group(1) if m else path.name
 
@@ -293,7 +289,7 @@ def _enforce_local_retention() -> None:
         return
 
     archives = sorted(
-        list(local_dir.glob("hriv-backup-*.tar.gz")) + list(local_dir.glob("corgi-backup-*.tar.gz")),
+        local_dir.glob("hriv-backup-*.tar.gz"),
         key=_backup_sort_key,
         reverse=True,
     )
@@ -323,7 +319,7 @@ def list_snapshots() -> list[dict]:
             return []
         snapshots = []
         for f in sorted(
-            list(local_dir.glob("hriv-backup-*.tar.gz")) + list(local_dir.glob("corgi-backup-*.tar.gz")),
+            local_dir.glob("hriv-backup-*.tar.gz"),
             key=_backup_sort_key,
             reverse=True,
         ):
@@ -401,7 +397,7 @@ def run_restore(snapshot_name: str | None = None) -> bool:
             archive_path = local_dir / fname
         else:
             archives = sorted(
-                list(local_dir.glob("hriv-backup-*.tar.gz")) + list(local_dir.glob("corgi-backup-*.tar.gz")),
+                local_dir.glob("hriv-backup-*.tar.gz"),
                 key=_backup_sort_key,
                 reverse=True,
             )

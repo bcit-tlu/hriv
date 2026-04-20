@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from ..auth import require_role, hash_password
 from ..database import get_db
-from ..models import User, Program
+from ..models import User
 from ..schemas import UserCreate, UserUpdate, UserBulkUpdate, UserOut
 
 router = APIRouter(prefix="/users", tags=["users"])
