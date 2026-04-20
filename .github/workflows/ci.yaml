@@ -9,6 +9,8 @@ run-name: >-
       && format('PR #{0} — {1}', github.event.pull_request.number, github.event.pull_request.title)
       || startsWith(github.ref, 'refs/tags/')
       && format('Release {0}', github.ref_name)
+      || (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      && format('Nightly rebuild — {0}', github.sha)
       || format('Head build — {0}', github.event.head_commit.message) }}
 
 on:
@@ -17,6 +19,21 @@ on:
     tags: ["frontend-v*", "backend-v*", "backup-v*"]
   pull_request:
     branches: [main]
+  # ── Nightly rebuild ───────────────────────────────────────
+  #
+  # Re-runs the image matrix against current `main` with no source
+  # changes so Trivy re-scans against a freshly pulled base image and
+  # freshly downloaded vulnerability DB. Picks up already-published
+  # Debian/Alpine/Python security patches without waiting for the next
+  # code change. Produces the moving `:head` OCI tag pointing at the
+  # newly-rebuilt digest; see the versions job below for the immutable
+  # `.rebuild-<timestamp>` version tag that anchors each rebuild.
+  #
+  # 09:17 UTC ≈ 02:17 Pacific — outside business hours, off the top
+  # of the hour to dodge GitHub's peak cron load.
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch: {}
 
 env:
   REGISTRY: ghcr.io
@@ -177,6 +194,16 @@ jobs:
               # and piped through the image pipeline.
               MODE="head"
               VERSION="0.0.0-head.${SHORT_SHA}"
+            elif [[ "${GITHUB_EVENT_NAME}" == "schedule" \
+                 || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+              # ── Nightly / on-demand rebuild of main ─────────
+              # Source is unchanged (same ${SHORT_SHA}), but base images
+              # may have fresh patches. Move `:head` to the new digest
+              # and stamp an immutable `.rebuild-<timestamp>` suffix so
+              # the original `0.0.0-head.<sha>` tag produced by the
+              # main-push build stays a stable provenance anchor.
+              MODE="rebuild"
+              VERSION="0.0.0-head.${SHORT_SHA}.rebuild-$(date -u +%Y%m%d%H%M)"
             else
               # ── PR: build-only sanity check, no push ────────
               MODE="pr"
@@ -246,6 +273,10 @@ jobs:
       #     if full release + highest stable semver → stable, latest
       #   mode=head (main branch push):
       #     always → head
+      #   mode=rebuild (scheduled / workflow_dispatch rebuild of main):
+      #     always → head  +  the dated immutable `.rebuild-<ts>` version
+      #     tag produced by the versions job. Preserves the original
+      #     `0.0.0-head.<sha>` tag as an unchanged provenance anchor.
       #   mode=pr (pull request):
       #     always → pr-<sha>  (not pushed to registry)
       - uses: docker/metadata-action@v6
@@ -257,7 +288,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
           tags: |
             type=raw,value=${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }},enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' }}
-            type=raw,value=head,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'head' }}
+            type=raw,value=head,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'head' || fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'rebuild' }}
             type=raw,value=stable,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'release' && fromJSON(needs.versions.outputs.json)[matrix.component].is_prerelease == false && fromJSON(needs.versions.outputs.json)[matrix.component].is_highest_stable == true }}
             type=raw,value=latest,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'release' && fromJSON(needs.versions.outputs.json)[matrix.component].is_prerelease == false && fromJSON(needs.versions.outputs.json)[matrix.component].is_highest_stable == true }}
           flavor: |
@@ -367,11 +398,19 @@ jobs:
   #     the moving `head` OCI tag. Lets flux-fleet's latest overlay
   #     track main HEAD continuously.
   #
-  # PR builds do not publish.
+  # Skipped on:
+  #   * pull requests    — nothing to publish; build-only sanity check.
+  #   * mode=rebuild     — chart bytes are identical to the prior main
+  #     push (no source change), so re-pushing `<chart>-head.<sha>` is
+  #     either a no-op (registry dedupes) or a 409 (immutable tag).
+  #     The rebuild only needs to move `:head` on the image side.
   helm-publish:
     runs-on: ubuntu-latest
     needs: [helm-lint, images, versions]
-    if: github.event_name != 'pull_request'
+    if: >-
+      github.event_name != 'pull_request'
+      && github.event_name != 'schedule'
+      && github.event_name != 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v6
 
