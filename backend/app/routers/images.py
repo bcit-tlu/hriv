@@ -160,6 +160,17 @@ async def update_image(
     update_data = body.model_dump(exclude_unset=True)
     if "metadata_extra" in update_data:
         update_data["metadata_"] = update_data.pop("metadata_extra")
+    # Server-side partial merge: apply provided keys to existing metadata.
+    # Keys with None values are deleted; all other keys are set/updated.
+    merge_patch = update_data.pop("metadata_extra_merge", None)
+    if merge_patch is not None:
+        current = dict(img.metadata_ or {})
+        for key, value in merge_patch.items():
+            if value is None:
+                current.pop(key, None)
+            else:
+                current[key] = value
+        update_data["metadata_"] = current if current else None
     program_ids = update_data.pop("program_ids", None)
     for key, value in update_data.items():
         setattr(img, key, value)
