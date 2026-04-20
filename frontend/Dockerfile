@@ -28,7 +28,15 @@ RUN npm run build
 
 # ── Stage 4: Production server (nginx) ───────────────────
 FROM nginx:1.27-alpine AS prod
-RUN rm /etc/nginx/conf.d/default.conf
+# Pull fresh Alpine package updates on top of the base so the image
+# doesn't wait on the nginx maintainers' base-image tag cadence for
+# published libxml2 / libssl3 / libcrypto3 / libpng / zlib / musl
+# / libexpat patches. Effectiveness is bounded by how often CI
+# re-resolves the ``nginx:1.27-alpine`` tag against the upstream
+# registry — BuildKit's cache will otherwise keep serving this layer
+# from the prior build. The ``pull: true`` flag on rebuild-mode
+# builds in ``.github/workflows/ci.yaml`` handles that case.
+RUN apk --no-cache upgrade && rm /etc/nginx/conf.d/default.conf
 # Bake in a fallback nginx template so the prod image is self-sufficient
 # for ad-hoc `docker run` while keeping **one** physical source of truth
 # for the config.  The canonical file lives in the Helm chart at
