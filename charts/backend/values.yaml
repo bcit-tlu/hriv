@@ -21,12 +21,12 @@ env:
 # default so deployments without an OTLP collector don't carry six
 # always-empty env vars in the pod spec.
 otel:
-    enabled: true
+    enabled: false
     serviceName: "hriv-backend"
     tracesExporter: "otlp"
     metricsExporter: "otlp"
     logsExporter: "otlp"
-    exporterEndpoint: "http://opentelemetry-collector.observability:4318"
+    exporterEndpoint: ""
     exporterProtocol: "http/protobuf"
 
 # Stable JWT signing secret shared across all Uvicorn workers.
