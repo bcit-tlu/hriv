@@ -271,6 +271,9 @@ jobs:
           build-contexts: ${{ matrix.build_contexts }}
           target: ${{ matrix.target }}
           push: ${{ github.event_name != 'pull_request' }}
+          # PR builds don't push to the registry, but we still need the image
+          # locally so the Trivy step below can scan it by tag.
+          load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           sbom: ${{ github.event_name != 'pull_request' }}
@@ -290,15 +293,43 @@ jobs:
           cosign sign --yes \
             ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}@${{ steps.build.outputs.digest }}
 
-      # ── Trivy vulnerability scan → GitHub Security tab ─────
+      # ── Trivy vulnerability scan ───────────────────────────
+      #
+      # Runs on every build, including pull requests, so regressions surface
+      # on the PR that introduces them rather than after merge to main.
+      #
+      #   * main/tag pushes: scan the pushed image by digest and upload the
+      #     full CRITICAL+HIGH SARIF to the Security tab. `ignore-unfixed`
+      #     is disabled here so unfixable CVEs remain visible on the tab
+      #     for inventory/audit purposes.
+      #
+      #   * pull requests: scan the locally loaded image by tag (PRs don't
+      #     push to the registry). `ignore-unfixed: true` trims the noise
+      #     to CVEs with an upstream fix available, and `exit-code: 1`
+      #     fails the PR if any such CRITICAL/HIGH is introduced. SARIF is
+      #     not uploaded on PRs — the main-branch scan is the source of
+      #     truth for the Security tab.
+      - name: Resolve image reference for Trivy
+        id: scan-ref
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "ref=${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Scan image for vulnerabilities
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name != 'pull_request'
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
         uses: aquasecurity/trivy-action@v0.35.0
         with:
-          image-ref: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}@${{ steps.build.outputs.digest }}
+          image-ref: ${{ steps.scan-ref.outputs.ref }}
           format: sarif
           output: trivy-${{ matrix.component }}.sarif
           severity: CRITICAL,HIGH
+          ignore-unfixed: ${{ github.event_name == 'pull_request' }}
+          exit-code: ${{ github.event_name == 'pull_request' && '1' || '0' }}
 
       - name: Upload scan results to GitHub Security
         if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name != 'pull_request'
