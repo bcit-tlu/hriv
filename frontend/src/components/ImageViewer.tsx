@@ -554,23 +554,25 @@ export default function ImageViewer({
         onClearOverlaysRef.current?.()
       },
     })
+    // Wrap the OSD button in an outer container so we can block OSD's
+    // MouseTracker (pointer-events:none on the button itself) while the
+    // wrapper still receives hover events for the tooltip.
+    const clearWrapper = document.createElement('div')
+    clearWrapper.style.display = 'inline-block'
+    clearWrapper.appendChild(clearButton.element)
+
     // Visually disable clear button when locked
     const updateClearButtonState = () => {
       const locked = overlaysLockedRef.current
       clearButton.element.style.opacity = locked ? '0.3' : '1'
-      clearButton.element.style.cursor = locked ? 'not-allowed' : 'pointer'
-      clearButton.element.title = locked
+      clearButton.element.style.pointerEvents = locked ? 'none' : 'auto'
+      clearWrapper.style.cursor = locked ? 'not-allowed' : 'pointer'
+      clearWrapper.title = locked
         ? 'Overlays are locked by the instructor'
         : 'Clear all selection rectangles'
-      // Suppress OSD hover/pressed image swaps when locked so the button
-      // doesn't appear interactive; the container still receives mouse
-      // events so the title tooltip remains visible.
-      clearButton.element.querySelectorAll('img').forEach((img) => {
-        img.style.pointerEvents = locked ? 'none' : 'auto'
-      })
     }
     updateClearButtonState()
-    viewer.addControl(clearButton.element, {
+    viewer.addControl(clearWrapper, {
       anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
     })
 
