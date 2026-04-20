@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2-rc](https://github.com/bcit-tlu/hriv/compare/backend-v0.5.1...backend-v0.5.2-rc) (2026-04-20)
+
+
+### Bug Fixes
+
+* resolve stale metadata, overlay validation, and viewer re-creation ([#40](https://github.com/bcit-tlu/hriv/issues/40), [#41](https://github.com/bcit-tlu/hriv/issues/41), [#42](https://github.com/bcit-tlu/hriv/issues/42)) ([#123](https://github.com/bcit-tlu/hriv/issues/123)) ([32838ea](https://github.com/bcit-tlu/hriv/commit/32838eaa6f1ca9ac76989ca399658836141bd759))
+
 ## [0.5.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.5.0...backend-v0.5.1) (2026-04-18)
 
 
