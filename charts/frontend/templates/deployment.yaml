@@ -14,9 +14,16 @@ spec:
       labels:
         {{- include "hriv-frontend.selectorLabels" . | nindent 8 }}
       annotations:
-        {{- /* Restart pods automatically when ConfigMap content changes */}}
+        {{- /* Restart pods automatically when ConfigMap content changes.
+               Hash covers both inline ``data`` and any file-backed
+               ``files`` entries so edits to chart-relative files (e.g.
+               ``files/default.conf.template``) still trigger a rollout. */}}
         {{- range $m := (.Values.configMounts | default list) }}
-        checksum/{{ $m.name }}: {{ toYaml $m.data | sha256sum }}
+        {{- $parts := list (toYaml ($m.data | default dict)) }}
+        {{- range $key, $path := ($m.files | default dict) }}
+        {{-   $parts = append $parts (printf "%s=%s" $key ($.Files.Get $path)) }}
+        {{- end }}
+        checksum/{{ $m.name }}: {{ join "\n" $parts | sha256sum }}
         {{- end }}
     spec:
       containers:

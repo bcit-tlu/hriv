@@ -29,14 +29,23 @@ RUN npm run build
 # ── Stage 4: Production server (nginx) ───────────────────
 FROM nginx:1.27-alpine AS prod
 RUN rm /etc/nginx/conf.d/default.conf
-# The nginx config template is supplied at deploy time via a ConfigMap
-# mounted at /etc/nginx/templates/default.conf.template — authoritative
-# copy lives in charts/frontend/values.yaml under
-# configMounts[0].data."default.conf.template".  The prod image is
-# therefore only usable under the Helm chart (or an equivalent mount);
-# docker-compose uses the `dev` target above and does not consume this
-# stage.  See issue #37 for the rationale behind removing the legacy
-# baked-in fallback that previously caused drift between the two copies.
+# Bake in a fallback nginx template so the prod image is self-sufficient
+# for ad-hoc `docker run` while keeping **one** physical source of truth
+# for the config.  The canonical file lives in the Helm chart at
+# ``charts/frontend/files/default.conf.template`` and is also rendered
+# into the ConfigMap the chart mounts over this path at deploy time —
+# the ConfigMap, when present, shadows the baked-in copy.  The chart
+# directory is supplied to BuildKit as a named build context; build the
+# image with:
+#
+#     docker buildx build \
+#         --build-context nginx-config=charts/frontend/files \
+#         -t hriv-frontend:dev -f frontend/Dockerfile frontend
+#
+# CI wires this up automatically via ``build-contexts:`` in
+# ``.github/workflows/ci.yaml`` for the ``frontend`` matrix entry.
+# See issue #37 for the rationale.
+COPY --from=nginx-config default.conf.template /etc/nginx/templates/default.conf.template
 COPY --chmod=755 dns-resolver.envsh /docker-entrypoint.d/12-dns-resolver.envsh
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 8080

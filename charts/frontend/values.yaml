@@ -30,126 +30,20 @@ env:
 # resource and is mounted into the container at the given mountPath.
 # Override the nginx config at deploy time without rebuilding the image.
 #
-# The nginx ``default.conf.template`` below is the **sole** source of
-# truth for the frontend's reverse-proxy config.  The prod container
-# image (see ``frontend/Dockerfile``) ships without a baked-in fallback
-# — running the image without this ConfigMap mount will leave nginx
-# with no server block.  This is deliberate: it makes the Helm chart
-# the only place the config needs to be edited.  See issue #37.
+# Each entry may populate ``data`` directly or reference files via
+# ``files`` (map of ConfigMap key → chart-relative file path); the file
+# contents are read with ``.Files.Get`` at template-render time.  The
+# frontend nginx template below is the **single** source of truth for
+# the reverse-proxy config: the same file is baked into the prod Docker
+# image via a BuildKit named build context so that `docker run` of the
+# published image and the Helm ConfigMap path resolve to identical
+# bytes by construction.  See issue #37 for history.
 configMounts:
     - name: nginx-config
       mountPath: /etc/nginx/templates
-      data:
-          default.conf.template: |-
-              server {
-                  listen       8080;
-                  server_name  _;
-                  root         /usr/share/nginx/html;
-                  index        index.html;
+      files:
+          default.conf.template: files/default.conf.template
 
-                  # ── Gzip ──────────────────────────────────────────────
-                  gzip             on;
-                  gzip_vary        on;
-                  gzip_proxied     any;
-                  gzip_min_length  256;
-                  gzip_types
-                      text/plain
-                      text/css
-                      text/javascript
-                      application/javascript
-                      application/json
-                      application/xml
-                      image/svg+xml;
-
-                  # ── Cache hashed assets aggressively ──────────────────
-                  location /assets/ {
-                      expires 1y;
-                      add_header Cache-Control          "public, immutable";
-                      add_header X-Frame-Options        "SAMEORIGIN" always;
-                      add_header X-Content-Type-Options "nosniff"     always;
-                  }
-
-                  # ── Reverse-proxy API to the backend ──────────────────
-                  #
-                  # The `client_max_body_size` cap is split across two locations so
-                  # that non-upload API traffic (login, metadata PATCH/POST, admin
-                  # actions, etc.) keeps a sane 10 MB ceiling while the handful of
-                  # upload endpoints below are allowed to stream hundreds of
-                  # megabytes (high-res pathology TIFFs, tar.gz admin imports).
-                  #
-                  # The upload location MUST be a regex and MUST ship its own full
-                  # proxy config: nginx does *not* inherit `proxy_pass` / headers /
-                  # timeouts from an enclosing prefix location into a nested block.
-                  # Putting the upload rules inside `location /api/ { ... }` (the
-                  # obvious-looking DRY refactor) breaks routing — requests fall
-                  # through to the static-file handler and return 404.  See PR #115.
-                  #
-                  # Regex locations are evaluated after prefix matches but win when
-                  # they match, so `/api/source-images/upload` is handled here while
-                  # `/api/anything-else` falls through to the prefix `/api/` block.
-
-                  # Upload endpoints — unlimited body size.
-                  # - /api/source-images/upload        single high-res TIFF/SVS
-                  # - /api/admin/bulk-import[/...]     multi-file bulk ingest
-                  # - /api/admin/tasks/db-import       admin DB JSON import
-                  # - /api/admin/tasks/files-import    admin tar.gz filesystem import
-                  location ~ ^/api/(source-images/upload|admin/bulk-import(/.*)?|admin/tasks/(db|files)-import)(/|\?.*)?$ {
-                      resolver           ${NGINX_DNS_RESOLVER} valid=5s;
-                      set                $backend "${BACKEND_URL}";
-                      proxy_pass         $backend$request_uri;
-
-                      proxy_http_version 1.1;
-                      proxy_set_header   Host              $host;
-                      proxy_set_header   X-Real-IP         $remote_addr;
-                      proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-                      proxy_set_header   X-Forwarded-Proto $scheme;
-
-                      # 0 = unlimited.  Upload handlers stream the body to disk in
-                      # bounded chunks (see backend/app/routers/upload.py), so we do
-                      # not need an nginx-level cap here.
-                      client_max_body_size 0;
-
-                      proxy_read_timeout    600s;
-                      proxy_send_timeout    600s;
-                      proxy_connect_timeout 60s;
-                  }
-
-                  # Default API proxy — sane body-size cap for JSON/metadata routes.
-                  location /api/ {
-                      # Re-resolve the backend hostname on every request so that nginx
-                      # picks up endpoint changes after pod restarts or service updates.
-                      resolver           ${NGINX_DNS_RESOLVER} valid=5s;
-                      set                $backend "${BACKEND_URL}";
-                      proxy_pass         $backend$request_uri;
-
-                      proxy_http_version 1.1;
-                      proxy_set_header   Host              $host;
-                      proxy_set_header   X-Real-IP         $remote_addr;
-                      proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-                      proxy_set_header   X-Forwarded-Proto $scheme;
-
-                      # Every non-upload /api/ route is capped at 10 MB so a
-                      # malicious or buggy client cannot stream arbitrarily large
-                      # payloads at handlers that have no reason to accept them.
-                      # The upload regex location above overrides this for the
-                      # endpoints that genuinely do accept large bodies.
-                      client_max_body_size 10m;
-
-                      # Extend timeouts for slow uploads / large tile-generation responses.
-                      proxy_read_timeout    600s;
-                      proxy_send_timeout    600s;
-                      proxy_connect_timeout 60s;
-                  }
-
-                  # ── SPA fallback ─────────────────────────────────────
-                  location / {
-                      try_files $uri $uri/ /index.html;
-                  }
-
-                  # ── Security headers ─────────────────────────────────
-                  add_header X-Frame-Options        "SAMEORIGIN" always;
-                  add_header X-Content-Type-Options "nosniff"     always;
-              }
 # emptyDir mounts required by the nginx container (writable paths on a
 # read-only root filesystem).
 emptyDirMounts:

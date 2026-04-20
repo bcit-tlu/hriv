@@ -181,9 +181,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The frontend prod stage bakes in ``default.conf.template``
+          # from the Helm chart's ``files/`` directory via a named
+          # BuildKit context (see frontend/Dockerfile and issue #37).
+          # This keeps the chart ConfigMap and the Docker image resolved
+          # to the same bytes on disk without duplicating the template.
           - component: frontend
             context: ./frontend
             target: prod
+            build_contexts: |
+              nginx-config=charts/frontend/files
           - component: backend
             context: ./backend
             target: prod
@@ -237,6 +244,7 @@ jobs:
         if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
         with:
           context: ${{ matrix.context }}
+          build-contexts: ${{ matrix.build_contexts }}
           target: ${{ matrix.target }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}

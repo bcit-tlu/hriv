@@ -6,8 +6,14 @@ metadata:
   name: {{ $m.name | quote }}
   labels:
     {{- include "hriv-frontend.labels" $ | nindent 4 }}
-{{- if $m.data }}
+{{- if or $m.data $m.files }}
 data:
+{{- if $m.data }}
 {{ toYaml $m.data | indent 2 }}
+{{- end }}
+{{- range $key, $path := ($m.files | default dict) }}
+  {{ $key }}: |-
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}
 {{- end }}
 {{- end }}
