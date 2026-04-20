@@ -1,11 +1,5 @@
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
-// Migrate legacy localStorage key from previous "corgi" branding
-if (localStorage.getItem('corgi_token') && !localStorage.getItem('hriv_token')) {
-  localStorage.setItem('hriv_token', localStorage.getItem('corgi_token')!)
-  localStorage.removeItem('corgi_token')
-}
-
 let _token: string | null = localStorage.getItem('hriv_token')
 
 // Unique per browser-tab identifier sent on every API call.  Allows the
