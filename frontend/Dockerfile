@@ -28,7 +28,14 @@ RUN npm run build
 
 # ── Stage 4: Production server (nginx) ───────────────────
 FROM nginx:1.27-alpine AS prod
-RUN rm /etc/nginx/conf.d/default.conf
+# Pull fresh Alpine package updates on every rebuild so the image
+# picks up published security patches without waiting on the nginx
+# maintainers' base-image tag cadence. Combined with the nightly
+# rebuild in ``.github/workflows/ci.yaml``, this keeps the
+# ``hriv-frontend:head`` image within ~24h of the Alpine security
+# mirror for libxml2 / libssl3 / libcrypto3 / libpng / zlib / musl
+# / libexpat.
+RUN apk --no-cache upgrade && rm /etc/nginx/conf.d/default.conf
 # Bake in a fallback nginx template so the prod image is self-sufficient
 # for ad-hoc `docker run` while keeping **one** physical source of truth
 # for the config.  The canonical file lives in the Helm chart at
