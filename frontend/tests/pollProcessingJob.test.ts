@@ -341,6 +341,46 @@ describe('pollProcessingJob', () => {
         expect(failedB).toHaveBeenCalledWith(20, null)
     })
 
+    it('retries the poll when onCompleted rejects (transient refresh failure)', async () => {
+        // Regression test for a bug introduced during extraction from App.tsx:
+        // the previous (inlined) polling code let an exception inside the
+        // completion handler bubble to the outer catch, which re-scheduled
+        // the poll.  That lets a transient data-refresh failure resolve itself
+        // on the next tick instead of leaving the job visually stuck.
+        const fetchStatus = vi
+            .fn()
+            .mockResolvedValue(
+                makeStatus({ status: 'completed', image_id: 1 }),
+            )
+        const onCompleted = vi
+            .fn()
+            .mockRejectedValueOnce(new Error('loadCategories failed'))
+            .mockResolvedValueOnce(undefined)
+
+        pollProcessingJob(42, {
+            fetchStatus,
+            onCompleted,
+            onFailed: vi.fn(),
+            onProgress: vi.fn(),
+            pollIntervalMs: 1000,
+        })
+
+        // First fetch + first onCompleted attempt (rejects).
+        await flushMicrotasks()
+        expect(fetchStatus).toHaveBeenCalledTimes(1)
+        expect(onCompleted).toHaveBeenCalledTimes(1)
+
+        // Advance past the retry interval — second fetch + second attempt.
+        await vi.advanceTimersByTimeAsync(1000)
+        expect(fetchStatus).toHaveBeenCalledTimes(2)
+        expect(onCompleted).toHaveBeenCalledTimes(2)
+
+        // Successful completion — no further retries.
+        await vi.advanceTimersByTimeAsync(10_000)
+        expect(fetchStatus).toHaveBeenCalledTimes(2)
+        expect(onCompleted).toHaveBeenCalledTimes(2)
+    })
+
     it('awaits onCompleted before marking terminal (supports async refresh hooks)', async () => {
         let resolveRefresh: () => void = () => {}
         const refreshPromise = new Promise<void>((r) => {

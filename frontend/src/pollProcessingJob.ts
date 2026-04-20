@@ -72,13 +72,18 @@ export function pollProcessingJob(
             if (controller.signal.aborted || terminated) return
 
             if (src.status === 'completed') {
-                terminated = true
+                // Await the terminal callback *before* flipping `terminated`
+                // so that if it rejects (e.g. a data-refresh network blip),
+                // the outer catch schedules a retry — matching the
+                // pre-extraction behaviour where the whole poll was retried
+                // on any error inside the completion handler.
                 await cb.onCompleted(src.image_id ?? null)
+                terminated = true
                 return
             }
             if (src.status === 'failed') {
-                terminated = true
                 cb.onFailed(src.progress, src.error_message ?? null)
+                terminated = true
                 return
             }
 
