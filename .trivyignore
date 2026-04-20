@@ -19,133 +19,33 @@
 #
 # Removing an entry is *free* — the next Trivy scan will re-report the CVE.
 # Prefer removing an entry whenever the justification no longer holds (e.g.
-# if HRIV starts decoding HEIF, the libheif block below must go).
+# if HRIV starts shipping a codec delegate that was previously disabled in
+# backend/Dockerfile, the matching ignore block must go).
+#
+# NOTE: the backend image deliberately does NOT install `libvips42t64` from
+# Debian — it builds `libvips` from source with unused codec delegates
+# compiled out (see `libvips-build` stage in backend/Dockerfile).  The RAW /
+# HEIF / JPEG-XL / OpenEXR / ImageMagick / MATLAB / Poppler / GnuPG CVE
+# groups that used to dominate this file are *physically absent* from the
+# runtime image and no longer need ignore entries.
 #
 # Format reference: https://aquasecurity.github.io/trivy/latest/docs/configuration/filtering/#trivyignore
 # ------------------------------------------------------------------------------
 
 
-# --- libraw (RAW camera formats — HRIV only ingests TIFF/SVS via pyvips) ------
-# HRIV backend uses pyvips (libvips) to tile TIFF and Aperio .svs pyramidal TIFFs.
-# libvips routes TIFF to libtiff; it never dispatches to libraw. libraw ships in
-# the backend image purely as a transitive Depends of libvips42t64 (see the
-# commented libvips dependency-graph note in backend/Dockerfile). The codec
-# path is physically present but unreachable at runtime.
+# --- backend/libarchive13t64: archive-format parser CVEs ---------------------
+# libvips is compiled against libarchive to support the `dzsave` tile writer
+# (directory output of .dzi + _files tree is libarchive-free, but the module
+# is linked regardless).  HRIV only writes DZI output; it never *reads* a
+# user-supplied archive (no .zip/.tar/.rar/.iso paths reach libvips). The
+# RAR5, RAR, and ISO9660 decoder CVEs below are therefore non-reachable —
+# the parsers exist in the library image but nothing in HRIV's pipeline
+# dispatches to them. Debian has not yet shipped a fix in trixie-security.
 #
-# Packages: libraw23t64
-CVE-2020-24890  # sev=low
-CVE-2026-20884  # sev=critical
-CVE-2026-20889  # sev=high
-CVE-2026-20911  # sev=high
-CVE-2026-21413  # sev=high
-CVE-2026-24450  # sev=critical
-CVE-2026-24660  # sev=critical
-CVE-2026-5318   # sev=medium
-CVE-2026-5342   # sev=medium
-
-# --- libheif (HEIF/HEIC — HRIV does not decode HEIF) -------------------------
-# Same reasoning as libraw: transitive Depends of libvips42t64, no HRIV code
-# path reaches it.
-#
-# Packages: libheif1
-CVE-2025-68431  # sev=high
-CVE-2026-3949   # sev=low
-
-# --- OpenEXR (HDR formats — HRIV only handles 8/16-bit TIFF/SVS) -------------
-# Same reasoning as libraw: transitive Depends of libvips42t64, no HRIV code
-# path reaches it.
-#
-# Packages: libopenexr-3-1-30
-CVE-2017-14988  # sev=low
-CVE-2025-12495  # sev=high
-CVE-2025-12839  # sev=high
-CVE-2025-12840  # sev=high
-CVE-2025-48074  # sev=medium
-CVE-2025-64181  # sev=high
-CVE-2026-27622  # sev=high
-CVE-2026-34379  # sev=high
-CVE-2026-34380  # sev=medium
-CVE-2026-34543  # sev=high
-CVE-2026-34544  # sev=high
-CVE-2026-34545  # sev=high
-CVE-2026-34588  # sev=high
-CVE-2026-34589  # sev=medium
-
-# --- ImageMagick core (HRIV uses pyvips directly, never shells out to IM) ----
-# libmagickcore is a transitive Depends of libvips42t64 via libvips' delegates
-# graph. HRIV never shells out to ImageMagick (`convert`, `magick`) and never
-# invokes libvips' ImageMagick loader delegate — it opens TIFF/SVS directly
-# via libtiff. Codec path unreachable.
-#
-# Packages: libmagickcore-7.q16-10
-CVE-2005-0406   # sev=low
-CVE-2008-3134   # sev=low
-CVE-2016-8678   # sev=low
-CVE-2017-11754  # sev=low
-CVE-2017-11755  # sev=low
-CVE-2017-7275   # sev=low
-CVE-2018-15607  # sev=low
-CVE-2023-34152  # sev=low
-CVE-2025-55160  # sev=low
-CVE-2026-32636  # sev=high
-CVE-2026-33535  # sev=medium
-CVE-2026-33536  # sev=medium
-CVE-2026-33899  # sev=medium
-CVE-2026-33900  # sev=medium
-CVE-2026-33901  # sev=high
-CVE-2026-33902  # sev=medium
-CVE-2026-33905  # sev=medium
-CVE-2026-33908  # sev=high
-CVE-2026-34238  # sev=medium
-CVE-2026-40169  # sev=medium
-CVE-2026-40183  # sev=medium
-CVE-2026-40310  # sev=medium
-CVE-2026-40311  # sev=medium
-CVE-2026-40312  # sev=medium
-
-# --- libmatio (MATLAB .mat — HRIV never reads .mat files) --------------------
-# Transitive Depends of libvips42t64; codec path unreachable.
-#
-# Packages: libmatio13
-CVE-2019-20019  # sev=low
-CVE-2025-2338   # sev=high
-CVE-2025-50343  # sev=high
-
-# --- libjxl (JPEG-XL — HRIV does not decode JXL) -----------------------------
-# Transitive Depends of libvips42t64; codec path unreachable.
-#
-# Packages: libjxl0.11
-CVE-2021-36691  # sev=low
-CVE-2025-12474  # sev=low
-CVE-2026-1837   # sev=high
-
-# --- Poppler (PDF rendering — HRIV does not render PDFs) ---------------------
-# Transitive Depends of libvips42t64 (via the libvips PDF-loader delegate which
-# we never invoke). HRIV only handles TIFF/SVS; no PDF surface exists.
-#
-# Packages: libpoppler-glib8t64, libpoppler147
-CVE-2013-4472   # sev=low
-CVE-2017-2814   # sev=low
-CVE-2017-2818   # sev=low
-CVE-2017-2820   # sev=low
-CVE-2017-9083   # sev=low
-CVE-2019-9543   # sev=low
-CVE-2019-9545   # sev=low
-CVE-2022-24106  # sev=low
-CVE-2025-43718  # sev=medium
-CVE-2025-52885  # sev=medium
-
-# --- GnuPG chain (transitive via libpoppler → libgpgme → gnupg) --------------
-# HRIV never invokes gpg at runtime — no signature verification, no key
-# management, no decryption. The binaries are physically present because
-# libpoppler147 hard-depends on libgpgmepp6t64 which pulls gnupg. Installing
-# libvips42t64 therefore drags gnupg in as a pure transitive. Not reachable.
-#
-# Packages: gnupg, gnupg-l10n, gpg, gpg-agent, gpgconf, gpgsm, gpgv, dirmngr
-CVE-2022-3219   # sev=low
-CVE-2025-30258  # sev=medium
-CVE-2025-68972  # sev=medium
-CVE-2026-24882  # sev=high
+# Packages: libarchive13t64
+CVE-2026-4111   # sev=high (RAR5 infinite-loop DoS)
+CVE-2026-4424   # sev=high (RAR information disclosure)
+CVE-2026-5121   # sev=high (ISO9660 integer overflow)
 
 # --- util-linux chfn/chsh info leak ------------------------------------------
 # CVE-2022-0563 (and the sibling chsh/login entries) require an interactive
