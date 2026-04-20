@@ -305,14 +305,17 @@ jobs:
       #
       #   * pull requests: scan the locally loaded image by tag (PRs don't
       #     push to the registry). `ignore-unfixed: true` trims the noise
-      #     to CVEs with an upstream fix available. The scan is advisory
+      #     to CVEs with an upstream fix available. Emits a `table`-format
+      #     report into the Actions log so reviewers can see exactly what
+      #     CVEs the PR carries without hunting through a SARIF file
+      #     (PRs don't upload SARIF — the main-branch scan is the source
+      #     of truth for the Security tab). The scan is advisory
       #     (`exit-code: 0`) today because the frontend/backend/backup
       #     images still carry pre-existing fixable CVEs that an immediate
       #     blocking gate would fail every unrelated PR on. Once the base
       #     images are cleaned up (see the tracking items in the code-
       #     scanning mitigation plan), flip this to `exit-code: 1` so new
-      #     regressions block merges. SARIF is not uploaded on PRs — the
-      #     main-branch scan is the source of truth for the Security tab.
+      #     regressions block merges.
       - name: Resolve image reference for Trivy
         id: scan-ref
         if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
@@ -324,17 +327,28 @@ jobs:
             echo "ref=${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Scan image for vulnerabilities
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
+      - name: Scan image for vulnerabilities (PR, table output to log)
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name == 'pull_request'
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: ${{ steps.scan-ref.outputs.ref }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          # TODO: flip to '1' once the base-image cleanup items from the
+          # code-scanning mitigation plan have landed, so new regressions
+          # block merges.
+          exit-code: '0'
+
+      - name: Scan image for vulnerabilities (main/tag, SARIF to Security tab)
+        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name != 'pull_request'
         uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ${{ steps.scan-ref.outputs.ref }}
           format: sarif
           output: trivy-${{ matrix.component }}.sarif
           severity: CRITICAL,HIGH
-          ignore-unfixed: ${{ github.event_name == 'pull_request' }}
-          # TODO: flip to '1' on PRs once the base-image cleanup items from
-          # the code-scanning mitigation plan have landed.
+          ignore-unfixed: false
           exit-code: '0'
 
       - name: Upload scan results to GitHub Security
