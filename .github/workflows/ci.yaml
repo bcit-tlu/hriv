@@ -87,13 +87,6 @@ jobs:
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
             | sudo tar xz -C /usr/local/bin kubeconform
 
-      - name: Check nginx configs are in sync (issue #37)
-        # The frontend nginx config exists in two places — the baked-in
-        # fallback at `frontend/nginx.conf.template` and the Helm
-        # ConfigMap template inlined in `charts/frontend/values.yaml`.
-        # This guard fails the build if the two copies drift.
-        run: python3 scripts/check_nginx_configs_in_sync.py
-
       - name: Lint, template-render & validate all charts
         run: |
           for chart in charts/*/; do
@@ -212,9 +205,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # The frontend prod stage bakes in ``default.conf.template``
+          # from the Helm chart's ``files/`` directory via a named
+          # BuildKit context (see frontend/Dockerfile and issue #37).
+          # This keeps the chart ConfigMap and the Docker image resolved
+          # to the same bytes on disk without duplicating the template.
           - component: frontend
             context: ./frontend
             target: prod
+            build_contexts: |
+              nginx-config=charts/frontend/files
           - component: backend
             context: ./backend
             target: prod
@@ -268,6 +268,7 @@ jobs:
         if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
         with:
           context: ${{ matrix.context }}
+          build-contexts: ${{ matrix.build_contexts }}
           target: ${{ matrix.target }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
