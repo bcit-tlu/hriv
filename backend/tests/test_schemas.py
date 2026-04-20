@@ -270,3 +270,14 @@ def test_metadata_extra_and_merge_mutually_exclusive() -> None:
             metadata_extra={"key": "val"},
             metadata_extra_merge={"other": "val"},
         )
+
+
+def test_metadata_extra_null_and_merge_mutually_exclusive() -> None:
+    """Even explicit null metadata_extra with merge should raise."""
+    import pytest as _pt
+
+    with _pt.raises(Exception, match="mutually exclusive"):
+        ImageUpdate(
+            metadata_extra=None,
+            metadata_extra_merge={"key": "val"},
+        )
