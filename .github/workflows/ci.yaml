@@ -202,6 +202,15 @@ jobs:
               # and stamp an immutable `.rebuild-<timestamp>` suffix so
               # the original `0.0.0-head.<sha>` tag produced by the
               # main-push build stays a stable provenance anchor.
+              #
+              # Guard: workflow_dispatch lets an operator pick any branch
+              # in the Actions UI. Accepting a non-main ref would move
+              # the `:head` tag (intended to track main) to a feature
+              # branch's digest. Fail fast rather than silently drift.
+              if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+                echo "::error::Rebuild mode is only valid on refs/heads/main, got ${GITHUB_REF}" >&2
+                exit 1
+              fi
               MODE="rebuild"
               VERSION="0.0.0-head.${SHORT_SHA}.rebuild-$(date -u +%Y%m%d%H%M)"
             else
@@ -305,6 +314,13 @@ jobs:
           # PR builds don't push to the registry, but we still need the image
           # locally so the Trivy step below can scan it by tag.
           load: ${{ github.event_name == 'pull_request' }}
+          # On a rebuild, force BuildKit to re-resolve mutable base-image
+          # tags (`python:3.13-slim`, `nginx:1.27-alpine`, `node:22-alpine`)
+          # against the upstream registry rather than trusting cached
+          # layers. Without this, `cache-from: type=gha` can hand back
+          # the exact layers from the prior run and the rebuild produces
+          # an identical digest — defeating the point of nightly.
+          pull: ${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'rebuild' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           sbom: ${{ github.event_name != 'pull_request' }}
