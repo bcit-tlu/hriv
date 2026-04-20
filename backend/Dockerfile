@@ -20,7 +20,13 @@ RUN python -m venv /opt/poetry-venv \
 FROM python:3.13-slim AS builder
 WORKDIR /app
 
+# ``apt-get -y upgrade`` before the install chain picks up any
+# trixie-security patches published since the ``python:3.13-slim``
+# base-image digest was built.  The builder stage is discarded, but
+# upgrading here keeps the pip-built wheels linked against the same
+# library versions the runtime ``base`` stage will use.
 RUN apt-get update \
+    && apt-get -y upgrade \
     && apt-get install -y --no-install-recommends \
        libvips-dev pkg-config gcc \
     && rm -rf /var/lib/apt/lists/*
@@ -38,7 +44,26 @@ RUN /opt/poetry-venv/bin/poetry export --only main -f requirements.txt -o requir
 FROM python:3.13-slim AS base
 WORKDIR /app
 
+# ``apt-get -y upgrade`` pulls any trixie-security deltas that have
+# landed since the ``python:3.13-slim`` base digest was built, so the
+# runtime image is at least as current as the Debian security mirror
+# at build time rather than as current as the last docker-library
+# python rebuild.
+#
+# ``libvips42t64`` pulls in roughly 40 transitive Depends on Debian
+# trixie — including ``libmagickcore-7.q16-10`` (which hard-depends on
+# ``libraw23t64``), ``libheif1``, ``libopenexr-3-1-30``, ``libmatio13``,
+# ``libjxl0.11``, ``libpoppler-glib8t64`` (which transitively pulls
+# ``gnupg`` via ``libgpgmepp6t64``), and ``librsvg2-2``.  These are
+# all hard Depends, not Recommends, so ``--no-install-recommends`` has
+# no effect on them; attempts to ``apt-get purge`` them break libvips
+# symbol resolution.  HRIV only ever decodes TIFF/SVS (and the VIPS
+# pyramidal TIFF it writes itself), so most of these codec paths are
+# physically present but never reached at runtime.  The non-reachable
+# codec CVEs are silenced via the checked-in ``.trivyignore`` (with
+# justification + review date); see the code-scanning mitigation plan.
 RUN apt-get update \
+    && apt-get -y upgrade \
     && apt-get install -y --no-install-recommends libvips42t64 \
     && rm -rf /var/lib/apt/lists/*
 
