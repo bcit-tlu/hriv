@@ -23,9 +23,9 @@ env:
 otel:
     enabled: false
     serviceName: "hriv-backend"
-    tracesExporter: "otlp"
-    metricsExporter: "otlp"
-    logsExporter: "otlp"
+    tracesExporter: "none"
+    metricsExporter: "none"
+    logsExporter: "none"
     exporterEndpoint: ""
     exporterProtocol: "http/protobuf"
 
