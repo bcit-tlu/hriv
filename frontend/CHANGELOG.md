@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0-rc](https://github.com/bcit-tlu/hriv/compare/frontend-v0.5.2-rc...frontend-v0.6.0-rc) (2026-04-20)
+
+
+### Features
+
+* center-crop card thumbnails for recognisable image previews ([#140](https://github.com/bcit-tlu/hriv/issues/140)) ([ec9f31c](https://github.com/bcit-tlu/hriv/commit/ec9f31c3db00de849c66765b74c081794d6225df))
+
+
+### Bug Fixes
+
+* reset rotation when home icon is clicked ([#141](https://github.com/bcit-tlu/hriv/issues/141)) ([8d05e06](https://github.com/bcit-tlu/hriv/commit/8d05e0637a3660db80c0671fbbee2d71e62e9bae))
+* retain overlay text/link colour on save & exit edit mode ([#130](https://github.com/bcit-tlu/hriv/issues/130)) ([ae2932f](https://github.com/bcit-tlu/hriv/commit/ae2932fa8d913b145295686daafd7a683fb10a75))
+
 ## [0.5.2-rc](https://github.com/bcit-tlu/hriv/compare/frontend-v0.5.1...frontend-v0.5.2-rc) (2026-04-20)
 
 

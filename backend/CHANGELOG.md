@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0-rc](https://github.com/bcit-tlu/hriv/compare/backend-v0.5.2-rc...backend-v0.6.0-rc) (2026-04-20)
+
+
+### Features
+
+* center-crop card thumbnails for recognisable image previews ([#140](https://github.com/bcit-tlu/hriv/issues/140)) ([ec9f31c](https://github.com/bcit-tlu/hriv/commit/ec9f31c3db00de849c66765b74c081794d6225df))
+
 ## [0.5.2-rc](https://github.com/bcit-tlu/hriv/compare/backend-v0.5.1...backend-v0.5.2-rc) (2026-04-20)
 
 
