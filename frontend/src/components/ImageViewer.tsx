@@ -556,8 +556,12 @@ export default function ImageViewer({
     })
     // Visually disable clear button when locked
     const updateClearButtonState = () => {
-      clearButton.element.style.opacity = overlaysLockedRef.current ? '0.3' : '1'
-      clearButton.element.style.pointerEvents = overlaysLockedRef.current ? 'none' : 'auto'
+      const locked = overlaysLockedRef.current
+      clearButton.element.style.opacity = locked ? '0.3' : '1'
+      clearButton.element.style.cursor = locked ? 'not-allowed' : 'pointer'
+      clearButton.element.title = locked
+        ? 'Overlays are locked by the instructor'
+        : 'Clear all selection rectangles'
     }
     updateClearButtonState()
     viewer.addControl(clearButton.element, {
