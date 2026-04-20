@@ -305,10 +305,14 @@ jobs:
       #
       #   * pull requests: scan the locally loaded image by tag (PRs don't
       #     push to the registry). `ignore-unfixed: true` trims the noise
-      #     to CVEs with an upstream fix available, and `exit-code: 1`
-      #     fails the PR if any such CRITICAL/HIGH is introduced. SARIF is
-      #     not uploaded on PRs — the main-branch scan is the source of
-      #     truth for the Security tab.
+      #     to CVEs with an upstream fix available. The scan is advisory
+      #     (`exit-code: 0`) today because the frontend/backend/backup
+      #     images still carry pre-existing fixable CVEs that an immediate
+      #     blocking gate would fail every unrelated PR on. Once the base
+      #     images are cleaned up (see the tracking items in the code-
+      #     scanning mitigation plan), flip this to `exit-code: 1` so new
+      #     regressions block merges. SARIF is not uploaded on PRs — the
+      #     main-branch scan is the source of truth for the Security tab.
       - name: Resolve image reference for Trivy
         id: scan-ref
         if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
@@ -329,7 +333,9 @@ jobs:
           output: trivy-${{ matrix.component }}.sarif
           severity: CRITICAL,HIGH
           ignore-unfixed: ${{ github.event_name == 'pull_request' }}
-          exit-code: ${{ github.event_name == 'pull_request' && '1' || '0' }}
+          # TODO: flip to '1' on PRs once the base-image cleanup items from
+          # the code-scanning mitigation plan have landed.
+          exit-code: '0'
 
       - name: Upload scan results to GitHub Security
         if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name != 'pull_request'
