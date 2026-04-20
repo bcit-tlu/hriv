@@ -47,8 +47,16 @@ permissions:
 
 jobs:
   # ── Quality gates ─────────────────────────────────────────
+  #
+  # Tests/lint run on every push + PR. Skipped on `schedule` and
+  # `workflow_dispatch` rebuilds — those events don't change source,
+  # so re-running the suites would just re-validate the same commit
+  # that was already gated on its original merge to main. The image
+  # matrix below relaxes its `needs:` gate so those skipped checks
+  # don't block the rebuild.
   backend-tests:
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     defaults:
       run:
         working-directory: backend
@@ -70,6 +78,7 @@ jobs:
 
   frontend-tests:
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     defaults:
       run:
         working-directory: frontend
@@ -94,6 +103,7 @@ jobs:
 
   helm-lint:
     runs-on: ubuntu-latest
+    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v6
 
@@ -237,6 +247,15 @@ jobs:
   images:
     runs-on: ubuntu-latest
     needs: [backend-tests, frontend-tests, versions]
+    # Skipped quality-gate needs should not block nightly rebuilds.
+    # `needs.versions` must succeed (it's the source of truth for the
+    # publish plan); the test jobs are allowed to be `skipped` (nightly
+    # rebuild) or `success` (push / PR / tag push).
+    if: >-
+      !cancelled()
+      && needs.versions.result == 'success'
+      && (needs.backend-tests.result == 'success' || needs.backend-tests.result == 'skipped')
+      && (needs.frontend-tests.result == 'success' || needs.frontend-tests.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
