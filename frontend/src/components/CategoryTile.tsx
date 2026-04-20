@@ -85,7 +85,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
               height="140"
               image={cardImage.thumb}
               alt={category.label}
-              sx={{ objectFit: 'cover' }}
+              sx={{ objectFit: 'cover', objectPosition: 'center' }}
             />
           ) : (
             <Box

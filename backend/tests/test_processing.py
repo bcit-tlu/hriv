@@ -133,6 +133,9 @@ def test_generate_tiles_calls_pyvips(tmp_path) -> None:
     assert width == 1024
     assert height == 768
     mock_image.dzsave.assert_called_once()
+    mock_pyvips.Image.thumbnail.assert_called_once_with(
+        source_path, 256, height=256, crop="centre",
+    )
     mock_thumb.jpegsave.assert_called_once()
 
 
