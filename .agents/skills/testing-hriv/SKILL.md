@@ -26,6 +26,15 @@ domain-specific flows see the sibling skills `testing-image-processing`
 4. Frontend: http://localhost:5173
 5. Backend API: http://localhost:8000
 
+### Troubleshooting: Frontend Docker Build Fails
+
+If the frontend Docker build fails with `npm ci` errors about missing packages from
+the lock file, delete the stale `frontend/package-lock.json` (it is in `.gitignore`
+but may exist locally from a prior `npm install`) and rebuild:
+```bash
+rm -f frontend/package-lock.json
+docker compose up -d --build frontend
+```
 ### Rebuilding After Code Changes
 
 Bind-mounts give hot-reload for most source edits. For Dockerfile / dependency / nginx
