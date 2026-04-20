@@ -780,8 +780,10 @@ export default function App() {
         setOverlays(newOverlays);
     }, []);
 
-    // Memoize initialViewport so it stays referentially stable per image
-    const initialViewport = useMemo(() => viewportState, [selectedImage]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Memoize initialViewport so it stays referentially stable per image.
+    // Keyed on image ID so metadata-only updates (e.g. measurement settings)
+    // do not reset the viewport and re-create the OSD viewer.
+    const initialViewport = useMemo(() => viewportState, [selectedImage?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Derive locked overlays from the selected image's metadata.
     // Validates each entry has numeric x, y, w, h to guard against malformed JSONB data.
@@ -832,7 +834,8 @@ export default function App() {
         saveTargetImageIdRef.current = null;
     }, [selectedImage]);
 
-    // Memoize initialOverlays: use locked overlays on initial load if no URL overlays
+    // Memoize initialOverlays: use locked overlays on initial load if no URL overlays.
+    // Keyed on image ID so metadata-only updates do not re-create the viewer.
     const initialOverlays = useMemo(() => {
         if (
             lockedOverlays &&
@@ -842,7 +845,7 @@ export default function App() {
             return lockedOverlays;
         }
         return overlays;
-    }, [selectedImage]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [selectedImage?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Extract canvas annotations from the selected image's metadata
     const canvasAnnotations = useMemo((): CanvasAnnotation[] => {
@@ -953,42 +956,23 @@ export default function App() {
         }
     }, [saveCanvasAnnotations]);
 
-    // Build measurement config from the latest known metadata (falls back to
-    // selectedImage on initial load).  Using latestMetadataRef allows
-    // measurement updates from the Edit Details modal to take effect without
-    // triggering a viewer re-creation via setSelectedImage.
-    const deriveMeasurement = useCallback(
-        (meta: Record<string, unknown> | null | undefined): MeasurementConfig | undefined => {
-            if (!meta) return undefined;
-            const scale =
-                typeof meta.measurement_scale === "number"
-                    ? meta.measurement_scale
-                    : undefined;
-            const unit =
-                typeof meta.measurement_unit === "string"
-                    ? meta.measurement_unit
-                    : undefined;
-            if (!scale && !unit) return undefined;
-            return { scale, unit };
-        },
-        [],
-    );
-
-    const [localMeasurement, setLocalMeasurement] = useState<
-        MeasurementConfig | undefined
-    >(undefined);
-
-    // Reset local measurement override when a different image is selected
-    useEffect(() => {
-        setLocalMeasurement(undefined);
-    }, [selectedImage]);
-
+    // Build measurement config from the selected image's metadata
     const selectedImageMeasurement = useMemo(():
         | MeasurementConfig
         | undefined => {
-        if (localMeasurement !== undefined) return localMeasurement;
-        return deriveMeasurement(selectedImage?.metadataExtra);
-    }, [selectedImage, localMeasurement, deriveMeasurement]);
+        const meta = selectedImage?.metadataExtra;
+        if (!meta) return undefined;
+        const scale =
+            typeof meta.measurement_scale === "number"
+                ? meta.measurement_scale
+                : undefined;
+        const unit =
+            typeof meta.measurement_unit === "string"
+                ? meta.measurement_unit
+                : undefined;
+        if (!scale && !unit) return undefined;
+        return { scale, unit };
+    }, [selectedImage]);
 
     // Lock overlays: persist to image metadata_extra and engage lock.
     // Refreshes category tree so re-navigation reflects the update;
@@ -1310,48 +1294,24 @@ export default function App() {
             if (!selectedImage) return;
             try {
                 const updated = await apiUpdateImage(selectedImage.id, data);
-
-                // Determine whether non-metadata fields changed.  If only
-                // metadata_extra was modified (e.g. measurement settings) we
-                // can skip setSelectedImage and avoid destroying the OSD viewer.
-                const metadataOnly =
-                    updated.name === selectedImage.name &&
-                    updated.tile_sources === selectedImage.tileSources &&
-                    updated.category_id === (selectedImage.categoryId ?? null) &&
-                    updated.copyright === (selectedImage.copyright ?? null) &&
-                    updated.note === (selectedImage.note ?? null) &&
-                    JSON.stringify(updated.program_ids) ===
-                        JSON.stringify(selectedImage.programIds) &&
-                    updated.active === selectedImage.active;
-
-                if (metadataOnly) {
-                    // Update refs so subsequent operations see the latest state
-                    latestVersionRef.current = updated.version;
-                    latestMetadataRef.current = updated.metadata_extra ?? {};
-                    setLocalMeasurement(
-                        deriveMeasurement(updated.metadata_extra),
-                    );
-                } else {
-                    setSelectedImage({
-                        id: updated.id,
-                        name: updated.name,
-                        thumb: updated.thumb,
-                        tileSources: updated.tile_sources,
-                        categoryId: updated.category_id,
-                        copyright: updated.copyright,
-                        note: updated.note,
-                        programIds: updated.program_ids,
-                        active: updated.active,
-                        version: updated.version,
-                        createdAt: updated.created_at,
-                        updatedAt: updated.updated_at,
-                        metadataExtra: updated.metadata_extra,
-                        width: updated.width,
-                        height: updated.height,
-                        fileSize: updated.file_size,
-                    });
-                }
-
+                setSelectedImage({
+                    id: updated.id,
+                    name: updated.name,
+                    thumb: updated.thumb,
+                    tileSources: updated.tile_sources,
+                    categoryId: updated.category_id,
+                    copyright: updated.copyright,
+                    note: updated.note,
+                    programIds: updated.program_ids,
+                    active: updated.active,
+                    version: updated.version,
+                    createdAt: updated.created_at,
+                    updatedAt: updated.updated_at,
+                    metadataExtra: updated.metadata_extra,
+                    width: updated.width,
+                    height: updated.height,
+                    fileSize: updated.file_size,
+                });
                 setImageEditOpen(false);
                 // Refresh categories and update breadcrumb path from the fresh tree
                 const freshTree = (await fetchCategoryTree()).map(
@@ -1372,7 +1332,7 @@ export default function App() {
                 console.error("Failed to update image", err);
             }
         },
-        [selectedImage, deriveMeasurement, loadUncategorizedImages],
+        [selectedImage, loadUncategorizedImages],
     );
 
     // Show loading spinner while users are loading

@@ -162,6 +162,10 @@ class ImageUpdate(BaseModel):
 
     @model_validator(mode="after")
     def validate_overlay_shapes(self) -> "ImageUpdate":
+        if self.metadata_extra is not None and self.metadata_extra_merge is not None:
+            raise ValueError(
+                "metadata_extra and metadata_extra_merge are mutually exclusive"
+            )
         if self.metadata_extra is not None:
             _validate_locked_overlays(self.metadata_extra)
         if self.metadata_extra_merge is not None:

@@ -259,3 +259,14 @@ def test_validate_locked_overlays_merge_filters() -> None:
         metadata_extra_merge={"locked_overlays": [{"bad": True}]}
     )
     assert "locked_overlays" not in body.metadata_extra_merge
+
+
+def test_metadata_extra_and_merge_mutually_exclusive() -> None:
+    """Providing both metadata_extra and metadata_extra_merge should raise."""
+    import pytest as _pt
+
+    with _pt.raises(Exception, match="mutually exclusive"):
+        ImageUpdate(
+            metadata_extra={"key": "val"},
+            metadata_extra_merge={"other": "val"},
+        )
