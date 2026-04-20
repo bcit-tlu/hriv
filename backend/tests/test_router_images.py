@@ -393,6 +393,64 @@ async def test_bulk_delete_images_not_found() -> None:
     assert exc.value.status_code == 404
 
 
+async def test_update_image_metadata_extra_merge_sets_key() -> None:
+    """metadata_extra_merge should merge keys into existing metadata."""
+    img = _make_image()
+    img.metadata_ = {"existing": "value"}
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = ImageUpdate(metadata_extra_merge={"locked_overlays": [{"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}]})
+    await update_image(1, body, _mock_request(), _make_user(), db)
+    assert img.metadata_["existing"] == "value"
+    assert img.metadata_["locked_overlays"] == [{"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}]
+
+
+async def test_update_image_metadata_extra_merge_deletes_key() -> None:
+    """metadata_extra_merge with None value should remove the key."""
+    img = _make_image()
+    img.metadata_ = {"locked_overlays": [{"x": 0, "y": 0, "w": 1, "h": 1}], "other": "data"}
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = ImageUpdate(metadata_extra_merge={"locked_overlays": None})
+    await update_image(1, body, _mock_request(), _make_user(), db)
+    assert "locked_overlays" not in img.metadata_
+    assert img.metadata_["other"] == "data"
+
+
+async def test_update_image_metadata_extra_merge_empty_result_sets_none() -> None:
+    """When merge removes the last key, metadata should become None."""
+    img = _make_image()
+    img.metadata_ = {"locked_overlays": [{"x": 0, "y": 0, "w": 1, "h": 1}]}
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = ImageUpdate(metadata_extra_merge={"locked_overlays": None})
+    await update_image(1, body, _mock_request(), _make_user(), db)
+    assert img.metadata_ is None
+
+
+async def test_update_image_metadata_extra_merge_from_empty() -> None:
+    """Merge should work when existing metadata is None."""
+    img = _make_image()
+    img.metadata_ = None
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = ImageUpdate(metadata_extra_merge={"canvas_annotations": [{"type": "rect"}]})
+    await update_image(1, body, _mock_request(), _make_user(), db)
+    assert img.metadata_ == {"canvas_annotations": [{"type": "rect"}]}
+
+
 async def test_delete_image_success() -> None:
     img = _make_image()
     db = AsyncMock()

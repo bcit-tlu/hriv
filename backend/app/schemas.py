@@ -4,6 +4,43 @@ from typing import Annotated
 from pydantic import BaseModel, Field, model_validator
 
 
+# ── Overlay Rect (shared validation for locked_overlays in metadata_extra) ────
+
+class OverlayRectSchema(BaseModel):
+    x: float
+    y: float
+    w: float
+    h: float
+
+
+def _validate_locked_overlays(meta: dict | None) -> dict | None:
+    """Validate the ``locked_overlays`` key inside a metadata dict.
+
+    Each entry must have numeric ``x``, ``y``, ``w``, ``h`` properties.
+    Malformed entries are silently dropped; if the resulting list is empty
+    the key is removed entirely.
+    """
+    if meta is None:
+        return meta
+    raw = meta.get("locked_overlays")
+    if raw is None:
+        return meta
+    if not isinstance(raw, list):
+        meta.pop("locked_overlays", None)
+        return meta
+    valid: list[dict] = []
+    for item in raw:
+        try:
+            valid.append(OverlayRectSchema.model_validate(item).model_dump())
+        except Exception:
+            continue
+    if valid:
+        meta["locked_overlays"] = valid
+    else:
+        meta.pop("locked_overlays", None)
+    return meta
+
+
 # ── Program ──────────────────────────────────────────────
 
 class ProgramBase(BaseModel):
@@ -121,6 +158,21 @@ class ImageUpdate(BaseModel):
     program_ids: list[int] | None = None
     active: bool | None = None
     metadata_extra: dict | None = None
+    metadata_extra_merge: dict | None = None
+
+    @model_validator(mode="after")
+    def validate_overlay_shapes(self) -> "ImageUpdate":
+        if "metadata_extra" in self.model_fields_set and "metadata_extra_merge" in self.model_fields_set:
+            raise ValueError(
+                "metadata_extra and metadata_extra_merge are mutually exclusive"
+            )
+        if self.metadata_extra is not None:
+            _validate_locked_overlays(self.metadata_extra)
+        if self.metadata_extra_merge is not None:
+            raw = self.metadata_extra_merge.get("locked_overlays")
+            if raw is not None:
+                _validate_locked_overlays(self.metadata_extra_merge)
+        return self
 
 
 class ImageOut(ImageBase):

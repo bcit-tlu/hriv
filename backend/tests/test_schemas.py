@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from app.schemas import ImageOut, SourceImageOut
+from app.schemas import ImageOut, ImageUpdate, SourceImageOut
 
 
 def test_image_out_extracts_program_ids_from_orm() -> None:
@@ -195,3 +195,89 @@ def test_source_image_out_non_list_json_program() -> None:
     )
     out = SourceImageOut.model_validate(orm_obj)
     assert out.program_ids == []
+
+
+# ── locked_overlays validation ────────────────────────────
+
+
+def test_validate_locked_overlays_valid() -> None:
+    """Valid overlay rects should pass through unchanged."""
+    body = ImageUpdate(
+        metadata_extra={"locked_overlays": [{"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}]}
+    )
+    overlays = body.metadata_extra["locked_overlays"]
+    assert len(overlays) == 1
+    assert overlays[0] == {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}
+
+
+def test_validate_locked_overlays_filters_malformed() -> None:
+    """Entries missing required numeric properties should be dropped."""
+    body = ImageUpdate(
+        metadata_extra={
+            "locked_overlays": [
+                {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4},
+                {"x": "bad", "y": 0.2, "w": 0.3, "h": 0.4},
+                {"x": 0.1},
+                "not-an-object",
+            ]
+        }
+    )
+    overlays = body.metadata_extra["locked_overlays"]
+    assert len(overlays) == 1
+    assert overlays[0]["x"] == 0.1
+
+
+def test_validate_locked_overlays_all_invalid_removes_key() -> None:
+    """When all overlays are invalid, the key should be removed."""
+    body = ImageUpdate(
+        metadata_extra={"locked_overlays": [{"bad": True}], "other": "kept"}
+    )
+    assert "locked_overlays" not in body.metadata_extra
+    assert body.metadata_extra["other"] == "kept"
+
+
+def test_validate_locked_overlays_non_list_removes_key() -> None:
+    """Non-list locked_overlays should be removed."""
+    body = ImageUpdate(
+        metadata_extra={"locked_overlays": "not-a-list", "other": "kept"}
+    )
+    assert "locked_overlays" not in body.metadata_extra
+
+
+def test_validate_locked_overlays_merge_valid() -> None:
+    """Overlay validation also applies to metadata_extra_merge."""
+    body = ImageUpdate(
+        metadata_extra_merge={"locked_overlays": [{"x": 1, "y": 2, "w": 3, "h": 4}]}
+    )
+    overlays = body.metadata_extra_merge["locked_overlays"]
+    assert len(overlays) == 1
+
+
+def test_validate_locked_overlays_merge_filters() -> None:
+    """Merge overlay validation should filter malformed entries."""
+    body = ImageUpdate(
+        metadata_extra_merge={"locked_overlays": [{"bad": True}]}
+    )
+    assert "locked_overlays" not in body.metadata_extra_merge
+
+
+def test_metadata_extra_and_merge_mutually_exclusive() -> None:
+    """Providing both metadata_extra and metadata_extra_merge should raise."""
+    import pytest as _pt
+
+    with _pt.raises(Exception, match="mutually exclusive"):
+        ImageUpdate(
+            metadata_extra={"key": "val"},
+            metadata_extra_merge={"other": "val"},
+        )
+
+
+def test_metadata_extra_null_and_merge_mutually_exclusive() -> None:
+    """Even explicit null metadata_extra with merge should raise."""
+    import pytest as _pt
+
+    with _pt.raises(Exception, match="mutually exclusive"):
+        ImageUpdate(
+            metadata_extra=None,
+            metadata_extra_merge={"key": "val"},
+        )

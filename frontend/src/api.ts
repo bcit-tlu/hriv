@@ -194,6 +194,7 @@ export function updateImage(
     program_ids?: number[]
     active?: boolean
     metadata_extra?: Record<string, unknown>
+    metadata_extra_merge?: Record<string, unknown | null>
   },
   /** Pass the current image version for optimistic concurrency control */
   version?: number,
