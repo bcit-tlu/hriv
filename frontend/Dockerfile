@@ -30,9 +30,13 @@ RUN npm run build
 FROM nginx:1.27-alpine AS prod
 RUN rm /etc/nginx/conf.d/default.conf
 # The nginx config template is supplied at deploy time via a ConfigMap
-# mounted at /etc/nginx/templates/.  A baked-in fallback is kept for
-# local development (docker compose) where no ConfigMap is available.
-COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+# mounted at /etc/nginx/templates/default.conf.template — authoritative
+# copy lives in charts/frontend/values.yaml under
+# configMounts[0].data."default.conf.template".  The prod image is
+# therefore only usable under the Helm chart (or an equivalent mount);
+# docker-compose uses the `dev` target above and does not consume this
+# stage.  See issue #37 for the rationale behind removing the legacy
+# baked-in fallback that previously caused drift between the two copies.
 COPY --chmod=755 dns-resolver.envsh /docker-entrypoint.d/12-dns-resolver.envsh
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 8080

@@ -30,22 +30,17 @@ env:
 # resource and is mounted into the container at the given mountPath.
 # Override the nginx config at deploy time without rebuilding the image.
 #
-# NOTE: The nginx config below must stay byte-for-byte in sync with
-# `frontend/nginx.conf.template` (the Docker-image fallback copy).
-# A CI check runs `scripts/check_nginx_configs_in_sync.py` on every
-# push and fails the build if the two copies drift.  See issue #37.
+# The nginx ``default.conf.template`` below is the **sole** source of
+# truth for the frontend's reverse-proxy config.  The prod container
+# image (see ``frontend/Dockerfile``) ships without a baked-in fallback
+# — running the image without this ConfigMap mount will leave nginx
+# with no server block.  This is deliberate: it makes the Helm chart
+# the only place the config needs to be edited.  See issue #37.
 configMounts:
     - name: nginx-config
       mountPath: /etc/nginx/templates
       data:
           default.conf.template: |-
-              ##
-              ## NOTE: This file must stay byte-for-byte in sync with the inline
-              ## ConfigMap template in `charts/frontend/values.yaml`
-              ## (`configMounts[0].data."default.conf.template"`).  A CI check runs
-              ## `scripts/check_nginx_configs_in_sync.py` on every push and fails the
-              ## build if the two copies drift.  See issue #37.
-              ##
               server {
                   listen       8080;
                   server_name  _;
