@@ -51,6 +51,30 @@ jobs:
       - name: Run pytest
         run: poetry run pytest
 
+  frontend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        # `frontend/package-lock.json` is in `.gitignore` (see .gitignore
+        # line 64 and the fallback path in `frontend/Dockerfile`), so use
+        # `npm install` rather than `npm ci`.
+        run: npm install
+
+      - name: Run vitest with coverage
+        # Coverage thresholds are enforced via `test.coverage.thresholds`
+        # in frontend/vite.config.ts — vitest exits non-zero if any
+        # threshold is breached.
+        run: npm run test:coverage
+
   helm-lint:
     runs-on: ubuntu-latest
     steps:
