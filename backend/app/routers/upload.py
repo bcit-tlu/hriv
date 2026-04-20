@@ -22,9 +22,27 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/source-images", tags=["source-images"])
 
-# Recognised image extensions (lowercase, with dot)
+# Recognised image extensions (lowercase, with dot).
+# BMP is intentionally excluded: libvips has no native BMP loader and the
+# ImageMagick delegate (the only path that can decode BMP in libvips) is
+# disabled in the backend image's libvips source build to drop ~24
+# non-reachable magickcore CVEs. See backend/Dockerfile for details.
 _IMAGE_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".gif", ".webp", ".svs",
+    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".gif", ".webp", ".svs",
+}
+
+# Recognised image MIME types. We deliberately DO NOT accept
+# ``content_type.startswith("image/")`` because browsers send
+# ``image/bmp`` for BMP uploads — and BMP decoding is not available in
+# this backend's libvips build (see ``_IMAGE_EXTENSIONS`` comment).
+# Listing the specific MIME types we support keeps extension and MIME
+# validation in lock-step with the libvips loaders compiled in.
+_IMAGE_MIME_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/tiff",
+    "image/gif",
+    "image/webp",
 }
 
 # 1 MiB chunks for streaming large uploads to disk
@@ -33,7 +51,7 @@ _UPLOAD_CHUNK_SIZE = 1024 * 1024
 
 def _is_valid_image(filename: str, content_type: str | None) -> bool:
     """Accept the file if it has a recognised image extension *or* MIME type."""
-    if content_type and content_type.startswith("image/"):
+    if content_type and content_type in _IMAGE_MIME_TYPES:
         return True
     return Path(filename).suffix.lower() in _IMAGE_EXTENSIONS
 

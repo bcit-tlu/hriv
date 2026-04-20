@@ -9,16 +9,29 @@ import Link from '@mui/material/Link'
 import Typography from '@mui/material/Typography'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 
-/** Image file extensions accepted by the app (including TIFF). */
-const ACCEPTED_IMAGE_TYPES = 'image/*,.tif,.tiff'
+/**
+ * File-picker ``accept`` list. We list explicit MIME types instead of the
+ * ``image/*`` glob so BMP (``image/bmp``) is excluded — the backend's
+ * libvips build has no BMP loader. ``.tif`` / ``.tiff`` / ``.svs`` are
+ * listed as extensions because browsers don't always attach a MIME type
+ * to large pyramidal TIFFs or Aperio slides.
+ */
+const ACCEPTED_IMAGE_TYPES =
+  'image/jpeg,image/png,image/tiff,image/gif,image/webp,.tif,.tiff,.svs'
+
+/** Recognised image MIME types for drag-and-drop validation. Must stay
+ * in lock-step with ``backend/app/routers/upload.py::_IMAGE_MIME_TYPES``. */
+const IMAGE_MIME_TYPES = new Set<string>([
+  'image/jpeg', 'image/png', 'image/tiff', 'image/gif', 'image/webp',
+])
 
 /** Recognised image extensions for drag-and-drop validation. */
 const IMAGE_EXTENSIONS = new Set([
-  '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tif', '.tiff', '.svs',
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.tif', '.tiff', '.svs',
 ])
 
 function isImageFile(file: File): boolean {
-  if (file.type.startsWith('image/')) return true
+  if (IMAGE_MIME_TYPES.has(file.type)) return true
   const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
   return IMAGE_EXTENSIONS.has(ext)
 }

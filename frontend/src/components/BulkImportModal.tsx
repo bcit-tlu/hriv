@@ -180,7 +180,7 @@ export default function BulkImportModal({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,.tif,.tiff,.zip"
+              accept="image/jpeg,image/png,image/tiff,image/gif,image/webp,.tif,.tiff,.svs,.zip"
               multiple
               hidden
               onChange={handleFileSelect}
@@ -222,7 +222,7 @@ export default function BulkImportModal({
                 </Typography>
               </Typography>
               <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
-                Supports JPEG, PNG, TIFF, BMP, GIF, WebP, SVS, and ZIP files.
+                Supports JPEG, PNG, TIFF, GIF, WebP, SVS, and ZIP files.
               </Typography>
             </Box>
 
