@@ -562,6 +562,12 @@ export default function ImageViewer({
       clearButton.element.title = locked
         ? 'Overlays are locked by the instructor'
         : 'Clear all selection rectangles'
+      // Suppress OSD hover/pressed image swaps when locked so the button
+      // doesn't appear interactive; the container still receives mouse
+      // events so the title tooltip remains visible.
+      clearButton.element.querySelectorAll('img').forEach((img) => {
+        img.style.pointerEvents = locked ? 'none' : 'auto'
+      })
     }
     updateClearButtonState()
     viewer.addControl(clearButton.element, {
