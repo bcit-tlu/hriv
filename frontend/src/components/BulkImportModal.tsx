@@ -180,7 +180,7 @@ export default function BulkImportModal({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*,.tif,.tiff,.zip"
+              accept="image/jpeg,image/png,image/tiff,image/gif,image/webp,.tif,.tiff,.svs,.zip"
               multiple
               hidden
               onChange={handleFileSelect}
