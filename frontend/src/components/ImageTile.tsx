@@ -55,7 +55,7 @@ export default function ImageTile({ image, onClick, programs, onEditDetails }: I
           height="160"
           image={image.thumb}
           alt={image.name}
-          sx={{ objectFit: 'cover' }}
+          sx={{ objectFit: 'cover', objectPosition: 'center' }}
         />
         <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>

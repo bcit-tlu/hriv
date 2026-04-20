@@ -168,10 +168,14 @@ def generate_tiles(
         },
     )
 
-    # Generate thumbnail from a fresh file handle (sequential stream was
-    # consumed by dzsave above and cannot be rewound).
+    # Generate a center-cropped thumbnail so the card preview always shows
+    # a recognisable portion of the image regardless of aspect ratio.
+    # A fresh file handle is needed because the sequential stream was
+    # consumed by dzsave above and cannot be rewound.
     thumb_path = os.path.join(output_dir, "thumbnail.jpeg")
-    thumb = pyvips.Image.thumbnail(source_path, 256)
+    thumb = pyvips.Image.thumbnail(
+        source_path, 256, height=256, crop="centre",
+    )
     thumb.jpegsave(thumb_path, Q=85)
 
     if tracker:
