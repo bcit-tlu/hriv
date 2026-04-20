@@ -11,8 +11,7 @@
 ### Backend
 - Install dependencies: `cd backend && poetry install --with dev`
 - Start development server: `cd backend && poetry run uvicorn app.main:app --reload`
-- Run tests: `cd backend && poetry run pytest`
-- Run tests with coverage gate: `cd backend && poetry run pytest --cov-fail-under=80`
+- Run tests: `cd backend && poetry run pytest` (enforces 80% coverage gate via `addopts` in `pyproject.toml`)
 - Apply DB migrations: `cd backend && DATABASE_URL=... poetry run python -m app.migrations_bootstrap`
 - Create a new migration: `cd backend && DATABASE_URL=... poetry run alembic revision --autogenerate -m "<message>"`
 
