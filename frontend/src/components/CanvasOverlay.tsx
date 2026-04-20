@@ -556,7 +556,17 @@ export default function CanvasOverlay({
       if (type === 'text' || type === 'link') {
         const textObj = obj as fabric.IText
         base.text = textObj.text || ''
-        base.color = (textObj.fill as string) || '#000000'
+        // Prefer per-character fill when the user changed colour via
+        // setSelectionStyles (e.g. after selecting text in IText editing mode).
+        // In that case the object-level `fill` is stale, but the rendered colour
+        // is driven by styles[line][char].fill. CanvasAnnotation stores a single
+        // colour, so we use the first character's styled fill when present and
+        // fall back to the object-level fill otherwise.
+        const styles = textObj.styles as
+          | Record<number, Record<number, { fill?: string }>>
+          | undefined
+        const firstCharFill = styles?.[0]?.[0]?.fill
+        base.color = firstCharFill || (textObj.fill as string) || '#000000'
         if (obj.angle) base.rotation = obj.angle
         // Convert visual font size to viewport units using the bounding-box ratio.
         // vpWidth/pixelWidth is the conversion factor from pixels to viewport units.
