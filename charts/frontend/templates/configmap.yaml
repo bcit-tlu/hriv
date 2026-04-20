@@ -13,6 +13,11 @@ data:
 {{- end }}
 {{- range $key, $path := ($m.files | default dict) }}
   {{ $key }}: |-
+  {{- /* .Files.Get reads files included in the packaged chart.  If a
+         .helmignore is ever added to this chart, any pattern that
+         excludes `$path` (e.g. `files/`, `*.template`) will make this
+         call return an empty string and silently produce an empty
+         ConfigMap value.  Keep `charts/frontend/files/**` unignored. */}}
 {{ $.Files.Get $path | indent 4 }}
 {{- end }}
 {{- end }}
