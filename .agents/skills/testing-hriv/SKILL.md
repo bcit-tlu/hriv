@@ -1,4 +1,9 @@
-# Testing HRIV App
+# Testing HRIV
+
+End-to-end testing guide for the HRIV app: local stack bring-up, seed data, auth,
+UI navigation, metadata operations, admin export/import, and image upload. For
+domain-specific flows see the sibling skills `testing-image-processing`
+(tile pipeline / pyvips) and `testing-backup-service` (disaster recovery).
 
 ## Local Setup
 
@@ -8,145 +13,202 @@
    ```
 2. Start the full stack:
    ```bash
-   docker compose up -d
+   docker compose up -d --build
    ```
-3. Wait for all services to be healthy (db, redis, backend, frontend).
-4. **Important:** The arq background worker is NOT included in `docker-compose.yml`. You must start it manually for image processing to work:
+   Services: frontend (Vite on :5173), backend (FastAPI on :8000), db (PostgreSQL),
+   redis, worker (arq), seed. Wait ~10s for the db to seed.
+3. **arq worker:** `docker-compose.yml` now defines a `worker` service; `docker compose up -d`
+   starts it automatically. If you're on an older checkout without that service,
+   start the worker manually or image processing will enqueue to Redis without being processed:
    ```bash
    docker compose exec -d backend arq app.worker.WorkerSettings
    ```
-   Without this, uploaded images will be enqueued to Redis but never processed.
-5. Frontend: http://localhost:5173
-6. Backend API: http://localhost:8000
+4. Frontend: http://localhost:5173
+5. Backend API: http://localhost:8000
+
+### Rebuilding After Code Changes
+
+Bind-mounts give hot-reload for most source edits. For Dockerfile / dependency / nginx
+config changes, rebuild the specific service:
+```bash
+docker compose up -d --build frontend   # or backend, worker, etc.
+```
 
 ## Devin Secrets Needed
 
-No external secrets needed. Seed users are created automatically.
+None for local testing — seed users are created automatically.
+Backup-service S3/Azure testing needs credentials; see `testing-backup-service`.
 
 ## Seed Test Accounts
 
 All use password: `password`
 
-| Email | Role | Can Edit Content | Can Manage Users |
+| Email | Role | canEditContent | canManageUsers |
 |---|---|---|---|
 | admin@bcit.ca | admin | Yes | Yes |
 | instructor@bcit.ca | instructor | Yes | No |
 | student@bcit.ca | student | No | No |
 
+## Seed Data
+
+### Categories (hierarchical)
+- Architecture
+  - American
+  - Italian
+    - Gothic
+- Panoramas
+
+### Images
+| ID | Name | Category | Source |
+|---|---|---|---|
+| 1 | Duomo di Milano | Italian | OpenSeadragon examples |
+| 2 | Duomo di Milano (Gothic Detail) | Gothic | OpenSeadragon examples |
+| 3 | Highsmith Panorama | American | Library of Congress |
+| 4 | Library of Congress | Panoramas | Library of Congress |
+
 ## Getting an API Auth Token
 
-Many tests require authenticated API calls. Get a token:
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@bcit.ca","password":"password"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-```
+  -d '{"email":"admin@bcit.ca","password":"password"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
-Use it in subsequent requests:
-```bash
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1
 ```
 
-## Key UI Navigation Paths
+## Key UI Navigation
 
-- **Browse page (Home):** Shows category tiles and uncategorized image tiles
-- **Upload image:** Click "ADD IMAGE" button (top-right on browse page, requires admin/instructor role)
-- **Add category:** Manage menu (top nav) > Categories > click "+" button next to level > enter name > Create
-- **Image viewer:** Click any image tile on browse page to open OpenSeadragon viewer
-- **Manage page:** Click "MANAGE" tab, then use the manage interface for bulk operations
-- **Admin page:** Click "ADMIN" tab (admin role required) for database/filesystem export/import
+### Tabs by Role
+- **admin:** Home, Images, Manage, People, Admin
+- **instructor:** Home, Images, Manage
+- **student:** Home only
+
+### Browse (Home)
+- Category tiles + uncategorized image tiles.
+- Click a tile to drill down; click an image tile to open the OpenSeadragon viewer.
+
+### Images Tab
+- Table columns: ID, Name, Category, Copyright, Note, Program, Status, Modified, Actions.
+- Filter icon next to **ADD IMAGE** reveals per-column filters. The Category filter
+  matches the full path (e.g. "Architecture : Italian" — partial string like `arch` matches).
+- Three-dot menu on any row: View / Details / Move / Delete.
+- Clicking an image name opens the **Edit Details** modal.
+
+### Edit Details / Add Image / Bulk Import modals
+- All share a category dropdown rendering the full tree with view / edit / `+` icons.
+- `+` on any row opens a "New Category" dialog; the new category is auto-selected.
+- **Edit Details** has a **VIEW IMAGE** button that navigates to the viewer.
+- When testing auto-select, cancel without saving after verifying the dropdown value
+  to avoid polluting seed data.
+
+### Category Management
+- Manage > Categories has a full dialog with drag-and-drop reordering.
+- Category tree changes are reflected immediately on Browse without a refresh
+  (frontend invalidates the ETag-cached `/api/categories/tree` query).
+
+### People tab (admin only)
+- Add / delete / edit users. Persistence survives a hard refresh.
+
+### Admin tab (admin only)
+- Database export/import (JSON).
+- Filesystem export/import (tar.gz via background tasks with log streaming).
+
+### Footer
+- "BCIT Teaching and Learning Unit" link → https://www.bcit.ca/learning-teaching-centre/.
+  Visible on all pages.
 
 ## OpenSeadragon Viewer Toolbar
 
-The image viewer toolbar is at the bottom-left of the viewer area. Buttons from left to right:
+Bottom-left of the viewer, left to right:
 
-| Position | Icon | Function |
-|----------|------|----------|
+| # | Icon | Function |
+|---|---|---|
 | 1 | + | Zoom in |
-| 2 | - | Zoom out |
+| 2 | – | Zoom out |
 | 3 | House | Home (reset view) |
 | 4 | Arrows | Fullscreen toggle |
 | 5 | CCW arrow | Rotate left |
 | 6 | CW arrow | Rotate right |
 | 7 | Diagonal arrow | Selection tool (draw rectangles) |
-| 8 | Padlock | Lock/unlock overlays |
+| 8 | Padlock | Lock / unlock overlays |
 | 9 | X | Clear overlays |
 | 10 | Pencil | Canvas annotation edit |
 
-**Warning:** The fullscreen button (position 4) is easy to accidentally click when trying to reach the selection tool. If the viewer goes fullscreen, press Escape to exit.
+**Warning:** Fullscreen (4) is adjacent to the selection tool (7) and easy to hit
+accidentally. Press Escape to exit fullscreen.
+
+When testing viewer stability after metadata edits, watch the URL — `zoom=`, `x=`,
+`y=` params should remain unchanged if the viewport was preserved.
 
 ## Testing Metadata Operations
 
 ### Optimistic Concurrency
 
-Images use version-based optimistic concurrency. Always include `If-Match` header when PATCHing:
+Images use version-based optimistic concurrency; PATCH requires `If-Match`:
 ```bash
-# Get current version
-VERSION=$(curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1 | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+VERSION=$(curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1 \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
 
-# PATCH with version
 curl -X PATCH http://localhost:8000/api/images/1 \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -H "If-Match: $VERSION" \
   -d '{"name": "New Name"}'
 ```
+Always re-fetch `version` before each PATCH or you'll get 409 Conflict.
 
-### metadata_extra_merge (Partial Metadata Updates)
+### metadata_extra_merge (Partial Updates)
 
-The `metadata_extra_merge` field allows partial updates to `metadata_extra` without overwriting other keys. This is how the frontend updates locked overlays and measurement settings independently.
-
+`metadata_extra_merge` patches individual keys in `metadata_extra` without
+overwriting the rest — this is how the frontend updates locked overlays and
+measurement settings independently:
 ```bash
-# Add locked_overlays without overwriting measurement settings
+# Add / update a key
 curl -X PATCH http://localhost:8000/api/images/1 \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -H "If-Match: $VERSION" \
   -d '{"metadata_extra_merge": {"locked_overlays": [{"x":0.1,"y":0.2,"w":0.3,"h":0.4}]}}'
 
 # Remove a key by setting it to null
 curl -X PATCH http://localhost:8000/api/images/1 \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -H "If-Match: $VERSION" \
   -d '{"metadata_extra_merge": {"locked_overlays": null}}'
 ```
+`metadata_extra` and `metadata_extra_merge` are mutually exclusive — sending both
+in one request returns 422.
 
-**Important:** `metadata_extra` and `metadata_extra_merge` are mutually exclusive — sending both in one request returns HTTP 422.
+`locked_overlays` entries are validated by `OverlayRectSchema` — each must have
+numeric `x`, `y`, `w`, `h`. Malformed entries are silently filtered on both
+backend and frontend.
 
-### Injecting Test Data into DB
+### Injecting Test Data
 
-To test frontend validation of malformed data, inject directly into PostgreSQL:
+To exercise frontend handling of malformed metadata, inject directly:
 ```bash
 docker exec hriv-db-1 psql -U hriv -d hriv -c \
-  "UPDATE images SET metadata = jsonb_set(COALESCE(metadata,'{}'), '{locked_overlays}', '[{\"x\":0.1,\"y\":0.2,\"w\":0.3,\"h\":0.4},{\"garbage\":true},{\"x\":\"str\",\"y\":0,\"w\":0,\"h\":0}]') WHERE id=2"
+  "UPDATE images SET metadata = jsonb_set(COALESCE(metadata,'{}'), '{locked_overlays}', \
+   '[{\"x\":0.1,\"y\":0.2,\"w\":0.3,\"h\":0.4},{\"garbage\":true},{\"x\":\"str\",\"y\":0,\"w\":0,\"h\":0}]') \
+   WHERE id=2"
 ```
-
-Then navigate to that image in the browser to verify the frontend handles it gracefully.
+Then open that image in the browser to verify graceful handling.
 
 ## Testing Admin Export/Import
 
 ### Filesystem Export UI Flow
 
-1. Log in as `admin@bcit.ca`
-2. Navigate to ADMIN tab
-3. Scroll to "Filesystem" section
-4. Click "EXPORT" button to start a filesystem export task
-5. The task appears in "Recent Tasks" at the bottom of the page
-6. Click the info (i) icon on the task row to open the log dialog
-7. The log dialog shows:
-   - Task title with status badge (running/completed/cancelled)
-   - Progress bar (determinate while running, indeterminate while cancelling)
-   - Log output with streaming entries
-   - CANCEL button (while running) or CLOSE button (when done)
-8. Completed tasks show a download (arrow) icon in the task row
+1. Admin tab → Filesystem section → **EXPORT**.
+2. Task appears in "Recent Tasks" at the bottom.
+3. Click the info (i) icon to open the log dialog (status badge, determinate
+   progress bar, streaming logs, CANCEL/CLOSE).
+4. Completed tasks show a download (↓) icon in the task row.
 
 ### Seeding Test Data for Export Testing
 
-The default seed data may not contain enough files for meaningful export testing. To test cancellation responsiveness, you need enough data that archiving takes several seconds. Create test files inside the Docker container:
-
+Default seed data is too small to exercise cancellation. Generate ~1 GB of
+incompressible data inside the backend container:
 ```bash
-# Create ~1GB of test files (20 dirs x 500 files x 100KB each)
 docker exec hriv-backend-1 python3 -c "
 import os, random
 for d in range(20):
@@ -158,61 +220,62 @@ for d in range(20):
 "
 ```
 
-This creates incompressible random data that forces the tar.gz archiver to work slowly, making it possible to test cancellation mid-archive.
-
 ### Verifying Archive Contents
 
-Exported archives are stored at `/data/admin_tasks/` inside the backend container. To verify contents:
-
+Archives are stored at `/data/admin_tasks/` inside the backend container:
 ```bash
-# List archive files
 docker exec hriv-backend-1 find /data/admin_tasks -name "*.tar.gz" -type f
-
-# Check archive contents (should have tiles/ and source_images/, no admin_tasks/)
 docker exec hriv-backend-1 tar -tzf /data/admin_tasks/<filename>.tar.gz | head -20
-
-# Verify admin_tasks/ exclusion
+# admin_tasks/ must be excluded from archives (no re-archiving of past exports):
 docker exec hriv-backend-1 tar -tzf /data/admin_tasks/<filename>.tar.gz | grep admin_tasks
-# (should return no output)
+# (should return nothing)
 ```
 
-### Key Backend Implementation Notes
+### Backend Implementation Notes
 
-- Export archiving runs in a background thread via `asyncio.to_thread`
-- A concurrent polling coroutine checks for cancellation every 2 seconds
-- Cancellation uses `threading.Event` to bridge async/sync boundaries
-- Verbose log entries are buffered in a `queue.Queue` and flushed every 2 seconds
-- The `admin_tasks/` directory is excluded from archives to avoid re-archiving previous exports
+- Archiving runs on `asyncio.to_thread`; a concurrent coroutine polls cancellation every 2s.
+- Cancellation bridges async/sync via `threading.Event`.
+- Log entries buffer in `queue.Queue` and flush every 2s.
+- The frontend polls task status every 2s, so UI state may lag the backend slightly.
 
-## Testing Image Upload + Processing Flow
+## Testing Image Upload + Processing
 
-1. Log in as admin@bcit.ca
-2. Click "ADD IMAGE" on browse page
-3. Use Playwright CDP to handle file selection (native file chooser doesn't work well with computer-use tools):
+1. Log in as admin@bcit.ca.
+2. Click **ADD IMAGE** on Browse.
+3. Use Playwright CDP for file selection (native chooser doesn't cooperate with computer-use):
    ```python
    from playwright.async_api import async_playwright
    async with async_playwright() as p:
        browser = await p.chromium.connect_over_cdp("http://localhost:29229")
-       # Find the HRIV page
-       page = [pg for ctx in browser.contexts for pg in ctx.pages if "localhost:5173" in pg.url][0]
+       page = [pg for ctx in browser.contexts for pg in ctx.pages
+               if "localhost:5173" in pg.url][0]
        async with page.expect_file_chooser() as fc_info:
            await page.click('text=browse to upload')
        fc = await fc_info.value
        await fc.set_files('/path/to/image.jpg')
    ```
-4. Click "ADD" to upload
-5. Watch for processing snackbar at bottom-right
-6. The snackbar auto-dismisses after 6 seconds — use Playwright to reliably catch and click the "View image" link
+4. Click **ADD** to upload.
+5. Processing snackbar appears bottom-right with a "View image" link on completion.
 
-## Testing Tips
+The snackbar auto-dismisses after 6 s — use Playwright `wait_for` to catch the link
+deterministically. For deeper image-processing tests (progress flush timing,
+synthetic large images, pyvips eval signals) see `testing-image-processing`.
 
-- The snackbar "View image" link has a 6-second auto-hide timer. For automated testing, use Playwright's `wait_for` to detect when the link appears and click it programmatically.
-- Small test images (e.g., 1024x1024 solid-color JPEG) process much faster than large medical images.
-- The `/api/categories/tree` endpoint uses ETag-based caching. To verify cache behavior, check the `Cache-Control` and `ETag` response headers with curl.
-- Category tree changes (add/move/delete) should be immediately visible on the browse page without browser refresh.
-- For export cancellation testing, the data volume needs to be large enough (~1GB+) that archiving takes more than a few seconds, otherwise the archive completes before you can click Cancel.
-- The frontend polls for task status every 2 seconds, so UI status transitions may lag slightly behind the actual backend state.
-- Seed images use external DZI tile sources (openseadragon.github.io). If tiles appear dark/black on initial load, wait a few seconds for the CDN to respond.
-- When testing viewer stability (e.g., after metadata edits), check the URL bar for `zoom=` and `x=`/`y=` parameters — they should remain unchanged if the viewport was preserved.
-- For API-based tests of metadata operations, always re-fetch the current version before each PATCH to avoid 409 Conflict errors.
-- The `locked_overlays` field in `metadata_extra` is validated by `OverlayRectSchema` — each entry must have numeric `x`, `y`, `w`, `h` fields. Malformed entries are silently filtered on both backend and frontend.
+## Browser & Test Environment Tips
+
+- **Chrome CDP:** The provisioned Chrome exposes CDP on `http://localhost:29229`.
+  Use it for Playwright scripts (`p.chromium.connect_over_cdp(...)`) when native
+  computer-use is awkward (file uploads, flaky timing, snackbars).
+- **Chrome binary (if you need to relaunch):** `/opt/.devin/chrome/chrome/linux-*/chrome-linux64/chrome`
+  with `--user-data-dir=/home/ubuntu/.browser_data_dir` to keep profile state. The
+  `google-chrome` wrapper requires the CDP proxy.
+- **Maximize the window before recording** so the full app is captured:
+  ```bash
+  wmctrl -r :ACTIVE: -b add,maximized_vert,maximized_horz
+  ```
+  Install `wmctrl` first if needed (`sudo apt-get install -y wmctrl`). Keyboard
+  shortcuts like Super+Up only tile to half-screen on some window managers.
+- **Seed images use external DZI tiles** (openseadragon.github.io). Dark/black tiles
+  on first load usually mean the CDN is still warming — wait a few seconds.
+- **Small vs large test images:** a 1024×1024 solid-color JPEG processes in
+  milliseconds; anything beyond ~200 MB is needed to observe tile-processing progress.
