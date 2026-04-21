@@ -1,0 +1,15 @@
+{{- if .Values.versionConfigMap.enabled }}
+# Publishes this chart's Chart.AppVersion so the hriv-backend chart can
+# mount it and surface it via /api/admin/version.  CI stamps
+# Chart.AppVersion on every helm-publish (head builds, rc tags, full
+# releases), so this ConfigMap is rewritten in lockstep with every
+# deployment and no manual fleet bump is ever required.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.versionConfigMap.name }}
+  labels:
+    {{- include "hriv-backup.labels" . | nindent 4 }}
+data:
+  {{ .Values.versionConfigMap.key }}: {{ .Chart.AppVersion | quote }}
+{{- end }}

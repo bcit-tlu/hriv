@@ -70,9 +70,18 @@ spec:
             - name: GITHUB_REPO
               value: {{ .Values.env.GITHUB_REPO | quote }}
             # Backup component version surfaced by /api/admin/version.
-            # Empty string → endpoint falls back to "dev" at runtime.
+            # Precedence (see backend/app/routers/admin.py):
+            #   1. BACKUP_VERSION_FILE → file contents (ConfigMap mount,
+            #      re-read on every admin version request so kubelet
+            #      ConfigMap refresh propagates without pod restart).
+            #   2. BACKUP_VERSION env var (legacy / local override).
+            #   3. "dev" fallback for unset local / dev installs.
             - name: BACKUP_VERSION
               value: {{ .Values.backupVersion | default "" | quote }}
+            {{- if .Values.backupVersionConfigMap.enabled }}
+            - name: BACKUP_VERSION_FILE
+              value: {{ printf "%s/%s" (trimSuffix "/" .Values.backupVersionConfigMap.mountPath) .Values.backupVersionConfigMap.key | quote }}
+            {{- end }}
             {{- if .Values.otel.enabled }}
             - name: OTEL_SERVICE_NAME
               value: {{ .Values.otel.serviceName | quote }}
@@ -131,10 +140,17 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if .Values.persistence.enabled }}
+          {{- if or .Values.persistence.enabled .Values.backupVersionConfigMap.enabled }}
           volumeMounts:
+            {{- if .Values.persistence.enabled }}
             - name: data
               mountPath: /data
+            {{- end }}
+            {{- if .Values.backupVersionConfigMap.enabled }}
+            - name: backup-version
+              mountPath: {{ .Values.backupVersionConfigMap.mountPath | quote }}
+              readOnly: true
+            {{- end }}
           {{- end }}
         {{- if .Values.tileSidecar.enabled }}
         - name: tile-server
@@ -167,7 +183,7 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
         {{- end }}
-      {{- if or .Values.persistence.enabled .Values.tileSidecar.enabled }}
+      {{- if or .Values.persistence.enabled .Values.tileSidecar.enabled .Values.backupVersionConfigMap.enabled }}
       volumes:
         {{- if .Values.persistence.enabled }}
         - name: data
@@ -178,6 +194,16 @@ spec:
         - name: nginx-tiles-config
           configMap:
             name: {{ include "hriv-backend.fullname" . }}-nginx-tiles
+        {{- end }}
+        {{- if .Values.backupVersionConfigMap.enabled }}
+        # Optional mount: if the backup chart isn't deployed (or the
+        # ConfigMap name is wrong), the volume renders with no keys
+        # and /api/admin/version falls back to BACKUP_VERSION / "dev"
+        # instead of the pod failing to start.
+        - name: backup-version
+          configMap:
+            name: {{ .Values.backupVersionConfigMap.name | quote }}
+            optional: true
         {{- end }}
       {{- end }}
       {{- with .Values.nodeSelector }}

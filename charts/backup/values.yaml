@@ -3,6 +3,17 @@ image:
   tag: "" # Defaults to .Chart.AppVersion
   pullPolicy: IfNotPresent
 
+# Exposes Chart.AppVersion as a ConfigMap so the hriv-backend chart can
+# mount it and surface the deployed backup version via /api/admin/version.
+# CI stamps Chart.AppVersion on every helm-publish (see the helm-publish
+# step of .github/workflows/ci.yaml) so this value is automatically
+# kept in sync with head builds, rc tags, and full releases — no manual
+# fleet bump is ever required.
+versionConfigMap:
+  enabled: true
+  name: hriv-backup-version
+  key: version
+
 # Name of the CNPG-generated Secret containing the database URI.
 # This is the <cluster>-app secret created by the backend chart's CNPG Cluster.
 cnpgSecretName: hriv-backend-db-app

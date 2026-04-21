@@ -199,24 +199,58 @@ async def start_files_import(
     return _task_to_dict(task)
 
 
+def _read_backup_version() -> str:
+    """Resolve the deployed backup chart's version string.
+
+    The backup chart publishes its ``Chart.AppVersion`` in a ConfigMap
+    that the backend chart mounts as a volume; ``BACKUP_VERSION_FILE``
+    points at the projected key.  Reading the file per-request means
+    kubelet's ConfigMap-volume refresh (~60s) propagates new versions
+    without the backend pod restarting — so head builds and rc tags
+    that only change the backup chart show up in the admin footer on
+    the next request without manual fleet bumps.
+
+    Precedence:
+        1. Contents of ``BACKUP_VERSION_FILE`` (backup chart ConfigMap).
+        2. ``BACKUP_VERSION`` env var (legacy / local override).
+        3. ``"dev"`` fallback for unset local builds.
+    """
+    file_path = os.environ.get("BACKUP_VERSION_FILE")
+    if file_path:
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                value = f.read().strip()
+            if value:
+                return value
+        except OSError:
+            # File missing / unreadable — fall through to env-var path.
+            # Expected on local installs without the backup chart
+            # deployed, or before the first kubelet volume refresh.
+            pass
+    return os.environ.get("BACKUP_VERSION") or "dev"
+
+
 @router.get("/version")
 async def get_version(
     _user: Annotated[User, Depends(_admin)],
 ) -> dict[str, str]:
     """Return deployed component versions.
 
-    Values are sourced from env vars stamped by CI at image-build and
-    deploy time. ``APP_VERSION`` is baked into the backend image via the
-    Dockerfile ``ARG``; ``BACKUP_VERSION`` is injected by the Helm chart
-    because the backup service versions independently. Both fall back to
-    ``"dev"`` when unset so local/dev environments still render.
+    Backend: ``APP_VERSION`` env var, baked into the image at build
+    time via the Dockerfile ``ARG`` so it travels with the image.
+
+    Backup: resolved by :func:`_read_backup_version` — ConfigMap-mount
+    file first, then ``BACKUP_VERSION`` env var, then ``"dev"``.  The
+    backup service versions independently of backend, so its version
+    is surfaced by reading the deployed backup chart's Chart.AppVersion
+    via a mounted ConfigMap instead of a statically-baked env var.
 
     Admin-only: version strings leak information about the deployed
     image and are not surfaced to other roles.
     """
     return {
         "backend": os.environ.get("APP_VERSION") or "dev",
-        "backup": os.environ.get("BACKUP_VERSION") or "dev",
+        "backup": _read_backup_version(),
     }
 
 
