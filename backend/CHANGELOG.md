@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0-rc](https://github.com/bcit-tlu/hriv/compare/backend-v0.6.0...backend-v0.7.0-rc) (2026-04-21)
+
+
+### Features
+
+* **versions:** auto-publish backup version via ConfigMap mount ([#155](https://github.com/bcit-tlu/hriv/issues/155)) ([0ce22ec](https://github.com/bcit-tlu/hriv/commit/0ce22ecc6ff0c5c48eb58402a81dff7c598e3d95))
+
+
+### Bug Fixes
+
+* **backend:** read FastAPI version from APP_VERSION env var ([#160](https://github.com/bcit-tlu/hriv/issues/160)) ([d637f0a](https://github.com/bcit-tlu/hriv/commit/d637f0a45525cc40febea6a39fb0e2a8c74616d7))
+
 ## [0.6.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.6.0-rc...backend-v0.6.0) (2026-04-21)
 
 
