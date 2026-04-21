@@ -16,8 +16,12 @@ jobs:
         include:
           - component: frontend
             context: ./frontend
+            target: stable
+            build_contexts: |
+              nginx-config=./charts/frontend/files
           - component: backend
             context: ./backend
+            target: stable
           - component: backup
             context: ./backup
 
@@ -25,7 +29,6 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-          fetch-tags: true
 
       - name: Detect changes
         id: changes
@@ -88,7 +91,10 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
-          push: ${{ github.event_name != 'pull_request' }}
+          target: ${{ matrix.target }}
+          build-contexts: ${{ matrix.build_contexts || '' }}
+          push: false
+          # push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:sha-${{ github.sha }}
             ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:${{ steps.version.outputs.next }}-${{ steps.version.outputs.short }}.${{ steps.version.outputs.ts }}
