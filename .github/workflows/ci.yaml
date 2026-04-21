@@ -387,6 +387,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
           build-args: |
             VITE_APP_VERSION=${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }}
+            APP_VERSION=${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }}
 
       # ── Sign with Cosign (keyless / Sigstore) ──────────────
       - uses: sigstore/cosign-installer@v3

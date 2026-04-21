@@ -40,6 +40,15 @@ RUN poetry install --no-root --no-interaction
 
 COPY backup.py ./
 
+# Stamp the release-please-managed app version into the image.  The backup
+# service itself doesn't read this at runtime, but carrying APP_VERSION as
+# an ENV makes ``docker inspect`` / ``kubectl describe pod`` surface the
+# exact build, and matches the convention set by the backend/frontend
+# images so CI can pass the same ``--build-arg APP_VERSION=<...>`` to every
+# component without conditional logic.
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 # Default: run on cron schedule
 ENTRYPOINT ["python", "backup.py"]
 CMD ["cron"]

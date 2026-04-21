@@ -14,6 +14,15 @@ env:
     TILES_DIR: /data/tiles
     GITHUB_REPO: "https://github.com/bcit-tlu/hriv"
 
+# Version of the independently-released hriv-backup component, surfaced
+# to admins via ``/api/admin/version``.  The backend image bakes its own
+# version in as ``APP_VERSION`` at build time; the frontend bakes its
+# own version in as ``VITE_APP_VERSION``.  Backup versions separately
+# (see release-please-config.json → packages.backup) so its version
+# string must be passed in at deploy time from the fleet HelmRelease
+# values.  Leave empty here to render ``"dev"`` at runtime.
+backupVersion: ""
+
 # ── OpenTelemetry observability ─────────────────────────────
 # When enabled=true, the backend Deployment renders six OTEL_* env vars
 # read by the OpenTelemetry Python SDK / auto-instrumentation (the prod

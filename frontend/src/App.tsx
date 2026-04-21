@@ -66,6 +66,7 @@ import {
     fetchAnnouncement,
     fetchUncategorizedImages,
     fetchSourceImage,
+    fetchVersions,
     createCategory as apiCreateCategory,
     deleteCategory as apiDeleteCategory,
     updateCategory as apiUpdateCategory,
@@ -215,6 +216,12 @@ export default function App() {
 
     // Report issue modal state
     const [reportIssueOpen, setReportIssueOpen] = useState(false);
+
+    // Component versions (admin-only, fetched lazily on mount).  Backend +
+    // backup are returned by ``/api/admin/version``; frontend is baked in
+    // at build time via ``VITE_APP_VERSION`` so we read it directly.
+    const [backendVersion, setBackendVersion] = useState<string | null>(null);
+    const [backupVersion, setBackupVersion] = useState<string | null>(null);
 
     // Image processing tracking state (supports up to 5 concurrent jobs)
     const MAX_PROCESSING_JOBS = 5;
@@ -562,6 +569,25 @@ export default function App() {
                 .catch(() => setSearchUsers([]));
         }
     }, [searchOpen, canManageUsers]);
+
+    // Load deployed component versions for the footer (admin only).
+    // The endpoint is admin-guarded; non-admins never see versions.
+    useEffect(() => {
+        if (!canManageUsers) {
+            setBackendVersion(null);
+            setBackupVersion(null);
+            return;
+        }
+        fetchVersions()
+            .then((v) => {
+                setBackendVersion(v.backend);
+                setBackupVersion(v.backup);
+            })
+            .catch(() => {
+                setBackendVersion(null);
+                setBackupVersion(null);
+            });
+    }, [canManageUsers]);
 
     const loadCategories = useCallback(async () => {
         try {
@@ -2109,25 +2135,79 @@ export default function App() {
                     >
                         MPL-2.0
                     </Link>
-                    <Box
-                        component="span"
-                        sx={{ display: "inline-block", width: "3ch" }}
-                    />
-                    <strong>Version:</strong>{" "}
-                    <Link
-                        href={
-                            import.meta.env.VITE_APP_VERSION &&
-                            import.meta.env.VITE_APP_VERSION !== "dev"
-                                ? `https://github.com/bcit-tlu/hriv/releases`
-                                : `https://github.com/bcit-tlu/hriv`
-                        }
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        color="text.secondary"
-                        underline="hover"
-                    >
-                        {import.meta.env.VITE_APP_VERSION || "dev"}
-                    </Link>
+                    {canManageUsers &&
+                        (() => {
+                            // Versions are admin-only: the strings leak info
+                            // about the deployed image and are not relevant
+                            // to other roles.  Each component versions
+                            // independently (see release-please packages in
+                            // release-please-config.json) so the footer
+                            // lists three distinct values rather than a
+                            // single shared version.
+                            const frontendVer =
+                                import.meta.env.VITE_APP_VERSION || "dev";
+                            const releasesHref =
+                                "https://github.com/bcit-tlu/hriv/releases";
+                            const repoHref =
+                                "https://github.com/bcit-tlu/hriv";
+                            const hrefFor = (v: string) =>
+                                v && v !== "dev" ? releasesHref : repoHref;
+                            return (
+                                <>
+                                    <Box
+                                        component="span"
+                                        sx={{
+                                            display: "inline-block",
+                                            width: "3ch",
+                                        }}
+                                    />
+                                    <strong>Frontend:</strong>{" "}
+                                    <Link
+                                        href={hrefFor(frontendVer)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        color="text.secondary"
+                                        underline="hover"
+                                    >
+                                        {frontendVer}
+                                    </Link>
+                                    <Box
+                                        component="span"
+                                        sx={{
+                                            display: "inline-block",
+                                            width: "3ch",
+                                        }}
+                                    />
+                                    <strong>Backend:</strong>{" "}
+                                    <Link
+                                        href={hrefFor(backendVersion ?? "")}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        color="text.secondary"
+                                        underline="hover"
+                                    >
+                                        {backendVersion ?? "…"}
+                                    </Link>
+                                    <Box
+                                        component="span"
+                                        sx={{
+                                            display: "inline-block",
+                                            width: "3ch",
+                                        }}
+                                    />
+                                    <strong>Backup:</strong>{" "}
+                                    <Link
+                                        href={hrefFor(backupVersion ?? "")}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        color="text.secondary"
+                                        underline="hover"
+                                    >
+                                        {backupVersion ?? "…"}
+                                    </Link>
+                                </>
+                            );
+                        })()}
                 </Typography>
                 <Link
                     component="button"

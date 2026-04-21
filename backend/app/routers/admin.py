@@ -199,6 +199,27 @@ async def start_files_import(
     return _task_to_dict(task)
 
 
+@router.get("/version")
+async def get_version(
+    _user: Annotated[User, Depends(_admin)],
+) -> dict[str, str]:
+    """Return deployed component versions.
+
+    Values are sourced from env vars stamped by CI at image-build and
+    deploy time. ``APP_VERSION`` is baked into the backend image via the
+    Dockerfile ``ARG``; ``BACKUP_VERSION`` is injected by the Helm chart
+    because the backup service versions independently. Both fall back to
+    ``"dev"`` when unset so local/dev environments still render.
+
+    Admin-only: version strings leak information about the deployed
+    image and are not surfaced to other roles.
+    """
+    return {
+        "backend": os.environ.get("APP_VERSION") or "dev",
+        "backup": os.environ.get("BACKUP_VERSION") or "dev",
+    }
+
+
 @router.get("/tasks")
 async def list_tasks(
     _user: Annotated[User, Depends(_admin)],
