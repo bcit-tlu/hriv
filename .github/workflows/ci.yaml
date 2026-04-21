@@ -1,17 +1,4 @@
-name: "[CI] Test, build & publish"
-
-# Give each run a role-specific title so PR runs, main `head` builds and tag
-# release builds are distinguishable at a glance in the Actions list (the
-# default run title is the commit subject, which is identical for every
-# workflow triggered by the same push).
-run-name: >-
-  ${{ github.event_name == 'pull_request'
-      && format('PR #{0} — {1}', github.event.pull_request.number, github.event.pull_request.title)
-      || startsWith(github.ref, 'refs/tags/')
-      && format('Release {0}', github.ref_name)
-      || github.event_name == 'workflow_dispatch'
-      && format('Manual build — {0}', github.sha)
-      || format('Head build — {0}', github.event.head_commit.message) }}
+name: CI
 
 on:
   push:
@@ -19,123 +6,17 @@ on:
     tags: ["frontend-v*", "backend-v*", "backup-v*"]
   pull_request:
     branches: [main]
-  # workflow_dispatch is used by release-please.yaml to re-dispatch
-  # ci.yaml on freshly-created tag refs (release re-dispatch). It can
-  # also be triggered manually from the Actions UI on main for ad-hoc
-  # head builds.
   workflow_dispatch: {}
 
 env:
   REGISTRY: ghcr.io
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: read
   packages: write
-  id-token: write          # Cosign keyless (Sigstore OIDC)
-  security-events: write   # Trivy SARIF upload to GitHub Security tab
 
 jobs:
-  # ── Quality gates ─────────────────────────────────────────
-  #
-  # Tests/lint run on every push + PR. Skipped on `workflow_dispatch`
-  # (release re-dispatch on tag refs) — those events don't change
-  # source, so re-running the suites would just re-validate the same
-  # commit that was already gated on its original merge to main. The
-  # image matrix below relaxes its `needs:` gate so those skipped
-  # checks don't block the release build.
-  backend-tests:
-    runs-on: ubuntu-latest
-    if: github.event_name != 'workflow_dispatch'
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.13"
-
-      - name: Install Poetry
-        run: pip install poetry
-
-      - name: Install dependencies
-        run: poetry install --with dev
-
-      - name: Run pytest
-        run: poetry run pytest
-
-  frontend-tests:
-    runs-on: ubuntu-latest
-    if: github.event_name != 'workflow_dispatch'
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "22"
-
-      - name: Install dependencies
-        # `frontend/package-lock.json` is in `.gitignore` (see .gitignore
-        # line 64 and the fallback path in `frontend/Dockerfile`), so use
-        # `npm install` rather than `npm ci`.
-        run: npm install
-
-      - name: Run vitest with coverage
-        # Coverage thresholds are enforced via `test.coverage.thresholds`
-        # in frontend/vite.config.ts — vitest exits non-zero if any
-        # threshold is breached.
-        run: npm run test:coverage
-
-  helm-lint:
-    runs-on: ubuntu-latest
-    if: github.event_name != 'workflow_dispatch'
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: azure/setup-helm@v5
-
-      - name: Install kubeconform
-        run: |
-          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
-            | sudo tar xz -C /usr/local/bin kubeconform
-
-      - name: Lint, template-render & validate all charts
-        run: |
-          for chart in charts/*/; do
-            name=$(basename "$chart")
-            echo "::group::${name}"
-            helm lint "$chart"
-            helm template test "$chart" \
-              | kubeconform -strict -summary \
-                  -schema-location default \
-                  -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
-                  -ignore-missing-schemas
-            echo "::endgroup::"
-          done
-
-  # ── Compute per-component publish plan (Vault/Rancher-style) ──
-  #
-  # Tag model (strict-D — matches hashicorp/vault & rancher/rancher):
-  #   <component>-v<X.Y.Z>-rcN  → "pre-release" git tag (release-please in
-  #                               prerelease mode). Published as the immutable
-  #                               OCI tag X.Y.Z-rcN only; NO moving pointer
-  #                               follows rcs. Consumers opt into an rc by
-  #                               pinning its version tag.
-  #   <component>-v<X.Y.Z>      → "full release" git tag (graduated from an
-  #                               rc via `Release-As:` footer). Published as
-  #                               the immutable X.Y.Z plus, iff this is the
-  #                               highest full-release SemVer for the
-  #                               component, the moving `stable` and `latest`
-  #                               OCI pointers.
-  #
-  # Non-tag pushes to main publish only the moving `head` OCI pointer — the
-  # continuous-integration artifact (mirrors rancher/rancher:head). No SemVer
-  # is stamped; no helm chart is published; nothing is "released".
+  # ── Compute per-component version + mode ─────────────────
   versions:
     runs-on: ubuntu-latest
     outputs:
@@ -143,9 +24,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0    # need full history + tags for highest-stable check
+          fetch-depth: 0
 
-      - name: Compute component publish plan
+      - name: Compute publish plan
         id: compute
         shell: bash
         run: |
@@ -154,108 +35,23 @@ jobs:
           TAG_REF="${GITHUB_REF#refs/tags/}"
           OUT='{}'
 
-          # Guard: workflow_dispatch is only valid on tag refs (release
-          # re-dispatch from release-please.yaml) or refs/heads/main
-          # (ad-hoc head build). Reject any other ref so a feature-branch
-          # dispatch can't push signed PR-mode images to the registry.
-          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" \
-             && "${GITHUB_REF}" != refs/tags/* \
-             && "${GITHUB_REF}" != "refs/heads/main" ]]; then
-            echo "::error::workflow_dispatch is only valid on tag refs or refs/heads/main, got ${GITHUB_REF}" >&2
-            exit 1
-          fi
-
           for COMPONENT in frontend backend backup; do
             MODE="skip"
             VERSION=""
-            IS_PRERELEASE=false
-            IS_HIGHEST_STABLE=false
 
             if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-              # ── Tag push ────────────────────────────────────
-              # Only the matching component builds on a tag push so a
-              # release of one component doesn't drag unrelated components'
-              # moving tags onto new digests.
+              # Tag push: only the matching component builds.
               if [[ "${TAG_REF}" =~ ^${COMPONENT}-v(.+)$ ]]; then
                 MODE="release"
                 VERSION="${BASH_REMATCH[1]}"
-                if [[ "${VERSION}" == *-* ]]; then
-                  IS_PRERELEASE=true
-                else
-                  # Highest full-release SemVer for this component wins the
-                  # `stable` and `latest` moving pointers. Backports of older
-                  # lines won't displace them.
-                  # sed must strip the `${COMPONENT}-v` prefix *before* the
-                  # prerelease filter — the prefix contains a hyphen that
-                  # would otherwise swallow every line.
-                  ALL_STABLE=$(git tag -l "${COMPONENT}-v[0-9]*.[0-9]*.[0-9]*" \
-                    | sed "s/^${COMPONENT}-v//" \
-                    | grep -v -- '-' \
-                    || true)
-                  HIGHEST_STABLE=$(printf '%s\n' "${ALL_STABLE}" | sort -V | tail -n1)
-                  if [[ "${VERSION}" == "${HIGHEST_STABLE}" ]]; then
-                    IS_HIGHEST_STABLE=true
-                  fi
-                fi
               fi
             elif [[ "${GITHUB_EVENT_NAME}" == "push" \
                  || ( "${GITHUB_EVENT_NAME}" == "workflow_dispatch" \
                    && "${GITHUB_REF}" == "refs/heads/main" ) ]]; then
-              # ── main branch push (or manual dispatch on main) ──
-              # Anchor the head build's version to the next planned
-              # release so operators can read image / chart tags and
-              # immediately see which target SemVer the code is heading
-              # toward. Stripped of any prerelease suffix (e.g. `-rc`)
-              # so that SemVer-sort gives: head  <  rc  <  full release,
-              # matching the intuition "head = bleeding edge of the next
-              # target".
-              #
-              # Resolution order for the base version:
-              #   1. The component's release-please PR branch (most
-              #      accurate — reflects conventional-commit analysis).
-              #   2. The shared release-please branch (legacy fallback
-              #      for the transition from separate-pull-requests:
-              #      false → true).
-              #   3. The committed manifest on main (safe default when
-              #      no release-please PR exists yet).
-              #
-              # Rule applied to the resolved base:
-              #   * base holds a prerelease (e.g. `0.7.0-rc`) →
-              #     strip the `-rc` suffix and target the upcoming
-              #     release (`0.7.0-head.SHA`  <  `0.7.0-rc`).
-              #   * base holds a clean stable (e.g. `0.6.0`)  →
-              #     bump patch so head sorts strictly ABOVE the last
-              #     stable release (`0.6.1-head.SHA`  >  `0.6.0`).
-              #     This covers the brief window between merging a
-              #     graduation PR and release-please opening the next
-              #     rc PR.
               MODE="head"
-              BASE=""
-              # 1. Per-component release-please branch (separate-pull-requests: true)
-              RP_BRANCH="release-please--branches--main--components--${COMPONENT}"
-              BASE=$(git show "origin/${RP_BRANCH}:.release-please-manifest.json" 2>/dev/null \
-                | jq -r --arg c "${COMPONENT}" '.[$c] // empty' 2>/dev/null || true)
-              # 2. Shared release-please branch (separate-pull-requests: false)
-              if [[ -z "${BASE}" ]]; then
-                BASE=$(git show "origin/release-please--branches--main:.release-please-manifest.json" 2>/dev/null \
-                  | jq -r --arg c "${COMPONENT}" '.[$c] // empty' 2>/dev/null || true)
-              fi
-              # 3. Committed manifest on main
-              if [[ -z "${BASE}" ]]; then
-                BASE=$(jq -r --arg c "${COMPONENT}" '.[$c]' .release-please-manifest.json)
-              fi
-              [[ -n "${BASE}" && "${BASE}" != "null" ]] || {
-                echo "::error::Missing ${COMPONENT} version in .release-please-manifest.json" >&2
-                exit 1
-              }
-              BASE_STABLE="${BASE%-*}"
-              if [[ "${BASE}" == "${BASE_STABLE}" ]]; then
-                IFS=. read -r MAJ MIN PAT <<<"${BASE_STABLE}"
-                BASE_STABLE="${MAJ}.${MIN}.$((PAT + 1))"
-              fi
-              VERSION="${BASE_STABLE}-head.${SHORT_SHA}"
+              VERSION=$(jq -r --arg c "${COMPONENT}" '.[$c]' .release-please-manifest.json)
             else
-              # ── PR: build-only sanity check, no push ────────
+              # PR build: build but don't push.
               MODE="pr"
               VERSION="0.0.0-pr.${SHORT_SHA}"
             fi
@@ -264,38 +60,23 @@ jobs:
               --arg c "${COMPONENT}" \
               --arg mode "${MODE}" \
               --arg v "${VERSION}" \
-              --argjson pre "${IS_PRERELEASE}" \
-              --argjson hs "${IS_HIGHEST_STABLE}" \
-              '. + {($c): {mode: $mode, version: $v, is_prerelease: $pre, is_highest_stable: $hs}}' \
+              '. + {($c): {mode: $mode, version: $v}}' \
               <<<"${OUT}")
 
-            echo "  ${COMPONENT}: mode=${MODE} version=${VERSION} prerelease=${IS_PRERELEASE} highest_stable=${IS_HIGHEST_STABLE}"
+            echo "  ${COMPONENT}: mode=${MODE} version=${VERSION}"
           done
 
           echo "json=${OUT}" >> "$GITHUB_OUTPUT"
 
-  # ── Container images (matrix: frontend, backend, backup) ──
+  # ── App images (matrix: frontend, backend, backup) ───────
   images:
     runs-on: ubuntu-latest
-    needs: [backend-tests, frontend-tests, versions]
-    # Skipped quality-gate needs should not block release dispatches.
-    # `needs.versions` must succeed (it's the source of truth for the
-    # publish plan); the test jobs are allowed to be `skipped`
-    # (workflow_dispatch release re-dispatch) or `success` (push / PR).
-    if: >-
-      !cancelled()
-      && needs.versions.result == 'success'
-      && (needs.backend-tests.result == 'success' || needs.backend-tests.result == 'skipped')
-      && (needs.frontend-tests.result == 'success' || needs.frontend-tests.result == 'skipped')
+    needs: [versions]
+    if: needs.versions.result == 'success'
     strategy:
       fail-fast: false
       matrix:
         include:
-          # The frontend prod stage bakes in ``default.conf.template``
-          # from the Helm chart's ``files/`` directory via a named
-          # BuildKit context (see frontend/Dockerfile and issue #37).
-          # This keeps the chart ConfigMap and the Docker image resolved
-          # to the same bytes on disk without duplicating the template.
           - component: frontend
             context: ./frontend
             target: prod
@@ -308,10 +89,8 @@ jobs:
             context: ./backup
     steps:
       - name: Skip non-matching components on tag pushes
-        id: guard
         if: fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'skip'
-        run: |
-          echo "Skipping ${{ matrix.component }}: this is a tag push for a different component."
+        run: echo "Skipping ${{ matrix.component }}"
 
       - uses: actions/checkout@v6
         if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
@@ -326,167 +105,46 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Publish tags by mode (matches hashicorp/vault, rancher/rancher):
-      #   mode=release (any tag push):
-      #     always → <version>
-      #     if full release + highest stable semver → stable, latest
-      #   mode=head (main branch push):
-      #     always → head
-      #   mode=pr (pull request):
-      #     always → pr-<sha>  (not pushed to registry)
       - uses: docker/metadata-action@v6
         id: meta
         if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
-        env:
-          PLAN: ${{ toJSON(fromJSON(needs.versions.outputs.json)[matrix.component]) }}
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
           tags: |
             type=raw,value=${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }},enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' }}
             type=raw,value=head,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'head' }}
-            type=raw,value=stable,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'release' && fromJSON(needs.versions.outputs.json)[matrix.component].is_prerelease == false && fromJSON(needs.versions.outputs.json)[matrix.component].is_highest_stable == true }}
-            type=raw,value=latest,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'release' && fromJSON(needs.versions.outputs.json)[matrix.component].is_prerelease == false && fromJSON(needs.versions.outputs.json)[matrix.component].is_highest_stable == true }}
           flavor: |
             latest=false
 
       - uses: docker/build-push-action@v7
-        id: build
         if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
         with:
           context: ${{ matrix.context }}
           build-contexts: ${{ matrix.build_contexts }}
           target: ${{ matrix.target }}
           push: ${{ github.event_name != 'pull_request' }}
-          # PR builds don't push to the registry, but we still need the image
-          # locally so the Trivy step below can scan it by tag.
           load: ${{ github.event_name == 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          sbom: ${{ github.event_name != 'pull_request' }}
-          provenance: ${{ github.event_name != 'pull_request' }}
           cache-from: type=gha,scope=${{ matrix.component }}
           cache-to: type=gha,mode=max,scope=${{ matrix.component }}
           build-args: |
             VITE_APP_VERSION=${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }}
             APP_VERSION=${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }}
 
-      # ── Sign with Cosign (keyless / Sigstore) ──────────────
-      - uses: sigstore/cosign-installer@v3
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name != 'pull_request'
-
-      - name: Sign image
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name != 'pull_request'
-        run: |
-          cosign sign --yes \
-            ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}@${{ steps.build.outputs.digest }}
-
-      # ── Trivy vulnerability scan ───────────────────────────
-      #
-      # Runs on every build, including pull requests, so regressions surface
-      # on the PR that introduces them rather than after merge to main.
-      #
-      #   * main/tag pushes: scan the pushed image by digest and upload the
-      #     full CRITICAL+HIGH SARIF to the Security tab. `ignore-unfixed`
-      #     is disabled here so unfixable CVEs remain visible on the tab
-      #     for inventory/audit purposes.
-      #
-      #   * pull requests: scan the locally loaded image by tag (PRs don't
-      #     push to the registry). `ignore-unfixed: true` trims the noise
-      #     to CVEs with an upstream fix available. Emits a `table`-format
-      #     report into the Actions log so reviewers can see exactly what
-      #     CVEs the PR carries without hunting through a SARIF file
-      #     (PRs don't upload SARIF — the main-branch scan is the source
-      #     of truth for the Security tab). The scan is advisory
-      #     (`exit-code: 0`) today because the frontend/backend/backup
-      #     images still carry pre-existing fixable CVEs that an immediate
-      #     blocking gate would fail every unrelated PR on. Once the base
-      #     images are cleaned up (see the tracking items in the code-
-      #     scanning mitigation plan), flip this to `exit-code: 1` so new
-      #     regressions block merges.
-      - name: Resolve image reference for Trivy
-        id: scan-ref
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip'
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "ref=${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}@${{ steps.build.outputs.digest }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Scan image for vulnerabilities (PR, table output to log)
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@v0.35.0
-        with:
-          image-ref: ${{ steps.scan-ref.outputs.ref }}
-          format: table
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          # Suppress the documented, non-reachable / accepted CVEs listed in
-          # .trivyignore at the repo root (codec families transitively pulled
-          # in by libvips, the util-linux chfn/chsh info leak that can't fire
-          # inside a non-interactive container, and the two backup-image
-          # criticals). Each entry is justified and dated for review.
-          trivyignores: .trivyignore
-          # TODO: flip to '1' once the base-image cleanup items from the
-          # code-scanning mitigation plan have landed, so new regressions
-          # block merges.
-          exit-code: '0'
-
-      - name: Scan image for vulnerabilities (main/tag, SARIF to Security tab)
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name != 'pull_request'
-        uses: aquasecurity/trivy-action@v0.35.0
-        with:
-          image-ref: ${{ steps.scan-ref.outputs.ref }}
-          format: sarif
-          output: trivy-${{ matrix.component }}.sarif
-          severity: CRITICAL,HIGH
-          ignore-unfixed: false
-          # Same .trivyignore as the PR-table scan above, so the Security tab
-          # reflects the same accepted-risk decisions.
-          trivyignores: .trivyignore
-          exit-code: '0'
-
-      - name: Upload scan results to GitHub Security
-        if: fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' && github.event_name != 'pull_request'
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: trivy-${{ matrix.component }}.sarif
-          category: trivy-${{ matrix.component }}
-
-  # ── Helm charts → OCI registry ────────────────────────────
-  #
-  # Charts are published on:
-  #   * tag push (mode=release) — versioned artifact + conditional
-  #     stable/latest moving tags (when highest full-release SemVer).
-  #   * main push (mode=head)   — 0.0.0-head.<sha> versioned artifact +
-  #     the moving `head` OCI tag. Lets flux-fleet's latest overlay
-  #     track main HEAD continuously.
-  #
-  # Skipped on:
-  #   * pull requests    — nothing to publish; build-only sanity check.
-  # Needs are relaxed the same way `images` does: helm-lint is skipped
-  # on release dispatches (tests / lint don't gate those) and we
-  # must not let that skip cascade into blocking release dispatches.
+  # ── Helm charts → OCI registry ───────────────────────────
   helm-publish:
     runs-on: ubuntu-latest
-    needs: [helm-lint, images, versions]
+    needs: [images, versions]
     if: >-
       !cancelled()
       && needs.versions.result == 'success'
       && needs.images.result == 'success'
-      && (needs.helm-lint.result == 'success' || needs.helm-lint.result == 'skipped')
       && github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v6
 
       - uses: azure/setup-helm@v5
-
-      - uses: sigstore/cosign-installer@v3
-
-      - uses: imjasonh/setup-crane@v0.5
-        # crane attaches the `stable` / `latest` moving tags to the same
-        # OCI digest that `helm push` produces, without repackaging.
 
       - uses: docker/login-action@v4
         with:
@@ -500,141 +158,32 @@ jobs:
             helm registry login ${{ env.REGISTRY }} \
               -u ${{ github.actor }} --password-stdin
 
-      - name: Package, push, tag & sign charts
-        shell: bash
+      - name: Package & push charts
         env:
           PLAN_JSON: ${{ needs.versions.outputs.json }}
         run: |
           set -euo pipefail
           OCI_BASE="oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
-          IMAGE_BASE="${{ env.REGISTRY }}/${{ github.repository }}/charts"
 
           for dir in charts/*/; do
-            chart=$(basename "$dir")      # e.g. frontend
+            chart=$(basename "$dir")
             echo "::group::${chart}"
 
-            MODE=$(jq -r --arg c "${chart}" '.[$c].mode'              <<<"${PLAN_JSON}")
-            if [[ "${MODE}" == "skip" ]]; then
-              echo "Skipping ${chart}: tag push is for a different component."
+            MODE=$(jq -r --arg c "${chart}" '.[$c].mode' <<<"${PLAN_JSON}")
+            VERSION=$(jq -r --arg c "${chart}" '.[$c].version' <<<"${PLAN_JSON}")
+
+            if [[ "${MODE}" == "skip" || "${MODE}" == "pr" ]]; then
+              echo "Skipping ${chart} (mode=${MODE})"
               echo "::endgroup::"
               continue
             fi
 
-            # Defense-in-depth: the job-level `if:` already excludes
-            # PR events, but guard here so future event types or
-            # config drift can't let MODE=pr slip past and
-            # accidentally publish synthetic artifacts.
-            case "${MODE}" in
-              head|release) ;;
-              *) echo "::error::helm-publish invoked on ${chart} with unexpected mode: ${MODE}" >&2; exit 1 ;;
-            esac
-
-            VERSION=$(jq -r --arg c "${chart}" '.[$c].version'           <<<"${PLAN_JSON}")
-            IS_PRE=$(jq -r  --arg c "${chart}" '.[$c].is_prerelease'     <<<"${PLAN_JSON}")
-            IS_HS=$(jq -r   --arg c "${chart}" '.[$c].is_highest_stable' <<<"${PLAN_JSON}")
-            [[ -n "${VERSION}" && "${VERSION}" != "null" ]] || { echo "No version for chart ${chart}" >&2; exit 1; }
-
-            # ── Unified chart + app version ──────────────────────
-            # Chart version and app version are the same string — the
-            # one computed by the `versions` job — so the chart OCI
-            # tag, the image tag, and Chart.AppVersion all match the
-            # release-please lineage. Both Chart.yaml lines carry the
-            # `x-release-please-version` marker; release-please bumps
-            # them in lockstep on every rc / full release, and head /
-            # head mode stamps the manifest-derived prerelease form
-            # computed by the `versions` job.
-            sed -i "s/^version:.*/version: ${VERSION} # x-release-please-version/" "${dir}Chart.yaml"
-            sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\" # x-release-please-version/" "${dir}Chart.yaml"
+            # Stamp chart version and appVersion to match the release version.
+            sed -i "s/^version:.*/version: ${VERSION}/" "${dir}Chart.yaml"
+            sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" "${dir}Chart.yaml"
 
             helm package "$dir" -d /tmp/charts
-            PUSH_OUT=$(helm push "/tmp/charts/hriv-${chart}-${VERSION}.tgz" "${OCI_BASE}" 2>&1)
-            echo "${PUSH_OUT}"
-
-            DIGEST=$(printf '%s\n' "${PUSH_OUT}" | awk '/^Digest:/{print $2}')
-            [[ -n "${DIGEST}" ]] || { echo "Failed to capture digest from helm push" >&2; exit 1; }
-
-            # Moving-tag rules (strict-D — matches hashicorp/vault &
-            # rancher/rancher):
-            #   mode=head            → add `head`
-            #   mode=release rc      → no moving tag (immutable only)
-            #   mode=release stable  → add `stable` + `latest` iff highest
-            #                          full-release SemVer
-            if [[ "${MODE}" == "head" ]]; then
-              crane tag "${IMAGE_BASE}/hriv-${chart}:${VERSION}" head
-            elif [[ "${MODE}" == "release" && "${IS_PRE}" != "true" && "${IS_HS}" == "true" ]]; then
-              crane tag "${IMAGE_BASE}/hriv-${chart}:${VERSION}" stable
-              crane tag "${IMAGE_BASE}/hriv-${chart}:${VERSION}" latest
-            fi
-
-            cosign sign --yes "${IMAGE_BASE}/hriv-${chart}@${DIGEST}"
+            helm push "/tmp/charts/hriv-${chart}-${VERSION}.tgz" "${OCI_BASE}"
 
             echo "::endgroup::"
-          done
-
-  # ── GitHub Releases for head builds ────────────────────
-  #
-  # Every published OCI artifact should have a corresponding GitHub
-  # release so operators can trace a running image back to its source.
-  # release-please owns rc and stable releases (created when its PR is
-  # merged and the tag is pushed). This job covers head builds that
-  # release-please doesn't touch.
-  #
-  # Each release is marked as a pre-release and tagged with the
-  # component-prefixed version (e.g. `backend-v0.7.0-head.abc1234`).
-  # Tags created by GITHUB_TOKEN don't trigger new workflow runs, so
-  # the `on: push: tags:` trigger in this workflow won't fire.
-  github-release:
-    runs-on: ubuntu-latest
-    needs: [images, helm-publish, versions]
-    if: >-
-      !cancelled()
-      && needs.images.result == 'success'
-      && (needs.helm-publish.result == 'success' || needs.helm-publish.result == 'skipped')
-      && needs.versions.result == 'success'
-      && github.event_name != 'pull_request'
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Create GitHub releases for published components
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PLAN_JSON: ${{ needs.versions.outputs.json }}
-          REGISTRY: ghcr.io
-        run: |
-          set -euo pipefail
-          for COMPONENT in frontend backend backup; do
-            MODE=$(jq -r --arg c "${COMPONENT}" '.[$c].mode' <<<"${PLAN_JSON}")
-            VERSION=$(jq -r --arg c "${COMPONENT}" '.[$c].version' <<<"${PLAN_JSON}")
-
-            # release-please owns rc and stable releases; this job only
-            # covers head builds.
-            case "${MODE}" in
-              head) ;;
-              *) continue ;;
-            esac
-
-            TAG="${COMPONENT}-v${VERSION}"
-
-            # Idempotent: skip if the release already exists (e.g. workflow re-run).
-            if gh release view "${TAG}" &>/dev/null; then
-              echo "Release ${TAG} already exists, skipping"
-              continue
-            fi
-
-            TITLE="${COMPONENT}: v${VERSION}"
-            BODY="## ${COMPONENT} v${VERSION}"$'\n\n'
-            BODY+="**Mode:** \`${MODE}\`"$'\n'
-            BODY+="**Commit:** [\`${GITHUB_SHA::7}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA})"$'\n\n'
-            BODY+="### Artifacts"$'\n'
-            BODY+="- Image: \`${REGISTRY}/${GITHUB_REPOSITORY}/hriv-${COMPONENT}:${VERSION}\`"$'\n'
-            BODY+="- Chart: \`oci://${REGISTRY}/${GITHUB_REPOSITORY}/charts/hriv-${COMPONENT}:${VERSION}\`"$'\n'
-
-            echo "Creating release: ${TAG}"
-            gh release create "${TAG}" \
-              --title "${TITLE}" \
-              --notes "${BODY}" \
-              --target "${GITHUB_SHA}" \
-              --prerelease
           done

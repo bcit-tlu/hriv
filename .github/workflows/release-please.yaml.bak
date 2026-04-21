@@ -1,0 +1,72 @@
+name: "[Automation] Release Please"
+run-name: "Release Please — ${{ github.event.head_commit.message }}"
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  # `actions: write` is required for the dispatch-publish job below to call
+  # `gh workflow run` on ci.yaml. GitHub explicitly forbids workflow runs
+  # created by tag pushes that are themselves made by GITHUB_TOKEN — so the
+  # `on: push: tags:` trigger in ci.yaml never fires for release-please
+  # tags. `workflow_dispatch`, however, IS allowed from GITHUB_TOKEN, so we
+  # re-dispatch ci.yaml explicitly against each just-created tag ref.
+  actions: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.rp.outputs.releases_created }}
+      paths_released: ${{ steps.rp.outputs.paths_released }}
+      outputs: ${{ toJSON(steps.rp.outputs) }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: rp
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # ── Re-dispatch ci.yaml for each freshly-created tag ──────────
+  #
+  # release-please runs under the default GITHUB_TOKEN, so the tags it
+  # creates (e.g. backend-v0.6.0-rc) do NOT auto-trigger ci.yaml's
+  # `on: push: tags:` listener — GitHub suppresses workflow chaining
+  # from GITHUB_TOKEN-created refs to prevent infinite recursion.
+  # Without this job, rc / stable tags never produce OCI image or
+  # chart artifacts; only the moving `head` pushed on main-branch
+  # commits ever reaches GHCR.
+  #
+  # `gh workflow run --ref <tag>` IS allowed from GITHUB_TOKEN because
+  # workflow_dispatch has an explicit audit trail and isn't prone to
+  # the same recursion class. The dispatched run sees
+  # github.ref=refs/tags/<tag> and github.event_name=workflow_dispatch,
+  # which ci.yaml's `versions` job handles identically to a `push` tag
+  # event (the tag-ref check runs before the event-name branches).
+  dispatch-publish:
+    needs: release-please
+    if: needs.release-please.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Dispatch ci.yaml for each released tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RP_OUTPUTS: ${{ needs.release-please.outputs.outputs }}
+          PATHS_RELEASED: ${{ needs.release-please.outputs.paths_released }}
+        run: |
+          set -euo pipefail
+          echo "Paths released: ${PATHS_RELEASED}"
+          for path in $(jq -r '.[]' <<<"${PATHS_RELEASED}"); do
+            tag=$(jq -r --arg key "${path}--tag_name" '.[$key] // empty' <<<"${RP_OUTPUTS}")
+            if [[ -z "${tag}" ]]; then
+              echo "::warning::No tag_name output for path '${path}', skipping"
+              continue
+            fi
+            echo "Dispatching ci.yaml on tag ref: ${tag}"
+            gh workflow run ci.yaml --ref "${tag}"
+          done
