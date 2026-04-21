@@ -84,9 +84,11 @@ async def lifespan(app: FastAPI):
     setup_logging()
 
     logger.info(
-        "Application started",
+        "Application started (version %s)",
+        os.environ.get("APP_VERSION", "dev"),
         extra={
             "event": "app.started",
+            "version": os.environ.get("APP_VERSION", "dev"),
             "tiles_dir": settings.tiles_dir,
             "source_images_dir": settings.source_images_dir,
         },
