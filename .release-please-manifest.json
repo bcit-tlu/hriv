@@ -1,5 +1,5 @@
 {
   "frontend": "0.7.0-rc2",
-  "backend": "0.7.0-rc3",
+  "backend": "0.7.1-rc3",
   "backup": "0.3.0"
 }
