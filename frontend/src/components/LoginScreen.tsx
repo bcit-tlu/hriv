@@ -11,15 +11,12 @@ import InputAdornment from "@mui/material/InputAdornment";
 import Link from "@mui/material/Link";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
-import DarkModeIcon from "@mui/icons-material/DarkMode";
-import LightModeIcon from "@mui/icons-material/LightMode";
 import Visibility from "@mui/icons-material/Visibility";
 import VisibilityOff from "@mui/icons-material/VisibilityOff";
-import Tooltip from "@mui/material/Tooltip";
 import AnnouncementBanner from "./AnnouncementBanner";
+import ColorModeToggle from "./ColorModeToggle";
 import { fetchOidcEnabled, getOidcLoginUrl } from "../api";
 import { useAuth } from "../useAuth";
-import { useColorMode } from "../useColorMode";
 
 interface LoginScreenProps {
     onLogin: (email: string, password: string) => Promise<void>;
@@ -58,7 +55,6 @@ export default function LoginScreen({
     const [oidcEnabled, setOidcEnabled] = useState(false);
     const [showLocalForm, setShowLocalForm] = useState(false);
     const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
-    const { mode, toggleMode } = useColorMode();
     const { oidcError, clearOidcError } = useAuth();
 
     useEffect(() => {
@@ -106,28 +102,19 @@ export default function LoginScreen({
                 position: "relative",
             }}
         >
-            {/* Dark mode toggle */}
-            <Tooltip
-                title={
-                    mode === "dark"
-                        ? "Switch to light mode"
-                        : "Switch to dark mode"
-                }
+            {/* Theme toggle (Light / Dark / Auto) */}
+            <Box
+                sx={{
+                    position: "absolute",
+                    top: 16,
+                    right: 16,
+                    zIndex: 1,
+                }}
             >
-                <IconButton
-                    onClick={toggleMode}
-                    aria-label="Toggle dark mode"
-                    sx={{
-                        position: "absolute",
-                        top: 16,
-                        right: 16,
-                        zIndex: 1,
-                        color: "text.secondary",
-                    }}
-                >
-                    {mode === "dark" ? <LightModeIcon /> : <DarkModeIcon />}
-                </IconButton>
-            </Tooltip>
+                <ColorModeToggle
+                    iconButtonSx={{ color: "text.secondary" }}
+                />
+            </Box>
 
             {/* Left side — form */}
             <Box
