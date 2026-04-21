@@ -10,8 +10,6 @@
     "frontend": {
       "release-type": "simple",
       "component": "frontend",
-      "release-as": "0.6.0",
-      "prerelease": false,
       "extra-files": [
         "charts/frontend/Chart.yaml",
         "charts/frontend/values.yaml",
@@ -21,8 +19,6 @@
     "backend": {
       "release-type": "simple",
       "component": "backend",
-      "release-as": "0.6.0",
-      "prerelease": false,
       "extra-files": [
         "charts/backend/Chart.yaml",
         "charts/backend/values.yaml"
@@ -31,8 +27,6 @@
     "backup": {
       "release-type": "simple",
       "component": "backup",
-      "release-as": "0.3.0",
-      "prerelease": false,
       "extra-files": [
         "charts/backup/Chart.yaml",
         "charts/backup/values.yaml"
