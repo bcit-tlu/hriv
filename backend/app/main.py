@@ -113,7 +113,11 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutting down", extra={"event": "app.shutdown"})
 
 
-app = FastAPI(title="HRIV Image Library API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="HRIV Image Library API",
+    version=os.environ.get("APP_VERSION", "dev"),
+    lifespan=lifespan,
+)
 
 # CORS: read allowed origins from the CORS_ORIGINS env var (comma-separated).
 # Defaults to "*" for local development; production deployments should set
