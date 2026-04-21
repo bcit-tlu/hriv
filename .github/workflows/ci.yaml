@@ -209,14 +209,16 @@ jobs:
               # SemVer-sort: head  <  rc  <  full release, matching the
               # intuition that head = "bleeding edge of the next target".
               #
-              # Edge case: in the brief window between merging a
-              # graduation PR (which sets the manifest to a clean full
-              # release like `0.6.0`) and release-please opening the next
-              # rc PR (bumping to e.g. `0.7.0-rc`), the base would
-              # collide with the freshly-released git tag and sort below
-              # what's already deployed. Detect that collision and bump
-              # the patch component so head stays strictly above the
-              # last stable release.
+              # Rule:
+              #   * manifest holds a prerelease (e.g. `0.6.0-rc`) →
+              #     strip the `-rc` suffix and target the upcoming
+              #     release (`0.6.0-head.SHA`  <  `0.6.0-rc`).
+              #   * manifest holds a clean stable (e.g. `0.2.0`)  →
+              #     bump patch so head sorts strictly ABOVE the last
+              #     stable release (`0.2.1-head.SHA`  >  `0.2.0`).
+              #     This covers the brief window between merging a
+              #     graduation PR and release-please opening the next
+              #     rc PR, and is agnostic to the git tag naming scheme.
               MODE="head"
               BASE=$(jq -r --arg c "${COMPONENT}" '.[$c]' .release-please-manifest.json)
               [[ -n "${BASE}" && "${BASE}" != "null" ]] || {
@@ -224,7 +226,7 @@ jobs:
                 exit 1
               }
               BASE_STABLE="${BASE%-*}"
-              if git rev-parse --verify "refs/tags/${COMPONENT}-v${BASE_STABLE}" >/dev/null 2>&1; then
+              if [[ "${BASE}" == "${BASE_STABLE}" ]]; then
                 IFS=. read -r MAJ MIN PAT <<<"${BASE_STABLE}"
                 BASE_STABLE="${MAJ}.${MIN}.$((PAT + 1))"
               fi
@@ -255,7 +257,7 @@ jobs:
                 exit 1
               }
               BASE_STABLE="${BASE%-*}"
-              if git rev-parse --verify "refs/tags/${COMPONENT}-v${BASE_STABLE}" >/dev/null 2>&1; then
+              if [[ "${BASE}" == "${BASE_STABLE}" ]]; then
                 IFS=. read -r MAJ MIN PAT <<<"${BASE_STABLE}"
                 BASE_STABLE="${MAJ}.${MIN}.$((PAT + 1))"
               fi
@@ -544,6 +546,16 @@ jobs:
               echo "::endgroup::"
               continue
             fi
+
+            # Defense-in-depth: the job-level `if:` already excludes
+            # PR / rebuild / non-tag workflow_dispatch events, but
+            # guard here so future event types or config drift can't
+            # let MODE=pr slip past and accidentally publish synthetic
+            # artifacts.
+            case "${MODE}" in
+              head|release|rebuild) ;;
+              *) echo "::error::helm-publish invoked on ${chart} with unexpected mode: ${MODE}" >&2; exit 1 ;;
+            esac
 
             VERSION=$(jq -r --arg c "${chart}" '.[$c].version'           <<<"${PLAN_JSON}")
             IS_PRE=$(jq -r  --arg c "${chart}" '.[$c].is_prerelease'     <<<"${PLAN_JSON}")
