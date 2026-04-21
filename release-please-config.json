@@ -11,7 +11,7 @@
       "release-type": "simple",
       "component": "frontend",
       "extra-files": [
-        "package.json"
+        {"type": "json", "path": "package.json", "jsonpath": "$.version"}
       ]
     },
     "backend": {
