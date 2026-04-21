@@ -5,7 +5,7 @@
   "separate-pull-requests": true,
   "versioning": "prerelease",
   "prerelease": true,
-  "prerelease-type": "rc",
+  "prerelease-type": "rc1",
   "packages": {
     "frontend": {
       "release-type": "simple",
