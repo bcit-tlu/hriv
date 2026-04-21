@@ -25,12 +25,12 @@ jobs:
         include:
           - component: frontend
             context: ./frontend
-            # target: stable
+            target: stable
             build_contexts: |
               nginx-config=charts/frontend/files
           - component: backend
             context: ./backend
-            # target: stable
+            target: stable
           - component: backup
             context: ./backup
     steps:
@@ -69,8 +69,8 @@ jobs:
       - uses: docker/metadata-action@v6
         id: meta
         # #   if: steps.version.outputs.build == 'true'
-        # with:
-        #   images: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
         #   tags: |
         #     type=raw,value=${{ steps.version.outputs.version }}
       #     flavor: |
