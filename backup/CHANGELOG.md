@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.2.0...backup-v0.3.0) (2026-04-21)
+
+
+### Features
+
+* gate footer versions to admins and surface per-component versions ([#149](https://github.com/bcit-tlu/hriv/issues/149)) ([#150](https://github.com/bcit-tlu/hriv/issues/150)) ([b3447dd](https://github.com/bcit-tlu/hriv/commit/b3447dd997a419485b17804b8823d0b0d3c06fda))
+
 ## [0.2.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.1.0...backup-v0.2.0) (2026-04-15)
 
 
