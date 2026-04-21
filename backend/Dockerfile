@@ -161,6 +161,16 @@ ENV OTEL_TRACES_EXPORTER=none \
     OTEL_METRICS_EXPORTER=none \
     OTEL_LOGS_EXPORTER=none
 
+# Stamp the release-please-managed app version into the image so the
+# /api/admin/version endpoint can report it without any runtime
+# deployment-side configuration.  Defaults to ``dev`` for local builds
+# that don't pass the build-arg (e.g. ``docker compose build``).  CI
+# passes ``--build-arg APP_VERSION=<versions-job output>`` alongside
+# ``VITE_APP_VERSION`` so frontend/backend/backup all share the same
+# component-scoped version string at build time.
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 # ── Stage 3: Development (hot-reload, used by docker compose)
 FROM base AS dev
 RUN pip install --no-cache-dir 'pytest>=8.3.3,<9' 'pytest-asyncio>=0.24.0,<0.25' 'pytest-cov>=5.0.0,<6'

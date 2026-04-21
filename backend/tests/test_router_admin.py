@@ -12,6 +12,7 @@ from app.routers.admin import (
     _create_task,
     _kick_off,
     _task_to_dict,
+    get_version,
     start_db_export,
     start_db_import,
     start_files_export,
@@ -53,6 +54,36 @@ def _make_admin_task(
         created_at=now,
         updated_at=updated_at or now,
     )
+
+
+async def test_get_version_returns_env_values() -> None:
+    """When APP_VERSION and BACKUP_VERSION are set, both are surfaced."""
+    with patch.dict(
+        os.environ,
+        {"APP_VERSION": "1.2.3", "BACKUP_VERSION": "4.5.6"},
+        clear=False,
+    ):
+        result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
+    assert result == {"backend": "1.2.3", "backup": "4.5.6"}
+
+
+async def test_get_version_defaults_to_dev() -> None:
+    """Unset env vars fall back to 'dev' so local builds still render."""
+    env = {k: v for k, v in os.environ.items() if k not in ("APP_VERSION", "BACKUP_VERSION")}
+    with patch.dict(os.environ, env, clear=True):
+        result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
+    assert result == {"backend": "dev", "backup": "dev"}
+
+
+async def test_get_version_empty_env_falls_back_to_dev() -> None:
+    """Empty string env vars (chart default for BACKUP_VERSION) → 'dev'."""
+    with patch.dict(
+        os.environ,
+        {"APP_VERSION": "", "BACKUP_VERSION": ""},
+        clear=False,
+    ):
+        result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
+    assert result == {"backend": "dev", "backup": "dev"}
 
 
 def test_task_to_dict() -> None:

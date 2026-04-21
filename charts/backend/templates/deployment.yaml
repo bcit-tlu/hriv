@@ -69,6 +69,10 @@ spec:
             {{- end }}
             - name: GITHUB_REPO
               value: {{ .Values.env.GITHUB_REPO | quote }}
+            # Backup component version surfaced by /api/admin/version.
+            # Empty string → endpoint falls back to "dev" at runtime.
+            - name: BACKUP_VERSION
+              value: {{ .Values.backupVersion | default "" | quote }}
             {{- if .Values.otel.enabled }}
             - name: OTEL_SERVICE_NAME
               value: {{ .Values.otel.serviceName | quote }}

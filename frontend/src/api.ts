@@ -559,6 +559,15 @@ export function cancelAdminTask(taskId: number): Promise<AdminTask> {
   return request(`/admin/tasks/${taskId}/cancel`, { method: 'POST' })
 }
 
+export interface VersionsResponse {
+  backend: string
+  backup: string
+}
+
+export function fetchVersions(): Promise<VersionsResponse> {
+  return request('/admin/version')
+}
+
 export async function downloadAdminTaskResult(taskId: number): Promise<void> {
   // Obtain a short-lived download token, then navigate the browser to the
   // token-authenticated download URL (no JS buffering needed).
