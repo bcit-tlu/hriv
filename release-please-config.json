@@ -1,22 +1,54 @@
 {
-    "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-    "bump-minor-pre-major": true,
     "include-component-in-tag": true,
     "separate-pull-requests": true,
-    "versioning": "default",
-    "draft": true,
     "packages": {
         "frontend": {
-            "release-type": "node",
-            "component": "frontend"
+            "path": "frontend",
+            "component": "frontend",
+            "extra-files": [
+                {
+                    "type": "yaml",
+                    "path": "charts/frontend/Chart.yaml",
+                    "jsonpath": "$.version"
+                },
+                {
+                    "type": "yaml",
+                    "path": "charts/frontend/Chart.yaml",
+                    "jsonpath": "$.appVersion"
+                }
+            ]
         },
         "backend": {
-            "release-type": "python",
-            "component": "backend"
+            "path": "backend",
+            "component": "backend",
+            "extra-files": [
+                {
+                    "type": "yaml",
+                    "path": "charts/backend/Chart.yaml",
+                    "jsonpath": "$.version"
+                },
+                {
+                    "type": "yaml",
+                    "path": "charts/backend/Chart.yaml",
+                    "jsonpath": "$.appVersion"
+                }
+            ]
         },
         "backup": {
-            "release-type": "python",
-            "component": "backup"
+            "path": "backup",
+            "component": "backup",
+            "extra-files": [
+                {
+                    "type": "yaml",
+                    "path": "charts/backup/Chart.yaml",
+                    "jsonpath": "$.version"
+                },
+                {
+                    "type": "yaml",
+                    "path": "charts/backup/Chart.yaml",
+                    "jsonpath": "$.appVersion"
+                }
+            ]
         }
     }
 }

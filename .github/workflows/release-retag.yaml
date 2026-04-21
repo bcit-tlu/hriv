@@ -1,0 +1,65 @@
+name: release-images
+
+on:
+  release:
+    types: [published]
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  retag:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [frontend, backend, backup]
+
+    steps:
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Parse release tag
+        id: parse
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+
+          if [[ "$TAG" =~ ^${{ matrix.component }}-v(.+)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "match=true" >> $GITHUB_OUTPUT
+
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+            echo "major=$MAJOR" >> $GITHUB_OUTPUT
+            echo "minor=$MINOR" >> $GITHUB_OUTPUT
+          else
+            echo "match=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Skip non-matching component
+        if: steps.parse.outputs.match != 'true'
+        run: exit 0
+
+      - name: Get release commit SHA (safe)
+        id: sha
+        run: |
+          echo "sha=${{ github.event.release.target_commitish }}" >> $GITHUB_OUTPUT
+
+      - name: Retag (no pull)
+        run: |
+          IMAGE=${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
+          SHA=${{ steps.sha.outputs.sha }}
+          VERSION=${{ steps.parse.outputs.version }}
+          MAJOR=${{ steps.parse.outputs.major }}
+          MINOR=${{ steps.parse.outputs.minor }}
+
+          docker buildx imagetools create \
+            -t ${IMAGE}:${VERSION} \
+            -t ${IMAGE}:${MAJOR}.${MINOR} \
+            -t ${IMAGE}:${MAJOR} \
+            -t ${IMAGE}:latest \
+            ${IMAGE}:sha-${SHA}
