@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.3.0...backup-v0.3.1) (2026-04-21)
+
+
+### Bug Fixes
+
+* **release:** switch to language-specific release types ([#179](https://github.com/bcit-tlu/hriv/issues/179)) ([1ebba10](https://github.com/bcit-tlu/hriv/commit/1ebba106d1ed743087aea2f0f7a3b9905f07af81))
+
 ## [0.3.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.2.0...backup-v0.3.0) (2026-04-21)
 
 
