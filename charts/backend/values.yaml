@@ -14,13 +14,30 @@ env:
     TILES_DIR: /data/tiles
     GITHUB_REPO: "https://github.com/bcit-tlu/hriv"
 
-# Version of the independently-released hriv-backup component, surfaced
-# to admins via ``/api/admin/version``.  The backend image bakes its own
-# version in as ``APP_VERSION`` at build time; the frontend bakes its
-# own version in as ``VITE_APP_VERSION``.  Backup versions separately
-# (see release-please-config.json → packages.backup) so its version
-# string must be passed in at deploy time from the fleet HelmRelease
-# values.  Leave empty here to render ``"dev"`` at runtime.
+# Mount the ConfigMap published by the hriv-backup chart so
+# ``/api/admin/version`` can surface the deployed backup version
+# without a manual fleet bump per head build or release.  The backend
+# reads the mounted file on every admin version request so kubelet's
+# ConfigMap-volume refresh propagates new values without a pod restart.
+#
+# Precedence at runtime (see backend/app/routers/admin.py):
+#   1. ``{mountPath}/{key}`` file contents (this ConfigMap mount)
+#   2. ``BACKUP_VERSION`` env var  (legacy / local override)
+#   3. ``"dev"``                   (unset fallback for local builds)
+#
+# Disable the mount (``enabled: false``) to fall back to the env var
+# path; leave the ConfigMap name/key aligned with
+# ``charts/backup/values.yaml → versionConfigMap``.
+backupVersionConfigMap:
+    enabled: true
+    name: hriv-backup-version
+    key: version
+    mountPath: /etc/hriv-versions
+
+# Legacy literal override for the backup version.  Only consulted when
+# ``backupVersionConfigMap.enabled=false`` or the mounted file is
+# missing (e.g. local/dev installs without the backup chart deployed).
+# Leave empty to render ``"dev"`` at runtime.
 backupVersion: ""
 
 # ── OpenTelemetry observability ─────────────────────────────

@@ -56,12 +56,28 @@ def _make_admin_task(
     )
 
 
+_VERSION_ENV_KEYS = ("APP_VERSION", "BACKUP_VERSION", "BACKUP_VERSION_FILE")
+
+
+def _version_env(**overrides: str) -> dict[str, str]:
+    """Build an env dict with all version-related keys cleared, then applied.
+
+    ``patch.dict(..., clear=True)`` would drop PATH / pytest config / etc.;
+    instead we copy the current env, strip the three version-related
+    keys, and layer in just the overrides the test wants so one test's
+    env leaks can't silently flip another's precedence.
+    """
+    env = {k: v for k, v in os.environ.items() if k not in _VERSION_ENV_KEYS}
+    env.update(overrides)
+    return env
+
+
 async def test_get_version_returns_env_values() -> None:
-    """When APP_VERSION and BACKUP_VERSION are set, both are surfaced."""
+    """With no ConfigMap mount, env vars are the source of truth."""
     with patch.dict(
         os.environ,
-        {"APP_VERSION": "1.2.3", "BACKUP_VERSION": "4.5.6"},
-        clear=False,
+        _version_env(APP_VERSION="1.2.3", BACKUP_VERSION="4.5.6"),
+        clear=True,
     ):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
     assert result == {"backend": "1.2.3", "backup": "4.5.6"}
@@ -69,8 +85,7 @@ async def test_get_version_returns_env_values() -> None:
 
 async def test_get_version_defaults_to_dev() -> None:
     """Unset env vars fall back to 'dev' so local builds still render."""
-    env = {k: v for k, v in os.environ.items() if k not in ("APP_VERSION", "BACKUP_VERSION")}
-    with patch.dict(os.environ, env, clear=True):
+    with patch.dict(os.environ, _version_env(), clear=True):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
     assert result == {"backend": "dev", "backup": "dev"}
 
@@ -79,8 +94,72 @@ async def test_get_version_empty_env_falls_back_to_dev() -> None:
     """Empty string env vars (chart default for BACKUP_VERSION) → 'dev'."""
     with patch.dict(
         os.environ,
-        {"APP_VERSION": "", "BACKUP_VERSION": ""},
-        clear=False,
+        _version_env(APP_VERSION="", BACKUP_VERSION=""),
+        clear=True,
+    ):
+        result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
+    assert result == {"backend": "dev", "backup": "dev"}
+
+
+async def test_get_version_reads_backup_from_configmap_mount(tmp_path) -> None:
+    """ConfigMap mount wins over BACKUP_VERSION env var."""
+    version_file = tmp_path / "version"
+    version_file.write_text("0.3.1-head.abc1234\n")
+    with patch.dict(
+        os.environ,
+        _version_env(
+            APP_VERSION="0.6.0",
+            BACKUP_VERSION="legacy-should-be-ignored",
+            BACKUP_VERSION_FILE=str(version_file),
+        ),
+        clear=True,
+    ):
+        result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
+    # Trailing whitespace/newline from the ConfigMap projection is stripped
+    # so the footer stays tidy.
+    assert result == {"backend": "0.6.0", "backup": "0.3.1-head.abc1234"}
+
+
+async def test_get_version_falls_back_to_env_when_mount_missing(tmp_path) -> None:
+    """If BACKUP_VERSION_FILE points to a missing file, env var wins."""
+    missing = tmp_path / "does-not-exist" / "version"
+    with patch.dict(
+        os.environ,
+        _version_env(
+            APP_VERSION="0.6.0",
+            BACKUP_VERSION="0.3.0",
+            BACKUP_VERSION_FILE=str(missing),
+        ),
+        clear=True,
+    ):
+        result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
+    assert result == {"backend": "0.6.0", "backup": "0.3.0"}
+
+
+async def test_get_version_falls_back_to_env_when_mount_empty(tmp_path) -> None:
+    """Empty ConfigMap key (blank file) falls through to env var."""
+    version_file = tmp_path / "version"
+    version_file.write_text("   \n")
+    with patch.dict(
+        os.environ,
+        _version_env(
+            APP_VERSION="0.6.0",
+            BACKUP_VERSION="0.3.0",
+            BACKUP_VERSION_FILE=str(version_file),
+        ),
+        clear=True,
+    ):
+        result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
+    assert result == {"backend": "0.6.0", "backup": "0.3.0"}
+
+
+async def test_get_version_falls_back_to_dev_when_mount_and_env_missing(tmp_path) -> None:
+    """Missing mount + unset env var → 'dev' (local dev fallback)."""
+    missing = tmp_path / "version"
+    with patch.dict(
+        os.environ,
+        _version_env(BACKUP_VERSION_FILE=str(missing)),
+        clear=True,
     ):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
     assert result == {"backend": "dev", "backup": "dev"}
