@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1-rc2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.7.0-rc2...frontend-v0.7.1-rc2) (2026-04-21)
+
+
+### Bug Fixes
+
+* remove unused release graduation markers to trigger stable releases ([#173](https://github.com/bcit-tlu/hriv/issues/173)) ([b59d14a](https://github.com/bcit-tlu/hriv/commit/b59d14a5fcb8a315d095641302b565f94283faf9))
+
 ## [0.7.0-rc2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.7.0-rc1...frontend-v0.7.0-rc2) (2026-04-21)
 
 
