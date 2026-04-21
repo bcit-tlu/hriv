@@ -154,6 +154,17 @@ jobs:
           TAG_REF="${GITHUB_REF#refs/tags/}"
           OUT='{}'
 
+          # Guard: workflow_dispatch is only valid on tag refs (release
+          # re-dispatch from release-please.yaml) or refs/heads/main
+          # (ad-hoc head build). Reject any other ref so a feature-branch
+          # dispatch can't push signed PR-mode images to the registry.
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" \
+             && "${GITHUB_REF}" != refs/tags/* \
+             && "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::workflow_dispatch is only valid on tag refs or refs/heads/main, got ${GITHUB_REF}" >&2
+            exit 1
+          fi
+
           for COMPONENT in frontend backend backup; do
             MODE="skip"
             VERSION=""
