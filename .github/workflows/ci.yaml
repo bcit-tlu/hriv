@@ -9,8 +9,8 @@ run-name: >-
       && format('PR #{0} — {1}', github.event.pull_request.number, github.event.pull_request.title)
       || startsWith(github.ref, 'refs/tags/')
       && format('Release {0}', github.ref_name)
-      || (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
-      && format('Nightly rebuild — {0}', github.sha)
+      || github.event_name == 'workflow_dispatch'
+      && format('Manual build — {0}', github.sha)
       || format('Head build — {0}', github.event.head_commit.message) }}
 
 on:
@@ -19,20 +19,10 @@ on:
     tags: ["frontend-v*", "backend-v*", "backup-v*"]
   pull_request:
     branches: [main]
-  # ── Nightly rebuild ───────────────────────────────────────
-  #
-  # Re-runs the image matrix against current `main` with no source
-  # changes so Trivy re-scans against a freshly pulled base image and
-  # freshly downloaded vulnerability DB. Picks up already-published
-  # Debian/Alpine/Python security patches without waiting for the next
-  # code change. Produces the moving `:head` OCI tag pointing at the
-  # newly-rebuilt digest; see the versions job below for the immutable
-  # `.rebuild-<timestamp>` version tag that anchors each rebuild.
-  #
-  # 09:17 UTC ≈ 02:17 Pacific — outside business hours, off the top
-  # of the hour to dodge GitHub's peak cron load.
-  schedule:
-    - cron: "17 9 * * *"
+  # workflow_dispatch is used by release-please.yaml to re-dispatch
+  # ci.yaml on freshly-created tag refs (release re-dispatch). It can
+  # also be triggered manually from the Actions UI on main for ad-hoc
+  # head builds.
   workflow_dispatch: {}
 
 env:
@@ -48,15 +38,15 @@ permissions:
 jobs:
   # ── Quality gates ─────────────────────────────────────────
   #
-  # Tests/lint run on every push + PR. Skipped on `schedule` and
-  # `workflow_dispatch` rebuilds — those events don't change source,
-  # so re-running the suites would just re-validate the same commit
-  # that was already gated on its original merge to main. The image
-  # matrix below relaxes its `needs:` gate so those skipped checks
-  # don't block the rebuild.
+  # Tests/lint run on every push + PR. Skipped on `workflow_dispatch`
+  # (release re-dispatch on tag refs) — those events don't change
+  # source, so re-running the suites would just re-validate the same
+  # commit that was already gated on its original merge to main. The
+  # image matrix below relaxes its `needs:` gate so those skipped
+  # checks don't block the release build.
   backend-tests:
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+    if: github.event_name != 'workflow_dispatch'
     defaults:
       run:
         working-directory: backend
@@ -78,7 +68,7 @@ jobs:
 
   frontend-tests:
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+    if: github.event_name != 'workflow_dispatch'
     defaults:
       run:
         working-directory: frontend
@@ -103,7 +93,7 @@ jobs:
 
   helm-lint:
     runs-on: ubuntu-latest
-    if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
+    if: github.event_name != 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v6
 
@@ -164,6 +154,17 @@ jobs:
           TAG_REF="${GITHUB_REF#refs/tags/}"
           OUT='{}'
 
+          # Guard: workflow_dispatch is only valid on tag refs (release
+          # re-dispatch from release-please.yaml) or refs/heads/main
+          # (ad-hoc head build). Reject any other ref so a feature-branch
+          # dispatch can't push signed PR-mode images to the registry.
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" \
+             && "${GITHUB_REF}" != refs/tags/* \
+             && "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "::error::workflow_dispatch is only valid on tag refs or refs/heads/main, got ${GITHUB_REF}" >&2
+            exit 1
+          fi
+
           for COMPONENT in frontend backend backup; do
             MODE="skip"
             VERSION=""
@@ -197,30 +198,52 @@ jobs:
                   fi
                 fi
               fi
-            elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-              # ── main branch push ────────────────────────────
+            elif [[ "${GITHUB_EVENT_NAME}" == "push" \
+                 || ( "${GITHUB_EVENT_NAME}" == "workflow_dispatch" \
+                   && "${GITHUB_REF}" == "refs/heads/main" ) ]]; then
+              # ── main branch push (or manual dispatch on main) ──
               # Anchor the head build's version to the next planned
               # release so operators can read image / chart tags and
               # immediately see which target SemVer the code is heading
-              # toward. The base is read from .release-please-manifest.json
-              # (the single source of truth release-please maintains for
-              # the next version per component) and stripped of any
-              # prerelease suffix (e.g. `-rc`). This yields tags that
-              # SemVer-sort: head  <  rc  <  full release, matching the
-              # intuition that head = "bleeding edge of the next target".
+              # toward. Stripped of any prerelease suffix (e.g. `-rc`)
+              # so that SemVer-sort gives: head  <  rc  <  full release,
+              # matching the intuition "head = bleeding edge of the next
+              # target".
               #
-              # Rule:
-              #   * manifest holds a prerelease (e.g. `0.6.0-rc`) →
+              # Resolution order for the base version:
+              #   1. The component's release-please PR branch (most
+              #      accurate — reflects conventional-commit analysis).
+              #   2. The shared release-please branch (legacy fallback
+              #      for the transition from separate-pull-requests:
+              #      false → true).
+              #   3. The committed manifest on main (safe default when
+              #      no release-please PR exists yet).
+              #
+              # Rule applied to the resolved base:
+              #   * base holds a prerelease (e.g. `0.7.0-rc`) →
               #     strip the `-rc` suffix and target the upcoming
-              #     release (`0.6.0-head.SHA`  <  `0.6.0-rc`).
-              #   * manifest holds a clean stable (e.g. `0.2.0`)  →
+              #     release (`0.7.0-head.SHA`  <  `0.7.0-rc`).
+              #   * base holds a clean stable (e.g. `0.6.0`)  →
               #     bump patch so head sorts strictly ABOVE the last
-              #     stable release (`0.2.1-head.SHA`  >  `0.2.0`).
+              #     stable release (`0.6.1-head.SHA`  >  `0.6.0`).
               #     This covers the brief window between merging a
               #     graduation PR and release-please opening the next
-              #     rc PR, and is agnostic to the git tag naming scheme.
+              #     rc PR.
               MODE="head"
-              BASE=$(jq -r --arg c "${COMPONENT}" '.[$c]' .release-please-manifest.json)
+              BASE=""
+              # 1. Per-component release-please branch (separate-pull-requests: true)
+              RP_BRANCH="release-please--branches--main--components--${COMPONENT}"
+              BASE=$(git show "origin/${RP_BRANCH}:.release-please-manifest.json" 2>/dev/null \
+                | jq -r --arg c "${COMPONENT}" '.[$c] // empty' 2>/dev/null || true)
+              # 2. Shared release-please branch (separate-pull-requests: false)
+              if [[ -z "${BASE}" ]]; then
+                BASE=$(git show "origin/release-please--branches--main:.release-please-manifest.json" 2>/dev/null \
+                  | jq -r --arg c "${COMPONENT}" '.[$c] // empty' 2>/dev/null || true)
+              fi
+              # 3. Committed manifest on main
+              if [[ -z "${BASE}" ]]; then
+                BASE=$(jq -r --arg c "${COMPONENT}" '.[$c]' .release-please-manifest.json)
+              fi
               [[ -n "${BASE}" && "${BASE}" != "null" ]] || {
                 echo "::error::Missing ${COMPONENT} version in .release-please-manifest.json" >&2
                 exit 1
@@ -231,37 +254,6 @@ jobs:
                 BASE_STABLE="${MAJ}.${MIN}.$((PAT + 1))"
               fi
               VERSION="${BASE_STABLE}-head.${SHORT_SHA}"
-            elif [[ "${GITHUB_EVENT_NAME}" == "schedule" \
-                 || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
-              # ── Nightly / on-demand rebuild of main ─────────
-              # Source is unchanged (same ${SHORT_SHA}), but base images
-              # may have fresh patches. Move `:head` to the new digest
-              # and stamp an immutable `.rebuild-<timestamp>` suffix so
-              # the original head-mode version tag produced by the
-              # main-push build stays a stable provenance anchor. Derive
-              # the base from the manifest the same way head mode does
-              # so rebuild tags share the target-release prefix.
-              #
-              # Guard: workflow_dispatch lets an operator pick any branch
-              # in the Actions UI. Accepting a non-main ref would move
-              # the `:head` tag (intended to track main) to a feature
-              # branch's digest. Fail fast rather than silently drift.
-              if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
-                echo "::error::Rebuild mode is only valid on refs/heads/main, got ${GITHUB_REF}" >&2
-                exit 1
-              fi
-              MODE="rebuild"
-              BASE=$(jq -r --arg c "${COMPONENT}" '.[$c]' .release-please-manifest.json)
-              [[ -n "${BASE}" && "${BASE}" != "null" ]] || {
-                echo "::error::Missing ${COMPONENT} version in .release-please-manifest.json" >&2
-                exit 1
-              }
-              BASE_STABLE="${BASE%-*}"
-              if [[ "${BASE}" == "${BASE_STABLE}" ]]; then
-                IFS=. read -r MAJ MIN PAT <<<"${BASE_STABLE}"
-                BASE_STABLE="${MAJ}.${MIN}.$((PAT + 1))"
-              fi
-              VERSION="${BASE_STABLE}-head.${SHORT_SHA}.rebuild-$(date -u +%Y%m%d%H%M)"
             else
               # ── PR: build-only sanity check, no push ────────
               MODE="pr"
@@ -286,10 +278,10 @@ jobs:
   images:
     runs-on: ubuntu-latest
     needs: [backend-tests, frontend-tests, versions]
-    # Skipped quality-gate needs should not block nightly rebuilds.
+    # Skipped quality-gate needs should not block release dispatches.
     # `needs.versions` must succeed (it's the source of truth for the
-    # publish plan); the test jobs are allowed to be `skipped` (nightly
-    # rebuild) or `success` (push / PR / tag push).
+    # publish plan); the test jobs are allowed to be `skipped`
+    # (workflow_dispatch release re-dispatch) or `success` (push / PR).
     if: >-
       !cancelled()
       && needs.versions.result == 'success'
@@ -340,10 +332,6 @@ jobs:
       #     if full release + highest stable semver → stable, latest
       #   mode=head (main branch push):
       #     always → head
-      #   mode=rebuild (scheduled / workflow_dispatch rebuild of main):
-      #     always → head  +  the dated immutable `.rebuild-<ts>` version
-      #     tag produced by the versions job. Preserves the original
-      #     `0.0.0-head.<sha>` tag as an unchanged provenance anchor.
       #   mode=pr (pull request):
       #     always → pr-<sha>  (not pushed to registry)
       - uses: docker/metadata-action@v6
@@ -355,7 +343,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
           tags: |
             type=raw,value=${{ fromJSON(needs.versions.outputs.json)[matrix.component].version }},enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode != 'skip' }}
-            type=raw,value=head,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'head' || fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'rebuild' }}
+            type=raw,value=head,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'head' }}
             type=raw,value=stable,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'release' && fromJSON(needs.versions.outputs.json)[matrix.component].is_prerelease == false && fromJSON(needs.versions.outputs.json)[matrix.component].is_highest_stable == true }}
             type=raw,value=latest,enable=${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'release' && fromJSON(needs.versions.outputs.json)[matrix.component].is_prerelease == false && fromJSON(needs.versions.outputs.json)[matrix.component].is_highest_stable == true }}
           flavor: |
@@ -372,13 +360,6 @@ jobs:
           # PR builds don't push to the registry, but we still need the image
           # locally so the Trivy step below can scan it by tag.
           load: ${{ github.event_name == 'pull_request' }}
-          # On a rebuild, force BuildKit to re-resolve mutable base-image
-          # tags (`python:3.13-slim`, `nginx:1.27-alpine`, `node:22-alpine`)
-          # against the upstream registry rather than trusting cached
-          # layers. Without this, `cache-from: type=gha` can hand back
-          # the exact layers from the prior run and the rebuild produces
-          # an identical digest — defeating the point of nightly.
-          pull: ${{ fromJSON(needs.versions.outputs.json)[matrix.component].mode == 'rebuild' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           sbom: ${{ github.event_name != 'pull_request' }}
@@ -484,15 +465,8 @@ jobs:
   #
   # Skipped on:
   #   * pull requests    — nothing to publish; build-only sanity check.
-  #   * mode=rebuild     — chart bytes are identical to the prior main
-  #     push (no source change), so re-pushing `<chart>-head.<sha>` is
-  #     either a no-op (registry dedupes) or a 409 (immutable tag).
-  #     The rebuild only needs to move `:head` on the image side.
-  #     Rebuilds are triggered by `schedule` or `workflow_dispatch` on
-  #     `refs/heads/main`; `workflow_dispatch` against a tag ref is a
-  #     release re-dispatch from release-please.yaml and MUST publish.
   # Needs are relaxed the same way `images` does: helm-lint is skipped
-  # on rebuild dispatches (tests / lint don't gate rebuilds) and we
+  # on release dispatches (tests / lint don't gate those) and we
   # must not let that skip cascade into blocking release dispatches.
   helm-publish:
     runs-on: ubuntu-latest
@@ -503,8 +477,6 @@ jobs:
       && needs.images.result == 'success'
       && (needs.helm-lint.result == 'success' || needs.helm-lint.result == 'skipped')
       && github.event_name != 'pull_request'
-      && github.event_name != 'schedule'
-      && (github.event_name != 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/'))
     steps:
       - uses: actions/checkout@v6
 
@@ -549,12 +521,11 @@ jobs:
             fi
 
             # Defense-in-depth: the job-level `if:` already excludes
-            # PR / rebuild / non-tag workflow_dispatch events, but
-            # guard here so future event types or config drift can't
-            # let MODE=pr slip past and accidentally publish synthetic
-            # artifacts.
+            # PR events, but guard here so future event types or
+            # config drift can't let MODE=pr slip past and
+            # accidentally publish synthetic artifacts.
             case "${MODE}" in
-              head|release|rebuild) ;;
+              head|release) ;;
               *) echo "::error::helm-publish invoked on ${chart} with unexpected mode: ${MODE}" >&2; exit 1 ;;
             esac
 
@@ -570,7 +541,7 @@ jobs:
             # release-please lineage. Both Chart.yaml lines carry the
             # `x-release-please-version` marker; release-please bumps
             # them in lockstep on every rc / full release, and head /
-            # rebuild modes stamp the manifest-derived prerelease form
+            # head mode stamps the manifest-derived prerelease form
             # computed by the `versions` job.
             sed -i "s/^version:.*/version: ${VERSION} # x-release-please-version/" "${dir}Chart.yaml"
             sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\" # x-release-please-version/" "${dir}Chart.yaml"
@@ -598,4 +569,72 @@ jobs:
             cosign sign --yes "${IMAGE_BASE}/hriv-${chart}@${DIGEST}"
 
             echo "::endgroup::"
+          done
+
+  # ── GitHub Releases for head builds ────────────────────
+  #
+  # Every published OCI artifact should have a corresponding GitHub
+  # release so operators can trace a running image back to its source.
+  # release-please owns rc and stable releases (created when its PR is
+  # merged and the tag is pushed). This job covers head builds that
+  # release-please doesn't touch.
+  #
+  # Each release is marked as a pre-release and tagged with the
+  # component-prefixed version (e.g. `backend-v0.7.0-head.abc1234`).
+  # Tags created by GITHUB_TOKEN don't trigger new workflow runs, so
+  # the `on: push: tags:` trigger in this workflow won't fire.
+  github-release:
+    runs-on: ubuntu-latest
+    needs: [images, helm-publish, versions]
+    if: >-
+      !cancelled()
+      && needs.images.result == 'success'
+      && (needs.helm-publish.result == 'success' || needs.helm-publish.result == 'skipped')
+      && needs.versions.result == 'success'
+      && github.event_name != 'pull_request'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Create GitHub releases for published components
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PLAN_JSON: ${{ needs.versions.outputs.json }}
+          REGISTRY: ghcr.io
+        run: |
+          set -euo pipefail
+          for COMPONENT in frontend backend backup; do
+            MODE=$(jq -r --arg c "${COMPONENT}" '.[$c].mode' <<<"${PLAN_JSON}")
+            VERSION=$(jq -r --arg c "${COMPONENT}" '.[$c].version' <<<"${PLAN_JSON}")
+
+            # release-please owns rc and stable releases; this job only
+            # covers head builds.
+            case "${MODE}" in
+              head) ;;
+              *) continue ;;
+            esac
+
+            TAG="${COMPONENT}-v${VERSION}"
+
+            # Idempotent: skip if the release already exists (e.g. workflow re-run).
+            if gh release view "${TAG}" &>/dev/null; then
+              echo "Release ${TAG} already exists, skipping"
+              continue
+            fi
+
+            TITLE="${COMPONENT}: v${VERSION}"
+            BODY="## ${COMPONENT} v${VERSION}"$'\n\n'
+            BODY+="**Mode:** \`${MODE}\`"$'\n'
+            BODY+="**Commit:** [\`${GITHUB_SHA::7}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA})"$'\n\n'
+            BODY+="### Artifacts"$'\n'
+            BODY+="- Image: \`${REGISTRY}/${GITHUB_REPOSITORY}/hriv-${COMPONENT}:${VERSION}\`"$'\n'
+            BODY+="- Chart: \`oci://${REGISTRY}/${GITHUB_REPOSITORY}/charts/hriv-${COMPONENT}:${VERSION}\`"$'\n'
+
+            echo "Creating release: ${TAG}"
+            gh release create "${TAG}" \
+              --title "${TITLE}" \
+              --notes "${BODY}" \
+              --target "${GITHUB_SHA}" \
+              --prerelease
           done
