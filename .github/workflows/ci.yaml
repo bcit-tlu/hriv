@@ -199,19 +199,46 @@ jobs:
               fi
             elif [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
               # ── main branch push ────────────────────────────
-              # Use a SemVer-valid prerelease string so the same value can
-              # be stamped into Chart.yaml (helm package requires SemVer)
-              # and piped through the image pipeline.
+              # Anchor the head build's version to the next planned
+              # release so operators can read image / chart tags and
+              # immediately see which target SemVer the code is heading
+              # toward. The base is read from .release-please-manifest.json
+              # (the single source of truth release-please maintains for
+              # the next version per component) and stripped of any
+              # prerelease suffix (e.g. `-rc`). This yields tags that
+              # SemVer-sort: head  <  rc  <  full release, matching the
+              # intuition that head = "bleeding edge of the next target".
+              #
+              # Edge case: in the brief window between merging a
+              # graduation PR (which sets the manifest to a clean full
+              # release like `0.6.0`) and release-please opening the next
+              # rc PR (bumping to e.g. `0.7.0-rc`), the base would
+              # collide with the freshly-released git tag and sort below
+              # what's already deployed. Detect that collision and bump
+              # the patch component so head stays strictly above the
+              # last stable release.
               MODE="head"
-              VERSION="0.0.0-head.${SHORT_SHA}"
+              BASE=$(jq -r --arg c "${COMPONENT}" '.[$c]' .release-please-manifest.json)
+              [[ -n "${BASE}" && "${BASE}" != "null" ]] || {
+                echo "::error::Missing ${COMPONENT} version in .release-please-manifest.json" >&2
+                exit 1
+              }
+              BASE_STABLE="${BASE%-*}"
+              if git rev-parse --verify "refs/tags/${COMPONENT}-v${BASE_STABLE}" >/dev/null 2>&1; then
+                IFS=. read -r MAJ MIN PAT <<<"${BASE_STABLE}"
+                BASE_STABLE="${MAJ}.${MIN}.$((PAT + 1))"
+              fi
+              VERSION="${BASE_STABLE}-head.${SHORT_SHA}"
             elif [[ "${GITHUB_EVENT_NAME}" == "schedule" \
                  || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
               # ── Nightly / on-demand rebuild of main ─────────
               # Source is unchanged (same ${SHORT_SHA}), but base images
               # may have fresh patches. Move `:head` to the new digest
               # and stamp an immutable `.rebuild-<timestamp>` suffix so
-              # the original `0.0.0-head.<sha>` tag produced by the
-              # main-push build stays a stable provenance anchor.
+              # the original head-mode version tag produced by the
+              # main-push build stays a stable provenance anchor. Derive
+              # the base from the manifest the same way head mode does
+              # so rebuild tags share the target-release prefix.
               #
               # Guard: workflow_dispatch lets an operator pick any branch
               # in the Actions UI. Accepting a non-main ref would move
@@ -222,7 +249,17 @@ jobs:
                 exit 1
               fi
               MODE="rebuild"
-              VERSION="0.0.0-head.${SHORT_SHA}.rebuild-$(date -u +%Y%m%d%H%M)"
+              BASE=$(jq -r --arg c "${COMPONENT}" '.[$c]' .release-please-manifest.json)
+              [[ -n "${BASE}" && "${BASE}" != "null" ]] || {
+                echo "::error::Missing ${COMPONENT} version in .release-please-manifest.json" >&2
+                exit 1
+              }
+              BASE_STABLE="${BASE%-*}"
+              if git rev-parse --verify "refs/tags/${COMPONENT}-v${BASE_STABLE}" >/dev/null 2>&1; then
+                IFS=. read -r MAJ MIN PAT <<<"${BASE_STABLE}"
+                BASE_STABLE="${MAJ}.${MIN}.$((PAT + 1))"
+              fi
+              VERSION="${BASE_STABLE}-head.${SHORT_SHA}.rebuild-$(date -u +%Y%m%d%H%M)"
             else
               # ── PR: build-only sanity check, no push ────────
               MODE="pr"
@@ -503,48 +540,36 @@ jobs:
             IS_HS=$(jq -r   --arg c "${chart}" '.[$c].is_highest_stable' <<<"${PLAN_JSON}")
             [[ -n "${VERSION}" && "${VERSION}" != "null" ]] || { echo "No version for chart ${chart}" >&2; exit 1; }
 
-            # ── Independent chart vs app version ──────────────────
-            # * Chart version: committed in Chart.yaml, bumped by hand
-            #   when templates or values schema change. On head builds
-            #   we append a unique SemVer prerelease segment so every
-            #   main commit yields its own immutable tarball digest.
-            # * App version: the release-please / head-mode VERSION
-            #   computed above; equals the image tag the chart will
-            #   default to via {{ .Values.image.tag | default
-            #   .Chart.AppVersion }}.
-            COMMITTED_CHART_VERSION=$(awk '/^version:/{print $2; exit}' "${dir}Chart.yaml")
-            case "${MODE}" in
-              head)    CHART_VERSION="${COMMITTED_CHART_VERSION}-head.${GITHUB_SHA::7}" ;;
-              release) CHART_VERSION="${COMMITTED_CHART_VERSION}" ;;
-              *)       echo "Unexpected mode for helm-publish: ${MODE}" >&2; exit 1 ;;
-            esac
-
-            sed -i "s/^version:.*/version: ${CHART_VERSION}/" "${dir}Chart.yaml"
-            sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" "${dir}Chart.yaml"
+            # ── Unified chart + app version ──────────────────────
+            # Chart version and app version are the same string — the
+            # one computed by the `versions` job — so the chart OCI
+            # tag, the image tag, and Chart.AppVersion all match the
+            # release-please lineage. Both Chart.yaml lines carry the
+            # `x-release-please-version` marker; release-please bumps
+            # them in lockstep on every rc / full release, and head /
+            # rebuild modes stamp the manifest-derived prerelease form
+            # computed by the `versions` job.
+            sed -i "s/^version:.*/version: ${VERSION} # x-release-please-version/" "${dir}Chart.yaml"
+            sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\" # x-release-please-version/" "${dir}Chart.yaml"
 
             helm package "$dir" -d /tmp/charts
-            PUSH_OUT=$(helm push "/tmp/charts/hriv-${chart}-${CHART_VERSION}.tgz" "${OCI_BASE}" 2>&1)
+            PUSH_OUT=$(helm push "/tmp/charts/hriv-${chart}-${VERSION}.tgz" "${OCI_BASE}" 2>&1)
             echo "${PUSH_OUT}"
 
             DIGEST=$(printf '%s\n' "${PUSH_OUT}" | awk '/^Digest:/{print $2}')
             [[ -n "${DIGEST}" ]] || { echo "Failed to capture digest from helm push" >&2; exit 1; }
 
             # Moving-tag rules (strict-D — matches hashicorp/vault &
-            # rancher/rancher). Tags are applied to the chart artifact
-            # at CHART_VERSION (the chart axis), not VERSION (the app
-            # axis). `is_highest_stable` is still computed from the app
-            # axis; chart `stable`/`latest` move in lockstep with app
-            # releases, so the stable chart is always the one wrapping
-            # the latest stable app.
+            # rancher/rancher):
             #   mode=head            → add `head`
             #   mode=release rc      → no moving tag (immutable only)
             #   mode=release stable  → add `stable` + `latest` iff highest
-            #                          full-release SemVer on the app axis
+            #                          full-release SemVer
             if [[ "${MODE}" == "head" ]]; then
-              crane tag "${IMAGE_BASE}/hriv-${chart}:${CHART_VERSION}" head
+              crane tag "${IMAGE_BASE}/hriv-${chart}:${VERSION}" head
             elif [[ "${MODE}" == "release" && "${IS_PRE}" != "true" && "${IS_HS}" == "true" ]]; then
-              crane tag "${IMAGE_BASE}/hriv-${chart}:${CHART_VERSION}" stable
-              crane tag "${IMAGE_BASE}/hriv-${chart}:${CHART_VERSION}" latest
+              crane tag "${IMAGE_BASE}/hriv-${chart}:${VERSION}" stable
+              crane tag "${IMAGE_BASE}/hriv-${chart}:${VERSION}" latest
             fi
 
             cosign sign --yes "${IMAGE_BASE}/hriv-${chart}@${DIGEST}"
