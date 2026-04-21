@@ -167,4 +167,4 @@ async def health():
 async def readiness(db: AsyncSession = Depends(get_db)):
     """Readiness probe: verifies the database connection is alive."""
     await db.execute(text("SELECT 1"))
-    return {"status": "ready"}
+    return {"status": "ready", "version": app.version}
