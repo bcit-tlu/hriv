@@ -59,6 +59,10 @@ jobs:
                    && "${GITHUB_REF}" == "refs/heads/main" ) ]]; then
               MODE="head"
               BASE=$(jq -r --arg c "${COMPONENT}" '.[$c]' .release-please-manifest.json)
+              [[ -n "${BASE}" && "${BASE}" != "null" ]] || {
+                echo "::error::Missing ${COMPONENT} version in .release-please-manifest.json" >&2
+                exit 1
+              }
               BASE_STABLE="${BASE%-*}"
               if [[ "${BASE}" == "${BASE_STABLE}" ]]; then
                 IFS=. read -r MAJ MIN PAT <<<"${BASE_STABLE}"
