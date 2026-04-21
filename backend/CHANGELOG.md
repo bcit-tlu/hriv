@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.7.0...backend-v0.7.1) (2026-04-21)
+
+
+### Bug Fixes
+
+* **backend:** log app version on startup ([#183](https://github.com/bcit-tlu/hriv/issues/183)) ([bf37b85](https://github.com/bcit-tlu/hriv/commit/bf37b85192dd605d7dd7f1cd147cbd35a644fb3c))
+* **release:** switch to language-specific release types ([#179](https://github.com/bcit-tlu/hriv/issues/179)) ([1ebba10](https://github.com/bcit-tlu/hriv/commit/1ebba106d1ed743087aea2f0f7a3b9905f07af81))
+
 ## [0.7.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.6.0...backend-v0.7.0) (2026-04-21)
 
 
