@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0-rc](https://github.com/bcit-tlu/hriv/compare/frontend-v0.6.0...frontend-v0.7.0-rc) (2026-04-21)
+
+
+### Features
+
+* **frontend:** add 'follow OS' option to theme toggle ([#153](https://github.com/bcit-tlu/hriv/issues/153)) ([e928df6](https://github.com/bcit-tlu/hriv/commit/e928df6b051da0914f2528133213a881bbf0deba))
+
 ## [0.6.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.6.0-rc...frontend-v0.6.0) (2026-04-21)
 
 
