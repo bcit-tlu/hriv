@@ -54,6 +54,7 @@
 - `/backend/app` - Backend application code
 - `/backend/tests` - Backend test files
 - `/docs` - Documentation
+- `/scripts` - Utility scripts (e.g. CLI upload helper)
 - `/public` - Static assets
 
 ## Development Workflow
