@@ -34,8 +34,6 @@ import DisabledVisibleIcon from "@mui/icons-material/DisabledVisible";
 import EditIcon from "@mui/icons-material/Edit";
 import HomeIcon from "@mui/icons-material/Home";
 import LinkIcon from "@mui/icons-material/Link";
-import DarkModeIcon from "@mui/icons-material/DarkMode";
-import LightModeIcon from "@mui/icons-material/LightMode";
 import SearchIcon from "@mui/icons-material/Search";
 import ImageViewer from "./components/ImageViewer";
 import type {
@@ -46,6 +44,7 @@ import type {
 import type { CanvasAnnotation } from "./components/CanvasOverlay";
 import { MAX_SHARE_OVERLAYS } from "./components/ImageViewer";
 import CategoryTile from "./components/CategoryTile";
+import ColorModeToggle from "./components/ColorModeToggle";
 import ImageTile from "./components/ImageTile";
 import ManageCategoriesDialog from "./components/ManageCategoriesDialog";
 import AdminPage from "./components/AdminPage";
@@ -162,7 +161,7 @@ export default function App() {
         canManageUsers,
         canEditContent,
     } = useAuth();
-    const { mode, toggleMode } = useColorMode();
+    const { mode } = useColorMode();
 
     type Page = "browse" | "manage" | "people" | "admin";
     const [page, setPage] = useState<Page>("browse");
@@ -1496,25 +1495,7 @@ export default function App() {
                         </MenuItem>
                     </Menu>
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                        <Tooltip
-                            title={
-                                mode === "dark"
-                                    ? "Switch to light mode"
-                                    : "Switch to dark mode"
-                            }
-                        >
-                            <IconButton
-                                onClick={toggleMode}
-                                sx={{ color: "inherit" }}
-                                aria-label="Toggle dark mode"
-                            >
-                                {mode === "dark" ? (
-                                    <LightModeIcon />
-                                ) : (
-                                    <DarkModeIcon />
-                                )}
-                            </IconButton>
-                        </Tooltip>
+                        <ColorModeToggle iconButtonSx={{ color: "inherit" }} />
                         <Tooltip title="Search">
                             <IconButton
                                 onClick={() => setSearchOpen(true)}

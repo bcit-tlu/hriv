@@ -7,7 +7,11 @@ import {
 } from "react";
 import { ThemeProvider, CssBaseline } from "@mui/material";
 import { buildTheme } from "./theme";
-import { ColorModeContext, type ColorMode } from "./colorModeContext";
+import {
+    ColorModeContext,
+    type ColorMode,
+    type ColorModePreference,
+} from "./colorModeContext";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -15,14 +19,19 @@ import { ColorModeContext, type ColorMode } from "./colorModeContext";
 
 const STORAGE_KEY = "hriv-color-mode";
 
-/** Read the stored preference, falling back to the OS preference. */
-function getInitialMode(): ColorMode {
+/** Read the stored user preference; missing / invalid values collapse to "auto". */
+function getInitialPreference(): ColorModePreference {
     try {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored === "dark" || stored === "light") return stored;
     } catch {
         // localStorage may be unavailable (e.g. private browsing)
     }
+    return "auto";
+}
+
+/** Read the current OS-level colour-scheme preference. */
+function getSystemMode(): ColorMode {
     if (
         typeof window !== "undefined" &&
         window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -30,6 +39,19 @@ function getInitialMode(): ColorMode {
         return "dark";
     }
     return "light";
+}
+
+/** Persist (or clear, for "auto") the preference in localStorage. */
+function persistPreference(preference: ColorModePreference): void {
+    try {
+        if (preference === "auto") {
+            localStorage.removeItem(STORAGE_KEY);
+        } else {
+            localStorage.setItem(STORAGE_KEY, preference);
+        }
+    } catch {
+        // ignore
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -41,42 +63,44 @@ interface ColorModeProviderProps {
 }
 
 export default function ColorModeProvider({ children }: ColorModeProviderProps) {
-    const [mode, setMode] = useState<ColorMode>(getInitialMode);
+    const [preference, setPreferenceState] = useState<ColorModePreference>(
+        getInitialPreference,
+    );
+    const [systemMode, setSystemMode] = useState<ColorMode>(getSystemMode);
 
+    const setPreference = useCallback((next: ColorModePreference) => {
+        persistPreference(next);
+        setPreferenceState(next);
+    }, []);
+
+    // Cycle: Light → Dark → Auto → Light …
     const toggleMode = useCallback(() => {
-        setMode((prev) => {
-            const next = prev === "light" ? "dark" : "light";
-            try {
-                localStorage.setItem(STORAGE_KEY, next);
-            } catch {
-                // ignore
-            }
+        setPreferenceState((prev) => {
+            const next: ColorModePreference =
+                prev === "light" ? "dark" : prev === "dark" ? "auto" : "light";
+            persistPreference(next);
             return next;
         });
     }, []);
 
-    // Listen for OS-level preference changes so the UI stays in sync when no
-    // explicit user choice has been persisted.
+    // Track OS-level preference so "auto" stays in sync when the system theme
+    // changes (or when the user switches to "auto" after an OS change).
     useEffect(() => {
         const mq = window.matchMedia("(prefers-color-scheme: dark)");
         const handler = (e: MediaQueryListEvent) => {
-            // Only follow the OS if the user hasn't explicitly picked a mode
-            let hasStored = false;
-            try {
-                hasStored = !!localStorage.getItem(STORAGE_KEY);
-            } catch {
-                // localStorage may be unavailable
-            }
-            if (!hasStored) {
-                setMode(e.matches ? "dark" : "light");
-            }
+            setSystemMode(e.matches ? "dark" : "light");
         };
         mq.addEventListener("change", handler);
         return () => mq.removeEventListener("change", handler);
     }, []);
 
+    const mode: ColorMode = preference === "auto" ? systemMode : preference;
+
     const theme = useMemo(() => buildTheme(mode), [mode]);
-    const ctx = useMemo(() => ({ mode, toggleMode }), [mode, toggleMode]);
+    const ctx = useMemo(
+        () => ({ mode, preference, setPreference, toggleMode }),
+        [mode, preference, setPreference, toggleMode],
+    );
 
     return (
         <ColorModeContext.Provider value={ctx}>
