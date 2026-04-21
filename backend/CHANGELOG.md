@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.6.0-rc...backend-v0.6.0) (2026-04-21)
+
+
+### Features
+
+* gate footer versions to admins and surface per-component versions ([#149](https://github.com/bcit-tlu/hriv/issues/149)) ([#150](https://github.com/bcit-tlu/hriv/issues/150)) ([b3447dd](https://github.com/bcit-tlu/hriv/commit/b3447dd997a419485b17804b8823d0b0d3c06fda))
+
 ## [0.6.0-rc](https://github.com/bcit-tlu/hriv/compare/backend-v0.5.2-rc...backend-v0.6.0-rc) (2026-04-20)
 
 
