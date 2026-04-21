@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0-rc.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.7.0-rc...backend-v0.7.0-rc.1) (2026-04-21)
+
+
+### Bug Fixes
+
+* **backend:** include app version in health endpoint response ([#164](https://github.com/bcit-tlu/hriv/issues/164)) ([3906a27](https://github.com/bcit-tlu/hriv/commit/3906a27a710af94eda14eeeccb8e062b78c64799))
+
 ## [0.7.0-rc](https://github.com/bcit-tlu/hriv/compare/backend-v0.6.0...backend-v0.7.0-rc) (2026-04-21)
 
 
