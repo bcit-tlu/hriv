@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0-rc3](https://github.com/bcit-tlu/hriv/compare/backend-v0.7.0-rc2...backend-v0.7.0-rc3) (2026-04-21)
+
+
+### Bug Fixes
+
+* **backend:** include app version in readiness probe response ([#169](https://github.com/bcit-tlu/hriv/issues/169)) ([2fd67cc](https://github.com/bcit-tlu/hriv/commit/2fd67ccea8980eae590ee95ce625772b0ec9db05))
+
 ## [0.7.0-rc2](https://github.com/bcit-tlu/hriv/compare/backend-v0.7.0-rc1...backend-v0.7.0-rc2) (2026-04-21)
 
 
