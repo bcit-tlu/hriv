@@ -30,9 +30,9 @@ def _stub_pyvips(monkeypatch):
 
 
 async def test_health_endpoint() -> None:
-    from app.main import health
+    from app.main import app, health
     result = await health()
-    assert result == {"status": "ok"}
+    assert result == {"status": "ok", "version": app.version}
 
 
 # ── _check_oidc_connectivity tests ──────────────────────

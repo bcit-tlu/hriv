@@ -160,7 +160,7 @@ app.mount("/api/tiles", StaticFiles(directory=settings.tiles_dir), name="tiles")
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": app.version}
 
 
 @app.get("/api/health/ready")
