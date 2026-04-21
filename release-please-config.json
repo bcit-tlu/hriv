@@ -7,18 +7,15 @@
   "prerelease": false,
   "packages": {
     "frontend": {
-      "release-type": "simple",
-      "component": "frontend",
-      "extra-files": [
-        {"type": "json", "path": "package.json", "jsonpath": "$.version"}
-      ]
+      "release-type": "node",
+      "component": "frontend"
     },
     "backend": {
-      "release-type": "simple",
+      "release-type": "python",
       "component": "backend"
     },
     "backup": {
-      "release-type": "simple",
+      "release-type": "python",
       "component": "backup"
     }
   }
