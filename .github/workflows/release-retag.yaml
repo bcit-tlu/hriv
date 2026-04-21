@@ -45,11 +45,13 @@ jobs:
         run: exit 0
 
       - name: Get release commit SHA (safe)
+        if: steps.parse.outputs.match == 'true'
         id: sha
         run: |
           echo "sha=${{ github.event.release.target_commitish }}" >> $GITHUB_OUTPUT
 
       - name: Retag (no pull)
+        if: steps.parse.outputs.match == 'true'
         run: |
           IMAGE=${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
           SHA=${{ steps.sha.outputs.sha }}
