@@ -11,26 +11,16 @@
       "release-type": "simple",
       "component": "frontend",
       "extra-files": [
-        "charts/frontend/Chart.yaml",
-        "charts/frontend/values.yaml",
-        "frontend/package.json"
+        "package.json"
       ]
     },
     "backend": {
       "release-type": "simple",
-      "component": "backend",
-      "extra-files": [
-        "charts/backend/Chart.yaml",
-        "charts/backend/values.yaml"
-      ]
+      "component": "backend"
     },
     "backup": {
       "release-type": "simple",
-      "component": "backup",
-      "extra-files": [
-        "charts/backup/Chart.yaml",
-        "charts/backup/values.yaml"
-      ]
+      "component": "backup"
     }
   }
 }
