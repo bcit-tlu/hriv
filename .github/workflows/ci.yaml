@@ -67,7 +67,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: docker/metadata-action@v6
-        # id: meta
+        id: meta
         # #   if: steps.version.outputs.build == 'true'
         # with:
         #   images: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
