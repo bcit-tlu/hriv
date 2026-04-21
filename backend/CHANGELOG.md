@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.7.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.6.0...backend-v0.7.0) (2026-04-21)
+
+
+### Features
+
+* **versions:** auto-publish backup version via ConfigMap mount ([#155](https://github.com/bcit-tlu/hriv/issues/155)) ([0ce22ec](https://github.com/bcit-tlu/hriv/commit/0ce22ecc6ff0c5c48eb58402a81dff7c598e3d95))
+
+
+### Bug Fixes
+
+* **backend:** include app version in health endpoint response ([#164](https://github.com/bcit-tlu/hriv/issues/164)) ([3906a27](https://github.com/bcit-tlu/hriv/commit/3906a27a710af94eda14eeeccb8e062b78c64799))
+* **backend:** include app version in readiness probe response ([#169](https://github.com/bcit-tlu/hriv/issues/169)) ([2fd67cc](https://github.com/bcit-tlu/hriv/commit/2fd67ccea8980eae590ee95ce625772b0ec9db05))
+* **backend:** read FastAPI version from APP_VERSION env var ([#160](https://github.com/bcit-tlu/hriv/issues/160)) ([d637f0a](https://github.com/bcit-tlu/hriv/commit/d637f0a45525cc40febea6a39fb0e2a8c74616d7))
+* **release:** reset manifest to last stable version for clean 0.7.0 graduation ([#176](https://github.com/bcit-tlu/hriv/issues/176)) ([2c0d2fc](https://github.com/bcit-tlu/hriv/commit/2c0d2fc0d65885b46741689147aa7e751976747e))
+* **release:** use rc1 prerelease format instead of rc.1 ([#166](https://github.com/bcit-tlu/hriv/issues/166)) ([277045b](https://github.com/bcit-tlu/hriv/commit/277045b79fdbc652ba1b9864de5fa0f591af324f))
+* remove unused release graduation markers to trigger stable releases ([#173](https://github.com/bcit-tlu/hriv/issues/173)) ([b59d14a](https://github.com/bcit-tlu/hriv/commit/b59d14a5fcb8a315d095641302b565f94283faf9))
+
 ## [0.7.0-rc3](https://github.com/bcit-tlu/hriv/compare/backend-v0.7.0-rc2...backend-v0.7.0-rc3) (2026-04-21)
 
 
