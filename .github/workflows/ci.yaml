@@ -202,25 +202,45 @@ jobs:
               # Anchor the head build's version to the next planned
               # release so operators can read image / chart tags and
               # immediately see which target SemVer the code is heading
-              # toward. The base is read from .release-please-manifest.json
-              # (the single source of truth release-please maintains for
-              # the next version per component) and stripped of any
-              # prerelease suffix (e.g. `-rc`). This yields tags that
-              # SemVer-sort: head  <  rc  <  full release, matching the
-              # intuition that head = "bleeding edge of the next target".
+              # toward. Stripped of any prerelease suffix (e.g. `-rc`)
+              # so that SemVer-sort gives: head  <  rc  <  full release,
+              # matching the intuition "head = bleeding edge of the next
+              # target".
               #
-              # Rule:
-              #   * manifest holds a prerelease (e.g. `0.6.0-rc`) →
+              # Resolution order for the base version:
+              #   1. The component's release-please PR branch (most
+              #      accurate — reflects conventional-commit analysis).
+              #   2. The shared release-please branch (legacy fallback
+              #      for the transition from separate-pull-requests:
+              #      false → true).
+              #   3. The committed manifest on main (safe default when
+              #      no release-please PR exists yet).
+              #
+              # Rule applied to the resolved base:
+              #   * base holds a prerelease (e.g. `0.7.0-rc`) →
               #     strip the `-rc` suffix and target the upcoming
-              #     release (`0.6.0-head.SHA`  <  `0.6.0-rc`).
-              #   * manifest holds a clean stable (e.g. `0.2.0`)  →
+              #     release (`0.7.0-head.SHA`  <  `0.7.0-rc`).
+              #   * base holds a clean stable (e.g. `0.6.0`)  →
               #     bump patch so head sorts strictly ABOVE the last
-              #     stable release (`0.2.1-head.SHA`  >  `0.2.0`).
+              #     stable release (`0.6.1-head.SHA`  >  `0.6.0`).
               #     This covers the brief window between merging a
               #     graduation PR and release-please opening the next
-              #     rc PR, and is agnostic to the git tag naming scheme.
+              #     rc PR.
               MODE="head"
-              BASE=$(jq -r --arg c "${COMPONENT}" '.[$c]' .release-please-manifest.json)
+              BASE=""
+              # 1. Per-component release-please branch (separate-pull-requests: true)
+              RP_BRANCH="release-please--branches--main--components--${COMPONENT}"
+              BASE=$(git show "origin/${RP_BRANCH}:.release-please-manifest.json" 2>/dev/null \
+                | jq -r --arg c "${COMPONENT}" '.[$c] // empty' 2>/dev/null || true)
+              # 2. Shared release-please branch (separate-pull-requests: false)
+              if [[ -z "${BASE}" ]]; then
+                BASE=$(git show "origin/release-please--branches--main:.release-please-manifest.json" 2>/dev/null \
+                  | jq -r --arg c "${COMPONENT}" '.[$c] // empty' 2>/dev/null || true)
+              fi
+              # 3. Committed manifest on main
+              if [[ -z "${BASE}" ]]; then
+                BASE=$(jq -r --arg c "${COMPONENT}" '.[$c]' .release-please-manifest.json)
+              fi
               [[ -n "${BASE}" && "${BASE}" != "null" ]] || {
                 echo "::error::Missing ${COMPONENT} version in .release-please-manifest.json" >&2
                 exit 1
@@ -251,7 +271,18 @@ jobs:
                 exit 1
               fi
               MODE="rebuild"
-              BASE=$(jq -r --arg c "${COMPONENT}" '.[$c]' .release-please-manifest.json)
+              # Same resolution order as head mode (see comments above).
+              BASE=""
+              RP_BRANCH="release-please--branches--main--components--${COMPONENT}"
+              BASE=$(git show "origin/${RP_BRANCH}:.release-please-manifest.json" 2>/dev/null \
+                | jq -r --arg c "${COMPONENT}" '.[$c] // empty' 2>/dev/null || true)
+              if [[ -z "${BASE}" ]]; then
+                BASE=$(git show "origin/release-please--branches--main:.release-please-manifest.json" 2>/dev/null \
+                  | jq -r --arg c "${COMPONENT}" '.[$c] // empty' 2>/dev/null || true)
+              fi
+              if [[ -z "${BASE}" ]]; then
+                BASE=$(jq -r --arg c "${COMPONENT}" '.[$c]' .release-please-manifest.json)
+              fi
               [[ -n "${BASE}" && "${BASE}" != "null" ]] || {
                 echo "::error::Missing ${COMPONENT} version in .release-please-manifest.json" >&2
                 exit 1
@@ -598,4 +629,74 @@ jobs:
             cosign sign --yes "${IMAGE_BASE}/hriv-${chart}@${DIGEST}"
 
             echo "::endgroup::"
+          done
+
+  # ── GitHub Releases for head / rebuild builds ──────────
+  #
+  # Every published OCI artifact should have a corresponding GitHub
+  # release so operators can trace a running image back to its source.
+  # release-please owns rc and stable releases (created when its PR is
+  # merged and the tag is pushed). This job covers head and rebuild
+  # modes that release-please doesn't touch.
+  #
+  # Each release is marked as a pre-release and tagged with the
+  # component-prefixed version (e.g. `backend-v0.7.0-head.abc1234`).
+  # Tags created by GITHUB_TOKEN don't trigger new workflow runs, so
+  # the `on: push: tags:` trigger in this workflow won't fire.
+  github-release:
+    runs-on: ubuntu-latest
+    needs: [images, helm-publish, versions]
+    if: >-
+      !cancelled()
+      && needs.images.result == 'success'
+      && (needs.helm-publish.result == 'success' || needs.helm-publish.result == 'skipped')
+      && needs.versions.result == 'success'
+      && github.event_name != 'pull_request'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Create GitHub releases for published components
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PLAN_JSON: ${{ needs.versions.outputs.json }}
+          REGISTRY: ghcr.io
+        run: |
+          set -euo pipefail
+          for COMPONENT in frontend backend backup; do
+            MODE=$(jq -r --arg c "${COMPONENT}" '.[$c].mode' <<<"${PLAN_JSON}")
+            VERSION=$(jq -r --arg c "${COMPONENT}" '.[$c].version' <<<"${PLAN_JSON}")
+
+            # release-please owns rc and stable releases; this job only
+            # covers head and rebuild modes.
+            case "${MODE}" in
+              head|rebuild) ;;
+              *) continue ;;
+            esac
+
+            TAG="${COMPONENT}-v${VERSION}"
+
+            # Idempotent: skip if the release already exists (e.g. workflow re-run).
+            if gh release view "${TAG}" &>/dev/null; then
+              echo "Release ${TAG} already exists, skipping"
+              continue
+            fi
+
+            TITLE="${COMPONENT}: v${VERSION}"
+            BODY="## ${COMPONENT} v${VERSION}"$'\n\n'
+            BODY+="**Mode:** \`${MODE}\`"$'\n'
+            BODY+="**Commit:** [\`${GITHUB_SHA::7}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA})"$'\n\n'
+            BODY+="### Artifacts"$'\n'
+            BODY+="- Image: \`${REGISTRY}/${GITHUB_REPOSITORY}/hriv-${COMPONENT}:${VERSION}\`"$'\n'
+            if [[ "${MODE}" == "head" ]]; then
+              BODY+="- Chart: \`oci://${REGISTRY}/${GITHUB_REPOSITORY}/charts/hriv-${COMPONENT}:${VERSION}\`"$'\n'
+            fi
+
+            echo "Creating release: ${TAG}"
+            gh release create "${TAG}" \
+              --title "${TITLE}" \
+              --notes "${BODY}" \
+              --target "${GITHUB_SHA}" \
+              --prerelease
           done
