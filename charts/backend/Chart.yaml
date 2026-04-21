@@ -1,12 +1,12 @@
 apiVersion: v2
 name: hriv-backend
 description: HRIV Backend – FastAPI image library API
-# Chart version — independent of app version. Bump by hand in a PR
-# when chart templates / values schema change. release-please does
-# NOT touch this line.
-version: 0.1.0
-# App version — stamped by CI from the release-please version (= image
-# tag). Marked so release-please keeps the committed value in sync for
-# local `helm template` / `helm install` runs against the source tree.
+# Chart version and app version are intentionally kept in lockstep with
+# the release-please lineage — both lines carry the `x-release-please-version`
+# marker so every release bumps them together, and CI stamps the same string
+# into both fields at publish time. This keeps the GitHub release name, the
+# git tag, the image tag, and the chart OCI tag identical so operators can
+# trace any deployed pod back to a single version string.
+version: 0.1.0 # x-release-please-version
 appVersion: "0.1.0" # x-release-please-version
 type: application
