@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.6.0...frontend-v0.7.0) (2026-04-21)
+
+
+### Features
+
+* **frontend:** add 'follow OS' option to theme toggle ([#153](https://github.com/bcit-tlu/hriv/issues/153)) ([e928df6](https://github.com/bcit-tlu/hriv/commit/e928df6b051da0914f2528133213a881bbf0deba))
+
+
+### Bug Fixes
+
+* **release:** correct extra-files paths in release-please config ([#163](https://github.com/bcit-tlu/hriv/issues/163)) ([3a788ac](https://github.com/bcit-tlu/hriv/commit/3a788ac287f40a45c0146fcc21555ea65179105b))
+* **release:** reset manifest to last stable version for clean 0.7.0 graduation ([#176](https://github.com/bcit-tlu/hriv/issues/176)) ([2c0d2fc](https://github.com/bcit-tlu/hriv/commit/2c0d2fc0d65885b46741689147aa7e751976747e))
+* **release:** use rc1 prerelease format instead of rc.1 ([#166](https://github.com/bcit-tlu/hriv/issues/166)) ([277045b](https://github.com/bcit-tlu/hriv/commit/277045b79fdbc652ba1b9864de5fa0f591af324f))
+* remove unused release graduation markers to trigger stable releases ([#173](https://github.com/bcit-tlu/hriv/issues/173)) ([b59d14a](https://github.com/bcit-tlu/hriv/commit/b59d14a5fcb8a315d095641302b565f94283faf9))
+
 ## [0.7.0-rc2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.7.0-rc1...frontend-v0.7.0-rc2) (2026-04-21)
 
 
