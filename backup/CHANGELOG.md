@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.3.1...backup-v0.4.0) (2026-04-22)
+
+
+### Features
+
+* **version:** split build-identity from display-identity; inject APP_VERSION via Helm ([#197](https://github.com/bcit-tlu/hriv/issues/197)) ([c20730a](https://github.com/bcit-tlu/hriv/commit/c20730adf04497bd52f599e7476b01003c9f937f))
+
 ## [0.3.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.3.0...backup-v0.3.1) (2026-04-21)
 
 
