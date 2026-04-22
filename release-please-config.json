@@ -6,20 +6,17 @@
         "frontend": {
             "path": "frontend",
             "component": "frontend",
-            "release-type": "node",
-            "release-as": "0.7.2"
+            "release-type": "node"
         },
         "backend": {
             "path": "backend",
             "component": "backend",
-            "release-type": "python",
-            "release-as": "0.7.2"
+            "release-type": "python"
         },
         "backup": {
             "path": "backup",
             "component": "backup",
-            "release-type": "python",
-            "release-as": "0.3.2"
+            "release-type": "python"
         }
     }
 }
