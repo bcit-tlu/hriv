@@ -69,3 +69,19 @@ EXPOSE 8080
 # using envsubst, writing output to /etc/nginx/conf.d/
 # See: https://hub.docker.com/_/nginx  ("Using environment variables in nginx configuration")
 ENV BACKEND_URL=http://backend:8000
+# ``default.conf.template`` contains ``${APP_VERSION}`` in the
+# ``/version`` response body.  The nginx image's
+# ``20-envsubst-on-templates.sh`` only substitutes env vars that are
+# actually *defined* at container start (it seeds the substitution
+# list from ``env | cut -d= -f1``). Without a default, ad-hoc
+# ``docker run`` / ``docker compose`` invocations leave the literal
+# ``${APP_VERSION}`` in the rendered config, which nginx then parses
+# as an unknown nginx variable and refuses to start
+# (``nginx: [emerg] unknown "APP_VERSION" variable``).  The Helm
+# chart's ``Deployment`` template overrides this with the actual
+# ``hriv-frontend.displayVersion`` helper value at deploy time; the
+# ``dev`` sentinel matches the backend's
+# ``os.environ.get("APP_VERSION", "dev")`` fallback so ad-hoc runs
+# surface a consistent "not in a managed deploy" signal across all
+# three components.
+ENV APP_VERSION=dev
