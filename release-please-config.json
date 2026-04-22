@@ -1,22 +1,22 @@
 {
-    "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-    "bump-minor-pre-major": true,
     "include-component-in-tag": true,
     "separate-pull-requests": true,
-    "versioning": "default",
-    "draft": true,
+    "bump-minor-pre-major": true,
     "packages": {
         "frontend": {
-            "release-type": "node",
-            "component": "frontend"
+            "path": "frontend",
+            "component": "frontend",
+            "release-type": "node"
         },
         "backend": {
-            "release-type": "python",
-            "component": "backend"
+            "path": "backend",
+            "component": "backend",
+            "release-type": "python"
         },
         "backup": {
-            "release-type": "python",
-            "component": "backup"
+            "path": "backup",
+            "component": "backup",
+            "release-type": "python"
         }
     }
 }

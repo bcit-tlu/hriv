@@ -1,13 +1,9 @@
-name: CI
+name: build
 
 on:
   push:
-    # branches:
-    # - main
-    # tags: ["frontend-v*", "backend-v*", "backup-v*"]
-  pull_request:
     branches: [main]
-  # workflow_dispatch: {}
+  pull_request:
 
 env:
   REGISTRY: ghcr.io
@@ -20,126 +16,106 @@ jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
-      # fail-fast: false
       matrix:
         include:
           - component: frontend
             context: ./frontend
-            # target: stable
+            target: stable
             build_contexts: |
-              nginx-config=charts/frontend/files
+              nginx-config=./charts/frontend/files
+            extra_watch_paths: ./charts/frontend/files
           - component: backend
             context: ./backend
-            # target: stable
+            target: stable
           - component: backup
             context: ./backup
-    steps:
-      # - name: Resolve version
-      #   id: version
-      #   shell: bash
-      #   run: |
-      #     if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-      #       TAG_REF="${GITHUB_REF#refs/tags/}"
-      #       if [[ "${TAG_REF}" =~ ^${{ matrix.component }}-v(.+)$ ]]; then
-      #         echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-      #         echo "build=true" >> "$GITHUB_OUTPUT"
-      #       else
-      #         echo "build=false" >> "$GITHUB_OUTPUT"
-      #       fi
-      #     elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
-      #       echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
-      #       echo "build=true" >> "$GITHUB_OUTPUT"
-      #     else
-      #       echo "build=false" >> "$GITHUB_OUTPUT"
-      #     fi
 
+    steps:
       - uses: actions/checkout@v6
-      #   if: steps.version.outputs.build == 'true'
+        with:
+          fetch-depth: 0
+
+      - name: Detect changes
+        id: changes
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            BASE=${{ github.event.pull_request.base.sha }}
+            HEAD=${{ github.event.pull_request.head.sha }}
+          else
+            BASE=${{ github.event.before }}
+            HEAD=${{ github.sha }}
+          fi
+
+          if git diff --quiet $BASE $HEAD -- ${{ matrix.context }} ${{ matrix.extra_watch_paths }}; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
 
       - uses: docker/setup-buildx-action@v4
-      #   if: steps.version.outputs.build == 'true'
+        if: steps.changes.outputs.changed == 'true'
 
       - uses: docker/login-action@v4
-        #   if: steps.version.outputs.build == 'true' && startsWith(github.ref, 'refs/tags/')
+        if: steps.changes.outputs.changed == 'true' && github.event_name != 'pull_request'
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/metadata-action@v6
-        # id: meta
-        # #   if: steps.version.outputs.build == 'true'
-        # with:
-        #   images: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
-        #   tags: |
-        #     type=raw,value=${{ steps.version.outputs.version }}
-      #     flavor: |
-      #       latest=false
-      - uses: docker/build-push-action@v7
-        #   if: steps.version.outputs.build == 'true'
+      - name: Compute next version
+        id: version
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          COMPONENT=${{ matrix.component }}
+
+          TAG=$(git describe --tags \
+            --match "${COMPONENT}-v*" \
+            --exclude "${COMPONENT}-v*-*" \
+            --abbrev=0 2>/dev/null || true)
+          if [[ -z "$TAG" ]]; then
+            VERSION="0.0.0"
+            RANGE="HEAD"
+          else
+            VERSION="${TAG#${COMPONENT}-v}"
+            RANGE="${TAG}..HEAD"
+          fi
+
+          if ! [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Refusing to bump from non-semver base version '${VERSION}' (tag '${TAG}')"
+            exit 1
+          fi
+          MAJOR="${BASH_REMATCH[1]}"
+          MINOR="${BASH_REMATCH[2]}"
+          PATCH="${BASH_REMATCH[3]}"
+
+          SUBJECTS=$(git log "${RANGE}" --pretty=format:"%s" -- ${{ matrix.context }})
+          BODIES=$(git log "${RANGE}" --pretty=format:"%b" -- ${{ matrix.context }})
+
+          if echo "$SUBJECTS" | grep -qE "^[a-zA-Z]+(\([^)]+\))?!:" \
+             || echo "$BODIES" | grep -qE "^BREAKING[ -]CHANGE:"; then
+            ((MAJOR+=1)); MINOR=0; PATCH=0
+          elif echo "$SUBJECTS" | grep -qE "^feat(\(.+\))?:"; then
+            ((MINOR+=1)); PATCH=0
+          else
+            ((PATCH+=1))
+          fi
+
+          NEXT="${MAJOR}.${MINOR}.${PATCH}"
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          TS=$(date -u +"%Y%m%d%H%M%S")
+
+          echo "next=${NEXT}" >> $GITHUB_OUTPUT
+          echo "short=${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "ts=${TS}" >> $GITHUB_OUTPUT
+
+      - name: Build and push
+        if: steps.changes.outputs.changed == 'true'
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
-          build-contexts: ${{ matrix.build_contexts }}
-          # target: ${{ matrix.target }}
-        #     push: ${{ startsWith(github.ref, 'refs/tags/') }}
-        #     load: ${{ !startsWith(github.ref, 'refs/tags/') }}
-        #     tags: ${{ steps.meta.outputs.tags }}
-        # labels: ${{ steps.meta.outputs.labels }}
-      #     cache-from: type=gha,scope=${{ matrix.component }}
-      #     cache-to: type=gha,mode=max,scope=${{ matrix.component }}
-      #     build-args: |
-      #       APP_VERSION=${{ steps.version.outputs.version }}
-      #       VITE_APP_VERSION=${{ steps.version.outputs.version }}
-
-  # helm-publish:
-  #   runs-on: ubuntu-latest
-  #   needs: [build]
-  #   if: startsWith(github.ref, 'refs/tags/')
-  #   strategy:
-  #     fail-fast: false
-  #     matrix:
-  #       component: [frontend, backend, backup]
-  #   steps:
-  #     - name: Resolve version from tag
-  #       id: version
-  #       shell: bash
-  #       run: |
-  #         TAG_REF="${GITHUB_REF#refs/tags/}"
-  #         if [[ "${TAG_REF}" =~ ^${{ matrix.component }}-v(.+)$ ]]; then
-  #           echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-  #           echo "publish=true" >> "$GITHUB_OUTPUT"
-  #         else
-  #           echo "publish=false" >> "$GITHUB_OUTPUT"
-  #         fi
-
-  #     - uses: actions/checkout@v6
-  #       if: steps.version.outputs.publish == 'true'
-
-  #     - uses: azure/setup-helm@v5
-  #       if: steps.version.outputs.publish == 'true'
-
-  #     - uses: docker/login-action@v4
-  #       if: steps.version.outputs.publish == 'true'
-  #       with:
-  #         registry: ${{ env.REGISTRY }}
-  #         username: ${{ github.actor }}
-  #         password: ${{ secrets.GITHUB_TOKEN }}
-
-  #     - name: Log in to GHCR (Helm OCI)
-  #       if: steps.version.outputs.publish == 'true'
-  #       run: |
-  #         echo "${{ secrets.GITHUB_TOKEN }}" | \
-  #           helm registry login ${{ env.REGISTRY }} \
-  #             -u ${{ github.actor }} --password-stdin
-
-  #     - name: Package & push chart
-  #       if: steps.version.outputs.publish == 'true'
-  #       run: |
-  #         set -euo pipefail
-  #         VERSION="${{ steps.version.outputs.version }}"
-  #         DIR="charts/${{ matrix.component }}"
-  #         sed -i "s/^version:.*/version: ${VERSION}/" "${DIR}/Chart.yaml"
-  #         sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" "${DIR}/Chart.yaml"
-  #         helm package "${DIR}" -d /tmp/charts
-  #         helm push "/tmp/charts/hriv-${{ matrix.component }}-${VERSION}.tgz" \
-  #           "oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
+          target: ${{ matrix.target }}
+          build-contexts: ${{ matrix.build_contexts || '' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:sha-${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:${{ steps.version.outputs.next }}-${{ steps.version.outputs.short }}.${{ steps.version.outputs.ts }}

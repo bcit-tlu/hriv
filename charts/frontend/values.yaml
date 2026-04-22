@@ -1,13 +1,13 @@
 replicaCount: 1
 
 image:
-    repository: ghcr.io/bcit-tlu/hriv/hriv-frontend
-    tag: "" # Defaults to .Chart.AppVersion
-    pullPolicy: IfNotPresent
+  repository: ghcr.io/bcit-tlu/hriv/hriv-frontend
+  tag: "" # Defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
 
 service:
-    type: ClusterIP
-    port: 8080
+  type: ClusterIP
+  port: 8080
 
 # Backend service discovery.  The Helm template builds a cluster-
 # internal FQDN (<host>.<namespace>.svc.cluster.local:<port>) so that
@@ -15,16 +15,16 @@ service:
 # that block non-443 traffic on public/node IPs.
 # Set env.BACKEND_URL to override the auto-constructed URL entirely.
 backend:
-    host: hriv-backend
-    port: 8000
-    # Namespace where the backend service lives.  When empty the chart
-    # uses .Release.Namespace (i.e. the namespace you pass to
-    # helm install/upgrade --namespace).  Set this explicitly if the
-    # backend is deployed to a different namespace than the frontend.
-    namespace: ""
+  host: hriv-backend
+  port: 8000
+  # Namespace where the backend service lives.  When empty the chart
+  # uses .Release.Namespace (i.e. the namespace you pass to
+  # helm install/upgrade --namespace).  Set this explicitly if the
+  # backend is deployed to a different namespace than the frontend.
+  namespace: ""
 
 env:
-    BACKEND_URL: ""
+  BACKEND_URL: ""
 
 # Volume mounts backed by ConfigMaps.  Each entry creates a ConfigMap
 # resource and is mounted into the container at the given mountPath.
@@ -34,39 +34,39 @@ env:
 # ``files`` (map of ConfigMap key → chart-relative file path); the file
 # contents are read with ``.Files.Get`` at template-render time.  The
 # frontend nginx template below is the **single** source of truth for
-# the reverse-proxy config: the same file is baked into the prod Docker
+# the reverse-proxy config: the same file is baked into the stable Docker
 # image via a BuildKit named build context so that `docker run` of the
 # published image and the Helm ConfigMap path resolve to identical
 # bytes by construction.  See issue #37 for history.
 configMounts:
-    - name: nginx-config
-      mountPath: /etc/nginx/templates
-      files:
-          default.conf.template: files/default.conf.template
+  - name: nginx-config
+    mountPath: /etc/nginx/templates
+    files:
+      default.conf.template: files/default.conf.template
 
 # emptyDir mounts required by the nginx container (writable paths on a
 # read-only root filesystem).
 emptyDirMounts:
-    - name: tmp
-      mountPath: /tmp
-    - name: nginx-cache
-      mountPath: /var/cache/nginx
-    - name: nginx-run
-      mountPath: /var/run
+  - name: tmp
+    mountPath: /tmp
+  - name: nginx-cache
+    mountPath: /var/cache/nginx
+  - name: nginx-run
+    mountPath: /var/run
 
 ingress:
-    enabled: false
-    className: ""
-    annotations:
-        # Allow large image uploads through the ingress controller.
-        # Without this the nginx ingress controller defaults to 1 MB,
-        # which blocks pathology TIFF/SVS uploads.  0 = unlimited.
-        nginx.ingress.kubernetes.io/proxy-body-size: "0"
-    hosts: []
-    tls: []
+  enabled: false
+  className: ""
+  annotations:
+    # Allow large image uploads through the ingress controller.
+    # Without this the nginx ingress controller defaults to 1 MB,
+    # which blocks pathology TIFF/SVS uploads.  0 = unlimited.
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+  hosts: []
+  tls: []
 
 networkPolicy:
-    enabled: true
+  enabled: true
 
 resources: {}
 
@@ -77,8 +77,8 @@ resources: {}
 # NOTE: replicaCount must not exceed the number of distinct zones,
 # otherwise excess pods will remain Pending (hard scheduling constraint).
 zoneAntiAffinity:
-    enabled: false
-    topologyKey: topology.kubernetes.io/zone
+  enabled: false
+  topologyKey: topology.kubernetes.io/zone
 
 nodeSelector: {}
 tolerations: []

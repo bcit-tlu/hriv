@@ -1,0 +1,77 @@
+name: helm-publish
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag to package and publish (e.g. frontend-v1.2.3)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [frontend, backend, backup]
+
+    steps:
+      - name: Parse release tag
+        id: parse
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag_name || github.event.release.tag_name }}
+        run: |
+          if [[ "$TAG" =~ ^${{ matrix.component }}-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
+            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.parse.outputs.publish == 'true'
+
+      - uses: azure/setup-helm@v5
+        if: steps.parse.outputs.publish == 'true'
+
+      - name: Helm login (OCI)
+        if: steps.parse.outputs.publish == 'true'
+        shell: bash
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login "${{ env.REGISTRY }}" \
+            -u "${{ github.actor }}" \
+            --password-stdin
+
+      - name: Package and push chart
+        if: steps.parse.outputs.publish == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.parse.outputs.version }}"
+          CHART_DIR="charts/${{ matrix.component }}"
+          DEST_DIR="/tmp/charts"
+
+          mkdir -p "${DEST_DIR}"
+
+          helm dependency update "${CHART_DIR}" || true
+
+          helm package "${CHART_DIR}" \
+            --version "${VERSION}" \
+            --app-version "${VERSION}" \
+            -d "${DEST_DIR}"
+
+          helm push \
+            "${DEST_DIR}/hriv-${{ matrix.component }}-${VERSION}.tgz" \
+            "oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"

@@ -1,0 +1,110 @@
+name: release-images
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag to retag (e.g. frontend-v1.2.3)"
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  retag:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [frontend, backend, backup]
+
+    steps:
+      - name: Parse release tag
+        id: parse
+        env:
+          TAG: ${{ inputs.tag_name || github.event.release.tag_name }}
+        run: |
+          if [[ "$TAG" =~ ^${{ matrix.component }}-v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "version=${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}" >> $GITHUB_OUTPUT
+            echo "major=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+            echo "minor=${BASH_REMATCH[2]}" >> $GITHUB_OUTPUT
+            echo "match=true" >> $GITHUB_OUTPUT
+          else
+            echo "match=false" >> $GITHUB_OUTPUT
+          fi
+
+      - uses: actions/checkout@v6
+        if: steps.parse.outputs.match == 'true'
+        with:
+          ref: ${{ inputs.tag_name || github.event.release.tag_name }}
+
+      - name: Resolve tag commit SHA
+        if: steps.parse.outputs.match == 'true'
+        id: sha
+        env:
+          TAG: ${{ inputs.tag_name || github.event.release.tag_name }}
+        run: |
+          SHA=$(git rev-list -n1 "${TAG}")
+          echo "sha=${SHA}" >> $GITHUB_OUTPUT
+
+      - uses: docker/setup-buildx-action@v4
+        if: steps.parse.outputs.match == 'true'
+
+      - uses: docker/login-action@v4
+        if: steps.parse.outputs.match == 'true'
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Wait for source image
+        if: steps.parse.outputs.match == 'true'
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          SRC="${IMAGE}:sha-${SHA}"
+          # The ci.yaml build for the same commit runs in parallel with
+          # release-please's dispatch of this workflow. Poll with
+          # exponential backoff until the sha-tagged image appears in
+          # the registry (or time out after ~30 min, which covers a
+          # worst-case backend libvips build).
+          DELAY=10
+          MAX_DELAY=60
+          DEADLINE=$(( $(date +%s) + 1800 ))
+          while :; do
+            if docker buildx imagetools inspect "${SRC}" >/dev/null 2>&1; then
+              echo "Source image ${SRC} is available."
+              break
+            fi
+            if [[ $(date +%s) -ge $DEADLINE ]]; then
+              echo "::error::Timed out after 30m waiting for ${SRC} (CI build for $SHA did not publish)."
+              exit 1
+            fi
+            echo "Source image ${SRC} not yet available; retrying in ${DELAY}s..."
+            sleep "$DELAY"
+            DELAY=$(( DELAY * 2 ))
+            if (( DELAY > MAX_DELAY )); then DELAY=$MAX_DELAY; fi
+          done
+
+      - name: Retag (no pull)
+        if: steps.parse.outputs.match == 'true'
+        run: |
+          IMAGE=${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
+          SHA=${{ steps.sha.outputs.sha }}
+          VERSION=${{ steps.parse.outputs.version }}
+          MAJOR=${{ steps.parse.outputs.major }}
+          MINOR=${{ steps.parse.outputs.minor }}
+
+          docker buildx imagetools create \
+            -t ${IMAGE}:${VERSION} \
+            -t ${IMAGE}:${MAJOR}.${MINOR} \
+            -t ${IMAGE}:${MAJOR} \
+            -t ${IMAGE}:latest \
+            ${IMAGE}:sha-${SHA}
