@@ -163,11 +163,10 @@ ENV OTEL_TRACES_EXPORTER=none \
 
 # Stamp an app version into the image for the /api/admin/version
 # endpoint.  Defaults to ``dev`` for local builds that don't pass the
-# build-arg (e.g. ``docker compose build``).  CI does not currently
-# pass ``--build-arg APP_VERSION`` — the component version is conveyed
-# via the image tag instead (see ci.yaml's Compute next version step),
-# so images built by CI will report ``dev`` here until that wiring is
-# added.
+# build-arg (e.g. ``docker compose build``).  CI stamps the computed
+# next version via ``--build-arg APP_VERSION=<next>`` in
+# ``.github/workflows/ci.yaml`` so images built by CI report the real
+# component version at runtime.
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 

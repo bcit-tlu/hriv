@@ -5,7 +5,12 @@
 # bookworm (notably CVE-2023-45853 zlib minizip and CVE-2025-7458
 # libsqlite3 — both criticals for this image) and receives security
 # updates directly from Debian's trixie-security mirror.
-FROM python:3.13-slim-trixie
+# Single-stage image, but give it an explicit `stable` target name so
+# `.github/workflows/ci.yaml` can share the same `target: stable` matrix
+# entry across all three components. Targeting a named stage that is
+# also the final stage is a no-op for buildx but lets the CI template
+# treat every component uniformly.
+FROM python:3.13-slim-trixie AS stable
 
 WORKDIR /app
 
