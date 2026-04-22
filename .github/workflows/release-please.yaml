@@ -34,6 +34,40 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # `release-as` per-package is a one-shot: once the release PR it
+      # triggered has merged and the manifest has caught up, the override
+      # must be removed, otherwise every subsequent release-please run
+      # keeps pinning the same version and blocks normal semver bumps
+      # from feat:/fix: commits. This guard runs *after* release-please
+      # and is skipped whenever `releases_created=true`, so the
+      # tag/release finalization that happens on the merge-of-chore-PR
+      # push (where manifest has just caught up to release-as) isn't
+      # blocked. On any subsequent push where the state is still stale
+      # and there's nothing to release, the workflow fails loudly to
+      # force the cleanup PR.
+      - uses: actions/checkout@v6
+        if: steps.rp.outputs.releases_created != 'true'
+      - name: Guard against stale `release-as` entries
+        if: steps.rp.outputs.releases_created != 'true'
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          with open("release-please-config.json") as f:
+              cfg = json.load(f)
+          with open(".release-please-manifest.json") as f:
+              manifest = json.load(f)
+          stale = []
+          for pkg, conf in cfg.get("packages", {}).items():
+              ra = conf.get("release-as")
+              if ra is not None and manifest.get(pkg) == ra:
+                  stale.append((pkg, ra))
+          if stale:
+              print("::error::Stale `release-as` entries in release-please-config.json:")
+              for pkg, ra in stale:
+                  print(f"::error::  packages.{pkg}.release-as={ra} already matches .release-please-manifest.json — remove this field so release-please can resume normal semver bumps.")
+              sys.exit(1)
+          PY
+
   # Releases created via GITHUB_TOKEN do NOT trigger workflows that listen
   # on `release: published` or `push: tags:`. Dispatch helm-publish and
   # release-retag explicitly for each released tag.
