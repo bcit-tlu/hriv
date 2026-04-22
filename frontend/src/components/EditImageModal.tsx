@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -13,6 +14,7 @@ import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import OutlinedInput from '@mui/material/OutlinedInput'
 import Select from '@mui/material/Select'
+import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -74,6 +76,7 @@ function EditImageForm({
   )
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [confirmViewImage, setConfirmViewImage] = useState(false)
 
   // Track whether the form has been modified from its initial values
@@ -98,6 +101,7 @@ function EditImageForm({
       await onDelete()
     } catch {
       setDeleting(false)
+      setDeleteError('Failed to delete image. Please try again.')
     }
   }
 
@@ -362,6 +366,15 @@ function EditImageForm({
           Save
         </Button>
       </DialogActions>
+      <Snackbar
+        open={deleteError !== null}
+        autoHideDuration={6000}
+        onClose={(_event, reason) => { if (reason === 'clickaway') return; setDeleteError(null) }}
+      >
+        <Alert severity="error" variant="filled" onClose={() => setDeleteError(null)}>
+          {deleteError}
+        </Alert>
+      </Snackbar>
     </>
   )
 }
