@@ -1,0 +1,49 @@
+name: pr-title-lint
+
+# Gate non-conventional PR titles at the merge boundary so unparseable
+# squash-merge commits (e.g. "New release2 (#185)") can't land on main and
+# silently starve release-please of the feat:/fix:/BREAKING signals it uses
+# to open release PRs. release-please itself skips unparseable commits with
+# a log warning and produces no chore release PR, which is easy to miss
+# since the workflow still exits 0. This check fails loud instead.
+
+on:
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize]
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Mirror release-please's default conventional-commits parser
+          # (conventional-changelog-conventionalcommits). Keep this list in
+          # sync with any custom `changelog-sections` override in
+          # release-please-config.json so the lint gate accepts exactly the
+          # commit types release-please recognizes.
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" found in the pull request title
+            "{title}" didn't match the configured pattern. Please ensure
+            that the subject doesn't start with an uppercase character.
