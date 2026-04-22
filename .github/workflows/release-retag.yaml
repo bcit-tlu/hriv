@@ -30,14 +30,11 @@ jobs:
         env:
           TAG: ${{ inputs.tag_name || github.event.release.tag_name }}
         run: |
-          if [[ "$TAG" =~ ^${{ matrix.component }}-v(.+)$ ]]; then
-            VERSION="${BASH_REMATCH[1]}"
-            echo "version=$VERSION" >> $GITHUB_OUTPUT
+          if [[ "$TAG" =~ ^${{ matrix.component }}-v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "version=${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}" >> $GITHUB_OUTPUT
+            echo "major=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+            echo "minor=${BASH_REMATCH[2]}" >> $GITHUB_OUTPUT
             echo "match=true" >> $GITHUB_OUTPUT
-
-            IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-            echo "major=$MAJOR" >> $GITHUB_OUTPUT
-            echo "minor=$MINOR" >> $GITHUB_OUTPUT
           else
             echo "match=false" >> $GITHUB_OUTPUT
           fi
