@@ -19,6 +19,20 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    # Skip for bot-authored PRs. ``pull_request_target`` is the only
+    # event that fires on release-please's own PRs (GitHub's default
+    # ``GITHUB_TOKEN``-doesn't-trigger-workflows rule gates plain
+    # ``pull_request``), so without this guard every release-please PR
+    # gets held under "1 workflow awaiting approval" until a maintainer
+    # clicks Approve — release-please's own titles are always
+    # well-formed ``chore(main): release <component> <ver>`` so there's
+    # nothing for the lint to guard anyway, and the repo's
+    # Actions → General "Require approval for first-time contributors"
+    # setting is what turns the otherwise-invisible bot-author check
+    # into a blocking gate. Human-authored PRs (User type) still run
+    # the lint from the base-ref copy of this workflow, preserving the
+    # malicious-edit-proof property of ``pull_request_target``.
+    if: github.event.pull_request.user.type != 'Bot'
     steps:
       - uses: amannn/action-semantic-pull-request@v5
         env:
