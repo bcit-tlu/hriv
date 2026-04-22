@@ -585,7 +585,14 @@ export interface FrontendVersionResponse {
 }
 
 export async function fetchFrontendVersion(): Promise<FrontendVersionResponse> {
-  const res = await fetch(`${BASE}/version`, { headers: { 'Accept': 'application/json' } })
+  // NB: absolute path, not ``${BASE}/version``. ``BASE`` is
+  // ``VITE_API_URL`` (the *backend* base), so if it's ever set to a
+  // cross-origin URL (e.g. ``https://api.example.com``) the fetch would
+  // hit the backend's origin — which does not serve ``/version`` — and
+  // silently fall back to ``"dev"`` even in a managed deploy. This
+  // endpoint is served by the frontend's own nginx on the same origin
+  // as the SPA regardless of ``VITE_API_URL``.
+  const res = await fetch('/version', { headers: { 'Accept': 'application/json' } })
   if (!res.ok) {
     throw new Error(`Frontend /version ${res.status}`)
   }
