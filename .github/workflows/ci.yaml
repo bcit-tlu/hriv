@@ -8,6 +8,10 @@ on:
 env:
   REGISTRY: ghcr.io
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -98,57 +102,3 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:sha-${{ github.sha }}
             ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:${{ steps.version.outputs.next }}-${{ steps.version.outputs.short }}.${{ steps.version.outputs.ts }}
-
-  helm-publish:
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
-    strategy:
-      matrix:
-        component: [frontend, backend, backup]
-
-    steps:
-      - name: Parse tag
-        id: parse
-        run: |
-          TAG="${GITHUB_REF#refs/tags/}"
-
-          if [[ "$TAG" =~ ^${{ matrix.component }}-v(.+)$ ]]; then
-            echo "version=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
-            echo "publish=true" >> $GITHUB_OUTPUT
-          else
-            echo "publish=false" >> $GITHUB_OUTPUT
-          fi
-
-      - uses: actions/checkout@v6
-        if: steps.parse.outputs.publish == 'true'
-
-      - uses: azure/setup-helm@v5
-        if: steps.parse.outputs.publish == 'true'
-
-      - uses: docker/login-action@v4
-        if: steps.parse.outputs.publish == 'true'
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Helm login (OCI)
-        if: steps.parse.outputs.publish == 'true'
-        run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            helm registry login ${{ env.REGISTRY }} \
-            -u ${{ github.actor }} --password-stdin
-
-      - name: Package & push chart
-        if: steps.parse.outputs.publish == 'true'
-        run: |
-          set -euo pipefail
-
-          VERSION=${{ steps.parse.outputs.version }}
-          DIR="charts/${{ matrix.component }}"
-
-          helm package "${DIR}" -d /tmp/charts
-
-          helm push \
-            "/tmp/charts/hriv-${{ matrix.component }}-${VERSION}.tgz" \
-            "oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
