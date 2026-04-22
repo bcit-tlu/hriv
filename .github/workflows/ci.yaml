@@ -68,7 +68,10 @@ jobs:
         run: |
           COMPONENT=${{ matrix.component }}
 
-          TAG=$(git describe --tags --match "${COMPONENT}-v*" --abbrev=0 2>/dev/null || true)
+          TAG=$(git describe --tags \
+            --match "${COMPONENT}-v*" \
+            --exclude "${COMPONENT}-v*-*" \
+            --abbrev=0 2>/dev/null || true)
           if [[ -z "$TAG" ]]; then
             VERSION="0.0.0"
             RANGE="HEAD"
@@ -77,7 +80,13 @@ jobs:
             RANGE="${TAG}..HEAD"
           fi
 
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+          if ! [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::Refusing to bump from non-semver base version '${VERSION}' (tag '${TAG}')"
+            exit 1
+          fi
+          MAJOR="${BASH_REMATCH[1]}"
+          MINOR="${BASH_REMATCH[2]}"
+          PATCH="${BASH_REMATCH[3]}"
 
           SUBJECTS=$(git log "${RANGE}" --pretty=format:"%s" -- ${{ matrix.context }})
           BODIES=$(git log "${RANGE}" --pretty=format:"%b" -- ${{ matrix.context }})
