@@ -123,9 +123,15 @@ jobs:
           done
 
   # ── Container images (matrix: frontend, backend, backup) ──
+  #
+  # Each matrix entry only requires its own quality gate to pass.
+  # `!cancelled()` prevents a sibling gate failure from blocking
+  # unrelated components. The per-component `gate` field is checked
+  # in the first step to skip early when *this* component's gate failed.
   build:
     runs-on: ubuntu-latest
     needs: [backend-tests, frontend-checks, helm-lint]
+    if: "!cancelled()"
     permissions:
       contents: read
       packages: write
@@ -141,20 +147,38 @@ jobs:
             build_contexts: |
               nginx-config=./charts/frontend/files
             extra_watch_paths: ./charts/frontend/files
+            gate: frontend-checks
           - component: backend
             context: ./backend
             target: stable
+            gate: backend-tests
           - component: backup
             context: ./backup
             target: stable
+            gate: backend-tests
 
     steps:
+      - name: Check own quality gate
+        id: gate
+        shell: bash
+        run: |
+          result="${{ needs[matrix.gate].result }}"
+          echo "gate=${{ matrix.gate }} result=${result}"
+          if [[ "${result}" != "success" ]]; then
+            echo "::error::Quality gate '${{ matrix.gate }}' did not succeed (result=${result}); skipping ${{ matrix.component }} build."
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - uses: actions/checkout@v6
+        if: steps.gate.outputs.passed == 'true'
         with:
           fetch-depth: 0
 
       - name: Detect changes
         id: changes
+        if: steps.gate.outputs.passed == 'true'
         shell: bash
         run: |
           set -euo pipefail
