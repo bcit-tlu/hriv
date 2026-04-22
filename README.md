@@ -66,3 +66,10 @@ Note: the Vite proxy target uses the Docker service name (`http://backend:8000`)
 ## Testing
 
 See [docs/TESTING.md](docs/TESTING.md) for the full test plan and verification procedures.
+
+## Release & deploy flow
+
+See [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md) for how
+a merged PR becomes a running pod in `latest` or `stable`: PR-title →
+release-please, image/chart artifact contract, and the `flux-fleet`
+reconciliation model for both environments.
