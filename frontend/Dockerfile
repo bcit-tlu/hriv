@@ -22,8 +22,16 @@ FROM deps AS build
 COPY . .
 ARG VITE_API_URL
 ENV VITE_API_URL=${VITE_API_URL}
-ARG VITE_APP_VERSION
-ENV VITE_APP_VERSION=${VITE_APP_VERSION}
+# ``VITE_APP_VERSION`` is deliberately **not** a build-time ARG anymore.
+# Vite would bake its value into the bundled JS as an ``import.meta.env``
+# compile-time constant, which survives intact when
+# ``.github/workflows/release-retag.yaml`` aliases the main-build
+# ``sha-<full>`` digest as ``vX.Y.Z``/``latest`` — causing a production
+# image to display the original ``-rc.<short>`` string. Instead, the
+# version surfaced in the admin panel is fetched at runtime from
+# ``/version``, which is rendered by nginx via ``envsubst`` on
+# ``APP_VERSION`` supplied by the Helm chart at deploy time (see
+# ``charts/frontend/files/default.conf.template``).
 RUN npm run build
 
 # ── Stage 4: Stable server (nginx) ───────────────────

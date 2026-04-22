@@ -27,6 +27,17 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.cnpgSecretName }}
                   key: uri
+            # Parity with the backend/frontend containers: expose the
+            # deploy-time display version so ``docker inspect`` /
+            # ``kubectl describe pod`` surfaces the same
+            # ``<ver>-rc.<short>`` (main) or clean ``<ver>`` (retag-
+            # promoted) string reported by the admin UI.  ``backup.py``
+            # itself does not consume this env var; the version
+            # reported under ``/api/admin/version`` is published by the
+            # `version-configmap` template and mounted into the
+            # backend's pod.
+            - name: APP_VERSION
+              value: {{ include "hriv-backup.displayVersion" . | quote }}
             - name: DATA_DIR
               value: {{ .Values.env.DATA_DIR | quote }}
             - name: BACKUP_CRON_SCHEDULE

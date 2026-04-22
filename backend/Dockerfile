@@ -161,14 +161,21 @@ ENV OTEL_TRACES_EXPORTER=none \
     OTEL_METRICS_EXPORTER=none \
     OTEL_LOGS_EXPORTER=none
 
-# Stamp an app version into the image for the /api/admin/version
-# endpoint.  Defaults to ``dev`` for local builds that don't pass the
-# build-arg (e.g. ``docker compose build``).  CI stamps the computed
-# next version via ``--build-arg APP_VERSION=<next>`` in
-# ``.github/workflows/ci.yaml`` so images built by CI report the real
-# component version at runtime.
-ARG APP_VERSION=dev
-ENV APP_VERSION=${APP_VERSION}
+# Deliberately no ``ARG APP_VERSION``/``ENV APP_VERSION`` here.
+#
+# The value surfaced by ``/api/admin/version`` is supplied **at deploy
+# time** by the Helm chart (``charts/backend/templates/deployment.yaml``
+# renders ``APP_VERSION`` from ``.Values.image.tag | default
+# .Chart.AppVersion`` with the rc-timestamp trimmed). Baking it as a
+# build-time ARG would cause retag-promoted production images (see
+# ``.github/workflows/release-retag.yaml``, which aliases an existing
+# ``sha-<full>`` digest as ``vX.Y.Z``/``latest`` without rebuilding) to
+# display the ``-rc.<short>`` string from the original main build even
+# when pulled under the release tag. ``app/main.py`` +
+# ``app/routers/admin.py`` both read ``os.environ.get("APP_VERSION",
+# "dev")`` lazily, so a missing env var at runtime degrades to the
+# ``"dev"`` fallback — appropriate for ``docker compose`` / ad-hoc
+# ``docker run`` use.
 
 # ── Stage 3: Development (hot-reload, used by docker compose)
 FROM base AS dev

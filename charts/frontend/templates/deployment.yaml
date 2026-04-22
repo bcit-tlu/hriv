@@ -37,6 +37,18 @@ spec:
           env:
             - name: BACKEND_URL
               value: {{ .Values.env.BACKEND_URL | default (printf "http://%s.%s.svc.cluster.local:%d" .Values.backend.host (.Values.backend.namespace | default .Release.Namespace) (.Values.backend.port | int)) | quote }}
+            # Frontend display version exposed at runtime via the
+            # nginx ``/version`` endpoint (see
+            # ``files/default.conf.template``). nginx's
+            # ``docker-entrypoint.d`` renders
+            # ``*.conf.template`` via ``envsubst``, substituting this
+            # env var into the response body. Rendering at deploy time
+            # rather than baking into the Vite bundle at build time
+            # means retag-promoted production images (same digest,
+            # release tag) report the clean ``<ver>`` instead of the
+            # main-build ``-rc.<short>`` identity.
+            - name: APP_VERSION
+              value: {{ include "hriv-frontend.displayVersion" . | quote }}
           livenessProbe:
             httpGet:
               path: /

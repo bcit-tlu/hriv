@@ -131,7 +131,12 @@ services:
       - ./frontend/tsconfig.app.json:/app/tsconfig.app.json
     environment:
       - NODE_ENV=development
-      - VITE_APP_VERSION=${APP_VERSION:-dev}
+      # No VITE_APP_VERSION here: the deployed frontend fetches its
+      # version from the nginx-served /version endpoint (see
+      # charts/frontend/files/default.conf.template), which does not
+      # exist on the Vite dev server — the admin footer simply falls
+      # back to "dev" locally. If local parity becomes useful, stand
+      # up a sidecar that serves a static /version JSON.
     depends_on:
       backend:
         condition: service_healthy

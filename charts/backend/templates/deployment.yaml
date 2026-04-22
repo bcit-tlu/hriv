@@ -69,6 +69,17 @@ spec:
             {{- end }}
             - name: GITHUB_REPO
               value: {{ .Values.env.GITHUB_REPO | quote }}
+            # Backend component version surfaced by /api/admin/version
+            # and the FastAPI `app.version` attribute. Rendered from
+            # `.Values.image.tag | default .Chart.AppVersion` with the
+            # rc-timestamp stripped (see `hriv-backend.displayVersion`
+            # helper). Supplying the value here rather than baking it
+            # into the image as a build-arg keeps retag-promoted
+            # production images (same digest, different tag under
+            # `release-retag.yaml`) displaying a clean `<ver>` while
+            # the main-build `latest` env renders `<ver>-rc.<short>`.
+            - name: APP_VERSION
+              value: {{ include "hriv-backend.displayVersion" . | quote }}
             # Backup component version surfaced by /api/admin/version.
             # Precedence (see backend/app/routers/admin.py):
             #   1. BACKUP_VERSION_FILE → file contents (ConfigMap mount,

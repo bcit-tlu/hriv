@@ -568,6 +568,30 @@ export function fetchVersions(): Promise<VersionsResponse> {
   return request('/admin/version')
 }
 
+// Frontend version is served by the frontend's own nginx at ``/version``
+// (outside the ``/api`` proxy prefix), rendered from the ``APP_VERSION``
+// env var via ``envsubst`` on the ConfigMap-mounted nginx template at
+// container start. See ``charts/frontend/files/default.conf.template``.
+//
+// We intentionally bypass ``request`` (which prepends ``/api`` and
+// attaches auth headers) because this endpoint lives outside the
+// backend-proxied path and carries no auth requirement. In dev mode
+// (``npm run dev``), Vite's proxy does not forward ``/version`` so the
+// fetch will fall through to the dev server's 404 response; callers
+// treat the rejection as "frontend: dev" to keep local development
+// non-fatal.
+export interface FrontendVersionResponse {
+  frontend: string
+}
+
+export async function fetchFrontendVersion(): Promise<FrontendVersionResponse> {
+  const res = await fetch(`${BASE}/version`, { headers: { 'Accept': 'application/json' } })
+  if (!res.ok) {
+    throw new Error(`Frontend /version ${res.status}`)
+  }
+  return res.json() as Promise<FrontendVersionResponse>
+}
+
 export async function downloadAdminTaskResult(taskId: number): Promise<void> {
   // Obtain a short-lived download token, then navigate the browser to the
   // token-authenticated download URL (no JS buffering needed).

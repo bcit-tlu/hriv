@@ -165,14 +165,29 @@ jobs:
           # doubling the artifacts visible under ghcr's package view.
           provenance: false
           sbom: false
-          # Stamp the computed version into the image so
-          # `/api/admin/version` (backend) and the admin panel
-          # (frontend, via VITE_APP_VERSION) report the real build
-          # version instead of the `dev` ARG default. backup/Dockerfile
-          # also carries APP_VERSION for docker/kubectl inspect parity.
-          build-args: |
-            APP_VERSION=${{ steps.version.outputs.next }}
-            VITE_APP_VERSION=${{ steps.version.outputs.next }}
+          # Commit identity travels with the image as OCI manifest
+          # labels rather than baked build-time `ARG`s. Labels survive
+          # `release-retag.yaml`'s digest-promotion (aliasing a
+          # `sha-<full>` manifest as `vX.Y.Z`/`latest` without
+          # rebuilding), so `docker buildx imagetools inspect` always
+          # recovers the exact commit an image was built from,
+          # regardless of which tag it is pulled under.
+          #
+          # The runtime-displayable version strings surfaced by the
+          # admin UI / `/api/admin/version` / `/version` endpoint are
+          # rendered at deploy time by the Helm charts from
+          # `.Values.image.tag` (see `charts/backend/templates/
+          # deployment.yaml`, `charts/frontend/files/
+          # default.conf.template`, `charts/backup/templates/
+          # version-configmap.yaml`). This keeps a retag-promoted
+          # production image reporting a clean `<ver>` string while
+          # the main-build image in the `latest` env renders its
+          # `<ver>-rc.<short>` identity, even though the two are the
+          # same underlying digest.
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.version.outputs.next }}-rc.${{ steps.version.outputs.short }}
           # Tag order matters for how ghcr renders the "tags" list on
           # each image version card — the last tag in this list is
           # treated as the most recent by ghcr and surfaces first in

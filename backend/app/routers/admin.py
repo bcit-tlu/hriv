@@ -236,14 +236,25 @@ async def get_version(
 ) -> dict[str, str]:
     """Return deployed component versions.
 
-    Backend: ``APP_VERSION`` env var, baked into the image at build
-    time via the Dockerfile ``ARG`` so it travels with the image.
+    Backend: ``APP_VERSION`` env var, rendered at deploy time by the
+    Helm chart from ``.Values.image.tag | default .Chart.AppVersion``
+    (with the main-build ``-rc.<ts>.`` timestamp segment stripped —
+    see the ``hriv-backend.displayVersion`` helper).  Sourcing from
+    the chart rather than a build-time Dockerfile ``ARG`` keeps
+    retag-promoted production images (see
+    ``.github/workflows/release-retag.yaml``, which aliases a
+    ``sha-<full>`` digest as ``vX.Y.Z``/``latest`` without rebuilding)
+    reporting the clean ``<ver>`` release string while the main-build
+    ``latest`` env reports ``<ver>-rc.<short>``.  Falls back to
+    ``"dev"`` when the env var is unset (local ``docker compose`` or
+    ad-hoc ``docker run``).
 
     Backup: resolved by :func:`_read_backup_version` — ConfigMap-mount
     file first, then ``BACKUP_VERSION`` env var, then ``"dev"``.  The
     backup service versions independently of backend, so its version
-    is surfaced by reading the deployed backup chart's Chart.AppVersion
-    via a mounted ConfigMap instead of a statically-baked env var.
+    is surfaced via the hriv-backup chart's ``version-configmap``
+    (which itself uses the same display-version derivation from
+    ``.Values.image.tag``).
 
     Admin-only: version strings leak information about the deployed
     image and are not surfaced to other roles.

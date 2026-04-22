@@ -66,6 +66,7 @@ import {
     fetchUncategorizedImages,
     fetchSourceImage,
     fetchVersions,
+    fetchFrontendVersion,
     createCategory as apiCreateCategory,
     deleteCategory as apiDeleteCategory,
     updateCategory as apiUpdateCategory,
@@ -217,10 +218,16 @@ export default function App() {
     const [reportIssueOpen, setReportIssueOpen] = useState(false);
 
     // Component versions (admin-only, fetched lazily on mount).  Backend +
-    // backup are returned by ``/api/admin/version``; frontend is baked in
-    // at build time via ``VITE_APP_VERSION`` so we read it directly.
+    // backup are returned by ``/api/admin/version``; frontend is served by
+    // its own nginx at ``/version`` (envsubst-rendered from the Helm
+    // chart's ``APP_VERSION`` env at container start — see
+    // ``charts/frontend/files/default.conf.template``), so the displayed
+    // string reflects the deployed image tag rather than a build-time
+    // constant that would survive ``release-retag.yaml``'s digest
+    // promotion into production pulls.
     const [backendVersion, setBackendVersion] = useState<string | null>(null);
     const [backupVersion, setBackupVersion] = useState<string | null>(null);
+    const [frontendVersion, setFrontendVersion] = useState<string | null>(null);
 
     // Image processing tracking state (supports up to 5 concurrent jobs)
     const MAX_PROCESSING_JOBS = 5;
@@ -570,11 +577,19 @@ export default function App() {
     }, [searchOpen, canManageUsers]);
 
     // Load deployed component versions for the footer (admin only).
-    // The endpoint is admin-guarded; non-admins never see versions.
+    // Backend+backup come from ``/api/admin/version`` (admin-guarded on
+    // the backend; non-admins never see those strings). The frontend
+    // version is served by its own nginx and is not strictly admin-
+    // guarded at the transport layer, but we only fetch it in the admin
+    // path to match the footer's gating behaviour — the displayed
+    // version string carries the same info as the image-tag filenames
+    // already visible in the public JS bundle, so there is no new
+    // information leak.
     useEffect(() => {
         if (!canManageUsers) {
             setBackendVersion(null);
             setBackupVersion(null);
+            setFrontendVersion(null);
             return;
         }
         fetchVersions()
@@ -585,6 +600,18 @@ export default function App() {
             .catch(() => {
                 setBackendVersion(null);
                 setBackupVersion(null);
+            });
+        fetchFrontendVersion()
+            .then((v) => {
+                setFrontendVersion(v.frontend);
+            })
+            .catch(() => {
+                // ``/version`` is only served by the chart-deployed
+                // nginx; ``npm run dev`` / local Vite does not proxy
+                // this path, so a rejection here is expected outside
+                // Kubernetes and we fall back to ``"dev"`` at render
+                // time.
+                setFrontendVersion(null);
             });
     }, [canManageUsers]);
 
@@ -2125,8 +2152,7 @@ export default function App() {
                             // release-please-config.json) so the footer
                             // lists three distinct values rather than a
                             // single shared version.
-                            const frontendVer =
-                                import.meta.env.VITE_APP_VERSION || "dev";
+                            const frontendVer = frontendVersion || "dev";
                             const releasesHref =
                                 "https://github.com/bcit-tlu/hriv/releases";
                             const repoHref =
