@@ -23,6 +23,7 @@ jobs:
             target: stable
             build_contexts: |
               nginx-config=./charts/frontend/files
+            extra_watch_paths: ./charts/frontend/files
           - component: backend
             context: ./backend
             target: stable
@@ -45,7 +46,7 @@ jobs:
             HEAD=${{ github.sha }}
           fi
 
-          if git diff --quiet $BASE $HEAD -- ${{ matrix.context }}; then
+          if git diff --quiet $BASE $HEAD -- ${{ matrix.context }} ${{ matrix.extra_watch_paths }}; then
             echo "changed=false" >> $GITHUB_OUTPUT
           else
             echo "changed=true" >> $GITHUB_OUTPUT

@@ -8,12 +8,53 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
+  actions: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.rp.outputs.releases_created }}
+      paths_released: ${{ steps.rp.outputs.paths_released }}
+      outputs: ${{ toJSON(steps.rp.outputs) }}
     steps:
       - uses: googleapis/release-please-action@v4
+        id: rp
         with:
           release-type: manifest
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  # Releases created via GITHUB_TOKEN do NOT trigger workflows that listen
+  # on `release: published` or `push: tags:`. Dispatch helm-publish and
+  # release-retag explicitly for each released tag.
+  dispatch-publish:
+    needs: release
+    if: needs.release.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch downstream workflows for each released tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          RP_OUTPUTS: ${{ needs.release.outputs.outputs }}
+          PATHS_RELEASED: ${{ needs.release.outputs.paths_released }}
+        run: |
+          set -euo pipefail
+          for path in $(jq -r '.[]' <<<"${PATHS_RELEASED}"); do
+            tag=$(jq -r --arg key "${path}--tag_name" '.[$key] // empty' <<<"${RP_OUTPUTS}")
+            if [[ -z "${tag}" ]]; then
+              echo "::warning::No tag_name output for path '${path}', skipping"
+              continue
+            fi
+            echo "Dispatching helm-publish.yaml for ${tag}"
+            gh workflow run helm-publish.yaml \
+              --ref "${tag}" \
+              -f tag_name="${tag}"
+            echo "Dispatching release-retag.yaml for ${tag}"
+            gh workflow run release-retag.yaml \
+              --ref "${tag}" \
+              -f tag_name="${tag}"
+          done

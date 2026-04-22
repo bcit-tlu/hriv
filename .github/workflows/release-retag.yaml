@@ -3,6 +3,12 @@ name: release-images
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag to retag (e.g. frontend-v1.2.3)"
+        required: true
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -21,9 +27,9 @@ jobs:
     steps:
       - name: Parse release tag
         id: parse
+        env:
+          TAG: ${{ inputs.tag_name || github.event.release.tag_name }}
         run: |
-          TAG="${{ github.event.release.tag_name }}"
-
           if [[ "$TAG" =~ ^${{ matrix.component }}-v(.+)$ ]]; then
             VERSION="${BASH_REMATCH[1]}"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -39,13 +45,15 @@ jobs:
       - uses: actions/checkout@v6
         if: steps.parse.outputs.match == 'true'
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ inputs.tag_name || github.event.release.tag_name }}
 
       - name: Resolve tag commit SHA
         if: steps.parse.outputs.match == 'true'
         id: sha
+        env:
+          TAG: ${{ inputs.tag_name || github.event.release.tag_name }}
         run: |
-          SHA=$(git rev-list -n1 "${{ github.event.release.tag_name }}")
+          SHA=$(git rev-list -n1 "${TAG}")
           echo "sha=${SHA}" >> $GITHUB_OUTPUT
 
       - uses: docker/setup-buildx-action@v4

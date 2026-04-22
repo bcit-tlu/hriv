@@ -3,6 +3,12 @@ name: helm-publish
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag to package and publish (e.g. frontend-v1.2.3)"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -23,7 +29,7 @@ jobs:
         id: parse
         shell: bash
         run: |
-          TAG="${{ github.event.release.tag_name }}"
+          TAG="${{ inputs.tag_name || github.event.release.tag_name }}"
 
           if [[ "$TAG" =~ ^${{ matrix.component }}-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
             echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
