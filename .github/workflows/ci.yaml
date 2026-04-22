@@ -165,14 +165,23 @@ jobs:
           # doubling the artifacts visible under ghcr's package view.
           provenance: false
           sbom: false
-          # Stamp the computed version into the image so
+          # Stamp the build-time version identifier into the image so
           # `/api/admin/version` (backend) and the admin panel
           # (frontend, via VITE_APP_VERSION) report the real build
           # version instead of the `dev` ARG default. backup/Dockerfile
           # also carries APP_VERSION for docker/kubectl inspect parity.
+          #
+          # Value mirrors the image tag identity minus the timestamp:
+          # `<nextComputedVersion>-rc.<short>` (e.g. `1.1.18-rc.b286051`).
+          # Dropping the timestamp keeps the displayed string short
+          # enough to be useful in admin UIs while still signalling
+          # "rc from main" and pinning to a specific commit. The full
+          # tag with timestamp (`1.1.18-rc.20260414194220.b286051`)
+          # remains recoverable from the image's published ghcr tag
+          # if exact build recency is ever needed.
           build-args: |
-            APP_VERSION=${{ steps.version.outputs.next }}
-            VITE_APP_VERSION=${{ steps.version.outputs.next }}
+            APP_VERSION=${{ steps.version.outputs.next }}-rc.${{ steps.version.outputs.short }}
+            VITE_APP_VERSION=${{ steps.version.outputs.next }}-rc.${{ steps.version.outputs.short }}
           # Tag order matters for how ghcr renders the "tags" list on
           # each image version card — the last tag in this list is
           # treated as the most recent by ghcr and surfaces first in
