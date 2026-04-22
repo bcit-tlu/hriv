@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
@@ -13,6 +14,7 @@ import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import OutlinedInput from '@mui/material/OutlinedInput'
 import Select from '@mui/material/Select'
+import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
@@ -60,6 +62,7 @@ export default function BulkEditImagesModal({
   const [active, setActive] = useState(true)
   const [activeChanged, setActiveChanged] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   const resetForm = useCallback(() => {
@@ -72,6 +75,7 @@ export default function BulkEditImagesModal({
     setActive(true)
     setActiveChanged(false)
     setConfirmDelete(false)
+    setDeleteError(null)
     setSaving(false)
   }, [])
 
@@ -123,6 +127,7 @@ export default function BulkEditImagesModal({
       resetForm()
     } catch {
       setSaving(false)
+      setDeleteError('Failed to delete images. Please try again.')
     }
   }
 
@@ -244,6 +249,15 @@ export default function BulkEditImagesModal({
           {saving ? 'Saving…' : 'Save Changes'}
         </Button>
       </DialogActions>
+      <Snackbar
+        open={deleteError !== null}
+        autoHideDuration={6000}
+        onClose={() => setDeleteError(null)}
+      >
+        <Alert severity="error" variant="filled" onClose={() => setDeleteError(null)}>
+          {deleteError}
+        </Alert>
+      </Snackbar>
     </Dialog>
   )
 }
