@@ -53,6 +53,7 @@ jobs:
         with:
           path: backend/.venv
           key: backend-venv-py3.13-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: backend-venv-py3.13-
 
       - name: Install dependencies
         run: poetry install --with dev
