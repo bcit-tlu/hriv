@@ -45,14 +45,16 @@ RUN poetry install --no-root --no-interaction
 
 COPY backup.py ./
 
-# Stamp the release-please-managed app version into the image.  The backup
-# service itself doesn't read this at runtime, but carrying APP_VERSION as
-# an ENV makes ``docker inspect`` / ``kubectl describe pod`` surface the
-# exact build, and matches the convention set by the backend/frontend
-# images so CI can pass the same ``--build-arg APP_VERSION=<...>`` to every
-# component without conditional logic.
-ARG APP_VERSION=dev
-ENV APP_VERSION=${APP_VERSION}
+# No build-time ``ARG APP_VERSION``. ``backup.py`` doesn't consume
+# ``APP_VERSION`` at runtime — the backup version reported via
+# ``/api/admin/version`` is published by this chart's
+# ``version-configmap`` ConfigMap (read from the ``.Values.image.tag``
+# the chart was rendered with, not baked into the image). Baking here
+# would leak the main-build ``-rc.<short>`` identity into retag-promoted
+# production images (see ``.github/workflows/release-retag.yaml``). The
+# chart's Deployment template renders ``APP_VERSION`` as an env var for
+# ``docker inspect`` / ``kubectl describe pod`` parity with the backend
+# and frontend containers.
 
 # Default: run on cron schedule
 ENTRYPOINT ["python", "backup.py"]

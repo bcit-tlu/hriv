@@ -27,3 +27,15 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/name: {{ include "hriv-frontend.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
+
+{{/*
+Runtime display version surfaced by the nginx `/version` endpoint.
+
+See `hriv-backend.displayVersion` for the design rationale — this
+mirrors that helper, using the frontend chart's own image tag so each
+component reports its independently-released version.
+*/}}
+{{- define "hriv-frontend.displayVersion" -}}
+{{- $tag := .Values.image.tag | default .Chart.AppVersion -}}
+{{- regexReplaceAll "-rc\\.[0-9]{14}\\." $tag "-rc." -}}
+{{- end -}}

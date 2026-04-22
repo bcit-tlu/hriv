@@ -1,9 +1,15 @@
 {{- if .Values.versionConfigMap.enabled }}
-# Publishes this chart's Chart.AppVersion so the hriv-backend chart can
-# mount it and surface it via /api/admin/version.  CI stamps
-# Chart.AppVersion on every helm-publish (head builds, rc tags, full
-# releases), so this ConfigMap is rewritten in lockstep with every
-# deployment and no manual fleet bump is ever required.
+# Publishes the backup chart's display version so the hriv-backend
+# chart can mount it and surface it via /api/admin/version.
+#
+# The value is derived from ``.Values.image.tag | default
+# .Chart.AppVersion`` with the main-build ``-rc.<ts>.`` timestamp
+# segment stripped (see the ``hriv-backup.displayVersion`` helper).
+# flux-fleet's ImagePolicy rewrites ``.Values.image.tag`` per main
+# push, so this ConfigMap automatically tracks the deployed backup
+# image without a manual fleet bump — and retag-promoted production
+# images (same digest, release tag) render the clean ``<ver>`` string
+# instead of the original ``-rc.<short>`` identity.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -11,5 +17,5 @@ metadata:
   labels:
     {{- include "hriv-backup.labels" . | nindent 4 }}
 data:
-  {{ .Values.versionConfigMap.key }}: {{ .Chart.AppVersion | quote }}
+  {{ .Values.versionConfigMap.key }}: {{ include "hriv-backup.displayVersion" . | quote }}
 {{- end }}

@@ -22,8 +22,16 @@ FROM deps AS build
 COPY . .
 ARG VITE_API_URL
 ENV VITE_API_URL=${VITE_API_URL}
-ARG VITE_APP_VERSION
-ENV VITE_APP_VERSION=${VITE_APP_VERSION}
+# ``VITE_APP_VERSION`` is deliberately **not** a build-time ARG anymore.
+# Vite would bake its value into the bundled JS as an ``import.meta.env``
+# compile-time constant, which survives intact when
+# ``.github/workflows/release-retag.yaml`` aliases the main-build
+# ``sha-<full>`` digest as ``vX.Y.Z``/``latest`` — causing a production
+# image to display the original ``-rc.<short>`` string. Instead, the
+# version surfaced in the admin panel is fetched at runtime from
+# ``/version``, which is rendered by nginx via ``envsubst`` on
+# ``APP_VERSION`` supplied by the Helm chart at deploy time (see
+# ``charts/frontend/files/default.conf.template``).
 RUN npm run build
 
 # ── Stage 4: Stable server (nginx) ───────────────────
@@ -61,3 +69,19 @@ EXPOSE 8080
 # using envsubst, writing output to /etc/nginx/conf.d/
 # See: https://hub.docker.com/_/nginx  ("Using environment variables in nginx configuration")
 ENV BACKEND_URL=http://backend:8000
+# ``default.conf.template`` contains ``${APP_VERSION}`` in the
+# ``/version`` response body.  The nginx image's
+# ``20-envsubst-on-templates.sh`` only substitutes env vars that are
+# actually *defined* at container start (it seeds the substitution
+# list from ``env | cut -d= -f1``). Without a default, ad-hoc
+# ``docker run`` / ``docker compose`` invocations leave the literal
+# ``${APP_VERSION}`` in the rendered config, which nginx then parses
+# as an unknown nginx variable and refuses to start
+# (``nginx: [emerg] unknown "APP_VERSION" variable``).  The Helm
+# chart's ``Deployment`` template overrides this with the actual
+# ``hriv-frontend.displayVersion`` helper value at deploy time; the
+# ``dev`` sentinel matches the backend's
+# ``os.environ.get("APP_VERSION", "dev")`` fallback so ad-hoc runs
+# surface a consistent "not in a managed deploy" signal across all
+# three components.
+ENV APP_VERSION=dev

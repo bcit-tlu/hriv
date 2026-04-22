@@ -98,6 +98,43 @@ server {
         proxy_connect_timeout 60s;
     }
 
+    # ── Runtime-injected frontend version ────────────────
+    #
+    # Serves the deployed frontend image's display version so the
+    # admin panel (``App.tsx``) can fetch it on mount instead of
+    # reading ``import.meta.env.VITE_APP_VERSION`` — which would be
+    # baked into the Vite bundle at build time and would outlive
+    # digest-based retag-promotion (``release-retag.yaml`` aliases
+    # the main-build ``sha-<full>`` manifest as ``vX.Y.Z``/``latest``
+    # without rebuilding, so a baked-in ``-rc.<short>`` string would
+    # survive into production pulls).
+    #
+    # ``$APP_VERSION`` is substituted by nginx's
+    # ``docker-entrypoint.d/20-envsubst-on-templates.sh`` at container
+    # start, using the env var rendered by the Helm chart from
+    # ``.Values.image.tag`` (see
+    # ``charts/frontend/templates/deployment.yaml``).
+    #
+    # The endpoint is unauthenticated — the version string is already
+    # present in the publicly-served JS bundle filename hashes and
+    # carries no more sensitive information than the image tag visible
+    # in ghcr's package view. ``no-cache`` keeps CDN / browser caches
+    # from pinning a stale version across a rolling deploy.
+    location = /version {
+        default_type application/json;
+        # nginx's ``add_header`` inheritance rule: the moment *any*
+        # ``add_header`` appears inside a location block, the
+        # server-level ``add_header`` directives (``X-Frame-Options``,
+        # ``X-Content-Type-Options`` at the bottom of this file) are
+        # no longer inherited into it.  Re-declare them here to keep
+        # defense-in-depth consistent with the ``/assets/`` location
+        # above, which handles the same caveat the same way.
+        add_header   Cache-Control            "no-cache, no-store, must-revalidate" always;
+        add_header   X-Frame-Options          "SAMEORIGIN" always;
+        add_header   X-Content-Type-Options   "nosniff"    always;
+        return 200 '{"frontend":"${APP_VERSION}"}';
+    }
+
     # ── SPA fallback ─────────────────────────────────────
     location / {
         try_files $uri $uri/ /index.html;
