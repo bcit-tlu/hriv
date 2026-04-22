@@ -29,7 +29,9 @@ jobs:
   # ── Quality gates ─────────────────────────────────────────
   #
   # Tests, lint, and coverage run on every push + PR in parallel.
-  # The build matrix below gates on all three succeeding.
+  # Each build matrix entry gates on its own quality-gate job;
+  # helm-lint runs independently (its failure breaks the workflow
+  # status but does not block individual image builds).
 
   backend-tests:
     runs-on: ubuntu-latest
