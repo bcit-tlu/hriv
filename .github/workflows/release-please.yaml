@@ -4,24 +4,34 @@ on:
   push:
     branches: [main]
 
+# Least-privilege default: only `checkout` needs read access.
+# Each job elevates permissions to just what that job requires.
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  actions: write
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    # release-please creates/updates release PRs, tags, GitHub releases
+    # and comments on associated issues.
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
     outputs:
       releases_created: ${{ steps.rp.outputs.releases_created }}
       paths_released: ${{ steps.rp.outputs.paths_released }}
       outputs: ${{ toJSON(steps.rp.outputs) }}
     steps:
+      # Manifest mode is inferred from the presence of
+      # `release-please-config.json` + `.release-please-manifest.json`;
+      # the top-level `release-type` input only accepts the leaf values
+      # (ruby|python|node|terraform-module) and must be omitted here so
+      # each component's `release-type` from the config drives the
+      # per-package strategy.
       - uses: googleapis/release-please-action@v4
         id: rp
         with:
-          release-type: manifest
           token: ${{ secrets.GITHUB_TOKEN }}
 
   # Releases created via GITHUB_TOKEN do NOT trigger workflows that listen
