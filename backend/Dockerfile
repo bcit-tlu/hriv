@@ -161,13 +161,13 @@ ENV OTEL_TRACES_EXPORTER=none \
     OTEL_METRICS_EXPORTER=none \
     OTEL_LOGS_EXPORTER=none
 
-# Stamp the release-please-managed app version into the image so the
-# /api/admin/version endpoint can report it without any runtime
-# deployment-side configuration.  Defaults to ``dev`` for local builds
-# that don't pass the build-arg (e.g. ``docker compose build``).  CI
-# passes ``--build-arg APP_VERSION=<versions-job output>`` alongside
-# ``VITE_APP_VERSION`` so frontend/backend/backup all share the same
-# component-scoped version string at build time.
+# Stamp an app version into the image for the /api/admin/version
+# endpoint.  Defaults to ``dev`` for local builds that don't pass the
+# build-arg (e.g. ``docker compose build``).  CI does not currently
+# pass ``--build-arg APP_VERSION`` — the component version is conveyed
+# via the image tag instead (see ci.yaml's Compute next version step),
+# so images built by CI will report ``dev`` here until that wiring is
+# added.
 ARG APP_VERSION=dev
 ENV APP_VERSION=${APP_VERSION}
 

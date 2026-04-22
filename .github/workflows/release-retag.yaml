@@ -63,6 +63,36 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Wait for source image
+        if: steps.parse.outputs.match == 'true'
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
+          SHA: ${{ steps.sha.outputs.sha }}
+        run: |
+          SRC="${IMAGE}:sha-${SHA}"
+          # The ci.yaml build for the same commit runs in parallel with
+          # release-please's dispatch of this workflow. Poll with
+          # exponential backoff until the sha-tagged image appears in
+          # the registry (or time out after ~30 min, which covers a
+          # worst-case backend libvips build).
+          DELAY=10
+          MAX_DELAY=60
+          DEADLINE=$(( $(date +%s) + 1800 ))
+          while :; do
+            if docker buildx imagetools inspect "${SRC}" >/dev/null 2>&1; then
+              echo "Source image ${SRC} is available."
+              break
+            fi
+            if [[ $(date +%s) -ge $DEADLINE ]]; then
+              echo "::error::Timed out after 30m waiting for ${SRC} (CI build for $SHA did not publish)."
+              exit 1
+            fi
+            echo "Source image ${SRC} not yet available; retrying in ${DELAY}s..."
+            sleep "$DELAY"
+            DELAY=$(( DELAY * 2 ))
+            if (( DELAY > MAX_DELAY )); then DELAY=$MAX_DELAY; fi
+          done
+
       - name: Retag (no pull)
         if: steps.parse.outputs.match == 'true'
         run: |
