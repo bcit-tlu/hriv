@@ -28,9 +28,9 @@ jobs:
       - name: Parse release tag
         id: parse
         shell: bash
+        env:
+          TAG: ${{ inputs.tag_name || github.event.release.tag_name }}
         run: |
-          TAG="${{ inputs.tag_name || github.event.release.tag_name }}"
-
           if [[ "$TAG" =~ ^${{ matrix.component }}-v([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
             echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
             echo "publish=true" >> "$GITHUB_OUTPUT"
