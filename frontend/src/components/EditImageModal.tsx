@@ -369,7 +369,7 @@ function EditImageForm({
       <Snackbar
         open={deleteError !== null}
         autoHideDuration={6000}
-        onClose={() => setDeleteError(null)}
+        onClose={(_event, reason) => { if (reason === 'clickaway') return; setDeleteError(null) }}
       >
         <Alert severity="error" variant="filled" onClose={() => setDeleteError(null)}>
           {deleteError}
