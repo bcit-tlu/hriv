@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.7.1...frontend-v0.8.0) (2026-04-22)
+
+
+### Features
+
+* **version:** split build-identity from display-identity; inject APP_VERSION via Helm ([#197](https://github.com/bcit-tlu/hriv/issues/197)) ([c20730a](https://github.com/bcit-tlu/hriv/commit/c20730adf04497bd52f599e7476b01003c9f937f))
+
+
+### Bug Fixes
+
+* show error toast on image delete failure ([#192](https://github.com/bcit-tlu/hriv/issues/192)) ([75ab7fb](https://github.com/bcit-tlu/hriv/commit/75ab7fb92aacaa7f2eb9c3659088432eba2d98c3))
+
 ## [0.7.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.7.0...frontend-v0.7.1) (2026-04-21)
 
 
