@@ -5,53 +5,17 @@
         "frontend": {
             "path": "frontend",
             "component": "frontend",
-            "release-type": "node",
-            "extra-files": [
-                {
-                    "type": "yaml",
-                    "path": "charts/frontend/Chart.yaml",
-                    "jsonpath": "$.version"
-                },
-                {
-                    "type": "yaml",
-                    "path": "charts/frontend/Chart.yaml",
-                    "jsonpath": "$.appVersion"
-                }
-            ]
+            "release-type": "node"
         },
         "backend": {
             "path": "backend",
             "component": "backend",
-            "release-type": "python",
-            "extra-files": [
-                {
-                    "type": "yaml",
-                    "path": "charts/backend/Chart.yaml",
-                    "jsonpath": "$.version"
-                },
-                {
-                    "type": "yaml",
-                    "path": "charts/backend/Chart.yaml",
-                    "jsonpath": "$.appVersion"
-                }
-            ]
+            "release-type": "python"
         },
         "backup": {
             "path": "backup",
             "component": "backup",
-            "release-type": "python",
-            "extra-files": [
-                {
-                    "type": "yaml",
-                    "path": "charts/backup/Chart.yaml",
-                    "jsonpath": "$.version"
-                },
-                {
-                    "type": "yaml",
-                    "path": "charts/backup/Chart.yaml",
-                    "jsonpath": "$.appVersion"
-                }
-            ]
+            "release-type": "python"
         }
     }
 }

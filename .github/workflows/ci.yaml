@@ -68,12 +68,18 @@ jobs:
         run: |
           COMPONENT=${{ matrix.component }}
 
-          TAG=$(git describe --tags --match "${COMPONENT}-v*" --abbrev=0 2>/dev/null || echo "${COMPONENT}-v0.0.0")
-          VERSION=${TAG#${COMPONENT}-v}
+          TAG=$(git describe --tags --match "${COMPONENT}-v*" --abbrev=0 2>/dev/null || true)
+          if [[ -z "$TAG" ]]; then
+            VERSION="0.0.0"
+            RANGE="HEAD"
+          else
+            VERSION="${TAG#${COMPONENT}-v}"
+            RANGE="${TAG}..HEAD"
+          fi
 
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
-          COMMITS=$(git log "${TAG}..HEAD" --pretty=format:"%s%n%b" -- ${{ matrix.context }})
+          COMMITS=$(git log "${RANGE}" --pretty=format:"%s%n%b" -- ${{ matrix.context }})
 
           if echo "$COMMITS" | grep -qE "BREAKING CHANGE|!:"; then
             ((MAJOR+=1)); MINOR=0; PATCH=0
