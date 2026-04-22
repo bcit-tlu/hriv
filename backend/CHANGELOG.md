@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.7.1...backend-v0.8.0) (2026-04-22)
+
+
+### Features
+
+* **version:** split build-identity from display-identity; inject APP_VERSION via Helm ([#197](https://github.com/bcit-tlu/hriv/issues/197)) ([c20730a](https://github.com/bcit-tlu/hriv/commit/c20730adf04497bd52f599e7476b01003c9f937f))
+
 ## [0.7.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.7.0...backend-v0.7.1) (2026-04-21)
 
 
