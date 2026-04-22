@@ -97,8 +97,7 @@ jobs:
           context: ${{ matrix.context }}
           target: ${{ matrix.target }}
           build-contexts: ${{ matrix.build_contexts || '' }}
-          push: false
-          # push: ${{ github.event_name != 'pull_request' }}
+          push: ${{ github.event_name != 'pull_request' }}
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:sha-${{ github.sha }}
             ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:${{ steps.version.outputs.next }}-${{ steps.version.outputs.short }}.${{ steps.version.outputs.ts }}

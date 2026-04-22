@@ -5,6 +5,7 @@
         "frontend": {
             "path": "frontend",
             "component": "frontend",
+            "release-type": "node",
             "extra-files": [
                 {
                     "type": "yaml",
@@ -21,6 +22,7 @@
         "backend": {
             "path": "backend",
             "component": "backend",
+            "release-type": "python",
             "extra-files": [
                 {
                     "type": "yaml",
@@ -37,6 +39,7 @@
         "backup": {
             "path": "backup",
             "component": "backup",
+            "release-type": "python",
             "extra-files": [
                 {
                     "type": "yaml",
