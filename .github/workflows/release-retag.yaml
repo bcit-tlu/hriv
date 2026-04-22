@@ -12,6 +12,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: read
@@ -105,14 +106,8 @@ jobs:
             -t ${IMAGE}:latest \
             ${IMAGE}:sha-${SHA}
 
-          # Capture digest for Cosign signing (--raw + jq is portable
-          # across all buildx versions; the Go-template path varies).
-          DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --raw | jq -r '.digest // empty')
-          if [[ -z "${DIGEST}" ]]; then
-            # Single-manifest image: raw output IS the manifest, so
-            # re-derive the digest from the tag we just created.
-            DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{.Manifest.Digest}}')
-          fi
+          # Capture digest for Cosign signing.
+          DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{.Manifest.Digest}}')
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
 
