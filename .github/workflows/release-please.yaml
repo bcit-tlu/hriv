@@ -23,15 +23,32 @@ jobs:
       paths_released: ${{ steps.rp.outputs.paths_released }}
       outputs: ${{ toJSON(steps.rp.outputs) }}
     steps:
-      - uses: actions/checkout@v4
+      # Manifest mode is inferred from the presence of
+      # `release-please-config.json` + `.release-please-manifest.json`;
+      # the top-level `release-type` input only accepts the leaf values
+      # (ruby|python|node|terraform-module) and must be omitted here so
+      # each component's `release-type` from the config drives the
+      # per-package strategy.
+      - uses: googleapis/release-please-action@v4
+        id: rp
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       # `release-as` per-package is a one-shot: once the release PR it
       # triggered has merged and the manifest has caught up, the override
       # must be removed, otherwise every subsequent release-please run
       # keeps pinning the same version and blocks normal semver bumps
-      # from feat:/fix: commits. Fail the workflow if we detect that
-      # state so the cleanup can't be forgotten.
+      # from feat:/fix: commits. This guard runs *after* release-please
+      # and is skipped whenever `releases_created=true`, so the
+      # tag/release finalization that happens on the merge-of-chore-PR
+      # push (where manifest has just caught up to release-as) isn't
+      # blocked. On any subsequent push where the state is still stale
+      # and there's nothing to release, the workflow fails loudly to
+      # force the cleanup PR.
+      - uses: actions/checkout@v4
+        if: steps.rp.outputs.releases_created != 'true'
       - name: Guard against stale `release-as` entries
+        if: steps.rp.outputs.releases_created != 'true'
         run: |
           python3 - <<'PY'
           import json, sys
@@ -50,17 +67,6 @@ jobs:
                   print(f"::error::  packages.{pkg}.release-as={ra} already matches .release-please-manifest.json — remove this field so release-please can resume normal semver bumps.")
               sys.exit(1)
           PY
-
-      # Manifest mode is inferred from the presence of
-      # `release-please-config.json` + `.release-please-manifest.json`;
-      # the top-level `release-type` input only accepts the leaf values
-      # (ruby|python|node|terraform-module) and must be omitted here so
-      # each component's `release-type` from the config drives the
-      # per-package strategy.
-      - uses: googleapis/release-please-action@v4
-        id: rp
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
   # Releases created via GITHUB_TOKEN do NOT trigger workflows that listen
   # on `release: published` or `push: tags:`. Dispatch helm-publish and
