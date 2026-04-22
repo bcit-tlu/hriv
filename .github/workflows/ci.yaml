@@ -137,10 +137,13 @@ jobs:
           NEXT="${MAJOR}.${MINOR}.${PATCH}"
           SHORT_SHA=$(git rev-parse --short HEAD)
           # Numerical timestamp suffix used by Flux ImagePolicy
-          # (extract=numerical) to sort `latest`-env images by build
-          # recency. Keeping it in the primary tag lets Flux pick the
-          # newest image unambiguously even across re-runs of the same
-          # commit.
+          # (extract=numerical, pattern captures $ts) to sort
+          # `latest`-env images by build recency. Embedded in the
+          # primary tag so Flux picks the newest image unambiguously
+          # even across re-runs of the same commit. Fixed-width
+          # 14-char format also sorts lexically, so SemVer
+          # prerelease comparison of the same `-rc.` identifier
+          # across different timestamps produces the right order.
           TS=$(date -u +"%Y%m%d%H%M%S")
 
           echo "next=${NEXT}" >> "$GITHUB_OUTPUT"
@@ -170,6 +173,19 @@ jobs:
           build-args: |
             APP_VERSION=${{ steps.version.outputs.next }}
             VITE_APP_VERSION=${{ steps.version.outputs.next }}
+          # Tag order matters for how ghcr renders the "tags" list on
+          # each image version card — the last tag in this list is
+          # treated as the most recent by ghcr and surfaces first in
+          # the UI. Put the immutable `sha-<fullsha>` tag first and
+          # the human-meaningful `<ver>-rc.<ts>.<short>` rc tag last
+          # so the rc tag is what shows up at a glance.
+          #
+          # Primary tag schema: `<nextComputedVersion>-rc.<ts>.<short>`
+          # e.g. `1.1.18-rc.20260414194220.b286051`. This is a valid
+          # SemVer prerelease (`-rc.<num>.<alnum>`) so tooling that
+          # expects semver (Helm, ArgoCD, Flux OCIRepository semver
+          # range) still parses it. Flux ImagePolicy in flux-fleet
+          # extracts the 14-char `<ts>` for numerical ordering.
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:${{ steps.version.outputs.next }}-${{ steps.version.outputs.short }}.${{ steps.version.outputs.ts }}
             ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:sha-${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:${{ steps.version.outputs.next }}-rc.${{ steps.version.outputs.ts }}.${{ steps.version.outputs.short }}
