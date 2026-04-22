@@ -1,18 +1,18 @@
 replicaCount: 1
 
 image:
-    repository: ghcr.io/bcit-tlu/hriv/hriv-backend
-    tag: "" # Defaults to .Chart.AppVersion
-    pullPolicy: IfNotPresent
+  repository: ghcr.io/bcit-tlu/hriv/hriv-backend
+  tag: "" # Defaults to .Chart.AppVersion
+  pullPolicy: IfNotPresent
 
 service:
-    type: ClusterIP
-    port: 8000
+  type: ClusterIP
+  port: 8000
 
 env:
-    SOURCE_IMAGES_DIR: /data/source_images
-    TILES_DIR: /data/tiles
-    GITHUB_REPO: "https://github.com/bcit-tlu/hriv"
+  SOURCE_IMAGES_DIR: /data/source_images
+  TILES_DIR: /data/tiles
+  GITHUB_REPO: "https://github.com/bcit-tlu/hriv"
 
 # Mount the ConfigMap published by the hriv-backup chart so
 # ``/api/admin/version`` can surface the deployed backup version
@@ -29,10 +29,10 @@ env:
 # path; leave the ConfigMap name/key aligned with
 # ``charts/backup/values.yaml → versionConfigMap``.
 backupVersionConfigMap:
-    enabled: true
-    name: hriv-backup-version
-    key: version
-    mountPath: /etc/hriv-versions
+  enabled: true
+  name: hriv-backup-version
+  key: version
+  mountPath: /etc/hriv-versions
 
 # Legacy literal override for the backup version.  Only consulted when
 # ``backupVersionConfigMap.enabled=false`` or the mounted file is
@@ -42,18 +42,18 @@ backupVersion: ""
 
 # ── OpenTelemetry observability ─────────────────────────────
 # When enabled=true, the backend Deployment renders six OTEL_* env vars
-# read by the OpenTelemetry Python SDK / auto-instrumentation (the prod
+# read by the OpenTelemetry Python SDK / auto-instrumentation (the stable
 # image wraps uvicorn with ``opentelemetry-instrument``).  Disabled by
 # default so deployments without an OTLP collector don't carry six
 # always-empty env vars in the pod spec.
 otel:
-    enabled: false
-    serviceName: "hriv-backend"
-    tracesExporter: "none"
-    metricsExporter: "none"
-    logsExporter: "none"
-    exporterEndpoint: ""
-    exporterProtocol: "http/protobuf"
+  enabled: false
+  serviceName: "hriv-backend"
+  tracesExporter: "none"
+  metricsExporter: "none"
+  logsExporter: "none"
+  exporterEndpoint: ""
+  exporterProtocol: "http/protobuf"
 
 # Stable JWT signing secret shared across all Uvicorn workers.
 # Leave blank to auto-generate a random value at install time.
@@ -64,77 +64,77 @@ jwtSecret: ""
 
 # ── OIDC / OAuth 2.0 authentication ─────────────────────────
 oidc:
-    enabled: true
-    # Full issuer URL — the backend appends /.well-known/openid-configuration.
-    issuer: "https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider"
-    # Public client identifier (safe for ConfigMap; not a secret per OAuth 2.0 spec).
-    clientId: "hkPdYUJqqEYWxiVwIrgrAjiS8fLja2ip"
-    # Client secret — only used when vault.enabled=false and existingSecret is empty.
-    # When vault.enabled=true the secret is pulled from Vault via VSO.
-    # When existingSecret is set the chart-managed secret is not created at all.
-    clientSecret: ""
-    # Name of a pre-existing K8s Secret that contains 'client-id' and
-    # 'client-secret' keys.  When set, the chart does not create its own
-    # OIDC secret — use this to manage the secret outside of Helm/Vault
-    # (e.g. kubectl create secret generic <name> ...).  Leave empty to
-    # let the chart create the secret from clientId/clientSecret above.
-    existingSecret: "hriv-oidc"
-    # Backend callback endpoint that the IdP redirects to after authentication.
-    redirectUri: "https://hriv.latest.ltc.bcit.ca/api/auth/oidc/callback"
-    # Space-separated OAuth 2.0 scopes to request from the IdP.
-    scopes: "openid email profile"
-    # JSON object mapping IdP group names to HRIV roles (admin/instructor/student).
-    roleMapping: '{"bcit-tlu-admins":"admin","bcit-tlu-instructors":"instructor","bcit-tlu-students":"student"}'
-    # Frontend URL to redirect to after successful OIDC login.
-    postLoginRedirect: "https://hriv.latest.ltc.bcit.ca"
-    # Trust email from IdP without requiring email_verified claim.
-    # Vault does not emit email_verified; safe for trusted corporate IdP.
-    trustEmail: true
-    # CORS origins (comma-separated). Used as fallback redirect target when
-    # postLoginRedirect is empty.
-    corsOrigins: "https://hriv.latest.ltc.bcit.ca"
+  enabled: true
+  # Full issuer URL — the backend appends /.well-known/openid-configuration.
+  issuer: "https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider"
+  # Public client identifier (safe for ConfigMap; not a secret per OAuth 2.0 spec).
+  clientId: "hkPdYUJqqEYWxiVwIrgrAjiS8fLja2ip"
+  # Client secret — only used when vault.enabled=false and existingSecret is empty.
+  # When vault.enabled=true the secret is pulled from Vault via VSO.
+  # When existingSecret is set the chart-managed secret is not created at all.
+  clientSecret: ""
+  # Name of a pre-existing K8s Secret that contains 'client-id' and
+  # 'client-secret' keys.  When set, the chart does not create its own
+  # OIDC secret — use this to manage the secret outside of Helm/Vault
+  # (e.g. kubectl create secret generic <name> ...).  Leave empty to
+  # let the chart create the secret from clientId/clientSecret above.
+  existingSecret: "hriv-oidc"
+  # Backend callback endpoint that the IdP redirects to after authentication.
+  redirectUri: "https://hriv.latest.ltc.bcit.ca/api/auth/oidc/callback"
+  # Space-separated OAuth 2.0 scopes to request from the IdP.
+  scopes: "openid email profile"
+  # JSON object mapping IdP group names to HRIV roles (admin/instructor/student).
+  roleMapping: '{"bcit-tlu-admins":"admin","bcit-tlu-instructors":"instructor","bcit-tlu-students":"student"}'
+  # Frontend URL to redirect to after successful OIDC login.
+  postLoginRedirect: "https://hriv.latest.ltc.bcit.ca"
+  # Trust email from IdP without requiring email_verified claim.
+  # Vault does not emit email_verified; safe for trusted corporate IdP.
+  trustEmail: true
+  # CORS origins (comma-separated). Used as fallback redirect target when
+  # postLoginRedirect is empty.
+  corsOrigins: "https://hriv.latest.ltc.bcit.ca"
 
 # CloudNative-PG database cluster
 cnpg:
-    instances: 1
-    imageName: ghcr.io/cloudnative-pg/postgresql:16
-    database: hriv
-    owner: hriv
-    devPassword: password1234
-    enableSuperuserAccess: true
-    storage:
-        storageClass: longhorn
-        size: 5Gi
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  database: hriv
+  owner: hriv
+  devPassword: password1234
+  enableSuperuserAccess: true
+  storage:
+    storageClass: longhorn
+    size: 5Gi
 
 # Vault Secrets Operator integration
 vault:
-    enabled: false
-    kvMount: secret
-    authRef: vault-auth
-    refreshAfter: 1h
-    dbAppSecretPath: hriv/db-app
-    dbSuperuserSecretPath: hriv/db-superuser
-    githubPatSecretPath: hriv/github-pat
-    oidcSecretPath: hriv/oidc
+  enabled: false
+  kvMount: secret
+  authRef: vault-auth
+  refreshAfter: 1h
+  dbAppSecretPath: hriv/db-app
+  dbSuperuserSecretPath: hriv/db-superuser
+  githubPatSecretPath: hriv/github-pat
+  oidcSecretPath: hriv/oidc
 
 # Nginx sidecar for serving /api/tiles directly from the PVC,
 # bypassing the Python process.  Tiles are immutable and cache-friendly.
 tileSidecar:
-    enabled: false
-    image: nginx:1.27-alpine
-    port: 8001
-    resources: {}
+  enabled: false
+  image: nginx:1.27-alpine
+  port: 8001
+  resources: {}
 
 persistence:
-    enabled: true
-    storageClass: longhorn
-    size: 10Gi
-    # ReadWriteOnce is fine for single-replica dev/staging.
-    # Production with replicaCount > 1 MUST use ReadWriteMany so that
-    # background admin task result files written by one pod are accessible
-    # from every other pod's download endpoint.
-    accessModes:
-        - ReadWriteOnce
+  enabled: true
+  storageClass: longhorn
+  size: 10Gi
+  # ReadWriteOnce is fine for single-replica dev/staging.
+  # Production with replicaCount > 1 MUST use ReadWriteMany so that
+  # background admin task result files written by one pod are accessible
+  # from every other pod's download endpoint.
+  accessModes:
+    - ReadWriteOnce
 
 resources: {}
 
@@ -145,8 +145,8 @@ resources: {}
 #   kubectl label node <name> topology.kubernetes.io/zone=dtc
 #   kubectl label node <name> topology.kubernetes.io/zone=bby
 zoneAntiAffinity:
-    enabled: false
-    topologyKey: topology.kubernetes.io/zone
+  enabled: false
+  topologyKey: topology.kubernetes.io/zone
 
 nodeSelector: {}
 tolerations: []
@@ -170,17 +170,17 @@ affinity: {}
 # deployments that rely exclusively on OIDC from day one (see
 # ``oidc.roleMapping`` above).
 seedAdmin:
-    enabled: true
-    name: "Admin"
-    email: "admin@example.com"
-    # bcrypt hash of the bootstrap password.  Defaults to the same
-    # development hash shared by docker-compose seed users (intended
-    # to be rotated immediately after first login).  Override with
-    # ``--set seedAdmin.passwordHash=...`` or in a values file for a
-    # stronger initial password.
-    # Generate a new hash with:
-    #   python -c "import bcrypt; print(bcrypt.hashpw(b'<password>', bcrypt.gensalt()).decode())"
-    # Setting this to an empty string while ``enabled: true`` makes
-    # ``helm install`` fail loudly at render time rather than silently
-    # inserting an unusable empty hash.
-    passwordHash: "$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C"
+  enabled: true
+  name: "Admin"
+  email: "admin@example.com"
+  # bcrypt hash of the bootstrap password.  Defaults to the same
+  # development hash shared by docker-compose seed users (intended
+  # to be rotated immediately after first login).  Override with
+  # ``--set seedAdmin.passwordHash=...`` or in a values file for a
+  # stronger initial password.
+  # Generate a new hash with:
+  #   python -c "import bcrypt; print(bcrypt.hashpw(b'<password>', bcrypt.gensalt()).decode())"
+  # Setting this to an empty string while ``enabled: true`` makes
+  # ``helm install`` fail loudly at render time rather than silently
+  # inserting an unusable empty hash.
+  passwordHash: "$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C"
