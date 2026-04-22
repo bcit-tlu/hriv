@@ -23,6 +23,34 @@ jobs:
       paths_released: ${{ steps.rp.outputs.paths_released }}
       outputs: ${{ toJSON(steps.rp.outputs) }}
     steps:
+      - uses: actions/checkout@v4
+
+      # `release-as` per-package is a one-shot: once the release PR it
+      # triggered has merged and the manifest has caught up, the override
+      # must be removed, otherwise every subsequent release-please run
+      # keeps pinning the same version and blocks normal semver bumps
+      # from feat:/fix: commits. Fail the workflow if we detect that
+      # state so the cleanup can't be forgotten.
+      - name: Guard against stale `release-as` entries
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          with open("release-please-config.json") as f:
+              cfg = json.load(f)
+          with open(".release-please-manifest.json") as f:
+              manifest = json.load(f)
+          stale = []
+          for pkg, conf in cfg.get("packages", {}).items():
+              ra = conf.get("release-as")
+              if ra is not None and manifest.get(pkg) == ra:
+                  stale.append((pkg, ra))
+          if stale:
+              print("::error::Stale `release-as` entries in release-please-config.json:")
+              for pkg, ra in stale:
+                  print(f"::error::  packages.{pkg}.release-as={ra} already matches .release-please-manifest.json — remove this field so release-please can resume normal semver bumps.")
+              sys.exit(1)
+          PY
+
       # Manifest mode is inferred from the presence of
       # `release-please-config.json` + `.release-please-manifest.json`;
       # the top-level `release-type` input only accepts the leaf values
