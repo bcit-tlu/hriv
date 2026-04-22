@@ -136,9 +136,16 @@ jobs:
 
           NEXT="${MAJOR}.${MINOR}.${PATCH}"
           SHORT_SHA=$(git rev-parse --short HEAD)
+          # Numerical timestamp suffix used by Flux ImagePolicy
+          # (extract=numerical) to sort `latest`-env images by build
+          # recency. Keeping it in the primary tag lets Flux pick the
+          # newest image unambiguously even across re-runs of the same
+          # commit.
+          TS=$(date -u +"%Y%m%d%H%M%S")
 
           echo "next=${NEXT}" >> "$GITHUB_OUTPUT"
           echo "short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "ts=${TS}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
         if: steps.changes.outputs.changed == 'true'
@@ -164,5 +171,5 @@ jobs:
             APP_VERSION=${{ steps.version.outputs.next }}
             VITE_APP_VERSION=${{ steps.version.outputs.next }}
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:${{ steps.version.outputs.next }}-${{ steps.version.outputs.short }}
+            ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:${{ steps.version.outputs.next }}-${{ steps.version.outputs.short }}.${{ steps.version.outputs.ts }}
             ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:sha-${{ github.sha }}
