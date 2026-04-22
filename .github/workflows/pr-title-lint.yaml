@@ -14,13 +14,34 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
+  # Elevated from ``read`` to ``write`` so the failure-handler step
+  # below can post / update a sticky comment on the PR explaining the
+  # failing reason to the author. ``pull_request_target`` runs in the
+  # base-ref context so this write token cannot be exfiltrated by an
+  # adversarial PR branch (the workflow file used is ``main``'s copy,
+  # not the PR branch's).
+  pull-requests: write
 
 jobs:
   lint:
     runs-on: ubuntu-latest
+    # Skip for bot-authored PRs. ``pull_request_target`` is the only
+    # event that fires on release-please's own PRs (GitHub's default
+    # ``GITHUB_TOKEN``-doesn't-trigger-workflows rule gates plain
+    # ``pull_request``), so without this guard every release-please PR
+    # gets held under "1 workflow awaiting approval" until a maintainer
+    # clicks Approve — release-please's own titles are always
+    # well-formed ``chore(main): release <component> <ver>`` so there's
+    # nothing for the lint to guard anyway, and the repo's
+    # Actions → General "Require approval for first-time contributors"
+    # setting is what turns the otherwise-invisible bot-author check
+    # into a blocking gate. Human-authored PRs (User type) still run
+    # the lint from the base-ref copy of this workflow, preserving the
+    # malicious-edit-proof property of ``pull_request_target``.
+    if: github.event.pull_request.user.type != 'Bot'
     steps:
-      - uses: amannn/action-semantic-pull-request@v5
+      - id: lint
+        uses: amannn/action-semantic-pull-request@v5
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -44,6 +65,45 @@ jobs:
           requireScope: false
           subjectPattern: ^(?![A-Z]).+$
           subjectPatternError: |
-            The subject "{subject}" found in the pull request title
-            "{title}" didn't match the configured pattern. Please ensure
-            that the subject doesn't start with an uppercase character.
+            The subject "{subject}" in PR title "{title}" must start with a
+            lowercase letter (imperative mood, no trailing period). See
+            CONTRIBUTING.md for examples.
+
+      # When the lint fails, post (or update) a sticky comment on the
+      # PR with a tl;dr of the rules. The sticky-comment action
+      # deduplicates by ``header`` so re-running on a title edit
+      # updates the same comment rather than spamming new ones; the
+      # ``delete: true`` branch in the success step below tidies up
+      # once the title is fixed.
+      - name: Post failure explainer comment
+        if: failure() && steps.lint.outcome == 'failure'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: pr-title-lint
+          message: |
+            ## PR title does not match Conventional Commits
+
+            **Why this matters (tl;dr)** — release-please reads PR titles on `main` to decide whether to cut a release, what version bump to apply, and how to group CHANGELOG entries. A title that doesn't parse is silently dropped; no release PR opens, no error, workflow still exits 0. This has bitten us before (`New release2 (#185)`). The lint exists so that can't happen again.
+
+            **Required structure**
+
+            ```
+            <type>[optional scope][!]: <subject>
+            ```
+
+            - `<type>` — `feat` / `fix` / `docs` / `style` / `refactor` / `perf` / `test` / `build` / `ci` / `chore` / `revert`
+            - `<subject>` — lowercase first letter, imperative mood, no trailing period
+            - add `!` (or `BREAKING CHANGE:` in the body) for breaking changes
+
+            **Good** — `feat(frontend): add bulk-edit dialog`, `fix(backend): prevent OIDC login loop`, `ci: tighten workflow permissions`
+
+            **Bad** — `Add bulk edit` (no type), `feat: Add bulk edit` (uppercase subject), `New release2` (no type)
+
+            Edit the PR title in the GitHub UI — the check re-runs automatically within seconds, no push needed. Full rules: [.github/CONTRIBUTING.md](./.github/CONTRIBUTING.md#pr-titles-must-be-conventional-commits).
+
+      - name: Clear failure explainer on success
+        if: success() && steps.lint.outcome == 'success'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: pr-title-lint
+          delete: true
