@@ -122,7 +122,16 @@ server {
     # from pinning a stale version across a rolling deploy.
     location = /version {
         default_type application/json;
-        add_header   Cache-Control "no-cache, no-store, must-revalidate" always;
+        # nginx's ``add_header`` inheritance rule: the moment *any*
+        # ``add_header`` appears inside a location block, the
+        # server-level ``add_header`` directives (``X-Frame-Options``,
+        # ``X-Content-Type-Options`` at the bottom of this file) are
+        # no longer inherited into it.  Re-declare them here to keep
+        # defense-in-depth consistent with the ``/assets/`` location
+        # above, which handles the same caveat the same way.
+        add_header   Cache-Control            "no-cache, no-store, must-revalidate" always;
+        add_header   X-Frame-Options          "SAMEORIGIN" always;
+        add_header   X-Content-Type-Options   "nosniff"    always;
         return 200 '{"frontend":"${APP_VERSION}"}';
     }
 
