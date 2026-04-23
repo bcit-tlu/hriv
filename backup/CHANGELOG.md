@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.4.0...backup-v0.5.0) (2026-04-23)
+
+
+### Features
+
+* **backup:** add OpenTelemetry instrumentation ([#212](https://github.com/bcit-tlu/hriv/issues/212)) ([24c50a0](https://github.com/bcit-tlu/hriv/commit/24c50a02404d2c9709d1283359dae033c1ee7030))
+
 ## [0.4.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.3.1...backup-v0.4.0) (2026-04-22)
 
 
