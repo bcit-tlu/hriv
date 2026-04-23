@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.8.0...frontend-v0.8.1) (2026-04-23)
+
+
+### Bug Fixes
+
+* **ci:** resolve annotation errors from CI run [#469](https://github.com/bcit-tlu/hriv/issues/469) ([#219](https://github.com/bcit-tlu/hriv/issues/219)) ([8d2ff30](https://github.com/bcit-tlu/hriv/commit/8d2ff30f829da27bd3cecea29894d0c5ca5d073c))
+
 ## [0.8.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.7.1...frontend-v0.8.0) (2026-04-22)
 
 
