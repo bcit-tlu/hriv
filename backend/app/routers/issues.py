@@ -107,12 +107,15 @@ async def report_issue(
 
         # Best-effort label application — don't fail the request if the
         # label doesn't exist or the token lacks permission.
-        await client.post(
-            f"https://api.github.com/repos/{GITHUB_REPO}/issues/{issue_number}/labels",
-            headers=gh_headers,
-            json={"labels": ["feedback"]},
-            timeout=10.0,
-        )
+        try:
+            await client.post(
+                f"https://api.github.com/repos/{GITHUB_REPO}/issues/{issue_number}/labels",
+                headers=gh_headers,
+                json={"labels": ["feedback"]},
+                timeout=10.0,
+            )
+        except Exception:
+            pass
 
     # Record successful submission for rate limiting
     _user_timestamps[current_user.id].append(time.monotonic())

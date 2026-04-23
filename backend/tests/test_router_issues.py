@@ -4,6 +4,7 @@ import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from fastapi import HTTPException
 
@@ -120,6 +121,36 @@ async def test_report_issue_success() -> None:
     assert "/issues/1/labels" in label_call.args[0]
     assert label_call.kwargs["json"] == {"labels": ["feedback"]}
 
+    _user_timestamps.pop(user_id, None)
+
+
+async def test_report_issue_label_failure_still_succeeds() -> None:
+    """Issue is returned even when the label call raises an exception."""
+    user_id = 8886
+    _user_timestamps.pop(user_id, None)
+    user = SimpleNamespace(id=user_id, name="Test User", email="t@example.com")
+    body = ReportIssueRequest(description="Bug report", page_url="http://localhost/page")
+
+    create_resp = MagicMock()
+    create_resp.status_code = 201
+    create_resp.json.return_value = {
+        "html_url": "https://github.com/repo/issues/2",
+        "number": 2,
+    }
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(
+        side_effect=[create_resp, httpx.TimeoutException("label timed out")]
+    )
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routers.issues.GITHUB_TOKEN", "fake-token"):
+        with patch("app.routers.issues.GITHUB_REPO", "owner/repo"):
+            with patch("app.routers.issues.httpx.AsyncClient", return_value=mock_client):
+                result = await report_issue(body, user)
+
+    assert result.issue_url == "https://github.com/repo/issues/2"
     _user_timestamps.pop(user_id, None)
 
 
