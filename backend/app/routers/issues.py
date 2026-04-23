@@ -15,7 +15,12 @@ from ..models import User
 router = APIRouter(tags=["issues"])
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
-GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
+_raw_repo = os.environ.get("GITHUB_REPO", "")
+# Normalize full GitHub URLs to "owner/repo" so the API call works
+# even if GITHUB_REPO is accidentally set to "https://github.com/owner/repo".
+GITHUB_REPO = _raw_repo.removeprefix("https://github.com/").removeprefix(
+    "http://github.com/"
+).strip("/")
 
 # Per-user rate limiting: max 2 issues per 24-hour window
 _RATE_LIMIT = 2
