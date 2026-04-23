@@ -111,7 +111,6 @@ describe('AddCategoryDialog', () => {
     const onClose = vi.fn()
 
     const { container } = render(
-      // eslint-disable-next-line jsx-a11y/no-static-element-interactions
       <div onKeyDown={outerKeyDown}>
         <AddCategoryDialog
           open={true}

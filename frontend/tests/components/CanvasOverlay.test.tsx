@@ -671,7 +671,7 @@ describe('CanvasOverlay', () => {
       // pw = 300 - 100 = 200, ph = 200 - 100 = 100
       // cx = pw/2 = 100, cy = ph/2 = 50, rx = |pw/2| = 100, ry = |ph/2| = 50
       // (based on our mocked pixelFromPoint returning (100,100) and (300,200))
-      const [cx, cy, rx, ry] = ellipseCall!.args as number[]
+      const [, , rx, ry] = ellipseCall!.args as number[]
       expect(rx).not.toBe(ry) // non-uniform = ellipse, not circle
     })
 

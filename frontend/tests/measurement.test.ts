@@ -15,7 +15,7 @@ import {
     createMeasurementLabel,
     formatMeasurement,
     type MeasurementConfig,
-} from '../src/components/ImageViewer'
+} from '../src/components/imageViewerUtils'
 
 describe('formatMeasurement', () => {
     describe('without a measurement configuration (fallback to pixels)', () => {

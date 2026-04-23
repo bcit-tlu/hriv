@@ -40,9 +40,9 @@ import type {
     ViewportState,
     MeasurementConfig,
     OverlayRect,
-} from "./components/ImageViewer";
+} from "./components/imageViewerUtils";
 import type { CanvasAnnotation } from "./components/CanvasOverlay";
-import { MAX_SHARE_OVERLAYS } from "./components/ImageViewer";
+import { MAX_SHARE_OVERLAYS } from "./components/imageViewerUtils";
 import CategoryTile from "./components/CategoryTile";
 import ColorModeToggle from "./components/ColorModeToggle";
 import ImageTile from "./components/ImageTile";
