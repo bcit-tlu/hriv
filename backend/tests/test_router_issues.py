@@ -9,10 +9,26 @@ from fastapi import HTTPException
 
 from app.routers.issues import (
     _check_rate_limit,
+    _normalize_repo,
     _user_timestamps,
     report_issue,
     ReportIssueRequest,
 )
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("owner/repo", "owner/repo"),
+        ("https://github.com/owner/repo", "owner/repo"),
+        ("http://github.com/owner/repo", "owner/repo"),
+        ("https://github.com/owner/repo/", "owner/repo"),
+        ("", ""),
+    ],
+)
+def test_github_repo_normalization(raw: str, expected: str) -> None:
+    """GITHUB_REPO is normalized to owner/repo at module load time."""
+    assert _normalize_repo(raw) == expected
 
 
 def test_check_rate_limit_allows_first_request() -> None:

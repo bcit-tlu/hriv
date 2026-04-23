@@ -15,7 +15,18 @@ from ..models import User
 router = APIRouter(tags=["issues"])
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
-GITHUB_REPO = os.environ.get("GITHUB_REPO", "")
+
+
+def _normalize_repo(raw: str) -> str:
+    """Normalize a full GitHub URL to ``owner/repo`` format."""
+    return (
+        raw.removeprefix("https://github.com/")
+        .removeprefix("http://github.com/")
+        .strip("/")
+    )
+
+
+GITHUB_REPO = _normalize_repo(os.environ.get("GITHUB_REPO", ""))
 
 # Per-user rate limiting: max 2 issues per 24-hour window
 _RATE_LIMIT = 2
