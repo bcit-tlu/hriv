@@ -43,6 +43,32 @@ jobs:
         if: steps.parse.outputs.match == 'true'
         with:
           ref: ${{ inputs.tag_name || github.event.release.tag_name }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Check if this is the highest stable release
+        id: highest
+        if: steps.parse.outputs.match == 'true'
+        shell: bash
+        run: |
+          COMPONENT=${{ matrix.component }}
+          VERSION=${{ steps.parse.outputs.version }}
+
+          # List all stable (non-prerelease) tags for this component,
+          # strip the prefix, sort by semver, and take the highest.
+          HIGHEST=$(git tag -l "${COMPONENT}-v[0-9]*.[0-9]*.[0-9]*" \
+            | sed "s/^${COMPONENT}-v//" \
+            | grep -v -- '-' \
+            | sort -V \
+            | tail -n1)
+
+          if [[ "${VERSION}" == "${HIGHEST}" ]]; then
+            echo "is_highest=true" >> "$GITHUB_OUTPUT"
+            echo "${VERSION} is the highest stable release for ${COMPONENT} — will tag as latest."
+          else
+            echo "is_highest=false" >> "$GITHUB_OUTPUT"
+            echo "${VERSION} is NOT the highest stable release (highest: ${HIGHEST}) — skipping latest tag."
+          fi
 
       - name: Resolve tag commit SHA
         if: steps.parse.outputs.match == 'true'
@@ -101,9 +127,13 @@ jobs:
           SHA=${{ steps.sha.outputs.sha }}
           VERSION=${{ steps.parse.outputs.version }}
 
+          TAGS="-t ${IMAGE}:${VERSION}"
+          if [[ "${{ steps.highest.outputs.is_highest }}" == "true" ]]; then
+            TAGS="${TAGS} -t ${IMAGE}:latest"
+          fi
+
           docker buildx imagetools create \
-            -t ${IMAGE}:${VERSION} \
-            -t ${IMAGE}:latest \
+            ${TAGS} \
             ${IMAGE}:sha-${SHA}
 
           # Capture digest for Cosign signing.
