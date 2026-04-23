@@ -74,34 +74,50 @@ async def report_issue(
 
     _check_rate_limit(current_user.id)
 
-    title = f"User report from {body.page_url}"
+    title = f"feedback: Issue report from {current_user.name}"
     issue_body = (
-        f"**Reported by:** {current_user.name} ({current_user.email})\n"
-        f"**Page:** {body.page_url}\n\n"
+        f"{body.description}\n\n"
         f"---\n\n"
-        f"{body.description}"
+        f"**Reported by:** {current_user.name} ({current_user.email})\n"
+        f"**Page:** {body.page_url}"
     )
+
+    gh_headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"https://api.github.com/repos/{GITHUB_REPO}/issues",
-            headers={
-                "Authorization": f"Bearer {GITHUB_TOKEN}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
+            headers=gh_headers,
             json={"title": title, "body": issue_body},
             timeout=15.0,
         )
 
-    if resp.status_code != 201:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"GitHub API error: {resp.status_code}",
-        )
+        if resp.status_code != 201:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"GitHub API error: {resp.status_code}",
+            )
+
+        data = resp.json()
+        issue_number = data["number"]
+
+        # Best-effort label application — don't fail the request if the
+        # label doesn't exist or the token lacks permission.
+        try:
+            await client.post(
+                f"https://api.github.com/repos/{GITHUB_REPO}/issues/{issue_number}/labels",
+                headers=gh_headers,
+                json={"labels": ["feedback"]},
+                timeout=10.0,
+            )
+        except Exception:
+            pass
 
     # Record successful submission for rate limiting
     _user_timestamps[current_user.id].append(time.monotonic())
 
-    data = resp.json()
     return ReportIssueResponse(issue_url=data["html_url"])
