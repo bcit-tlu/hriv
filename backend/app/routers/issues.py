@@ -82,26 +82,39 @@ async def report_issue(
         f"**Page:** {body.page_url}"
     )
 
+    gh_headers = {
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             f"https://api.github.com/repos/{GITHUB_REPO}/issues",
-            headers={
-                "Authorization": f"Bearer {GITHUB_TOKEN}",
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-            },
-            json={"title": title, "body": issue_body, "labels": ["feedback"]},
+            headers=gh_headers,
+            json={"title": title, "body": issue_body},
             timeout=15.0,
         )
 
-    if resp.status_code != 201:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"GitHub API error: {resp.status_code}",
+        if resp.status_code != 201:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"GitHub API error: {resp.status_code}",
+            )
+
+        data = resp.json()
+        issue_number = data["number"]
+
+        # Best-effort label application — don't fail the request if the
+        # label doesn't exist or the token lacks permission.
+        await client.post(
+            f"https://api.github.com/repos/{GITHUB_REPO}/issues/{issue_number}/labels",
+            headers=gh_headers,
+            json={"labels": ["feedback"]},
+            timeout=10.0,
         )
 
     # Record successful submission for rate limiting
     _user_timestamps[current_user.id].append(time.monotonic())
 
-    data = resp.json()
     return ReportIssueResponse(issue_url=data["html_url"])

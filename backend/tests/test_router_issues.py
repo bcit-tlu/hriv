@@ -81,12 +81,18 @@ async def test_report_issue_success() -> None:
     user = SimpleNamespace(id=user_id, name="Test User", email="t@example.com")
     body = ReportIssueRequest(description="Found a bug", page_url="http://localhost/page")
 
-    mock_resp = MagicMock()
-    mock_resp.status_code = 201
-    mock_resp.json.return_value = {"html_url": "https://github.com/repo/issues/1"}
+    # First call: issue creation (201). Second call: label application (200).
+    create_resp = MagicMock()
+    create_resp.status_code = 201
+    create_resp.json.return_value = {
+        "html_url": "https://github.com/repo/issues/1",
+        "number": 1,
+    }
+    label_resp = MagicMock()
+    label_resp.status_code = 200
 
     mock_client = AsyncMock()
-    mock_client.post = AsyncMock(return_value=mock_resp)
+    mock_client.post = AsyncMock(side_effect=[create_resp, label_resp])
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
 
@@ -97,16 +103,22 @@ async def test_report_issue_success() -> None:
 
     assert result.issue_url == "https://github.com/repo/issues/1"
 
-    call_kwargs = mock_client.post.call_args
-    payload = call_kwargs.kwargs["json"]
+    # Verify the issue-creation call (first POST)
+    create_call = mock_client.post.call_args_list[0]
+    payload = create_call.kwargs["json"]
     assert payload["title"] == "feedback: Issue report from Test User"
-    assert payload["labels"] == ["feedback"]
+    assert "labels" not in payload  # labels applied separately
     # Description appears before the metadata separator
     body_text = payload["body"]
     sep_pos = body_text.index("---")
     assert body_text.index("Found a bug") < sep_pos
     assert body_text.index("**Reported by:**") > sep_pos
     assert body_text.index("**Page:**") > sep_pos
+
+    # Verify the label call (second POST)
+    label_call = mock_client.post.call_args_list[1]
+    assert "/issues/1/labels" in label_call.args[0]
+    assert label_call.kwargs["json"] == {"labels": ["feedback"]}
 
     _user_timestamps.pop(user_id, None)
 
