@@ -56,6 +56,18 @@ COPY backup.py ./
 # ``docker inspect`` / ``kubectl describe pod`` parity with the backend
 # and frontend containers.
 
-# Default: run on cron schedule
-ENTRYPOINT ["python", "backup.py"]
+# ── OpenTelemetry disable-by-default ────────────────────────
+# Mirror the backend's pattern: pin all OTEL exporters to ``none`` at
+# the image level so ``opentelemetry-instrument`` is a true no-op
+# unless the Helm chart overrides these env vars.  Without these
+# defaults the distro would attempt gRPC connections to localhost:4317
+# on every startup, producing connection-error noise.
+ENV OTEL_TRACES_EXPORTER=none \
+    OTEL_METRICS_EXPORTER=none \
+    OTEL_LOGS_EXPORTER=none
+
+# Default: run on cron schedule, wrapped by the OTEL auto-instrumentation
+# agent so that Python logging is bridged to the OTEL logs pipeline when
+# the chart enables ``otel.enabled``.
+ENTRYPOINT ["opentelemetry-instrument", "python", "backup.py"]
 CMD ["cron"]

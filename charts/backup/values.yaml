@@ -29,6 +29,21 @@ env:
   AZURE_STORAGE_CONTAINER: ""
   AZURE_BLOB_PREFIX: hriv-backups
 
+# ── OpenTelemetry observability ─────────────────────────────
+# When enabled=true, the backup Deployment renders OTEL_* env vars
+# read by the OpenTelemetry Python SDK / auto-instrumentation (the
+# image wraps ``backup.py`` with ``opentelemetry-instrument``).
+# Disabled by default so deployments without an OTLP collector don't
+# carry always-empty env vars in the pod spec.
+otel:
+  enabled: false
+  serviceName: "hriv-backup"
+  tracesExporter: "none"
+  metricsExporter: "none"
+  logsExporter: "none"
+  exporterEndpoint: ""
+  exporterProtocol: "http/protobuf"
+
 # Vault Secrets Operator integration
 vault:
   enabled: true
