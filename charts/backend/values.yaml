@@ -12,7 +12,7 @@ service:
 env:
   SOURCE_IMAGES_DIR: /data/source_images
   TILES_DIR: /data/tiles
-  GITHUB_REPO: "https://github.com/bcit-tlu/hriv"
+  GITHUB_REPO: "bcit-tlu/hriv"
 
 # Mount the ConfigMap published by the hriv-backup chart so
 # ``/api/admin/version`` can surface the deployed backup version
@@ -106,6 +106,27 @@ cnpg:
     storageClass: longhorn
     size: 5Gi
 
+# ── Issue reporting (GitHub PAT) ─────────────────────────────
+# The backend creates GitHub Issues on behalf of end-users via
+# POST /api/issues/report.  It needs a GitHub PAT with Issues
+# read/write scope on the target repository.
+#
+# Secret resolution order:
+#   1. reportIssue.existingSecret  → operator-managed K8s Secret
+#   2. vault.enabled=true          → VSO creates the Secret from Vault KV
+#   3. Neither                     → chart creates a placeholder Secret
+#                                    (local dev only; token = "someGHtoken")
+#
+# To supply a real PAT without Vault:
+#   kubectl create secret generic hriv-backend-report-issue-pat \
+#     --from-literal=token=ghp_YOUR_SCOPED_PAT -n hriv
+# then set  reportIssue.existingSecret: hriv-backend-report-issue-pat
+reportIssue:
+  # Name of a pre-existing K8s Secret containing a 'token' key.
+  # When set, the chart does not create its own Secret — use this to
+  # manage the PAT outside of Helm/Vault.
+  existingSecret: ""
+
 # Vault Secrets Operator integration
 vault:
   enabled: false
@@ -114,7 +135,7 @@ vault:
   refreshAfter: 1h
   dbAppSecretPath: hriv/db-app
   dbSuperuserSecretPath: hriv/db-superuser
-  githubPatSecretPath: hriv/github-pat
+  reportIssuePatSecretPath: hriv/github-pat
   oidcSecretPath: hriv/oidc
 
 # Nginx sidecar for serving /api/tiles directly from the PVC,
