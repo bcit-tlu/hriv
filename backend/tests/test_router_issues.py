@@ -66,7 +66,7 @@ def test_check_rate_limit_prunes_old_entries() -> None:
 
 
 async def test_report_issue_not_configured() -> None:
-    user = SimpleNamespace(id=1, name="Test", email="t@example.com")
+    user = SimpleNamespace(id=1, name="Test", email="t@example.com", role="student")
     body = ReportIssueRequest(description="Bug", page_url="http://localhost/page")
 
     with patch("app.routers.issues.GITHUB_TOKEN", ""):
@@ -79,7 +79,7 @@ async def test_report_issue_not_configured() -> None:
 async def test_report_issue_success() -> None:
     user_id = 8888
     _user_timestamps.pop(user_id, None)
-    user = SimpleNamespace(id=user_id, name="Test User", email="t@example.com")
+    user = SimpleNamespace(id=user_id, name="Test User", email="t@example.com", role="student")
     body = ReportIssueRequest(description="Found a bug", page_url="http://localhost/page")
 
     # First call: issue creation (201). Second call: label application (200).
@@ -107,7 +107,7 @@ async def test_report_issue_success() -> None:
     # Verify the issue-creation call (first POST)
     create_call = mock_client.post.call_args_list[0]
     payload = create_call.kwargs["json"]
-    assert payload["title"] == "feedback: Issue report from Test User"
+    assert payload["title"] == "feedback: Issue report from student"
     assert "labels" not in payload  # labels applied separately
     # Description appears before the metadata separator
     body_text = payload["body"]
@@ -128,7 +128,7 @@ async def test_report_issue_label_failure_still_succeeds() -> None:
     """Issue is returned even when the label call raises an exception."""
     user_id = 8886
     _user_timestamps.pop(user_id, None)
-    user = SimpleNamespace(id=user_id, name="Test User", email="t@example.com")
+    user = SimpleNamespace(id=user_id, name="Test User", email="t@example.com", role="instructor")
     body = ReportIssueRequest(description="Bug report", page_url="http://localhost/page")
 
     create_resp = MagicMock()
@@ -157,7 +157,7 @@ async def test_report_issue_label_failure_still_succeeds() -> None:
 async def test_report_issue_github_error() -> None:
     user_id = 8887
     _user_timestamps.pop(user_id, None)
-    user = SimpleNamespace(id=user_id, name="Test", email="t@example.com")
+    user = SimpleNamespace(id=user_id, name="Test", email="t@example.com", role="admin")
     body = ReportIssueRequest(description="Bug", page_url="http://localhost/page")
 
     mock_resp = MagicMock()
