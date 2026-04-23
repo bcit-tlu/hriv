@@ -130,9 +130,14 @@ jobs:
   # `!cancelled()` prevents a sibling gate failure from blocking
   # unrelated components. The per-component `gate` field is checked
   # in the first step to skip early when *this* component's gate failed.
+  #
+  # `helm-lint` is intentionally NOT in `needs` — it runs as an
+  # independent parallel job whose failure surfaces via branch
+  # protection (required status check) rather than delaying or
+  # blocking image builds.
   build:
     runs-on: ubuntu-latest
-    needs: [backend-tests, frontend-checks, helm-lint]
+    needs: [backend-tests, frontend-checks]
     if: "!cancelled()"
     permissions:
       contents: read
