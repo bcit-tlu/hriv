@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.8.0...backend-v0.8.1) (2026-04-23)
+
+
+### Bug Fixes
+
+* **backend:** normalize GITHUB_REPO to owner/repo format at startup ([#211](https://github.com/bcit-tlu/hriv/issues/211)) ([6237a90](https://github.com/bcit-tlu/hriv/commit/6237a9093a7188c67c4a93da118174ca3559979a))
+
 ## [0.8.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.7.1...backend-v0.8.0) (2026-04-22)
 
 
