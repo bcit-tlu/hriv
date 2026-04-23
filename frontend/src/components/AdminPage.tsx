@@ -163,6 +163,7 @@ export default function AdminPage() {
     if (el !== null) {
       el.scrollTop = el.scrollHeight
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logTask?.id])
 
   // Keep the log pinned to the bottom as new content streams in — but
