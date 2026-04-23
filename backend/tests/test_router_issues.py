@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from app.routers.issues import (
     _check_rate_limit,
+    _normalize_repo,
     _user_timestamps,
     report_issue,
     ReportIssueRequest,
@@ -27,12 +28,7 @@ from app.routers.issues import (
 )
 def test_github_repo_normalization(raw: str, expected: str) -> None:
     """GITHUB_REPO is normalized to owner/repo at module load time."""
-    normalized = (
-        raw.removeprefix("https://github.com/")
-        .removeprefix("http://github.com/")
-        .strip("/")
-    )
-    assert normalized == expected
+    assert _normalize_repo(raw) == expected
 
 
 def test_check_rate_limit_allows_first_request() -> None:
