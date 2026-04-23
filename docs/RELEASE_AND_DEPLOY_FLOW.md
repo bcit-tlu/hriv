@@ -26,7 +26,7 @@ between this repo and `bcit-tlu/flux-fleet`.
                     │                            - release-retag.yaml
                     ▼
           release-retag.yaml ──► image aliases:
-                                   <ver>, <maj>.<min>, <maj>, latest
+                                   <ver>, latest
                                    (same OCI digest, no rebuild)
 ```
 
@@ -39,7 +39,7 @@ between this repo and `bcit-tlu/flux-fleet`.
 | Push to `main` | commits since last component tag | `ci.yaml` computes next `<ver>` from `git log` conventional-commit analysis (`feat:` → minor, `!:`/`BREAKING CHANGE:` → major, else patch), builds per-component images | image: `sha-<fullsha>` + `<ver>-rc.<ts>.<short>` |
 | Push to `main` | commits since last component tag | `release-please.yaml` opens/updates one chore release PR per component whose path has a release-triggering commit | — |
 | Merge of a release PR | | `release-please.yaml` cuts a GitHub Release with tag `<component>-v<ver>`, then `dispatch-publish` job workflow-dispatches the two release workflows below | release created |
-| Release published (via dispatch) | release tag | `release-retag.yaml` waits for the `sha-<fullsha>` image of the release commit, then aliases it | image: `<ver>`, `<maj>.<min>`, `<maj>`, `latest` (retag — same digest, no rebuild) |
+| Release published (via dispatch) | release tag | `release-retag.yaml` waits for the `sha-<fullsha>` image of the release commit, then aliases it | image: `<ver>`, `latest` (retag — same digest, no rebuild) |
 | Release published (via dispatch) | release tag | `helm-publish.yaml` packages `charts/<component>/` and pushes to OCI | chart: `hriv-<component>-<ver>.tgz` |
 
 **The chart is published only on release.** Main pushes never produce a
@@ -51,7 +51,7 @@ matters for the flux-fleet flow below.
 | Thing | Format | Example | Notes |
 |---|---|---|---|
 | Image rc tag | `<ver>-rc.<14-digit UTC ts>.<7-char sha>` | `1.1.18-rc.20260414194220.b286051` | Valid SemVer prerelease. Timestamp exists for deterministic Flux `ImagePolicy` ordering (numerical). |
-| Image release tag | `<ver>` (+ aliases) | `1.1.18`, `1.1`, `1`, `latest` | Produced by digest-retag, not rebuild. |
+| Image release tag | `<ver>`, `latest` | `1.1.18`, `latest` | Produced by digest-retag, not rebuild. |
 | Image immutable pointer | `sha-<40-char sha>` | `sha-b286051...` | Always published; survives across every retag. |
 | Git release tag | `<component>-v<ver>` | `frontend-v1.1.18` | Cut by release-please. |
 | Chart artifact | `ghcr.io/<owner>/<repo>/charts/hriv-<component>:<ver>` | `...charts/hriv-frontend:1.1.18` | OCI chart, one per release. |
