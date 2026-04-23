@@ -74,12 +74,12 @@ async def report_issue(
 
     _check_rate_limit(current_user.id)
 
-    title = f"User report from {body.page_url}"
+    title = f"feedback: Issue report from {current_user.name}"
     issue_body = (
-        f"**Reported by:** {current_user.name} ({current_user.email})\n"
-        f"**Page:** {body.page_url}\n\n"
+        f"{body.description}\n\n"
         f"---\n\n"
-        f"{body.description}"
+        f"**Reported by:** {current_user.name} ({current_user.email})\n"
+        f"**Page:** {body.page_url}"
     )
 
     async with httpx.AsyncClient() as client:
@@ -90,7 +90,7 @@ async def report_issue(
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
             },
-            json={"title": title, "body": issue_body},
+            json={"title": title, "body": issue_body, "labels": ["feedback"]},
             timeout=15.0,
         )
 

@@ -96,6 +96,18 @@ async def test_report_issue_success() -> None:
                 result = await report_issue(body, user)
 
     assert result.issue_url == "https://github.com/repo/issues/1"
+
+    call_kwargs = mock_client.post.call_args
+    payload = call_kwargs.kwargs["json"]
+    assert payload["title"] == "feedback: Issue report from Test User"
+    assert payload["labels"] == ["feedback"]
+    # Description appears before the metadata separator
+    body_text = payload["body"]
+    sep_pos = body_text.index("---")
+    assert body_text.index("Found a bug") < sep_pos
+    assert body_text.index("**Reported by:**") > sep_pos
+    assert body_text.index("**Page:**") > sep_pos
+
     _user_timestamps.pop(user_id, None)
 
 
