@@ -35,12 +35,17 @@ env:
 # image wraps ``backup.py`` with ``opentelemetry-instrument``).
 # Disabled by default so deployments without an OTLP collector don't
 # carry always-empty env vars in the pod spec.
+#
+# The exporter defaults below are chosen so that setting
+# ``otel.enabled=true`` + ``otel.exporterEndpoint`` is sufficient to
+# start shipping logs and traces.  Override individual exporters to
+# ``"none"`` to disable a specific signal.
 otel:
   enabled: false
   serviceName: "hriv-backup"
-  tracesExporter: "none"
+  tracesExporter: "otlp"
   metricsExporter: "none"
-  logsExporter: "none"
+  logsExporter: "otlp"
   exporterEndpoint: ""
   exporterProtocol: "http/protobuf"
 
