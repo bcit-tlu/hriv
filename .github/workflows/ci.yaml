@@ -1,4 +1,11 @@
-name: build
+name: "[CI] Test, build & publish"
+
+# Readable run titles in the Actions UI: PR runs show the PR number and
+# title; main pushes show the head commit subject.
+run-name: >-
+  ${{ github.event_name == 'pull_request'
+      && format('PR #{0} — {1}', github.event.pull_request.number, github.event.pull_request.title)
+      || format('Head build — {0}', github.event.head_commit.message) }}
 
 on:
   push:
@@ -11,21 +18,132 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # Least-privilege default: only read access at the workflow level.
-# Jobs that push to GHCR elevate `packages: write` locally.
+# Jobs that need more elevate locally.
 permissions:
   contents: read
 
 jobs:
+  # ── Quality gates ─────────────────────────────────────────
+  #
+  # Tests, lint, and coverage run on every push + PR in parallel.
+  # Each build matrix entry gates on its own quality-gate job;
+  # helm-lint runs independently (its failure breaks the workflow
+  # status but does not block individual image builds).
+
+  backend-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Configure in-project virtualenv
+        run: poetry config virtualenvs.in-project true
+
+      - uses: actions/cache@v4
+        with:
+          path: backend/.venv
+          key: backend-venv-py3.13-${{ hashFiles('backend/poetry.lock') }}
+          restore-keys: backend-venv-py3.13-
+
+      - name: Install dependencies
+        run: poetry install --with dev
+
+      # Coverage gate (≥ 80 %) is enforced via `addopts` in pyproject.toml.
+      - name: Run pytest with coverage
+        run: poetry run pytest
+
+  frontend-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+
+      - uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: frontend-npm-${{ hashFiles('frontend/package.json') }}
+
+      # `frontend/package-lock.json` is in `.gitignore`, so use
+      # `npm install` rather than `npm ci`.
+      - name: Install dependencies
+        run: npm install
+
+      # Advisory until pre-existing lint errors are resolved; promote to
+      # blocking by removing `continue-on-error` once clean.
+      - name: Lint (ESLint)
+        continue-on-error: true
+        run: npm run lint
+
+      # Coverage thresholds are enforced via `test.coverage.thresholds`
+      # in frontend/vite.config.ts — vitest exits non-zero if any
+      # threshold is breached.
+      - name: Test with coverage (Vitest)
+        run: npm run test:coverage
+
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: azure/setup-helm@v5
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | sudo tar xz -C /usr/local/bin kubeconform
+
+      - name: Lint, template-render & validate all charts
+        run: |
+          for chart in charts/*/; do
+            name=$(basename "$chart")
+            echo "::group::${name}"
+            helm lint "$chart"
+            helm template test "$chart" \
+              | kubeconform -strict -summary \
+                  -schema-location default \
+                  -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+                  -ignore-missing-schemas
+            echo "::endgroup::"
+          done
+
+  # ── Container images (matrix: frontend, backend, backup) ──
+  #
+  # Each matrix entry only requires its own quality gate to pass.
+  # `!cancelled()` prevents a sibling gate failure from blocking
+  # unrelated components. The per-component `gate` field is checked
+  # in the first step to skip early when *this* component's gate failed.
+  #
+  # `helm-lint` is intentionally NOT in `needs` — it runs as an
+  # independent parallel job whose failure surfaces via branch
+  # protection (required status check) rather than delaying or
+  # blocking image builds.
   build:
     runs-on: ubuntu-latest
-    # `packages: write` is required for `docker login ghcr.io` + push;
-    # scoped to this job so PR runs never use it even though they share
-    # the same build step (push: false on pull_request events).
+    needs: [backend-tests, frontend-checks]
+    if: "!cancelled()"
     permissions:
       contents: read
       packages: write
+      id-token: write          # Cosign keyless (Sigstore OIDC)
+      security-events: write   # Trivy SARIF upload to GitHub Security tab
     strategy:
       fail-fast: false
       matrix:
@@ -36,14 +154,28 @@ jobs:
             build_contexts: |
               nginx-config=./charts/frontend/files
             extra_watch_paths: ./charts/frontend/files
+            gate: frontend-checks
           - component: backend
             context: ./backend
             target: stable
+            gate: backend-tests
           - component: backup
             context: ./backup
             target: stable
+            gate: backend-tests
 
     steps:
+      - name: Check own quality gate
+        id: gate
+        shell: bash
+        run: |
+          result="${{ needs[matrix.gate].result }}"
+          echo "gate=${{ matrix.gate }} result=${result}"
+          if [[ "${result}" != "success" ]]; then
+            echo "::error::Quality gate '${{ matrix.gate }}' did not succeed (result=${result}); skipping ${{ matrix.component }} build."
+            exit 1
+          fi
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
@@ -151,6 +283,7 @@ jobs:
           echo "ts=${TS}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push
+        id: build-push
         if: steps.changes.outputs.changed == 'true'
         uses: docker/build-push-action@v7
         with:
@@ -158,6 +291,9 @@ jobs:
           target: ${{ matrix.target }}
           build-contexts: ${{ matrix.build_contexts || '' }}
           push: ${{ github.event_name != 'pull_request' }}
+          # PR builds don't push to the registry, but load locally so
+          # the Trivy step can scan the image by tag.
+          load: ${{ github.event_name == 'pull_request' }}
           # Skip SLSA provenance + SBOM attestations so each push
           # produces a single image manifest per tag (two tags total:
           # versioned + full-sha). Without this, buildx creates an
@@ -165,42 +301,79 @@ jobs:
           # doubling the artifacts visible under ghcr's package view.
           provenance: false
           sbom: false
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
           # Commit identity travels with the image as OCI manifest
           # labels rather than baked build-time `ARG`s. Labels survive
-          # `release-retag.yaml`'s digest-promotion (aliasing a
-          # `sha-<full>` manifest as `vX.Y.Z`/`latest` without
-          # rebuilding), so `docker buildx imagetools inspect` always
-          # recovers the exact commit an image was built from,
-          # regardless of which tag it is pulled under.
-          #
-          # The runtime-displayable version strings surfaced by the
-          # admin UI / `/api/admin/version` / `/version` endpoint are
-          # rendered at deploy time by the Helm charts from
-          # `.Values.image.tag` (see `charts/backend/templates/
-          # deployment.yaml`, `charts/frontend/files/
-          # default.conf.template`, `charts/backup/templates/
-          # version-configmap.yaml`). This keeps a retag-promoted
-          # production image reporting a clean `<ver>` string while
-          # the main-build image in the `latest` env renders its
-          # `<ver>-rc.<short>` identity, even though the two are the
-          # same underlying digest.
+          # `release-retag.yaml`'s digest-promotion so
+          # `docker buildx imagetools inspect` always recovers the
+          # exact commit an image was built from.
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.version=${{ steps.version.outputs.next }}-rc.${{ steps.version.outputs.short }}
-          # Tag order matters for how ghcr renders the "tags" list on
-          # each image version card — the last tag in this list is
-          # treated as the most recent by ghcr and surfaces first in
-          # the UI. Put the immutable `sha-<fullsha>` tag first and
-          # the human-meaningful `<ver>-rc.<ts>.<short>` rc tag last
-          # so the rc tag is what shows up at a glance.
-          #
-          # Primary tag schema: `<nextComputedVersion>-rc.<ts>.<short>`
-          # e.g. `1.1.18-rc.20260414194220.b286051`. This is a valid
-          # SemVer prerelease (`-rc.<num>.<alnum>`) so tooling that
-          # expects semver (Helm, ArgoCD, Flux OCIRepository semver
-          # range) still parses it. Flux ImagePolicy in flux-fleet
-          # extracts the 14-char `<ts>` for numerical ordering.
           tags: |
             ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:sha-${{ github.sha }}
             ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:${{ steps.version.outputs.next }}-rc.${{ steps.version.outputs.ts }}.${{ steps.version.outputs.short }}
+
+      # ── Sign with Cosign (keyless / Sigstore) ──────────────
+      - uses: sigstore/cosign-installer@v3
+        if: steps.changes.outputs.changed == 'true' && github.event_name != 'pull_request'
+
+      - name: Sign image
+        if: steps.changes.outputs.changed == 'true' && github.event_name != 'pull_request'
+        run: |
+          cosign sign --yes \
+            ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}@${{ steps.build-push.outputs.digest }}
+
+      # ── Trivy vulnerability scan ───────────────────────────
+      #
+      # Runs on every build so regressions surface on the PR that
+      # introduces them rather than after merge to main.
+      #
+      #   * main pushes: scan by digest, upload SARIF to Security tab.
+      #     `ignore-unfixed` disabled for full inventory/audit.
+      #   * PRs: scan locally loaded image by tag. `ignore-unfixed: true`
+      #     trims noise to CVEs with an upstream fix. Advisory today
+      #     (exit-code 0) — flip to 1 once base-image CVEs are resolved.
+      - name: Resolve image reference for Trivy
+        id: scan-ref
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "ref=${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:sha-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}@${{ steps.build-push.outputs.digest }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Scan image (PR — table to log)
+        if: steps.changes.outputs.changed == 'true' && github.event_name == 'pull_request'
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: ${{ steps.scan-ref.outputs.ref }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          trivyignores: .trivyignore
+          # TODO: flip to '1' once base-image cleanup lands.
+          exit-code: "0"
+
+      - name: Scan image (main — SARIF to Security tab)
+        if: steps.changes.outputs.changed == 'true' && github.event_name != 'pull_request'
+        uses: aquasecurity/trivy-action@v0.35.0
+        with:
+          image-ref: ${{ steps.scan-ref.outputs.ref }}
+          format: sarif
+          output: trivy-${{ matrix.component }}.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: false
+          trivyignores: .trivyignore
+          exit-code: "0"
+
+      - name: Upload scan results to GitHub Security
+        if: steps.changes.outputs.changed == 'true' && github.event_name != 'pull_request'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-${{ matrix.component }}.sarif
+          category: trivy-${{ matrix.component }}

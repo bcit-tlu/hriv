@@ -12,10 +12,12 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
   contents: read
   packages: write
+  id-token: write          # Cosign keyless (Sigstore OIDC)
 
 jobs:
   retag:
@@ -32,8 +34,6 @@ jobs:
         run: |
           if [[ "$TAG" =~ ^${{ matrix.component }}-v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
             echo "version=${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}" >> $GITHUB_OUTPUT
-            echo "major=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
-            echo "minor=${BASH_REMATCH[2]}" >> $GITHUB_OUTPUT
             echo "match=true" >> $GITHUB_OUTPUT
           else
             echo "match=false" >> $GITHUB_OUTPUT
@@ -43,6 +43,32 @@ jobs:
         if: steps.parse.outputs.match == 'true'
         with:
           ref: ${{ inputs.tag_name || github.event.release.tag_name }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Check if this is the highest stable release
+        id: highest
+        if: steps.parse.outputs.match == 'true'
+        shell: bash
+        run: |
+          COMPONENT=${{ matrix.component }}
+          VERSION=${{ steps.parse.outputs.version }}
+
+          # List all stable (non-prerelease) tags for this component,
+          # strip the prefix, sort by semver, and take the highest.
+          HIGHEST=$(git tag -l "${COMPONENT}-v[0-9]*.[0-9]*.[0-9]*" \
+            | sed "s/^${COMPONENT}-v//" \
+            | grep -v -- '-' \
+            | sort -V \
+            | tail -n1)
+
+          if [[ "${VERSION}" == "${HIGHEST}" ]]; then
+            echo "is_highest=true" >> "$GITHUB_OUTPUT"
+            echo "${VERSION} is the highest stable release for ${COMPONENT} — will tag as latest."
+          else
+            echo "is_highest=false" >> "$GITHUB_OUTPUT"
+            echo "${VERSION} is NOT the highest stable release (highest: ${HIGHEST}) — skipping latest tag."
+          fi
 
       - name: Resolve tag commit SHA
         if: steps.parse.outputs.match == 'true'
@@ -94,17 +120,33 @@ jobs:
           done
 
       - name: Retag (no pull)
+        id: retag
         if: steps.parse.outputs.match == 'true'
         run: |
           IMAGE=${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}
           SHA=${{ steps.sha.outputs.sha }}
           VERSION=${{ steps.parse.outputs.version }}
-          MAJOR=${{ steps.parse.outputs.major }}
-          MINOR=${{ steps.parse.outputs.minor }}
+
+          TAGS="-t ${IMAGE}:${VERSION}"
+          if [[ "${{ steps.highest.outputs.is_highest }}" == "true" ]]; then
+            TAGS="${TAGS} -t ${IMAGE}:latest"
+          fi
 
           docker buildx imagetools create \
-            -t ${IMAGE}:${VERSION} \
-            -t ${IMAGE}:${MAJOR}.${MINOR} \
-            -t ${IMAGE}:${MAJOR} \
-            -t ${IMAGE}:latest \
+            ${TAGS} \
             ${IMAGE}:sha-${SHA}
+
+          # Capture digest for Cosign signing.
+          DIGEST=$(docker buildx imagetools inspect "${IMAGE}:${VERSION}" --format '{{.Manifest.Digest}}')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+
+      # ── Sign with Cosign (keyless / Sigstore) ──────────────
+      - uses: sigstore/cosign-installer@v3
+        if: steps.parse.outputs.match == 'true'
+
+      - name: Sign release image
+        if: steps.parse.outputs.match == 'true'
+        run: |
+          cosign sign --yes \
+            ${{ steps.retag.outputs.image }}@${{ steps.retag.outputs.digest }}
