@@ -74,7 +74,7 @@ async def report_issue(
 
     _check_rate_limit(current_user.id)
 
-    title = f"feedback: Issue report from {current_user.name}"
+    title = f"feedback: Issue report from {current_user.role}"
     issue_body = (
         f"{body.description}\n\n"
         f"---\n\n"
