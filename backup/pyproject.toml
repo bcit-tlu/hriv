@@ -8,6 +8,8 @@ authors = ["Devin AI"]
 python = "^3.11"
 azure-storage-blob = "^12.20.0"
 croniter = "^5.0.0"
+opentelemetry-distro = "^0.57b0"
+opentelemetry-exporter-otlp = "^1.36.0"
 
 [build-system]
 requires = ["poetry-core"]
