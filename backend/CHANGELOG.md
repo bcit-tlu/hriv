@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.8.1...backend-v0.8.2) (2026-04-23)
+
+
+### Bug Fixes
+
+* **backend:** improve issue report title, body order, and labeling ([#218](https://github.com/bcit-tlu/hriv/issues/218)) ([118584a](https://github.com/bcit-tlu/hriv/commit/118584a573ad15b40b1d076e5c4edb0a3dc8332b))
+
 ## [0.8.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.8.0...backend-v0.8.1) (2026-04-23)
 
 
