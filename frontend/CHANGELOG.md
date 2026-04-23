@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.8.1...frontend-v0.8.2) (2026-04-23)
+
+
+### Bug Fixes
+
+* **frontend:** disable React Compiler lint rules from react-hooks v7 ([#222](https://github.com/bcit-tlu/hriv/issues/222)) ([858895f](https://github.com/bcit-tlu/hriv/commit/858895f907505fb62cb40bfe30d80b7fca0d55d4))
+
 ## [0.8.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.8.0...frontend-v0.8.1) (2026-04-23)
 
 
