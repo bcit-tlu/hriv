@@ -17,7 +17,6 @@ on:
     branches: [main]
 
 env:
-  REGISTRY: ghcr.io
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 # Least-privilege default: only read access at the workflow level.
@@ -29,7 +28,7 @@ jobs:
   # ── Quality gates ─────────────────────────────────────────
   #
   # Tests, lint, and coverage run on every push + PR in parallel.
-  # Each build matrix entry gates on its own quality-gate job;
+  # Each component's build job gates on its own quality-gate job;
   # helm-lint runs independently (its failure breaks the workflow
   # status but does not block individual image builds).
 
@@ -124,256 +123,69 @@ jobs:
             echo "::endgroup::"
           done
 
-  # ── Container images (matrix: frontend, backend, backup) ──
+  # ── Container images ──────────────────────────────────────
   #
-  # Each matrix entry only requires its own quality gate to pass.
-  # `!cancelled()` prevents a sibling gate failure from blocking
-  # unrelated components. The per-component `gate` field is checked
-  # in the first step to skip early when *this* component's gate failed.
+  # Each component gets its own build job gated on the relevant
+  # quality-gate job.  This gives every component an independent
+  # GitHub status check that can be individually required in
+  # branch protection — a backend regression no longer blocks
+  # PRs that only touch frontend code (and vice versa).
+  #
+  # The shared reusable workflow handles checkout, change
+  # detection, Docker build/push, Cosign signing, and Trivy
+  # scanning.
   #
   # `helm-lint` is intentionally NOT in `needs` — it runs as an
   # independent parallel job whose failure surfaces via branch
   # protection (required status check) rather than delaying or
   # blocking image builds.
-  build:
-    runs-on: ubuntu-latest
-    needs: [backend-tests, frontend-checks]
-    if: "!cancelled()"
+
+  build-frontend:
+    needs: [frontend-checks]
+    uses: bcit-tlu/.github/.github/workflows/oci-build.yaml@main
     permissions:
       contents: read
       packages: write
-      id-token: write          # Cosign keyless (Sigstore OIDC)
-      security-events: write   # Trivy SARIF upload to GitHub Security tab
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - component: frontend
-            context: ./frontend
-            target: stable
-            build_contexts: |
-              nginx-config=./charts/frontend/files
-            extra_watch_paths: ./charts/frontend/files
-            gate: frontend-checks
-          - component: backend
-            context: ./backend
-            target: stable
-            gate: backend-tests
-          - component: backup
-            context: ./backup
-            target: stable
-            gate: backend-tests
+      id-token: write
+      security-events: write
+    with:
+      component: frontend
+      image_name: hriv-frontend
+      context: ./frontend
+      target: stable
+      build_contexts: "nginx-config=./charts/frontend/files"
+      extra_watch_paths: ./charts/frontend/files
+      trivyignore: .trivyignore
+    secrets: inherit
 
-    steps:
-      - name: Check own quality gate
-        id: gate
-        shell: bash
-        run: |
-          result="${{ needs[matrix.gate].result }}"
-          echo "gate=${{ matrix.gate }} result=${result}"
-          if [[ "${result}" != "success" ]]; then
-            echo "::error::Quality gate '${{ matrix.gate }}' did not succeed (result=${result}); skipping ${{ matrix.component }} build."
-            exit 1
-          fi
+  build-backend:
+    needs: [backend-tests]
+    uses: bcit-tlu/.github/.github/workflows/oci-build.yaml@main
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
+    with:
+      component: backend
+      image_name: hriv-backend
+      context: ./backend
+      target: stable
+      trivyignore: .trivyignore
+    secrets: inherit
 
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Detect changes
-        id: changes
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            BASE="${{ github.event.pull_request.base.sha }}"
-            HEAD="${{ github.event.pull_request.head.sha }}"
-          else
-            BASE="${{ github.event.before }}"
-            HEAD="${{ github.sha }}"
-          fi
-
-          # `github.event.before` is the all-zeroes SHA on first pushes
-          # to a new ref (and occasionally missing from the local clone
-          # on force-pushes / history edits). Fall back to HEAD~1 when
-          # available so `git diff` doesn't abort the job; if HEAD has
-          # no parent (initial commit), treat everything as changed.
-          ZERO_SHA="0000000000000000000000000000000000000000"
-          if [[ -z "${BASE}" || "${BASE}" == "${ZERO_SHA}" ]] \
-             || ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
-            if git rev-parse --verify "${HEAD}^" >/dev/null 2>&1; then
-              BASE="${HEAD}^"
-            else
-              echo "changed=true" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          fi
-
-          if git diff --quiet "${BASE}" "${HEAD}" -- ${{ matrix.context }} ${{ matrix.extra_watch_paths }}; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: docker/setup-buildx-action@v4
-        if: steps.changes.outputs.changed == 'true'
-
-      - uses: docker/login-action@v4
-        if: steps.changes.outputs.changed == 'true' && github.event_name != 'pull_request'
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Compute next version
-        id: version
-        if: steps.changes.outputs.changed == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          COMPONENT=${{ matrix.component }}
-
-          TAG=$(git describe --tags \
-            --match "${COMPONENT}-v*" \
-            --exclude "${COMPONENT}-v*-*" \
-            --abbrev=0 2>/dev/null || true)
-          if [[ -z "$TAG" ]]; then
-            VERSION="0.0.0"
-            RANGE="HEAD"
-          else
-            VERSION="${TAG#${COMPONENT}-v}"
-            RANGE="${TAG}..HEAD"
-          fi
-
-          if ! [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-            echo "::error::Refusing to bump from non-semver base version '${VERSION}' (tag '${TAG}')"
-            exit 1
-          fi
-          MAJOR="${BASH_REMATCH[1]}"
-          MINOR="${BASH_REMATCH[2]}"
-          PATCH="${BASH_REMATCH[3]}"
-
-          SUBJECTS=$(git log "${RANGE}" --pretty=format:"%s" -- ${{ matrix.context }})
-          BODIES=$(git log "${RANGE}" --pretty=format:"%b" -- ${{ matrix.context }})
-
-          if echo "$SUBJECTS" | grep -qE "^[a-zA-Z]+(\([^)]+\))?!:" \
-             || echo "$BODIES" | grep -qE "^BREAKING[ -]CHANGE:"; then
-            ((MAJOR+=1)); MINOR=0; PATCH=0
-          elif echo "$SUBJECTS" | grep -qE "^feat(\(.+\))?:"; then
-            ((MINOR+=1)); PATCH=0
-          else
-            ((PATCH+=1))
-          fi
-
-          NEXT="${MAJOR}.${MINOR}.${PATCH}"
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          # Numerical timestamp suffix used by Flux ImagePolicy
-          # (extract=numerical, pattern captures $ts) to sort
-          # `latest`-env images by build recency. Embedded in the
-          # primary tag so Flux picks the newest image unambiguously
-          # even across re-runs of the same commit. Fixed-width
-          # 14-char format also sorts lexically, so SemVer
-          # prerelease comparison of the same `-rc.` identifier
-          # across different timestamps produces the right order.
-          TS=$(date -u +"%Y%m%d%H%M%S")
-
-          echo "next=${NEXT}" >> "$GITHUB_OUTPUT"
-          echo "short=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
-          echo "ts=${TS}" >> "$GITHUB_OUTPUT"
-
-      - name: Build and push
-        id: build-push
-        if: steps.changes.outputs.changed == 'true'
-        uses: docker/build-push-action@v7
-        with:
-          context: ${{ matrix.context }}
-          target: ${{ matrix.target }}
-          build-contexts: ${{ matrix.build_contexts || '' }}
-          push: ${{ github.event_name != 'pull_request' }}
-          # PR builds don't push to the registry, but load locally so
-          # the Trivy step can scan the image by tag.
-          load: ${{ github.event_name == 'pull_request' }}
-          # Skip SLSA provenance + SBOM attestations so each push
-          # produces a single image manifest per tag (two tags total:
-          # versioned + full-sha). Without this, buildx creates an
-          # extra unnamed attestation manifest alongside every tag,
-          # doubling the artifacts visible under ghcr's package view.
-          provenance: false
-          sbom: false
-          cache-from: type=gha,scope=${{ matrix.component }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
-          # Commit identity travels with the image as OCI manifest
-          # labels rather than baked build-time `ARG`s. Labels survive
-          # `release-retag.yaml`'s digest-promotion so
-          # `docker buildx imagetools inspect` always recovers the
-          # exact commit an image was built from.
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.version=${{ steps.version.outputs.next }}-rc.${{ steps.version.outputs.short }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:sha-${{ github.sha }}
-            ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:${{ steps.version.outputs.next }}-rc.${{ steps.version.outputs.ts }}.${{ steps.version.outputs.short }}
-
-      # ── Sign with Cosign (keyless / Sigstore) ──────────────
-      - uses: sigstore/cosign-installer@v3
-        if: steps.changes.outputs.changed == 'true' && github.event_name != 'pull_request'
-
-      - name: Sign image
-        if: steps.changes.outputs.changed == 'true' && github.event_name != 'pull_request'
-        run: |
-          cosign sign --yes \
-            ${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}@${{ steps.build-push.outputs.digest }}
-
-      # ── Trivy vulnerability scan ───────────────────────────
-      #
-      # Runs on every build so regressions surface on the PR that
-      # introduces them rather than after merge to main.
-      #
-      #   * main pushes: scan by digest, upload SARIF to Security tab.
-      #     `ignore-unfixed` disabled for full inventory/audit.
-      #   * PRs: scan locally loaded image by tag. `ignore-unfixed: true`
-      #     trims noise to CVEs with an upstream fix. Advisory today
-      #     (exit-code 0) — flip to 1 once base-image CVEs are resolved.
-      - name: Resolve image reference for Trivy
-        id: scan-ref
-        if: steps.changes.outputs.changed == 'true'
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            echo "ref=${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}:sha-${{ github.sha }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "ref=${{ env.REGISTRY }}/${{ github.repository }}/hriv-${{ matrix.component }}@${{ steps.build-push.outputs.digest }}" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Scan image (PR — table to log)
-        if: steps.changes.outputs.changed == 'true' && github.event_name == 'pull_request'
-        uses: aquasecurity/trivy-action@v0.35.0
-        with:
-          image-ref: ${{ steps.scan-ref.outputs.ref }}
-          format: table
-          severity: CRITICAL,HIGH
-          ignore-unfixed: true
-          trivyignores: .trivyignore
-          # TODO: flip to '1' once base-image cleanup lands.
-          exit-code: "0"
-
-      - name: Scan image (main — SARIF to Security tab)
-        if: steps.changes.outputs.changed == 'true' && github.event_name != 'pull_request'
-        uses: aquasecurity/trivy-action@v0.35.0
-        with:
-          image-ref: ${{ steps.scan-ref.outputs.ref }}
-          format: sarif
-          output: trivy-${{ matrix.component }}.sarif
-          severity: CRITICAL,HIGH
-          ignore-unfixed: false
-          trivyignores: .trivyignore
-          exit-code: "0"
-
-      - name: Upload scan results to GitHub Security
-        if: steps.changes.outputs.changed == 'true' && github.event_name != 'pull_request'
-        uses: github/codeql-action/upload-sarif@v4
-        with:
-          sarif_file: trivy-${{ matrix.component }}.sarif
-          category: trivy-${{ matrix.component }}
+  build-backup:
+    needs: [backend-tests]
+    uses: bcit-tlu/.github/.github/workflows/oci-build.yaml@main
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
+    with:
+      component: backup
+      image_name: hriv-backup
+      context: ./backup
+      target: stable
+      trivyignore: .trivyignore
+    secrets: inherit
