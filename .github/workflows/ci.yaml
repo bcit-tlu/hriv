@@ -148,6 +148,7 @@ jobs:
       packages: write
       id-token: write
       security-events: write
+      actions: read
     with:
       component: frontend
       image_name: hriv-frontend
@@ -166,6 +167,7 @@ jobs:
       packages: write
       id-token: write
       security-events: write
+      actions: read
     with:
       component: backend
       image_name: hriv-backend
@@ -182,6 +184,7 @@ jobs:
       packages: write
       id-token: write
       security-events: write
+      actions: read
     with:
       component: backup
       image_name: hriv-backup
