@@ -314,3 +314,54 @@ def test_main_returns_one_on_failure(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(migrations_bootstrap, "bootstrap", _boom)
     assert migrations_bootstrap.main() == 1
+
+
+def test_main_logs_auth_hint_on_password_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """When the bootstrap fails with a password authentication error,
+    ``main()`` must log an actionable hint pointing at Vault / CNPG
+    credential mismatch rather than a raw asyncpg traceback."""
+
+    def _boom() -> None:
+        raise RuntimeError("password authentication failed for user \"hriv\"")
+
+    monkeypatch.setattr(migrations_bootstrap, "bootstrap", _boom)
+
+    with caplog.at_level("ERROR"):
+        rc = migrations_bootstrap.main()
+
+    assert rc == 1
+    assert "Database authentication failed" in caplog.text
+    assert "Vault" in caplog.text
+
+
+def test_main_logs_host_hint_on_dns_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """When the bootstrap fails because the database host is unreachable,
+    ``main()`` must log a hint about the CNPG service."""
+
+    def _boom() -> None:
+        raise RuntimeError("could not translate host name \"hriv-backend-db-rw\"")
+
+    monkeypatch.setattr(migrations_bootstrap, "bootstrap", _boom)
+
+    with caplog.at_level("ERROR"):
+        rc = migrations_bootstrap.main()
+
+    assert rc == 1
+    assert "Database host unreachable" in caplog.text
+
+
+def test_redacted_url_masks_password() -> None:
+    """``_redacted_url`` must return host/user/db without the password."""
+    url = "postgresql+asyncpg://hriv:s3cret@db-rw:5432/hriv"
+    result = migrations_bootstrap._redacted_url(url)
+    assert "s3cret" not in result
+    assert "hriv@db-rw:5432/hriv" == result
+
+
+def test_redacted_url_handles_unparseable() -> None:
+    """``_redacted_url`` must not raise on garbage input."""
+    assert migrations_bootstrap._redacted_url("") is not None

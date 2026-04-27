@@ -24,6 +24,7 @@ import logging
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
+from urllib.parse import urlparse
 
 from alembic import command
 from alembic.config import Config
@@ -220,15 +221,50 @@ def bootstrap() -> None:
     asyncio.run(_async_bootstrap())
 
 
+def _redacted_url(url: str) -> str:
+    """Return *host/user/db* from a database URL with the password masked."""
+    try:
+        parsed = urlparse(url.replace("+asyncpg", "", 1))
+        return f"{parsed.username}@{parsed.hostname}:{parsed.port or 5432}/{parsed.path.lstrip('/')}"
+    except Exception:
+        return "<unparseable>"
+
+
 def main() -> int:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    logger.info(
+        "Alembic bootstrap targeting %s",
+        _redacted_url(settings.database_url),
+    )
     try:
         bootstrap()
-    except Exception:
-        logger.exception("Alembic bootstrap failed")
+    except Exception as exc:
+        # Surface actionable hints for the two most common deployment
+        # errors so operators don't have to trace through asyncpg internals.
+        msg = str(exc)
+        if "InvalidPasswordError" in type(exc).__name__ or (
+            "password authentication failed" in msg
+        ):
+            logger.error(
+                "Database authentication failed.  The password in "
+                "DATABASE_URL does not match the PostgreSQL role's "
+                "password.  If credentials are sourced from Vault, verify "
+                "that the KV secret (e.g. apps/hriv/<env>/db-app) contains "
+                "the password the CNPG cluster was originally bootstrapped "
+                "with.  To reset: ALTER USER <owner> PASSWORD '<pw>' via "
+                "the superuser, or update the Vault KV secret to match."
+            )
+        elif "could not translate host name" in msg or "Name or service not known" in msg:
+            logger.error(
+                "Database host unreachable — is the CNPG cluster running "
+                "and does the Service '%s-db-rw' exist?",
+                "hriv-backend",
+            )
+        else:
+            logger.exception("Alembic bootstrap failed")
         return 1
     return 0
 
