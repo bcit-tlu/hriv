@@ -197,8 +197,8 @@ affinity: {}
 # ``oidc.roleMapping`` above).
 seedAdmin:
   enabled: true
-  name: "Admin"
-  email: "admin@example.com"
+  name: "Haruki Tanaka"
+  email: "admin@bcit.ca"
   # bcrypt hash of the bootstrap password.  Defaults to the same
   # development hash shared by docker-compose seed users (intended
   # to be rotated immediately after first login).  Override with
