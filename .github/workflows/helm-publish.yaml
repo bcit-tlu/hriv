@@ -76,8 +76,9 @@ jobs:
 
           PUSH_OUT=$(helm push \
             "${DEST_DIR}/hriv-${{ matrix.component }}-${VERSION}.tgz" \
-            "oci://${{ env.REGISTRY }}/${{ github.repository }}/charts" 2>&1)
+            "oci://${{ env.REGISTRY }}/${{ github.repository }}/charts" 2>&1) || true
           echo "${PUSH_OUT}"
+          printf '%s\n' "${PUSH_OUT}" | grep -q '^Digest:' || { echo '::error::helm push failed'; exit 1; }
 
           DIGEST=$(printf '%s\n' "${PUSH_OUT}" | awk '/^Digest:/{print $2}')
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"

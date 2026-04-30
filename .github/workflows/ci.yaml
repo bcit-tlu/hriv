@@ -266,8 +266,9 @@ jobs:
 
             PUSH_OUT=$(helm push \
               "${DEST_DIR}/${CHART_NAME}-${VERSION}.tgz" \
-              "${OCI_BASE}" 2>&1)
+              "${OCI_BASE}" 2>&1) || true
             echo "${PUSH_OUT}"
+            printf '%s\n' "${PUSH_OUT}" | grep -q '^Digest:' || { echo "::error::helm push failed for ${CHART_NAME}"; exit 1; }
 
             DIGEST=$(printf '%s\n' "${PUSH_OUT}" | awk '/^Digest:/{print $2}')
             if [[ -n "${DIGEST}" ]]; then
