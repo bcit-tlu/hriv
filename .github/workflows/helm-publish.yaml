@@ -45,6 +45,9 @@ jobs:
       - uses: azure/setup-helm@v5
         if: steps.parse.outputs.publish == 'true'
 
+      - uses: sigstore/cosign-installer@v3
+        if: steps.parse.outputs.publish == 'true'
+
       - name: Helm login (OCI)
         if: steps.parse.outputs.publish == 'true'
         shell: bash
@@ -82,9 +85,6 @@ jobs:
 
           DIGEST=$(printf '%s\n' "${PUSH_OUT}" | awk '/^Digest:/{print $2}')
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
-
-      - uses: sigstore/cosign-installer@v3
-        if: steps.parse.outputs.publish == 'true'
 
       - name: Sign chart
         if: steps.parse.outputs.publish == 'true' && steps.push.outputs.digest != ''
