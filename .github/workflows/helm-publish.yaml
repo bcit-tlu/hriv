@@ -48,6 +48,14 @@ jobs:
       - uses: sigstore/cosign-installer@v3
         if: steps.parse.outputs.publish == 'true'
 
+      - name: Cosign login (OCI)
+        if: steps.parse.outputs.publish == 'true'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            cosign login "${{ env.REGISTRY }}" \
+            -u "${{ github.actor }}" \
+            --password-stdin
+
       - name: Helm login (OCI)
         if: steps.parse.outputs.publish == 'true'
         shell: bash

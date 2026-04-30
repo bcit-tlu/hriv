@@ -218,6 +218,13 @@ jobs:
 
       - uses: sigstore/cosign-installer@v3
 
+      - name: Cosign login (OCI)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            cosign login "${{ env.REGISTRY }}" \
+            -u "${{ github.actor }}" \
+            --password-stdin
+
       - name: Helm login (OCI)
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | \
