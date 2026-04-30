@@ -13,6 +13,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write          # Cosign keyless (Sigstore OIDC)
 
 env:
   REGISTRY: ghcr.io
@@ -54,6 +55,7 @@ jobs:
             --password-stdin
 
       - name: Package and push chart
+        id: push
         if: steps.parse.outputs.publish == 'true'
         shell: bash
         run: |
@@ -72,6 +74,19 @@ jobs:
             --app-version "${VERSION}" \
             -d "${DEST_DIR}"
 
-          helm push \
+          PUSH_OUT=$(helm push \
             "${DEST_DIR}/hriv-${{ matrix.component }}-${VERSION}.tgz" \
-            "oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
+            "oci://${{ env.REGISTRY }}/${{ github.repository }}/charts" 2>&1)
+          echo "${PUSH_OUT}"
+
+          DIGEST=$(printf '%s\n' "${PUSH_OUT}" | awk '/^Digest:/{print $2}')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - uses: sigstore/cosign-installer@v3
+        if: steps.parse.outputs.publish == 'true'
+
+      - name: Sign chart
+        if: steps.parse.outputs.publish == 'true' && steps.push.outputs.digest != ''
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ github.repository }}/charts/hriv-${{ matrix.component }}@${{ steps.push.outputs.digest }}"
