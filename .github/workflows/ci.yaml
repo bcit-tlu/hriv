@@ -192,3 +192,87 @@ jobs:
       target: stable
       trivyignore: .trivyignore
     secrets: inherit
+
+  # ── Helm charts → OCI registry (main push) ─────────────────
+  #
+  # Publishes each component's chart with the same RC version that
+  # the corresponding image received, so chart and app tags stay
+  # in lockstep.  Only runs on main pushes; skips components with
+  # no changes.  Release-time chart publishing is handled by
+  # helm-publish.yaml.
+
+  helm-publish:
+    needs: [helm-lint, build-frontend, build-backend, build-backup]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write          # Cosign keyless (Sigstore OIDC)
+    env:
+      REGISTRY: ghcr.io
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: azure/setup-helm@v5
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Helm login (OCI)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login "${{ env.REGISTRY }}" \
+            -u "${{ github.actor }}" \
+            --password-stdin
+
+      - name: Package, push & sign charts
+        shell: bash
+        env:
+          FRONTEND_VERSION: ${{ needs.build-frontend.outputs.rc_version }}
+          BACKEND_VERSION: ${{ needs.build-backend.outputs.rc_version }}
+          BACKUP_VERSION: ${{ needs.build-backup.outputs.rc_version }}
+        run: |
+          set -euo pipefail
+
+          OCI_BASE="oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
+          IMAGE_BASE="${{ env.REGISTRY }}/${{ github.repository }}/charts"
+
+          declare -A VERSIONS=(
+            [frontend]="${FRONTEND_VERSION}"
+            [backend]="${BACKEND_VERSION}"
+            [backup]="${BACKUP_VERSION}"
+          )
+
+          for component in frontend backend backup; do
+            VERSION="${VERSIONS[$component]}"
+            if [[ -z "${VERSION}" ]]; then
+              echo "No RC version for ${component} (no changes); skipping."
+              continue
+            fi
+
+            CHART_DIR="charts/${component}"
+            CHART_NAME=$(awk '/^name:/{print $2; exit}' "${CHART_DIR}/Chart.yaml")
+            DEST_DIR="/tmp/charts"
+            mkdir -p "${DEST_DIR}"
+
+            echo "::group::${CHART_NAME} ${VERSION}"
+
+            helm dependency update "${CHART_DIR}" || true
+
+            helm package "${CHART_DIR}" \
+              --version "${VERSION}" \
+              --app-version "${VERSION}" \
+              -d "${DEST_DIR}"
+
+            PUSH_OUT=$(helm push \
+              "${DEST_DIR}/${CHART_NAME}-${VERSION}.tgz" \
+              "${OCI_BASE}" 2>&1)
+            echo "${PUSH_OUT}"
+
+            DIGEST=$(printf '%s\n' "${PUSH_OUT}" | awk '/^Digest:/{print $2}')
+            if [[ -n "${DIGEST}" ]]; then
+              cosign sign --yes "${IMAGE_BASE}/${CHART_NAME}@${DIGEST}"
+            fi
+
+            echo "::endgroup::"
+          done
