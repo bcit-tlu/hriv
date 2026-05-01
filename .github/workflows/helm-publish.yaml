@@ -13,6 +13,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write          # Cosign keyless (Sigstore OIDC)
 
 env:
   REGISTRY: ghcr.io
@@ -44,6 +45,17 @@ jobs:
       - uses: azure/setup-helm@v5
         if: steps.parse.outputs.publish == 'true'
 
+      - uses: sigstore/cosign-installer@v3
+        if: steps.parse.outputs.publish == 'true'
+
+      - name: Cosign login (OCI)
+        if: steps.parse.outputs.publish == 'true'
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            cosign login "${{ env.REGISTRY }}" \
+            -u "${{ github.actor }}" \
+            --password-stdin
+
       - name: Helm login (OCI)
         if: steps.parse.outputs.publish == 'true'
         shell: bash
@@ -54,6 +66,7 @@ jobs:
             --password-stdin
 
       - name: Package and push chart
+        id: push
         if: steps.parse.outputs.publish == 'true'
         shell: bash
         run: |
@@ -72,6 +85,17 @@ jobs:
             --app-version "${VERSION}" \
             -d "${DEST_DIR}"
 
-          helm push \
+          PUSH_OUT=$(helm push \
             "${DEST_DIR}/hriv-${{ matrix.component }}-${VERSION}.tgz" \
-            "oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
+            "oci://${{ env.REGISTRY }}/${{ github.repository }}/charts" 2>&1) || true
+          echo "${PUSH_OUT}"
+          printf '%s\n' "${PUSH_OUT}" | grep -q '^Digest:' || { echo '::error::helm push failed'; exit 1; }
+
+          DIGEST=$(printf '%s\n' "${PUSH_OUT}" | awk '/^Digest:/{print $2}')
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Sign chart
+        if: steps.parse.outputs.publish == 'true' && steps.push.outputs.digest != ''
+        run: |
+          cosign sign --yes \
+            "${{ env.REGISTRY }}/${{ github.repository }}/charts/hriv-${{ matrix.component }}@${{ steps.push.outputs.digest }}"
