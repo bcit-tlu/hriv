@@ -1,4 +1,4 @@
-# HRIV Frontend — OpenSeaDragon Viewer
+# HRIV Frontend - Image Viewer
 
 A minimal, functional [OpenSeaDragon](https://openseadragon.github.io/) deep-zoom image viewer built with contemporary tooling and Material Design.
 
