@@ -2,7 +2,9 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/bcit-tlu/hriv/hriv-backend
-  tag: "" # Defaults to .Chart.AppVersion
+  # Defaults to .Chart.AppVersion; set to a specific release tag (e.g.
+  # the version from `helm pull --version <ver>`) for reproducible deploys.
+  tag: ""
   pullPolicy: IfNotPresent
 
 service:
@@ -29,7 +31,7 @@ env:
 # path; leave the ConfigMap name/key aligned with
 # ``charts/backup/values.yaml → versionConfigMap``.
 backupVersionConfigMap:
-  enabled: true
+  enabled: false
   name: hriv-backup-version
   key: version
   mountPath: /etc/hriv-versions
@@ -68,12 +70,15 @@ otel:
 jwtSecret: ""
 
 # ── OIDC / OAuth 2.0 authentication ─────────────────────────
+# Disabled by default so chart consumers can start with local
+# email/password login (see seedAdmin below).  Enable and supply
+# issuer + client credentials for SSO.
 oidc:
-  enabled: true
+  enabled: false
   # Full issuer URL — the backend appends /.well-known/openid-configuration.
-  issuer: "https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider"
+  issuer: ""
   # Public client identifier (safe for ConfigMap; not a secret per OAuth 2.0 spec).
-  clientId: "hkPdYUJqqEYWxiVwIrgrAjiS8fLja2ip"
+  clientId: ""
   # Client secret — only used when vault.enabled=false and existingSecret is empty.
   # When vault.enabled=true the secret is pulled from Vault via VSO.
   # When existingSecret is set the chart-managed secret is not created at all.
@@ -83,24 +88,32 @@ oidc:
   # OIDC secret — use this to manage the secret outside of Helm/Vault
   # (e.g. kubectl create secret generic <name> ...).  Leave empty to
   # let the chart create the secret from clientId/clientSecret above.
-  existingSecret: "hriv-oidc"
+  existingSecret: ""
   # Backend callback endpoint that the IdP redirects to after authentication.
-  redirectUri: "https://hriv.latest.ltc.bcit.ca/api/auth/oidc/callback"
+  redirectUri: ""
   # Space-separated OAuth 2.0 scopes to request from the IdP.
   scopes: "openid email profile"
   # JSON object mapping IdP group names to HRIV roles (admin/instructor/student).
-  roleMapping: '{"bcit-tlu-admins":"admin","bcit-tlu-instructors":"instructor","bcit-tlu-students":"student"}'
+  roleMapping: '{}'
   # Frontend URL to redirect to after successful OIDC login.
-  postLoginRedirect: "https://hriv.latest.ltc.bcit.ca"
+  postLoginRedirect: ""
   # Trust email from IdP without requiring email_verified claim.
-  # Vault does not emit email_verified; safe for trusted corporate IdP.
-  trustEmail: true
+  # Enable when your IdP does not emit the email_verified claim.
+  trustEmail: false
   # CORS origins (comma-separated). Used as fallback redirect target when
   # postLoginRedirect is empty.
-  corsOrigins: "https://hriv.latest.ltc.bcit.ca"
+  corsOrigins: ""
 
-# CloudNative-PG database cluster
+# CloudNative-PG database cluster.
+# Set enabled=true to have the chart create a CNPG Cluster resource;
+# set enabled=false to bring your own PostgreSQL and supply the
+# connection string via cnpg.externalDatabaseUri (or vault.enabled=true).
 cnpg:
+  enabled: false
+  # Full PostgreSQL connection URI for BYO-database deployments.
+  # Only used when cnpg.enabled=false AND vault.enabled=false.
+  # Example: "postgresql://user:pass@db-host:5432/hriv"
+  externalDatabaseUri: ""
   instances: 1
   imageName: ghcr.io/cloudnative-pg/postgresql:16
   database: hriv
@@ -152,7 +165,7 @@ tileSidecar:
   resources: {}
 
 persistence:
-  enabled: true
+  enabled: false
   storageClass: longhorn
   size: 10Gi
   # ReadWriteOnce is fine for single-replica dev/staging.
@@ -185,8 +198,11 @@ affinity: {}
 # post-install`` — not re-run on upgrades or rollbacks).
 #
 # Enabled by default so fresh ``helm install`` runs produce a working
-# local admin login even when OIDC isn't wired up yet.  The default
-# ``passwordHash`` below is the same development hash used by
+# local admin login even when OIDC isn't wired up yet.  Without this
+# seed (and without OIDC), there is no initial user and no way to
+# create one through the API (POST /api/users requires admin role).
+#
+# The default ``passwordHash`` is the same development hash used by
 # ``db/seed.sql`` in docker-compose; the operator's very first task
 # after the pods are healthy should be to log in as this account and
 # rotate the password via the normal change-password flow (or disable
