@@ -163,8 +163,8 @@ ENV OTEL_TRACES_EXPORTER=none \
 
 # Deliberately no ``ARG APP_VERSION``/``ENV APP_VERSION`` here.
 #
-# The value surfaced by ``/api/admin/version`` is supplied **at deploy
-# time** by the Helm chart (``charts/backend/templates/deployment.yaml``
+# The value surfaced by ``/api/admin/version`` is supplied *at deploy
+# time* by the Helm chart (``charts/backend/templates/deployment.yaml``
 # renders ``APP_VERSION`` from ``.Values.image.tag | default
 # .Chart.AppVersion`` with the rc-timestamp trimmed). Baking it as a
 # build-time ARG would cause retag-promoted production images (see
