@@ -2,6 +2,8 @@ apiVersion: v2
 name: hriv-backend
 description: HRIV Backend – FastAPI image library API
 # CI stamps version and appVersion from the release tag at helm-publish time.
+# To install the latest stable chart:
+#   helm pull oci://ghcr.io/bcit-tlu/hriv/charts/hriv-backend --version <latest GitHub release>
 version: 0.1.0
 appVersion: "0.1.0"
 type: application
