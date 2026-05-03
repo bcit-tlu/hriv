@@ -49,9 +49,11 @@ otel:
   exporterEndpoint: ""
   exporterProtocol: "http/protobuf"
 
-# Vault Secrets Operator integration
+# Vault Secrets Operator integration.
+# Disabled by default so standalone chart users are not required to use Vault.
+# Override to true in Flux overlays (flux-fleet) for org deployments.
 vault:
-  enabled: true
+  enabled: false
   kvMount: secret
   authRef: vault-auth
   refreshAfter: 1h
