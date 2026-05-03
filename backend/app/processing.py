@@ -566,24 +566,18 @@ async def process_replace_image(
             src.status_message = "Tiles generated"
             await db.commit()
 
-            # Remove old tile directory from disk
+            # Capture old tile directory path before updating Image record
+            old_tile_dir: str | None = None
             old_tile_sources = img.tile_sources  # e.g. /api/tiles/42/image.dzi
             if old_tile_sources:
-                # Extract the source-image ID from the URL path
                 parts = old_tile_sources.strip("/").split("/")
                 # Expected format: api/tiles/<old_src_id>/image.dzi
                 if len(parts) >= 3:
                     old_src_id = parts[2]
-                    old_tile_dir = os.path.join(settings.tiles_dir, old_src_id)
-                    if os.path.isdir(old_tile_dir):
-                        shutil.rmtree(old_tile_dir, ignore_errors=True)
-                        logger.info(
-                            "Removed old tile directory",
-                            extra={
-                                "event": "replace.old_tiles_removed",
-                                "old_tile_dir": old_tile_dir,
-                            },
-                        )
+                    candidate = os.path.join(settings.tiles_dir, old_src_id)
+                    tiles_root = Path(settings.tiles_dir).resolve()
+                    if Path(candidate).resolve().is_relative_to(tiles_root):
+                        old_tile_dir = candidate
 
             tile_sources_url = f"/api/tiles/{src.id}/{dzi_rel}"
             thumb_url = f"/api/tiles/{src.id}/{thumb_rel}"
@@ -622,6 +616,18 @@ async def process_replace_image(
                 src.progress = 100
                 src.status_message = "Completed"
                 await db.commit()
+
+            # Remove old tiles only after the commit succeeds, so a
+            # failure cannot leave the Image record pointing at deleted files.
+            if old_tile_dir and os.path.isdir(old_tile_dir):
+                shutil.rmtree(old_tile_dir, ignore_errors=True)
+                logger.info(
+                    "Removed old tile directory",
+                    extra={
+                        "event": "replace.old_tiles_removed",
+                        "old_tile_dir": old_tile_dir,
+                    },
+                )
 
             duration_ms = round((time.monotonic() - t_start) * 1000)
             logger.info(
