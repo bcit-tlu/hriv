@@ -1,7 +1,10 @@
-{{- if and .Values.redis.enabled .Values.redis.worker.enabled }}
-{{- if not .Values.redis.enabled }}
+{{- if and .Values.redis.worker.enabled (not .Values.redis.enabled) }}
 {{- fail "redis.worker.enabled requires redis.enabled — the worker needs a Redis connection" }}
 {{- end }}
+{{- if and .Values.redis.enabled .Values.redis.worker.enabled .Values.persistence.enabled (not (has "ReadWriteMany" .Values.persistence.accessModes)) }}
+{{- fail "redis.worker.enabled with persistence requires a ReadWriteMany PVC — the worker and API pods both mount the data volume" }}
+{{- end }}
+{{- if and .Values.redis.enabled .Values.redis.worker.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
