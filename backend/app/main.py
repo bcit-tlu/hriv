@@ -1,3 +1,5 @@
+import app.otel_bootstrap  # noqa: F401 — side-effect: configure OTEL SDK
+
 import logging
 import os
 from contextlib import asynccontextmanager
