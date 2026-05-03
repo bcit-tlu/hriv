@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -35,11 +35,43 @@ export interface ImageFormData {
   metadata_extra?: Record<string, unknown>
 }
 
+/** Recognised image MIME types (must stay in sync with backend). */
+const IMAGE_MIME_TYPES = new Set<string>([
+  'image/jpeg', 'image/png', 'image/tiff', 'image/gif', 'image/webp',
+])
+
+/** Recognised image extensions for drag-and-drop validation. */
+const IMAGE_EXTENSIONS = new Set([
+  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.tif', '.tiff', '.svs',
+])
+
+const ACCEPTED_IMAGE_TYPES =
+  'image/jpeg,image/png,image/tiff,image/gif,image/webp,.tif,.tiff,.svs'
+
+function isImageFile(file: File): boolean {
+  if (IMAGE_MIME_TYPES.has(file.type)) return true
+  const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
+  return IMAGE_EXTENSIONS.has(ext)
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+}
+
+export interface ReplaceImageData {
+  file: File
+  formData: ImageFormData
+}
+
 interface EditImageModalProps {
   open: boolean
   onClose: () => void
   onSave: (data: ImageFormData) => void
   onDelete?: () => Promise<void>
+  onReplace?: (data: ReplaceImageData) => Promise<void>
   image: ApiImage | null
   categories: Category[]
   programs: Program[]
@@ -53,6 +85,7 @@ function EditImageForm({
   onClose,
   onSave,
   onDelete,
+  onReplace,
   image,
   categories,
   programs,
@@ -61,6 +94,7 @@ function EditImageForm({
   onToggleVisibility,
   onViewImage,
 }: Omit<EditImageModalProps, 'open'>) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState(image?.name ?? '')
   const [categoryId, setCategoryId] = useState<number | null>(image?.category_id ?? null)
   const [copyright, setCopyright] = useState(image?.copyright ?? '')
@@ -78,6 +112,13 @@ function EditImageForm({
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [confirmViewImage, setConfirmViewImage] = useState(false)
+
+  // Replacement state
+  const [replaceFile, setReplaceFile] = useState<File | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+  const [confirmReplace, setConfirmReplace] = useState(false)
+  const [replacing, setReplacing] = useState(false)
+  const [replaceError, setReplaceError] = useState<string | null>(null)
 
   // Track whether the form has been modified from its initial values
   const isDirty =
@@ -110,10 +151,9 @@ function EditImageForm({
     setProgramIds(typeof value === 'string' ? [] : value)
   }
 
-  const handleSave = () => {
+  const buildFormData = (): ImageFormData | null => {
     const trimmedName = name.trim()
-    if (!trimmedName) return
-    // Only include metadata_extra when measurement fields have been touched
+    if (!trimmedName) return null
     const scaleNum = measurementScale.trim() ? Number(measurementScale) : undefined
     const unitStr = measurementUnit.trim() || undefined
     const hasScale = scaleNum !== undefined && !Number.isNaN(scaleNum)
@@ -139,8 +179,76 @@ function EditImageForm({
       }
     }
 
+    return formData
+  }
+
+  const handleSave = () => {
+    const formData = buildFormData()
+    if (!formData) return
     onSave(formData)
   }
+
+  // ── Replacement handlers ──────────────────────────────
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setDragOver(false)
+    if (!onReplace) return
+    const dropped = e.dataTransfer.files[0]
+    if (dropped && isImageFile(dropped)) {
+      setReplaceFile(dropped)
+      setConfirmReplace(false)
+    }
+  }, [onReplace])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    if (onReplace) setDragOver(true)
+  }, [onReplace])
+
+  const handleDragLeave = useCallback(() => {
+    setDragOver(false)
+  }, [])
+
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const selected = e.target.files?.[0]
+      if (selected && isImageFile(selected)) {
+        setReplaceFile(selected)
+        setConfirmReplace(false)
+      }
+    },
+    [],
+  )
+
+  const handleClearFile = () => {
+    setReplaceFile(null)
+    setConfirmReplace(false)
+    setReplaceError(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleReplace = async () => {
+    if (!onReplace || !replaceFile) return
+    if (!confirmReplace) {
+      setConfirmReplace(true)
+      return
+    }
+    const formData = buildFormData()
+    if (!formData) return
+    setReplacing(true)
+    setReplaceError(null)
+    try {
+      await onReplace({ file: replaceFile, formData })
+    } catch {
+      setReplacing(false)
+      setReplaceError('Failed to replace image. Please try again.')
+    }
+  }
+
+  const busy = deleting || replacing
 
   return (
     <>
@@ -166,12 +274,23 @@ function EditImageForm({
       <DialogContent
         sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
       >
-        {/* Replace image drop zone (disabled until replacement is implemented) */}
+        {/* Replace image drop zone */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPTED_IMAGE_TYPES}
+          hidden
+          onChange={handleFileSelect}
+        />
         <Box
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onClick={onReplace ? () => fileInputRef.current?.click() : undefined}
           sx={{
             mt: 1,
             border: '2px dashed',
-            borderColor: 'grey.400',
+            borderColor: dragOver ? 'primary.main' : replaceFile ? 'success.main' : 'grey.400',
             borderRadius: 2,
             p: 3,
             display: 'flex',
@@ -179,28 +298,68 @@ function EditImageForm({
             alignItems: 'center',
             justifyContent: 'center',
             minHeight: 120,
-            bgcolor: 'action.hover',
-            opacity: 0.6,
-            pointerEvents: 'none',
+            bgcolor: dragOver ? 'action.hover' : replaceFile ? 'success.50' : 'grey.50',
+            transition: 'all 0.2s',
+            cursor: onReplace ? 'pointer' : 'default',
+            opacity: onReplace ? 1 : 0.6,
           }}
         >
           <CloudUploadIcon
-            sx={{ fontSize: 36, color: 'grey.500', mb: 0.5 }}
+            sx={{ fontSize: 36, color: replaceFile ? 'success.main' : 'grey.500', mb: 0.5 }}
           />
-          <Typography variant="body2" color="text.disabled">
-            Drag and drop to replace image
-          </Typography>
-          <Typography
-            variant="caption"
-            color="text.disabled"
-            sx={{ mt: 0.5 }}
-          >
-            or browse to upload
-          </Typography>
+          {replaceFile ? (
+            <>
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                {replaceFile.name}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {formatBytes(replaceFile.size)}
+              </Typography>
+              <Button
+                size="small"
+                onClick={(e) => { e.stopPropagation(); handleClearFile() }}
+                sx={{ mt: 0.5 }}
+              >
+                Clear
+              </Button>
+            </>
+          ) : (
+            <>
+              <Typography variant="body2" color={onReplace ? 'text.secondary' : 'text.disabled'}>
+                Drag and drop to replace image
+              </Typography>
+              <Typography
+                variant="caption"
+                color={onReplace ? 'text.secondary' : 'text.disabled'}
+                sx={{ mt: 0.5 }}
+              >
+                or{' '}
+                <Typography
+                  component="span"
+                  variant="caption"
+                  color={onReplace ? 'primary' : 'text.disabled'}
+                  sx={onReplace ? { cursor: 'pointer', textDecoration: 'underline' } : {}}
+                >
+                  browse to upload
+                </Typography>
+              </Typography>
+            </>
+          )}
         </Box>
-        <Typography variant="caption" color="text.secondary">
-          Image replacement processing will be added in a future update.
-        </Typography>
+
+        {replaceFile && confirmReplace && (
+          <Alert severity="warning" sx={{ mt: -1 }}>
+            Replacing this image will delete the current image file, all tiles,
+            and any canvas annotations and overlays. This cannot be undone.
+            Click &quot;Replace &amp; Save&quot; again to confirm.
+          </Alert>
+        )}
+
+        {replaceError && (
+          <Alert severity="error" sx={{ mt: -1 }} onClose={() => setReplaceError(null)}>
+            {replaceError}
+          </Alert>
+        )}
 
         <TextField
           autoFocus
@@ -312,7 +471,7 @@ function EditImageForm({
                 color="error"
                 variant={confirmDelete ? 'contained' : 'outlined'}
                 onClick={handleDelete}
-                disabled={deleting}
+                disabled={busy}
                 fullWidth
               >
                 {confirmDelete
@@ -357,14 +516,25 @@ function EditImageForm({
         </Box>
       )}
       <DialogActions>
-        <Button onClick={onClose} disabled={deleting}>Cancel</Button>
-        <Button
-          onClick={handleSave}
-          variant="contained"
-          disabled={!name.trim() || deleting}
-        >
-          Save
-        </Button>
+        <Button onClick={onClose} disabled={busy}>Cancel</Button>
+        {replaceFile && onReplace ? (
+          <Button
+            onClick={handleReplace}
+            variant="contained"
+            color={confirmReplace ? 'warning' : 'primary'}
+            disabled={!name.trim() || busy}
+          >
+            {confirmReplace ? 'Confirm Replace & Save' : 'Replace & Save'}
+          </Button>
+        ) : (
+          <Button
+            onClick={handleSave}
+            variant="contained"
+            disabled={!name.trim() || busy}
+          >
+            Save
+          </Button>
+        )}
       </DialogActions>
       <Snackbar
         open={deleteError !== null}
@@ -384,6 +554,7 @@ export default function EditImageModal({
   onClose,
   onSave,
   onDelete,
+  onReplace,
   image,
   categories,
   programs,
@@ -402,6 +573,7 @@ export default function EditImageModal({
           onClose={onClose}
           onSave={onSave}
           onDelete={onDelete}
+          onReplace={onReplace}
           image={image}
           categories={categories}
           programs={programs}

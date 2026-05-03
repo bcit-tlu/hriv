@@ -54,7 +54,7 @@ import ManagePage from "./components/ManagePage";
 import PeoplePage from "./components/PeoplePage";
 import LoginScreen from "./components/LoginScreen";
 import EditImageModal from "./components/EditImageModal";
-import type { ImageFormData } from "./components/EditImageModal";
+import type { ImageFormData, ReplaceImageData } from "./components/EditImageModal";
 import ProgramManagementModal from "./components/ProgramManagementModal";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
@@ -63,6 +63,7 @@ import { useAuth } from "./useAuth";
 import {
     fetchCategoryTree,
     fetchAnnouncement,
+    fetchImage as apiFetchImage,
     fetchUncategorizedImages,
     fetchSourceImage,
     fetchVersions,
@@ -75,6 +76,7 @@ import {
     fetchPrograms as apiFetchPrograms,
     updateImage as apiUpdateImage,
     deleteImage as apiDeleteImage,
+    replaceImage as apiReplaceImage,
     updateAnnouncement,
     createProgram,
     updateProgram,
@@ -170,6 +172,8 @@ export default function App() {
     const [categoriesLoading, setCategoriesLoading] = useState(true);
     const [path, setPath] = useState<Category[]>([]);
     const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
+    const selectedImageRef = useRef<ImageItem | null>(null);
+    selectedImageRef.current = selectedImage;
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [announcement, setAnnouncement] = useState("");
@@ -389,6 +393,34 @@ export default function App() {
                         loadCategories(),
                         loadUncategorizedImages(),
                     ]);
+                    // If the completed job is for the currently-viewed image,
+                    // refresh it so the viewer picks up new tile URLs.
+                    const current = selectedImageRef.current;
+                    if (imageId != null && current && current.id === imageId) {
+                        try {
+                            const fresh = await apiFetchImage(imageId);
+                            setSelectedImage({
+                                id: fresh.id,
+                                name: fresh.name,
+                                thumb: fresh.thumb,
+                                tileSources: fresh.tile_sources,
+                                categoryId: fresh.category_id,
+                                copyright: fresh.copyright,
+                                note: fresh.note,
+                                programIds: fresh.program_ids,
+                                active: fresh.active,
+                                version: fresh.version,
+                                createdAt: fresh.created_at,
+                                updatedAt: fresh.updated_at,
+                                metadataExtra: fresh.metadata_extra,
+                                width: fresh.width,
+                                height: fresh.height,
+                                fileSize: fresh.file_size,
+                            });
+                        } catch {
+                            // Non-critical; viewer will show stale data
+                        }
+                    }
                     refs.delete(job.id);
                     setProcessingJobs((prev) =>
                         prev.map((j) =>
@@ -1387,6 +1419,77 @@ export default function App() {
         [selectedImage, loadUncategorizedImages],
     );
 
+    const addProcessingJob = useCallback(
+        (sourceImageId: number, filename: string, fileSize: number) => {
+            setProcessingJobs((prev) => {
+                if (
+                    prev.filter((j) => j.status === "processing")
+                        .length >= MAX_PROCESSING_JOBS
+                )
+                    return prev;
+                if (prev.some((j) => j.id === sourceImageId)) return prev;
+                return [
+                    ...prev,
+                    {
+                        id: sourceImageId,
+                        filename,
+                        status: "processing" as const,
+                        serverProgress: 0,
+                        fileSize,
+                        startedAt: Date.now(),
+                    },
+                ];
+            });
+        },
+        [],
+    );
+
+    const handleReplaceViewerImage = useCallback(
+        async ({ file, formData }: ReplaceImageData) => {
+            if (!selectedImage) return;
+            // Save metadata changes first
+            const updated = await apiUpdateImage(selectedImage.id, formData);
+            // Upload replacement file
+            const result = await apiReplaceImage(selectedImage.id, file);
+            addProcessingJob(result.id, file.name, file.size);
+            setSelectedImage({
+                id: updated.id,
+                name: updated.name,
+                thumb: updated.thumb,
+                tileSources: updated.tile_sources,
+                categoryId: updated.category_id,
+                copyright: updated.copyright,
+                note: updated.note,
+                programIds: updated.program_ids,
+                active: updated.active,
+                version: updated.version,
+                createdAt: updated.created_at,
+                updatedAt: updated.updated_at,
+                metadataExtra: updated.metadata_extra,
+                width: updated.width,
+                height: updated.height,
+                fileSize: updated.file_size,
+            });
+            setImageEditOpen(false);
+            await loadCategories();
+            loadUncategorizedImages();
+        },
+        [selectedImage, loadCategories, loadUncategorizedImages, addProcessingJob],
+    );
+
+    const handleReplaceBrowseImage = useCallback(
+        async ({ file, formData }: ReplaceImageData) => {
+            if (!browseEditImage) return;
+            await apiUpdateImage(browseEditImage.id, formData);
+            const result = await apiReplaceImage(browseEditImage.id, file);
+            addProcessingJob(result.id, file.name, file.size);
+            setBrowseEditImage(null);
+            await loadCategories();
+            loadUncategorizedImages();
+        },
+        [browseEditImage, loadCategories, loadUncategorizedImages, addProcessingJob],
+    );
+
     // Show loading spinner while users are loading
     if (usersLoading) {
         return (
@@ -1706,6 +1809,7 @@ export default function App() {
                                 loadUncategorizedImages();
                             }}
                             onAddCategory={addCategoryInline}
+                            onReplaceImage={addProcessingJob}
                         />
                     ) : selectedImage ? (
                         /* ---- Viewer mode ---- */
@@ -2271,6 +2375,7 @@ export default function App() {
                           }
                         : undefined
                 }
+                onReplace={handleReplaceViewerImage}
                 image={selectedApiImage}
                 categories={categories}
                 programs={programs}
@@ -2294,6 +2399,7 @@ export default function App() {
                           }
                         : undefined
                 }
+                onReplace={handleReplaceBrowseImage}
                 image={browseApiImage}
                 categories={categories}
                 programs={programs}

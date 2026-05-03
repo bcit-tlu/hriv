@@ -40,13 +40,13 @@ import FilterListIcon from '@mui/icons-material/FilterList'
 import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityIcon from '@mui/icons-material/Visibility'
-import { fetchImages, updateImage, deleteImage, bulkUpdateImages, bulkDeleteImages } from '../api'
+import { fetchImages, updateImage, deleteImage, replaceImage, bulkUpdateImages, bulkDeleteImages } from '../api'
 import type { ApiImage } from '../api'
 import type { Category, Program } from '../types'
 import BulkEditImagesModal from './BulkEditImagesModal'
 import BulkImportModal from './BulkImportModal'
 import EditImageModal from './EditImageModal'
-import type { ImageFormData } from './EditImageModal'
+import type { ImageFormData, ReplaceImageData } from './EditImageModal'
 import MoveImageDialog from './MoveImageDialog'
 import UploadImageModal from './UploadImageModal'
 
@@ -126,9 +126,10 @@ interface ManagePageProps {
   onAddCategory?: (label: string, parentId: number | null) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  onReplaceImage?: (sourceImageId: number, filename: string, fileSize: number) => void
 }
 
-export default function ManagePage({ categories, programs, onViewImage, onNavigateCategory, onCategoriesChanged, onAddCategory, onEditCategory, onToggleVisibility }: ManagePageProps) {
+export default function ManagePage({ categories, programs, onViewImage, onNavigateCategory, onCategoriesChanged, onAddCategory, onEditCategory, onToggleVisibility, onReplaceImage }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -850,6 +851,15 @@ export default function ManagePage({ categories, programs, onViewImage, onNaviga
             next.delete(editingImage.id)
             return next
           })
+          setEditOpen(false)
+          setEditingImage(null)
+          await loadImages()
+          onCategoriesChanged?.()
+        } : undefined}
+        onReplace={editingImage ? async ({ file, formData }: ReplaceImageData) => {
+          await updateImage(editingImage.id, formData)
+          const result = await replaceImage(editingImage.id, file)
+          onReplaceImage?.(result.id, file.name, file.size)
           setEditOpen(false)
           setEditingImage(null)
           await loadImages()
