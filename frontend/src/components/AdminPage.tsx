@@ -698,11 +698,19 @@ export default function AdminPage() {
               {(logTask.status === 'uploading' || logTask.status === 'running' || logTask.status === 'pending' || logTask.status === 'cancelling') && (
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
-                    {logTask.status === 'cancelling' ? 'Cancelling…' : `Progress: ${logTask.progress}%`}
+                    {logTask.status === 'cancelling'
+                      ? 'Cancelling…'
+                      : logTask.status === 'uploading'
+                        ? `Uploading ${Math.round((uploadProgress.get(logTask.id) ?? 0) * 100)}%`
+                        : `Progress: ${logTask.progress}%`}
                   </Typography>
                   <LinearProgress
                     variant={logTask.status === 'cancelling' ? 'indeterminate' : 'determinate'}
-                    value={logTask.progress}
+                    value={
+                      logTask.status === 'uploading'
+                        ? (uploadProgress.get(logTask.id) ?? 0) * 100
+                        : logTask.progress
+                    }
                     color={logTask.status === 'cancelling' ? 'warning' : 'primary'}
                     sx={{ height: 6, borderRadius: 1 }}
                   />
