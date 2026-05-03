@@ -1422,6 +1422,11 @@ export default function App() {
     const addProcessingJob = useCallback(
         (sourceImageId: number, filename: string, fileSize: number) => {
             setProcessingJobs((prev) => {
+                if (
+                    prev.filter((j) => j.status === "processing")
+                        .length >= MAX_PROCESSING_JOBS
+                )
+                    return prev;
                 if (prev.some((j) => j.id === sourceImageId)) return prev;
                 return [
                     ...prev,
