@@ -532,19 +532,89 @@ export function startFilesExport(): Promise<AdminTask> {
   return request('/admin/tasks/files-export', { method: 'POST' })
 }
 
-export async function startFilesImport(file: File): Promise<AdminTask> {
+/**
+ * Create a filesystem-import task in ``uploading`` status.
+ *
+ * This is step 1 of a two-step flow: init → upload.  The returned task
+ * should be added to the active-task list and polled immediately so the
+ * user sees the "Uploading" state.  Step 2 is {@link uploadTaskFile}.
+ */
+export function initFilesImport(filename: string): Promise<AdminTask> {
+  return request(
+    `/admin/tasks/files-import?filename=${encodeURIComponent(filename)}`,
+    { method: 'POST' },
+  )
+}
+
+/**
+ * Upload the archive for an ``uploading``-status task via XHR.
+ *
+ * On success the backend transitions the task to ``pending`` and
+ * enqueues it for background processing.  The returned promise
+ * resolves with the updated task object.
+ *
+ * @param onProgress  Called with a fraction (0–1) as the upload streams.
+ */
+export function uploadTaskFile(
+  taskId: number,
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<AdminTask> {
   const form = new FormData()
   form.append('file', file)
-  const res = await fetch(`${BASE}/api/admin/tasks/files-import`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: form,
+
+  return new Promise<AdminTask>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', `${BASE}/api/admin/tasks/${taskId}/upload`)
+
+    const hdrs = authHeaders()
+    for (const [k, v] of Object.entries(hdrs)) {
+      xhr.setRequestHeader(k, v)
+    }
+
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          onProgress(e.loaded / e.total)
+        }
+      })
+    }
+
+    xhr.addEventListener('load', () => {
+      try {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(JSON.parse(xhr.responseText) as AdminTask)
+        } else {
+          reject(new Error(`Upload failed: ${xhr.responseText || xhr.statusText}`))
+        }
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
+      }
+    })
+
+    xhr.addEventListener('error', () => {
+      reject(new Error('Upload failed: network error'))
+    })
+
+    xhr.send(form)
   })
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText)
-    throw new Error(`Import failed: ${text}`)
-  }
-  return res.json() as Promise<AdminTask>
+}
+
+/**
+ * Convenience wrapper that runs both init + upload in sequence.
+ *
+ * @param onInitiated  Called once the task record exists (before the
+ *                     upload starts) so the caller can begin polling.
+ * @param onUploadProgress  Fraction 0–1 during the upload phase.
+ */
+export async function startFilesImport(
+  file: File,
+  onInitiated?: (task: AdminTask) => void,
+  onUploadProgress?: (fraction: number) => void,
+): Promise<AdminTask> {
+  const task = await initFilesImport(file.name)
+  if (onInitiated) onInitiated(task)
+  return uploadTaskFile(task.id, file, onUploadProgress)
 }
 
 export function fetchAdminTasks(): Promise<AdminTask[]> {

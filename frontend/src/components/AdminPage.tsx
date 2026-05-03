@@ -26,7 +26,8 @@ import {
   startDbExport,
   startDbImport,
   startFilesExport,
-  startFilesImport,
+  initFilesImport,
+  uploadTaskFile,
   fetchAdminTask,
   fetchAdminTasks,
   cancelAdminTask,
@@ -58,6 +59,8 @@ export default function AdminPage() {
 
   // Active background tasks being polled
   const [activeTasks, setActiveTasks] = useState<AdminTask[]>([])
+  // Client-side upload progress for tasks in "uploading" status (0–1).
+  const [uploadProgress, setUploadProgress] = useState<Map<number, number>>(new Map())
   // Completed/failed task history (loaded once)
   const [taskHistory, setTaskHistory] = useState<AdminTask[]>([])
   // Snackbar notifications
@@ -236,7 +239,35 @@ export default function AdminPage() {
     if (kind === 'db_import') {
       await kickOff('db_import', () => startDbImport(file))
     } else {
-      await kickOff('files_import', () => startFilesImport(file))
+      // Two-step flow: create task first (visible immediately), then
+      // upload via XHR with progress.
+      setError(null)
+      setStarting('files_import')
+      try {
+        const task = await initFilesImport(file.name)
+        setActiveTasks((prev) => [...prev, task])
+        pollTask(task.id)
+        setStarting(null) // task banner takes over
+
+        await uploadTaskFile(task.id, file, (fraction) => {
+          setUploadProgress((prev) => new Map(prev).set(task.id, fraction))
+        })
+        // Upload done — clear local progress; polling picks up the rest.
+        setUploadProgress((prev) => {
+          const next = new Map(prev)
+          next.delete(task.id)
+          return next
+        })
+      } catch (err) {
+        setUploadProgress((prev) => {
+          const next = new Map(prev)
+          // Clean up stale entry for any task that existed
+          for (const id of next.keys()) next.delete(id)
+          return next
+        })
+        setError(err instanceof Error ? err.message : 'Operation failed')
+        setStarting(null)
+      }
     }
   }
 
@@ -282,7 +313,7 @@ export default function AdminPage() {
 
   // Active (in-flight) tasks for the progress banner
   const runningTasks = activeTasks.filter(
-    (t) => t.status === 'pending' || t.status === 'running' || t.status === 'cancelling',
+    (t) => t.status === 'uploading' || t.status === 'pending' || t.status === 'running' || t.status === 'cancelling',
   )
 
   return (
@@ -340,11 +371,25 @@ export default function AdminPage() {
           <Box sx={{ width: '100%' }}>
             <Typography variant="body2" sx={{ mb: 0.5 }}>
               {TASK_LABELS[task.task_type] ?? task.task_type}
-              {task.status === 'cancelling' ? ' — Cancelling…' : ` — ${task.progress}%`}
+              {task.status === 'cancelling'
+                ? ' — Cancelling…'
+                : task.status === 'uploading'
+                  ? ` — Uploading ${Math.round((uploadProgress.get(task.id) ?? 0) * 100)}%`
+                  : ` — ${task.progress}%`}
             </Typography>
             <LinearProgress
-              variant={task.status === 'cancelling' ? 'indeterminate' : 'determinate'}
-              value={task.progress}
+              variant={
+                task.status === 'cancelling'
+                  ? 'indeterminate'
+                  : task.status === 'uploading'
+                    ? (uploadProgress.has(task.id) ? 'determinate' : 'indeterminate')
+                    : 'determinate'
+              }
+              value={
+                task.status === 'uploading'
+                  ? (uploadProgress.get(task.id) ?? 0) * 100
+                  : task.progress
+              }
               color={task.status === 'cancelling' ? 'warning' : 'primary'}
               sx={{ height: 6, borderRadius: 1 }}
             />
@@ -517,7 +562,7 @@ export default function AdminPage() {
                     ? new Date(task.created_at).toLocaleString()
                     : ''}
                 </Typography>
-                {(task.status === 'pending' || task.status === 'running') && (
+                {(task.status === 'uploading' || task.status === 'pending' || task.status === 'running') && (
                   <IconButton
                     size="small"
                     color="warning"
@@ -650,14 +695,28 @@ export default function AdminPage() {
               />
             </DialogTitle>
             <DialogContent dividers>
-              {(logTask.status === 'running' || logTask.status === 'pending' || logTask.status === 'cancelling') && (
+              {(logTask.status === 'uploading' || logTask.status === 'running' || logTask.status === 'pending' || logTask.status === 'cancelling') && (
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
-                    {logTask.status === 'cancelling' ? 'Cancelling…' : `Progress: ${logTask.progress}%`}
+                    {logTask.status === 'cancelling'
+                      ? 'Cancelling…'
+                      : logTask.status === 'uploading'
+                        ? `Uploading ${Math.round((uploadProgress.get(logTask.id) ?? 0) * 100)}%`
+                        : `Progress: ${logTask.progress}%`}
                   </Typography>
                   <LinearProgress
-                    variant={logTask.status === 'cancelling' ? 'indeterminate' : 'determinate'}
-                    value={logTask.progress}
+                    variant={
+                      logTask.status === 'cancelling'
+                        ? 'indeterminate'
+                        : logTask.status === 'uploading'
+                          ? (uploadProgress.has(logTask.id) ? 'determinate' : 'indeterminate')
+                          : 'determinate'
+                    }
+                    value={
+                      logTask.status === 'uploading'
+                        ? (uploadProgress.get(logTask.id) ?? 0) * 100
+                        : logTask.progress
+                    }
                     color={logTask.status === 'cancelling' ? 'warning' : 'primary'}
                     sx={{ height: 6, borderRadius: 1 }}
                   />
@@ -693,7 +752,7 @@ export default function AdminPage() {
               </Box>
             </DialogContent>
             <DialogActions>
-              {(logTask.status === 'pending' || logTask.status === 'running') && (
+              {(logTask.status === 'uploading' || logTask.status === 'pending' || logTask.status === 'running') && (
                 <Button
                   color="warning"
                   startIcon={<CancelIcon />}

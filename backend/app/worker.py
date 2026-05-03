@@ -226,4 +226,4 @@ class WorkerSettings:
     redis_settings = _parse_redis_settings()
     on_startup = on_startup
     max_jobs = 4  # Match the existing _MAX_CONCURRENCY
-    job_timeout = 1800  # 30 minutes — filesystem archives can be very large
+    job_timeout = 7200  # 2 hours — large filesystem archives need headroom

@@ -30,6 +30,8 @@ import {
   startDbExport,
   startDbImport,
   startFilesExport,
+  initFilesImport,
+  uploadTaskFile,
   startFilesImport,
   fetchAdminTasks,
   fetchAdminTask,
@@ -152,28 +154,179 @@ describe('Background Admin Task API', () => {
     })
   })
 
-  // ── startFilesImport ─────────────────────────────────────────────────
+  // ── initFilesImport ──────────────────────────────────────────────────
 
-  describe('startFilesImport', () => {
-    it('sends POST with FormData containing file', async () => {
+  describe('initFilesImport', () => {
+    it('sends POST with filename query param', async () => {
       mockFetch.mockReturnValueOnce(jsonResponse(TASK_FIXTURE))
 
-      const file = new File(['tar-data'], 'backup.tar.gz', { type: 'application/gzip' })
-      const result = await startFilesImport(file)
+      const result = await initFilesImport('backup.tar.gz')
 
       const [url, init] = mockFetch.mock.calls[0]
-      expect(url).toBe('/api/admin/tasks/files-import')
+      expect(url).toBe('/api/admin/tasks/files-import?filename=backup.tar.gz')
       expect(init.method).toBe('POST')
-      expect(init.body).toBeInstanceOf(FormData)
-      expect((init.body as FormData).get('file')).toBe(file)
       expect(result).toEqual(TASK_FIXTURE)
     })
 
     it('throws on non-OK response', async () => {
-      mockFetch.mockReturnValueOnce(errorResponse(400, 'Invalid archive'))
+      mockFetch.mockReturnValueOnce(errorResponse(400, 'Only .tar.gz / .tgz files are accepted'))
 
-      const file = new File(['bad'], 'bad.tar.gz', { type: 'application/gzip' })
-      await expect(startFilesImport(file)).rejects.toThrow('Import failed: Invalid archive')
+      await expect(initFilesImport('bad.zip')).rejects.toThrow('API 400')
+    })
+  })
+
+  // ── uploadTaskFile ────────────────────────────────────────────────────
+
+  describe('uploadTaskFile', () => {
+    let xhrInstance: {
+      open: ReturnType<typeof vi.fn>
+      setRequestHeader: ReturnType<typeof vi.fn>
+      send: ReturnType<typeof vi.fn>
+      upload: { addEventListener: ReturnType<typeof vi.fn> }
+      addEventListener: ReturnType<typeof vi.fn>
+      status: number
+      responseText: string
+    }
+
+    beforeEach(() => {
+      xhrInstance = {
+        open: vi.fn(),
+        setRequestHeader: vi.fn(),
+        send: vi.fn(),
+        upload: { addEventListener: vi.fn() },
+        addEventListener: vi.fn(),
+        status: 200,
+        responseText: JSON.stringify(TASK_FIXTURE),
+      }
+      // Use a regular function so it can be called with `new`
+      vi.stubGlobal('XMLHttpRequest', function XMLHttpRequest() {
+        return xhrInstance
+      })
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+      // Re-stub the globals other tests need
+      vi.stubGlobal('fetch', mockFetch)
+      vi.stubGlobal('localStorage', {
+        getItem: (key: string) => storage[key] ?? null,
+        setItem: (key: string, val: string) => { storage[key] = val },
+        removeItem: (key: string) => { delete storage[key] },
+      })
+      vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
+    })
+
+    it('opens PUT to the upload endpoint', async () => {
+      const file = new File(['tar-data'], 'backup.tar.gz', { type: 'application/gzip' })
+      const promise = uploadTaskFile(42, file)
+
+      // Simulate successful load
+      const loadHandler = xhrInstance.addEventListener.mock.calls.find(
+        (c: unknown[]) => c[0] === 'load',
+      )![1] as () => void
+      loadHandler()
+
+      const result = await promise
+      expect(xhrInstance.open).toHaveBeenCalledWith('PUT', '/api/admin/tasks/42/upload')
+      expect(xhrInstance.send).toHaveBeenCalled()
+      expect(result).toEqual(TASK_FIXTURE)
+    })
+
+    it('rejects on XHR error', async () => {
+      const file = new File(['tar-data'], 'backup.tar.gz', { type: 'application/gzip' })
+      const promise = uploadTaskFile(42, file)
+
+      const errorHandler = xhrInstance.addEventListener.mock.calls.find(
+        (c: unknown[]) => c[0] === 'error',
+      )![1] as () => void
+      errorHandler()
+
+      await expect(promise).rejects.toThrow('Upload failed: network error')
+    })
+
+    it('calls onProgress callback', async () => {
+      const onProgress = vi.fn()
+      const file = new File(['tar-data'], 'backup.tar.gz', { type: 'application/gzip' })
+      const promise = uploadTaskFile(42, file, onProgress)
+
+      // Fire a progress event
+      const progressHandler = xhrInstance.upload.addEventListener.mock.calls.find(
+        (c: unknown[]) => c[0] === 'progress',
+      )![1] as (e: { lengthComputable: boolean; loaded: number; total: number }) => void
+      progressHandler({ lengthComputable: true, loaded: 50, total: 100 })
+
+      expect(onProgress).toHaveBeenCalledWith(0.5)
+
+      // Complete
+      const loadHandler = xhrInstance.addEventListener.mock.calls.find(
+        (c: unknown[]) => c[0] === 'load',
+      )![1] as () => void
+      loadHandler()
+      await promise
+    })
+  })
+
+  // ── startFilesImport (convenience wrapper) ────────────────────────────
+
+  describe('startFilesImport', () => {
+    let xhrInstance: {
+      open: ReturnType<typeof vi.fn>
+      setRequestHeader: ReturnType<typeof vi.fn>
+      send: ReturnType<typeof vi.fn>
+      upload: { addEventListener: ReturnType<typeof vi.fn> }
+      addEventListener: ReturnType<typeof vi.fn>
+      status: number
+      responseText: string
+    }
+
+    beforeEach(() => {
+      xhrInstance = {
+        open: vi.fn(),
+        setRequestHeader: vi.fn(),
+        send: vi.fn(),
+        upload: { addEventListener: vi.fn() },
+        addEventListener: vi.fn(),
+        status: 200,
+        responseText: JSON.stringify(TASK_FIXTURE),
+      }
+      vi.stubGlobal('XMLHttpRequest', function XMLHttpRequest() {
+        return xhrInstance
+      })
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+      vi.stubGlobal('fetch', mockFetch)
+      vi.stubGlobal('localStorage', {
+        getItem: (key: string) => storage[key] ?? null,
+        setItem: (key: string, val: string) => { storage[key] = val },
+        removeItem: (key: string) => { delete storage[key] },
+      })
+      vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
+    })
+
+    it('calls init then uploads via XHR', async () => {
+      // Mock the init fetch call
+      mockFetch.mockReturnValueOnce(jsonResponse(TASK_FIXTURE))
+
+      const file = new File(['tar-data'], 'backup.tar.gz', { type: 'application/gzip' })
+      const onInitiated = vi.fn()
+      const promise = startFilesImport(file, onInitiated)
+
+      // Wait for the init call to resolve
+      await vi.waitFor(() => {
+        expect(onInitiated).toHaveBeenCalledWith(TASK_FIXTURE)
+      })
+
+      // Simulate XHR load
+      const loadHandler = xhrInstance.addEventListener.mock.calls.find(
+        (c: unknown[]) => c[0] === 'load',
+      )![1] as () => void
+      loadHandler()
+
+      const result = await promise
+      expect(result).toEqual(TASK_FIXTURE)
+      expect(mockFetch).toHaveBeenCalledOnce()
     })
   })
 
