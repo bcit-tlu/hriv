@@ -1,11 +1,12 @@
 """Tests for the images router endpoints."""
 
 from datetime import datetime, timezone
+from io import BytesIO
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 
 from app.routers.images import (
     list_images,
@@ -15,6 +16,7 @@ from app.routers.images import (
     bulk_update_images,
     bulk_delete_images,
     delete_image,
+    replace_image,
 )
 from app.schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete
 
@@ -469,3 +471,172 @@ async def test_delete_image_not_found() -> None:
     with pytest.raises(HTTPException) as exc:
         await delete_image(999, _make_user(), db)
     assert exc.value.status_code == 404
+
+
+# ── Replace Image tests ──────────────────────────────────
+
+
+def _make_source_image(id: int = 10, image_id: int = 1) -> SimpleNamespace:
+    now = datetime.now(timezone.utc)
+    return SimpleNamespace(
+        id=id,
+        original_filename="replacement.jpg",
+        stored_path="/data/source_images/abc.jpg",
+        status="pending",
+        progress=0,
+        error_message=None,
+        status_message=None,
+        name="test-img",
+        category_id=None,
+        copyright=None,
+        note=None,
+        active=True,
+        program=None,
+        image_id=image_id,
+        file_size=1024,
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _make_upload_file(
+    filename: str = "test.jpg", content_type: str = "image/jpeg",
+) -> UploadFile:
+    return UploadFile(
+        file=BytesIO(b"fake-image-data"),
+        filename=filename,
+        headers=MagicMock(get=lambda k, d=None: content_type if k == "content-type" else d),
+    )
+
+
+@patch("os.path.getsize", return_value=1024)
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_success(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_getsize: MagicMock,
+) -> None:
+    """Replacement endpoint creates SourceImage and enqueues processing."""
+    mock_enqueue = AsyncMock(return_value=True)
+    mock_process = MagicMock()
+
+    img = _make_image()
+    src = _make_source_image()
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", src.id))
+
+    background_tasks = MagicMock()
+    file = _make_upload_file()
+
+    with patch.dict("sys.modules", {
+        "app.processing": MagicMock(process_replace_image=mock_process),
+        "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
+    }):
+        result = await replace_image(
+            image_id=1,
+            file=file,
+            background_tasks=background_tasks,
+            _user=_make_user(),
+            db=db,
+        )
+
+    db.add.assert_called_once()
+    db.commit.assert_awaited()
+    mock_enqueue.assert_awaited_once()
+    assert result.original_filename == "test.jpg"
+    assert result.status == "pending"
+
+
+@patch("os.path.getsize", return_value=1024)
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_fallback_to_background_tasks(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_getsize: MagicMock,
+) -> None:
+    """When arq enqueue fails, replacement falls back to BackgroundTasks."""
+    mock_enqueue = AsyncMock(return_value=False)
+    mock_process = MagicMock()
+
+    img = _make_image()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.refresh = AsyncMock()
+
+    background_tasks = MagicMock()
+    file = _make_upload_file()
+
+    with patch.dict("sys.modules", {
+        "app.processing": MagicMock(process_replace_image=mock_process),
+        "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
+    }):
+        await replace_image(
+            image_id=1,
+            file=file,
+            background_tasks=background_tasks,
+            _user=_make_user(),
+            db=db,
+        )
+
+    background_tasks.add_task.assert_called_once()
+
+
+async def test_replace_image_not_found() -> None:
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+
+    file = _make_upload_file()
+    background_tasks = MagicMock()
+
+    with pytest.raises(HTTPException) as exc:
+        await replace_image(
+            image_id=999,
+            file=file,
+            background_tasks=background_tasks,
+            _user=_make_user(),
+            db=db,
+        )
+    assert exc.value.status_code == 404
+
+
+async def test_replace_image_invalid_file() -> None:
+    img = _make_image()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    file = _make_upload_file(filename="doc.pdf", content_type="application/pdf")
+    background_tasks = MagicMock()
+
+    with pytest.raises(HTTPException) as exc:
+        await replace_image(
+            image_id=1,
+            file=file,
+            background_tasks=background_tasks,
+            _user=_make_user(),
+            db=db,
+        )
+    assert exc.value.status_code == 400
+    assert "image" in exc.value.detail.lower()
+
+
+async def test_replace_image_no_filename() -> None:
+    img = _make_image()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    file = UploadFile(file=BytesIO(b"data"), filename="")
+    background_tasks = MagicMock()
+
+    with pytest.raises(HTTPException) as exc:
+        await replace_image(
+            image_id=1,
+            file=file,
+            background_tasks=background_tasks,
+            _user=_make_user(),
+            db=db,
+        )
+    assert exc.value.status_code == 400

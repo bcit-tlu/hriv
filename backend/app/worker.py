@@ -105,6 +105,36 @@ async def enqueue_process_source_image(source_image_id: int) -> bool:
         return False
 
 
+async def enqueue_replace_image(
+    source_image_id: int, target_image_id: int,
+) -> bool:
+    """Enqueue an image-replacement job via arq.
+
+    Returns ``True`` if the job was enqueued, ``False`` if Redis is
+    unavailable (caller should fall back to ``BackgroundTasks``).
+    """
+    pool = await get_pool()
+    if pool is None:
+        return False
+    try:
+        carrier: dict[str, str] = {}
+        inject(carrier)
+        await pool.enqueue_job(
+            "replace_image_task", source_image_id, target_image_id, carrier,
+        )
+        return True
+    except Exception:
+        logger.warning(
+            "Failed to enqueue replacement job — falling back to BackgroundTasks",
+            extra={
+                "event": "worker.enqueue_replace_failed",
+                "source_image_id": source_image_id,
+                "target_image_id": target_image_id,
+            },
+        )
+        return False
+
+
 async def enqueue_admin_task(task_id: int, task_type: str) -> bool:
     """Enqueue a background admin task via arq.
 
@@ -158,6 +188,39 @@ async def process_source_image_task(
                 },
             )
             await process_source_image(source_image_id)
+    finally:
+        if token is not None:
+            detach(token)
+
+
+async def replace_image_task(
+    ctx: dict[str, Any],
+    source_image_id: int,
+    target_image_id: int,
+    trace_headers: dict[str, str] | None = None,
+) -> None:
+    """arq task wrapper for image replacement processing."""
+    from .processing import process_replace_image
+
+    parent_ctx = extract(trace_headers) if trace_headers else None
+    token = attach(parent_ctx) if parent_ctx else None
+    try:
+        with tracer.start_as_current_span(
+            "replace_image_task",
+            attributes={
+                "source_image.id": source_image_id,
+                "target_image.id": target_image_id,
+            },
+        ):
+            logger.info(
+                "arq worker processing image replacement",
+                extra={
+                    "event": "worker.replace_task_started",
+                    "source_image_id": source_image_id,
+                    "target_image_id": target_image_id,
+                },
+            )
+            await process_replace_image(source_image_id, target_image_id)
     finally:
         if token is not None:
             detach(token)
@@ -222,7 +285,7 @@ async def on_startup(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """Configuration class consumed by ``arq worker``."""
 
-    functions = [process_source_image_task, admin_task_runner]
+    functions = [process_source_image_task, replace_image_task, admin_task_runner]
     redis_settings = _parse_redis_settings()
     on_startup = on_startup
     max_jobs = 4  # Match the existing _MAX_CONCURRENCY

@@ -54,7 +54,7 @@ import ManagePage from "./components/ManagePage";
 import PeoplePage from "./components/PeoplePage";
 import LoginScreen from "./components/LoginScreen";
 import EditImageModal from "./components/EditImageModal";
-import type { ImageFormData } from "./components/EditImageModal";
+import type { ImageFormData, ReplaceImageData } from "./components/EditImageModal";
 import ProgramManagementModal from "./components/ProgramManagementModal";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
@@ -75,6 +75,7 @@ import {
     fetchPrograms as apiFetchPrograms,
     updateImage as apiUpdateImage,
     deleteImage as apiDeleteImage,
+    replaceImage as apiReplaceImage,
     updateAnnouncement,
     createProgram,
     updateProgram,
@@ -1387,6 +1388,72 @@ export default function App() {
         [selectedImage, loadUncategorizedImages],
     );
 
+    const addProcessingJob = useCallback(
+        (sourceImageId: number, filename: string, fileSize: number) => {
+            setProcessingJobs((prev) => {
+                if (prev.some((j) => j.id === sourceImageId)) return prev;
+                return [
+                    ...prev,
+                    {
+                        id: sourceImageId,
+                        filename,
+                        status: "processing" as const,
+                        serverProgress: 0,
+                        fileSize,
+                        startedAt: Date.now(),
+                    },
+                ];
+            });
+        },
+        [],
+    );
+
+    const handleReplaceViewerImage = useCallback(
+        async ({ file, formData }: ReplaceImageData) => {
+            if (!selectedImage) return;
+            // Save metadata changes first
+            const updated = await apiUpdateImage(selectedImage.id, formData);
+            // Upload replacement file
+            const result = await apiReplaceImage(selectedImage.id, file);
+            addProcessingJob(result.id, file.name, file.size);
+            setSelectedImage({
+                id: updated.id,
+                name: updated.name,
+                thumb: updated.thumb,
+                tileSources: updated.tile_sources,
+                categoryId: updated.category_id,
+                copyright: updated.copyright,
+                note: updated.note,
+                programIds: updated.program_ids,
+                active: updated.active,
+                version: updated.version,
+                createdAt: updated.created_at,
+                updatedAt: updated.updated_at,
+                metadataExtra: updated.metadata_extra,
+                width: updated.width,
+                height: updated.height,
+                fileSize: updated.file_size,
+            });
+            setImageEditOpen(false);
+            await loadCategories();
+            loadUncategorizedImages();
+        },
+        [selectedImage, loadCategories, loadUncategorizedImages, addProcessingJob],
+    );
+
+    const handleReplaceBrowseImage = useCallback(
+        async ({ file, formData }: ReplaceImageData) => {
+            if (!browseEditImage) return;
+            await apiUpdateImage(browseEditImage.id, formData);
+            const result = await apiReplaceImage(browseEditImage.id, file);
+            addProcessingJob(result.id, file.name, file.size);
+            setBrowseEditImage(null);
+            await loadCategories();
+            loadUncategorizedImages();
+        },
+        [browseEditImage, loadCategories, loadUncategorizedImages, addProcessingJob],
+    );
+
     // Show loading spinner while users are loading
     if (usersLoading) {
         return (
@@ -1706,6 +1773,7 @@ export default function App() {
                                 loadUncategorizedImages();
                             }}
                             onAddCategory={addCategoryInline}
+                            onReplaceImage={addProcessingJob}
                         />
                     ) : selectedImage ? (
                         /* ---- Viewer mode ---- */
@@ -2271,6 +2339,7 @@ export default function App() {
                           }
                         : undefined
                 }
+                onReplace={handleReplaceViewerImage}
                 image={selectedApiImage}
                 categories={categories}
                 programs={programs}
@@ -2294,6 +2363,7 @@ export default function App() {
                           }
                         : undefined
                 }
+                onReplace={handleReplaceBrowseImage}
                 image={browseApiImage}
                 categories={categories}
                 programs={programs}

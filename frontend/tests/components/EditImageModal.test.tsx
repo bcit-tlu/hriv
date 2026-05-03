@@ -29,12 +29,14 @@ function renderModal(
   const onClose = overrides.onClose ?? vi.fn()
   const onSave = overrides.onSave ?? vi.fn()
   const onDelete = overrides.onDelete ?? vi.fn()
+  const onReplace = overrides.onReplace ?? undefined
   const result = render(
     <EditImageModal
       open={overrides.open ?? true}
       onClose={onClose}
       onSave={onSave}
       onDelete={onDelete}
+      onReplace={onReplace}
       image={overrides.image ?? baseImage}
       categories={overrides.categories ?? []}
       programs={overrides.programs ?? []}
@@ -83,5 +85,101 @@ describe('EditImageModal – delete error toast', () => {
     expect(
       screen.queryByText('Failed to delete image. Please try again.'),
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('EditImageModal – image replacement', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('shows drop zone text when onReplace is provided', () => {
+    const onReplace = vi.fn()
+    renderModal({ onReplace })
+
+    expect(screen.getByText('Drag and drop to replace image')).toBeInTheDocument()
+    expect(screen.getByText(/browse to upload/)).toBeInTheDocument()
+  })
+
+  it('shows Replace & Save button after file is selected', async () => {
+    const user = userEvent.setup()
+    const onReplace = vi.fn().mockResolvedValue(undefined)
+    renderModal({ onReplace })
+
+    const file = new File(['image-data'], 'photo.jpg', { type: 'image/jpeg' })
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    await user.upload(fileInput, file)
+
+    expect(screen.getByText('photo.jpg')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /replace & save/i })).toBeInTheDocument()
+  })
+
+  it('shows confirmation warning on first Replace & Save click', async () => {
+    const user = userEvent.setup()
+    const onReplace = vi.fn().mockResolvedValue(undefined)
+    renderModal({ onReplace })
+
+    const file = new File(['image-data'], 'photo.jpg', { type: 'image/jpeg' })
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    await user.upload(fileInput, file)
+
+    const replaceBtn = screen.getByRole('button', { name: /replace & save/i })
+    await user.click(replaceBtn)
+
+    await waitFor(() => {
+      expect(screen.getByText(/replacing this image will delete/i)).toBeInTheDocument()
+    })
+    expect(screen.getByRole('button', { name: /confirm replace & save/i })).toBeInTheDocument()
+  })
+
+  it('calls onReplace after confirmation', async () => {
+    const user = userEvent.setup()
+    const onReplace = vi.fn().mockResolvedValue(undefined)
+    renderModal({ onReplace })
+
+    const file = new File(['image-data'], 'photo.jpg', { type: 'image/jpeg' })
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    await user.upload(fileInput, file)
+
+    // First click: show confirmation
+    const replaceBtn = screen.getByRole('button', { name: /replace & save/i })
+    await user.click(replaceBtn)
+
+    // Second click: confirm
+    const confirmBtn = screen.getByRole('button', { name: /confirm replace & save/i })
+    await user.click(confirmBtn)
+
+    await waitFor(() => {
+      expect(onReplace).toHaveBeenCalledTimes(1)
+    })
+    const callArgs = onReplace.mock.calls[0][0]
+    expect(callArgs.file.name).toBe('photo.jpg')
+    expect(callArgs.formData.name).toBe('Test Image')
+  })
+
+  it('clears selected file when Clear button is clicked', async () => {
+    const user = userEvent.setup()
+    const onReplace = vi.fn()
+    renderModal({ onReplace })
+
+    const file = new File(['image-data'], 'photo.jpg', { type: 'image/jpeg' })
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+    await user.upload(fileInput, file)
+
+    expect(screen.getByText('photo.jpg')).toBeInTheDocument()
+
+    const clearBtn = screen.getByRole('button', { name: /clear/i })
+    await user.click(clearBtn)
+
+    expect(screen.queryByText('photo.jpg')).not.toBeInTheDocument()
+    expect(screen.getByText('Drag and drop to replace image')).toBeInTheDocument()
+  })
+
+  it('shows Save button when no replacement file is selected', () => {
+    const onReplace = vi.fn()
+    renderModal({ onReplace })
+
+    expect(screen.getByRole('button', { name: /^save$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /replace & save/i })).not.toBeInTheDocument()
   })
 })

@@ -10,6 +10,7 @@ import json
 import logging
 import math
 import os
+import shutil
 import threading
 import time
 from pathlib import Path
@@ -441,5 +442,215 @@ async def process_source_image(source_image_id: int) -> None:
             if src is not None:
                 src.status = "failed"
                 src.error_message = "Tile generation failed. Check server logs."
+                src.status_message = "Failed"
+                await db.commit()
+
+
+async def process_replace_image(
+    source_image_id: int, target_image_id: int,
+) -> None:
+    """Background task: replace an existing image with a new source file.
+
+    - Generates DZI tiles + thumbnail from the new source image
+    - Removes old tile directory from disk
+    - Updates the existing Image record (tile_sources, thumb, width, height,
+      file_size) and clears canvas_annotations / locked_overlays from metadata
+    - Updates the SourceImage record with status and image_id
+    """
+    span = trace.get_current_span()
+    span.set_attributes({
+        "source_image.id": source_image_id,
+        "target_image.id": target_image_id,
+    })
+
+    async with async_session() as db:
+        src = await db.get(SourceImage, source_image_id)
+        if src is None:
+            logger.error(
+                "SourceImage not found for replacement, skipping",
+                extra={
+                    "event": "replace.source_not_found",
+                    "source_image_id": source_image_id,
+                },
+            )
+            return
+
+        img = await db.get(Image, target_image_id)
+        if img is None:
+            logger.error(
+                "Target Image not found for replacement, skipping",
+                extra={
+                    "event": "replace.target_not_found",
+                    "target_image_id": target_image_id,
+                },
+            )
+            src.status = "failed"
+            src.error_message = "Target image no longer exists."
+            src.status_message = "Failed"
+            await db.commit()
+            return
+
+        src.status = "processing"
+        src.progress = 5
+        src.status_message = "Preparing replacement"
+        await db.commit()
+
+        logger.info(
+            "Replacement processing started",
+            extra={
+                "event": "replace.started",
+                "source_image_id": src.id,
+                "target_image_id": target_image_id,
+                "original_filename": src.original_filename,
+            },
+        )
+        t_start = time.monotonic()
+
+        try:
+            output_dir = os.path.join(settings.tiles_dir, str(src.id))
+
+            src.progress = 10
+            src.status_message = "Generating tiles"
+            await db.commit()
+
+            tracker = ProgressTracker()
+            tracker.set(10, "Generating tiles")
+            stop_event = asyncio.Event()
+
+            async def _flush_progress() -> None:
+                last_progress = 0
+                last_message = ""
+                while not stop_event.is_set():
+                    try:
+                        await asyncio.wait_for(stop_event.wait(), timeout=1.5)
+                        break
+                    except asyncio.TimeoutError:
+                        pass
+                    current_progress, current_message = tracker.get()
+                    if current_progress != last_progress or current_message != last_message:
+                        try:
+                            async with async_session() as progress_db:
+                                progress_src = await progress_db.get(
+                                    SourceImage, source_image_id,
+                                )
+                                if progress_src is not None:
+                                    progress_src.progress = current_progress
+                                    if current_message:
+                                        progress_src.status_message = current_message
+                                    await progress_db.commit()
+                            last_progress = current_progress
+                            last_message = current_message
+                        except Exception:
+                            logger.debug(
+                                "Progress flush failed (non-critical)",
+                                extra={
+                                    "event": "replace.progress_flush_failed",
+                                    "source_image_id": source_image_id,
+                                },
+                            )
+
+            progress_task = asyncio.create_task(_flush_progress())
+            try:
+                with tracer.start_as_current_span("generate_tiles"):
+                    dzi_rel, thumb_rel, img_width, img_height = await asyncio.to_thread(
+                        generate_tiles, src.stored_path, output_dir, tracker,
+                    )
+            finally:
+                stop_event.set()
+                await progress_task
+
+            t_tiles = time.monotonic()
+            span.set_attribute("tiles.duration_ms", round((t_tiles - t_start) * 1000))
+
+            src.progress = 80
+            src.status_message = "Tiles generated"
+            await db.commit()
+
+            # Remove old tile directory from disk
+            old_tile_sources = img.tile_sources  # e.g. /api/tiles/42/image.dzi
+            if old_tile_sources:
+                # Extract the source-image ID from the URL path
+                parts = old_tile_sources.strip("/").split("/")
+                # Expected format: api/tiles/<old_src_id>/image.dzi
+                if len(parts) >= 3:
+                    old_src_id = parts[2]
+                    old_tile_dir = os.path.join(settings.tiles_dir, old_src_id)
+                    if os.path.isdir(old_tile_dir):
+                        shutil.rmtree(old_tile_dir, ignore_errors=True)
+                        logger.info(
+                            "Removed old tile directory",
+                            extra={
+                                "event": "replace.old_tiles_removed",
+                                "old_tile_dir": old_tile_dir,
+                            },
+                        )
+
+            tile_sources_url = f"/api/tiles/{src.id}/{dzi_rel}"
+            thumb_url = f"/api/tiles/{src.id}/{thumb_rel}"
+
+            src.progress = 90
+            src.status_message = "Updating image record"
+            await db.commit()
+
+            with tracer.start_as_current_span("update_image_record"):
+                file_size_mb: float | None = None
+                if src.file_size is not None:
+                    file_size_mb = round(src.file_size / (1024 * 1024), 2)
+                else:
+                    try:
+                        file_size_mb = round(
+                            os.path.getsize(src.stored_path) / (1024 * 1024), 2,
+                        )
+                    except OSError:
+                        pass
+
+                img.tile_sources = tile_sources_url
+                img.thumb = thumb_url
+                img.width = img_width
+                img.height = img_height
+                img.file_size = file_size_mb
+                img.version = img.version + 1
+
+                # Clear edit canvas metadata (annotations and overlays)
+                current_meta = dict(img.metadata_ or {})
+                current_meta.pop("canvas_annotations", None)
+                current_meta.pop("locked_overlays", None)
+                img.metadata_ = current_meta if current_meta else {}
+
+                src.image_id = img.id
+                src.status = "completed"
+                src.progress = 100
+                src.status_message = "Completed"
+                await db.commit()
+
+            duration_ms = round((time.monotonic() - t_start) * 1000)
+            logger.info(
+                "Replacement processing completed",
+                extra={
+                    "event": "replace.completed",
+                    "source_image_id": src.id,
+                    "target_image_id": img.id,
+                    "original_filename": src.original_filename,
+                    "duration_ms": duration_ms,
+                },
+            )
+
+        except Exception:
+            duration_ms = round((time.monotonic() - t_start) * 1000)
+            logger.exception(
+                "Failed to process replacement image",
+                extra={
+                    "event": "replace.failed",
+                    "source_image_id": src.id,
+                    "original_filename": src.original_filename,
+                    "duration_ms": duration_ms,
+                },
+            )
+            await db.rollback()
+
+            src = await db.get(SourceImage, source_image_id)
+            if src is not None:
+                src.status = "failed"
+                src.error_message = "Image replacement failed. Check server logs."
                 src.status_message = "Failed"
                 await db.commit()

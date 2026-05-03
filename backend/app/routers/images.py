@@ -1,13 +1,20 @@
+import json
+import logging
+import os
+import uuid
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, Response, UploadFile
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
-from ..database import get_db
-from ..models import Category, Image, Program, User
-from ..schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageOut
+from ..database import get_db, settings
+from ..models import Category, Image, Program, SourceImage, User
+from ..schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageOut, SourceImageOut
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/images", tags=["images"])
 
@@ -187,6 +194,96 @@ async def update_image(
     )
     response.headers["ETag"] = f'"{img.version}"'
     return response
+
+
+_IMAGE_EXTENSIONS = {
+    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".gif", ".webp", ".svs",
+}
+_IMAGE_MIME_TYPES = {
+    "image/jpeg", "image/png", "image/tiff", "image/gif", "image/webp",
+}
+_UPLOAD_CHUNK_SIZE = 1024 * 1024
+
+
+def _is_valid_image(filename: str, content_type: str | None) -> bool:
+    if content_type and content_type in _IMAGE_MIME_TYPES:
+        return True
+    return Path(filename).suffix.lower() in _IMAGE_EXTENSIONS
+
+
+@router.post("/{image_id}/replace", response_model=SourceImageOut, status_code=201)
+async def replace_image(
+    image_id: int,
+    file: Annotated[UploadFile, File()],
+    background_tasks: BackgroundTasks,
+    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    db: AsyncSession = Depends(get_db),
+) -> SourceImage:
+    """Replace an existing image file.
+
+    Uploads a new source file and triggers background processing that will
+    regenerate tiles and thumbnails, update image dimensions and file size,
+    and clear all canvas annotations and overlay metadata.
+    """
+    img = await db.get(Image, image_id)
+    if not img:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+
+    if not _is_valid_image(file.filename, file.content_type):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    os.makedirs(settings.source_images_dir, exist_ok=True)
+
+    ext = os.path.splitext(file.filename)[1] or ".bin"
+    unique_name = f"{uuid.uuid4().hex}{ext}"
+    stored_path = os.path.join(settings.source_images_dir, unique_name)
+
+    with open(stored_path, "wb") as f:
+        while True:
+            chunk = await file.read(_UPLOAD_CHUNK_SIZE)
+            if not chunk:
+                break
+            f.write(chunk)
+
+    file_size = os.path.getsize(stored_path)
+
+    src = SourceImage(
+        original_filename=file.filename,
+        stored_path=stored_path,
+        status="pending",
+        name=img.name,
+        category_id=img.category_id,
+        copyright=img.copyright,
+        note=img.note,
+        active=img.active,
+        file_size=file_size,
+        image_id=image_id,
+    )
+    db.add(src)
+    await db.commit()
+    await db.refresh(src)
+
+    logger.info(
+        "Replacement image uploaded, queuing for processing",
+        extra={
+            "event": "replace.accepted",
+            "source_image_id": src.id,
+            "target_image_id": image_id,
+            "original_filename": file.filename,
+        },
+    )
+
+    from ..processing import process_replace_image
+    from ..worker import enqueue_replace_image
+
+    enqueued = await enqueue_replace_image(src.id, image_id)
+    if not enqueued:
+        background_tasks.add_task(process_replace_image, src.id, image_id)
+
+    return src
 
 
 @router.delete("/bulk", status_code=204)

@@ -427,6 +427,51 @@ export function fetchSourceImage(id: number): Promise<ApiSourceImage> {
   return request(`/source-images/${id}`)
 }
 
+export async function replaceImage(
+  imageId: number,
+  file: File,
+  onProgress?: (fraction: number) => void,
+): Promise<ApiSourceImage> {
+  const form = new FormData()
+  form.append('file', file)
+
+  return new Promise<ApiSourceImage>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${BASE}/api/images/${imageId}/replace`)
+
+    const hdrs = authHeaders()
+    for (const [k, v] of Object.entries(hdrs)) {
+      xhr.setRequestHeader(k, v)
+    }
+
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          onProgress(e.loaded / e.total)
+        }
+      })
+    }
+
+    xhr.addEventListener('load', () => {
+      try {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
+        } else {
+          reject(new Error(`Replace failed: ${xhr.responseText || xhr.statusText}`))
+        }
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error('Failed to parse replace response'))
+      }
+    })
+
+    xhr.addEventListener('error', () => {
+      reject(new Error('Replace failed: network error'))
+    })
+
+    xhr.send(form)
+  })
+}
+
 // ── Bulk Import ────────────────────────────────────────
 
 export interface ApiBulkImportJob {
