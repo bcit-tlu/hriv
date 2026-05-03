@@ -55,7 +55,13 @@ interface UploadImageModalProps {
   onClose: () => void
   onUploaded: () => void
   /** Called after file upload completes so the parent can track processing. */
-  onProcessingStarted?: (sourceImageId: number, filename: string, fileSize: number) => void
+  onProcessingStarted?: (sourceImageId: number, filename: string, fileSize: number, uploadId: number) => void
+  /** Called when a file upload begins (before server response). */
+  onUploadStarted?: (uploadId: number, filename: string, fileSize: number) => void
+  /** Called with progress fraction (0–1) during upload. */
+  onUploadProgress?: (uploadId: number, fraction: number) => void
+  /** Called when a file upload fails. */
+  onUploadFailed?: (uploadId: number, error: string) => void
   categoryId?: number | null
   categories: Category[]
   programs: Program[]
@@ -75,6 +81,9 @@ export default function UploadImageModal({
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
+  onUploadStarted,
+  onUploadProgress,
+  onUploadFailed,
 }: UploadImageModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
@@ -142,11 +151,16 @@ export default function UploadImageModal({
     setUploadProgress(null)
   }
 
+  const uploadIdRef = useRef<number | null>(null)
+
   const handleUpload = async () => {
     if (!file) return
     setUploading(true)
     setError(null)
     setUploadProgress(0)
+    const uploadId = Date.now()
+    uploadIdRef.current = uploadId
+    onUploadStarted?.(uploadId, file.name, file.size)
     try {
       const result = await uploadSourceImage(
         file,
@@ -156,17 +170,23 @@ export default function UploadImageModal({
         metadata.note || undefined,
         metadata.programIds.length > 0 ? metadata.programIds : undefined,
         metadata.active,
-        (fraction) => setUploadProgress(fraction),
+        (fraction) => {
+          setUploadProgress(fraction)
+          onUploadProgress?.(uploadId, fraction)
+        },
       )
       // Hand off processing tracking to the parent and close the modal
-      onProcessingStarted?.(result.id, file.name, file.size)
+      onProcessingStarted?.(result.id, file.name, file.size, uploadId)
       onUploaded()
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed')
+      const msg = err instanceof Error ? err.message : 'Upload failed'
+      setError(msg)
+      onUploadFailed?.(uploadId, msg)
     } finally {
       setUploading(false)
       setUploadProgress(null)
+      uploadIdRef.current = null
     }
   }
 
