@@ -358,8 +358,15 @@ async def test_upload_task_file_success(tmp_path) -> None:
     db = AsyncMock()
     db.get = AsyncMock(return_value=task)
 
+    # The atomic UPDATE returns a result whose scalar() yields the task id.
+    update_result = MagicMock()
+    update_result.scalar.return_value = task.id
+    db.execute = AsyncMock(return_value=update_result)
+
     async def mock_refresh(obj, *_args, **_kwargs):
-        pass  # keep current attrs
+        # After the atomic UPDATE, refresh should show "pending"
+        obj.status = "pending"
+        obj.log = (obj.log or "") + "Upload complete (0.0 MB). Queued for processing.\n"
 
     db.refresh = AsyncMock(side_effect=mock_refresh)
 

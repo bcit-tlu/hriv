@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from jose import JWTError, jwt
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..admin_ops import (
@@ -248,25 +248,34 @@ async def upload_task_file(
 
     size_mb = bytes_written / (1024 * 1024)
 
-    # Re-read the task status to detect cancellation during the upload.
-    await db.refresh(task)
-    if task.status != "uploading":
+    # Atomic uploading→pending transition.  If cancel_task changed the
+    # status between the upload and this UPDATE, the WHERE clause won't
+    # match and we detect the race without a TOCTOU window.
+    log_line = f"Upload complete ({size_mb:.1f} MB). Queued for processing.\n"
+    result = await db.execute(
+        update(AdminTask)
+        .where(AdminTask.id == task_id, AdminTask.status == "uploading")
+        .values(
+            status="pending",
+            log=AdminTask.log + log_line,
+        )
+        .returning(AdminTask.id)
+    )
+    await db.commit()
+
+    if result.scalar() is None:
+        # Status changed during upload (e.g. cancelled) — clean up file.
         try:
             os.unlink(task.input_path)
         except OSError:
             pass
+        await db.refresh(task)
         raise HTTPException(
             status_code=409,
             detail=f"Task was {task.status} during upload",
         )
 
-    task.status = "pending"
-    task.log = (
-        (task.log or "")
-        + f"Upload complete ({size_mb:.1f} MB). Queued for processing.\n"
-    )
-    await db.commit()
-
+    await db.refresh(task)
     await _kick_off(task, bg)
     await db.refresh(task)
     return _task_to_dict(task)
