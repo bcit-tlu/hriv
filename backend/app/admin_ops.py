@@ -1299,12 +1299,20 @@ async def run_files_import(task_id: int) -> None:
                         # while the thread is still running, as it may be
                         # mid-copytree from tmpdir → data_dir.
                         cancel_event.set()
-                        try:
-                            await asyncio.wait_for(
-                                extract_future, timeout=120,
-                            )
-                        except asyncio.TimeoutError:
-                            pass
+
+                        if last_phase == "finalize":
+                            # The thread is mid-copytree (irreversible).
+                            # We MUST wait for it to finish — exiting the
+                            # TemporaryDirectory block would delete the
+                            # staging dir out from under the copy.
+                            await asyncio.shield(extract_future)
+                        else:
+                            try:
+                                await asyncio.wait_for(
+                                    extract_future, timeout=120,
+                                )
+                            except asyncio.TimeoutError:
+                                pass
 
                         if extract_future.done():
                             try:

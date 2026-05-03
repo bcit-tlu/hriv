@@ -705,7 +705,13 @@ export default function AdminPage() {
                         : `Progress: ${logTask.progress}%`}
                   </Typography>
                   <LinearProgress
-                    variant={logTask.status === 'cancelling' ? 'indeterminate' : 'determinate'}
+                    variant={
+                      logTask.status === 'cancelling'
+                        ? 'indeterminate'
+                        : logTask.status === 'uploading'
+                          ? (uploadProgress.has(logTask.id) ? 'determinate' : 'indeterminate')
+                          : 'determinate'
+                    }
                     value={
                       logTask.status === 'uploading'
                         ? (uploadProgress.get(logTask.id) ?? 0) * 100
