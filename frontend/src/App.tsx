@@ -2410,11 +2410,13 @@ export default function App() {
                         ),
                     );
                 }}
-                onProcessingStarted={(sourceImageId, filename, fileSize) => {
+                onProcessingStarted={(sourceImageId, filename, fileSize, uploadId) => {
                     setProcessingJobs((prev) => {
-                        // Find the uploading job and transition it to processing
+                        // Find the uploading job by uploadId and transition it
                         const uploadingJob = prev.find(
-                            (j) => j.status === "uploading",
+                            (j) =>
+                                j.status === "uploading" &&
+                                j.uploadId === uploadId,
                         );
                         if (uploadingJob) {
                             uploadProgressRef.current.delete(
