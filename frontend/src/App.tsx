@@ -326,7 +326,13 @@ export default function App() {
     const visibleJobs = useMemo(
         () =>
             processingJobs.filter(
-                (j) => !(j.status === "uploading" && uploadOpen),
+                (j) =>
+                    !(
+                        (j.status === "uploading" ||
+                            j.status === "failed") &&
+                        uploadOpen &&
+                        j.uploadId != null
+                    ),
             ),
         [processingJobs, uploadOpen],
     );
