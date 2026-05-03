@@ -146,6 +146,10 @@ export function reorderCategories(
 
 // ── Images ───────────────────────────────────────────────
 
+export function fetchImage(imageId: number): Promise<ApiImage> {
+  return request(`/images/${imageId}`)
+}
+
 export function fetchImages(categoryId?: number): Promise<ApiImage[]> {
   const qs = categoryId != null ? `?category_id=${categoryId}` : ''
   return request(`/images/${qs}`)

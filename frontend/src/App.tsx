@@ -63,6 +63,7 @@ import { useAuth } from "./useAuth";
 import {
     fetchCategoryTree,
     fetchAnnouncement,
+    fetchImage as apiFetchImage,
     fetchUncategorizedImages,
     fetchSourceImage,
     fetchVersions,
@@ -171,6 +172,8 @@ export default function App() {
     const [categoriesLoading, setCategoriesLoading] = useState(true);
     const [path, setPath] = useState<Category[]>([]);
     const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
+    const selectedImageRef = useRef<ImageItem | null>(null);
+    selectedImageRef.current = selectedImage;
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [announcement, setAnnouncement] = useState("");
@@ -390,6 +393,34 @@ export default function App() {
                         loadCategories(),
                         loadUncategorizedImages(),
                     ]);
+                    // If the completed job is for the currently-viewed image,
+                    // refresh it so the viewer picks up new tile URLs.
+                    const current = selectedImageRef.current;
+                    if (imageId != null && current && current.id === imageId) {
+                        try {
+                            const fresh = await apiFetchImage(imageId);
+                            setSelectedImage({
+                                id: fresh.id,
+                                name: fresh.name,
+                                thumb: fresh.thumb,
+                                tileSources: fresh.tile_sources,
+                                categoryId: fresh.category_id,
+                                copyright: fresh.copyright,
+                                note: fresh.note,
+                                programIds: fresh.program_ids,
+                                active: fresh.active,
+                                version: fresh.version,
+                                createdAt: fresh.created_at,
+                                updatedAt: fresh.updated_at,
+                                metadataExtra: fresh.metadata_extra,
+                                width: fresh.width,
+                                height: fresh.height,
+                                fileSize: fresh.file_size,
+                            });
+                        } catch {
+                            // Non-critical; viewer will show stale data
+                        }
+                    }
                     refs.delete(job.id);
                     setProcessingJobs((prev) =>
                         prev.map((j) =>
