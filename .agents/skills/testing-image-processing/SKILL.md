@@ -1,3 +1,8 @@
+---
+name: testing-image-processing
+description: Guide for testing the HRIV image processing pipeline including arq worker, OTEL tracing, and graceful degradation.
+---
+
 # Testing HRIV Image Processing Pipeline
 
 ## Overview
@@ -74,6 +79,78 @@ For concurrent upload + polling (needed for large files), use threading to uploa
 - **Limitation**: Playwright CDP has a 50MB file transfer limit. For larger files, the upload must go through the API.
 - The frontend polls every 3 seconds, so the snackbar progress display is only visible if processing takes >3s
 - The snackbar appears at the bottom of the page after the upload modal closes
+
+## Verifying OTEL Distributed Tracing
+
+To verify trace context propagation from API to arq worker:
+
+1. **Enable console exporter** — create `docker-compose.override.yml`:
+   ```yaml
+   services:
+     backend:
+       environment:
+         - OTEL_TRACES_EXPORTER=console
+         - OTEL_SERVICE_NAME=hriv-backend
+     worker:
+       environment:
+         - OTEL_TRACES_EXPORTER=console
+         - OTEL_SERVICE_NAME=hriv-worker
+   ```
+
+2. **Rebuild and restart:**
+   ```bash
+   docker compose up -d --build backend worker
+   ```
+
+3. **Upload an image**, then check logs:
+   ```bash
+   # Find the backend upload span trace_id
+   docker compose logs backend | grep '"name": "POST /api/source-images/upload"' -A5
+   # Find the worker task span — should have same trace_id
+   docker compose logs worker | grep '"name": "process_source_image_task"' -A10
+   ```
+
+4. **Verify linkage:** The worker span's `parent_id` should match the backend span's `span_id`, and both should share the same `trace_id`.
+
+5. **Delete the override when done** — do not commit it.
+
+### Key spans in the processing pipeline
+
+| Span name | Container | Attributes |
+|-----------|-----------|------------|
+| `POST /api/source-images/upload` | backend | Auto-instrumented by FastAPI |
+| `process_source_image_task` | worker | `source_image.id`, `tiles.duration_ms` |
+| `generate_tiles` | worker | `image.width`, `image.height`, `image.bands`, `tiles.estimated_count`, `tiles.dzsave_duration_ms` |
+| `save_image_record` | worker | Child of `process_source_image_task` |
+
+### OTEL bootstrap and uvicorn --reload
+
+`app/otel_bootstrap.py` ensures the OTEL SDK is configured in uvicorn's `--reload` child process. Without it, `inject(carrier)` produces an empty dict because the child inherits env vars but not the SDK state from `opentelemetry-instrument`. The module detects `ProxyTracerProvider` and re-runs `initialize()`. In production (`--workers 1`, no `--reload`), it's a no-op.
+
+## Testing Graceful Degradation
+
+### Redis down — BackgroundTasks fallback
+
+```bash
+docker compose stop redis
+# Upload an image — should succeed, processed in backend container
+docker compose logs backend | grep 'worker.enqueue_failed\|processing.started'
+# Restart redis
+docker compose start redis
+```
+
+Verify: `worker.enqueue_failed` event in backend logs, followed by `processing.started` in backend (not worker). Image completes successfully.
+
+### Redis down — rate limiting
+
+```bash
+docker compose stop redis
+curl -s -X POST http://localhost:8000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"admin@bcit.ca","password":"password"}'
+# Should succeed with 200; backend logs show rate_limit.redis_unavailable warning
+docker compose start redis
+```
 
 ## Known Issues
 
