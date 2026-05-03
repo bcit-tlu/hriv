@@ -598,6 +598,9 @@ async def process_replace_image(
                     except OSError:
                         pass
 
+                # Re-fetch to pick up any concurrent metadata changes
+                await db.refresh(img)
+
                 img.tile_sources = tile_sources_url
                 img.thumb = thumb_url
                 img.width = img_width
