@@ -245,6 +245,19 @@ async def upload_task_file(
         raise HTTPException(status_code=500, detail="File upload failed")
 
     size_mb = bytes_written / (1024 * 1024)
+
+    # Re-read the task status to detect cancellation during the upload.
+    await db.refresh(task)
+    if task.status != "uploading":
+        try:
+            os.unlink(task.input_path)
+        except OSError:
+            pass
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task was {task.status} during upload",
+        )
+
     task.status = "pending"
     task.log = (
         (task.log or "")
@@ -373,6 +386,12 @@ async def cancel_task(
         raise HTTPException(status_code=404, detail="Task not found")
     if task.status == "uploading":
         # No background runner exists yet — transition directly to cancelled.
+        # Clean up any partially-uploaded file.
+        if task.input_path:
+            try:
+                os.unlink(task.input_path)
+            except OSError:
+                pass
         task.status = "cancelled"
         task.log = (task.log or "") + "Cancelled before upload completed.\n"
     elif task.status in ("pending", "running"):
