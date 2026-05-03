@@ -50,7 +50,7 @@ async def _create_task(
         await db.execute(
             select(AdminTask).where(
                 AdminTask.task_type == task_type,
-                AdminTask.status.in_(["pending", "running", "cancelling"]),
+                AdminTask.status.in_(["uploading", "pending", "running", "cancelling"]),
             )
         )
     ).scalars().first()
@@ -168,34 +168,92 @@ async def start_files_export(
 @router.post("/tasks/files-import")
 async def start_files_import(
     user: Annotated[User, Depends(_admin)],
-    bg: BackgroundTasks,
-    file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    filename: str = Query(
+        ..., description="Original filename of the archive to upload",
+    ),
 ):
-    """Accept a tar.gz file and kick off a background filesystem import."""
-    if not file.filename or not (
-        file.filename.endswith(".tar.gz") or file.filename.endswith(".tgz")
+    """Create a filesystem import task in ``uploading`` status.
+
+    The archive file itself is uploaded separately via
+    ``PUT /admin/tasks/{task_id}/upload``.  This two-step flow lets the
+    frontend show upload progress (via XHR) and ensures the task record
+    exists before the potentially long upload begins — so that timeouts
+    or network errors during upload are visible in the task history
+    rather than vanishing silently.
+    """
+    if not (
+        filename.endswith(".tar.gz") or filename.endswith(".tgz")
     ):
         raise HTTPException(status_code=400, detail="Only .tar.gz / .tgz files are accepted")
 
     tasks_dir = _ensure_tasks_dir()
     input_path = os.path.join(tasks_dir, f"import-{uuid.uuid4().hex}.tar.gz")
-    with open(input_path, "wb") as f:
-        while True:
-            chunk = await file.read(_TASK_UPLOAD_CHUNK)
-            if not chunk:
-                break
-            f.write(chunk)
 
+    task = await _create_task(db, "files_import", user, input_path=input_path)
+    task.status = "uploading"
+    task.log = f"Awaiting file upload: {filename}\n"
+    await db.commit()
+    await db.refresh(task)
+    return _task_to_dict(task)
+
+
+@router.put("/tasks/{task_id}/upload")
+async def upload_task_file(
+    task_id: int,
+    user: Annotated[User, Depends(_admin)],
+    bg: BackgroundTasks,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload the archive for a task currently in ``uploading`` status.
+
+    Once the file has been fully streamed to disk the task transitions to
+    ``pending`` and is enqueued for background processing via the arq
+    worker (with an in-process ``BackgroundTasks`` fallback when Redis is
+    unavailable).
+    """
+    task = await db.get(AdminTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status != "uploading":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task is in '{task.status}' state, expected 'uploading'",
+        )
+    if not task.input_path:
+        raise HTTPException(status_code=500, detail="Task missing input_path")
+
+    bytes_written = 0
     try:
-        task = await _create_task(db, "files_import", user, input_path=input_path)
+        with open(task.input_path, "wb") as f:
+            while True:
+                chunk = await file.read(_TASK_UPLOAD_CHUNK)
+                if not chunk:
+                    break
+                f.write(chunk)
+                bytes_written += len(chunk)
     except Exception:
         try:
-            os.unlink(input_path)
+            os.unlink(task.input_path)
         except OSError:
             pass
-        raise
+        task.status = "failed"
+        task.error_message = "File upload failed"
+        task.log = (task.log or "") + "ERROR: File upload failed.\n"
+        await db.commit()
+        raise HTTPException(status_code=500, detail="File upload failed")
+
+    size_mb = bytes_written / (1024 * 1024)
+    task.status = "pending"
+    task.log = (
+        (task.log or "")
+        + f"Upload complete ({size_mb:.1f} MB). Queued for processing.\n"
+    )
+    await db.commit()
+
     await _kick_off(task, bg)
+    await db.refresh(task)
     return _task_to_dict(task)
 
 
@@ -313,7 +371,7 @@ async def cancel_task(
     task = await db.get(AdminTask, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    if task.status in ("pending", "running"):
+    if task.status in ("uploading", "pending", "running"):
         task.status = "cancelling"
         task.log = (task.log or "") + "Cancellation requested by admin.\n"
     elif task.status == "cancelling":

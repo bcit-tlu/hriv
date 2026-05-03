@@ -91,7 +91,7 @@ async def reconcile_stale_tasks(
     stmt = (
         update(AdminTask)
         .where(
-            AdminTask.status.in_(["pending", "running", "cancelling"]),
+            AdminTask.status.in_(["uploading", "pending", "running", "cancelling"]),
             AdminTask.updated_at < cutoff,
         )
         .values(
@@ -1002,20 +1002,64 @@ def _extract_and_restore(
     data_dir: str,
     tiles_dir: str,
     source_images_dir: str,
+    *,
+    cancel_event: threading.Event | None = None,
+    on_progress: Callable[[str, int, int], None] | None = None,
 ) -> dict[str, int]:
-    """Extract archive, swap data dir atomically, count restored files."""
-    with tarfile.open(tmp_archive, "r:gz") as tar:
-        members = tar.getnames()
-        if not members:
-            raise ValueError("Archive is empty")
-        staging = Path(tmpdir) / "staging"
-        staging.mkdir()
-        tar.extractall(path=str(staging), filter="data")
+    """Extract archive, swap data dir atomically, count restored files.
 
-    extracted = staging / "data"
-    if not extracted.exists():
+    Parameters
+    ----------
+    cancel_event
+        If set during processing, :class:`TaskCancelled` is raised so
+        the caller can abort cleanly.
+    on_progress
+        Called as ``on_progress(phase, current, total)`` where *phase*
+        is ``"scan"`` (counting members), ``"extract"`` (extracting
+        files), or ``"finalize"`` (directory swap).  During ``"scan"``
+        and ``"finalize"`` *current* and *total* are zero.  During
+        ``"extract"`` *current* is the number of members extracted so
+        far and *total* is the member count from the scan phase.
+    """
+
+    def _check_cancel() -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            raise TaskCancelled("Task cancelled by admin")
+
+    # Phase 1 — scan: iterate headers to count members.  The archive
+    # must be decompressed sequentially (gzip) so this is I/O-bound but
+    # does not extract any data to disk.
+    if on_progress:
+        on_progress("scan", 0, 0)
+    member_count = 0
+    with tarfile.open(tmp_archive, "r:gz") as tar:
+        for _ in tar:
+            _check_cancel()
+            member_count += 1
+
+    if member_count == 0:
+        raise ValueError("Archive is empty")
+
+    # Phase 2 — extract: per-member extraction with progress callbacks.
+    staging = Path(tmpdir) / "staging"
+    staging.mkdir()
+    extracted_count = 0
+    with tarfile.open(tmp_archive, "r:gz") as tar:
+        for member in tar:
+            _check_cancel()
+            tar.extract(member, path=str(staging), filter="data")
+            extracted_count += 1
+            if on_progress:
+                on_progress("extract", extracted_count, member_count)
+
+    # Phase 3 — finalize: swap the data directory.
+    if on_progress:
+        on_progress("finalize", 0, 0)
+
+    extracted_dir = staging / "data"
+    if not extracted_dir.exists():
         entries = list(staging.iterdir())
-        extracted = entries[0] if len(entries) == 1 and entries[0].is_dir() else staging
+        extracted_dir = entries[0] if len(entries) == 1 and entries[0].is_dir() else staging
 
     data_path = Path(data_dir)
     backup_path = data_path.with_name(
@@ -1045,7 +1089,7 @@ def _extract_and_restore(
             # move src inside it" fallback could silently nest the backup.
             os.rename(str(data_path), str(backup_path))
         os.makedirs(str(data_path), exist_ok=True)
-        shutil.copytree(str(extracted), str(data_path), dirs_exist_ok=True)
+        shutil.copytree(str(extracted_dir), str(data_path), dirs_exist_ok=True)
         # Restore the preserved admin_tasks directory.  The restored archive
         # should not contain admin_tasks (exports exclude it), but handle
         # the edge case where it does by merging.
@@ -1096,7 +1140,25 @@ def _extract_and_restore(
 
 
 async def run_files_import(task_id: int) -> None:
-    """Extract a tar.gz archive over the data directory in the background."""
+    """Extract a tar.gz archive over the data directory in the background.
+
+    Progress is mapped into three phases so the admin UI can show a
+    meaningful progress bar for long-running imports:
+
+    * **scan** (5 %–15 %): iterate the tar.gz to count members.
+    * **extract** (15 %–85 %): extract members to a staging directory
+      with per-entry progress.
+    * **finalize** (85 %–100 %): swap directories + count restored files.
+
+    Cancellation is supported throughout via ``threading.Event`` (the
+    extraction thread) and DB polling (the progress coroutine), following
+    the same pattern used by :func:`run_files_export`.
+    """
+    _SCAN_END = 15
+    _EXTRACT_START = 15
+    _EXTRACT_END = 85
+    _FINALIZE = 90
+
     async with get_async_session()() as session:
         task = await session.get(AdminTask, task_id)
         if task is None:
@@ -1117,21 +1179,145 @@ async def run_files_import(task_id: int) -> None:
 
             data_dir = str(Path(settings.tiles_dir).parent)
 
+            archive_mb = os.path.getsize(input_path) / (1024 * 1024)
             await _update_task(
-                session, task, progress=10,
-                log_line="Extracting and restoring files (this may take a while)…",
+                session, task, progress=5,
+                log_line=(
+                    f"Archive size: {archive_mb:.1f} MB. "
+                    "Scanning archive to count entries…"
+                ),
                 check_cancelled=True,
             )
 
+            # -- threaded extraction with async progress polling --
+            cancel_event = threading.Event()
+            progress_queue: queue.Queue[tuple[str, int, int]] = queue.Queue()
+
+            def _on_progress(phase: str, current: int, total: int) -> None:
+                progress_queue.put((phase, current, total))
+
+            last_phase = ""
+
+            async def _poll_progress() -> None:
+                nonlocal last_phase
+                while True:
+                    await asyncio.sleep(_LOG_FLUSH_INTERVAL)
+                    entries: list[tuple[str, int, int]] = []
+                    while not progress_queue.empty():
+                        try:
+                            entries.append(progress_queue.get_nowait())
+                        except queue.Empty:
+                            break
+
+                    if entries:
+                        phase, current, total = entries[-1]
+
+                        if phase == "scan" and last_phase != "scan":
+                            await _update_task(
+                                session, task,
+                                log_line="Scanning archive entries…",
+                                progress=10,
+                            )
+                            last_phase = "scan"
+                        elif phase == "extract":
+                            if last_phase != "extract":
+                                await _update_task(
+                                    session, task,
+                                    log_line=f"Extracting {total} archive entries…",
+                                    progress=_EXTRACT_START,
+                                )
+                                last_phase = "extract"
+                            elif total > 0:
+                                span = _EXTRACT_END - _EXTRACT_START
+                                pct = _EXTRACT_START + int(
+                                    span * current / total
+                                )
+                                await _update_task(
+                                    session, task,
+                                    progress=min(pct, _EXTRACT_END),
+                                    log_line=(
+                                        f"  extracted {current}/{total} entries"
+                                    ),
+                                )
+                        elif phase == "finalize" and last_phase != "finalize":
+                            await _update_task(
+                                session, task,
+                                log_line="Swapping data directory…",
+                                progress=_FINALIZE,
+                            )
+                            last_phase = "finalize"
+
+                    await session.refresh(task, attribute_names=["status"])
+                    if task.status in ("cancelling", "cancelled"):
+                        cancel_event.set()
+                        return
+
             with tempfile.TemporaryDirectory(prefix="hriv-import-") as tmpdir:
-                restored = await asyncio.to_thread(
-                    _extract_and_restore,
-                    input_path,
-                    tmpdir,
-                    data_dir,
-                    settings.tiles_dir,
-                    settings.source_images_dir,
+                extract_future = asyncio.ensure_future(
+                    asyncio.to_thread(
+                        _extract_and_restore,
+                        input_path, tmpdir, data_dir,
+                        settings.tiles_dir, settings.source_images_dir,
+                        cancel_event=cancel_event,
+                        on_progress=_on_progress,
+                    )
                 )
+                poll_future = asyncio.ensure_future(_poll_progress())
+
+                try:
+                    done, _pending = await asyncio.wait(
+                        [extract_future, poll_future],
+                        return_when=asyncio.FIRST_COMPLETED,
+                    )
+
+                    if extract_future in done:
+                        poll_future.cancel()
+                        restored = extract_future.result()
+                    else:
+                        poll_exc = (
+                            poll_future.exception()
+                            if poll_future.done()
+                            else None
+                        )
+                        if poll_exc is not None:
+                            cancel_event.set()
+                            try:
+                                await asyncio.wait_for(
+                                    extract_future, timeout=5,
+                                )
+                            except asyncio.TimeoutError:
+                                pass
+                            if not extract_future.done():
+                                extract_future.cancel()
+                            raise poll_exc
+                        # Poll returned normally → cancellation detected.
+                        try:
+                            await asyncio.wait_for(
+                                extract_future, timeout=5,
+                            )
+                        except asyncio.TimeoutError:
+                            pass
+                        if extract_future.done():
+                            extract_future.result()
+                        else:
+                            extract_future.cancel()
+                        raise TaskCancelled("Task cancelled by admin")
+                finally:
+                    remaining: list[tuple[str, int, int]] = []
+                    while not progress_queue.empty():
+                        try:
+                            remaining.append(progress_queue.get_nowait())
+                        except queue.Empty:
+                            break
+                    if remaining:
+                        phase, current, total = remaining[-1]
+                        if phase == "extract" and total > 0:
+                            await _update_task(
+                                session, task,
+                                log_line=(
+                                    f"  extracted {current}/{total} entries"
+                                ),
+                            )
 
             summary = (
                 f"Restored {restored['tile_files']} tile files, "

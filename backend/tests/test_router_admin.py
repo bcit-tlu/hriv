@@ -17,6 +17,7 @@ from app.routers.admin import (
     start_db_import,
     start_files_export,
     start_files_import,
+    upload_task_file,
     list_tasks,
     get_task,
     cancel_task,
@@ -286,15 +287,93 @@ async def test_start_db_import_rejects_non_json() -> None:
 
 async def test_start_files_import_rejects_non_tar() -> None:
     user = SimpleNamespace(id=1)
-    bg = MagicMock()
-
-    upload = MagicMock()
-    upload.filename = "data.zip"
 
     with pytest.raises(HTTPException) as exc:
-        await start_files_import(user, bg, file=upload, db=AsyncMock())
+        await start_files_import(user, db=AsyncMock(), filename="data.zip")
     assert exc.value.status_code == 400
     assert "tar.gz" in exc.value.detail.lower()
+
+
+async def test_start_files_import_creates_uploading_task() -> None:
+    """Valid filename → task with ``uploading`` status is returned."""
+    user = SimpleNamespace(id=1)
+    db = AsyncMock()
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = None
+    db.execute = AsyncMock(return_value=mock_result)
+
+    task_template = _make_admin_task(task_type="files_import", status="uploading")
+
+    async def mock_refresh(obj, *_args, **_kwargs):
+        for k, v in vars(task_template).items():
+            setattr(obj, k, v)
+
+    db.refresh = AsyncMock(side_effect=mock_refresh)
+
+    with patch("app.routers.admin._ensure_tasks_dir", return_value="/tmp/tasks"):
+        result = await start_files_import(user, db=db, filename="backup.tar.gz")
+
+    assert result["task_type"] == "files_import"
+    assert result["status"] == "uploading"
+
+
+async def test_upload_task_file_not_found() -> None:
+    """Upload to a non-existent task returns 404."""
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+
+    with pytest.raises(HTTPException) as exc:
+        await upload_task_file(999, user, bg, file=MagicMock(), db=db)
+    assert exc.value.status_code == 404
+
+
+async def test_upload_task_file_wrong_status() -> None:
+    """Upload to a task not in ``uploading`` status returns 409."""
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    task = _make_admin_task(status="running", input_path="/tmp/x.tar.gz")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+
+    with pytest.raises(HTTPException) as exc:
+        await upload_task_file(1, user, bg, file=MagicMock(), db=db)
+    assert exc.value.status_code == 409
+
+
+async def test_upload_task_file_success(tmp_path) -> None:
+    """Successful upload transitions to pending and kicks off."""
+    input_path = str(tmp_path / "import.tar.gz")
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path=input_path,
+        log="Awaiting file upload: backup.tar.gz\n",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+
+    async def mock_refresh(obj, *_args, **_kwargs):
+        pass  # keep current attrs
+
+    db.refresh = AsyncMock(side_effect=mock_refresh)
+
+    # Fake upload file that yields one small chunk
+    upload = MagicMock()
+    upload.read = AsyncMock(side_effect=[b"fake-data", b""])
+
+    with patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True):
+        result = await upload_task_file(task.id, user, bg, file=upload, db=db)
+
+    assert result["status"] == "pending"
+    assert "Upload complete" in result["log"]
+    assert os.path.exists(input_path)  # file was written
+    os.unlink(input_path)  # clean up
 
 
 async def test_list_tasks() -> None:
