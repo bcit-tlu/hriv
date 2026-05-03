@@ -139,8 +139,8 @@ redis:
   enabled: false
   # Full Redis connection URL consumed by the backend (arq + rate limiter).
   # When deploying Redis in-cluster, use the Kubernetes Service DNS name:
-  #   redis://hriv-redis-master:6379
-  url: "redis://hriv-redis-master:6379"
+  #   redis://hriv-redis:6379
+  url: "redis://hriv-redis:6379"
   # Deploy a dedicated arq worker Deployment alongside the API pod.
   # Requires redis.enabled=true.  When false, background tasks fall back
   # to in-process BackgroundTasks (the existing graceful-degradation path).
