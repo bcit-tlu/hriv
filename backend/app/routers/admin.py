@@ -371,7 +371,11 @@ async def cancel_task(
     task = await db.get(AdminTask, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    if task.status in ("uploading", "pending", "running"):
+    if task.status == "uploading":
+        # No background runner exists yet — transition directly to cancelled.
+        task.status = "cancelled"
+        task.log = (task.log or "") + "Cancelled before upload completed.\n"
+    elif task.status in ("pending", "running"):
         task.status = "cancelling"
         task.log = (task.log or "") + "Cancellation requested by admin.\n"
     elif task.status == "cancelling":

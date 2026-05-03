@@ -1283,7 +1283,7 @@ async def run_files_import(task_id: int) -> None:
                             cancel_event.set()
                             try:
                                 await asyncio.wait_for(
-                                    extract_future, timeout=5,
+                                    extract_future, timeout=120,
                                 )
                             except asyncio.TimeoutError:
                                 pass
@@ -1291,17 +1291,35 @@ async def run_files_import(task_id: int) -> None:
                                 extract_future.cancel()
                             raise poll_exc
                         # Poll returned normally → cancellation detected.
+                        # Wait for the extraction thread.  It will finish
+                        # on its own once cancel_event stops phases 1/2,
+                        # or run to completion if already in phase 3
+                        # (finalize — irreversible directory swap).  We
+                        # must NOT exit the TemporaryDirectory block
+                        # while the thread is still running, as it may be
+                        # mid-copytree from tmpdir → data_dir.
+                        cancel_event.set()
                         try:
                             await asyncio.wait_for(
-                                extract_future, timeout=5,
+                                extract_future, timeout=120,
                             )
                         except asyncio.TimeoutError:
                             pass
+
                         if extract_future.done():
-                            extract_future.result()
+                            try:
+                                restored = extract_future.result()
+                                # Extraction completed (phase 3 was
+                                # already past the cancel check).
+                                # Treat as success — the directory swap
+                                # is irreversible.
+                            except TaskCancelled:
+                                raise
+                            except Exception:
+                                raise
                         else:
                             extract_future.cancel()
-                        raise TaskCancelled("Task cancelled by admin")
+                            raise TaskCancelled("Task cancelled by admin")
                 finally:
                     remaining: list[tuple[str, int, int]] = []
                     while not progress_queue.empty():
