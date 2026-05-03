@@ -150,6 +150,31 @@ describe('CategoryTile', () => {
       expect(screen.getByText(/1 sub-category/)).toBeInTheDocument()
     })
 
+    it('counts all descendant subcategories recursively', () => {
+      render(
+        <CategoryTile
+          category={makeCategory({
+            children: [
+              makeCategory({
+                id: 2,
+                label: 'B',
+                children: [
+                  makeCategory({ id: 4, label: 'D' }),
+                  makeCategory({ id: 5, label: 'E' }),
+                  makeCategory({ id: 6, label: 'F' }),
+                ],
+              }),
+              makeCategory({ id: 3, label: 'C' }),
+            ],
+          })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+      // 2 direct children + 3 grandchildren = 5
+      expect(screen.getByText(/5 sub-categories/)).toBeInTheDocument()
+    })
+
     it('shows image count', () => {
       render(
         <CategoryTile
@@ -180,6 +205,32 @@ describe('CategoryTile', () => {
         />,
       )
       expect(screen.getByText(/1 image/)).toBeInTheDocument()
+    })
+
+    it('counts all descendant images recursively', () => {
+      render(
+        <CategoryTile
+          category={makeCategory({
+            images: [
+              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
+            ],
+            children: [
+              makeCategory({
+                id: 2,
+                label: 'Child',
+                images: [
+                  { id: 2, name: 'Img2', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
+                  { id: 3, name: 'Img3', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
+                ],
+              }),
+            ],
+          })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+      // 1 direct + 2 in child = 3
+      expect(screen.getByText(/3 images/)).toBeInTheDocument()
     })
   })
 
