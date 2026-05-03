@@ -44,6 +44,7 @@ async def _create_task(
     task_type: str,
     user: User,
     input_path: str | None = None,
+    status: str = "pending",
 ) -> AdminTask:
     # Reject if a task of the same type is already pending or running
     existing = (
@@ -66,7 +67,7 @@ async def _create_task(
 
     task = AdminTask(
         task_type=task_type,
-        status="pending",
+        status=status,
         created_by=user.id,
         input_path=input_path,
     )
@@ -190,8 +191,9 @@ async def start_files_import(
     tasks_dir = _ensure_tasks_dir()
     input_path = os.path.join(tasks_dir, f"import-{uuid.uuid4().hex}.tar.gz")
 
-    task = await _create_task(db, "files_import", user, input_path=input_path)
-    task.status = "uploading"
+    task = await _create_task(
+        db, "files_import", user, input_path=input_path, status="uploading",
+    )
     task.log = f"Awaiting file upload: {filename}\n"
     await db.commit()
     await db.refresh(task)

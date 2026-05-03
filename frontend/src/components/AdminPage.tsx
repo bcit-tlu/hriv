@@ -562,7 +562,7 @@ export default function AdminPage() {
                     ? new Date(task.created_at).toLocaleString()
                     : ''}
                 </Typography>
-                {(task.status === 'pending' || task.status === 'running') && (
+                {(task.status === 'uploading' || task.status === 'pending' || task.status === 'running') && (
                   <IconButton
                     size="small"
                     color="warning"
@@ -695,7 +695,7 @@ export default function AdminPage() {
               />
             </DialogTitle>
             <DialogContent dividers>
-              {(logTask.status === 'running' || logTask.status === 'pending' || logTask.status === 'cancelling') && (
+              {(logTask.status === 'uploading' || logTask.status === 'running' || logTask.status === 'pending' || logTask.status === 'cancelling') && (
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
                     {logTask.status === 'cancelling' ? 'Cancelling…' : `Progress: ${logTask.progress}%`}
@@ -738,7 +738,7 @@ export default function AdminPage() {
               </Box>
             </DialogContent>
             <DialogActions>
-              {(logTask.status === 'pending' || logTask.status === 'running') && (
+              {(logTask.status === 'uploading' || logTask.status === 'pending' || logTask.status === 'running') && (
                 <Button
                   color="warning"
                   startIcon={<CancelIcon />}
