@@ -20,12 +20,13 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "hriv-backend.selectorLabels" . | nindent 6 }}
-      app.kubernetes.io/component: worker
+      app.kubernetes.io/name: {{ include "hriv-backend.name" . }}-worker
+      app.kubernetes.io/instance: {{ .Release.Name }}
   template:
     metadata:
       labels:
-        {{- include "hriv-backend.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/name: {{ include "hriv-backend.name" . }}-worker
+        app.kubernetes.io/instance: {{ .Release.Name }}
         app.kubernetes.io/component: worker
     spec:
       containers:
