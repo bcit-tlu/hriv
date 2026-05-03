@@ -15,12 +15,14 @@ import time
 from pathlib import Path
 
 import pyvips
+from opentelemetry import trace
 from sqlalchemy import select
 
 from .database import async_session, settings
 from .models import Image, Program, SourceImage
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 # ── Progress tracker ──────────────────────────────────────
@@ -69,11 +71,18 @@ def generate_tiles(
 
     Returns (dzi_path, thumb_path, width, height) relative to the output directory.
     """
+    span = trace.get_current_span()
     os.makedirs(output_dir, exist_ok=True)
 
     image = pyvips.Image.new_from_file(source_path, access="sequential")
 
     estimated_tiles = _estimate_tile_count(image.width, image.height)
+    span.set_attributes({
+        "image.width": image.width,
+        "image.height": image.height,
+        "image.bands": image.bands,
+        "tiles.estimated_count": estimated_tiles,
+    })
 
     logger.info(
         "Source image loaded",
@@ -189,6 +198,8 @@ def generate_tiles(
         },
     )
 
+    span.set_attribute("tiles.dzsave_duration_ms", round((t_dzsave_end - t_dzsave_start) * 1000))
+
     return f"{dzi_basename}.dzi", "thumbnail.jpeg", image.width, image.height
 
 
@@ -200,6 +211,9 @@ async def process_source_image(source_image_id: int) -> None:
     - Creates an Image record in the database
     - Updates the SourceImage record with status and image_id
     """
+    span = trace.get_current_span()
+    span.set_attribute("source_image.id", source_image_id)
+
     async with async_session() as db:
         src = await db.get(SourceImage, source_image_id)
         if src is None:
@@ -228,6 +242,8 @@ async def process_source_image(source_image_id: int) -> None:
             },
         )
         t_start = time.monotonic()
+
+        span.set_attribute("source_image.filename", src.original_filename)
 
         try:
             output_dir = os.path.join(settings.tiles_dir, str(src.id))
@@ -279,14 +295,16 @@ async def process_source_image(source_image_id: int) -> None:
             # Run tile generation and progress flusher concurrently
             progress_task = asyncio.create_task(_flush_progress())
             try:
-                dzi_rel, thumb_rel, img_width, img_height = await asyncio.to_thread(
-                    generate_tiles, src.stored_path, output_dir, tracker,
-                )
+                with tracer.start_as_current_span("generate_tiles"):
+                    dzi_rel, thumb_rel, img_width, img_height = await asyncio.to_thread(
+                        generate_tiles, src.stored_path, output_dir, tracker,
+                    )
             finally:
                 stop_event.set()
                 await progress_task
 
             t_tiles = time.monotonic()
+            span.set_attribute("tiles.duration_ms", round((t_tiles - t_start) * 1000))
 
             # Mark tile generation completed
             src.progress = 80
@@ -311,85 +329,86 @@ async def process_source_image(source_image_id: int) -> None:
             src.status_message = "Saving image record"
             await db.commit()
 
-            logger.info(
-                "Creating Image database record",
-                extra={
-                    "event": "processing.creating_record",
-                    "source_image_id": src.id,
-                    "original_filename": src.original_filename,
-                },
-            )
+            with tracer.start_as_current_span("save_image_record"):
+                logger.info(
+                    "Creating Image database record",
+                    extra={
+                        "event": "processing.creating_record",
+                        "source_image_id": src.id,
+                        "original_filename": src.original_filename,
+                    },
+                )
 
-            name = src.name or Path(src.original_filename).stem
+                name = src.name or Path(src.original_filename).stem
 
-            # Compute file size in MB from the source image on disk
-            file_size_mb: float | None = None
-            if src.file_size is not None:
-                file_size_mb = round(src.file_size / (1024 * 1024), 2)
-            else:
-                try:
-                    file_size_mb = round(
-                        os.path.getsize(src.stored_path) / (1024 * 1024), 2
-                    )
-                except OSError:
-                    pass
-
-            img = Image(
-                name=name,
-                thumb=thumb_url,
-                tile_sources=tile_sources_url,
-                category_id=src.category_id,
-                copyright=src.copyright,
-                note=src.note,
-                active=src.active,
-                metadata_={},
-                width=img_width,
-                height=img_height,
-                file_size=file_size_mb,
-            )
-            db.add(img)
-            await db.flush()
-
-            # Associate programs if stored on source image
-            if src.program:
-                src.progress = 93
-                src.status_message = "Associating programs"
-                await db.commit()
-
-                try:
-                    program_ids = json.loads(src.program)
-                    if isinstance(program_ids, list) and program_ids:
-                        result = await db.execute(
-                            select(Program).where(Program.id.in_(program_ids))
+                # Compute file size in MB from the source image on disk
+                file_size_mb: float | None = None
+                if src.file_size is not None:
+                    file_size_mb = round(src.file_size / (1024 * 1024), 2)
+                else:
+                    try:
+                        file_size_mb = round(
+                            os.path.getsize(src.stored_path) / (1024 * 1024), 2
                         )
-                        programs = list(result.scalars().all())
-                        await db.refresh(img, ["programs"])
-                        img.programs = programs
-                        await db.flush()
+                    except OSError:
+                        pass
 
-                        logger.info(
-                            "Programs associated with image",
+                img = Image(
+                    name=name,
+                    thumb=thumb_url,
+                    tile_sources=tile_sources_url,
+                    category_id=src.category_id,
+                    copyright=src.copyright,
+                    note=src.note,
+                    active=src.active,
+                    metadata_={},
+                    width=img_width,
+                    height=img_height,
+                    file_size=file_size_mb,
+                )
+                db.add(img)
+                await db.flush()
+
+                # Associate programs if stored on source image
+                if src.program:
+                    src.progress = 93
+                    src.status_message = "Associating programs"
+                    await db.commit()
+
+                    try:
+                        program_ids = json.loads(src.program)
+                        if isinstance(program_ids, list) and program_ids:
+                            result = await db.execute(
+                                select(Program).where(Program.id.in_(program_ids))
+                            )
+                            programs = list(result.scalars().all())
+                            await db.refresh(img, ["programs"])
+                            img.programs = programs
+                            await db.flush()
+
+                            logger.info(
+                                "Programs associated with image",
+                                extra={
+                                    "event": "processing.programs_associated",
+                                    "source_image_id": src.id,
+                                    "image_id": img.id,
+                                    "program_count": len(programs),
+                                },
+                            )
+                    except (json.JSONDecodeError, TypeError):
+                        logger.warning(
+                            "Could not parse program_ids from source image",
                             extra={
-                                "event": "processing.programs_associated",
+                                "event": "processing.program_parse_error",
                                 "source_image_id": src.id,
-                                "image_id": img.id,
-                                "program_count": len(programs),
                             },
                         )
-                except (json.JSONDecodeError, TypeError):
-                    logger.warning(
-                        "Could not parse program_ids from source image",
-                        extra={
-                            "event": "processing.program_parse_error",
-                            "source_image_id": src.id,
-                        },
-                    )
 
-            src.image_id = img.id
-            src.status = "completed"
-            src.progress = 100
-            src.status_message = "Completed"
-            await db.commit()
+                src.image_id = img.id
+                src.status = "completed"
+                src.progress = 100
+                src.status_message = "Completed"
+                await db.commit()
 
             duration_ms = round((time.monotonic() - t_start) * 1000)
             logger.info(

@@ -33,7 +33,7 @@ spec:
         - name: worker
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          command: ["arq", "app.worker.WorkerSettings"]
+          command: ["opentelemetry-instrument", "arq", "app.worker.WorkerSettings"]
           env:
             - name: DATABASE_URL
               valueFrom:
