@@ -105,6 +105,10 @@ spec:
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
               value: {{ .Values.otel.exporterProtocol | quote }}
             {{- end }}
+            {{- if .Values.redis.enabled }}
+            - name: REDIS_URL
+              value: {{ .Values.redis.url | quote }}
+            {{- end }}
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:

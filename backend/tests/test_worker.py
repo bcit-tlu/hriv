@@ -2,7 +2,7 @@
 
 import sys
 from types import ModuleType
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from app.worker import (
     admin_task_runner,
@@ -31,7 +31,7 @@ async def test_enqueue_succeeds_when_redis_available() -> None:
 
     assert result is True
     mock_pool.enqueue_job.assert_awaited_once_with(
-        "process_source_image_task", 42
+        "process_source_image_task", 42, ANY,
     )
 
 
@@ -86,7 +86,9 @@ async def test_enqueue_admin_task_succeeds() -> None:
         result = await enqueue_admin_task(1, "db_export")
 
     assert result is True
-    mock_pool.enqueue_job.assert_awaited_once_with("admin_task_runner", 1, "db_export")
+    mock_pool.enqueue_job.assert_awaited_once_with(
+        "admin_task_runner", 1, "db_export", ANY,
+    )
 
 
 async def test_enqueue_admin_task_failure() -> None:

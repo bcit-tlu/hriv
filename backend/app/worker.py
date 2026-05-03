@@ -1,9 +1,17 @@
 """arq worker configuration for background image processing tasks.
 
-Run with:  arq app.worker.WorkerSettings
+Run with:  opentelemetry-instrument arq app.worker.WorkerSettings
 
 Falls back to in-process BackgroundTasks when Redis is unavailable so
 the application keeps working in local-dev / single-container setups.
+
+Trace context propagation
+~~~~~~~~~~~~~~~~~~~~~~~~
+When the API pod enqueues a job the current W3C trace context is
+serialized into the arq job arguments.  The worker extracts it and
+links the processing span to the originating HTTP request so the
+full upload → enqueue → worker → tile-gen → DB-write pipeline is
+visible as a single distributed trace.
 """
 
 import logging
@@ -12,11 +20,16 @@ from urllib.parse import urlparse
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
+from opentelemetry import trace
+from opentelemetry.context import attach, detach
+from opentelemetry.propagate import extract, inject
 
 from .database import settings
 from .logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
+
 
 # ── Shared helpers ────────────────────────────────────────
 
@@ -75,7 +88,11 @@ async def enqueue_process_source_image(source_image_id: int) -> bool:
     if pool is None:
         return False
     try:
-        await pool.enqueue_job("process_source_image_task", source_image_id)
+        carrier: dict[str, str] = {}
+        inject(carrier)
+        await pool.enqueue_job(
+            "process_source_image_task", source_image_id, carrier,
+        )
         return True
     except Exception:
         logger.warning(
@@ -98,7 +115,11 @@ async def enqueue_admin_task(task_id: int, task_type: str) -> bool:
     if pool is None:
         return False
     try:
-        await pool.enqueue_job("admin_task_runner", task_id, task_type)
+        carrier: dict[str, str] = {}
+        inject(carrier)
+        await pool.enqueue_job(
+            "admin_task_runner", task_id, task_type, carrier,
+        )
         return True
     except Exception:
         logger.warning(
@@ -114,23 +135,40 @@ async def enqueue_admin_task(task_id: int, task_type: str) -> bool:
 
 # ── arq task functions ────────────────────────────────────
 
-async def process_source_image_task(ctx: dict[str, Any], source_image_id: int) -> None:
+async def process_source_image_task(
+    ctx: dict[str, Any],
+    source_image_id: int,
+    trace_headers: dict[str, str] | None = None,
+) -> None:
     """arq task wrapper around the existing processing pipeline."""
-    # Lazy import to avoid loading pyvips at module level (it requires
-    # libvips shared library which may not be present in all environments).
     from .processing import process_source_image
 
-    logger.info(
-        "arq worker processing source image",
-        extra={
-            "event": "worker.task_started",
-            "source_image_id": source_image_id,
-        },
-    )
-    await process_source_image(source_image_id)
+    parent_ctx = extract(trace_headers) if trace_headers else None
+    token = attach(parent_ctx) if parent_ctx else None
+    try:
+        with tracer.start_as_current_span(
+            "process_source_image_task",
+            attributes={"source_image.id": source_image_id},
+        ):
+            logger.info(
+                "arq worker processing source image",
+                extra={
+                    "event": "worker.task_started",
+                    "source_image_id": source_image_id,
+                },
+            )
+            await process_source_image(source_image_id)
+    finally:
+        if token is not None:
+            detach(token)
 
 
-async def admin_task_runner(ctx: dict[str, Any], task_id: int, task_type: str) -> None:
+async def admin_task_runner(
+    ctx: dict[str, Any],
+    task_id: int,
+    task_type: str,
+    trace_headers: dict[str, str] | None = None,
+) -> None:
     """arq task wrapper for background admin import/export operations."""
     from .admin_ops import run_db_export, run_db_import, run_files_export, run_files_import
 
@@ -149,15 +187,25 @@ async def admin_task_runner(ctx: dict[str, Any], task_id: int, task_type: str) -
         )
         return
 
-    logger.info(
-        "arq worker running admin task",
-        extra={
-            "event": "worker.admin_task_started",
-            "task_id": task_id,
-            "task_type": task_type,
-        },
-    )
-    await runner(task_id)
+    parent_ctx = extract(trace_headers) if trace_headers else None
+    token = attach(parent_ctx) if parent_ctx else None
+    try:
+        with tracer.start_as_current_span(
+            "admin_task_runner",
+            attributes={"admin_task.id": task_id, "admin_task.type": task_type},
+        ):
+            logger.info(
+                "arq worker running admin task",
+                extra={
+                    "event": "worker.admin_task_started",
+                    "task_id": task_id,
+                    "task_type": task_type,
+                },
+            )
+            await runner(task_id)
+    finally:
+        if token is not None:
+            detach(token)
 
 
 # ── arq lifecycle hooks ───────────────────────────────────

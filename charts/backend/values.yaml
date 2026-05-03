@@ -124,6 +124,31 @@ cnpg:
     storageClass: longhorn
     size: 5Gi
 
+# ── Redis / arq background worker ────────────────────────────
+# When enabled, the chart injects REDIS_URL into the backend pod and
+# optionally deploys a dedicated arq worker Deployment that processes
+# image-generation and admin tasks off the main API process.
+#
+# Without Redis the backend gracefully degrades: image processing
+# runs in-process via FastAPI BackgroundTasks and login rate limiting
+# is disabled.  Enabling Redis adds:
+#   • Job persistence — in-flight tasks survive pod restarts
+#   • Resource isolation — tile generation runs in a separate worker pod
+#   • Login rate limiting — brute-force protection via token bucket
+redis:
+  enabled: false
+  # Full Redis connection URL consumed by the backend (arq + rate limiter).
+  # When deploying Redis in-cluster, use the Kubernetes Service DNS name:
+  #   redis://hriv-redis-master:6379
+  url: "redis://hriv-redis-master:6379"
+  # Deploy a dedicated arq worker Deployment alongside the API pod.
+  # Requires redis.enabled=true.  When false, background tasks fall back
+  # to in-process BackgroundTasks (the existing graceful-degradation path).
+  worker:
+    enabled: false
+    replicaCount: 1
+    resources: {}
+
 # ── Issue reporting (GitHub PAT) ─────────────────────────────
 # The backend creates GitHub Issues on behalf of end-users via
 # POST /api/issues/report.  It needs a GitHub PAT with Issues
