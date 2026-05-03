@@ -2444,8 +2444,11 @@ export default function App() {
                         }
                         // Fallback: no uploading job found, create new
                         if (
-                            prev.filter((j) => j.status === "processing")
-                                .length >= MAX_PROCESSING_JOBS
+                            prev.filter(
+                                (j) =>
+                                    j.status === "uploading" ||
+                                    j.status === "processing",
+                            ).length >= MAX_PROCESSING_JOBS
                         )
                             return prev;
                         if (prev.some((j) => j.id === sourceImageId))
