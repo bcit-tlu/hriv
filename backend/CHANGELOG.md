@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.9.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.8.2...backend-v0.9.0) (2026-05-03)
+
+
+### Features
+
+* **chart/backend:** add Redis and arq worker support ([#245](https://github.com/bcit-tlu/hriv/issues/245)) ([206cb86](https://github.com/bcit-tlu/hriv/commit/206cb86ddac474f6b90146ffcc63ff8cc67f48a4))
+* implement image replacement in Edit Image modal ([#261](https://github.com/bcit-tlu/hriv/issues/261)) ([d916541](https://github.com/bcit-tlu/hriv/commit/d916541c58d5db5bcf5b1c53bacab763c5c65cd0))
+* robust filesystem import with progress tracking and cancellation ([#258](https://github.com/bcit-tlu/hriv/issues/258)) ([50a0c0f](https://github.com/bcit-tlu/hriv/commit/50a0c0f1b33cec6bccf75741971a313c1cf11a65))
+
+
+### Bug Fixes
+
+* **backend:** add actionable error messages for bootstrap connection failures ([#230](https://github.com/bcit-tlu/hriv/issues/230)) ([e456c34](https://github.com/bcit-tlu/hriv/commit/e456c34d9c148ea8e5b0e117173a187c76ba7a51))
+* **backend:** use reporter role instead of name in issue title ([#226](https://github.com/bcit-tlu/hriv/issues/226)) ([33e0a72](https://github.com/bcit-tlu/hriv/commit/33e0a72fc2eae2b527c0b172c95890cf2cf6a1c1))
+* **otel:** bootstrap SDK in uvicorn --reload child processes ([#249](https://github.com/bcit-tlu/hriv/issues/249)) ([b63e9fe](https://github.com/bcit-tlu/hriv/commit/b63e9fe8f66d1b1e555981920bacb276c871a4c9))
+
 ## [0.8.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.8.1...backend-v0.8.2) (2026-04-23)
 
 
