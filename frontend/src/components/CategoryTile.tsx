@@ -27,6 +27,24 @@ function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
   return null
 }
 
+/** Count all descendant subcategories recursively. */
+function countAllSubcategories(cat: Category): number {
+  let count = cat.children.length
+  for (const child of cat.children) {
+    count += countAllSubcategories(child)
+  }
+  return count
+}
+
+/** Count all images in a category and all its descendants. */
+function countAllImages(cat: Category): number {
+  let count = cat.images.length
+  for (const child of cat.children) {
+    count += countAllImages(child)
+  }
+  return count
+}
+
 /** Collect all unique program IDs from a category and all its descendants. */
 function collectProgramIds(cat: Category): Set<number> {
   const ids = new Set<number>()
@@ -50,8 +68,8 @@ interface CategoryTileProps {
 export default function CategoryTile({ category, onClick, onMove, onSetCardImage, programs }: CategoryTileProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
 
-  const subCategoryCount = category.children.length
-  const imageCount = category.images.length
+  const subCategoryCount = countAllSubcategories(category)
+  const imageCount = countAllImages(category)
   const programIds = collectProgramIds(category)
 
   const detailParts: string[] = []
