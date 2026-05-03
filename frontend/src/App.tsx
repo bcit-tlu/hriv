@@ -234,7 +234,7 @@ export default function App() {
     interface ProcessingJob {
         id: number;
         filename: string;
-        status: "processing" | "completed" | "failed";
+        status: "uploading" | "processing" | "completed" | "failed";
         errorMessage?: string;
         imageId?: number;
         /** Server-reported progress (0–100). */
@@ -245,6 +245,10 @@ export default function App() {
         startedAt: number;
         /** Server-reported status message describing the current phase. */
         statusMessage?: string;
+        /** Upload progress fraction (0–1), only for "uploading" status. */
+        uploadProgress?: number;
+        /** Temporary ID assigned during upload (before sourceImageId is known). */
+        uploadId?: number;
     }
     const [processingJobs, setProcessingJobs] = useState<ProcessingJob[]>([]);
     const processingPollRefs = useRef<Map<number, PollHandle>>(new Map());
@@ -252,6 +256,9 @@ export default function App() {
     // Server-reported progress stored in a ref to avoid re-triggering the
     // polling useEffect when intermediate progress updates arrive.
     const serverProgressRef = useRef<Map<number, number>>(new Map());
+
+    // Upload progress stored in a ref (same reason as above).
+    const uploadProgressRef = useRef<Map<number, number>>(new Map());
 
     // Server-reported status message stored in a ref (same reason as above).
     const serverStatusMessageRef = useRef<Map<number, string>>(new Map());
@@ -313,6 +320,16 @@ export default function App() {
             ""
         );
     }, []);
+
+    // Jobs visible as snackbars — hide "uploading" jobs while the modal is open
+    // (the modal already shows its own progress bar).
+    const visibleJobs = useMemo(
+        () =>
+            processingJobs.filter(
+                (j) => !(j.status === "uploading" && uploadOpen),
+            ),
+        [processingJobs, uploadOpen],
+    );
 
     // Search modal state
     const [searchOpen, setSearchOpen] = useState(false);
@@ -458,7 +475,7 @@ export default function App() {
     // re-triggering the polling useEffect.
     useEffect(() => {
         const hasActiveJob = processingJobs.some(
-            (j) => j.status === "processing",
+            (j) => j.status === "processing" || j.status === "uploading",
         );
         if (hasActiveJob && !interpolationTimerRef.current) {
             interpolationTimerRef.current = setInterval(() => {
@@ -1717,11 +1734,23 @@ export default function App() {
                                     alignItems: "center",
                                     justifyContent: "space-between",
                                     mb: 2,
-                                    flexWrap: "wrap",
                                     gap: 1,
                                 }}
                             >
-                                <MuiBreadcrumbs aria-label="image breadcrumb">
+                                <MuiBreadcrumbs
+                                    aria-label="image breadcrumb"
+                                    sx={{
+                                        minWidth: 0,
+                                        "& .MuiBreadcrumbs-ol": {
+                                            flexWrap: "nowrap",
+                                        },
+                                        "& .MuiBreadcrumbs-li:last-of-type": {
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis",
+                                            whiteSpace: "nowrap",
+                                        },
+                                    }}
+                                >
                                     <Link
                                         component="button"
                                         variant="body2"
@@ -1950,11 +1979,23 @@ export default function App() {
                                     alignItems: "center",
                                     justifyContent: "space-between",
                                     mb: 2,
-                                    flexWrap: "wrap",
                                     gap: 1,
                                 }}
                             >
-                                <MuiBreadcrumbs aria-label="category breadcrumb">
+                                <MuiBreadcrumbs
+                                    aria-label="category breadcrumb"
+                                    sx={{
+                                        minWidth: 0,
+                                        "& .MuiBreadcrumbs-ol": {
+                                            flexWrap: "nowrap",
+                                        },
+                                        "& .MuiBreadcrumbs-li:last-of-type": {
+                                            overflow: "hidden",
+                                            textOverflow: "ellipsis",
+                                            whiteSpace: "nowrap",
+                                        },
+                                    }}
+                                >
                                     <Link
                                         component="button"
                                         variant="body2"
@@ -2327,8 +2368,73 @@ export default function App() {
                     loadCategories();
                     loadUncategorizedImages();
                 }}
+                onUploadStarted={(uploadId, filename, fileSize) => {
+                    setProcessingJobs((prev) => {
+                        if (
+                            prev.filter(
+                                (j) =>
+                                    j.status === "uploading" ||
+                                    j.status === "processing",
+                            ).length >= MAX_PROCESSING_JOBS
+                        )
+                            return prev;
+                        return [
+                            ...prev,
+                            {
+                                id: -uploadId,
+                                filename,
+                                status: "uploading" as const,
+                                serverProgress: 0,
+                                fileSize,
+                                startedAt: Date.now(),
+                                uploadId,
+                                uploadProgress: 0,
+                            },
+                        ];
+                    });
+                }}
+                onUploadProgress={(uploadId, fraction) => {
+                    uploadProgressRef.current.set(uploadId, fraction);
+                }}
+                onUploadFailed={(uploadId, error) => {
+                    uploadProgressRef.current.delete(uploadId);
+                    setProcessingJobs((prev) =>
+                        prev.map((j) =>
+                            j.uploadId === uploadId
+                                ? {
+                                      ...j,
+                                      status: "failed" as const,
+                                      errorMessage: error,
+                                  }
+                                : j,
+                        ),
+                    );
+                }}
                 onProcessingStarted={(sourceImageId, filename, fileSize) => {
                     setProcessingJobs((prev) => {
+                        // Find the uploading job and transition it to processing
+                        const uploadingJob = prev.find(
+                            (j) => j.status === "uploading",
+                        );
+                        if (uploadingJob) {
+                            uploadProgressRef.current.delete(
+                                uploadingJob.uploadId!,
+                            );
+                            return prev.map((j) =>
+                                j.id === uploadingJob.id
+                                    ? {
+                                          ...j,
+                                          id: sourceImageId,
+                                          status: "processing" as const,
+                                          serverProgress: 0,
+                                          startedAt: Date.now(),
+                                          uploadId: undefined,
+                                          uploadProgress: undefined,
+                                      }
+                                    : j,
+                            );
+                        }
+                        // Fallback: no uploading job found, create new
                         if (
                             prev.filter((j) => j.status === "processing")
                                 .length >= MAX_PROCESSING_JOBS
@@ -2491,13 +2597,19 @@ export default function App() {
                 sx={{
                     zIndex: 1500,
                     bottom: {
-                        xs: `${24 + processingJobs.length * 80}px !important`,
+                        xs: `${24 + visibleJobs.length * 88}px !important`,
                     },
                 }}
             />
 
-            {/* Image processing snackbars (one per job, stacked above modals) */}
-            {processingJobs.map((job, index) => {
+            {/* Image upload + processing snackbars (one per job, stacked) */}
+            {visibleJobs.map((job, index) => {
+                const uploadFraction =
+                    job.status === "uploading"
+                        ? (uploadProgressRef.current.get(job.uploadId!) ??
+                          job.uploadProgress ??
+                          0)
+                        : 0;
                 const displayProgress = getDisplayProgress(job);
                 const statusMsg = getStatusMessage(job);
                 return (
@@ -2505,7 +2617,10 @@ export default function App() {
                         key={job.id}
                         open
                         autoHideDuration={
-                            job.status !== "processing" ? 6000 : null
+                            job.status === "processing" ||
+                            job.status === "uploading"
+                                ? null
+                                : 6000
                         }
                         onClose={(_event, reason) => {
                             if (reason === "clickaway") return;
@@ -2519,7 +2634,7 @@ export default function App() {
                         }}
                         sx={{
                             zIndex: 1500,
-                            bottom: { xs: `${24 + index * 80}px !important` },
+                            bottom: { xs: `${24 + index * 88}px !important` },
                         }}
                     >
                         <Alert
@@ -2537,7 +2652,8 @@ export default function App() {
                                 alignItems: "center",
                             }}
                             icon={
-                                job.status === "processing" ? (
+                                job.status === "processing" ||
+                                job.status === "uploading" ? (
                                     <CircularProgress
                                         size={20}
                                         sx={{ color: "inherit" }}
@@ -2550,6 +2666,30 @@ export default function App() {
                                 )
                             }
                         >
+                            {job.status === "uploading" && (
+                                <Box sx={{ width: "100%", minWidth: 220 }}>
+                                    <Typography
+                                        variant="body2"
+                                        sx={{ mb: 0.5 }}
+                                    >
+                                        {`Uploading: ${job.filename} — ${Math.round(uploadFraction * 100)}%`}
+                                    </Typography>
+                                    <LinearProgress
+                                        variant="determinate"
+                                        value={Math.round(
+                                            uploadFraction * 100,
+                                        )}
+                                        sx={{
+                                            height: 6,
+                                            borderRadius: 1,
+                                            bgcolor: "rgba(255,255,255,0.3)",
+                                            "& .MuiLinearProgress-bar": {
+                                                bgcolor: "#fff",
+                                            },
+                                        }}
+                                    />
+                                </Box>
+                            )}
                             {job.status === "processing" && (
                                 <Box sx={{ width: "100%", minWidth: 220 }}>
                                     <Typography
