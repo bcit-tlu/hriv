@@ -1,3 +1,8 @@
+---
+name: testing-hriv
+description: End-to-end testing guide for the HRIV app including local stack setup, seed data, auth, UI navigation, metadata operations, admin export/import, image upload, and image replacement.
+---
+
 # Testing HRIV
 
 End-to-end testing guide for the HRIV app: local stack bring-up, seed data, auth,
@@ -269,6 +274,82 @@ docker exec hriv-backend-1 tar -tzf /data/admin_tasks/<filename>.tar.gz | grep a
 The snackbar auto-dismisses after 6 s — use Playwright `wait_for` to catch the link
 deterministically. For deeper image-processing tests (progress flush timing,
 synthetic large images, pyvips eval signals) see `testing-image-processing`.
+
+## Testing Image Replacement
+
+The Edit Details modal supports one-to-one image replacement with a two-step
+confirmation flow. This replaces the image file, regenerates tiles and thumbnails,
+and clears canvas metadata (`locked_overlays`, `canvas_annotations`).
+
+### Creating Test Images
+
+Generate synthetic test images of varying sizes:
+```bash
+# Small JPEG for quick tests
+python3 -c "import numpy as np; from PIL import Image; Image.fromarray(np.random.randint(0,255,(600,800,3),dtype=np.uint8)).save('/tmp/test_replacement.jpg', quality=85)"
+
+# Large PNG for processing-time tests
+python3 -c "import numpy as np; from PIL import Image; Image.fromarray(np.random.randint(0,255,(2000,2000,3),dtype=np.uint8)).save('/tmp/test_replacement_large.png')"
+```
+
+### UI Flow
+
+1. Open Edit Details modal (click image name in Images tab, or click "Edit Details" in viewer).
+2. The drop zone at the top shows "Drag and drop to replace image" with a "browse to upload" link.
+3. Select a file — the drop zone turns green, shows filename + size + "Clear" button.
+4. Button changes from "Save" to "Replace & Save" (blue).
+5. **First click** on "Replace & Save" → warning alert appears:
+   > "Replacing this image will delete the current image file, all tiles, and any canvas annotations and overlays. This cannot be undone."
+6. Button changes to "Confirm Replace & Save" (orange/warning color).
+7. **Second click** executes the replacement.
+8. Modal closes; processing snackbar appears at bottom.
+
+### File Injection via Playwright
+
+Since the file input is hidden, use Playwright CDP to inject the file directly
+rather than trying to interact with the OS file picker:
+```python
+import asyncio
+from playwright.async_api import async_playwright
+
+async def inject_file():
+    async with async_playwright() as p:
+        browser = await p.chromium.connect_over_cdp("http://localhost:29229")
+        context = browser.contexts[0]
+        page = context.pages[0]
+        file_input = page.locator('input[type="file"]')
+        await file_input.set_input_files('/tmp/test_replacement.jpg')
+
+asyncio.run(inject_file())
+```
+This directly sets the hidden `<input type="file">` without needing to interact
+with the native file chooser dialog. The modal must be open before running this.
+
+### Post-Replacement Verification
+
+After the processing snackbar disappears, verify via API:
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1 | python3 -m json.tool
+```
+
+Key assertions:
+- `tile_sources` changed from external URL to `/api/tiles/<id>/image.dzi`
+- `thumb` changed to `/api/tiles/<id>/thumbnail.jpeg`
+- `width` and `height` match the replacement image dimensions
+- `file_size` is populated
+- `metadata_extra` is `{}` (canvas metadata cleared)
+- `name`, `category_id`, `copyright`, `note`, `program_ids` are preserved
+- `version` has incremented
+
+### Known Limitation (Issue #271)
+
+The frontend performs two separate API calls for replacement:
+1. Metadata PATCH (`apiUpdateImage`) — updates form fields
+2. File POST (`apiReplaceImage`) — uploads the new file
+
+If the file upload fails after the metadata PATCH succeeds, metadata changes are
+committed but the file remains unchanged. This is a known trade-off; see issue #271
+for discussion of potential atomic replacement approaches.
 
 ## Browser & Test Environment Tips
 
