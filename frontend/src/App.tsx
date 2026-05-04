@@ -332,24 +332,6 @@ export default function App() {
         );
     }, []);
 
-    // Jobs visible as snackbars — hide "uploading" jobs while the modal that
-    // owns them is open (the modal already shows its own progress bar).
-    const visibleJobs = useMemo(
-        () =>
-            processingJobs.filter(
-                (j) =>
-                    !(
-                        (j.status === "uploading" ||
-                            j.status === "failed") &&
-                        (uploadOpen ||
-                            imageEditOpen ||
-                            browseEditImage != null) &&
-                        j.uploadId != null
-                    ),
-            ),
-        [processingJobs, uploadOpen, imageEditOpen, browseEditImage],
-    );
-
     // Search modal state
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchUsers, setSearchUsers] = useState<ApiUser[]>([]);
@@ -382,6 +364,24 @@ export default function App() {
     // Image edit modal state (for browse-view ellipsis icon)
     const [browseEditImage, setBrowseEditImage] = useState<ImageItem | null>(
         null,
+    );
+
+    // Jobs visible as snackbars — hide "uploading" jobs while the modal that
+    // owns them is open (the modal already shows its own progress bar).
+    const visibleJobs = useMemo(
+        () =>
+            processingJobs.filter(
+                (j) =>
+                    !(
+                        (j.status === "uploading" ||
+                            j.status === "failed") &&
+                        (uploadOpen ||
+                            imageEditOpen ||
+                            browseEditImage != null) &&
+                        j.uploadId != null
+                    ),
+            ),
+        [processingJobs, uploadOpen, imageEditOpen, browseEditImage],
     );
 
     // User profile popover + edit modal state
