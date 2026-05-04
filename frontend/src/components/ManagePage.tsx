@@ -32,7 +32,6 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
-import CollectionsIcon from '@mui/icons-material/Collections'
 import ClearIcon from '@mui/icons-material/Clear'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
@@ -44,7 +43,6 @@ import { fetchImages, updateImage, deleteImage, replaceImage, bulkUpdateImages, 
 import type { ApiImage } from '../api'
 import type { Category, Program } from '../types'
 import BulkEditImagesModal from './BulkEditImagesModal'
-import BulkImportModal from './BulkImportModal'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
 import MoveImageDialog from './MoveImageDialog'
@@ -153,9 +151,6 @@ export default function ManagePage({ categories, programs, onViewImage, onNaviga
 
   // Upload modal state
   const [uploadOpen, setUploadOpen] = useState(false)
-
-  // Bulk import modal state
-  const [bulkImportOpen, setBulkImportOpen] = useState(false)
 
   // Move modal state
   const [moveOpen, setMoveOpen] = useState(false)
@@ -524,14 +519,7 @@ export default function ManagePage({ categories, programs, onViewImage, onNaviga
             startIcon={<AddPhotoAlternateIcon />}
             onClick={() => setUploadOpen(true)}
           >
-            Add Image
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<CollectionsIcon />}
-            onClick={() => setBulkImportOpen(true)}
-          >
-            Bulk Import
+            Add Images
           </Button>
         </Box>
       </Box>
@@ -882,7 +870,11 @@ export default function ManagePage({ categories, programs, onViewImage, onNaviga
       {/* Upload image modal */}
       <UploadImageModal
         open={uploadOpen}
-        onClose={() => setUploadOpen(false)}
+        onClose={() => {
+          setUploadOpen(false)
+          loadImages()
+          onCategoriesChanged?.()
+        }}
         onUploaded={() => {
           loadImages()
           onCategoriesChanged?.()
@@ -903,21 +895,6 @@ export default function ManagePage({ categories, programs, onViewImage, onNaviga
         categories={categories}
         programs={programs}
         selectedCount={selected.size}
-        onAddCategory={onAddCategory}
-        onEditCategory={onEditCategory}
-        onToggleVisibility={onToggleVisibility}
-      />
-
-      {/* Bulk import modal */}
-      <BulkImportModal
-        open={bulkImportOpen}
-        onClose={() => {
-          setBulkImportOpen(false)
-          loadImages()
-          onCategoriesChanged?.()
-        }}
-        categories={categories}
-        programs={programs}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
