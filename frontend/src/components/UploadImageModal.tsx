@@ -149,6 +149,7 @@ export default function UploadImageModal({
             clearInterval(pollRef.current)
             pollRef.current = null
           }
+          onUploaded()
         }
       } catch {
         // ignore poll errors
@@ -160,7 +161,7 @@ export default function UploadImageModal({
         pollRef.current = null
       }
     }
-  }, [job])
+  }, [job, onUploaded])
 
   const handleReset = useCallback(() => {
     setFiles([])
@@ -184,16 +185,13 @@ export default function UploadImageModal({
     const dropped = Array.from(e.dataTransfer.files).filter(isAcceptedFile)
     if (dropped.length === 0) return
 
-    if (dropped.length === 1 && isImageFile(dropped[0])) {
-      // Single image replaces current selection for single-upload mode
-      setFiles([dropped[0]])
-      if (!name) {
-        setName(dropped[0].name.replace(/\.[^.]+$/, ''))
+    setFiles((prev) => {
+      const next = [...prev, ...dropped]
+      if (next.length === 1 && isImageFile(next[0]) && !name) {
+        setName(next[0].name.replace(/\.[^.]+$/, ''))
       }
-    } else {
-      // Multiple files or zip: append to list for bulk mode
-      setFiles((prev) => [...prev, ...dropped])
-    }
+      return next
+    })
   }, [name])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -207,17 +205,16 @@ export default function UploadImageModal({
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const selected = Array.from(e.target.files ?? [])
+      const selected = Array.from(e.target.files ?? []).filter(isAcceptedFile)
       if (selected.length === 0) return
 
-      if (selected.length === 1 && isImageFile(selected[0])) {
-        setFiles([selected[0]])
-        if (!name) {
-          setName(selected[0].name.replace(/\.[^.]+$/, ''))
+      setFiles((prev) => {
+        const next = [...prev, ...selected]
+        if (next.length === 1 && isImageFile(next[0]) && !name) {
+          setName(next[0].name.replace(/\.[^.]+$/, ''))
         }
-      } else {
-        setFiles((prev) => [...prev, ...selected.filter(isAcceptedFile)])
-      }
+        return next
+      })
       e.target.value = ''
     },
     [name],
