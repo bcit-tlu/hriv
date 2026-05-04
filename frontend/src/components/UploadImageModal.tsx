@@ -118,6 +118,11 @@ export default function UploadImageModal({
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // Stable ref for onUploaded so polling/reset callbacks don't depend
+  // on the (potentially unstable) inline closure from the parent.
+  const onUploadedRef = useRef(onUploaded)
+  onUploadedRef.current = onUploaded
+
   // Bulk-import job state
   const [job, setJob] = useState<ApiBulkImportJob | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -153,7 +158,7 @@ export default function UploadImageModal({
           }
           if (!bulkRefreshDoneRef.current) {
             bulkRefreshDoneRef.current = true
-            onUploaded()
+            onUploadedRef.current()
           }
         }
       } catch {
@@ -166,14 +171,14 @@ export default function UploadImageModal({
         pollRef.current = null
       }
     }
-  }, [job, onUploaded])
+  }, [job])
 
   const handleReset = useCallback(() => {
     // If a bulk job was started but onUploaded hasn't fired yet
     // (e.g. user closed the dialog while import was still running),
     // notify the parent so it can refresh data.
     if (hadBulkJobRef.current && !bulkRefreshDoneRef.current) {
-      onUploaded()
+      onUploadedRef.current()
     }
     hadBulkJobRef.current = false
     bulkRefreshDoneRef.current = false
@@ -190,7 +195,7 @@ export default function UploadImageModal({
       clearInterval(pollRef.current)
       pollRef.current = null
     }
-  }, [initialCategoryId, onUploaded])
+  }, [initialCategoryId])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
