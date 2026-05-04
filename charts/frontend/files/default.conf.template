@@ -47,10 +47,11 @@ server {
 
     # Upload endpoints — unlimited body size.
     # - /api/source-images/upload        single high-res TIFF/SVS
+    # - /api/images/<id>/replace         one-to-one image replacement
     # - /api/admin/bulk-import[/...]     multi-file bulk ingest
     # - /api/admin/tasks/db-import       admin DB JSON import
     # - /api/admin/tasks/files-import    admin tar.gz filesystem import
-    location ~ ^/api/(source-images/upload|admin/bulk-import(/.*)?|admin/tasks/(db|files)-import)(/|\?.*)?$ {
+    location ~ ^/api/(source-images/upload|images/\d+/replace|admin/bulk-import(/.*)?|admin/tasks/(db|files)-import)(/|\?.*)?$ {
         resolver           ${NGINX_DNS_RESOLVER} valid=5s;
         set                $backend "${BACKEND_URL}";
         proxy_pass         $backend$request_uri;
