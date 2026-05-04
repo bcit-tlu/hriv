@@ -1564,10 +1564,12 @@ export default function App() {
                                       status: "failed" as const,
                                       errorMessage:
                                           "Failed to upload replacement image",
+                                      uploadId: undefined,
                                   }
                                 : j,
                         ),
                     );
+                    setImageEditOpen(false);
                 });
         },
         [selectedImage, loadCategories, loadUncategorizedImages],
@@ -1640,10 +1642,12 @@ export default function App() {
                                       status: "failed" as const,
                                       errorMessage:
                                           "Failed to upload replacement image",
+                                      uploadId: undefined,
                                   }
                                 : j,
                         ),
                     );
+                    setBrowseEditImage(null);
                 });
         },
         [browseEditImage, loadCategories, loadUncategorizedImages],
