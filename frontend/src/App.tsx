@@ -270,9 +270,12 @@ export default function App() {
     // Monotonic counter for replacement upload IDs (avoids collisions with
     // UploadImageModal which uses Date.now()).
     const nextReplaceUploadIdRef = useRef(2_000_000);
-    // Track the active replacement uploadId so we can compute progress for
-    // the EditImageModal.
-    const activeReplaceUploadIdRef = useRef<number | null>(null);
+    // Track the active replacement uploadId and which modal context started
+    // it so progress doesn't leak between the viewer and browse modals.
+    const activeReplaceUploadIdRef = useRef<{
+        uploadId: number;
+        context: "viewer" | "browse";
+    } | null>(null);
 
     // Client-side progress interpolation — a simple tick counter that
     // increments every 500 ms to trigger re-renders without mutating
@@ -366,21 +369,24 @@ export default function App() {
         null,
     );
 
-    // Jobs visible as snackbars — hide "uploading" jobs while the modal that
-    // owns them is open (the modal already shows its own progress bar).
+    // Jobs visible as snackbars — hide "uploading"/"failed" jobs only while
+    // the modal that owns them is open (that modal shows its own progress).
+    // Upload-modal jobs (uploadId from Date.now()) are hidden when uploadOpen.
+    // Replacement jobs (uploadId from nextReplaceUploadIdRef, < 1 billion)
+    // are hidden when the edit modal that started them is open.
     const visibleJobs = useMemo(
         () =>
-            processingJobs.filter(
-                (j) =>
-                    !(
-                        (j.status === "uploading" ||
-                            j.status === "failed") &&
-                        (uploadOpen ||
-                            imageEditOpen ||
-                            browseEditImage != null) &&
-                        j.uploadId != null
-                    ),
-            ),
+            processingJobs.filter((j) => {
+                if (
+                    !(j.status === "uploading" || j.status === "failed") ||
+                    j.uploadId == null
+                )
+                    return true;
+                const isReplaceJob = j.uploadId < 1_000_000_000;
+                if (isReplaceJob)
+                    return !(imageEditOpen || browseEditImage != null);
+                return !uploadOpen;
+            }),
         [processingJobs, uploadOpen, imageEditOpen, browseEditImage],
     );
 
@@ -1502,7 +1508,7 @@ export default function App() {
 
             // Create an uploading job so progress is tracked in snackbar/modal
             const uploadId = nextReplaceUploadIdRef.current++;
-            activeReplaceUploadIdRef.current = uploadId;
+            activeReplaceUploadIdRef.current = { uploadId, context: "viewer" };
             setProcessingJobs((prev) => {
                 if (
                     prev.filter(
@@ -1581,7 +1587,7 @@ export default function App() {
             await apiUpdateImage(browseEditImage.id, formData);
 
             const uploadId = nextReplaceUploadIdRef.current++;
-            activeReplaceUploadIdRef.current = uploadId;
+            activeReplaceUploadIdRef.current = { uploadId, context: "browse" };
             setProcessingJobs((prev) => {
                 if (
                     prev.filter(
@@ -1674,13 +1680,16 @@ export default function App() {
         return <LoginScreen onLogin={login} announcement={announcement} />;
     }
 
-    // Compute current replacement upload progress for the edit modal.
-    // Refs are read here so the 500 ms progressTick timer drives re-renders.
-    const replaceUploadProgress =
-        activeReplaceUploadIdRef.current != null
-            ? uploadProgressRef.current.get(
-                  activeReplaceUploadIdRef.current,
-              ) ?? 0
+    // Compute per-modal replacement upload progress.
+    // Each modal only sees progress for its own replacement operation.
+    const activeReplace = activeReplaceUploadIdRef.current;
+    const viewerReplaceUploadProgress =
+        activeReplace?.context === "viewer"
+            ? uploadProgressRef.current.get(activeReplace.uploadId) ?? 0
+            : undefined;
+    const browseReplaceUploadProgress =
+        activeReplace?.context === "browse"
+            ? uploadProgressRef.current.get(activeReplace.uploadId) ?? 0
             : undefined;
 
     return (
@@ -2572,7 +2581,7 @@ export default function App() {
                         : undefined
                 }
                 onReplace={handleReplaceViewerImage}
-                replaceUploadProgress={replaceUploadProgress}
+                replaceUploadProgress={viewerReplaceUploadProgress}
                 image={selectedApiImage}
                 categories={categories}
                 programs={programs}
@@ -2597,7 +2606,7 @@ export default function App() {
                         : undefined
                 }
                 onReplace={handleReplaceBrowseImage}
-                replaceUploadProgress={replaceUploadProgress}
+                replaceUploadProgress={browseReplaceUploadProgress}
                 image={browseApiImage}
                 categories={categories}
                 programs={programs}

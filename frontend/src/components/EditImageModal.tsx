@@ -253,6 +253,7 @@ function EditImageForm({
   }
 
   const busy = deleting || (replacing && !uploadInProgress)
+  const disableActions = busy || uploadInProgress
 
   return (
     <>
@@ -488,7 +489,7 @@ function EditImageForm({
                 color="error"
                 variant={confirmDelete ? 'contained' : 'outlined'}
                 onClick={handleDelete}
-                disabled={busy}
+                disabled={disableActions}
                 fullWidth
               >
                 {confirmDelete
@@ -533,7 +534,7 @@ function EditImageForm({
         </Box>
       )}
       <DialogActions>
-        <Button onClick={onClose} disabled={busy}>{uploadInProgress ? 'Close' : 'Cancel'}</Button>
+        <Button onClick={onClose} disabled={busy || deleting}>{uploadInProgress ? 'Close' : 'Cancel'}</Button>
         {replaceFile && onReplace ? (
           <Button
             onClick={handleReplace}
