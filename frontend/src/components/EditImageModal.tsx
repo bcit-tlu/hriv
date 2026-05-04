@@ -8,6 +8,7 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
+import LinearProgress from '@mui/material/LinearProgress'
 import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import InputLabel from '@mui/material/InputLabel'
@@ -72,6 +73,7 @@ interface EditImageModalProps {
   onSave: (data: ImageFormData) => void
   onDelete?: () => Promise<void>
   onReplace?: (data: ReplaceImageData) => Promise<void>
+  replaceUploadProgress?: number
   image: ApiImage | null
   categories: Category[]
   programs: Program[]
@@ -86,6 +88,7 @@ function EditImageForm({
   onSave,
   onDelete,
   onReplace,
+  replaceUploadProgress,
   image,
   categories,
   programs,
@@ -94,6 +97,7 @@ function EditImageForm({
   onToggleVisibility,
   onViewImage,
 }: Omit<EditImageModalProps, 'open'>) {
+  const uploadInProgress = replaceUploadProgress !== undefined
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState(image?.name ?? '')
   const [categoryId, setCategoryId] = useState<number | null>(image?.category_id ?? null)
@@ -248,7 +252,8 @@ function EditImageForm({
     }
   }
 
-  const busy = deleting || replacing
+  const busy = deleting || (replacing && !uploadInProgress)
+  const disableActions = busy || uploadInProgress
 
   return (
     <>
@@ -353,6 +358,19 @@ function EditImageForm({
             and any canvas annotations and overlays. This cannot be undone.
             Click &quot;Replace &amp; Save&quot; again to confirm.
           </Alert>
+        )}
+
+        {uploadInProgress && (
+          <Box sx={{ mt: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+              {`Uploading replacement \u2014 ${Math.round(replaceUploadProgress * 100)}%`}
+            </Typography>
+            <LinearProgress
+              variant="determinate"
+              value={Math.round(replaceUploadProgress * 100)}
+              sx={{ height: 6, borderRadius: 1 }}
+            />
+          </Box>
         )}
 
         {replaceError && (
@@ -471,7 +489,7 @@ function EditImageForm({
                 color="error"
                 variant={confirmDelete ? 'contained' : 'outlined'}
                 onClick={handleDelete}
-                disabled={busy}
+                disabled={disableActions}
                 fullWidth
               >
                 {confirmDelete
@@ -516,13 +534,13 @@ function EditImageForm({
         </Box>
       )}
       <DialogActions>
-        <Button onClick={onClose} disabled={busy}>Cancel</Button>
+        <Button onClick={onClose} disabled={busy || deleting}>{uploadInProgress ? 'Close' : 'Cancel'}</Button>
         {replaceFile && onReplace ? (
           <Button
             onClick={handleReplace}
             variant="contained"
             color={confirmReplace ? 'warning' : 'primary'}
-            disabled={!name.trim() || busy}
+            disabled={!name.trim() || busy || uploadInProgress}
           >
             {confirmReplace ? 'Confirm Replace & Save' : 'Replace & Save'}
           </Button>
@@ -555,6 +573,7 @@ export default function EditImageModal({
   onSave,
   onDelete,
   onReplace,
+  replaceUploadProgress,
   image,
   categories,
   programs,
@@ -574,6 +593,7 @@ export default function EditImageModal({
           onSave={onSave}
           onDelete={onDelete}
           onReplace={onReplace}
+          replaceUploadProgress={replaceUploadProgress}
           image={image}
           categories={categories}
           programs={programs}
