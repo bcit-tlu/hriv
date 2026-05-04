@@ -870,11 +870,7 @@ export default function ManagePage({ categories, programs, onViewImage, onNaviga
       {/* Upload image modal */}
       <UploadImageModal
         open={uploadOpen}
-        onClose={() => {
-          setUploadOpen(false)
-          loadImages()
-          onCategoriesChanged?.()
-        }}
+        onClose={() => setUploadOpen(false)}
         onUploaded={() => {
           loadImages()
           onCategoriesChanged?.()

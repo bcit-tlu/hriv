@@ -121,6 +121,8 @@ export default function UploadImageModal({
   // Bulk-import job state
   const [job, setJob] = useState<ApiBulkImportJob | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const hadBulkJobRef = useRef(false)
+  const bulkRefreshDoneRef = useRef(false)
 
   const bulk = isBulkMode(files)
 
@@ -149,7 +151,10 @@ export default function UploadImageModal({
             clearInterval(pollRef.current)
             pollRef.current = null
           }
-          onUploaded()
+          if (!bulkRefreshDoneRef.current) {
+            bulkRefreshDoneRef.current = true
+            onUploaded()
+          }
         }
       } catch {
         // ignore poll errors
@@ -164,6 +169,14 @@ export default function UploadImageModal({
   }, [job, onUploaded])
 
   const handleReset = useCallback(() => {
+    // If a bulk job was started but onUploaded hasn't fired yet
+    // (e.g. user closed the dialog while import was still running),
+    // notify the parent so it can refresh data.
+    if (hadBulkJobRef.current && !bulkRefreshDoneRef.current) {
+      onUploaded()
+    }
+    hadBulkJobRef.current = false
+    bulkRefreshDoneRef.current = false
     setFiles([])
     setName('')
     setCategoryId(initialCategoryId ?? null)
@@ -177,7 +190,7 @@ export default function UploadImageModal({
       clearInterval(pollRef.current)
       pollRef.current = null
     }
-  }, [initialCategoryId])
+  }, [initialCategoryId, onUploaded])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -253,6 +266,7 @@ export default function UploadImageModal({
           metadata.programIds.length > 0 ? metadata.programIds : undefined,
           metadata.active,
         )
+        hadBulkJobRef.current = true
         setJob(result)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Upload failed')
