@@ -2319,7 +2319,7 @@ export default function App() {
                                             }
                                             onClick={() => setUploadOpen(true)}
                                         >
-                                            Add Image
+                                            Add Images
                                         </Button>
                                     </Box>
                                 )}
