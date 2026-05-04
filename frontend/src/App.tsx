@@ -267,6 +267,13 @@ export default function App() {
     // Server-reported status message stored in a ref (same reason as above).
     const serverStatusMessageRef = useRef<Map<number, string>>(new Map());
 
+    // Monotonic counter for replacement upload IDs (avoids collisions with
+    // UploadImageModal which uses Date.now()).
+    const nextReplaceUploadIdRef = useRef(2_000_000);
+    // Track the active replacement uploadId so we can compute progress for
+    // the EditImageModal.
+    const activeReplaceUploadIdRef = useRef<number | null>(null);
+
     // Client-side progress interpolation — a simple tick counter that
     // increments every 500 ms to trigger re-renders without mutating
     // processingJobs (which would restart the polling useEffect).
@@ -325,8 +332,8 @@ export default function App() {
         );
     }, []);
 
-    // Jobs visible as snackbars — hide "uploading" jobs while the modal is open
-    // (the modal already shows its own progress bar).
+    // Jobs visible as snackbars — hide "uploading" jobs while the modal that
+    // owns them is open (the modal already shows its own progress bar).
     const visibleJobs = useMemo(
         () =>
             processingJobs.filter(
@@ -334,11 +341,13 @@ export default function App() {
                     !(
                         (j.status === "uploading" ||
                             j.status === "failed") &&
-                        uploadOpen &&
+                        (uploadOpen ||
+                            imageEditOpen ||
+                            browseEditImage != null) &&
                         j.uploadId != null
                     ),
             ),
-        [processingJobs, uploadOpen],
+        [processingJobs, uploadOpen, imageEditOpen, browseEditImage],
     );
 
     // Search modal state
@@ -1470,11 +1479,8 @@ export default function App() {
     const handleReplaceViewerImage = useCallback(
         async ({ file, formData }: ReplaceImageData) => {
             if (!selectedImage) return;
-            // Save metadata changes first
+            // Save metadata changes first (awaited — can throw on validation)
             const updated = await apiUpdateImage(selectedImage.id, formData);
-            // Upload replacement file
-            const result = await apiReplaceImage(selectedImage.id, file);
-            addProcessingJob(result.id, file.name, file.size);
             setSelectedImage({
                 id: updated.id,
                 name: updated.name,
@@ -1493,24 +1499,154 @@ export default function App() {
                 height: updated.height,
                 fileSize: updated.file_size,
             });
-            setImageEditOpen(false);
-            await loadCategories();
-            loadUncategorizedImages();
+
+            // Create an uploading job so progress is tracked in snackbar/modal
+            const uploadId = nextReplaceUploadIdRef.current++;
+            activeReplaceUploadIdRef.current = uploadId;
+            setProcessingJobs((prev) => {
+                if (
+                    prev.filter(
+                        (j) =>
+                            j.status === "uploading" ||
+                            j.status === "processing",
+                    ).length >= MAX_PROCESSING_JOBS
+                )
+                    return prev;
+                return [
+                    ...prev,
+                    {
+                        id: -uploadId,
+                        filename: file.name,
+                        status: "uploading" as const,
+                        serverProgress: 0,
+                        fileSize: file.size,
+                        startedAt: Date.now(),
+                        uploadId,
+                        uploadProgress: 0,
+                    },
+                ];
+            });
+
+            // Fire-and-forget: upload runs in the background with progress
+            apiReplaceImage(selectedImage.id, file, (fraction) => {
+                uploadProgressRef.current.set(uploadId, fraction);
+            })
+                .then((result) => {
+                    uploadProgressRef.current.delete(uploadId);
+                    activeReplaceUploadIdRef.current = null;
+                    setProcessingJobs((prev) =>
+                        prev.map((j) =>
+                            j.uploadId === uploadId
+                                ? {
+                                      ...j,
+                                      id: result.id,
+                                      status: "processing" as const,
+                                      serverProgress: 0,
+                                      startedAt: Date.now(),
+                                      uploadId: undefined,
+                                      uploadProgress: undefined,
+                                  }
+                                : j,
+                        ),
+                    );
+                    setImageEditOpen(false);
+                    loadCategories();
+                    loadUncategorizedImages();
+                })
+                .catch(() => {
+                    uploadProgressRef.current.delete(uploadId);
+                    activeReplaceUploadIdRef.current = null;
+                    setProcessingJobs((prev) =>
+                        prev.map((j) =>
+                            j.uploadId === uploadId
+                                ? {
+                                      ...j,
+                                      status: "failed" as const,
+                                      errorMessage:
+                                          "Failed to upload replacement image",
+                                  }
+                                : j,
+                        ),
+                    );
+                });
         },
-        [selectedImage, loadCategories, loadUncategorizedImages, addProcessingJob],
+        [selectedImage, loadCategories, loadUncategorizedImages],
     );
 
     const handleReplaceBrowseImage = useCallback(
         async ({ file, formData }: ReplaceImageData) => {
             if (!browseEditImage) return;
             await apiUpdateImage(browseEditImage.id, formData);
-            const result = await apiReplaceImage(browseEditImage.id, file);
-            addProcessingJob(result.id, file.name, file.size);
-            setBrowseEditImage(null);
-            await loadCategories();
-            loadUncategorizedImages();
+
+            const uploadId = nextReplaceUploadIdRef.current++;
+            activeReplaceUploadIdRef.current = uploadId;
+            setProcessingJobs((prev) => {
+                if (
+                    prev.filter(
+                        (j) =>
+                            j.status === "uploading" ||
+                            j.status === "processing",
+                    ).length >= MAX_PROCESSING_JOBS
+                )
+                    return prev;
+                return [
+                    ...prev,
+                    {
+                        id: -uploadId,
+                        filename: file.name,
+                        status: "uploading" as const,
+                        serverProgress: 0,
+                        fileSize: file.size,
+                        startedAt: Date.now(),
+                        uploadId,
+                        uploadProgress: 0,
+                    },
+                ];
+            });
+
+            apiReplaceImage(browseEditImage.id, file, (fraction) => {
+                uploadProgressRef.current.set(uploadId, fraction);
+            })
+                .then((result) => {
+                    uploadProgressRef.current.delete(uploadId);
+                    activeReplaceUploadIdRef.current = null;
+                    setProcessingJobs((prev) =>
+                        prev.map((j) =>
+                            j.uploadId === uploadId
+                                ? {
+                                      ...j,
+                                      id: result.id,
+                                      status: "processing" as const,
+                                      serverProgress: 0,
+                                      startedAt: Date.now(),
+                                      uploadId: undefined,
+                                      uploadProgress: undefined,
+                                  }
+                                : j,
+                        ),
+                    );
+                    setBrowseEditImage(null);
+                    loadCategories();
+                    loadUncategorizedImages();
+                })
+                .catch(() => {
+                    uploadProgressRef.current.delete(uploadId);
+                    activeReplaceUploadIdRef.current = null;
+                    setProcessingJobs((prev) =>
+                        prev.map((j) =>
+                            j.uploadId === uploadId
+                                ? {
+                                      ...j,
+                                      status: "failed" as const,
+                                      errorMessage:
+                                          "Failed to upload replacement image",
+                                  }
+                                : j,
+                        ),
+                    );
+                });
         },
-        [browseEditImage, loadCategories, loadUncategorizedImages, addProcessingJob],
+        [browseEditImage, loadCategories, loadUncategorizedImages],
     );
 
     // Show loading spinner while users are loading
@@ -1533,6 +1669,15 @@ export default function App() {
     if (!currentUser) {
         return <LoginScreen onLogin={login} announcement={announcement} />;
     }
+
+    // Compute current replacement upload progress for the edit modal.
+    // Refs are read here so the 500 ms progressTick timer drives re-renders.
+    const replaceUploadProgress =
+        activeReplaceUploadIdRef.current != null
+            ? uploadProgressRef.current.get(
+                  activeReplaceUploadIdRef.current,
+              ) ?? 0
+            : undefined;
 
     return (
         <Box
@@ -2423,6 +2568,7 @@ export default function App() {
                         : undefined
                 }
                 onReplace={handleReplaceViewerImage}
+                replaceUploadProgress={replaceUploadProgress}
                 image={selectedApiImage}
                 categories={categories}
                 programs={programs}
@@ -2447,6 +2593,7 @@ export default function App() {
                         : undefined
                 }
                 onReplace={handleReplaceBrowseImage}
+                replaceUploadProgress={replaceUploadProgress}
                 image={browseApiImage}
                 categories={categories}
                 programs={programs}
