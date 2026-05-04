@@ -147,9 +147,11 @@ export default function UploadImageModal({
       }
       return
     }
+    let cancelled = false
     pollRef.current = setInterval(async () => {
       try {
         const updated = await fetchBulkImportJob(job.id)
+        if (cancelled) return
         setJob(updated)
         if (updated.status === 'completed' || updated.status === 'failed') {
           if (pollRef.current) {
@@ -166,6 +168,7 @@ export default function UploadImageModal({
       }
     }, 2000)
     return () => {
+      cancelled = true
       if (pollRef.current) {
         clearInterval(pollRef.current)
         pollRef.current = null
