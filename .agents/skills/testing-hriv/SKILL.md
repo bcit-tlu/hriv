@@ -3,6 +3,11 @@ name: testing-hriv
 description: End-to-end testing guide for the HRIV app including local stack setup, seed data, auth, UI navigation, metadata operations, admin export/import, image upload, and image replacement.
 ---
 
+---
+name: testing-hriv
+description: End-to-end testing guide for the HRIV app including local stack setup, seed data, auth, UI navigation, metadata operations, admin export/import, image upload, and image replacement.
+---
+
 # Testing HRIV
 
 End-to-end testing guide for the HRIV app: local stack bring-up, seed data, auth,
@@ -350,6 +355,74 @@ The frontend performs two separate API calls for replacement:
 If the file upload fails after the metadata PATCH succeeds, metadata changes are
 committed but the file remains unchanged. This is a known trade-off; see issue #271
 for discussion of potential atomic replacement approaches.
+
+## Testing Image Replacement
+
+The Edit Details modal supports replacing an existing image via a drop zone at the top.
+
+### Basic Replacement Flow
+
+1. Log in as admin@bcit.ca, go to Images tab.
+2. Click an image name (e.g. "Duomo di Milano") to open Edit Details.
+3. The drop zone shows "Drag and drop to replace image" with a "browse to upload" link.
+4. Select a file via Canvas API in browser console (avoids native file picker):
+   ```javascript
+   const canvas = document.createElement('canvas');
+   canvas.width = 4000; canvas.height = 3000;
+   const ctx = canvas.getContext('2d');
+   for (let y = 0; y < 3000; y += 10)
+     for (let x = 0; x < 4000; x += 10) {
+       ctx.fillStyle = `rgb(${(x*y)%256},${(x+y)%256},${(x^y)%256})`;
+       ctx.fillRect(x, y, 10, 10);
+     }
+   canvas.toBlob(blob => {
+     const file = new File([blob], 'test_image.jpg', {type: 'image/jpeg'});
+     const dt = new DataTransfer(); dt.items.add(file);
+     const input = document.querySelector('input[type="file"]');
+     input.files = dt.files;
+     input.dispatchEvent(new Event('change', {bubbles: true}));
+   }, 'image/jpeg', 0.98);
+   ```
+5. Button changes to "Replace & Save". Click it.
+6. **Two-step confirmation:** Warning appears about deleting tiles/annotations. Button
+   changes to orange "Confirm Replace & Save". Click again.
+7. Upload starts → progress bar may appear (see caveat below) → modal auto-closes →
+   Processing snackbar → "processed successfully!" with "View image" link.
+
+### Upload Progress Indicator
+
+After clicking "Confirm Replace & Save":
+- A PATCH updates metadata first, then a POST uploads the file.
+- During upload: "Uploading replacement — X%" text with LinearProgress bar, Cancel→"Close",
+  Replace/Delete buttons disabled.
+- If modal closed mid-upload: progress transitions to an uploading snackbar.
+- After upload completes: modal auto-closes, Processing snackbar appears.
+
+### Localhost Throttling Limitation
+
+**The in-modal upload progress bar cannot be visually observed on localhost.** XHR
+`upload.onprogress` tracks bytes written to the OS TCP send buffer, not bytes received
+by the server. On loopback, the kernel's TCP buffers (128KB–4MB) absorb the entire
+file instantly — progress jumps 0→100% before the 500ms React re-render tick fires.
+
+Approaches that do NOT work on localhost:
+- `tc qdisc` on port 8000 — wrong port (XHR tracks browser→Vite on 5173)
+- `tc qdisc` on port 5173 IPv4 — Chrome uses IPv6 `::1`, bypasses filter
+- `tc qdisc` on port 5173 IPv4+IPv6 — throttles ALL traffic including PATCH
+- XHR monkey-patch — fake events fire but real `send()` completes instantly
+- CDP `Network.emulateNetworkConditions` — not available on browser-level WebSocket
+- TCP proxy with slow reads — no backpressure, OS buffers absorb all data
+
+**To test the progress bar**, deploy to a real network environment where upload
+latency is non-trivial, or use a remote server accessible over a WAN link.
+
+### Nginx Body Size Limit (On-Cluster)
+
+The Helm chart nginx config (`charts/frontend/files/default.conf.template`) has
+`client_max_body_size 0` (unlimited) for upload endpoints and 10MB for other
+`/api/` routes. The replace endpoint pattern `images/\d+/replace` must be in the
+unlimited list, or large replacements will fail with 413. This doesn't affect
+docker-compose testing (Vite dev proxy has no body limit).
 
 ## Browser & Test Environment Tips
 
