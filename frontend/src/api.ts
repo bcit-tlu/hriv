@@ -508,6 +508,7 @@ export async function bulkImportImages(
   note?: string,
   programIds?: number[],
   active?: boolean,
+  onProgress?: (fraction: number) => void,
 ): Promise<ApiBulkImportJob> {
   const form = new FormData()
   for (const file of files) {
@@ -522,16 +523,42 @@ export async function bulkImportImages(
     }
   }
   if (active !== undefined) form.append('active', String(active))
-  const res = await fetch(`${BASE}/api/admin/bulk-import/`, {
-    method: 'POST',
-    headers: authHeaders(),
-    body: form,
+
+  return new Promise<ApiBulkImportJob>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${BASE}/api/admin/bulk-import/`)
+
+    const hdrs = authHeaders()
+    for (const [k, v] of Object.entries(hdrs)) {
+      xhr.setRequestHeader(k, v)
+    }
+
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          onProgress(e.loaded / e.total)
+        }
+      })
+    }
+
+    xhr.addEventListener('load', () => {
+      try {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(JSON.parse(xhr.responseText) as ApiBulkImportJob)
+        } else {
+          reject(new Error(`Bulk import failed: ${xhr.responseText || xhr.statusText}`))
+        }
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error('Failed to parse bulk import response'))
+      }
+    })
+
+    xhr.addEventListener('error', () => {
+      reject(new Error('Bulk import failed: network error'))
+    })
+
+    xhr.send(form)
   })
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText)
-    throw new Error(`Bulk import failed: ${text}`)
-  }
-  return res.json() as Promise<ApiBulkImportJob>
 }
 
 export function fetchBulkImportJob(jobId: number): Promise<ApiBulkImportJob> {

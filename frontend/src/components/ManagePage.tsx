@@ -40,7 +40,7 @@ import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import { fetchImages, updateImage, deleteImage, replaceImage, bulkUpdateImages, bulkDeleteImages } from '../api'
-import type { ApiImage } from '../api'
+import type { ApiBulkImportJob, ApiImage } from '../api'
 import type { Category, Program } from '../types'
 import BulkEditImagesModal from './BulkEditImagesModal'
 import EditImageModal from './EditImageModal'
@@ -125,9 +125,39 @@ interface ManagePageProps {
   onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
   onReplaceImage?: (sourceImageId: number, filename: string, fileSize: number) => void
+  onProcessingStarted?: (
+    sourceImageId: number,
+    filename: string,
+    fileSize: number,
+    uploadId: number,
+  ) => void
+  onUploadStarted?: (uploadId: number, filename: string, fileSize: number) => void
+  onUploadProgress?: (uploadId: number, fraction: number) => void
+  onBulkImportStarted?: (
+    job: ApiBulkImportJob,
+    filename: string,
+    fileSize: number,
+    uploadId: number,
+  ) => void
+  onUploadFailed?: (uploadId: number, error: string) => void
 }
 
-export default function ManagePage({ categories, programs, onViewImage, onNavigateCategory, onCategoriesChanged, onAddCategory, onEditCategory, onToggleVisibility, onReplaceImage }: ManagePageProps) {
+export default function ManagePage({
+  categories,
+  programs,
+  onViewImage,
+  onNavigateCategory,
+  onCategoriesChanged,
+  onAddCategory,
+  onEditCategory,
+  onToggleVisibility,
+  onReplaceImage,
+  onProcessingStarted,
+  onUploadStarted,
+  onUploadProgress,
+  onBulkImportStarted,
+  onUploadFailed,
+}: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -880,6 +910,11 @@ export default function ManagePage({ categories, programs, onViewImage, onNaviga
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
+        onProcessingStarted={onProcessingStarted}
+        onUploadStarted={onUploadStarted}
+        onUploadProgress={onUploadProgress}
+        onBulkImportStarted={onBulkImportStarted}
+        onUploadFailed={onUploadFailed}
       />
 
       {/* Bulk edit images modal */}

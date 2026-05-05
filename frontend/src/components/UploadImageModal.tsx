@@ -78,6 +78,13 @@ interface UploadImageModalProps {
   onUploadStarted?: (uploadId: number, filename: string, fileSize: number) => void
   /** Called with progress fraction (0-1) during upload. */
   onUploadProgress?: (uploadId: number, fraction: number) => void
+  /** Called after a bulk import upload completes so the parent can track processing. */
+  onBulkImportStarted?: (
+    job: ApiBulkImportJob,
+    filename: string,
+    fileSize: number,
+    uploadId: number,
+  ) => void
   /** Called when a file upload fails. */
   onUploadFailed?: (uploadId: number, error: string) => void
   categoryId?: number | null
@@ -101,6 +108,7 @@ export default function UploadImageModal({
   onToggleVisibility,
   onUploadStarted,
   onUploadProgress,
+  onBulkImportStarted,
   onUploadFailed,
 }: UploadImageModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -265,6 +273,13 @@ export default function UploadImageModal({
       }
       setUploading(true)
       setError(null)
+      setUploadProgress(0)
+      const uploadId = Date.now()
+      uploadIdRef.current = uploadId
+      const uploadFilename =
+        files.length === 1 ? files[0].name : `${files.length} files`
+      const uploadFileSize = files.reduce((total, file) => total + file.size, 0)
+      onUploadStarted?.(uploadId, uploadFilename, uploadFileSize)
       try {
         const result = await bulkImportImages(
           files,
@@ -273,13 +288,23 @@ export default function UploadImageModal({
           metadata.note || undefined,
           metadata.programIds.length > 0 ? metadata.programIds : undefined,
           metadata.active,
+          (fraction) => {
+            setUploadProgress(fraction)
+            onUploadProgress?.(uploadId, fraction)
+          },
         )
         hadBulkJobRef.current = true
         setJob(result)
+        onBulkImportStarted?.(result, uploadFilename, uploadFileSize, uploadId)
+        onClose()
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Upload failed')
+        const msg = err instanceof Error ? err.message : 'Upload failed'
+        setError(msg)
+        onUploadFailed?.(uploadId, msg)
       } finally {
         setUploading(false)
+        setUploadProgress(null)
+        uploadIdRef.current = null
       }
     } else {
       // Single image upload workflow
@@ -326,6 +351,8 @@ export default function UploadImageModal({
       : 0
 
   const singleFile = files.length === 1 && !bulk ? files[0] : null
+  const selectedBytes =
+    singleFile?.size ?? files.reduce((total, file) => total + file.size, 0)
 
   return (
     <Dialog
@@ -456,7 +483,7 @@ export default function UploadImageModal({
               programs={programs}
               idPrefix="upload"
             />
-            {uploading && uploadProgress !== null && !bulk && (
+            {uploading && uploadProgress !== null && (
               <Box sx={{ width: '100%' }}>
                 <LinearProgress
                   variant="determinate"
@@ -465,7 +492,7 @@ export default function UploadImageModal({
                 />
                 <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
                   Uploading: {Math.round(uploadProgress * 100)}%
-                  {singleFile ? ` (${formatBytes(Math.round(uploadProgress * singleFile.size))} / ${formatBytes(singleFile.size)})` : ''}
+                  {` (${formatBytes(Math.round(uploadProgress * selectedBytes))} / ${formatBytes(selectedBytes)})`}
                 </Typography>
               </Box>
             )}

@@ -66,6 +66,7 @@ import {
     fetchImage as apiFetchImage,
     fetchUncategorizedImages,
     fetchSourceImage,
+    fetchBulkImportJob,
     fetchVersions,
     fetchFrontendVersion,
     createCategory as apiCreateCategory,
@@ -83,7 +84,12 @@ import {
     deleteProgram,
     reorderCategories as apiReorderCategories,
 } from "./api";
-import type { ApiCategoryTree, ApiImage, ApiUser } from "./api";
+import type {
+    ApiBulkImportJob,
+    ApiCategoryTree,
+    ApiImage,
+    ApiUser,
+} from "./api";
 import { pollProcessingJob, type PollHandle } from "./pollProcessingJob";
 import MoveCategoryDialog from "./components/MoveCategoryDialog";
 import type { Category, ImageItem, Program } from "./types";
@@ -238,9 +244,20 @@ export default function App() {
     interface ProcessingJob {
         id: number;
         filename: string;
-        status: "uploading" | "processing" | "completed" | "failed";
+        status:
+            | "uploading"
+            | "processing"
+            | "importing"
+            | "completed"
+            | "failed";
+        kind: "image" | "bulk-import";
         errorMessage?: string;
         imageId?: number;
+        bulkImportJobId?: number;
+        totalCount?: number;
+        completedCount?: number;
+        failedCount?: number;
+        errors?: Array<{ filename: string; error: string }> | null;
         /** Server-reported progress (0–100). */
         serverProgress: number;
         /** File size in bytes — used for client-side progress estimation. */
@@ -256,6 +273,9 @@ export default function App() {
     }
     const [processingJobs, setProcessingJobs] = useState<ProcessingJob[]>([]);
     const processingPollRefs = useRef<Map<number, PollHandle>>(new Map());
+    const bulkImportPollRefs = useRef<
+        Map<number, ReturnType<typeof setInterval>>
+    >(new Map());
 
     // Server-reported progress stored in a ref to avoid re-triggering the
     // polling useEffect when intermediate progress updates arrive.
@@ -304,6 +324,7 @@ export default function App() {
     const getDisplayProgress = useCallback(
         (job: ProcessingJob): number => {
             if (job.status === "completed") return 100;
+            if (job.status === "importing") return job.serverProgress;
             const sp =
                 serverProgressRef.current.get(job.id) ?? job.serverProgress;
             if (job.status === "failed") return sp;
@@ -522,13 +543,69 @@ export default function App() {
         };
     }, [processingJobs]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    useEffect(() => {
+        const refs = bulkImportPollRefs.current;
+
+        for (const job of processingJobs) {
+            if (job.status !== "importing" || job.bulkImportJobId == null)
+                continue;
+            if (refs.has(job.bulkImportJobId)) continue;
+
+            const interval = setInterval(async () => {
+                try {
+                    const updated = await fetchBulkImportJob(
+                        job.bulkImportJobId!,
+                    );
+                    updateBulkImportJob(updated, job.filename, job.fileSize);
+                    if (
+                        updated.status === "completed" ||
+                        updated.status === "failed"
+                    ) {
+                        const ref = refs.get(updated.id);
+                        if (ref) {
+                            clearInterval(ref);
+                            refs.delete(updated.id);
+                        }
+                        loadCategories();
+                        loadUncategorizedImages();
+                    }
+                } catch {
+                    // ignore poll errors
+                }
+            }, 2000);
+            refs.set(job.bulkImportJobId, interval);
+        }
+
+        for (const [id, interval] of refs) {
+            if (
+                !processingJobs.some(
+                    (j) =>
+                        j.bulkImportJobId === id && j.status === "importing",
+                )
+            ) {
+                clearInterval(interval);
+                refs.delete(id);
+            }
+        }
+
+        return () => {
+            for (const [, interval] of refs) {
+                clearInterval(interval);
+            }
+            refs.clear();
+        };
+    }, [processingJobs]); // eslint-disable-line react-hooks/exhaustive-deps
+
     // Interpolation timer: triggers re-render every 500 ms so the progress bar
     // advances smoothly between server polls while any job is processing.
     // Uses a tick counter instead of mutating processingJobs to avoid
     // re-triggering the polling useEffect.
     useEffect(() => {
         const hasActiveJob = processingJobs.some(
-            (j) => j.status === "processing" || j.status === "uploading",
+            (j) =>
+                j.status === "processing" ||
+                j.status === "uploading" ||
+                j.status === "importing",
         );
         if (hasActiveJob && !interpolationTimerRef.current) {
             interpolationTimerRef.current = setInterval(() => {
@@ -634,6 +711,13 @@ export default function App() {
         setBrowseEditImage(null);
         setSearchOpen(false);
         setSearchUsers([]);
+        processingPollRefs.current.forEach((handle) => handle.cancel());
+        processingPollRefs.current.clear();
+        bulkImportPollRefs.current.forEach((interval) => clearInterval(interval));
+        bulkImportPollRefs.current.clear();
+        serverProgressRef.current.clear();
+        uploadProgressRef.current.clear();
+        serverStatusMessageRef.current.clear();
         setProcessingJobs([]);
     }, [currentUser]);
 
@@ -1461,8 +1545,12 @@ export default function App() {
         (sourceImageId: number, filename: string, fileSize: number) => {
             setProcessingJobs((prev) => {
                 if (
-                    prev.filter((j) => j.status === "processing")
-                        .length >= MAX_PROCESSING_JOBS
+                    prev.filter(
+                        (j) =>
+                            j.status === "uploading" ||
+                            j.status === "processing" ||
+                            j.status === "importing",
+                    ).length >= MAX_PROCESSING_JOBS
                 )
                     return prev;
                 if (prev.some((j) => j.id === sourceImageId)) return prev;
@@ -1472,9 +1560,94 @@ export default function App() {
                         id: sourceImageId,
                         filename,
                         status: "processing" as const,
+                        kind: "image" as const,
                         serverProgress: 0,
                         fileSize,
                         startedAt: Date.now(),
+                    },
+                ];
+            });
+        },
+        [],
+    );
+
+    const updateBulkImportJob = useCallback(
+        (
+            bulkJob: ApiBulkImportJob,
+            filename: string,
+            fileSize: number,
+            uploadId?: number,
+        ) => {
+            const done = bulkJob.completed_count + bulkJob.failed_count;
+            const progress =
+                bulkJob.total_count > 0
+                    ? Math.round((done / bulkJob.total_count) * 100)
+                    : 0;
+            setProcessingJobs((prev) => {
+                const existing = prev.find(
+                    (j) =>
+                        j.bulkImportJobId === bulkJob.id ||
+                        (uploadId !== undefined && j.uploadId === uploadId),
+                );
+                const status =
+                    bulkJob.status === "completed"
+                        ? "completed"
+                        : bulkJob.status === "failed"
+                          ? "failed"
+                          : "importing";
+                if (existing) {
+                    return prev.map((j) =>
+                        j.id === existing.id
+                            ? {
+                                  ...j,
+                                  kind: "bulk-import" as const,
+                                  status,
+                                  bulkImportJobId: bulkJob.id,
+                                  serverProgress:
+                                      status === "completed" ? 100 : progress,
+                                  uploadId: undefined,
+                                  uploadProgress: undefined,
+                                  totalCount: bulkJob.total_count,
+                                  completedCount: bulkJob.completed_count,
+                                  failedCount: bulkJob.failed_count,
+                                  errors: bulkJob.errors,
+                                  errorMessage:
+                                      status === "failed"
+                                          ? "Bulk import failed."
+                                          : undefined,
+                              }
+                            : j,
+                    );
+                }
+                if (
+                    prev.filter(
+                        (j) =>
+                            j.status === "uploading" ||
+                            j.status === "processing" ||
+                            j.status === "importing",
+                    ).length >= MAX_PROCESSING_JOBS
+                )
+                    return prev;
+                return [
+                    ...prev,
+                    {
+                        id: -bulkJob.id,
+                        filename,
+                        status,
+                        kind: "bulk-import" as const,
+                        bulkImportJobId: bulkJob.id,
+                        serverProgress:
+                            status === "completed" ? 100 : progress,
+                        fileSize,
+                        startedAt: Date.now(),
+                        totalCount: bulkJob.total_count,
+                        completedCount: bulkJob.completed_count,
+                        failedCount: bulkJob.failed_count,
+                        errors: bulkJob.errors,
+                        errorMessage:
+                            status === "failed"
+                                ? "Bulk import failed."
+                                : undefined,
                     },
                 ];
             });
@@ -1514,7 +1687,8 @@ export default function App() {
                     prev.filter(
                         (j) =>
                             j.status === "uploading" ||
-                            j.status === "processing",
+                            j.status === "processing" ||
+                            j.status === "importing",
                     ).length >= MAX_PROCESSING_JOBS
                 )
                     return prev;
@@ -1524,6 +1698,7 @@ export default function App() {
                         id: -uploadId,
                         filename: file.name,
                         status: "uploading" as const,
+                        kind: "image" as const,
                         serverProgress: 0,
                         fileSize: file.size,
                         startedAt: Date.now(),
@@ -1547,6 +1722,7 @@ export default function App() {
                                       ...j,
                                       id: result.id,
                                       status: "processing" as const,
+                                      kind: "image" as const,
                                       serverProgress: 0,
                                       startedAt: Date.now(),
                                       uploadId: undefined,
@@ -1593,7 +1769,8 @@ export default function App() {
                     prev.filter(
                         (j) =>
                             j.status === "uploading" ||
-                            j.status === "processing",
+                            j.status === "processing" ||
+                            j.status === "importing",
                     ).length >= MAX_PROCESSING_JOBS
                 )
                     return prev;
@@ -1603,6 +1780,7 @@ export default function App() {
                         id: -uploadId,
                         filename: file.name,
                         status: "uploading" as const,
+                        kind: "image" as const,
                         serverProgress: 0,
                         fileSize: file.size,
                         startedAt: Date.now(),
@@ -1625,6 +1803,7 @@ export default function App() {
                                       ...j,
                                       id: result.id,
                                       status: "processing" as const,
+                                      kind: "image" as const,
                                       serverProgress: 0,
                                       startedAt: Date.now(),
                                       uploadId: undefined,
@@ -1657,6 +1836,128 @@ export default function App() {
                 });
         },
         [browseEditImage, loadCategories, loadUncategorizedImages],
+    );
+
+    const handleUploadStarted = useCallback(
+        (uploadId: number, filename: string, fileSize: number) => {
+            setProcessingJobs((prev) => {
+                if (
+                    prev.filter(
+                        (j) =>
+                            j.status === "uploading" ||
+                            j.status === "processing" ||
+                            j.status === "importing",
+                    ).length >= MAX_PROCESSING_JOBS
+                )
+                    return prev;
+                return [
+                    ...prev,
+                    {
+                        id: -uploadId,
+                        filename,
+                        status: "uploading" as const,
+                        kind: "image" as const,
+                        serverProgress: 0,
+                        fileSize,
+                        startedAt: Date.now(),
+                        uploadId,
+                        uploadProgress: 0,
+                    },
+                ];
+            });
+        },
+        [],
+    );
+
+    const handleUploadProgress = useCallback(
+        (uploadId: number, fraction: number) => {
+            uploadProgressRef.current.set(uploadId, fraction);
+        },
+        [],
+    );
+
+    const handleUploadFailed = useCallback((uploadId: number, error: string) => {
+        uploadProgressRef.current.delete(uploadId);
+        setProcessingJobs((prev) =>
+            prev.map((j) =>
+                j.uploadId === uploadId
+                    ? {
+                          ...j,
+                          status: "failed" as const,
+                          errorMessage: error,
+                          uploadId: undefined,
+                      }
+                    : j,
+            ),
+        );
+    }, []);
+
+    const handleProcessingStarted = useCallback(
+        (
+            sourceImageId: number,
+            filename: string,
+            fileSize: number,
+            uploadId: number,
+        ) => {
+            setProcessingJobs((prev) => {
+                const uploadingJob = prev.find(
+                    (j) => j.status === "uploading" && j.uploadId === uploadId,
+                );
+                if (uploadingJob) {
+                    uploadProgressRef.current.delete(uploadingJob.uploadId!);
+                    return prev.map((j) =>
+                        j.id === uploadingJob.id
+                            ? {
+                                  ...j,
+                                  id: sourceImageId,
+                                  status: "processing" as const,
+                                  kind: "image" as const,
+                                  serverProgress: 0,
+                                  startedAt: Date.now(),
+                                  uploadId: undefined,
+                                  uploadProgress: undefined,
+                              }
+                            : j,
+                    );
+                }
+                if (
+                    prev.filter(
+                        (j) =>
+                            j.status === "uploading" ||
+                            j.status === "processing" ||
+                            j.status === "importing",
+                    ).length >= MAX_PROCESSING_JOBS
+                )
+                    return prev;
+                if (prev.some((j) => j.id === sourceImageId)) return prev;
+                return [
+                    ...prev,
+                    {
+                        id: sourceImageId,
+                        filename,
+                        status: "processing" as const,
+                        kind: "image" as const,
+                        serverProgress: 0,
+                        fileSize,
+                        startedAt: Date.now(),
+                    },
+                ];
+            });
+        },
+        [],
+    );
+
+    const handleBulkImportStarted = useCallback(
+        (
+            job: ApiBulkImportJob,
+            filename: string,
+            fileSize: number,
+            uploadId: number,
+        ) => {
+            uploadProgressRef.current.delete(uploadId);
+            updateBulkImportJob(job, filename, fileSize, uploadId);
+        },
+        [updateBulkImportJob],
     );
 
     // Show loading spinner while users are loading
@@ -1991,6 +2292,11 @@ export default function App() {
                             }}
                             onAddCategory={addCategoryInline}
                             onReplaceImage={addProcessingJob}
+                            onProcessingStarted={handleProcessingStarted}
+                            onUploadStarted={handleUploadStarted}
+                            onUploadProgress={handleUploadProgress}
+                            onBulkImportStarted={handleBulkImportStarted}
+                            onUploadFailed={handleUploadFailed}
                         />
                     ) : selectedImage ? (
                         /* ---- Viewer mode ---- */
@@ -2640,98 +2946,11 @@ export default function App() {
                     loadCategories();
                     loadUncategorizedImages();
                 }}
-                onUploadStarted={(uploadId, filename, fileSize) => {
-                    setProcessingJobs((prev) => {
-                        if (
-                            prev.filter(
-                                (j) =>
-                                    j.status === "uploading" ||
-                                    j.status === "processing",
-                            ).length >= MAX_PROCESSING_JOBS
-                        )
-                            return prev;
-                        return [
-                            ...prev,
-                            {
-                                id: -uploadId,
-                                filename,
-                                status: "uploading" as const,
-                                serverProgress: 0,
-                                fileSize,
-                                startedAt: Date.now(),
-                                uploadId,
-                                uploadProgress: 0,
-                            },
-                        ];
-                    });
-                }}
-                onUploadProgress={(uploadId, fraction) => {
-                    uploadProgressRef.current.set(uploadId, fraction);
-                }}
-                onUploadFailed={(uploadId, error) => {
-                    uploadProgressRef.current.delete(uploadId);
-                    setProcessingJobs((prev) =>
-                        prev.map((j) =>
-                            j.uploadId === uploadId
-                                ? {
-                                      ...j,
-                                      status: "failed" as const,
-                                      errorMessage: error,
-                                  }
-                                : j,
-                        ),
-                    );
-                }}
-                onProcessingStarted={(sourceImageId, filename, fileSize, uploadId) => {
-                    setProcessingJobs((prev) => {
-                        // Find the uploading job by uploadId and transition it
-                        const uploadingJob = prev.find(
-                            (j) =>
-                                j.status === "uploading" &&
-                                j.uploadId === uploadId,
-                        );
-                        if (uploadingJob) {
-                            uploadProgressRef.current.delete(
-                                uploadingJob.uploadId!,
-                            );
-                            return prev.map((j) =>
-                                j.id === uploadingJob.id
-                                    ? {
-                                          ...j,
-                                          id: sourceImageId,
-                                          status: "processing" as const,
-                                          serverProgress: 0,
-                                          startedAt: Date.now(),
-                                          uploadId: undefined,
-                                          uploadProgress: undefined,
-                                      }
-                                    : j,
-                            );
-                        }
-                        // Fallback: no uploading job found, create new
-                        if (
-                            prev.filter(
-                                (j) =>
-                                    j.status === "uploading" ||
-                                    j.status === "processing",
-                            ).length >= MAX_PROCESSING_JOBS
-                        )
-                            return prev;
-                        if (prev.some((j) => j.id === sourceImageId))
-                            return prev;
-                        return [
-                            ...prev,
-                            {
-                                id: sourceImageId,
-                                filename,
-                                status: "processing" as const,
-                                serverProgress: 0,
-                                fileSize,
-                                startedAt: Date.now(),
-                            },
-                        ];
-                    });
-                }}
+                onUploadStarted={handleUploadStarted}
+                onUploadProgress={handleUploadProgress}
+                onUploadFailed={handleUploadFailed}
+                onProcessingStarted={handleProcessingStarted}
+                onBulkImportStarted={handleBulkImportStarted}
                 categoryId={path.length > 0 ? path[path.length - 1].id : null}
                 categories={categories}
                 programs={programs}
@@ -2895,7 +3114,8 @@ export default function App() {
                         open
                         autoHideDuration={
                             job.status === "processing" ||
-                            job.status === "uploading"
+                            job.status === "uploading" ||
+                            job.status === "importing"
                                 ? null
                                 : 6000
                         }
@@ -2930,7 +3150,8 @@ export default function App() {
                             }}
                             icon={
                                 job.status === "processing" ||
-                                job.status === "uploading" ? (
+                                job.status === "uploading" ||
+                                job.status === "importing" ? (
                                     <CircularProgress
                                         size={20}
                                         sx={{ color: "inherit" }}
@@ -3001,9 +3222,53 @@ export default function App() {
                                     />
                                 </Box>
                             )}
+                            {job.status === "importing" && (
+                                <Box sx={{ width: "100%", minWidth: 220 }}>
+                                    <Typography
+                                        variant="body2"
+                                        sx={{ mb: 0.5 }}
+                                    >
+                                        {`Importing: ${job.filename} — ${displayProgress}%`}
+                                    </Typography>
+                                    {job.totalCount != null && (
+                                        <Typography
+                                            variant="caption"
+                                            sx={{
+                                                opacity: 0.85,
+                                                display: "block",
+                                                mb: 0.25,
+                                            }}
+                                        >
+                                            {`${job.completedCount ?? 0} of ${job.totalCount} completed${
+                                                job.failedCount
+                                                    ? `, ${job.failedCount} failed`
+                                                    : ""
+                                            }`}
+                                        </Typography>
+                                    )}
+                                    <LinearProgress
+                                        variant="determinate"
+                                        value={displayProgress}
+                                        sx={{
+                                            height: 6,
+                                            borderRadius: 1,
+                                            bgcolor: "rgba(255,255,255,0.3)",
+                                            "& .MuiLinearProgress-bar": {
+                                                bgcolor: "#fff",
+                                            },
+                                        }}
+                                    />
+                                </Box>
+                            )}
                             {job.status === "completed" && (
                                 <>
-                                    {`"${job.filename}" processed successfully! `}
+                                    {job.kind === "bulk-import"
+                                        ? `"${job.filename}" import completed${
+                                              job.failedCount
+                                                  ? ` with ${job.failedCount} failed.`
+                                                  : " successfully!"
+                                          }`
+                                        : `"${job.filename}" processed successfully! `}
                                     {job.imageId != null && (
                                         <Link
                                             component="button"
@@ -3117,7 +3382,9 @@ export default function App() {
                             )}
                             {job.status === "failed" &&
                                 (job.errorMessage ||
-                                    `"${job.filename}" processing failed.`)}
+                                    (job.kind === "bulk-import"
+                                        ? `"${job.filename}" import failed.`
+                                        : `"${job.filename}" processing failed.`))}
                         </Alert>
                     </Snackbar>
                 );
