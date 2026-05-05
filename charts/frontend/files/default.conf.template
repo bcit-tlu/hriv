@@ -103,8 +103,11 @@ server {
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto $scheme;
 
-        # Tiles are immutable once written — cache aggressively.
-        proxy_cache_valid  200 30d;
+        # Tiles are immutable once written — tell browsers and CDNs to
+        # cache aggressively.  Server-side proxy caching (proxy_cache) is
+        # not configured here; the tile sidecar itself is already highly
+        # efficient (sendfile + tcp_nopush) and adding a cache zone would
+        # duplicate data on disk for little benefit.
         add_header         Cache-Control "public, max-age=2592000, immutable" always;
         add_header         X-Frame-Options        "SAMEORIGIN" always;
         add_header         X-Content-Type-Options "nosniff"     always;
