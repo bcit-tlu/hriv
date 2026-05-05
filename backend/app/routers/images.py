@@ -1,3 +1,5 @@
+import contextlib
+import errno
 import json
 import logging
 import os
@@ -241,12 +243,31 @@ async def replace_image(
     unique_name = f"{uuid.uuid4().hex}{ext}"
     stored_path = os.path.join(settings.source_images_dir, unique_name)
 
-    with open(stored_path, "wb") as f:
-        while True:
-            chunk = await file.read(_UPLOAD_CHUNK_SIZE)
-            if not chunk:
-                break
-            f.write(chunk)
+    try:
+        with open(stored_path, "wb") as f:
+            while True:
+                chunk = await file.read(_UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                f.write(chunk)
+    except OSError as exc:
+        with contextlib.suppress(OSError):
+            os.unlink(stored_path)
+        if exc.errno == errno.ENOSPC:
+            logger.error(
+                "Replace upload failed: no space left on device",
+                extra={
+                    "event": "replace.enospc",
+                    "image_id": image_id,
+                    "original_filename": file.filename,
+                    "stored_path": stored_path,
+                },
+            )
+            raise HTTPException(
+                status_code=507,
+                detail="Insufficient storage — the data volume is full",
+            )
+        raise
 
     file_size = os.path.getsize(stored_path)
 

@@ -6,6 +6,7 @@ and processes them in the background with concurrency limiting.
 
 import asyncio
 import contextlib
+import errno
 import json
 import logging
 import os
@@ -344,6 +345,20 @@ async def bulk_import_images(
                     raise
 
                 file_entries.append((upload.filename, stored_path))
+    except OSError as exc:
+        for _, stored_path in file_entries:
+            with contextlib.suppress(OSError):
+                os.unlink(stored_path)
+        if exc.errno == errno.ENOSPC:
+            logger.error(
+                "Bulk import failed: no space left on device",
+                extra={"event": "bulk_import.enospc"},
+            )
+            raise HTTPException(
+                status_code=507,
+                detail="Insufficient storage — the data volume is full",
+            )
+        raise
     except Exception:
         # Clean up any files already stored before re-raising
         for _, stored_path in file_entries:
