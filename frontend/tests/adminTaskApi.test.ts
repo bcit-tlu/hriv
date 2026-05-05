@@ -33,11 +33,13 @@ import {
   initFilesImport,
   uploadTaskFile,
   startFilesImport,
+  bulkImportImages,
   fetchAdminTasks,
   fetchAdminTask,
   cancelAdminTask,
   downloadAdminTaskResult,
   setToken,
+  type ApiBulkImportJob,
   type AdminTask,
 } from '../src/api'
 
@@ -52,6 +54,18 @@ const TASK_FIXTURE: AdminTask = {
   result_filename: null,
   error_message: null,
   created_by: 1,
+  created_at: '2025-01-01T00:00:00Z',
+  updated_at: '2025-01-01T00:00:00Z',
+}
+
+const BULK_IMPORT_FIXTURE: ApiBulkImportJob = {
+  id: 5,
+  status: 'pending',
+  category_id: 2,
+  total_count: 3,
+  completed_count: 0,
+  failed_count: 0,
+  errors: [],
   created_at: '2025-01-01T00:00:00Z',
   updated_at: '2025-01-01T00:00:00Z',
 }
@@ -263,6 +277,98 @@ describe('Background Admin Task API', () => {
       )![1] as () => void
       loadHandler()
       await promise
+    })
+  })
+
+  // ── bulkImportImages ──────────────────────────────────────────────────
+
+  describe('bulkImportImages', () => {
+    let xhrInstance: {
+      open: ReturnType<typeof vi.fn>
+      setRequestHeader: ReturnType<typeof vi.fn>
+      send: ReturnType<typeof vi.fn>
+      upload: { addEventListener: ReturnType<typeof vi.fn> }
+      addEventListener: ReturnType<typeof vi.fn>
+      status: number
+      responseText: string
+      statusText: string
+    }
+
+    beforeEach(() => {
+      xhrInstance = {
+        open: vi.fn(),
+        setRequestHeader: vi.fn(),
+        send: vi.fn(),
+        upload: { addEventListener: vi.fn() },
+        addEventListener: vi.fn(),
+        status: 201,
+        responseText: JSON.stringify(BULK_IMPORT_FIXTURE),
+        statusText: 'Created',
+      }
+      vi.stubGlobal('XMLHttpRequest', function XMLHttpRequest() {
+        return xhrInstance
+      })
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+      vi.stubGlobal('fetch', mockFetch)
+      vi.stubGlobal('localStorage', {
+        getItem: (key: string) => storage[key] ?? null,
+        setItem: (key: string, val: string) => { storage[key] = val },
+        removeItem: (key: string) => { delete storage[key] },
+      })
+      vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
+    })
+
+    it('uploads bulk imports with XHR progress reporting', async () => {
+      const onProgress = vi.fn()
+      const zip = new File(['zip-data'], 'images.zip', { type: 'application/zip' })
+      const promise = bulkImportImages(
+        [zip],
+        2,
+        'Public Domain',
+        'Note',
+        [1, 3],
+        true,
+        onProgress,
+      )
+
+      const progressHandler = xhrInstance.upload.addEventListener.mock.calls.find(
+        (c: unknown[]) => c[0] === 'progress',
+      )![1] as (e: { lengthComputable: boolean; loaded: number; total: number }) => void
+      progressHandler({ lengthComputable: true, loaded: 25, total: 100 })
+
+      const loadHandler = xhrInstance.addEventListener.mock.calls.find(
+        (c: unknown[]) => c[0] === 'load',
+      )![1] as () => void
+      loadHandler()
+
+      const result = await promise
+      expect(onProgress).toHaveBeenCalledWith(0.25)
+      expect(xhrInstance.open).toHaveBeenCalledWith('POST', '/api/admin/bulk-import/')
+      expect(xhrInstance.setRequestHeader).toHaveBeenCalledWith('Authorization', 'Bearer test-jwt-token')
+      expect(xhrInstance.setRequestHeader).toHaveBeenCalledWith('X-Session-ID', expect.any(String))
+      expect(xhrInstance.send).toHaveBeenCalledOnce()
+      const form = xhrInstance.send.mock.calls[0][0] as FormData
+      expect(form.get('files')).toBe(zip)
+      expect(form.get('category_id')).toBe('2')
+      expect(form.getAll('program_ids')).toEqual(['1', '3'])
+      expect(result).toEqual(BULK_IMPORT_FIXTURE)
+    })
+
+    it('rejects bulk import upload failures', async () => {
+      xhrInstance.status = 500
+      xhrInstance.responseText = 'Internal Server Error'
+      const zip = new File(['zip-data'], 'images.zip', { type: 'application/zip' })
+      const promise = bulkImportImages([zip], 2)
+
+      const loadHandler = xhrInstance.addEventListener.mock.calls.find(
+        (c: unknown[]) => c[0] === 'load',
+      )![1] as () => void
+      loadHandler()
+
+      await expect(promise).rejects.toThrow('Bulk import failed: Internal Server Error')
     })
   })
 

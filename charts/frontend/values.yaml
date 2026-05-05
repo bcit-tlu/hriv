@@ -62,6 +62,11 @@ ingress:
     # Without this the nginx ingress controller defaults to 1 MB,
     # which blocks pathology TIFF/SVS uploads.  0 = unlimited.
     nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    # Stream request bodies upstream instead of buffering them in the
+    # ingress controller's temp storage first; this makes multi-GB
+    # uploads visible to the backend immediately and avoids temp-disk
+    # pressure before the frontend nginx receives the request.
+    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
   hosts: []
   tls: []
 

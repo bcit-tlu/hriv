@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.middleware import (
     AuditMiddleware,
+    _is_upload_path,
+    _parse_content_length,
     _parse_exclude_prefixes,
     get_request_id,
     request_id_ctx,
@@ -294,12 +296,75 @@ async def test_dispatch_logs_non_health_at_info() -> None:
         mock_logger.info.assert_called_once()
 
 
+async def test_dispatch_logs_numeric_content_length() -> None:
+    middleware = AuditMiddleware(app=MagicMock())
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.headers = {}
+
+    async def call_next(request):
+        return mock_response
+
+    request = MagicMock()
+    request.headers = {"content-length": "3607772528"}
+    request.method = "POST"
+    request.url.path = "/api/admin/bulk-import/"
+    request.client = MagicMock()
+    request.client.host = "127.0.0.1"
+
+    with patch("app.middleware.logger") as mock_logger:
+        await middleware.dispatch(request, call_next)
+        call_args = mock_logger.info.call_args
+        extra = call_args.kwargs.get("extra", {})
+        assert extra["content_length"] == 3607772528
+
+
 def test_parse_exclude_prefixes_strips_whitespace_and_blanks() -> None:
     """Exclude-prefix parsing should ignore empty entries and strip padding."""
     assert _parse_exclude_prefixes("") == ()
     assert _parse_exclude_prefixes(" , , ") == ()
     assert _parse_exclude_prefixes("/a,/b") == ("/a", "/b")
     assert _parse_exclude_prefixes(" /a , /b , ") == ("/a", "/b")
+
+
+def test_parse_content_length() -> None:
+    assert _parse_content_length(None) is None
+    assert _parse_content_length("") is None
+    assert _parse_content_length("3607772528") == 3607772528
+    assert _parse_content_length("unknown") == "unknown"
+
+
+def test_is_upload_path() -> None:
+    assert _is_upload_path("/api/source-images/upload")
+    assert _is_upload_path("/api/admin/bulk-import/")
+    assert _is_upload_path("/api/images/123/replace")
+    assert not _is_upload_path("/api/images")
+
+
+async def test_dispatch_logs_upload_start_for_upload_paths() -> None:
+    middleware = AuditMiddleware(app=MagicMock())
+
+    mock_response = MagicMock()
+    mock_response.status_code = 201
+    mock_response.headers = {}
+
+    async def call_next(request):
+        return mock_response
+
+    request = MagicMock()
+    request.headers = {"content-length": "3607772528"}
+    request.method = "POST"
+    request.url.path = "/api/admin/bulk-import/"
+    request.client = MagicMock()
+    request.client.host = "127.0.0.1"
+
+    with patch("app.middleware.logger") as mock_logger:
+        await middleware.dispatch(request, call_next)
+        upload_call = mock_logger.info.call_args_list[0]
+        extra = upload_call.kwargs.get("extra", {})
+        assert extra["event"] == "http.upload_started"
+        assert extra["content_length"] == 3607772528
 
 
 async def test_dispatch_logs_tiles_at_debug() -> None:
