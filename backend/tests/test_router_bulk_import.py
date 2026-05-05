@@ -6,6 +6,7 @@ image-filtering, error handling, job-state transitions, and the background
 processing helper.
 """
 
+import errno
 import io
 import os
 import sys
@@ -801,3 +802,80 @@ async def test_bulk_import_falls_back_to_background_tasks(tmp_path) -> None:
     mock_enqueue.assert_awaited_once()
     # BackgroundTasks should have been called as fallback
     assert bg.add_task.call_count == 1
+
+
+# ── ENOSPC handling ──────────────────────────────────────────────────────
+
+
+async def test_bulk_import_enospc_plain_image(tmp_path) -> None:
+    """ENOSPC during plain image write returns 507 and cleans up files."""
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=category)
+    bg = MagicMock()
+
+    enospc = OSError(errno.ENOSPC, "No space left on device")
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch("builtins.open", side_effect=enospc),
+        patch("os.makedirs"),
+        patch("os.unlink") as mock_unlink,
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await bulk_import_images(
+                files=[_make_upload("big.tiff", [b"data", b""])],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+
+    assert exc.value.status_code == 507
+    assert "storage" in exc.value.detail.lower()
+
+
+async def test_bulk_import_enospc_zip_extraction(tmp_path) -> None:
+    """ENOSPC during zip entry extraction returns 507."""
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=category)
+    bg = MagicMock()
+
+    zip_data = _zip_bytes({"slide.tiff": b"tiff-content"})
+
+    # zipfile.ZipFile reads the temp file via builtins.open in "rb" mode;
+    # the extraction destination is opened in "wb" mode.  Only fail on
+    # write-mode opens so the zip read succeeds but extraction hits ENOSPC.
+    real_open = open
+
+    def _open_side_effect(*args, **kwargs):
+        mode = args[1] if len(args) > 1 else kwargs.get("mode", "r")
+        if "w" in str(mode):
+            raise OSError(errno.ENOSPC, "No space left on device")
+        return real_open(*args, **kwargs)
+
+    upload = AsyncMock()
+    upload.filename = "archive.zip"
+    upload.content_type = "application/zip"
+    upload.read = AsyncMock(side_effect=[zip_data, b""])
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch("builtins.open", side_effect=_open_side_effect),
+        patch("os.makedirs"),
+        patch("os.unlink"),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await bulk_import_images(
+                files=[upload],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+
+    assert exc.value.status_code == 507
+    assert "storage" in exc.value.detail.lower()
