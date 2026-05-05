@@ -147,7 +147,32 @@ redis:
   worker:
     enabled: false
     replicaCount: 1
-    resources: {}
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "4Gi"
+    # ── Worker Horizontal Pod Autoscaler ──────────────────────
+    # Scales worker replicas based on CPU/memory utilisation so that
+    # concurrent image-processing jobs are distributed across pods.
+    # Each worker handles max_jobs=4 tasks, so 3 replicas = 12
+    # parallel processing slots.
+    #
+    # Prerequisites:
+    #   - Kubernetes Metrics Server must be running (bundled in RKE2)
+    #   - PVC must be ReadWriteMany when minReplicas > 1 (Longhorn
+    #     NFS or an RWX-capable StorageClass)
+    #
+    # For queue-depth-based scaling (recommended for production),
+    # install KEDA and use a ScaledObject targeting the arq Redis
+    # queue length instead of this HPA.
+    autoscaling:
+      enabled: false
+      minReplicas: 1
+      maxReplicas: 5
+      targetCPUUtilizationPercentage: 70
+      targetMemoryUtilizationPercentage: 80
 
 # ── Issue reporting (GitHub PAT) ─────────────────────────────
 # The backend creates GitHub Issues on behalf of end-users via
@@ -194,9 +219,12 @@ persistence:
   storageClass: longhorn
   size: 10Gi
   # ReadWriteOnce is fine for single-replica dev/staging.
-  # Production with replicaCount > 1 MUST use ReadWriteMany so that
-  # background admin task result files written by one pod are accessible
-  # from every other pod's download endpoint.
+  # Production with redis.worker.enabled=true MUST use ReadWriteMany
+  # so that the API pod and worker pod(s) can both access uploaded
+  # source images and generated tiles on the shared data volume.
+  # Longhorn supports RWX via its NFS provisioner — create a
+  # StorageClass with ``parameters.nfsOptions`` or use a native
+  # RWX-capable backend.
   accessModes:
     - ReadWriteOnce
 

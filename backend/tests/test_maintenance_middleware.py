@@ -11,84 +11,96 @@ from app.routers.admin import get_maintenance, set_maintenance
 
 
 # ---------------------------------------------------------------------------
+# Helpers for pure ASGI middleware tests
+# ---------------------------------------------------------------------------
+
+
+def _make_scope(path: str = "/api/images") -> dict:
+    return {
+        "type": "http",
+        "method": "GET",
+        "path": path,
+        "headers": [],
+        "client": ("127.0.0.1", 0),
+    }
+
+
+async def _noop_receive() -> dict:
+    return {"type": "http.request", "body": b""}
+
+
+async def _call_middleware(
+    middleware: MaintenanceMiddleware,
+    scope: dict,
+    *,
+    response_status: int = 200,
+) -> list[dict]:
+    captured: list[dict] = []
+
+    async def inner_app(scope, receive, send):
+        await send({"type": "http.response.start", "status": response_status, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    middleware.app = inner_app
+
+    async def capturing_send(message: dict) -> None:
+        captured.append(message)
+
+    await middleware(scope, _noop_receive, capturing_send)
+    return captured
+
+
+def _status_from(messages: list[dict]) -> int:
+    for msg in messages:
+        if msg["type"] == "http.response.start":
+            return msg["status"]
+    raise AssertionError("no http.response.start found")
+
+
+# ---------------------------------------------------------------------------
 # MaintenanceMiddleware
 # ---------------------------------------------------------------------------
 
 
-def _make_request(path: str = "/api/images") -> MagicMock:
-    request = MagicMock()
-    request.url.path = path
-    return request
-
-
 async def test_middleware_passes_through_when_not_in_maintenance() -> None:
     middleware = MaintenanceMiddleware(app=MagicMock())
-    expected_response = MagicMock()
-
-    async def call_next(_req):
-        return expected_response
-
-    response = await middleware.dispatch(_make_request(), call_next)
-    assert response is expected_response
+    messages = await _call_middleware(middleware, _make_scope())
+    assert _status_from(messages) == 200
 
 
 @patch("app.middleware.is_maintenance_mode", return_value=True)
 async def test_middleware_returns_503_during_maintenance(_mock) -> None:
     middleware = MaintenanceMiddleware(app=MagicMock())
-
-    async def call_next(_req):
-        raise AssertionError("should not be called")
-
-    response = await middleware.dispatch(_make_request("/api/categories"), call_next)
-    assert response.status_code == 503
+    messages = await _call_middleware(middleware, _make_scope("/api/categories"))
+    assert _status_from(messages) == 503
 
 
 @patch("app.middleware.is_maintenance_mode", return_value=True)
 async def test_middleware_allows_health_during_maintenance(_mock) -> None:
     middleware = MaintenanceMiddleware(app=MagicMock())
-    expected = MagicMock()
-
-    async def call_next(_req):
-        return expected
-
-    response = await middleware.dispatch(_make_request("/api/health"), call_next)
-    assert response is expected
+    messages = await _call_middleware(middleware, _make_scope("/api/health"))
+    assert _status_from(messages) == 200
 
 
 @patch("app.middleware.is_maintenance_mode", return_value=True)
 async def test_middleware_allows_health_ready_during_maintenance(_mock) -> None:
     middleware = MaintenanceMiddleware(app=MagicMock())
-    expected = MagicMock()
-
-    async def call_next(_req):
-        return expected
-
-    response = await middleware.dispatch(_make_request("/api/health/ready"), call_next)
-    assert response is expected
+    messages = await _call_middleware(middleware, _make_scope("/api/health/ready"))
+    assert _status_from(messages) == 200
 
 
 @patch("app.middleware.is_maintenance_mode", return_value=True)
 async def test_middleware_allows_status_during_maintenance(_mock) -> None:
     middleware = MaintenanceMiddleware(app=MagicMock())
-    expected = MagicMock()
-
-    async def call_next(_req):
-        return expected
-
-    response = await middleware.dispatch(_make_request("/api/status"), call_next)
-    assert response is expected
+    messages = await _call_middleware(middleware, _make_scope("/api/status"))
+    assert _status_from(messages) == 200
 
 
 @patch("app.middleware.is_maintenance_mode", return_value=True)
 async def test_middleware_allows_admin_maintenance_during_maintenance(_mock) -> None:
     middleware = MaintenanceMiddleware(app=MagicMock())
-    expected = MagicMock()
-
-    async def call_next(_req):
-        return expected
-
-    response = await middleware.dispatch(_make_request("/api/admin/maintenance"), call_next)
-    assert response is expected
+    messages = await _call_middleware(middleware, _make_scope("/api/admin/maintenance"))
+    assert _status_from(messages) == 200
 
 
 def test_all_exempt_paths_listed() -> None:

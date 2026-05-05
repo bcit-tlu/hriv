@@ -14,6 +14,7 @@ from app.processing import (
     _estimate_tile_count,
     generate_tiles,
     process_source_image,
+    reconcile_stale_source_images,
 )
 
 
@@ -281,3 +282,34 @@ async def test_process_source_image_with_programs() -> None:
                         await process_source_image(3)
 
     assert src.status == "completed"
+
+
+# ── reconcile_stale_source_images tests ──────────────────
+
+
+async def test_reconcile_stale_source_images_updates_stale() -> None:
+    """Stale source images in processing/pending are marked failed."""
+    mock_row = MagicMock()
+    mock_row.__getitem__ = lambda self, i: 42  # id=42
+    mock_result = MagicMock()
+    mock_result.all.return_value = [mock_row]
+
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=mock_result)
+
+    count = await reconcile_stale_source_images(session, stale_after_seconds=900)
+    assert count == 1
+    session.commit.assert_awaited_once()
+
+
+async def test_reconcile_stale_source_images_no_stale() -> None:
+    """When no source images are stale, nothing is updated."""
+    mock_result = MagicMock()
+    mock_result.all.return_value = []
+
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=mock_result)
+
+    count = await reconcile_stale_source_images(session, stale_after_seconds=900)
+    assert count == 0
+    session.commit.assert_awaited_once()

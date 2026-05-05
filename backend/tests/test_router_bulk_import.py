@@ -30,6 +30,16 @@ from app.routers.bulk_import import (
 )
 
 
+# ── Global fixture: default enqueue_bulk_import to False (no Redis) ───────
+# The endpoint now prefers arq; patch it to return False by default so
+# the BackgroundTasks fallback path (tested by existing tests) is exercised.
+
+@pytest.fixture(autouse=True)
+def _patch_enqueue_bulk_import():
+    with patch("app.routers.bulk_import.enqueue_bulk_import", new_callable=AsyncMock, return_value=False):
+        yield
+
+
 # ── _is_image_filename ────────────────────────────────────────────────────
 
 
@@ -724,3 +734,70 @@ async def test_bulk_import_images_strips_directory_prefix_from_zip(tmp_path) -> 
     assert os.path.commonpath([file_entries[0][1], str(tmp_path)]) == str(
         tmp_path
     )
+
+
+# ── arq routing tests ─────────────────────────────────────────────────────
+
+
+async def test_bulk_import_uses_arq_when_redis_available(tmp_path) -> None:
+    """When enqueue_bulk_import returns True, BackgroundTasks is NOT used."""
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=category)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    async def _refresh(obj) -> None:
+        obj.id = 99
+
+    db.refresh = AsyncMock(side_effect=_refresh)
+    bg = MagicMock()
+
+    mock_enqueue = AsyncMock(return_value=True)
+    with patch("app.routers.bulk_import.enqueue_bulk_import", mock_enqueue):
+        with patch("app.routers.bulk_import.settings") as mock_settings:
+            mock_settings.source_images_dir = str(tmp_path)
+            result = await bulk_import_images(
+                files=[_make_upload("a.png", [b"png-bytes", b""])],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+
+    assert result.id == 99
+    mock_enqueue.assert_awaited_once()
+    # BackgroundTasks should NOT have been called (arq handled it)
+    bg.add_task.assert_not_called()
+
+
+async def test_bulk_import_falls_back_to_background_tasks(tmp_path) -> None:
+    """When enqueue_bulk_import returns False, BackgroundTasks IS used."""
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=category)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    async def _refresh(obj) -> None:
+        obj.id = 77
+
+    db.refresh = AsyncMock(side_effect=_refresh)
+    bg = MagicMock()
+
+    mock_enqueue = AsyncMock(return_value=False)
+    with patch("app.routers.bulk_import.enqueue_bulk_import", mock_enqueue):
+        with patch("app.routers.bulk_import.settings") as mock_settings:
+            mock_settings.source_images_dir = str(tmp_path)
+            result = await bulk_import_images(
+                files=[_make_upload("b.tiff", [b"tiff-data", b""])],
+                category_id=1,
+                background_tasks=bg,
+                _user=MagicMock(),
+                db=db,
+            )
+
+    assert result.id == 77
+    mock_enqueue.assert_awaited_once()
+    # BackgroundTasks should have been called as fallback
+    assert bg.add_task.call_count == 1

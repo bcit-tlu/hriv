@@ -135,6 +135,47 @@ async def enqueue_replace_image(
         return False
 
 
+async def enqueue_bulk_import(
+    job_id: int,
+    file_entries: list[tuple[str, str]],
+    copyright: str | None = None,
+    note: str | None = None,
+    program_ids: list[int] | None = None,
+    active: bool = True,
+) -> bool:
+    """Enqueue a bulk-import processing job via arq.
+
+    Returns ``True`` if the job was enqueued, ``False`` if Redis is
+    unavailable (caller should fall back to ``BackgroundTasks``).
+    """
+    pool = await get_pool()
+    if pool is None:
+        return False
+    try:
+        carrier: dict[str, str] = {}
+        inject(carrier)
+        await pool.enqueue_job(
+            "bulk_import_task",
+            job_id,
+            file_entries,
+            copyright,
+            note,
+            program_ids,
+            active,
+            carrier,
+        )
+        return True
+    except Exception:
+        logger.warning(
+            "Failed to enqueue bulk import — falling back to BackgroundTasks",
+            extra={
+                "event": "worker.enqueue_bulk_import_failed",
+                "job_id": job_id,
+            },
+        )
+        return False
+
+
 async def enqueue_admin_task(task_id: int, task_type: str) -> bool:
     """Enqueue a background admin task via arq.
 
@@ -226,6 +267,47 @@ async def replace_image_task(
             detach(token)
 
 
+async def bulk_import_task(
+    ctx: dict[str, Any],
+    job_id: int,
+    file_entries: list[tuple[str, str]],
+    copyright: str | None,
+    note: str | None,
+    program_ids: list[int] | None,
+    active: bool,
+    trace_headers: dict[str, str] | None = None,
+) -> None:
+    """arq task wrapper for bulk import processing."""
+    from .routers.bulk_import import _process_bulk_import
+
+    parent_ctx = extract(trace_headers) if trace_headers else None
+    token = attach(parent_ctx) if parent_ctx else None
+    try:
+        with tracer.start_as_current_span(
+            "bulk_import_task",
+            attributes={"bulk_import.job_id": job_id},
+        ):
+            logger.info(
+                "arq worker processing bulk import",
+                extra={
+                    "event": "worker.bulk_import_started",
+                    "job_id": job_id,
+                    "file_count": len(file_entries),
+                },
+            )
+            await _process_bulk_import(
+                job_id,
+                file_entries,
+                copyright=copyright,
+                note=note,
+                program_ids=program_ids,
+                active=active,
+            )
+    finally:
+        if token is not None:
+            detach(token)
+
+
 async def admin_task_runner(
     ctx: dict[str, Any],
     task_id: int,
@@ -285,7 +367,7 @@ async def on_startup(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """Configuration class consumed by ``arq worker``."""
 
-    functions = [process_source_image_task, replace_image_task, admin_task_runner]
+    functions = [process_source_image_task, replace_image_task, bulk_import_task, admin_task_runner]
     redis_settings = _parse_redis_settings()
     on_startup = on_startup
     max_jobs = 4  # Match the existing _MAX_CONCURRENCY

@@ -1,0 +1,33 @@
+{{- if and .Values.redis.enabled .Values.redis.worker.enabled .Values.redis.worker.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "hriv-backend.fullname" . }}-worker
+  labels:
+    {{- include "hriv-backend.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "hriv-backend.fullname" . }}-worker
+  minReplicas: {{ .Values.redis.worker.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.redis.worker.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.redis.worker.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.redis.worker.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.redis.worker.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.redis.worker.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+{{- end }}

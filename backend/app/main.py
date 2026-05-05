@@ -13,6 +13,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .admin_ops import reconcile_stale_tasks
+from .processing import reconcile_stale_source_images
 from .auth import auth_settings
 from .database import get_async_session, get_db, settings
 from .logging_config import setup_logging
@@ -112,6 +113,18 @@ async def lifespan(app: FastAPI):
             "Stale admin task reconciliation failed: %s",
             exc,
             extra={"event": "admin_task.reconcile_failed", "error": str(exc)},
+        )
+
+    # Reconcile SourceImages orphaned by a previous pod crash/rollout
+    # so they don't appear stuck in "processing" in the UI forever.
+    try:
+        async with get_async_session()() as session:
+            await reconcile_stale_source_images(session)
+    except Exception as exc:  # pragma: no cover - best effort on startup
+        logger.warning(
+            "Stale source image reconciliation failed: %s",
+            exc,
+            extra={"event": "processing.reconcile_failed", "error": str(exc)},
         )
 
     yield
