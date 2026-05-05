@@ -131,8 +131,8 @@ _cors_origins = [
     o.strip() for o in settings.cors_origins.split(",") if o.strip()
 ] or ["*"]
 
-app.add_middleware(AuditMiddleware)
 app.add_middleware(MaintenanceMiddleware)
+app.add_middleware(AuditMiddleware)
 
 # Starlette session middleware — required by authlib's OIDC client to store
 # the OAuth state/nonce between the login redirect and the callback.

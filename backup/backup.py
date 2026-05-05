@@ -537,9 +537,11 @@ END $$;
             data_dest = Path(DATA_DIR)
             log.info("Restoring filesystem data to %s …", DATA_DIR)
 
-            # Clear existing data
+            # Clear existing data (preserve the maintenance flag)
             if data_dest.exists():
                 for child in data_dest.iterdir():
+                    if child.name == _MAINTENANCE_FILENAME:
+                        continue
                     if child.is_dir():
                         shutil.rmtree(str(child))
                     else:

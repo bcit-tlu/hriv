@@ -22,7 +22,7 @@ MAINTENANCE_FILENAME = ".maintenance"
 
 
 def _flag_path() -> Path:
-    return Path(settings.source_images_dir).parent / MAINTENANCE_FILENAME
+    return Path(settings.data_dir) / MAINTENANCE_FILENAME
 
 
 def is_maintenance_mode() -> bool:
