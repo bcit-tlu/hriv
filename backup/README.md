@@ -127,6 +127,11 @@ curl -X PUT "https://<host>/api/admin/maintenance?enabled=true" -H "Authorizatio
 curl -X PUT "https://<host>/api/admin/maintenance?enabled=false" -H "Authorization: Bearer <TOKEN>"
 ```
 
+> **Note:** Auth endpoints are blocked during maintenance, so the admin JWT must still be valid. If the JWT expires while maintenance is active, remove the flag file directly:
+> ```bash
+> kubectl exec -n hriv deploy/hriv-backup -- rm /data/.maintenance
+> ```
+
 ## Full Disaster Recovery Procedure
 
 After a fresh redeployment (new server, new Docker volumes):
