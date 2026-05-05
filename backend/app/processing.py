@@ -13,11 +13,14 @@ import os
 import shutil
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pyvips
 from opentelemetry import trace
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import func
 
 from .database import async_session, settings
 from .models import Image, Program, SourceImage
@@ -663,3 +666,63 @@ async def process_replace_image(
                 src.error_message = "Image replacement failed. Check server logs."
                 src.status_message = "Failed"
                 await db.commit()
+
+
+# ── Stale SourceImage reconciliation ──────────────────────
+
+# Threshold after which an in-flight SourceImage with no updated_at
+# progress is considered abandoned.  Processing writes progress every
+# 1.5 s, so 15 min is generously large.  Matches the admin-task
+# threshold for consistency.
+_STALE_SOURCE_IMAGE_SECONDS = int(
+    os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900")
+)
+
+
+async def reconcile_stale_source_images(
+    session: AsyncSession,
+    stale_after_seconds: int = _STALE_SOURCE_IMAGE_SECONDS,
+) -> int:
+    """Mark orphaned in-flight SourceImages as ``failed``.
+
+    A SourceImage is considered stale when its status is ``pending`` or
+    ``processing`` but its ``updated_at`` timestamp is older than
+    *stale_after_seconds*.  This runs on backend startup so images whose
+    processing task died (pod crash, OOM kill, rollout) are cleaned up
+    rather than appearing stuck in the UI forever.
+
+    Returns the number of rows updated.
+    """
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
+    stmt = (
+        update(SourceImage)
+        .where(
+            SourceImage.status.in_(["pending", "processing"]),
+            SourceImage.updated_at < cutoff,
+        )
+        .values(
+            status="failed",
+            error_message=(
+                "Marked as failed on backend startup — no progress "
+                f"update for more than {stale_after_seconds}s; the "
+                "processing task likely crashed before completion."
+            ),
+            status_message="Failed",
+            updated_at=func.now(),
+        )
+        .returning(SourceImage.id)
+    )
+    result = await session.execute(stmt)
+    ids = [row[0] for row in result.all()]
+    await session.commit()
+    if ids:
+        logger.warning(
+            "Reconciled %d stale source image(s) to 'failed' on startup",
+            len(ids),
+            extra={
+                "event": "processing.reconciled_stale",
+                "source_image_ids": ids,
+                "stale_after_seconds": stale_after_seconds,
+            },
+        )
+    return len(ids)

@@ -72,8 +72,11 @@ server {
         # multi-GB bodies in its temp directory before proxying.
         proxy_request_buffering off;
 
-        proxy_read_timeout    600s;
-        proxy_send_timeout    600s;
+        # 7200s (2 hours) matches the arq worker job_timeout so nginx
+        # does not sever the connection before the backend finishes
+        # processing very large images (1 GB+ over slow links).
+        proxy_read_timeout    7200s;
+        proxy_send_timeout    7200s;
         proxy_connect_timeout 60s;
     }
 
@@ -98,7 +101,6 @@ server {
         # endpoints that genuinely do accept large bodies.
         client_max_body_size 10m;
 
-        # Extend timeouts for slow uploads / large tile-generation responses.
         proxy_read_timeout    600s;
         proxy_send_timeout    600s;
         proxy_connect_timeout 60s;

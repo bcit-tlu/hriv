@@ -4,12 +4,85 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.middleware import (
     AuditMiddleware,
+    MaintenanceMiddleware,
     _is_upload_path,
     _parse_content_length,
     _parse_exclude_prefixes,
     get_request_id,
     request_id_ctx,
 )
+
+
+# ── helpers ───────────────────────────────────────────────────────────────
+
+
+def _make_scope(
+    method: str = "GET",
+    path: str = "/api/test",
+    headers: dict[str, str] | None = None,
+    client: tuple[str, int] | None = ("127.0.0.1", 0),
+) -> dict:
+    """Build a minimal ASGI HTTP scope."""
+    raw_headers: list[tuple[bytes, bytes]] = []
+    for k, v in (headers or {}).items():
+        raw_headers.append((k.lower().encode("latin-1"), v.encode("latin-1")))
+    scope = {
+        "type": "http",
+        "method": method,
+        "path": path,
+        "headers": raw_headers,
+    }
+    if client is not None:
+        scope["client"] = client
+    return scope
+
+
+async def _noop_receive() -> dict:
+    return {"type": "http.request", "body": b""}
+
+
+_captured_messages: list[dict] = []
+
+
+async def _noop_send(message: dict) -> None:
+    _captured_messages.append(message)
+
+
+async def _invoke(
+    middleware: AuditMiddleware | MaintenanceMiddleware,
+    scope: dict,
+    *,
+    response_status: int = 200,
+) -> list[dict]:
+    """Call the middleware with a tiny inner ASGI app that sends a response."""
+    captured: list[dict] = []
+
+    async def inner_app(scope, receive, send):
+        await send({"type": "http.response.start", "status": response_status, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    # Replace the middleware's inner app so responses are actually sent.
+    middleware.app = inner_app
+
+    async def capturing_send(message: dict) -> None:
+        captured.append(message)
+
+    await middleware(scope, _noop_receive, capturing_send)
+    return captured
+
+
+def _response_headers(messages: list[dict]) -> dict[str, str]:
+    """Extract response headers from captured ASGI messages."""
+    for msg in messages:
+        if msg["type"] == "http.response.start":
+            return {
+                k.decode("latin-1"): v.decode("latin-1")
+                for k, v in msg.get("headers", [])
+            }
+    return {}
+
+
+# ── context var tests ─────────────────────────────────────────────────────
 
 
 def test_get_request_id_returns_empty_string_by_default() -> None:
@@ -28,151 +101,75 @@ def test_get_request_id_returns_set_value() -> None:
         request_id_ctx.reset(token)
 
 
-async def test_dispatch_generates_request_id() -> None:
-    middleware = AuditMiddleware(app=MagicMock())
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers = {}
-
-    async def call_next(request):
-        return mock_response
-
-    request = MagicMock()
-    request.headers = {}
-    request.method = "GET"
-    request.url.path = "/api/health"
-    request.client = MagicMock()
-    request.client.host = "127.0.0.1"
-
-    response = await middleware.dispatch(request, call_next)
-    assert "X-Request-ID" in response.headers
+# ── AuditMiddleware ──────────────────────────────────────────────────────
 
 
-async def test_dispatch_uses_client_supplied_request_id() -> None:
-    middleware = AuditMiddleware(app=MagicMock())
+async def test_audit_generates_request_id() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/health")
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers = {}
-
-    async def call_next(request):
-        return mock_response
-
-    request = MagicMock()
-    request.headers = {"X-Request-ID": "my-custom-id"}
-    request.method = "GET"
-    request.url.path = "/api/test"
-    request.client = MagicMock()
-    request.client.host = "127.0.0.1"
-
-    response = await middleware.dispatch(request, call_next)
-    assert response.headers["X-Request-ID"] == "my-custom-id"
+    messages = await _invoke(mw, scope)
+    headers = _response_headers(messages)
+    assert "x-request-id" in headers
+    assert len(headers["x-request-id"]) > 0
 
 
-async def test_dispatch_rejects_invalid_request_id() -> None:
-    middleware = AuditMiddleware(app=MagicMock())
+async def test_audit_uses_client_supplied_request_id() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(headers={"X-Request-ID": "my-custom-id"})
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers = {}
-
-    async def call_next(request):
-        return mock_response
-
-    request = MagicMock()
-    # Oversized ID should be rejected
-    request.headers = {"X-Request-ID": "x" * 200}
-    request.method = "GET"
-    request.url.path = "/api/test"
-    request.client = MagicMock()
-    request.client.host = "127.0.0.1"
-
-    response = await middleware.dispatch(request, call_next)
-    # Should have generated a new ID, not the oversized one
-    assert response.headers["X-Request-ID"] != "x" * 200
+    messages = await _invoke(mw, scope)
+    headers = _response_headers(messages)
+    assert headers["x-request-id"] == "my-custom-id"
 
 
-async def test_dispatch_uses_forwarded_for_ip() -> None:
-    middleware = AuditMiddleware(app=MagicMock())
+async def test_audit_rejects_invalid_request_id() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(headers={"X-Request-ID": "x" * 200})
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers = {}
+    messages = await _invoke(mw, scope)
+    headers = _response_headers(messages)
+    assert headers["x-request-id"] != "x" * 200
 
-    captured_extra = {}
 
-    async def call_next(request):
-        return mock_response
-
-    request = MagicMock()
-    request.headers = {"X-Forwarded-For": "1.2.3.4, 5.6.7.8"}
-    request.method = "GET"
-    request.url.path = "/api/test"
-    request.client = MagicMock()
-    request.client.host = "127.0.0.1"
+async def test_audit_uses_forwarded_for_ip() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(headers={"X-Forwarded-For": "1.2.3.4, 5.6.7.8"})
 
     with patch("app.middleware.logger") as mock_logger:
-        await middleware.dispatch(request, call_next)
+        await _invoke(mw, scope)
         call_args = mock_logger.info.call_args
         extra = call_args.kwargs.get("extra", {})
         assert extra["client_ip"] == "1.2.3.4"
 
 
-async def test_dispatch_extracts_session_id() -> None:
-    middleware = AuditMiddleware(app=MagicMock())
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers = {}
-
-    async def call_next(request):
-        return mock_response
-
-    request = MagicMock()
-    request.headers = {"X-Session-ID": "session-abc"}
-    request.method = "GET"
-    request.url.path = "/api/test"
-    request.client = MagicMock()
-    request.client.host = "127.0.0.1"
+async def test_audit_extracts_session_id() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(headers={"X-Session-ID": "session-abc"})
 
     with patch("app.middleware.logger") as mock_logger:
-        await middleware.dispatch(request, call_next)
+        await _invoke(mw, scope)
         call_args = mock_logger.info.call_args
         extra = call_args.kwargs.get("extra", {})
         assert extra["session_id"] == "session-abc"
 
 
-async def test_dispatch_extracts_user_from_jwt() -> None:
-    middleware = AuditMiddleware(app=MagicMock())
+async def test_audit_extracts_user_from_jwt() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
 
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers = {}
-
-    async def call_next(request):
-        return mock_response
-
-    # Create a valid JWT for testing
     from jose import jwt as jose_jwt
     token = jose_jwt.encode(
         {"sub": "42", "email": "test@example.com", "role": "admin"},
         "test-secret",
         algorithm="HS256",
     )
-
-    request = MagicMock()
-    request.headers = {"Authorization": f"Bearer {token}"}
-    request.method = "GET"
-    request.url.path = "/api/test"
-    request.client = MagicMock()
-    request.client.host = "127.0.0.1"
+    scope = _make_scope(headers={"Authorization": f"Bearer {token}"})
 
     with patch("app.middleware.auth_settings") as mock_settings:
         mock_settings.jwt_secret = "test-secret"
         mock_settings.jwt_algorithm = "HS256"
         with patch("app.middleware.logger") as mock_logger:
-            await middleware.dispatch(request, call_next)
+            await _invoke(mw, scope)
             call_args = mock_logger.info.call_args
             extra = call_args.kwargs.get("extra", {})
             assert extra["user_id"] == 42
@@ -180,148 +177,98 @@ async def test_dispatch_extracts_user_from_jwt() -> None:
             assert extra["user_role"] == "admin"
 
 
-async def test_dispatch_handles_invalid_jwt_gracefully() -> None:
-    middleware = AuditMiddleware(app=MagicMock())
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers = {}
-
-    async def call_next(request):
-        return mock_response
-
-    request = MagicMock()
-    request.headers = {"Authorization": "Bearer invalid-token"}
-    request.method = "GET"
-    request.url.path = "/api/test"
-    request.client = MagicMock()
-    request.client.host = "127.0.0.1"
+async def test_audit_handles_invalid_jwt_gracefully() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(headers={"Authorization": "Bearer invalid-token"})
 
     with patch("app.middleware.logger") as mock_logger:
-        response = await middleware.dispatch(request, call_next)
+        messages = await _invoke(mw, scope)
+        headers = _response_headers(messages)
         # Should still succeed; invalid JWT just means no user info in logs
-        assert response.status_code == 200
+        for msg in messages:
+            if msg["type"] == "http.response.start":
+                assert msg["status"] == 200
         call_args = mock_logger.info.call_args
         extra = call_args.kwargs.get("extra", {})
         assert "user_id" not in extra
 
 
-async def test_dispatch_handles_no_client() -> None:
-    middleware = AuditMiddleware(app=MagicMock())
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers = {}
-
-    async def call_next(request):
-        return mock_response
-
-    request = MagicMock()
-    request.headers = {}
-    request.method = "GET"
-    request.url.path = "/api/test"
-    request.client = None
+async def test_audit_handles_no_client() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(client=None)
 
     with patch("app.middleware.logger") as mock_logger:
-        await middleware.dispatch(request, call_next)
+        await _invoke(mw, scope)
         call_args = mock_logger.info.call_args
         extra = call_args.kwargs.get("extra", {})
         assert extra["client_ip"] == "unknown"
 
 
-async def test_dispatch_handles_exception_in_call_next() -> None:
-    middleware = AuditMiddleware(app=MagicMock())
-
-    async def call_next(request):
+async def test_audit_handles_exception_in_inner_app() -> None:
+    """Audit log is still emitted when the inner app raises."""
+    async def failing_app(scope, receive, send):
         raise RuntimeError("boom")
 
-    request = MagicMock()
-    request.headers = {}
-    request.method = "GET"
-    request.url.path = "/api/test"
-    request.client = MagicMock()
-    request.client.host = "127.0.0.1"
+    mw = AuditMiddleware(app=failing_app)
+    scope = _make_scope()
 
     import pytest
     with pytest.raises(RuntimeError, match="boom"):
         with patch("app.middleware.logger"):
-            await middleware.dispatch(request, call_next)
+            await mw(scope, _noop_receive, _noop_send)
 
 
-async def test_dispatch_logs_health_check_at_debug() -> None:
+async def test_audit_logs_health_check_at_debug() -> None:
     """Health-check endpoints should be logged at DEBUG, not INFO."""
-    middleware = AuditMiddleware(app=MagicMock())
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers = {}
-
-    async def call_next(request):
-        return mock_response
+    mw = AuditMiddleware(app=AsyncMock())
 
     for path in ("/api/health", "/api/health/ready"):
-        request = MagicMock()
-        request.headers = {}
-        request.method = "GET"
-        request.url.path = path
-        request.client = MagicMock()
-        request.client.host = "127.0.0.1"
-
+        scope = _make_scope(path=path)
         with patch("app.middleware.logger") as mock_logger:
-            await middleware.dispatch(request, call_next)
+            await _invoke(mw, scope)
             mock_logger.debug.assert_called_once()
             mock_logger.info.assert_not_called()
 
 
-async def test_dispatch_logs_non_health_at_info() -> None:
+async def test_audit_logs_non_health_at_info() -> None:
     """Non-health-check endpoints should still be logged at INFO."""
-    middleware = AuditMiddleware(app=MagicMock())
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers = {}
-
-    async def call_next(request):
-        return mock_response
-
-    request = MagicMock()
-    request.headers = {}
-    request.method = "GET"
-    request.url.path = "/api/images"
-    request.client = MagicMock()
-    request.client.host = "127.0.0.1"
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/images")
 
     with patch("app.middleware.logger") as mock_logger:
-        await middleware.dispatch(request, call_next)
+        await _invoke(mw, scope)
         mock_logger.info.assert_called_once()
 
 
-async def test_dispatch_logs_numeric_content_length() -> None:
-    middleware = AuditMiddleware(app=MagicMock())
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers = {}
-
-    async def call_next(request):
-        return mock_response
-
-    request = MagicMock()
-    request.headers = {"content-length": "3607772528"}
-    request.method = "POST"
-    request.url.path = "/api/admin/bulk-import/"
-    request.client = MagicMock()
-    request.client.host = "127.0.0.1"
+async def test_audit_logs_numeric_content_length() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(
+        method="POST",
+        path="/api/admin/bulk-import/",
+        headers={"content-length": "3607772528"},
+    )
 
     with patch("app.middleware.logger") as mock_logger:
-        await middleware.dispatch(request, call_next)
+        await _invoke(mw, scope)
         call_args = mock_logger.info.call_args
         extra = call_args.kwargs.get("extra", {})
         assert extra["content_length"] == 3607772528
 
 
+async def test_audit_passes_through_non_http_scope() -> None:
+    """Non-HTTP scopes (websocket, lifespan) are passed through untouched."""
+    inner = AsyncMock()
+    mw = AuditMiddleware(app=inner)
+    scope = {"type": "lifespan"}
+
+    await mw(scope, _noop_receive, _noop_send)
+    inner.assert_called_once_with(scope, _noop_receive, _noop_send)
+
+
+# ── helper function tests ────────────────────────────────────────────────
+
+
 def test_parse_exclude_prefixes_strips_whitespace_and_blanks() -> None:
-    """Exclude-prefix parsing should ignore empty entries and strip padding."""
     assert _parse_exclude_prefixes("") == ()
     assert _parse_exclude_prefixes(" , , ") == ()
     assert _parse_exclude_prefixes("/a,/b") == ("/a", "/b")
@@ -342,76 +289,88 @@ def test_is_upload_path() -> None:
     assert not _is_upload_path("/api/images")
 
 
-async def test_dispatch_logs_upload_start_for_upload_paths() -> None:
-    middleware = AuditMiddleware(app=MagicMock())
-
-    mock_response = MagicMock()
-    mock_response.status_code = 201
-    mock_response.headers = {}
-
-    async def call_next(request):
-        return mock_response
-
-    request = MagicMock()
-    request.headers = {"content-length": "3607772528"}
-    request.method = "POST"
-    request.url.path = "/api/admin/bulk-import/"
-    request.client = MagicMock()
-    request.client.host = "127.0.0.1"
+async def test_audit_logs_upload_start_for_upload_paths() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(
+        method="POST",
+        path="/api/admin/bulk-import/",
+        headers={"content-length": "3607772528"},
+    )
 
     with patch("app.middleware.logger") as mock_logger:
-        await middleware.dispatch(request, call_next)
+        await _invoke(mw, scope)
         upload_call = mock_logger.info.call_args_list[0]
         extra = upload_call.kwargs.get("extra", {})
         assert extra["event"] == "http.upload_started"
         assert extra["content_length"] == 3607772528
 
 
-async def test_dispatch_logs_tiles_at_debug() -> None:
+async def test_audit_logs_tiles_at_debug() -> None:
     """Tile-serving endpoints match the default prefix list and log at DEBUG."""
-    middleware = AuditMiddleware(app=MagicMock())
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers = {}
-
-    async def call_next(request):
-        return mock_response
-
-    request = MagicMock()
-    request.headers = {}
-    request.method = "GET"
-    request.url.path = "/api/tiles/123/4/2/2.jpg"
-    request.client = MagicMock()
-    request.client.host = "127.0.0.1"
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/tiles/123/4/2/2.jpg")
 
     with patch("app.middleware._EXCLUDE_PREFIXES", ("/api/tiles/",)):
         with patch("app.middleware.logger") as mock_logger:
-            await middleware.dispatch(request, call_next)
+            await _invoke(mw, scope)
             mock_logger.debug.assert_called_once()
             mock_logger.info.assert_not_called()
 
 
-async def test_dispatch_respects_configured_exclude_prefixes() -> None:
+async def test_audit_respects_configured_exclude_prefixes() -> None:
     """Paths not matching any configured prefix are still logged at INFO."""
-    middleware = AuditMiddleware(app=MagicMock())
-
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.headers = {}
-
-    async def call_next(request):
-        return mock_response
-
-    request = MagicMock()
-    request.headers = {}
-    request.method = "GET"
-    request.url.path = "/api/images/42"
-    request.client = MagicMock()
-    request.client.host = "127.0.0.1"
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/images/42")
 
     with patch("app.middleware._EXCLUDE_PREFIXES", ("/api/tiles/", "/api/health")):
         with patch("app.middleware.logger") as mock_logger:
-            await middleware.dispatch(request, call_next)
+            await _invoke(mw, scope)
             mock_logger.info.assert_called_once()
             mock_logger.debug.assert_not_called()
+
+
+# ── MaintenanceMiddleware ────────────────────────────────────────────────
+
+
+async def test_maintenance_returns_503_when_active() -> None:
+    mw = MaintenanceMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/images")
+
+    with patch("app.middleware.is_maintenance_mode", return_value=True):
+        messages = await _invoke(mw, scope)
+        for msg in messages:
+            if msg["type"] == "http.response.start":
+                assert msg["status"] == 503
+
+
+async def test_maintenance_allows_exempt_paths() -> None:
+    mw = MaintenanceMiddleware(app=AsyncMock())
+
+    for path in ("/api/health", "/api/status", "/api/admin/maintenance"):
+        scope = _make_scope(path=path)
+        with patch("app.middleware.is_maintenance_mode", return_value=True):
+            messages = await _invoke(mw, scope)
+            for msg in messages:
+                if msg["type"] == "http.response.start":
+                    assert msg["status"] == 200
+
+
+async def test_maintenance_passes_through_when_inactive() -> None:
+    mw = MaintenanceMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/images")
+
+    with patch("app.middleware.is_maintenance_mode", return_value=False):
+        messages = await _invoke(mw, scope)
+        for msg in messages:
+            if msg["type"] == "http.response.start":
+                assert msg["status"] == 200
+
+
+async def test_maintenance_passes_through_non_http_scope() -> None:
+    """Non-HTTP scopes are passed through untouched."""
+    inner = AsyncMock()
+    mw = MaintenanceMiddleware(app=inner)
+    scope = {"type": "lifespan"}
+
+    await mw(scope, _noop_receive, _noop_send)
+    inner.assert_called_once_with(scope, _noop_receive, _noop_send)

@@ -27,6 +27,7 @@ from ..database import async_session, get_db, settings
 from ..models import BulkImportJob, Category, SourceImage, User
 from ..processing import process_source_image
 from ..schemas import BulkImportJobOut
+from ..worker import enqueue_bulk_import
 
 router = APIRouter(prefix="/admin/bulk-import", tags=["admin"])
 
@@ -379,9 +380,10 @@ async def bulk_import_images(
         },
     )
 
-    # Fire off background processing
-    background_tasks.add_task(
-        _process_bulk_import,
+    # Prefer the arq task queue for resource isolation and job
+    # persistence; fall back to in-process BackgroundTasks when Redis
+    # is unavailable (e.g. local development without Redis).
+    enqueued = await enqueue_bulk_import(
         job.id,
         file_entries,
         copyright=copyright,
@@ -389,6 +391,16 @@ async def bulk_import_images(
         program_ids=program_ids,
         active=active,
     )
+    if not enqueued:
+        background_tasks.add_task(
+            _process_bulk_import,
+            job.id,
+            file_entries,
+            copyright=copyright,
+            note=note,
+            program_ids=program_ids,
+            active=active,
+        )
 
     return job
 
