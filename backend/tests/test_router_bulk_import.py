@@ -289,6 +289,38 @@ async def test_bulk_import_images_extracts_zip_entries(tmp_path) -> None:
     assert basenames == {"cell_a.png", "cell_b.jpg"}
 
 
+async def test_bulk_import_images_streams_zip_extraction(tmp_path) -> None:
+    """ZIP entries are copied incrementally instead of loaded in one read."""
+    category = SimpleNamespace(id=1)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=category)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    async def _refresh(obj) -> None:
+        obj.id = 4
+
+    db.refresh = AsyncMock(side_effect=_refresh)
+    bg = MagicMock()
+    upload = _make_upload("batch.zip", [_zip_bytes({"large.tif": b"tif-data"}), b""])
+
+    with (
+        patch("app.routers.bulk_import.settings") as mock_settings,
+        patch("app.routers.bulk_import.shutil.copyfileobj") as copyfileobj,
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        await bulk_import_images(
+            files=[upload],
+            category_id=1,
+            background_tasks=bg,
+            _user=MagicMock(),
+            db=db,
+        )
+
+    copyfileobj.assert_called_once()
+    assert copyfileobj.call_args.kwargs["length"] == 1024 * 1024
+
+
 async def test_bulk_import_images_rejects_corrupt_zip(tmp_path) -> None:
     category = SimpleNamespace(id=1)
     db = AsyncMock()

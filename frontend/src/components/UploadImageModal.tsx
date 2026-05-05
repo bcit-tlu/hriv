@@ -12,7 +12,7 @@ import LinearProgress from '@mui/material/LinearProgress'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
-import { uploadSourceImage, bulkImportImages, fetchBulkImportJob } from '../api'
+import { uploadSourceImage, bulkImportImages } from '../api'
 import type { ApiBulkImportJob } from '../api'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import ImageMetadataFields from './ImageMetadataFields'
@@ -131,9 +131,6 @@ export default function UploadImageModal({
   const onUploadedRef = useRef(onUploaded)
   onUploadedRef.current = onUploaded
 
-  // Bulk-import job state
-  const [job, setJob] = useState<ApiBulkImportJob | null>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const hadBulkJobRef = useRef(false)
   const bulkRefreshDoneRef = useRef(false)
 
@@ -145,44 +142,6 @@ export default function UploadImageModal({
       setCategoryId(initialCategoryId ?? null)
     }
   }, [open, initialCategoryId])
-
-  // Poll bulk-import job status until terminal
-  useEffect(() => {
-    if (!job || job.status === 'completed' || job.status === 'failed') {
-      if (pollRef.current) {
-        clearInterval(pollRef.current)
-        pollRef.current = null
-      }
-      return
-    }
-    let cancelled = false
-    pollRef.current = setInterval(async () => {
-      try {
-        const updated = await fetchBulkImportJob(job.id)
-        if (cancelled) return
-        setJob(updated)
-        if (updated.status === 'completed' || updated.status === 'failed') {
-          if (pollRef.current) {
-            clearInterval(pollRef.current)
-            pollRef.current = null
-          }
-          if (!bulkRefreshDoneRef.current) {
-            bulkRefreshDoneRef.current = true
-            onUploadedRef.current()
-          }
-        }
-      } catch {
-        // ignore poll errors
-      }
-    }, 2000)
-    return () => {
-      cancelled = true
-      if (pollRef.current) {
-        clearInterval(pollRef.current)
-        pollRef.current = null
-      }
-    }
-  }, [job])
 
   const handleReset = useCallback(() => {
     // If a bulk job was started but onUploaded hasn't fired yet
@@ -201,11 +160,6 @@ export default function UploadImageModal({
     setUploading(false)
     setUploadProgress(null)
     setError(null)
-    setJob(null)
-    if (pollRef.current) {
-      clearInterval(pollRef.current)
-      pollRef.current = null
-    }
   }, [initialCategoryId])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -294,7 +248,6 @@ export default function UploadImageModal({
           },
         )
         hadBulkJobRef.current = true
-        setJob(result)
         onBulkImportStarted?.(result, uploadFilename, uploadFileSize, uploadId)
         onClose()
       } catch (err) {
@@ -344,12 +297,6 @@ export default function UploadImageModal({
     }
   }
 
-  const isTerminal = job?.status === 'completed' || job?.status === 'failed'
-  const progressPercent =
-    job && job.total_count > 0
-      ? Math.round(((job.completed_count + job.failed_count) / job.total_count) * 100)
-      : 0
-
   const singleFile = files.length === 1 && !bulk ? files[0] : null
   const selectedBytes =
     singleFile?.size ?? files.reduce((total, file) => total + file.size, 0)
@@ -366,16 +313,14 @@ export default function UploadImageModal({
       <DialogContent
         sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
       >
-        {!job ? (
-          <>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={ACCEPTED_FILE_TYPES}
-              multiple
-              hidden
-              onChange={handleFileSelect}
-            />
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={ACCEPTED_FILE_TYPES}
+          multiple
+          hidden
+          onChange={handleFileSelect}
+        />
             <Box
               onDrop={handleDrop}
               onDragOver={handleDragOver}
@@ -505,90 +450,28 @@ export default function UploadImageModal({
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: -1 }}>
               Zip files will be extracted and all image files inside will be imported. You can bulk-edit metadata later from the <strong>Images</strong> page.
             </Typography>
-            {error && (
-              <Alert severity="error" sx={{ mt: 1 }} onClose={() => setError(null)}>
-                {error}
-              </Alert>
-            )}
-          </>
-        ) : (
-          /* Bulk-import progress view */
-          <Box sx={{ mt: 1 }}>
-            <Typography variant="body1" sx={{ mb: 1 }}>
-              Job #{job.id} &mdash;{' '}
-              <Typography
-                component="span"
-                variant="body1"
-                sx={{
-                  fontWeight: 600,
-                  color:
-                    job.status === 'completed'
-                      ? 'success.main'
-                      : job.status === 'failed'
-                        ? 'error.main'
-                        : 'info.main',
-                }}
-              >
-                {job.status}
-              </Typography>
-            </Typography>
-
-            <LinearProgress
-              variant="determinate"
-              value={progressPercent}
-              sx={{ height: 8, borderRadius: 1, mb: 1 }}
-            />
-
-            <Typography variant="body2" color="text.secondary">
-              {job.completed_count} of {job.total_count} completed
-              {job.failed_count > 0 && `, ${job.failed_count} failed`}
-            </Typography>
-
-            {!isTerminal && (
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                Processing images in the background...
-              </Typography>
-            )}
-
-            {job.errors && job.errors.length > 0 && (
-              <Alert severity="warning" sx={{ mt: 2 }}>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                  Errors:
-                </Typography>
-                {job.errors.map((err, i) => (
-                  <Typography key={i} variant="caption" display="block">
-                    {err.filename}: {err.error}
-                  </Typography>
-                ))}
-              </Alert>
-            )}
-          </Box>
+        {error && (
+          <Alert severity="error" sx={{ mt: 1 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
         )}
       </DialogContent>
       <DialogActions>
-        {!job ? (
-          <>
-            <Button onClick={onClose} disabled={uploading}>
-              Cancel
-            </Button>
-            <Button
-              variant="contained"
-              disabled={files.length === 0 || uploading}
-              onClick={handleUpload}
-              startIcon={uploading ? <CircularProgress size={16} /> : undefined}
-            >
-              {uploading
-                ? bulk ? 'Uploading...' : 'Adding\u2026'
-                : bulk
-                  ? `Import ${files.length} file${files.length !== 1 ? 's' : ''}`
-                  : 'Add'}
-            </Button>
-          </>
-        ) : (
-          <Button onClick={onClose} variant={isTerminal ? 'contained' : 'outlined'}>
-            {isTerminal ? 'Done' : 'Close'}
-          </Button>
-        )}
+        <Button onClick={onClose} disabled={uploading}>
+          Cancel
+        </Button>
+        <Button
+          variant="contained"
+          disabled={files.length === 0 || uploading}
+          onClick={handleUpload}
+          startIcon={uploading ? <CircularProgress size={16} /> : undefined}
+        >
+          {uploading
+            ? bulk ? 'Uploading...' : 'Adding\u2026'
+            : bulk
+              ? `Import ${files.length} file${files.length !== 1 ? 's' : ''}`
+              : 'Add'}
+        </Button>
       </DialogActions>
     </Dialog>
   )

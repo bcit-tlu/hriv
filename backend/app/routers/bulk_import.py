@@ -5,9 +5,11 @@ and processes them in the background with concurrency limiting.
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
+import shutil
 import tempfile
 import uuid
 import zipfile
@@ -46,6 +48,7 @@ _MAX_CONCURRENCY = 4
 
 # 1 MiB chunks for streaming large uploads to disk
 _UPLOAD_CHUNK_SIZE = 1024 * 1024
+_ZIP_EXTRACT_CHUNK_SIZE = 1024 * 1024
 
 
 def _is_image_filename(filename: str) -> bool:
@@ -292,8 +295,20 @@ async def bulk_import_images(
                                 settings.source_images_dir, unique_name
                             )
 
-                            with zf.open(zip_entry) as src, open(stored_path, "wb") as dst:
-                                dst.write(src.read())
+                            try:
+                                with (
+                                    zf.open(zip_entry) as src,
+                                    open(stored_path, "wb") as dst,
+                                ):
+                                    shutil.copyfileobj(
+                                        src,
+                                        dst,
+                                        length=_ZIP_EXTRACT_CHUNK_SIZE,
+                                    )
+                            except Exception:
+                                with contextlib.suppress(OSError):
+                                    os.unlink(stored_path)
+                                raise
 
                             file_entries.append((basename, stored_path))
                 except zipfile.BadZipFile:
@@ -303,10 +318,8 @@ async def bulk_import_images(
                     )
                 finally:
                     if tmp_path is not None:
-                        try:
+                        with contextlib.suppress(OSError):
                             os.unlink(tmp_path)
-                        except OSError:
-                            pass
             else:
                 # Regular image file
                 if not _is_image_filename(upload.filename):
@@ -317,21 +330,24 @@ async def bulk_import_images(
                 stored_path = os.path.join(settings.source_images_dir, unique_name)
 
                 # Stream to disk in chunks (handles large TIFFs)
-                with open(stored_path, "wb") as f:
-                    while True:
-                        chunk = await upload.read(_UPLOAD_CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        f.write(chunk)
+                try:
+                    with open(stored_path, "wb") as f:
+                        while True:
+                            chunk = await upload.read(_UPLOAD_CHUNK_SIZE)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+                except Exception:
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
+                    raise
 
                 file_entries.append((upload.filename, stored_path))
     except Exception:
         # Clean up any files already stored before re-raising
         for _, stored_path in file_entries:
-            try:
+            with contextlib.suppress(OSError):
                 os.unlink(stored_path)
-            except OSError:
-                pass
         raise
 
     if not file_entries:

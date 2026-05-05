@@ -1885,7 +1885,6 @@ export default function App() {
                           ...j,
                           status: "failed" as const,
                           errorMessage: error,
-                          uploadId: undefined,
                       }
                     : j,
             ),

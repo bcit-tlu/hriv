@@ -22,6 +22,24 @@ def _parse_exclude_prefixes(raw: str) -> tuple[str, ...]:
     return tuple(p.strip() for p in raw.split(",") if p.strip())
 
 
+def _parse_content_length(raw: str | None) -> int | str | None:
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return raw
+
+
+def _is_upload_path(path: str) -> bool:
+    return (
+        path == "/api/source-images/upload"
+        or path.startswith("/api/admin/bulk-import")
+        or path in {"/api/admin/tasks/db-import", "/api/admin/tasks/files-import"}
+        or (path.startswith("/api/images/") and path.endswith("/replace"))
+    )
+
+
 # Snapshot the configured prefixes at import time so the per-request
 # comparison is a single tuple-membership walk rather than a re-parse
 # of the env var on every call.
@@ -72,6 +90,23 @@ class AuditMiddleware(BaseHTTPMiddleware):
         start = time.monotonic()
         status_code = 500  # default if call_next raises
         response: Response | None = None
+        path = request.url.path
+        content_length = _parse_content_length(request.headers.get("content-length"))
+        if request.method in {"POST", "PUT", "PATCH"} and _is_upload_path(path):
+            extra: dict[str, object] = {
+                "event": "http.upload_started",
+                "request_id": req_id,
+                "method": request.method,
+                "path": path,
+            }
+            if content_length is not None:
+                extra["content_length"] = content_length
+            logger.info(
+                "%s %s upload started",
+                request.method,
+                path,
+                extra=extra,
+            )
         try:
             response = await call_next(request)
             status_code = response.status_code
@@ -139,12 +174,14 @@ class AuditMiddleware(BaseHTTPMiddleware):
             if user_role:
                 extra["user_role"] = user_role
 
+            if content_length is not None:
+                extra["content_length"] = content_length
+
             # High-volume, low-signal endpoints (container healthchecks,
             # tile serving, …) are logged at DEBUG to keep local-dev and
             # production audit logs free of noise. DEBUG is below the
             # default INFO threshold so they won't appear unless explicitly
             # enabled. The list is configurable via AUDIT_EXCLUDE_PREFIXES.
-            path = request.url.path
             is_excluded = any(path.startswith(p) for p in _EXCLUDE_PREFIXES)
             _log = logger.debug if is_excluded else logger.info
             _log(
