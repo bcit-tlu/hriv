@@ -69,6 +69,11 @@ EXPOSE 8080
 # using envsubst, writing output to /etc/nginx/conf.d/
 # See: https://hub.docker.com/_/nginx  ("Using environment variables in nginx configuration")
 ENV BACKEND_URL=http://backend:8000
+# Tile server URL — defaults to the backend so tiles go through
+# FastAPI's StaticFiles mount.  When the backend chart's tileSidecar
+# is enabled, the Helm Deployment template overrides this to point at
+# the sidecar port (e.g. http://hriv-backend:8001).
+ENV TILE_SERVER_URL=http://backend:8000
 # ``default.conf.template`` contains ``${APP_VERSION}`` in the
 # ``/version`` response body.  The nginx image's
 # ``20-envsubst-on-templates.sh`` only substitutes env vars that are

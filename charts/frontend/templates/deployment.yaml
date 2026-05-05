@@ -37,6 +37,15 @@ spec:
           env:
             - name: BACKEND_URL
               value: {{ .Values.env.BACKEND_URL | default (printf "http://%s.%s.svc.cluster.local:%d" .Values.backend.host (.Values.backend.namespace | default .Release.Namespace) (.Values.backend.port | int)) | quote }}
+            # Tile server URL — when the backend's tileSidecar is
+            # enabled, points at the sidecar port so the frontend
+            # nginx serves /api/tiles/ directly from the PVC via
+            # nginx, bypassing the Python process.  When disabled,
+            # defaults to BACKEND_URL (tiles served via FastAPI).
+            {{- $backendUrl := .Values.env.BACKEND_URL | default (printf "http://%s.%s.svc.cluster.local:%d" .Values.backend.host (.Values.backend.namespace | default .Release.Namespace) (.Values.backend.port | int)) }}
+            {{- $tileUrl := .Values.tileServer.enabled | ternary (printf "http://%s.%s.svc.cluster.local:%d" .Values.backend.host (.Values.backend.namespace | default .Release.Namespace) (.Values.tileServer.port | int)) $backendUrl }}
+            - name: TILE_SERVER_URL
+              value: {{ $tileUrl | quote }}
             # Frontend display version exposed at runtime via the
             # nginx ``/version`` endpoint (see
             # ``files/default.conf.template``). nginx's
