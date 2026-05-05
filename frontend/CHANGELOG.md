@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.9.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.8.2...frontend-v0.9.0) (2026-05-04)
+
+
+### Features
+
+* add upload progress indicator for image replacement ([#279](https://github.com/bcit-tlu/hriv/issues/279)) ([f49172b](https://github.com/bcit-tlu/hriv/commit/f49172b8cecd41af6964777c575a2e362c91b3eb))
+* implement image replacement in Edit Image modal ([#261](https://github.com/bcit-tlu/hriv/issues/261)) ([d916541](https://github.com/bcit-tlu/hriv/commit/d916541c58d5db5bcf5b1c53bacab763c5c65cd0))
+* merge Add Image and Bulk Import into unified Add Images modal ([#283](https://github.com/bcit-tlu/hriv/issues/283)) ([2c1dc59](https://github.com/bcit-tlu/hriv/commit/2c1dc5967e50a748ac4e860bfe4083f13c2d9756))
+* robust filesystem import with progress tracking and cancellation ([#258](https://github.com/bcit-tlu/hriv/issues/258)) ([50a0c0f](https://github.com/bcit-tlu/hriv/commit/50a0c0f1b33cec6bccf75741971a313c1cf11a65))
+
+
+### Bug Fixes
+
+* **frontend:** show recursive descendant counts on category cards ([#276](https://github.com/bcit-tlu/hriv/issues/276)) ([d5a78d0](https://github.com/bcit-tlu/hriv/commit/d5a78d0c271adfb78c88553a49702808f0ea117d))
+* **frontend:** upload snackbar, snackbar spacing, breadcrumb layout ([#262](https://github.com/bcit-tlu/hriv/issues/262)) ([68d631e](https://github.com/bcit-tlu/hriv/commit/68d631ea56126e8465f6f2c9346120b84b1f9d5f))
+
 ## [0.8.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.8.1...frontend-v0.8.2) (2026-04-23)
 
 
