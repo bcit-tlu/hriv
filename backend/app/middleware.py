@@ -1,4 +1,4 @@
-"""Request audit logging and correlation-ID middleware."""
+"""Request audit logging, correlation-ID, and maintenance-mode middleware."""
 
 import logging
 import time
@@ -8,9 +8,11 @@ from contextvars import ContextVar
 from fastapi import Request, Response
 from jose import jwt
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.responses import JSONResponse
 
 from .auth import auth_settings
 from .database import settings
+from .maintenance import is_maintenance_mode
 
 logger = logging.getLogger(__name__)
 
@@ -158,3 +160,33 @@ class AuditMiddleware(BaseHTTPMiddleware):
         if response is not None:
             response.headers["X-Request-ID"] = req_id
         return response  # type: ignore[return-value]
+
+
+# ── Maintenance-mode middleware ─────────────────────────
+
+# Paths that must remain reachable during a restore so that health
+# probes, the status endpoint, and the maintenance toggle keep working.
+_MAINTENANCE_EXEMPT: tuple[str, ...] = (
+    "/api/health",
+    "/api/status",
+    "/api/admin/maintenance",
+)
+
+
+class MaintenanceMiddleware(BaseHTTPMiddleware):
+    """Return 503 for non-exempt endpoints when the maintenance flag is set."""
+
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
+        if is_maintenance_mode():
+            path = request.url.path
+            if not any(path.startswith(p) for p in _MAINTENANCE_EXEMPT):
+                return JSONResponse(
+                    status_code=503,
+                    content={
+                        "detail": "The application is undergoing maintenance. Please try again shortly.",
+                        "maintenance": True,
+                    },
+                )
+        return await call_next(request)

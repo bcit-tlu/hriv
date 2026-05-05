@@ -97,6 +97,17 @@ export interface ApiProgram {
   updated_at: string
 }
 
+// ── Status ────────────────────────────────────────────────
+
+export interface ApiStatus {
+  maintenance: boolean
+  version: string
+}
+
+export function fetchStatus(): Promise<ApiStatus> {
+  return request('/status')
+}
+
 // ── Categories ───────────────────────────────────────────
 
 export function fetchCategoryTree(): Promise<ApiCategoryTree[]> {

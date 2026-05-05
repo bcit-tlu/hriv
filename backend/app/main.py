@@ -16,7 +16,8 @@ from .admin_ops import reconcile_stale_tasks
 from .auth import auth_settings
 from .database import get_async_session, get_db, settings
 from .logging_config import setup_logging
-from .middleware import AuditMiddleware
+from .maintenance import is_maintenance_mode
+from .middleware import AuditMiddleware, MaintenanceMiddleware
 from .routers import admin, announcement, auth, bulk_import, categories, images, issues, oidc, programs, upload, users
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,7 @@ _cors_origins = [
 ] or ["*"]
 
 app.add_middleware(AuditMiddleware)
+app.add_middleware(MaintenanceMiddleware)
 
 # Starlette session middleware — required by authlib's OIDC client to store
 # the OAuth state/nonce between the login redirect and the callback.
@@ -172,3 +174,9 @@ async def readiness(db: AsyncSession = Depends(get_db)):
     """Readiness probe: verifies the database connection is alive."""
     await db.execute(text("SELECT 1"))
     return {"status": "ready", "version": app.version}
+
+
+@app.get("/api/status")
+async def status():
+    """Public endpoint for the frontend to check maintenance mode."""
+    return {"maintenance": is_maintenance_mode(), "version": app.version}
