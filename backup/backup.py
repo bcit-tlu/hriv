@@ -353,15 +353,53 @@ def list_snapshots() -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
+# Maintenance flag
+# ---------------------------------------------------------------------------
+
+_MAINTENANCE_FILENAME = ".maintenance"
+
+
+def _maintenance_flag_path() -> Path:
+    """Path to the maintenance flag file on the shared data volume."""
+    return Path(DATA_DIR) / _MAINTENANCE_FILENAME
+
+
+def _set_maintenance(enabled: bool) -> None:
+    path = _maintenance_flag_path()
+    if enabled:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.touch()
+        log.info("Maintenance mode ENABLED (%s)", path)
+    else:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        log.info("Maintenance mode DISABLED (%s)", path)
+
+
+# ---------------------------------------------------------------------------
 # Restore
 # ---------------------------------------------------------------------------
 
 def run_restore(snapshot_name: str | None = None) -> bool:
     """Download and restore a snapshot.
 
+    Automatically enables maintenance mode before the restore starts and
+    disables it when the restore completes (or fails).
+
     If *snapshot_name* is ``None``, the latest snapshot is used.
     Returns ``True`` on success.
     """
+    _set_maintenance(True)
+    try:
+        return _run_restore_inner(snapshot_name)
+    finally:
+        _set_maintenance(False)
+
+
+def _run_restore_inner(snapshot_name: str | None = None) -> bool:
+    """Core restore logic (called inside the maintenance-flag guard)."""
     # Locate the snapshot -------------------------------------------------------
     if _azure_configured():
         snapshots = list_snapshots()
@@ -499,9 +537,11 @@ END $$;
             data_dest = Path(DATA_DIR)
             log.info("Restoring filesystem data to %s …", DATA_DIR)
 
-            # Clear existing data
+            # Clear existing data (preserve the maintenance flag)
             if data_dest.exists():
                 for child in data_dest.iterdir():
+                    if child.name == _MAINTENANCE_FILENAME:
+                        continue
                     if child.is_dir():
                         shutil.rmtree(str(child))
                     else:

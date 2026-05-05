@@ -19,6 +19,7 @@ from ..admin_ops import (
 )
 from ..auth import auth_settings, require_role
 from ..database import get_db
+from ..maintenance import disable_maintenance_mode, enable_maintenance_mode, is_maintenance_mode
 from ..models import AdminTask, User
 from ..worker import enqueue_admin_task
 
@@ -30,6 +31,32 @@ _admin = require_role("admin")
 
 _CHUNK_SIZE = 1024 * 1024  # 1 MiB streaming chunks
 _DOWNLOAD_TOKEN_EXPIRE_SECONDS = 60
+
+
+# ---------------------------------------------------------------------------
+# Maintenance mode
+# ---------------------------------------------------------------------------
+
+
+@router.get("/maintenance")
+async def get_maintenance(
+    _user: Annotated[User, Depends(_admin)],
+):
+    """Return current maintenance-mode state (admin only)."""
+    return {"maintenance": is_maintenance_mode()}
+
+
+@router.put("/maintenance")
+async def set_maintenance(
+    _user: Annotated[User, Depends(_admin)],
+    enabled: bool = Query(..., description="Enable or disable maintenance mode"),
+):
+    """Toggle maintenance mode (admin only)."""
+    if enabled:
+        enable_maintenance_mode()
+    else:
+        disable_maintenance_mode()
+    return {"maintenance": is_maintenance_mode()}
 
 
 # ---------------------------------------------------------------------------
