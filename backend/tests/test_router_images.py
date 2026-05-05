@@ -1,5 +1,6 @@
 """Tests for the images router endpoints."""
 
+import errno
 from datetime import datetime, timezone
 from io import BytesIO
 from types import SimpleNamespace
@@ -640,3 +641,41 @@ async def test_replace_image_no_filename() -> None:
             db=db,
         )
     assert exc.value.status_code == 400
+
+
+@patch("os.unlink")
+@patch("os.makedirs")
+@patch("builtins.open", side_effect=OSError(errno.ENOSPC, "No space left on device"))
+async def test_replace_image_enospc(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_unlink: MagicMock,
+) -> None:
+    """ENOSPC during replace file write returns 507."""
+    img = _make_image()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    file = AsyncMock()
+    file.filename = "huge.tiff"
+    file.content_type = "image/tiff"
+    file.read = AsyncMock(side_effect=[b"data", b""])
+
+    background_tasks = MagicMock()
+
+    with (
+        patch("app.routers.images.settings") as mock_settings,
+        pytest.raises(HTTPException) as exc,
+    ):
+        mock_settings.source_images_dir = "/data/source_images"
+        await replace_image(
+            image_id=1,
+            file=file,
+            background_tasks=background_tasks,
+            _user=_make_user(),
+            db=db,
+        )
+
+    assert exc.value.status_code == 507
+    assert "storage" in exc.value.detail.lower()
+    mock_unlink.assert_called_once()

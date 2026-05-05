@@ -1,5 +1,6 @@
 """Tests for the upload router endpoints."""
 
+import errno
 import sys
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -155,3 +156,58 @@ async def test_upload_source_image_success(tmp_path) -> None:
     db.add.assert_called_once()
     db.commit.assert_awaited_once()
     bg.add_task.assert_called_once()
+
+
+async def test_upload_source_image_enospc(tmp_path) -> None:
+    """ENOSPC during file write returns 507 and cleans up partial file."""
+    file = AsyncMock()
+    file.filename = "huge.tiff"
+    file.content_type = "image/tiff"
+    file.read = AsyncMock(side_effect=[b"chunk1", b"chunk2"])
+
+    db = AsyncMock()
+    bg = MagicMock()
+
+    enospc = OSError(errno.ENOSPC, "No space left on device")
+
+    with (
+        patch("app.routers.upload.settings") as mock_settings,
+        patch("builtins.open", side_effect=enospc),
+        patch("os.makedirs"),
+        patch("os.unlink") as mock_unlink,
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(HTTPException) as exc:
+            await upload_source_image(
+                file=file, background_tasks=bg, _user=MagicMock(), db=db,
+            )
+
+    assert exc.value.status_code == 507
+    assert "storage" in exc.value.detail.lower()
+    mock_unlink.assert_called_once()
+
+
+async def test_upload_source_image_other_os_error(tmp_path) -> None:
+    """Non-ENOSPC OSErrors propagate without conversion to 507."""
+    file = AsyncMock()
+    file.filename = "test.png"
+    file.content_type = "image/png"
+
+    db = AsyncMock()
+    bg = MagicMock()
+
+    perm_error = OSError(errno.EACCES, "Permission denied")
+
+    with (
+        patch("app.routers.upload.settings") as mock_settings,
+        patch("builtins.open", side_effect=perm_error),
+        patch("os.makedirs"),
+        patch("os.unlink"),
+    ):
+        mock_settings.source_images_dir = str(tmp_path)
+        with pytest.raises(OSError) as exc:
+            await upload_source_image(
+                file=file, background_tasks=bg, _user=MagicMock(), db=db,
+            )
+
+    assert exc.value.errno == errno.EACCES
