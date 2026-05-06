@@ -553,27 +553,29 @@ export default function ImageViewer({
       }
     }
 
-    // --- Magnification factor badge ---
+    // --- Magnification factor badge (inside the navigator mini-map) ---
     const magBadge = document.createElement('div')
-    magBadge.style.display = 'inline-block'
-    magBadge.style.minWidth = '36px'
-    magBadge.style.height = '26px'
-    magBadge.style.lineHeight = '26px'
+    magBadge.style.position = 'absolute'
+    magBadge.style.bottom = '2px'
+    magBadge.style.left = '2px'
+    magBadge.style.minWidth = '28px'
+    magBadge.style.height = '18px'
+    magBadge.style.lineHeight = '18px'
     magBadge.style.textAlign = 'center'
-    magBadge.style.padding = '0 4px'
+    magBadge.style.padding = '0 3px'
     magBadge.style.fontFamily = 'monospace'
-    magBadge.style.fontSize = '13px'
+    magBadge.style.fontSize = '11px'
     magBadge.style.fontWeight = '700'
     magBadge.style.color = '#e0e0e0'
     magBadge.style.background = 'rgba(0,0,0,0.6)'
-    magBadge.style.borderRadius = '4px'
+    magBadge.style.borderRadius = '3px'
     magBadge.style.userSelect = 'none'
     magBadge.style.pointerEvents = 'none'
-    magBadge.style.verticalAlign = 'top'
+    magBadge.style.zIndex = '1'
     magBadge.textContent = '1X'
-    viewer.addControl(magBadge, {
-      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
-    })
+    if (viewer.navigator) {
+      viewer.navigator.element.appendChild(magBadge)
+    }
 
     const updateMagnification = () => {
       if (!viewer.viewport) return
