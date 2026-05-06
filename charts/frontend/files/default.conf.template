@@ -80,6 +80,39 @@ server {
         proxy_connect_timeout 60s;
     }
 
+    # ── Tile serving ────────────────────────────────────────
+    #
+    # DZI tiles are immutable static files (JPEG/PNG/XML).  When the
+    # backend chart's ``tileSidecar`` is enabled, ``TILE_SERVER_URL``
+    # points at the nginx sidecar (port 8001) which serves tiles
+    # directly from the PVC — bypassing the Python process entirely.
+    # When the sidecar is disabled, ``TILE_SERVER_URL`` defaults to
+    # ``BACKEND_URL`` and tiles fall through to FastAPI's StaticFiles
+    # mount as before.
+    #
+    # This prefix location is more specific than ``/api/`` and takes
+    # priority without requiring a regex.
+    location /api/tiles/ {
+        resolver           ${NGINX_DNS_RESOLVER} valid=5s;
+        set                $tile_server "${TILE_SERVER_URL}";
+        proxy_pass         $tile_server$request_uri;
+
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+
+        # Tiles are immutable once written — tell browsers and CDNs to
+        # cache aggressively.  Server-side proxy caching (proxy_cache) is
+        # not configured here; the tile sidecar itself is already highly
+        # efficient (sendfile + tcp_nopush) and adding a cache zone would
+        # duplicate data on disk for little benefit.
+        add_header         Cache-Control "public, max-age=2592000, immutable" always;
+        add_header         X-Frame-Options        "SAMEORIGIN" always;
+        add_header         X-Content-Type-Options "nosniff"     always;
+    }
+
     # Default API proxy — sane body-size cap for JSON/metadata routes.
     location /api/ {
         # Re-resolve the backend hostname on every request so that nginx
