@@ -6,6 +6,7 @@ import type { CanvasAnnotation } from './CanvasOverlay'
 import {
   formatMeasurement,
   createMeasurementLabel,
+  computeMagnification,
   MAX_SHARE_OVERLAYS,
   type ViewportState,
   type MeasurementConfig,
@@ -551,6 +552,39 @@ export default function ImageViewer({
         canvasEditButton.element.style.outlineOffset = active ? '-2px' : ''
       }
     }
+
+    // --- Magnification factor badge ---
+    const magBadge = document.createElement('div')
+    magBadge.style.display = 'inline-block'
+    magBadge.style.minWidth = '36px'
+    magBadge.style.height = '26px'
+    magBadge.style.lineHeight = '26px'
+    magBadge.style.textAlign = 'center'
+    magBadge.style.padding = '0 4px'
+    magBadge.style.fontFamily = 'monospace'
+    magBadge.style.fontSize = '13px'
+    magBadge.style.fontWeight = '700'
+    magBadge.style.color = '#e0e0e0'
+    magBadge.style.background = 'rgba(0,0,0,0.6)'
+    magBadge.style.borderRadius = '4px'
+    magBadge.style.userSelect = 'none'
+    magBadge.style.pointerEvents = 'none'
+    magBadge.style.verticalAlign = 'top'
+    magBadge.textContent = '1X'
+    viewer.addControl(magBadge, {
+      anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
+    })
+
+    const updateMagnification = () => {
+      if (!viewer.viewport) return
+      const imageZoom = viewer.viewport.viewportToImageZoom(
+        viewer.viewport.getZoom(),
+      )
+      const mag = computeMagnification(imageZoom, measurementRef.current)
+      magBadge.textContent = `${Math.round(mag)}X`
+    }
+    viewer.addHandler('animation', updateMagnification)
+    viewer.addHandler('open', updateMagnification)
 
     // Expose a function to reactively update lock/clear UI when overlaysLocked changes
     updateLockUiRef.current = () => {
