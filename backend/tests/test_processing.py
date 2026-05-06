@@ -12,6 +12,11 @@ if "pyvips" not in sys.modules:
 from app.processing import (
     ProgressTracker,
     _estimate_tile_count,
+    _detect_openslide_pyramid,
+    _detect_tiff_pyramid,
+    _extract_tiff_resolution,
+    _get_float_field,
+    detect_pyramid_info,
     generate_tiles,
     process_source_image,
     reconcile_stale_source_images,
@@ -313,3 +318,335 @@ async def test_reconcile_stale_source_images_no_stale() -> None:
     count = await reconcile_stale_source_images(session, stale_after_seconds=900)
     assert count == 0
     session.commit.assert_awaited_once()
+
+
+# ── Pyramidal detection tests ────────────────────────────
+
+
+def test_get_float_field_returns_value() -> None:
+    """_get_float_field extracts a numeric field from a vips image."""
+    img = MagicMock()
+    img.get.return_value = "0.2525"
+    result = _get_float_field(img, ["openslide.mpp-x"], "openslide.mpp-x")
+    assert result == 0.2525
+
+
+def test_get_float_field_missing_field() -> None:
+    """_get_float_field returns None for a field not in the list."""
+    img = MagicMock()
+    result = _get_float_field(img, ["other-field"], "openslide.mpp-x")
+    assert result is None
+
+
+def test_get_float_field_non_numeric() -> None:
+    """_get_float_field returns None for non-numeric values."""
+    img = MagicMock()
+    img.get.return_value = "not-a-number"
+    result = _get_float_field(img, ["some-field"], "some-field")
+    assert result is None
+
+
+def test_detect_openslide_pyramid_svs() -> None:
+    """SVS files with multiple levels are detected as pyramidal."""
+    img = MagicMock()
+    fields = [
+        "openslide.level-count",
+        "openslide.mpp-x",
+        "openslide.mpp-y",
+        "openslide.objective-power",
+    ]
+    img.get_fields.return_value = fields
+
+    def get_side_effect(name):
+        mapping = {
+            "openslide.level-count": "4",
+            "openslide.mpp-x": "0.2525",
+            "openslide.mpp-y": "0.2525",
+            "openslide.objective-power": "40",
+        }
+        return mapping.get(name)
+
+    img.get.side_effect = get_side_effect
+
+    result = _detect_openslide_pyramid("/path/to/scan.svs", img)
+    assert result is not None
+    assert result["is_pyramidal"] is True
+    assert result["loader"] == "openslideload"
+    assert result["level_count"] == 4
+    assert result["mpp_x"] == 0.2525
+    assert result["mpp_y"] == 0.2525
+    assert result["objective_power"] == 40.0
+    # scale = 1 / 0.2525 ≈ 3.9604
+    assert result["measurement_scale"] == round(1.0 / 0.2525, 4)
+    assert result["measurement_unit"] == "um"
+
+
+def test_detect_openslide_pyramid_single_level() -> None:
+    """A single-level OpenSlide image is not reported as pyramidal."""
+    img = MagicMock()
+    img.get_fields.return_value = ["openslide.level-count"]
+    img.get.return_value = "1"
+
+    result = _detect_openslide_pyramid("/path/to/flat.svs", img)
+    assert result is None
+
+
+def test_detect_openslide_pyramid_no_level_count() -> None:
+    """An image without level-count field is not pyramidal."""
+    img = MagicMock()
+    img.get_fields.return_value = ["width", "height"]
+
+    result = _detect_openslide_pyramid("/path/to/img.tiff", img)
+    assert result is None
+
+
+def test_detect_openslide_pyramid_aperio_mpp_fallback() -> None:
+    """Aperio MPP is used when openslide.mpp-x is not available."""
+    img = MagicMock()
+    fields = [
+        "openslide.level-count",
+        "aperio.AppMag",
+        "aperio.MPP",
+    ]
+    img.get_fields.return_value = fields
+
+    def get_side_effect(name):
+        mapping = {
+            "openslide.level-count": "3",
+            "aperio.AppMag": "20",
+            "aperio.MPP": "0.5",
+        }
+        return mapping.get(name)
+
+    img.get.side_effect = get_side_effect
+
+    result = _detect_openslide_pyramid("/path/to/scan.svs", img)
+    assert result is not None
+    assert result["mpp_x"] == 0.5
+    assert result["objective_power"] == 20.0
+    assert result["measurement_scale"] == round(1.0 / 0.5, 4)
+    assert result["measurement_unit"] == "um"
+
+
+def test_detect_tiff_pyramid_subifd() -> None:
+    """Pyramidal TIFF with SubIFDs is detected."""
+    img = MagicMock()
+    img.width = 4096
+    img.height = 4096
+    img.get_fields.return_value = []
+    img.xres = 4000.0  # pixels/mm → 0.25 µm/px
+    img.yres = 4000.0
+
+    # Mock sub-IFD images at decreasing sizes
+    sub0 = MagicMock()
+    sub0.width = 2048
+    sub0.height = 2048
+    sub1 = MagicMock()
+    sub1.width = 1024
+    sub1.height = 1024
+
+    def new_from_file_side_effect(path, **kwargs):
+        subifd = kwargs.get("subifd")
+        if subifd == 0:
+            return sub0
+        if subifd == 1:
+            return sub1
+        raise Exception("no more subifds")
+
+    with patch("app.processing.pyvips.Image.new_from_file", side_effect=new_from_file_side_effect):
+        result = _detect_tiff_pyramid("/path/to/pyramid.tiff", img)
+
+    assert result is not None
+    assert result["is_pyramidal"] is True
+    assert result["loader"] == "tiffload"
+    assert result["level_count"] == 3  # base + 2 subifds
+    # xres=4000 px/mm → mpp = 1000/4000 = 0.25 µm/px
+    assert result["mpp_x"] == 0.25
+    assert result["measurement_scale"] == round(4000.0 / 1000.0, 4)
+    assert result["measurement_unit"] == "um"
+
+
+def test_detect_tiff_pyramid_multipage() -> None:
+    """Multi-page pyramidal TIFF is detected."""
+    img = MagicMock()
+    img.width = 2048
+    img.height = 2048
+    img.xres = 0.0  # no valid resolution
+    img.yres = 0.0
+    fields = ["n-pages"]
+    img.get_fields.return_value = fields
+    img.get.return_value = "3"
+
+    page1 = MagicMock()
+    page1.width = 1024
+    page1.height = 1024
+
+    def new_from_file_side_effect(path, **kwargs):
+        if kwargs.get("subifd") is not None:
+            raise Exception("no subifds")
+        if kwargs.get("page") == 1:
+            return page1
+        raise Exception("no more pages")
+
+    with patch("app.processing.pyvips.Image.new_from_file", side_effect=new_from_file_side_effect):
+        result = _detect_tiff_pyramid("/path/to/multipage.tiff", img)
+
+    assert result is not None
+    assert result["is_pyramidal"] is True
+    assert result["level_count"] == 3
+    # No measurement data since xres=0
+    assert "measurement_scale" not in result
+
+
+def test_detect_tiff_pyramid_not_pyramidal() -> None:
+    """A flat TIFF (no subifds, single page) returns None."""
+    img = MagicMock()
+    img.width = 1024
+    img.height = 768
+    img.xres = 72.0
+    img.yres = 72.0
+    img.get_fields.return_value = []
+
+    def new_from_file_side_effect(path, **kwargs):
+        raise Exception("no subifds or pages")
+
+    with patch("app.processing.pyvips.Image.new_from_file", side_effect=new_from_file_side_effect):
+        result = _detect_tiff_pyramid("/path/to/flat.tiff", img)
+
+    assert result is None
+
+
+def test_extract_tiff_resolution_valid() -> None:
+    """Resolution within microscopy range populates measurement fields."""
+    img = MagicMock()
+    img.xres = 2000.0  # pixels/mm → 0.5 µm/px
+    img.yres = 2000.0
+    fields: list[str] = []
+    info: dict = {}
+
+    _extract_tiff_resolution(img, fields, info)
+
+    assert info["mpp_x"] == 0.5
+    assert info["mpp_y"] == 0.5
+    assert info["measurement_scale"] == 2.0  # 2000/1000
+    assert info["measurement_unit"] == "um"
+
+
+def test_extract_tiff_resolution_out_of_range() -> None:
+    """Resolution outside microscopy range is not stored."""
+    img = MagicMock()
+    img.xres = 3.0  # pixels/mm → 333 µm/px (way too large for microscopy)
+    img.yres = 3.0
+    fields: list[str] = []
+    info: dict = {}
+
+    _extract_tiff_resolution(img, fields, info)
+
+    assert "mpp_x" not in info
+    assert "measurement_scale" not in info
+
+
+def test_detect_pyramid_info_openslide_path() -> None:
+    """detect_pyramid_info routes to openslide detector for SVS."""
+    mock_img = MagicMock()
+    mock_img.get_fields.return_value = ["vips-loader", "openslide.level-count"]
+
+    def get_side_effect(name):
+        if name == "vips-loader":
+            return "openslideload"
+        if name == "openslide.level-count":
+            return "2"
+        return None
+
+    mock_img.get.side_effect = get_side_effect
+
+    with patch("app.processing.pyvips.Image.new_from_file", return_value=mock_img):
+        result = detect_pyramid_info("/path/to/scan.svs")
+
+    assert result is not None
+    assert result["loader"] == "openslideload"
+
+
+def test_detect_pyramid_info_non_pyramidal() -> None:
+    """detect_pyramid_info returns None for a plain JPEG."""
+    mock_img = MagicMock()
+    mock_img.get_fields.return_value = ["vips-loader"]
+    mock_img.get.return_value = "jpegload"
+
+    with patch("app.processing.pyvips.Image.new_from_file", return_value=mock_img):
+        result = detect_pyramid_info("/path/to/photo.jpg")
+
+    assert result is None
+
+
+def test_detect_pyramid_info_file_error() -> None:
+    """detect_pyramid_info returns None if the file cannot be opened."""
+    with patch("app.processing.pyvips.Image.new_from_file", side_effect=Exception("file not found")):
+        result = detect_pyramid_info("/nonexistent/path.tiff")
+
+    assert result is None
+
+
+async def test_process_source_image_with_pyramid_metadata() -> None:
+    """Pyramidal images get measurement metadata auto-populated."""
+    src = SimpleNamespace(
+        id=10,
+        original_filename="slide.svs",
+        stored_path="/data/source_images/slide.svs",
+        status="pending",
+        progress=0,
+        name="Slide",
+        category_id=2,
+        copyright=None,
+        note=None,
+        active=True,
+        program=None,
+        image_id=None,
+        file_size=2147483648,
+    )
+
+    pyramid_info = {
+        "is_pyramidal": True,
+        "loader": "openslideload",
+        "level_count": 4,
+        "mpp_x": 0.2525,
+        "mpp_y": 0.2525,
+        "objective_power": 40.0,
+        "measurement_scale": 3.9604,
+        "measurement_unit": "um",
+    }
+
+    mock_session = AsyncMock()
+    mock_session.get.return_value = src
+    mock_session.add = MagicMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    captured_image = {}
+
+    def capture_add(obj):
+        if hasattr(obj, "metadata_"):
+            captured_image["metadata"] = obj.metadata_
+
+    mock_session.add.side_effect = capture_add
+
+    # asyncio.to_thread is called for both detect_pyramid_info and generate_tiles.
+    # Patch detect_pyramid_info so when to_thread calls it, it returns pyramid_info.
+    # Patch generate_tiles so when to_thread calls it, it returns tile results.
+    with patch("app.processing.async_session", return_value=mock_session):
+        with patch("app.processing.generate_tiles", return_value=("image.dzi", "thumbnail.jpeg", 46000, 32914)):
+            with patch("app.processing.detect_pyramid_info", return_value=pyramid_info):
+                with patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)):
+                    with patch("app.processing.settings") as mock_settings:
+                        mock_settings.tiles_dir = "/data/tiles"
+                        await process_source_image(10)
+
+    assert src.status == "completed"
+    assert captured_image.get("metadata") is not None
+    meta = captured_image["metadata"]
+    assert meta["measurement_scale"] == 3.9604
+    assert meta["measurement_unit"] == "um"
+    assert meta["objective_power"] == 40.0
+    assert meta["mpp_x"] == 0.2525
+    assert meta["pyramid_detected"] is True
+    assert meta["pyramid_level_count"] == 4
