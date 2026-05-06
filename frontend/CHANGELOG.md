@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.9.0...frontend-v0.10.0) (2026-05-06)
+
+
+### Features
+
+* add automated maintenance mode for backup restores ([#285](https://github.com/bcit-tlu/hriv/issues/285)) ([98f2d67](https://github.com/bcit-tlu/hriv/commit/98f2d67fbf61ad7cd2f63ae69f03b0484654c71f))
+* route tile requests through nginx sidecar for direct PVC serving ([#300](https://github.com/bcit-tlu/hriv/issues/300)) ([04c5874](https://github.com/bcit-tlu/hriv/commit/04c587427a2d0c64692abedd314396eb8b03a9a8))
+
+
+### Bug Fixes
+
+* show zip upload progress ([#291](https://github.com/bcit-tlu/hriv/issues/291)) ([38ff8b7](https://github.com/bcit-tlu/hriv/commit/38ff8b76a11a5ab7eb1c4db9464a5fa360e66d18))
+
 ## [0.9.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.8.2...frontend-v0.9.0) (2026-05-04)
 
 
