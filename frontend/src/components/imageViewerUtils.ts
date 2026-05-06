@@ -70,25 +70,32 @@ export function unitToMicrons(unit: string): number | undefined {
  *
  * When a {@link MeasurementConfig} with a valid scale is available the
  * magnification is derived from the real-world specimen size and the
- * assumed CSS pixel size (96 DPI).  Without a scale the raw
- * `imageZoom` ratio is returned as a simple approximation.
+ * physical screen pixel size.  The physical pixel size is estimated by
+ * dividing the CSS-pixel baseline (96 DPI) by `devicePixelRatio`,
+ * which accounts for OS display scaling and HiDPI/Retina screens.
+ *
+ * Returns `undefined` when a meaningful magnification cannot be
+ * computed (no scale, unknown unit, etc.).
  *
  * @param imageZoom - OSD image-zoom ratio (1.0 = one image pixel per
  *   screen pixel), obtained via `viewport.viewportToImageZoom()`.
  * @param config - Optional measurement configuration for the image.
+ * @param dpr - `window.devicePixelRatio` (defaults to 1).
  */
 export function computeMagnification(
   imageZoom: number,
   config: MeasurementConfig | undefined,
-): number {
+  dpr = 1,
+): number | undefined {
   if (config?.scale && config.scale > 0 && config.unit) {
     const um = unitToMicrons(config.unit)
     if (um !== undefined) {
       const imagePixelUm = um / config.scale
-      return (CSS_PIXEL_UM / imagePixelUm) * imageZoom
+      const physicalPixelUm = CSS_PIXEL_UM / (dpr > 0 ? dpr : 1)
+      return (physicalPixelUm / imagePixelUm) * imageZoom
     }
   }
-  return imageZoom
+  return undefined
 }
 
 /** Create a styled label element for measurement display */

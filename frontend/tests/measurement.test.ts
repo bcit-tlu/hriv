@@ -202,63 +202,84 @@ describe('unitToMicrons', () => {
 })
 
 describe('computeMagnification', () => {
-    it('returns imageZoom when no config is provided', () => {
-        expect(computeMagnification(2.5, undefined)).toBe(2.5)
+    it('returns undefined when no config is provided', () => {
+        expect(computeMagnification(2.5, undefined)).toBeUndefined()
     })
 
-    it('returns imageZoom when scale is missing', () => {
+    it('returns undefined when scale is missing', () => {
         const config: MeasurementConfig = { unit: 'um' }
-        expect(computeMagnification(3, config)).toBe(3)
+        expect(computeMagnification(3, config)).toBeUndefined()
     })
 
-    it('returns imageZoom when scale is zero', () => {
+    it('returns undefined when scale is zero', () => {
         const config: MeasurementConfig = { scale: 0, unit: 'um' }
-        expect(computeMagnification(1, config)).toBe(1)
+        expect(computeMagnification(1, config)).toBeUndefined()
     })
 
-    it('returns imageZoom when scale is negative', () => {
+    it('returns undefined when scale is negative', () => {
         const config: MeasurementConfig = { scale: -5, unit: 'mm' }
-        expect(computeMagnification(1, config)).toBe(1)
+        expect(computeMagnification(1, config)).toBeUndefined()
     })
 
-    it('returns imageZoom when unit is missing', () => {
+    it('returns undefined when unit is missing', () => {
         const config: MeasurementConfig = { scale: 8 }
-        expect(computeMagnification(1, config)).toBe(1)
+        expect(computeMagnification(1, config)).toBeUndefined()
     })
 
-    it('computes real-world magnification for um scale at imageZoom 1', () => {
+    it('computes real-world magnification for um scale at imageZoom 1 (dpr=1)', () => {
         // 8 px/µm → each image pixel = 0.125 µm
-        // CSS pixel = 25400/96 µm ≈ 264.583
+        // CSS pixel = 25400/96 µm ≈ 264.583 (dpr=1 → physical = CSS)
         // mag = 264.583 / 0.125 = 2116.67
         const config: MeasurementConfig = { scale: 8, unit: 'um' }
-        const mag = computeMagnification(1, config)
+        const mag = computeMagnification(1, config, 1)
         expect(mag).toBeCloseTo(CSS_PIXEL_UM * 8, 2)
+    })
+
+    it('halves magnification when dpr doubles', () => {
+        const config: MeasurementConfig = { scale: 8, unit: 'um' }
+        const mag1 = computeMagnification(1, config, 1)!
+        const mag2 = computeMagnification(1, config, 2)!
+        expect(mag2).toBeCloseTo(mag1 / 2, 2)
     })
 
     it('scales linearly with imageZoom', () => {
         const config: MeasurementConfig = { scale: 8, unit: 'um' }
-        const mag1 = computeMagnification(1, config)
-        const mag2 = computeMagnification(2, config)
+        const mag1 = computeMagnification(1, config, 1)!
+        const mag2 = computeMagnification(2, config, 1)!
         expect(mag2).toBeCloseTo(mag1 * 2, 2)
     })
 
     it('computes magnification for mm scale', () => {
         // 2 px/mm → each image pixel = 0.5 mm = 500 µm
-        // mag = 264.583 / 500 ≈ 0.529
+        // mag = 264.583 / 500 ≈ 0.529 (dpr=1)
         const config: MeasurementConfig = { scale: 2, unit: 'mm' }
-        const mag = computeMagnification(1, config)
+        const mag = computeMagnification(1, config, 1)
         expect(mag).toBeCloseTo(CSS_PIXEL_UM / 500, 4)
     })
 
     it('computes magnification for cm scale', () => {
         const config: MeasurementConfig = { scale: 1, unit: 'cm' }
         // 1 px/cm → each pixel = 10000 µm
-        const mag = computeMagnification(1, config)
+        const mag = computeMagnification(1, config, 1)
         expect(mag).toBeCloseTo(CSS_PIXEL_UM / 10000, 6)
     })
 
-    it('falls back to imageZoom for unknown unit strings', () => {
+    it('returns undefined for unknown unit strings', () => {
         const config: MeasurementConfig = { scale: 8, unit: 'px' }
-        expect(computeMagnification(2, config)).toBe(2)
+        expect(computeMagnification(2, config)).toBeUndefined()
+    })
+
+    it('treats dpr=0 as dpr=1 (guard against invalid values)', () => {
+        const config: MeasurementConfig = { scale: 4, unit: 'um' }
+        const magDpr0 = computeMagnification(1, config, 0)
+        const magDpr1 = computeMagnification(1, config, 1)
+        expect(magDpr0).toBeCloseTo(magDpr1!, 2)
+    })
+
+    it('defaults dpr to 1 when omitted', () => {
+        const config: MeasurementConfig = { scale: 4, unit: 'um' }
+        const magDefault = computeMagnification(1, config)
+        const magExplicit = computeMagnification(1, config, 1)
+        expect(magDefault).toBeCloseTo(magExplicit!, 2)
     })
 })
