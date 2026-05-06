@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.9.0...backend-v0.10.0) (2026-05-06)
+
+
+### Features
+
+* add automated maintenance mode for backup restores ([#285](https://github.com/bcit-tlu/hriv/issues/285)) ([98f2d67](https://github.com/bcit-tlu/hriv/commit/98f2d67fbf61ad7cd2f63ae69f03b0484654c71f))
+
+
+### Bug Fixes
+
+* return 507 on disk-full instead of unhandled 500 ([#299](https://github.com/bcit-tlu/hriv/issues/299)) ([2f5fa19](https://github.com/bcit-tlu/hriv/commit/2f5fa191170f1bed8396e6d8b0454685899a0f17))
+* show zip upload progress ([#291](https://github.com/bcit-tlu/hriv/issues/291)) ([38ff8b7](https://github.com/bcit-tlu/hriv/commit/38ff8b76a11a5ab7eb1c4db9464a5fa360e66d18))
+
 ## [0.9.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.8.2...backend-v0.9.0) (2026-05-03)
 
 
