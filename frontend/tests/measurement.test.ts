@@ -12,8 +12,11 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+    computeMagnification,
     createMeasurementLabel,
+    CSS_PIXEL_UM,
     formatMeasurement,
+    unitToMicrons,
     type MeasurementConfig,
 } from '../src/components/imageViewerUtils'
 
@@ -158,5 +161,104 @@ describe('createMeasurementLabel', () => {
     it('produces a label with no text content initially', () => {
         const label = createMeasurementLabel()
         expect(label.textContent).toBe('')
+    })
+})
+
+describe('unitToMicrons', () => {
+    it('returns 1 for micrometres (um)', () => {
+        expect(unitToMicrons('um')).toBe(1)
+    })
+
+    it('returns 1 for micrometres (µm unicode)', () => {
+        expect(unitToMicrons('µm')).toBe(1)
+    })
+
+    it('returns 1000 for millimetres', () => {
+        expect(unitToMicrons('mm')).toBe(1000)
+    })
+
+    it('returns 10000 for centimetres', () => {
+        expect(unitToMicrons('cm')).toBe(10000)
+    })
+
+    it('returns 1000000 for metres', () => {
+        expect(unitToMicrons('m')).toBe(1_000_000)
+    })
+
+    it('returns 25400 for inches', () => {
+        expect(unitToMicrons('in')).toBe(25400)
+    })
+
+    it('is case-insensitive', () => {
+        expect(unitToMicrons('MM')).toBe(1000)
+        expect(unitToMicrons('CM')).toBe(10000)
+        expect(unitToMicrons('UM')).toBe(1)
+    })
+
+    it('returns undefined for unknown units', () => {
+        expect(unitToMicrons('furlongs')).toBeUndefined()
+        expect(unitToMicrons('px')).toBeUndefined()
+    })
+})
+
+describe('computeMagnification', () => {
+    it('returns imageZoom when no config is provided', () => {
+        expect(computeMagnification(2.5, undefined)).toBe(2.5)
+    })
+
+    it('returns imageZoom when scale is missing', () => {
+        const config: MeasurementConfig = { unit: 'um' }
+        expect(computeMagnification(3, config)).toBe(3)
+    })
+
+    it('returns imageZoom when scale is zero', () => {
+        const config: MeasurementConfig = { scale: 0, unit: 'um' }
+        expect(computeMagnification(1, config)).toBe(1)
+    })
+
+    it('returns imageZoom when scale is negative', () => {
+        const config: MeasurementConfig = { scale: -5, unit: 'mm' }
+        expect(computeMagnification(1, config)).toBe(1)
+    })
+
+    it('returns imageZoom when unit is missing', () => {
+        const config: MeasurementConfig = { scale: 8 }
+        expect(computeMagnification(1, config)).toBe(1)
+    })
+
+    it('computes real-world magnification for um scale at imageZoom 1', () => {
+        // 8 px/µm → each image pixel = 0.125 µm
+        // CSS pixel = 25400/96 µm ≈ 264.583
+        // mag = 264.583 / 0.125 = 2116.67
+        const config: MeasurementConfig = { scale: 8, unit: 'um' }
+        const mag = computeMagnification(1, config)
+        expect(mag).toBeCloseTo(CSS_PIXEL_UM * 8, 2)
+    })
+
+    it('scales linearly with imageZoom', () => {
+        const config: MeasurementConfig = { scale: 8, unit: 'um' }
+        const mag1 = computeMagnification(1, config)
+        const mag2 = computeMagnification(2, config)
+        expect(mag2).toBeCloseTo(mag1 * 2, 2)
+    })
+
+    it('computes magnification for mm scale', () => {
+        // 2 px/mm → each image pixel = 0.5 mm = 500 µm
+        // mag = 264.583 / 500 ≈ 0.529
+        const config: MeasurementConfig = { scale: 2, unit: 'mm' }
+        const mag = computeMagnification(1, config)
+        expect(mag).toBeCloseTo(CSS_PIXEL_UM / 500, 4)
+    })
+
+    it('computes magnification for cm scale', () => {
+        const config: MeasurementConfig = { scale: 1, unit: 'cm' }
+        // 1 px/cm → each pixel = 10000 µm
+        const mag = computeMagnification(1, config)
+        expect(mag).toBeCloseTo(CSS_PIXEL_UM / 10000, 6)
+    })
+
+    it('falls back to imageZoom for unknown unit strings', () => {
+        const config: MeasurementConfig = { scale: 8, unit: 'px' }
+        expect(computeMagnification(2, config)).toBe(2)
     })
 })

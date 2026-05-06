@@ -6,6 +6,7 @@ import type { CanvasAnnotation } from './CanvasOverlay'
 import {
   formatMeasurement,
   createMeasurementLabel,
+  computeMagnification,
   MAX_SHARE_OVERLAYS,
   type ViewportState,
   type MeasurementConfig,
@@ -552,6 +553,42 @@ export default function ImageViewer({
       }
     }
 
+    // --- Magnification factor badge (inside the navigator mini-map) ---
+    const magBadge = document.createElement('div')
+    magBadge.style.position = 'absolute'
+    magBadge.style.bottom = '2px'
+    magBadge.style.left = '2px'
+    magBadge.style.minWidth = '28px'
+    magBadge.style.height = '18px'
+    magBadge.style.lineHeight = '18px'
+    magBadge.style.textAlign = 'center'
+    magBadge.style.padding = '0 3px'
+    magBadge.style.fontFamily = 'monospace'
+    magBadge.style.fontSize = '11px'
+    magBadge.style.fontWeight = '700'
+    magBadge.style.color = '#e0e0e0'
+    magBadge.style.background = 'rgba(0,0,0,0.6)'
+    magBadge.style.borderRadius = '3px'
+    magBadge.style.userSelect = 'none'
+    magBadge.style.pointerEvents = 'none'
+    magBadge.style.zIndex = '1'
+    magBadge.textContent = '1X'
+    if (viewer.navigator) {
+      viewer.navigator.element.appendChild(magBadge)
+    }
+
+    const updateMagnification = () => {
+      if (!viewer.viewport) return
+      const imageZoom = viewer.viewport.viewportToImageZoom(
+        viewer.viewport.getZoom(),
+      )
+      const mag = computeMagnification(imageZoom, measurementRef.current)
+      const rounded = Math.round(mag)
+      magBadge.textContent = rounded < 1 ? '<1X' : `${rounded}X`
+    }
+    viewer.addHandler('animation', updateMagnification)
+    viewer.addHandler('animation-finish', updateMagnification)
+
     // Expose a function to reactively update lock/clear UI when overlaysLocked changes
     updateLockUiRef.current = () => {
       updateLockIcon()
@@ -579,6 +616,7 @@ export default function ImageViewer({
           addOverlayRect(r)
         }
       }
+      updateMagnification()
     })
 
     // Reset rotation to 0 when the home button is clicked

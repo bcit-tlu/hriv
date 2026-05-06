@@ -44,6 +44,53 @@ export function formatMeasurement(
   return `${Math.round(pixels)} px`
 }
 
+/** Micrometres per CSS pixel at the browser-standard 96 DPI baseline. */
+export const CSS_PIXEL_UM = 25400 / 96
+
+/** Known physical units and their micrometre equivalents. */
+const UNIT_TO_UM: Record<string, number> = {
+  um: 1,
+  'µm': 1,
+  mm: 1000,
+  cm: 10000,
+  m: 1_000_000,
+  in: 25400,
+}
+
+/**
+ * Convert a measurement unit string to its equivalent in micrometres.
+ * Returns `undefined` for unrecognised units.
+ */
+export function unitToMicrons(unit: string): number | undefined {
+  return UNIT_TO_UM[unit.toLowerCase()]
+}
+
+/**
+ * Compute the effective magnification factor for display.
+ *
+ * When a {@link MeasurementConfig} with a valid scale is available the
+ * magnification is derived from the real-world specimen size and the
+ * assumed CSS pixel size (96 DPI).  Without a scale the raw
+ * `imageZoom` ratio is returned as a simple approximation.
+ *
+ * @param imageZoom - OSD image-zoom ratio (1.0 = one image pixel per
+ *   screen pixel), obtained via `viewport.viewportToImageZoom()`.
+ * @param config - Optional measurement configuration for the image.
+ */
+export function computeMagnification(
+  imageZoom: number,
+  config: MeasurementConfig | undefined,
+): number {
+  if (config?.scale && config.scale > 0 && config.unit) {
+    const um = unitToMicrons(config.unit)
+    if (um !== undefined) {
+      const imagePixelUm = um / config.scale
+      return (CSS_PIXEL_UM / imagePixelUm) * imageZoom
+    }
+  }
+  return imageZoom
+}
+
 /** Create a styled label element for measurement display */
 export function createMeasurementLabel(): HTMLDivElement {
   const label = document.createElement('div')
