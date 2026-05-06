@@ -554,6 +554,7 @@ export default function ImageViewer({
     }
 
     // --- Magnification factor badge (inside the navigator mini-map) ---
+    // Only visible when the image has measurement settings (scale + unit).
     const magBadge = document.createElement('div')
     magBadge.style.position = 'absolute'
     magBadge.style.bottom = '2px'
@@ -572,7 +573,7 @@ export default function ImageViewer({
     magBadge.style.userSelect = 'none'
     magBadge.style.pointerEvents = 'none'
     magBadge.style.zIndex = '1'
-    magBadge.textContent = '1X'
+    magBadge.style.display = 'none'
     if (viewer.navigator) {
       viewer.navigator.element.appendChild(magBadge)
     }
@@ -582,7 +583,16 @@ export default function ImageViewer({
       const imageZoom = viewer.viewport.viewportToImageZoom(
         viewer.viewport.getZoom(),
       )
-      const mag = computeMagnification(imageZoom, measurementRef.current)
+      const mag = computeMagnification(
+        imageZoom,
+        measurementRef.current,
+        window.devicePixelRatio,
+      )
+      if (mag === undefined) {
+        magBadge.style.display = 'none'
+        return
+      }
+      magBadge.style.display = ''
       const rounded = Math.round(mag)
       magBadge.textContent = rounded < 1 ? '<1X' : `${rounded}X`
     }
