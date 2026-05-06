@@ -1,6 +1,6 @@
 ---
 name: testing-hriv
-description: End-to-end testing guide for the HRIV app including local stack setup, seed data, auth, UI navigation, metadata operations, admin export/import, image upload, and image replacement.
+description: End-to-end testing guide for the HRIV app including local stack setup, seed data, auth, UI navigation, metadata operations, admin export/import, image upload, image replacement, and tile sidecar routing.
 ---
 
 # Testing HRIV
