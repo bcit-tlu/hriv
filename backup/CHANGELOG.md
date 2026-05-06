@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.5.0...backup-v0.6.0) (2026-05-06)
+
+
+### Features
+
+* add automated maintenance mode for backup restores ([#285](https://github.com/bcit-tlu/hriv/issues/285)) ([98f2d67](https://github.com/bcit-tlu/hriv/commit/98f2d67fbf61ad7cd2f63ae69f03b0484654c71f))
+
 ## [0.5.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.4.0...backup-v0.5.0) (2026-04-23)
 
 
