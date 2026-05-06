@@ -86,6 +86,7 @@ export default function ImageViewer({
   const canEditContentRef = useRef(canEditContent)
   const updateLockUiRef = useRef<(() => void) | null>(null)
   const updateCanvasEditUiRef = useRef<((active: boolean) => void) | null>(null)
+  const updateMagnificationRef = useRef<(() => void) | null>(null)
   useEffect(() => {
     onViewportChangeRef.current = onViewportChange
   }, [onViewportChange])
@@ -94,6 +95,7 @@ export default function ImageViewer({
   }, [onOverlaysChange])
   useEffect(() => {
     measurementRef.current = measurement
+    updateMagnificationRef.current?.()
   }, [measurement])
   useEffect(() => {
     onLockOverlaysRef.current = onLockOverlays
@@ -598,6 +600,7 @@ export default function ImageViewer({
     }
     viewer.addHandler('animation', updateMagnification)
     viewer.addHandler('animation-finish', updateMagnification)
+    updateMagnificationRef.current = updateMagnification
 
     // Expose a function to reactively update lock/clear UI when overlaysLocked changes
     updateLockUiRef.current = () => {
