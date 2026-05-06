@@ -39,4 +39,8 @@ spec:
       ports:
         - port: {{ .Values.backend.port | default 8000 }}
           protocol: TCP
+        {{- if .Values.tileServer.enabled }}
+        - port: {{ .Values.tileServer.port }}
+          protocol: TCP
+        {{- end }}
 {{- end }}
