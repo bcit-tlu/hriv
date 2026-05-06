@@ -48,15 +48,15 @@ def detect_pyramid_info(source_path: str) -> dict | None:
     """
     try:
         img = pyvips.Image.new_from_file(source_path, access="sequential")
+
+        loader = img.get("vips-loader") if "vips-loader" in img.get_fields() else None
+
+        if loader == "openslideload":
+            return _detect_openslide_pyramid(source_path, img)
+        if loader == "tiffload":
+            return _detect_tiff_pyramid(source_path, img)
     except Exception:
         return None
-
-    loader = img.get("vips-loader") if "vips-loader" in img.get_fields() else None
-
-    if loader == "openslideload":
-        return _detect_openslide_pyramid(source_path, img)
-    if loader == "tiffload":
-        return _detect_tiff_pyramid(source_path, img)
     return None
 
 
