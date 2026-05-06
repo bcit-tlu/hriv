@@ -155,6 +155,42 @@ accidentally. Press Escape to exit fullscreen.
 When testing viewer stability after metadata edits, watch the URL — `zoom=`, `x=`,
 `y=` params should remain unchanged if the viewport was preserved.
 
+## Magnification Badge (Navigator Mini-Map)
+
+The viewer displays a real-time magnification badge (`NX`) in the **bottom-left
+corner of the navigator mini-map** (the mini-map itself is in the bottom-right
+of the viewer). The badge updates on every zoom animation frame.
+
+### Two display modes
+
+| Condition | Display |
+|---|---|
+| No measurement settings on image | Raw image-zoom ratio (e.g. `<1X`, `1X`, `4X`) |
+| Measurement scale + unit configured | Real-world magnification (e.g. `155X`, `2117X`) |
+
+Seed images have no measurement settings by default, so the badge shows `<1X` at
+home zoom. To test measurement-aware magnification:
+
+1. Click **Edit Details** on any image.
+2. Set **Scale** = `8`, **Unit** = `um` (8 pixels per micrometre).
+3. Save → badge immediately shows a high value (e.g. `155X` at home zoom).
+4. **Clean up after testing** — clear Scale and Unit fields and save again.
+
+### Expected badge values
+
+- At home zoom without measurement: `<1X` (image is smaller than viewport)
+- At home zoom with 8px/µm: ~`155X` (depends on image dimensions and viewport)
+- Zooming in increases the value linearly
+- Sub-unity magnification displays `<1X` instead of `0X`
+
+### Key implementation details for testing
+
+- Badge uses `pointerEvents: none` — it should never block clicks on the navigator
+- Badge is appended to `viewer.navigator.element`, NOT added via `viewer.addControl()`
+- Updates on both `animation` and `animation-finish` events (matches `repositionLabels` pattern)
+- After page reload with a share-link URL, the badge should show the correct value
+  for the restored viewport (not stale `1X`)
+
 ## Testing Metadata Operations
 
 ### Optimistic Concurrency
