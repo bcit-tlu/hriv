@@ -47,23 +47,22 @@ export function formatMeasurement(
 /** Micrometres per CSS pixel at the browser-standard 96 DPI baseline. */
 export const CSS_PIXEL_UM = 25400 / 96
 
-/** Convert a measurement unit string to its equivalent in micrometres. */
-export function unitToMicrons(unit: string): number {
-  switch (unit.toLowerCase()) {
-    case 'um':
-    case 'µm':
-      return 1
-    case 'mm':
-      return 1000
-    case 'cm':
-      return 10000
-    case 'm':
-      return 1_000_000
-    case 'in':
-      return 25400
-    default:
-      return 1
-  }
+/** Known physical units and their micrometre equivalents. */
+const UNIT_TO_UM: Record<string, number> = {
+  um: 1,
+  'µm': 1,
+  mm: 1000,
+  cm: 10000,
+  m: 1_000_000,
+  in: 25400,
+}
+
+/**
+ * Convert a measurement unit string to its equivalent in micrometres.
+ * Returns `undefined` for unrecognised units.
+ */
+export function unitToMicrons(unit: string): number | undefined {
+  return UNIT_TO_UM[unit.toLowerCase()]
 }
 
 /**
@@ -83,8 +82,11 @@ export function computeMagnification(
   config: MeasurementConfig | undefined,
 ): number {
   if (config?.scale && config.scale > 0 && config.unit) {
-    const imagePixelUm = unitToMicrons(config.unit) / config.scale
-    return (CSS_PIXEL_UM / imagePixelUm) * imageZoom
+    const um = unitToMicrons(config.unit)
+    if (um !== undefined) {
+      const imagePixelUm = um / config.scale
+      return (CSS_PIXEL_UM / imagePixelUm) * imageZoom
+    }
   }
   return imageZoom
 }

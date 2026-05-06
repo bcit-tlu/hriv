@@ -581,10 +581,11 @@ export default function ImageViewer({
         viewer.viewport.getZoom(),
       )
       const mag = computeMagnification(imageZoom, measurementRef.current)
-      magBadge.textContent = `${Math.round(mag)}X`
+      const rounded = Math.round(mag)
+      magBadge.textContent = rounded < 1 ? '<1X' : `${rounded}X`
     }
     viewer.addHandler('animation', updateMagnification)
-    viewer.addHandler('open', updateMagnification)
+    viewer.addHandler('animation-finish', updateMagnification)
 
     // Expose a function to reactively update lock/clear UI when overlaysLocked changes
     updateLockUiRef.current = () => {
@@ -613,6 +614,7 @@ export default function ImageViewer({
           addOverlayRect(r)
         }
       }
+      updateMagnification()
     })
 
     // Reset rotation to 0 when the home button is clicked

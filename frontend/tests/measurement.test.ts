@@ -195,8 +195,9 @@ describe('unitToMicrons', () => {
         expect(unitToMicrons('UM')).toBe(1)
     })
 
-    it('defaults to 1 for unknown units', () => {
-        expect(unitToMicrons('furlongs')).toBe(1)
+    it('returns undefined for unknown units', () => {
+        expect(unitToMicrons('furlongs')).toBeUndefined()
+        expect(unitToMicrons('px')).toBeUndefined()
     })
 })
 
@@ -254,5 +255,10 @@ describe('computeMagnification', () => {
         // 1 px/cm → each pixel = 10000 µm
         const mag = computeMagnification(1, config)
         expect(mag).toBeCloseTo(CSS_PIXEL_UM / 10000, 6)
+    })
+
+    it('falls back to imageZoom for unknown unit strings', () => {
+        const config: MeasurementConfig = { scale: 8, unit: 'px' }
+        expect(computeMagnification(2, config)).toBe(2)
     })
 })
