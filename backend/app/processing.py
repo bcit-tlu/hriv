@@ -29,6 +29,167 @@ logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 
+# ── Pyramidal image detection ─────────────────────────────
+
+def detect_pyramid_info(source_path: str) -> dict | None:
+    """Inspect a source image for pre-existing pyramidal structure and metadata.
+
+    Returns a metadata dict if the image is pyramidal (SVS, pyramidal TIFF),
+    ``None`` otherwise.  The dict contains:
+
+    - ``is_pyramidal``: always ``True`` when returned
+    - ``loader``: the vips loader used (e.g. ``"openslideload"``, ``"tiffload"``)
+    - ``level_count``: number of pyramid levels
+    - ``mpp_x``, ``mpp_y``: microns per pixel (if available)
+    - ``objective_power``: objective magnification (if available)
+    - ``measurement_scale``: pixels per µm (derived from mpp_x), ready for
+      the frontend measurement system
+    - ``measurement_unit``: always ``"um"`` when mpp is available
+    """
+    try:
+        img = pyvips.Image.new_from_file(source_path, access="sequential")
+
+        loader = img.get("vips-loader") if "vips-loader" in img.get_fields() else None
+
+        if loader == "openslideload":
+            return _detect_openslide_pyramid(source_path, img)
+        if loader == "tiffload":
+            return _detect_tiff_pyramid(source_path, img)
+    except Exception:
+        return None
+    return None
+
+
+def _detect_openslide_pyramid(source_path: str, img: pyvips.Image) -> dict | None:
+    """Detect pyramid info for OpenSlide-supported formats (SVS, MRXS, etc.)."""
+    fields = img.get_fields()
+
+    level_count_str = img.get("openslide.level-count") if "openslide.level-count" in fields else None
+    if level_count_str is None:
+        return None
+
+    level_count = int(level_count_str)
+    if level_count <= 1:
+        return None
+
+    info: dict = {
+        "is_pyramidal": True,
+        "loader": "openslideload",
+        "level_count": level_count,
+    }
+
+    # Extract microns-per-pixel
+    mpp_x = _get_float_field(img, fields, "openslide.mpp-x")
+    mpp_y = _get_float_field(img, fields, "openslide.mpp-y")
+    if mpp_x is not None:
+        info["mpp_x"] = mpp_x
+    if mpp_y is not None:
+        info["mpp_y"] = mpp_y
+
+    # Extract objective power
+    objective_power = _get_float_field(img, fields, "openslide.objective-power")
+    if objective_power is not None:
+        info["objective_power"] = objective_power
+
+    # Aperio-specific metadata (SVS files)
+    app_mag = _get_float_field(img, fields, "aperio.AppMag")
+    if app_mag is not None and objective_power is None:
+        info["objective_power"] = app_mag
+    aperio_mpp = _get_float_field(img, fields, "aperio.MPP")
+    if aperio_mpp is not None and mpp_x is None:
+        info["mpp_x"] = aperio_mpp
+        mpp_x = aperio_mpp
+
+    # Derive measurement config from MPP
+    if mpp_x is not None and mpp_x > 0:
+        info["measurement_scale"] = round(1.0 / mpp_x, 4)
+        info["measurement_unit"] = "um"
+
+    return info
+
+
+def _detect_tiff_pyramid(source_path: str, img: pyvips.Image) -> dict | None:
+    """Detect pyramid info for standard pyramidal TIFF files."""
+    fields = img.get_fields()
+
+    # Check for SubIFD-based pyramid first
+    try:
+        subifd_img = pyvips.Image.new_from_file(source_path, subifd=0, access="sequential")
+        if subifd_img.width < img.width and subifd_img.height < img.height:
+            # Count SubIFD levels
+            level_count = 1  # base level
+            for i in range(10):  # reasonable max
+                try:
+                    sub = pyvips.Image.new_from_file(source_path, subifd=i, access="sequential")
+                    if sub.width < img.width:
+                        level_count += 1
+                    else:
+                        break
+                except Exception:
+                    break
+
+            info: dict = {
+                "is_pyramidal": True,
+                "loader": "tiffload",
+                "level_count": level_count,
+            }
+            _extract_tiff_resolution(img, fields, info)
+            return info
+    except Exception:
+        pass
+
+    # Check for multi-page pyramid
+    n_pages_str = img.get("n-pages") if "n-pages" in fields else None
+    if n_pages_str is not None:
+        n_pages = int(n_pages_str)
+        if n_pages > 1:
+            try:
+                page1 = pyvips.Image.new_from_file(source_path, page=1, access="sequential")
+                if page1.width < img.width and page1.height < img.height:
+                    info = {
+                        "is_pyramidal": True,
+                        "loader": "tiffload",
+                        "level_count": n_pages,
+                    }
+                    _extract_tiff_resolution(img, fields, info)
+                    return info
+            except Exception:
+                pass
+
+    return None
+
+
+def _extract_tiff_resolution(img: pyvips.Image, fields: list[str], info: dict) -> None:
+    """Extract resolution metadata from TIFF fields and derive measurement config."""
+    xres = img.xres if img.xres > 0 else None
+    yres = img.yres if img.yres > 0 else None
+
+    # libvips stores resolution in pixels/mm by default for TIFF
+    # Convert to microns-per-pixel: 1 px = (1/xres) mm = (1000/xres) µm
+    if xres is not None and xres > 0:
+        mpp_x = 1000.0 / xres
+        # Only use if the value is in a reasonable range for microscopy (0.01 - 100 µm/px)
+        if 0.01 <= mpp_x <= 100:
+            info["mpp_x"] = round(mpp_x, 4)
+            info["measurement_scale"] = round(xres / 1000.0, 4)
+            info["measurement_unit"] = "um"
+
+    if yres is not None and yres > 0:
+        mpp_y = 1000.0 / yres
+        if 0.01 <= mpp_y <= 100:
+            info["mpp_y"] = round(mpp_y, 4)
+
+
+def _get_float_field(img: pyvips.Image, fields: list[str], name: str) -> float | None:
+    """Safely extract a numeric metadata field from a vips image."""
+    if name not in fields:
+        return None
+    try:
+        return float(img.get(name))
+    except (ValueError, TypeError):
+        return None
+
+
 # ── Progress tracker ──────────────────────────────────────
 
 class ProgressTracker:
@@ -250,6 +411,24 @@ async def process_source_image(source_image_id: int) -> None:
         span.set_attribute("source_image.filename", src.original_filename)
 
         try:
+            # Detect pyramidal structure and extract metadata (non-blocking)
+            pyramid_info = await asyncio.to_thread(detect_pyramid_info, src.stored_path)
+            if pyramid_info is not None:
+                span.set_attributes({
+                    "pyramid.detected": True,
+                    "pyramid.loader": pyramid_info.get("loader", ""),
+                    "pyramid.level_count": pyramid_info.get("level_count", 0),
+                })
+                logger.info(
+                    "Pyramidal image detected",
+                    extra={
+                        "event": "processing.pyramid_detected",
+                        "source_image_id": src.id,
+                        "original_filename": src.original_filename,
+                        "pyramid_info": pyramid_info,
+                    },
+                )
+
             output_dir = os.path.join(settings.tiles_dir, str(src.id))
 
             # Mark tile generation started
@@ -357,6 +536,22 @@ async def process_source_image(source_image_id: int) -> None:
                     except OSError:
                         pass
 
+                # Build metadata from pyramid detection results
+                image_metadata: dict = {}
+                if pyramid_info is not None:
+                    if "measurement_scale" in pyramid_info:
+                        image_metadata["measurement_scale"] = pyramid_info["measurement_scale"]
+                    if "measurement_unit" in pyramid_info:
+                        image_metadata["measurement_unit"] = pyramid_info["measurement_unit"]
+                    if "objective_power" in pyramid_info:
+                        image_metadata["objective_power"] = pyramid_info["objective_power"]
+                    if "mpp_x" in pyramid_info:
+                        image_metadata["mpp_x"] = pyramid_info["mpp_x"]
+                    if "mpp_y" in pyramid_info:
+                        image_metadata["mpp_y"] = pyramid_info["mpp_y"]
+                    image_metadata["pyramid_detected"] = True
+                    image_metadata["pyramid_level_count"] = pyramid_info.get("level_count")
+
                 img = Image(
                     name=name,
                     thumb=thumb_url,
@@ -365,7 +560,7 @@ async def process_source_image(source_image_id: int) -> None:
                     copyright=src.copyright,
                     note=src.note,
                     active=src.active,
-                    metadata_={},
+                    metadata_=image_metadata,
                     width=img_width,
                     height=img_height,
                     file_size=file_size_mb,
@@ -510,6 +705,24 @@ async def process_replace_image(
         t_start = time.monotonic()
 
         try:
+            # Detect pyramidal structure for the replacement file
+            pyramid_info = await asyncio.to_thread(detect_pyramid_info, src.stored_path)
+            if pyramid_info is not None:
+                span.set_attributes({
+                    "pyramid.detected": True,
+                    "pyramid.loader": pyramid_info.get("loader", ""),
+                    "pyramid.level_count": pyramid_info.get("level_count", 0),
+                })
+                logger.info(
+                    "Pyramidal image detected (replacement)",
+                    extra={
+                        "event": "replace.pyramid_detected",
+                        "source_image_id": src.id,
+                        "target_image_id": target_image_id,
+                        "pyramid_info": pyramid_info,
+                    },
+                )
+
             output_dir = os.path.join(settings.tiles_dir, str(src.id))
 
             src.progress = 10
@@ -615,6 +828,28 @@ async def process_replace_image(
                 current_meta = dict(img.metadata_ or {})
                 current_meta.pop("canvas_annotations", None)
                 current_meta.pop("locked_overlays", None)
+
+                # Clear old pyramid metadata before merging new
+                for key in ("pyramid_detected", "pyramid_level_count",
+                            "mpp_x", "mpp_y", "objective_power",
+                            "measurement_scale", "measurement_unit"):
+                    current_meta.pop(key, None)
+
+                # Merge pyramid metadata from the new source file
+                if pyramid_info is not None:
+                    if "measurement_scale" in pyramid_info:
+                        current_meta["measurement_scale"] = pyramid_info["measurement_scale"]
+                    if "measurement_unit" in pyramid_info:
+                        current_meta["measurement_unit"] = pyramid_info["measurement_unit"]
+                    if "objective_power" in pyramid_info:
+                        current_meta["objective_power"] = pyramid_info["objective_power"]
+                    if "mpp_x" in pyramid_info:
+                        current_meta["mpp_x"] = pyramid_info["mpp_x"]
+                    if "mpp_y" in pyramid_info:
+                        current_meta["mpp_y"] = pyramid_info["mpp_y"]
+                    current_meta["pyramid_detected"] = True
+                    current_meta["pyramid_level_count"] = pyramid_info.get("level_count")
+
                 img.metadata_ = current_meta if current_meta else {}
 
                 src.image_id = img.id
