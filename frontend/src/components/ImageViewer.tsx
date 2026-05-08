@@ -509,6 +509,7 @@ export default function ImageViewer({
     // wrapper still receives hover events for the tooltip.
     const clearWrapper = document.createElement('div')
     clearWrapper.style.display = 'inline-block'
+    clearButton.element.style.lineHeight = '0'
     clearWrapper.appendChild(clearButton.element)
 
     // Visually disable clear button when locked
