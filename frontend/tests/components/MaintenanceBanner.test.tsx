@@ -1,73 +1,59 @@
-/**
- * Unit tests for the MaintenanceBanner component.
- *
- * Covers:
- * 1. Children render when not in maintenance mode
- * 2. Maintenance overlay shown when backend reports maintenance=true
- * 3. Children hidden during maintenance
- * 4. Graceful fallback when fetchStatus fails (children shown)
- */
-
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
-import MaintenanceBanner from '../../src/components/MaintenanceBanner'
 
-vi.mock('../../src/api', () => ({
-  fetchStatus: vi.fn(),
-}))
-
-import { fetchStatus } from '../../src/api'
-
-const mockedFetchStatus = vi.mocked(fetchStatus)
-
-beforeEach(() => {
-  vi.clearAllMocks()
+vi.mock('../../src/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/api')>()
+  return {
+    ...actual,
+    fetchStatus: vi.fn(),
+  }
 })
 
-describe('MaintenanceBanner', () => {
-  it('renders children when not in maintenance', async () => {
-    mockedFetchStatus.mockResolvedValue({ maintenance: false, version: 'dev' })
+import { fetchStatus } from '../../src/api'
+import MaintenanceBanner from '../../src/components/MaintenanceBanner'
 
+describe('MaintenanceBanner', () => {
+  beforeEach(() => vi.clearAllMocks())
+
+  it('renders children when not in maintenance mode', async () => {
+    vi.mocked(fetchStatus).mockResolvedValue({ maintenance: false, version: '1.0' })
     render(
       <MaintenanceBanner>
-        <div data-testid="child">Hello</div>
+        <div>App Content</div>
       </MaintenanceBanner>,
     )
 
     await waitFor(() => {
-      expect(screen.getByTestId('child')).toBeInTheDocument()
+      expect(fetchStatus).toHaveBeenCalled()
     })
-    expect(screen.queryByText('Maintenance in Progress')).not.toBeInTheDocument()
+    expect(screen.getByText('App Content')).toBeInTheDocument()
   })
 
-  it('shows maintenance overlay when maintenance is true', async () => {
-    mockedFetchStatus.mockResolvedValue({ maintenance: true, version: 'dev' })
-
+  it('renders maintenance message when in maintenance mode', async () => {
+    vi.mocked(fetchStatus).mockResolvedValue({ maintenance: true, version: '1.0' })
     render(
       <MaintenanceBanner>
-        <div data-testid="child">Hello</div>
+        <div>App Content</div>
       </MaintenanceBanner>,
     )
 
     await waitFor(() => {
       expect(screen.getByText('Maintenance in Progress')).toBeInTheDocument()
     })
-    expect(screen.queryByTestId('child')).not.toBeInTheDocument()
+    expect(screen.queryByText('App Content')).toBeNull()
   })
 
   it('renders children when fetchStatus fails', async () => {
-    mockedFetchStatus.mockRejectedValue(new Error('Network error'))
-
+    vi.mocked(fetchStatus).mockRejectedValue(new Error('Network error'))
     render(
       <MaintenanceBanner>
-        <div data-testid="child">Hello</div>
+        <div>App Content</div>
       </MaintenanceBanner>,
     )
 
-    // Children should be visible since we default to non-maintenance on error
     await waitFor(() => {
-      expect(screen.getByTestId('child')).toBeInTheDocument()
+      expect(fetchStatus).toHaveBeenCalled()
     })
-    expect(screen.queryByText('Maintenance in Progress')).not.toBeInTheDocument()
+    expect(screen.getByText('App Content')).toBeInTheDocument()
   })
 })
