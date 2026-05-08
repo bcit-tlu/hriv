@@ -251,7 +251,11 @@ async def test_get_category_not_found() -> None:
 async def test_create_category_success() -> None:
     body = CategoryCreate(label="New Cat", parent_id=None)
 
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+
     db = AsyncMock()
+    db.execute = AsyncMock(return_value=dup_result)
     db.add = MagicMock()
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
@@ -259,6 +263,38 @@ async def test_create_category_success() -> None:
     result = await create_category(body, MagicMock(), db=db)
     db.add.assert_called_once()
     db.commit.assert_awaited_once()
+
+
+async def test_create_category_duplicate_sibling_rejected() -> None:
+    body = CategoryCreate(label="Histology", parent_id=None)
+
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = _make_category(1, "Histology")
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=dup_result)
+
+    with pytest.raises(HTTPException) as exc:
+        await create_category(body, MagicMock(), db=db)
+    assert exc.value.status_code == 409
+    assert "already exists" in exc.value.detail.lower()
+
+
+async def test_create_category_same_label_different_parent_allowed() -> None:
+    """Same label under a different parent is fine."""
+    body = CategoryCreate(label="Histology", parent_id=2)
+
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=dup_result)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    await create_category(body, MagicMock(), db=db)
+    db.add.assert_called_once()
 
 
 async def test_update_category_not_found() -> None:
@@ -286,14 +322,36 @@ async def test_update_category_self_parent() -> None:
 async def test_update_category_success() -> None:
     cat = _make_category(1, "Cat")
     body = CategoryUpdate(label="Updated Cat")
+
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+
     db = AsyncMock()
     db.get = AsyncMock(return_value=cat)
+    db.execute = AsyncMock(return_value=dup_result)
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
 
     result = await update_category(1, body, MagicMock(), db=db)
     assert result.label == "Updated Cat"
     db.commit.assert_awaited_once()
+
+
+async def test_update_category_duplicate_sibling_rejected() -> None:
+    cat = _make_category(1, "Alpha", parent_id=None)
+    body = CategoryUpdate(label="Beta")
+
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = _make_category(2, "Beta", parent_id=None)
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+    db.execute = AsyncMock(return_value=dup_result)
+
+    with pytest.raises(HTTPException) as exc:
+        await update_category(1, body, MagicMock(), db=db)
+    assert exc.value.status_code == 409
+    assert "already exists" in exc.value.detail.lower()
 
 
 async def test_update_category_metadata_extra() -> None:

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
+import Alert from '@mui/material/Alert'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -9,7 +10,7 @@ import TextField from '@mui/material/TextField'
 interface AddCategoryDialogProps {
   open: boolean
   onClose: () => void
-  onAdd: (label: string) => void
+  onAdd: (label: string) => void | Promise<void>
   currentDepth: number
 }
 
@@ -20,6 +21,8 @@ export default function AddCategoryDialog({
   currentDepth,
 }: AddCategoryDialogProps) {
   const [label, setLabel] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const handleEntered = useCallback(() => {
@@ -29,14 +32,28 @@ export default function AddCategoryDialog({
 
   const handleClose = () => {
     setLabel('')
+    setError(null)
     onClose()
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const trimmed = label.trim()
-    if (trimmed) {
-      onAdd(trimmed)
-      handleClose()
+    if (!trimmed) return
+    setSaving(true)
+    setError(null)
+    try {
+      await onAdd(trimmed)
+      setLabel('')
+      onClose()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('409')) {
+        setError('A category with this name already exists at this level')
+      } else {
+        setError(msg)
+      }
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -61,10 +78,15 @@ export default function AddCategoryDialog({
             }
           }}
         />
+        {error && (
+          <Alert severity="error" sx={{ mt: 1 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose}>Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={!label.trim()}>
+        <Button onClick={handleSubmit} variant="contained" disabled={!label.trim() || saving}>
           Create
         </Button>
       </DialogActions>

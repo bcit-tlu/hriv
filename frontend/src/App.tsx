@@ -1316,17 +1316,13 @@ export default function App() {
             label: string,
             parentId: number | null,
         ): Promise<number | void> => {
-            try {
-                const created = await apiCreateCategory({
-                    label,
-                    parent_id: parentId,
-                });
-                await loadCategories();
-                loadUncategorizedImages();
-                return created.id;
-            } catch (err) {
-                console.error("Failed to create category", err);
-            }
+            const created = await apiCreateCategory({
+                label,
+                parent_id: parentId,
+            });
+            await loadCategories();
+            loadUncategorizedImages();
+            return created.id;
         },
         [loadCategories, loadUncategorizedImages],
     );
@@ -1351,12 +1347,8 @@ export default function App() {
 
     const editCategoryInline = useCallback(
         async (categoryId: number, newLabel: string) => {
-            try {
-                await apiUpdateCategory(categoryId, { label: newLabel });
-                await loadCategories();
-            } catch (err) {
-                console.error("Failed to rename category", err);
-            }
+            await apiUpdateCategory(categoryId, { label: newLabel });
+            await loadCategories();
         },
         [loadCategories],
     );

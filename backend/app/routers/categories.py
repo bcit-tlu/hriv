@@ -3,7 +3,7 @@ import json as _json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
@@ -132,6 +132,20 @@ async def create_category(
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
 ):
+    # Reject duplicate label among siblings (same parent_id)
+    sibling_filter = [
+        Category.label == body.label,
+        Category.parent_id == body.parent_id
+        if body.parent_id is not None
+        else Category.parent_id.is_(None),
+    ]
+    existing = await db.execute(select(Category).where(and_(*sibling_filter)))
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail="A category with this name already exists at this level",
+        )
+
     cat = Category(
         label=body.label,
         parent_id=body.parent_id,
@@ -175,6 +189,22 @@ async def update_category(
                         detail="Cannot move a category into one of its own descendants",
                     )
                 ancestor_id = ancestor.parent_id
+    if "label" in update_data or "parent_id" in update_data:
+        new_label = update_data.get("label", cat.label)
+        new_parent_id = update_data.get("parent_id", cat.parent_id)
+        sibling_filter = [
+            Category.label == new_label,
+            Category.parent_id == new_parent_id
+            if new_parent_id is not None
+            else Category.parent_id.is_(None),
+            Category.id != category_id,
+        ]
+        dup = await db.execute(select(Category).where(and_(*sibling_filter)))
+        if dup.scalar_one_or_none():
+            raise HTTPException(
+                status_code=409,
+                detail="A category with this name already exists at this level",
+            )
     if "metadata_extra" in update_data:
         update_data["metadata_"] = update_data.pop("metadata_extra")
     for key, value in update_data.items():
