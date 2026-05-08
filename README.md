@@ -57,7 +57,7 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 

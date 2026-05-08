@@ -61,7 +61,6 @@ coverage/
 
 # Package managers
 composer.lock
-package-lock.json
 yarn.lock
 
 # Local scratch / caches
