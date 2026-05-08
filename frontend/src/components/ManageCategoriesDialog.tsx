@@ -182,6 +182,21 @@ export default function ManageCategoriesDialog({
 
   const options = useMemo(() => flattenTree(categories), [categories])
 
+  const addSiblingNames = useMemo(
+    () => options.filter((o) => o.parentId === addParentId).map((o) => o.label),
+    [options, addParentId],
+  )
+
+  const editSiblingNames = useMemo(
+    () =>
+      editingCategory
+        ? options
+            .filter((o) => o.parentId === editingCategory.parentId && o.id !== editingCategory.id)
+            .map((o) => o.label)
+        : [],
+    [options, editingCategory],
+  )
+
   const handleAddClick = (parentId: number | null, depth: number) => {
     setAddParentId(parentId)
     setAddParentDepth(depth)
@@ -517,6 +532,7 @@ export default function ManageCategoriesDialog({
         onClose={() => setAddDialogOpen(false)}
         onAdd={handleAddCategory}
         currentDepth={addParentDepth}
+        siblingNames={addSiblingNames}
       />
 
       <EditCategoryDialog
@@ -527,6 +543,7 @@ export default function ManageCategoriesDialog({
         }}
         onSave={handleEditSave}
         currentLabel={editingCategory?.label ?? ''}
+        siblingNames={editSiblingNames}
       />
 
       {/* Confirm delete dialog */}

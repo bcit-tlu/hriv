@@ -1,4 +1,7 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useMemo } from 'react'
+import Alert from '@mui/material/Alert'
+import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete'
+import { ApiError } from '../api'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -6,11 +9,14 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import TextField from '@mui/material/TextField'
 
+const filter = createFilterOptions<string>()
+
 interface EditCategoryDialogProps {
   open: boolean
   onClose: () => void
-  onSave: (newLabel: string) => void
+  onSave: (newLabel: string) => void | Promise<void>
   currentLabel: string
+  siblingNames?: string[]
 }
 
 export default function EditCategoryDialog({
@@ -18,23 +24,47 @@ export default function EditCategoryDialog({
   onClose,
   onSave,
   currentLabel,
+  siblingNames = [],
 }: EditCategoryDialogProps) {
   const [label, setLabel] = useState(currentLabel)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  const exactMatch = useMemo(
+    () =>
+      label.trim().toLowerCase() !== currentLabel.toLowerCase() &&
+      siblingNames.some((s) => s.toLowerCase() === label.trim().toLowerCase()),
+    [siblingNames, label, currentLabel],
+  )
 
   const handleEnter = useCallback(() => {
     setLabel(currentLabel)
+    setError(null)
   }, [currentLabel])
 
   const handleClose = () => {
     setLabel('')
+    setError(null)
     onClose()
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const trimmed = label.trim()
-    if (trimmed && trimmed !== currentLabel) {
-      onSave(trimmed)
-      handleClose()
+    if (!trimmed || trimmed === currentLabel) return
+    setSaving(true)
+    setError(null)
+    try {
+      await onSave(trimmed)
+      setLabel('')
+      onClose()
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setError('A category with this name already exists at this level')
+      } else {
+        setError(err instanceof Error ? err.message : String(err))
+      }
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -42,25 +72,48 @@ export default function EditCategoryDialog({
     <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth TransitionProps={{ onEnter: handleEnter }}>
       <DialogTitle>Rename Category</DialogTitle>
       <DialogContent>
-        <TextField
-          autoFocus
-          margin="dense"
-          label="Category name"
-          fullWidth
-          variant="outlined"
-          value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') handleSubmit()
+        <Autocomplete
+          freeSolo
+          options={siblingNames}
+          filterOptions={(options, state) => {
+            if (!state.inputValue) return []
+            return filter(options, state).filter(
+              (o) => o.toLowerCase() !== currentLabel.toLowerCase(),
+            )
           }}
+          inputValue={label}
+          onInputChange={(_e, value, reason) => {
+            if (reason !== 'reset') setLabel(value)
+          }}
+          disableClearable
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              autoFocus
+              margin="dense"
+              label="Category name"
+              fullWidth
+              variant="outlined"
+              helperText={exactMatch ? 'This name already exists at this level' : undefined}
+              error={exactMatch}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleSubmit()
+              }}
+            />
+          )}
         />
+        {error && (
+          <Alert severity="error" sx={{ mt: 1 }} onClose={() => setError(null)}>
+            {error}
+          </Alert>
+        )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
+        <Button onClick={handleClose} disabled={saving}>Cancel</Button>
         <Button
           onClick={handleSubmit}
           variant="contained"
-          disabled={!label.trim() || label.trim() === currentLabel}
+          disabled={!label.trim() || label.trim() === currentLabel || saving}
         >
           Save
         </Button>

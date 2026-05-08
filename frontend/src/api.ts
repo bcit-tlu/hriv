@@ -26,6 +26,15 @@ function authHeaders(): Record<string, string> {
   return h
 }
 
+export class ApiError extends Error {
+  status: number
+  constructor(status: number, detail: string) {
+    super(`API ${status}: ${detail}`)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const { headers: initHeaders, ...restInit } = init ?? {}
   const res = await fetch(`${BASE}/api${path}`, {
@@ -34,7 +43,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new Error(`API ${res.status}: ${text}`)
+    throw new ApiError(res.status, text)
   }
   if (res.status === 204) return undefined as unknown as T
   return res.json() as Promise<T>
