@@ -77,8 +77,9 @@ jobs:
 
       - uses: actions/cache@v5
         with:
-          path: frontend/node_modules
+          path: ~/.npm
           key: frontend-npm-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: frontend-npm-
 
       - name: Install dependencies
         run: npm ci
