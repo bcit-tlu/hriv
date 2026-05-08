@@ -438,6 +438,17 @@ async def test_run_db_export_success(tmp_path) -> None:
     assert task.result_filename.endswith(".json")
     assert "Export complete" in task.log
 
+    # Verify PII/credential fields are excluded from the export
+    export_path = os.path.join(tasks_dir, task.result_filename)
+    with open(export_path) as f:
+        dump = json.load(f)
+    for user_entry in dump["users"]:
+        assert "oidc_subject" not in user_entry, "oidc_subject is PII and must not appear in exports"
+        assert "password_hash" not in user_entry, "password_hash must not appear in exports"
+    # Ensure non-sensitive fields are still present
+    assert dump["users"][0]["email"] == "admin@test.com"
+    assert dump["users"][0]["role"] == "admin"
+
 
 # ── run_db_import tests ────────────────────────────────────
 

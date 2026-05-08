@@ -272,8 +272,14 @@ async def run_db_export(task_id: int) -> None:
                         "id": u.id,
                         "name": u.name,
                         "email": u.email,
-                        "password_hash": u.password_hash,
-                        "oidc_subject": u.oidc_subject,
+                        # oidc_subject and password_hash are intentionally
+                        # excluded — oidc_subject is PII (Azure AD object
+                        # ID) and password_hash is a credential artifact.
+                        # OIDC linkage is re-established automatically on
+                        # next login via email-based matching (see
+                        # routers/oidc.py callback).  Older exports that
+                        # still contain these fields are accepted on import
+                        # (the import path uses .get() with a None default).
                         "role": u.role,
                         "program_id": u.program_id,
                         "last_access": dt(u.last_access),
