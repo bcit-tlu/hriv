@@ -14,44 +14,45 @@ if "pyvips" not in sys.modules:
     sys.modules["pyvips"] = MagicMock()
     sys.modules["pyvips.enums"] = MagicMock()
 
-from app.routers.upload import _is_valid_image, list_source_images, get_source_image, upload_source_image
+from app.image_validation import is_valid_image
+from app.routers.upload import list_source_images, get_source_image, upload_source_image
 
 
 def test_is_valid_image_by_extension() -> None:
-    assert _is_valid_image("photo.jpg", None) is True
-    assert _is_valid_image("photo.jpeg", None) is True
-    assert _is_valid_image("photo.png", None) is True
-    assert _is_valid_image("photo.tif", None) is True
-    assert _is_valid_image("photo.tiff", None) is True
-    assert _is_valid_image("photo.gif", None) is True
-    assert _is_valid_image("photo.webp", None) is True
-    assert _is_valid_image("photo.svs", None) is True
+    assert is_valid_image("photo.jpg", None) is True
+    assert is_valid_image("photo.jpeg", None) is True
+    assert is_valid_image("photo.png", None) is True
+    assert is_valid_image("photo.tif", None) is True
+    assert is_valid_image("photo.tiff", None) is True
+    assert is_valid_image("photo.gif", None) is True
+    assert is_valid_image("photo.webp", None) is True
+    assert is_valid_image("photo.svs", None) is True
     # BMP is intentionally rejected: no native libvips loader and the
     # ImageMagick delegate is disabled in the backend image.
-    assert _is_valid_image("photo.bmp", None) is False
-    assert _is_valid_image("photo.txt", None) is False
-    assert _is_valid_image("photo.pdf", None) is False
+    assert is_valid_image("photo.bmp", None) is False
+    assert is_valid_image("photo.txt", None) is False
+    assert is_valid_image("photo.pdf", None) is False
 
 
 def test_is_valid_image_by_content_type() -> None:
-    assert _is_valid_image("noext", "image/png") is True
-    assert _is_valid_image("noext", "image/jpeg") is True
-    assert _is_valid_image("noext", "image/tiff") is True
-    assert _is_valid_image("noext", "image/gif") is True
-    assert _is_valid_image("noext", "image/webp") is True
-    assert _is_valid_image("noext", "application/pdf") is False
+    assert is_valid_image("noext", "image/png") is True
+    assert is_valid_image("noext", "image/jpeg") is True
+    assert is_valid_image("noext", "image/tiff") is True
+    assert is_valid_image("noext", "image/gif") is True
+    assert is_valid_image("noext", "image/webp") is True
+    assert is_valid_image("noext", "application/pdf") is False
     # BMP is rejected even via MIME type (libvips BMP loader absent).
-    assert _is_valid_image("noext", "image/bmp") is False
-    assert _is_valid_image("photo.bmp", "image/bmp") is False
+    assert is_valid_image("noext", "image/bmp") is False
+    assert is_valid_image("photo.bmp", "image/bmp") is False
     # ``image/svg+xml`` is not in the allow-list (not a pathology-slide
     # format and we don't compile librsvg into the libvips build).
-    assert _is_valid_image("noext", "image/svg+xml") is False
+    assert is_valid_image("noext", "image/svg+xml") is False
 
 
 def test_is_valid_image_case_insensitive_extension() -> None:
-    assert _is_valid_image("photo.JPG", None) is True
-    assert _is_valid_image("photo.PNG", None) is True
-    assert _is_valid_image("photo.TIF", None) is True
+    assert is_valid_image("photo.JPG", None) is True
+    assert is_valid_image("photo.PNG", None) is True
+    assert is_valid_image("photo.TIF", None) is True
 
 
 async def test_list_source_images() -> None:

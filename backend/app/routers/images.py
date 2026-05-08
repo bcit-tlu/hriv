@@ -4,7 +4,6 @@ import json
 import logging
 import os
 import uuid
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, Response, UploadFile
@@ -13,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
 from ..database import get_db, settings
+from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import Category, Image, Program, SourceImage, User
 from ..schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageOut, SourceImageOut
 
@@ -198,19 +198,7 @@ async def update_image(
     return response
 
 
-_IMAGE_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".gif", ".webp", ".svs",
-}
-_IMAGE_MIME_TYPES = {
-    "image/jpeg", "image/png", "image/tiff", "image/gif", "image/webp",
-}
-_UPLOAD_CHUNK_SIZE = 1024 * 1024
 
-
-def _is_valid_image(filename: str, content_type: str | None) -> bool:
-    if content_type and content_type in _IMAGE_MIME_TYPES:
-        return True
-    return Path(filename).suffix.lower() in _IMAGE_EXTENSIONS
 
 
 @router.post("/{image_id}/replace", response_model=SourceImageOut, status_code=201)
@@ -234,7 +222,7 @@ async def replace_image(
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
 
-    if not _is_valid_image(file.filename, file.content_type):
+    if not is_valid_image(file.filename, file.content_type):
         raise HTTPException(status_code=400, detail="File must be an image")
 
     os.makedirs(settings.source_images_dir, exist_ok=True)
@@ -246,7 +234,7 @@ async def replace_image(
     try:
         with open(stored_path, "wb") as f:
             while True:
-                chunk = await file.read(_UPLOAD_CHUNK_SIZE)
+                chunk = await file.read(UPLOAD_CHUNK_SIZE)
                 if not chunk:
                     break
                 f.write(chunk)
