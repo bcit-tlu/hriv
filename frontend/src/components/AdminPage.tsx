@@ -243,28 +243,35 @@ export default function AdminPage() {
       // upload via XHR with progress.
       setError(null)
       setStarting('files_import')
+      let task: AdminTask | undefined
       try {
-        const task = await initFilesImport(file.name)
-        setActiveTasks((prev) => [...prev, task])
+        task = await initFilesImport(file.name)
+        setActiveTasks((prev) => [...prev, task!])
         pollTask(task.id)
         setStarting(null) // task banner takes over
 
         await uploadTaskFile(task.id, file, (fraction) => {
-          setUploadProgress((prev) => new Map(prev).set(task.id, fraction))
+          setUploadProgress((prev) => new Map(prev).set(task!.id, fraction))
         })
         // Upload done — clear local progress; polling picks up the rest.
         setUploadProgress((prev) => {
           const next = new Map(prev)
-          next.delete(task.id)
+          next.delete(task!.id)
           return next
         })
       } catch (err) {
-        setUploadProgress((prev) => {
-          const next = new Map(prev)
-          // Clean up stale entry for any task that existed
-          for (const id of next.keys()) next.delete(id)
-          return next
-        })
+        if (task !== undefined) {
+          // Upload failed after the task was created — remove the
+          // stale task from the UI and stop its polling loop (#264).
+          stopPolling(task.id)
+          setActiveTasks((prev) => prev.filter((t) => t.id !== task!.id))
+          // Only clear the failed task's progress entry (#265).
+          setUploadProgress((prev) => {
+            const next = new Map(prev)
+            next.delete(task!.id)
+            return next
+          })
+        }
         setError(err instanceof Error ? err.message : 'Operation failed')
         setStarting(null)
       }
@@ -309,7 +316,10 @@ export default function AdminPage() {
     }
   }
 
-  const busy = starting !== null
+  // Disable action buttons while a task is being kicked off OR while
+  // any task is still uploading (#263 — setStarting(null) fires before
+  // the XHR upload completes, so also check for in-flight uploads).
+  const busy = starting !== null || activeTasks.some((t) => t.status === 'uploading')
 
   // Active (in-flight) tasks for the progress banner
   const runningTasks = activeTasks.filter(
