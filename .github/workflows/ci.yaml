@@ -78,12 +78,10 @@ jobs:
       - uses: actions/cache@v5
         with:
           path: frontend/node_modules
-          key: frontend-npm-${{ hashFiles('frontend/package.json') }}
+          key: frontend-npm-${{ hashFiles('frontend/package-lock.json') }}
 
-      # `frontend/package-lock.json` is in `.gitignore`, so use
-      # `npm install` rather than `npm ci`.
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       # Advisory until pre-existing lint errors are resolved; promote to
       # blocking by removing `continue-on-error` once clean.

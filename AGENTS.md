@@ -3,7 +3,7 @@
 ## Setup Commands
 
 ### Frontend
-- Install dependencies: `npm install`
+- Install dependencies: `npm ci`
 - Start development server: `npm run dev`
 - Run tests: `npm test`
 - Build for production: `npm run build`

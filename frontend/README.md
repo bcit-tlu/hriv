@@ -15,7 +15,7 @@ A minimal, functional [OpenSeaDragon](https://openseadragon.github.io/) deep-zoo
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev        # starts dev server at http://localhost:5173
 ```
 
