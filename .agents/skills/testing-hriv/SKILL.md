@@ -121,6 +121,27 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1
 - Category tree changes are reflected immediately on Browse without a refresh
   (frontend invalidates the ETag-cached `/api/categories/tree` query).
 
+#### Duplicate Category Name Validation
+
+The backend returns `409 Conflict` when creating or renaming a category to a name
+that already exists among its siblings (same `parent_id`). The frontend dialogs
+(AddCategoryDialog, EditCategoryDialog) show an inline red Alert and keep the dialog
+open for retry.
+
+**Key behaviors to verify:**
+- Creating a category with the same name as an existing sibling → 409 error, dialog stays open
+- Creating a category with a name that exists under a *different* parent → allowed (succeeds)
+- Renaming a category to match an existing sibling → 409 error, dialog stays open
+- After a 409 error: Create/Save button re-enables (not stuck in saving state)
+- The error Alert is dismissible via its close (X) button
+- Validation is sibling-scoped (same `parent_id`), not global
+
+**Testing flow (Manage > Categories):**
+1. Click `+` next to "Root level" → type an existing root name (e.g. "Architecture") → Create → expect error
+2. Click `+` next to a different parent (e.g. Panoramas) → type a name that exists elsewhere (e.g. "American") → Create → expect success
+3. Click pencil on a category → type an existing sibling name → Save → expect error
+4. **Clean up** any test categories created during step 2 (delete via the trash icon)
+
 ### People tab (admin only)
 - Add / delete / edit users. Persistence survives a hard refresh.
 
