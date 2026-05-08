@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react'
 import Alert from '@mui/material/Alert'
 import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete'
+import { ApiError } from '../api'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
@@ -57,11 +58,10 @@ export default function EditCategoryDialog({
       setLabel('')
       onClose()
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      if (msg.includes('409')) {
+      if (err instanceof ApiError && err.status === 409) {
         setError('A category with this name already exists at this level')
       } else {
-        setError(msg)
+        setError(err instanceof Error ? err.message : String(err))
       }
     } finally {
       setSaving(false)
@@ -109,7 +109,7 @@ export default function EditCategoryDialog({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
+        <Button onClick={handleClose} disabled={saving}>Cancel</Button>
         <Button
           onClick={handleSubmit}
           variant="contained"
