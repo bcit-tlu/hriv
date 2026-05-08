@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
 from ..database import async_session, get_db, settings
+from ..image_validation import IMAGE_EXTENSIONS, UPLOAD_CHUNK_SIZE
 from ..models import BulkImportJob, Category, SourceImage, User
 from ..processing import process_source_image
 from ..schemas import BulkImportJobOut
@@ -36,26 +37,14 @@ _editor = require_role("admin", "instructor")
 
 logger = logging.getLogger(__name__)
 
-# Image extensions we accept (lowercase).
-# BMP is intentionally excluded: libvips has no native BMP loader and the
-# ImageMagick delegate (the only path that can decode BMP in libvips) is
-# disabled in the backend image's libvips source build. See
-# backend/Dockerfile and backend/app/routers/upload.py for details.
-_IMAGE_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".gif", ".webp", ".svs",
-}
-
 # Maximum concurrent tile-generation tasks per bulk import
 _MAX_CONCURRENCY = 4
-
-# 1 MiB chunks for streaming large uploads to disk
-_UPLOAD_CHUNK_SIZE = 1024 * 1024
 _ZIP_EXTRACT_CHUNK_SIZE = 1024 * 1024
 
 
 def _is_image_filename(filename: str) -> bool:
     """Return True if the filename has a recognised image extension."""
-    return Path(filename).suffix.lower() in _IMAGE_EXTENSIONS
+    return Path(filename).suffix.lower() in IMAGE_EXTENSIONS
 
 
 async def _process_bulk_import(
@@ -275,7 +264,7 @@ async def bulk_import_images(
                     with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
                         tmp_path = tmp.name
                         while True:
-                            chunk = await upload.read(_UPLOAD_CHUNK_SIZE)
+                            chunk = await upload.read(UPLOAD_CHUNK_SIZE)
                             if not chunk:
                                 break
                             tmp.write(chunk)
@@ -335,7 +324,7 @@ async def bulk_import_images(
                 try:
                     with open(stored_path, "wb") as f:
                         while True:
-                            chunk = await upload.read(_UPLOAD_CHUNK_SIZE)
+                            chunk = await upload.read(UPLOAD_CHUNK_SIZE)
                             if not chunk:
                                 break
                             f.write(chunk)

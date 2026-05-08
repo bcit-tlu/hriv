@@ -31,7 +31,7 @@ const ACCEPTED_FILE_TYPES =
   'image/jpeg,image/png,image/tiff,image/gif,image/webp,.tif,.tiff,.svs,.zip'
 
 /** Recognised image MIME types for drag-and-drop validation. Must stay
- * in lock-step with ``backend/app/routers/upload.py::_IMAGE_MIME_TYPES``. */
+ * in lock-step with ``backend/app/image_validation.py::IMAGE_MIME_TYPES``. */
 const IMAGE_MIME_TYPES = new Set<string>([
   'image/jpeg', 'image/png', 'image/tiff', 'image/gif', 'image/webp',
 ])

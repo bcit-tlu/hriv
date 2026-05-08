@@ -55,7 +55,7 @@ WORKDIR /build/vips-${VIPS_VERSION}
 #                      pdfium, nifti, quantizr, openjpeg, rsvg, pangocairo,
 #                      fontconfig, cfitsio — none of the disabled delegates'
 #                      formats are in HRIV's accepted upload set (see
-#                      ``backend/app/routers/upload.py::_IMAGE_EXTENSIONS``;
+#                      ``backend/app/image_validation.py::IMAGE_EXTENSIONS``;
 #                      note that ``.bmp`` was removed from that set alongside
 #                      this build change because libvips has no native BMP
 #                      loader and the only delegate that can decode BMP is
