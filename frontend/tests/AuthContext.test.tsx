@@ -303,7 +303,7 @@ describe('AuthProvider', () => {
     })
 
     await act(async () => {
-      authCtx!.addUser('New', 'new@bcit.ca', 'student', 'pw')
+      await authCtx!.addUser('New', 'new@bcit.ca', 'student', 'pw')
     })
 
     expect(mockCreateUser).toHaveBeenCalledWith({
@@ -348,7 +348,7 @@ describe('AuthProvider', () => {
     })
 
     await act(async () => {
-      authCtx!.deleteUser(5)
+      await authCtx!.deleteUser(5)
     })
 
     await waitFor(() => {

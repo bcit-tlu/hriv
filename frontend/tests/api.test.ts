@@ -644,32 +644,32 @@ describe('downloadAdminTaskResult', () => {
   it('fetches download token then navigates to download URL', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse({ token: 'dl-token-abc' }))
 
-    // Mock window.location.href setter
-    const hrefSpy = vi.spyOn(window, 'location', 'get').mockReturnValue({
-      ...window.location,
-      href: '',
-    } as Location)
-    // Use defineProperty to capture the assignment
+    const originalLocation = window.location
     let assignedHref = ''
     Object.defineProperty(window, 'location', {
-      value: { ...window.location, href: '' },
+      value: {
+        ...originalLocation,
+        get href() { return assignedHref },
+        set href(val: string) { assignedHref = val },
+      },
       writable: true,
       configurable: true,
     })
-    Object.defineProperty(window.location, 'href', {
-      set(val: string) { assignedHref = val },
-      get() { return assignedHref },
-      configurable: true,
-    })
 
-    await downloadAdminTaskResult(42)
+    try {
+      await downloadAdminTaskResult(42)
 
-    const [url, init] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/admin/tasks/42/download-token')
-    expect(init.method).toBe('POST')
-    expect(assignedHref).toBe('/api/admin/tasks/42/download?token=dl-token-abc')
-
-    hrefSpy.mockRestore()
+      const [url, init] = mockFetch.mock.calls[0]
+      expect(url).toBe('/api/admin/tasks/42/download-token')
+      expect(init.method).toBe('POST')
+      expect(assignedHref).toBe('/api/admin/tasks/42/download?token=dl-token-abc')
+    } finally {
+      Object.defineProperty(window, 'location', {
+        value: originalLocation,
+        writable: true,
+        configurable: true,
+      })
+    }
   })
 })
 
