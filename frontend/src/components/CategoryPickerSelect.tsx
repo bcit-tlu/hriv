@@ -23,18 +23,20 @@ interface FlatOption {
   label: string
   depth: number
   status: string | null
+  parentId: number | null
 }
 
 function flattenTree(
   nodes: Category[],
   depth: number = 0,
   excludeIds?: Set<number>,
+  parentId: number | null = null,
 ): FlatOption[] {
   const result: FlatOption[] = []
   for (const node of nodes) {
     if (excludeIds?.has(node.id)) continue
-    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active' })
-    result.push(...flattenTree(node.children, depth + 1, excludeIds))
+    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId })
+    result.push(...flattenTree(node.children, depth + 1, excludeIds, node.id))
   }
   return result
 }
@@ -104,6 +106,21 @@ export default function CategoryPickerSelect({
     }
     return flattenTree(categories, 0, excludeIds)
   }, [categories, excludeCategoryId])
+
+  const addSiblingNames = useMemo(
+    () => options.filter((o) => o.parentId === addParentId).map((o) => o.label),
+    [options, addParentId],
+  )
+
+  const editSiblingNames = useMemo(
+    () =>
+      editingOpt
+        ? options
+            .filter((o) => o.parentId === editingOpt.parentId && o.id !== editingOpt.id)
+            .map((o) => o.label)
+        : [],
+    [options, editingOpt],
+  )
 
   const handleChange = (e: SelectChangeEvent<string>) => {
     const val = e.target.value
@@ -264,6 +281,7 @@ export default function CategoryPickerSelect({
           onClose={() => setAddDialogOpen(false)}
           onAdd={handleAddCategory}
           currentDepth={addParentDepth}
+          siblingNames={addSiblingNames}
         />
       )}
 
@@ -276,6 +294,7 @@ export default function CategoryPickerSelect({
           }}
           onSave={handleEditSave}
           currentLabel={editingOpt?.label ?? ''}
+          siblingNames={editSiblingNames}
         />
       )}
     </>
