@@ -1154,7 +1154,6 @@ async def run_files_import(task_id: int) -> None:
     extraction thread) and DB polling (the progress coroutine), following
     the same pattern used by :func:`run_files_export`.
     """
-    _SCAN_END = 15
     _EXTRACT_START = 15
     _EXTRACT_END = 85
     _FINALIZE = 90
