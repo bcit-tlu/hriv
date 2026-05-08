@@ -304,7 +304,7 @@ export default function UploadImageModal({
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={uploading ? undefined : onClose}
       maxWidth="sm"
       fullWidth
       TransitionProps={{ onExited: handleReset }}
