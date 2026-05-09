@@ -47,7 +47,7 @@ describe('ReportIssueModal', () => {
     await user.click(screen.getByRole('button', { name: /submit/i }))
 
     await waitFor(() => {
-      expect(screen.getByText(/Issue created successfully/)).toBeInTheDocument()
+      expect(screen.getByText(/Your feedback was received successfully/)).toBeInTheDocument()
     })
     expect(reportIssue).toHaveBeenCalledWith({
       description: 'Button is broken',
