@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.11.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.10.0...backend-v0.11.0) (2026-05-09)
+
+
+### Features
+
+* propagate user identity to OTEL trace spans ([#319](https://github.com/bcit-tlu/hriv/issues/319)) ([240a2d2](https://github.com/bcit-tlu/hriv/commit/240a2d2462839dd315822911f815bf94ad62b6b8))
+* reject duplicate category names within same parent ([#311](https://github.com/bcit-tlu/hriv/issues/311)) ([9a06a1b](https://github.com/bcit-tlu/hriv/commit/9a06a1b65705e6c54d4c46f2059bb932b346e3f9))
+
+
+### Bug Fixes
+
+* exclude OIDC subject and password hash from admin export ([#316](https://github.com/bcit-tlu/hriv/issues/316)) ([10e1ac9](https://github.com/bcit-tlu/hriv/commit/10e1ac9118d95ad2aeeccf763d8c840261520509))
+
 ## [0.10.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.9.0...backend-v0.10.0) (2026-05-06)
 
 
