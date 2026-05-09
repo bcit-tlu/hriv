@@ -46,6 +46,21 @@ describe('BulkEditImagesModal – delete error toast', () => {
     })
   })
 
+  it('shows an error toast when bulk save fails', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockRejectedValue(new Error('Server error'))
+    renderModal({ onSave })
+
+    const saveBtn = screen.getByRole('button', { name: /save changes/i })
+    await user.click(saveBtn)
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Failed to save changes. Please try again.'),
+      ).toBeInTheDocument()
+    })
+  })
+
   it('does not show an error toast when bulk delete succeeds', async () => {
     const user = userEvent.setup()
     const onDelete = vi.fn().mockResolvedValue(undefined)
