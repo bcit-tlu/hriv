@@ -73,6 +73,11 @@ export default function AdminPage() {
 
   const pollRefs = useRef(new Map<number, ReturnType<typeof setTimeout>>())
 
+  // Abort controllers for in-flight XHR uploads, keyed by task ID.
+  // Used to abort the upload immediately when a user cancels an
+  // uploading task (#266).
+  const uploadAbortRefs = useRef(new Map<number, AbortController>())
+
   // Log viewer auto-scroll: the pre element that holds the streaming
   // task log, and a sticky-bottom flag that pauses auto-scroll if the
   // user scrolls up to read earlier output and resumes once they scroll
@@ -250,9 +255,11 @@ export default function AdminPage() {
         pollTask(task.id)
         setStarting(null) // task banner takes over
 
+        const abort = new AbortController()
+        uploadAbortRefs.current.set(task.id, abort)
         await uploadTaskFile(task.id, file, (fraction) => {
           setUploadProgress((prev) => new Map(prev).set(task!.id, fraction))
-        })
+        }, abort.signal)
         // Upload done — clear local progress; polling picks up the rest.
         setUploadProgress((prev) => {
           const next = new Map(prev)
@@ -260,7 +267,11 @@ export default function AdminPage() {
           return next
         })
       } catch (err) {
-        if (task !== undefined) {
+        // Suppress AbortError — the cancel handler already took care
+        // of UI cleanup and the backend cancellation request (#266).
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          // noop — polling will pick up the cancelled status
+        } else if (task !== undefined) {
           // Upload failed after the task was created — remove the
           // stale task from the UI and stop its polling loop (#264).
           stopPolling(task.id)
@@ -271,9 +282,13 @@ export default function AdminPage() {
             next.delete(task!.id)
             return next
           })
+          setError(err instanceof Error ? err.message : 'Operation failed')
+        } else {
+          setError(err instanceof Error ? err.message : 'Operation failed')
         }
-        setError(err instanceof Error ? err.message : 'Operation failed')
         setStarting(null)
+      } finally {
+        if (task !== undefined) uploadAbortRefs.current.delete(task.id)
       }
     }
   }
@@ -301,6 +316,20 @@ export default function AdminPage() {
       )
     ) {
       return
+    }
+    // Abort the in-flight XHR upload if one exists for this task
+    // (#266). This stops bandwidth waste immediately and prevents the
+    // duplicate "Upload failed" error notification.
+    const abort = uploadAbortRefs.current.get(taskId)
+    if (abort) {
+      abort.abort()
+      uploadAbortRefs.current.delete(taskId)
+      // Clear upload progress for the cancelled task.
+      setUploadProgress((prev) => {
+        const next = new Map(prev)
+        next.delete(taskId)
+        return next
+      })
     }
     try {
       const updated = await cancelAdminTask(taskId)
