@@ -449,7 +449,7 @@ export async function uploadSourceImage(
     })
 
     if (signal) {
-      if (signal.aborted) { xhr.abort(); return }
+      if (signal.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
       signal.addEventListener('abort', () => xhr.abort(), { once: true })
     }
 
@@ -508,7 +508,7 @@ export async function replaceImage(
     })
 
     if (signal) {
-      if (signal.aborted) { xhr.abort(); return }
+      if (signal.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
       signal.addEventListener('abort', () => xhr.abort(), { once: true })
     }
 
@@ -592,7 +592,7 @@ export async function bulkImportImages(
     })
 
     if (signal) {
-      if (signal.aborted) { xhr.abort(); return }
+      if (signal.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
       signal.addEventListener('abort', () => xhr.abort(), { once: true })
     }
 
@@ -728,7 +728,7 @@ export function uploadTaskFile(
     })
 
     if (signal) {
-      if (signal.aborted) { xhr.abort(); return }
+      if (signal.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
       signal.addEventListener('abort', () => xhr.abort(), { once: true })
     }
 

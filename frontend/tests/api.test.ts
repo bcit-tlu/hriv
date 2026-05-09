@@ -858,6 +858,8 @@ describe('XHR upload abort support', () => {
     const file = new File(['test'], 'test.png', { type: 'image/png' })
     const promise = uploadSourceImage(file, undefined, undefined, undefined, undefined, undefined, undefined, undefined, ac.signal)
     await expect(promise).rejects.toThrow('Upload aborted')
-    expect(xhrInstances[0].abort).toHaveBeenCalled()
+    // Rejects directly without calling xhr.abort() (abort before send
+    // doesn't fire the abort event per XHR spec).
+    expect(xhrInstances[0].send).not.toHaveBeenCalled()
   })
 })
