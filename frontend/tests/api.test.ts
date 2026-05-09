@@ -65,6 +65,10 @@ import {
   fetchAdminTasks,
   fetchAdminTask,
   cancelAdminTask,
+  uploadSourceImage,
+  uploadTaskFile,
+  bulkImportImages,
+  replaceImage,
   type ApiCategory,
   type ApiCategoryTree,
   type ApiImage,
@@ -739,5 +743,121 @@ describe('Admin Tasks API', () => {
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/admin/tasks/42/cancel')
     expect(init.method).toBe('POST')
+  })
+})
+
+// ── XHR upload abort tests (#266, #295) ──────────────────────────────────
+
+describe('XHR upload abort support', () => {
+  let xhrInstances: Array<{
+    open: ReturnType<typeof vi.fn>
+    send: ReturnType<typeof vi.fn>
+    abort: ReturnType<typeof vi.fn>
+    setRequestHeader: ReturnType<typeof vi.fn>
+    upload: { addEventListener: ReturnType<typeof vi.fn> }
+    addEventListener: ReturnType<typeof vi.fn>
+    status: number
+    responseText: string
+    listeners: Record<string, (() => void)[]>
+  }>
+
+  beforeEach(() => {
+    xhrInstances = []
+    // Must use `function` keyword (not arrow) so `new XMLHttpRequest()` works.
+    function MockXHR(this: typeof xhrInstances[0]) {
+      const listeners: Record<string, (() => void)[]> = {}
+      this.open = vi.fn()
+      this.send = vi.fn()
+      this.abort = vi.fn().mockImplementation(() => {
+        for (const cb of listeners['abort'] ?? []) cb()
+      })
+      this.setRequestHeader = vi.fn()
+      this.upload = { addEventListener: vi.fn() }
+      this.addEventListener = vi.fn().mockImplementation(
+        (event: string, cb: () => void) => {
+          if (!listeners[event]) listeners[event] = []
+          listeners[event].push(cb)
+        },
+      )
+      this.status = 200
+      this.responseText = '{}'
+      this.listeners = listeners
+      xhrInstances.push(this)
+    }
+    vi.stubGlobal('XMLHttpRequest', MockXHR)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    // Re-stub the globals needed by other test blocks
+    vi.stubGlobal('fetch', mockFetch)
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => storage[key] ?? null,
+      setItem: (key: string, val: string) => { storage[key] = val },
+      removeItem: (key: string) => { delete storage[key] },
+    })
+    vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
+  })
+
+  it('uploadSourceImage rejects with AbortError when signal is aborted', async () => {
+    const ac = new AbortController()
+    const file = new File(['test'], 'test.png', { type: 'image/png' })
+    const promise = uploadSourceImage(file, undefined, undefined, undefined, undefined, undefined, undefined, undefined, ac.signal)
+    ac.abort()
+    await expect(promise).rejects.toThrow('Upload aborted')
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('uploadTaskFile rejects with AbortError when signal is aborted', async () => {
+    const ac = new AbortController()
+    const file = new File(['test'], 'test.tar.gz')
+    const promise = uploadTaskFile(1, file, undefined, ac.signal)
+    ac.abort()
+    await expect(promise).rejects.toThrow('Upload aborted')
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('bulkImportImages rejects with AbortError when signal is aborted', async () => {
+    const ac = new AbortController()
+    const file = new File(['test'], 'test.zip')
+    const promise = bulkImportImages([file], 1, undefined, undefined, undefined, undefined, undefined, ac.signal)
+    ac.abort()
+    await expect(promise).rejects.toThrow('Upload aborted')
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('replaceImage rejects with AbortError when signal is aborted', async () => {
+    const ac = new AbortController()
+    const file = new File(['test'], 'test.png', { type: 'image/png' })
+    const promise = replaceImage(1, file, undefined, ac.signal)
+    ac.abort()
+    await expect(promise).rejects.toThrow('Upload aborted')
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
+  it('uploadSourceImage calls xhr.abort() when signal fires', async () => {
+    const ac = new AbortController()
+    const file = new File(['test'], 'test.png', { type: 'image/png' })
+    const promise = uploadSourceImage(file, undefined, undefined, undefined, undefined, undefined, undefined, undefined, ac.signal)
+    expect(xhrInstances).toHaveLength(1)
+    ac.abort()
+    expect(xhrInstances[0].abort).toHaveBeenCalled()
+    await expect(promise).rejects.toThrow()
+  })
+
+  it('does not abort when no signal is passed', () => {
+    const file = new File(['test'], 'test.png', { type: 'image/png' })
+    uploadSourceImage(file)
+    expect(xhrInstances).toHaveLength(1)
+    expect(xhrInstances[0].abort).not.toHaveBeenCalled()
+  })
+
+  it('rejects immediately when signal is already aborted', async () => {
+    const ac = new AbortController()
+    ac.abort()
+    const file = new File(['test'], 'test.png', { type: 'image/png' })
+    const promise = uploadSourceImage(file, undefined, undefined, undefined, undefined, undefined, undefined, undefined, ac.signal)
+    await expect(promise).rejects.toThrow('Upload aborted')
+    expect(xhrInstances[0].abort).toHaveBeenCalled()
   })
 })

@@ -215,6 +215,7 @@ export default function UploadImageModal({
   }, [])
 
   const uploadIdRef = useRef<number | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const handleUpload = async () => {
     if (files.length === 0) return
@@ -230,6 +231,8 @@ export default function UploadImageModal({
       setUploadProgress(0)
       const uploadId = Date.now()
       uploadIdRef.current = uploadId
+      const abort = new AbortController()
+      abortRef.current = abort
       const uploadFilename =
         files.length === 1 ? files[0].name : `${files.length} files`
       const uploadFileSize = files.reduce((total, file) => total + file.size, 0)
@@ -246,18 +249,25 @@ export default function UploadImageModal({
             setUploadProgress(fraction)
             onUploadProgress?.(uploadId, fraction)
           },
+          abort.signal,
         )
         hadBulkJobRef.current = true
         onBulkImportStarted?.(result, uploadFilename, uploadFileSize, uploadId)
         onClose()
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Upload failed'
-        setError(msg)
-        onUploadFailed?.(uploadId, msg)
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          onUploadFailed?.(uploadId, 'Upload cancelled')
+          onClose()
+        } else {
+          const msg = err instanceof Error ? err.message : 'Upload failed'
+          setError(msg)
+          onUploadFailed?.(uploadId, msg)
+        }
       } finally {
         setUploading(false)
         setUploadProgress(null)
         uploadIdRef.current = null
+        abortRef.current = null
       }
     } else {
       // Single image upload workflow
@@ -267,6 +277,8 @@ export default function UploadImageModal({
       setUploadProgress(0)
       const uploadId = Date.now()
       uploadIdRef.current = uploadId
+      const abort = new AbortController()
+      abortRef.current = abort
       onUploadStarted?.(uploadId, file.name, file.size)
       try {
         const result = await uploadSourceImage(
@@ -281,18 +293,25 @@ export default function UploadImageModal({
             setUploadProgress(fraction)
             onUploadProgress?.(uploadId, fraction)
           },
+          abort.signal,
         )
         onProcessingStarted?.(result.id, file.name, file.size, uploadId)
         onUploaded()
         onClose()
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Upload failed'
-        setError(msg)
-        onUploadFailed?.(uploadId, msg)
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          onUploadFailed?.(uploadId, 'Upload cancelled')
+          onClose()
+        } else {
+          const msg = err instanceof Error ? err.message : 'Upload failed'
+          setError(msg)
+          onUploadFailed?.(uploadId, msg)
+        }
       } finally {
         setUploading(false)
         setUploadProgress(null)
         uploadIdRef.current = null
+        abortRef.current = null
       }
     }
   }
@@ -457,7 +476,15 @@ export default function UploadImageModal({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={uploading}>
+        <Button
+          onClick={() => {
+            if (uploading && abortRef.current) {
+              abortRef.current.abort()
+            } else {
+              onClose()
+            }
+          }}
+        >
           Cancel
         </Button>
         <Button

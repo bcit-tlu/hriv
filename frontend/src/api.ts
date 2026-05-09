@@ -395,6 +395,7 @@ export async function uploadSourceImage(
   programIds?: number[],
   active?: boolean,
   onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<ApiSourceImage> {
   const form = new FormData()
   form.append('file', file)
@@ -443,6 +444,15 @@ export async function uploadSourceImage(
       reject(new Error('Upload failed: network error'))
     })
 
+    xhr.addEventListener('abort', () => {
+      reject(new DOMException('Upload aborted', 'AbortError'))
+    })
+
+    if (signal) {
+      if (signal.aborted) { xhr.abort(); return }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
+
     xhr.send(form)
   })
 }
@@ -455,6 +465,7 @@ export async function replaceImage(
   imageId: number,
   file: File,
   onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<ApiSourceImage> {
   const form = new FormData()
   form.append('file', file)
@@ -492,6 +503,15 @@ export async function replaceImage(
       reject(new Error('Replace failed: network error'))
     })
 
+    xhr.addEventListener('abort', () => {
+      reject(new DOMException('Upload aborted', 'AbortError'))
+    })
+
+    if (signal) {
+      if (signal.aborted) { xhr.abort(); return }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
+
     xhr.send(form)
   })
 }
@@ -518,6 +538,7 @@ export async function bulkImportImages(
   programIds?: number[],
   active?: boolean,
   onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<ApiBulkImportJob> {
   const form = new FormData()
   for (const file of files) {
@@ -565,6 +586,15 @@ export async function bulkImportImages(
     xhr.addEventListener('error', () => {
       reject(new Error('Bulk import failed: network error'))
     })
+
+    xhr.addEventListener('abort', () => {
+      reject(new DOMException('Upload aborted', 'AbortError'))
+    })
+
+    if (signal) {
+      if (signal.aborted) { xhr.abort(); return }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
 
     xhr.send(form)
   })
@@ -655,6 +685,7 @@ export function uploadTaskFile(
   taskId: number,
   file: File,
   onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<AdminTask> {
   const form = new FormData()
   form.append('file', file)
@@ -692,6 +723,15 @@ export function uploadTaskFile(
       reject(new Error('Upload failed: network error'))
     })
 
+    xhr.addEventListener('abort', () => {
+      reject(new DOMException('Upload aborted', 'AbortError'))
+    })
+
+    if (signal) {
+      if (signal.aborted) { xhr.abort(); return }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
+
     xhr.send(form)
   })
 }
@@ -707,10 +747,11 @@ export async function startFilesImport(
   file: File,
   onInitiated?: (task: AdminTask) => void,
   onUploadProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<AdminTask> {
   const task = await initFilesImport(file.name)
   if (onInitiated) onInitiated(task)
-  return uploadTaskFile(task.id, file, onUploadProgress)
+  return uploadTaskFile(task.id, file, onUploadProgress, signal)
 }
 
 export function fetchAdminTasks(): Promise<AdminTask[]> {
