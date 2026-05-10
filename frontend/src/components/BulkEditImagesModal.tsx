@@ -63,6 +63,7 @@ export default function BulkEditImagesModal({
   const [activeChanged, setActiveChanged] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
   const resetForm = useCallback(() => {
@@ -76,6 +77,7 @@ export default function BulkEditImagesModal({
     setActiveChanged(false)
     setConfirmDelete(false)
     setDeleteError(null)
+    setSaveError(null)
     setSaving(false)
   }, [])
 
@@ -113,6 +115,7 @@ export default function BulkEditImagesModal({
       resetForm()
     } catch {
       setSaving(false)
+      setSaveError('Failed to save changes. Please try again.')
     }
   }
 
@@ -256,6 +259,15 @@ export default function BulkEditImagesModal({
       >
         <Alert severity="error" variant="filled" onClose={() => setDeleteError(null)}>
           {deleteError}
+        </Alert>
+      </Snackbar>
+      <Snackbar
+        open={saveError !== null}
+        autoHideDuration={6000}
+        onClose={(_event, reason) => { if (reason === 'clickaway') return; setSaveError(null) }}
+      >
+        <Alert severity="error" variant="filled" onClose={() => setSaveError(null)}>
+          {saveError}
         </Alert>
       </Snackbar>
     </Dialog>

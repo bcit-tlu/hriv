@@ -200,7 +200,6 @@ export default function ManagePage({
   // Delete confirmation dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteDialogImage, setDeleteDialogImage] = useState<ApiImage | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   const loadImages = useCallback(async () => {
@@ -472,17 +471,12 @@ export default function ManagePage({
     if (image) {
       setDeleteDialogImage(image)
       setDeleteDialogOpen(true)
-      setConfirmDelete(false)
       setDeleting(false)
     }
   }
 
   const handleConfirmDeleteImage = async () => {
     if (!deleteDialogImage) return
-    if (!confirmDelete) {
-      setConfirmDelete(true)
-      return
-    }
     setDeleting(true)
     try {
       await deleteImage(deleteDialogImage.id)
@@ -493,7 +487,6 @@ export default function ManagePage({
       })
       setDeleteDialogOpen(false)
       setDeleteDialogImage(null)
-      setConfirmDelete(false)
       setDeleting(false)
       await loadImages()
       onCategoriesChanged?.()
@@ -506,7 +499,6 @@ export default function ManagePage({
   const handleCloseDeleteDialog = () => {
     setDeleteDialogOpen(false)
     setDeleteDialogImage(null)
-    setConfirmDelete(false)
     setDeleting(false)
   }
 
@@ -951,24 +943,20 @@ export default function ManagePage({
           <Box>
             <Button
               color="error"
-              variant={confirmDelete ? 'contained' : 'outlined'}
+              variant="contained"
               onClick={handleConfirmDeleteImage}
               disabled={deleting}
               fullWidth
             >
-              {confirmDelete
-                ? 'Confirm Delete Image'
-                : 'Delete Image'}
+              Delete Image
             </Button>
-            {confirmDelete && (
-              <Typography
-                variant="caption"
-                color="error"
-                sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
-              >
-                This action cannot be undone. Click again to confirm.
-              </Typography>
-            )}
+            <Typography
+              variant="caption"
+              color="error"
+              sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
+            >
+              This action cannot be undone.
+            </Typography>
           </Box>
         </DialogContent>
         <DialogActions>
