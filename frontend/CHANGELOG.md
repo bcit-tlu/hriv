@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.10.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.9.0...frontend-v0.10.0) (2026-05-10)
+
+
+### Features
+
+* add automated maintenance mode for backup restores ([#285](https://github.com/bcit-tlu/hriv/issues/285)) ([98f2d67](https://github.com/bcit-tlu/hriv/commit/98f2d67fbf61ad7cd2f63ae69f03b0484654c71f))
+* add real-time magnification factor badge to image viewer ([#302](https://github.com/bcit-tlu/hriv/issues/302)) ([ee3212f](https://github.com/bcit-tlu/hriv/commit/ee3212f8ac89c69d11918dcf8a9947e16913b0c1))
+* improve magnification accuracy with devicePixelRatio and hide badge without scale ([#305](https://github.com/bcit-tlu/hriv/issues/305)) ([d8dfc6a](https://github.com/bcit-tlu/hriv/commit/d8dfc6ab8bc5a84da9066ee99b952119147a564f))
+* reject duplicate category names within same parent ([#311](https://github.com/bcit-tlu/hriv/issues/311)) ([9a06a1b](https://github.com/bcit-tlu/hriv/commit/9a06a1b65705e6c54d4c46f2059bb932b346e3f9))
+* route tile requests through nginx sidecar for direct PVC serving ([#300](https://github.com/bcit-tlu/hriv/issues/300)) ([04c5874](https://github.com/bcit-tlu/hriv/commit/04c587427a2d0c64692abedd314396eb8b03a9a8))
+* upload cancellation with XHR abort ([#295](https://github.com/bcit-tlu/hriv/issues/295), [#266](https://github.com/bcit-tlu/hriv/issues/266)) ([#325](https://github.com/bcit-tlu/hriv/issues/325)) ([e81e289](https://github.com/bcit-tlu/hriv/commit/e81e289ad95859c81d358ee1336c0b2978e71390))
+
+
+### Bug Fixes
+
+* admin upload error handling ([#263](https://github.com/bcit-tlu/hriv/issues/263), [#264](https://github.com/bcit-tlu/hriv/issues/264), [#265](https://github.com/bcit-tlu/hriv/issues/265)) ([#320](https://github.com/bcit-tlu/hriv/issues/320)) ([2448b2c](https://github.com/bcit-tlu/hriv/commit/2448b2cee2962a1f835c54447a353e575a3bb383))
+* prevent backdrop/Escape close of upload modal during active upload ([#317](https://github.com/bcit-tlu/hriv/issues/317)) ([1952329](https://github.com/bcit-tlu/hriv/commit/1952329bf08939547203b2efd01ff27f8e5dee20))
+* show zip upload progress ([#291](https://github.com/bcit-tlu/hriv/issues/291)) ([38ff8b7](https://github.com/bcit-tlu/hriv/commit/38ff8b76a11a5ab7eb1c4db9464a5fa360e66d18))
+* standalone UX fixes ([#296](https://github.com/bcit-tlu/hriv/issues/296), [#246](https://github.com/bcit-tlu/hriv/issues/246), [#194](https://github.com/bcit-tlu/hriv/issues/194)) ([#322](https://github.com/bcit-tlu/hriv/issues/322)) ([9964023](https://github.com/bcit-tlu/hriv/commit/99640238bc6079872dbf6b967589ad771a4a65f2))
+* track package-lock.json and switch to npm ci ([#310](https://github.com/bcit-tlu/hriv/issues/310)) ([a355936](https://github.com/bcit-tlu/hriv/commit/a35593622b8d633ca50874682e88e0fd531c7a48))
+
 ## [0.9.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.8.2...frontend-v0.9.0) (2026-05-04)
 
 
