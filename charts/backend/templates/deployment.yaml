@@ -104,6 +104,8 @@ spec:
               value: {{ .Values.otel.exporterEndpoint | quote }}
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
               value: {{ .Values.otel.exporterProtocol | quote }}
+            - name: OTEL_PYTHON_FASTAPI_EXCLUDED_URLS
+              value: {{ .Values.otel.excludedUrls | quote }}
             {{- end }}
             {{- if .Values.redis.enabled }}
             - name: REDIS_URL

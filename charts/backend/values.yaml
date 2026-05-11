@@ -61,6 +61,10 @@ otel:
   logsExporter: "otlp"
   exporterEndpoint: ""
   exporterProtocol: "http/protobuf"
+  # Comma-delimited regexes passed to OTEL_PYTHON_FASTAPI_EXCLUDED_URLS.
+  # Prevents Kubernetes liveness/readiness probes from flooding the
+  # trace backend with low-value spans.
+  excludedUrls: "api/health,api/health/ready"
 
 # Stable JWT signing secret shared across all Uvicorn workers.
 # Leave blank to auto-generate a random value at install time.
