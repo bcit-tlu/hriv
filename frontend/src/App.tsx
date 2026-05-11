@@ -1151,6 +1151,12 @@ export default function App() {
             for (let i = 0; i < 30 && canvasSaveInFlightRef.current; i++) {
                 await new Promise((r) => setTimeout(r, 100));
             }
+            // After waiting, save any data the in-flight handler didn't pick up
+            const stillPending = pendingCanvasAnnotationsRef.current;
+            if (stillPending && !canvasSaveInFlightRef.current) {
+                pendingCanvasAnnotationsRef.current = null;
+                await saveCanvasAnnotations(stillPending);
+            }
             return;
         }
         // Use the ref (always current) instead of localCanvasAnnotations state
