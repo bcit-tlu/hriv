@@ -233,7 +233,7 @@ export default function ManageCategoriesDialog({
     setEditDialogOpen(true)
   }, [])
 
-  const handleEditSave = useCallback(async (newLabel: string, programIds: number[]) => {
+  const handleEditSave = useCallback(async (newLabel: string, programIds?: number[]) => {
     if (editingCategory && onEditCategory) {
       await onEditCategory(editingCategory.id, newLabel, programIds)
     }

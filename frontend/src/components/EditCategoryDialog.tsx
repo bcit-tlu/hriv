@@ -21,7 +21,7 @@ const filter = createFilterOptions<string>()
 interface EditCategoryDialogProps {
   open: boolean
   onClose: () => void
-  onSave: (newLabel: string, programIds: number[]) => void | Promise<void>
+  onSave: (newLabel: string, programIds?: number[]) => void | Promise<void>
   currentLabel: string
   siblingNames?: string[]
   programs?: Program[]
@@ -94,7 +94,9 @@ export default function EditCategoryDialog({
     if (!trimmed) return
     const labelChanged = trimmed !== currentLabel
     if (!labelChanged && !programsChanged) return
-    const programIds = visibility === 'specific' ? Array.from(selectedProgramIds) : []
+    const programIds = programs.length > 0
+      ? (visibility === 'specific' ? Array.from(selectedProgramIds) : [])
+      : undefined
     setSaving(true)
     setError(null)
     try {

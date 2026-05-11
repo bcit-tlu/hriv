@@ -67,9 +67,37 @@ describe('EditCategoryDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith('New Name', [])
+      expect(onSave).toHaveBeenCalledWith('New Name', undefined)
     })
     expect(onClose).toHaveBeenCalled()
+  })
+
+  it('passes programIds when programs prop is provided', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockResolvedValue(undefined)
+
+    render(
+      <EditCategoryDialog
+        open
+        onClose={vi.fn()}
+        onSave={onSave}
+        currentLabel="Architecture"
+        programs={[
+          { id: 1, name: 'Admin' },
+          { id: 2, name: 'Design' },
+        ]}
+        currentProgramIds={[2]}
+      />,
+    )
+
+    const input = screen.getByDisplayValue('Architecture')
+    await user.clear(input)
+    await user.type(input, 'New Name')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledWith('New Name', [2])
+    })
   })
 
   it('shows error on 409 conflict', async () => {
