@@ -23,6 +23,7 @@ from arq.connections import ArqRedis, RedisSettings
 from opentelemetry import trace
 from opentelemetry.context import attach, detach
 from opentelemetry.propagate import extract, inject
+from opentelemetry.trace import Status, StatusCode
 
 from .database import settings
 from .logging_config import setup_logging
@@ -220,7 +221,7 @@ async def process_source_image_task(
         with tracer.start_as_current_span(
             "process_source_image_task",
             attributes={"source_image.id": source_image_id},
-        ):
+        ) as span:
             logger.info(
                 "arq worker processing source image",
                 extra={
@@ -228,7 +229,12 @@ async def process_source_image_task(
                     "source_image_id": source_image_id,
                 },
             )
-            await process_source_image(source_image_id)
+            try:
+                await process_source_image(source_image_id)
+            except Exception as exc:
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                span.record_exception(exc)
+                raise
     finally:
         if token is not None:
             detach(token)
@@ -252,7 +258,7 @@ async def replace_image_task(
                 "source_image.id": source_image_id,
                 "target_image.id": target_image_id,
             },
-        ):
+        ) as span:
             logger.info(
                 "arq worker processing image replacement",
                 extra={
@@ -261,7 +267,12 @@ async def replace_image_task(
                     "target_image_id": target_image_id,
                 },
             )
-            await process_replace_image(source_image_id, target_image_id)
+            try:
+                await process_replace_image(source_image_id, target_image_id)
+            except Exception as exc:
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                span.record_exception(exc)
+                raise
     finally:
         if token is not None:
             detach(token)
@@ -286,7 +297,7 @@ async def bulk_import_task(
         with tracer.start_as_current_span(
             "bulk_import_task",
             attributes={"bulk_import.job_id": job_id},
-        ):
+        ) as span:
             logger.info(
                 "arq worker processing bulk import",
                 extra={
@@ -295,14 +306,19 @@ async def bulk_import_task(
                     "file_count": len(file_entries),
                 },
             )
-            await _process_bulk_import(
-                job_id,
-                file_entries,
-                copyright=copyright,
-                note=note,
-                program_ids=program_ids,
-                active=active,
-            )
+            try:
+                await _process_bulk_import(
+                    job_id,
+                    file_entries,
+                    copyright=copyright,
+                    note=note,
+                    program_ids=program_ids,
+                    active=active,
+                )
+            except Exception as exc:
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                span.record_exception(exc)
+                raise
     finally:
         if token is not None:
             detach(token)
@@ -338,7 +354,7 @@ async def admin_task_runner(
         with tracer.start_as_current_span(
             "admin_task_runner",
             attributes={"admin_task.id": task_id, "admin_task.type": task_type},
-        ):
+        ) as span:
             logger.info(
                 "arq worker running admin task",
                 extra={
@@ -347,7 +363,12 @@ async def admin_task_runner(
                     "task_type": task_type,
                 },
             )
-            await runner(task_id)
+            try:
+                await runner(task_id)
+            except Exception as exc:
+                span.set_status(Status(StatusCode.ERROR, str(exc)))
+                span.record_exception(exc)
+                raise
     finally:
         if token is not None:
             detach(token)
