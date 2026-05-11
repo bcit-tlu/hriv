@@ -28,7 +28,7 @@ describe('ImageMetadataFields', () => {
     )
     expect(screen.getByLabelText(/copyright/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/note/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/program/i)).toBeInTheDocument()
+    expect(screen.getByText('Program')).toBeInTheDocument()
     expect(screen.getByLabelText(/active/i)).toBeInTheDocument()
   })
 
@@ -101,7 +101,7 @@ describe('ImageMetadataFields', () => {
     expect(screen.getByPlaceholderText('custom note')).toBeInTheDocument()
   })
 
-  it('displays selected program chips', () => {
+  it('displays selected program chips as filled', () => {
     render(
       <ImageMetadataFields
         values={{ ...defaultValues, programIds: [1] }}
@@ -110,5 +110,40 @@ describe('ImageMetadataFields', () => {
       />,
     )
     expect(screen.getByText('Medical Lab')).toBeInTheDocument()
+    expect(screen.getByText('Dental Hygiene')).toBeInTheDocument()
+  })
+
+  it('calls onChange with toggled programIds when chip is clicked', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <ImageMetadataFields
+        values={defaultValues}
+        onChange={onChange}
+        programs={programs}
+      />,
+    )
+
+    await user.click(screen.getByText('Medical Lab'))
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ programIds: [1] }),
+    )
+  })
+
+  it('calls onChange to remove programId when selected chip is clicked', async () => {
+    const onChange = vi.fn()
+    const user = userEvent.setup()
+    render(
+      <ImageMetadataFields
+        values={{ ...defaultValues, programIds: [1, 2] }}
+        onChange={onChange}
+        programs={programs}
+      />,
+    )
+
+    await user.click(screen.getByText('Medical Lab'))
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ programIds: [2] }),
+    )
   })
 })
