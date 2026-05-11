@@ -72,13 +72,30 @@ All use password: `password`
     - Gothic
 - Panoramas
 
+### Programs
+| ID | Name |
+|---|---|
+| 1 | Administration |
+| 2 | Digital Design |
+| 3 | Photography |
+
 ### Images
-| ID | Name | Category | Source |
-|---|---|---|---|
-| 1 | Duomo di Milano | Italian | OpenSeadragon examples |
-| 2 | Duomo di Milano (Gothic Detail) | Gothic | OpenSeadragon examples |
-| 3 | Highsmith Panorama | American | Library of Congress |
-| 4 | Library of Congress | Panoramas | Library of Congress |
+| ID | Name | Category | Program | Source |
+|---|---|---|---|---|
+| 1 | Duomo di Milano | Italian | Digital Design | OpenSeadragon examples |
+| 2 | Duomo di Milano (Gothic Detail) | Gothic | Digital Design | OpenSeadragon examples |
+| 3 | Highsmith Panorama | American | Photography | Library of Congress |
+| 4 | Library of Congress | Panoramas | Photography | Library of Congress |
+
+### Direct Image Counts per Category
+These are direct (first-child) counts, not subtree sums:
+| Category | Direct Image Count |
+|---|---|
+| Architecture | 0 |
+| American | 1 |
+| Italian | 1 |
+| Gothic | 1 |
+| Panoramas | 1 |
 
 ## Getting an API Auth Token
 
@@ -109,17 +126,54 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1
 - Three-dot menu on any row: View / Details / Move / Delete.
 - Clicking an image name opens the **Edit Details** modal.
 
-### Edit Details / Add Image / Bulk Import modals
+### Edit Details / Add Image / Bulk Edit modals
 - All share a category dropdown rendering the full tree with view / edit / `+` icons.
 - `+` on any row opens a "New Category" dialog; the new category is auto-selected.
 - **Edit Details** has a **VIEW IMAGE** button that navigates to the viewer.
 - When testing auto-select, cancel without saving after verifying the dropdown value
   to avoid polluting seed data.
 
+#### Category Dropdown Image Counts
+The category dropdown (`CategoryPickerSelect`) shows direct image counts next to
+each category name — e.g. `Architecture (0)`, `Italian (1)`. These are **direct**
+counts (images directly in that category), not subtree sums. When testing:
+- Verify Architecture shows `(0)` not `(3)` — it has no direct images
+- Verify leaf categories (American, Italian, Gothic, Panoramas) each show `(1)`
+
+#### Program Chip Toggles
+All image metadata forms (Edit Details, Add Images, Bulk Edit) use a **chip toggle
+panel** for program multi-select — not a Select dropdown. The pattern:
+- "Program" appears as a Typography heading above a row of Chip components
+- **Filled/primary** = selected, **outlined/default** = unselected
+- Click a chip to toggle its state (no Ctrl key needed)
+- Multiple chips can be selected simultaneously
+- In **Edit Details**: chips reflect the image's current program assignments
+- In **Add Images**: all chips start outlined (no pre-selection)
+- In **Bulk Edit**: all chips start outlined (changes apply to all selected images)
+
+**Testing flow:**
+1. Open Edit Details for an image with a known program (e.g. Duomo di Milano → Digital Design)
+2. Verify the correct chip is filled, others are outlined
+3. Click an unselected chip → verify it becomes filled (others unchanged)
+4. Click a selected chip → verify it becomes outlined (others unchanged)
+5. Cancel to discard changes
+6. Repeat in Add Images and Bulk Edit modals to verify consistent behavior
+
 ### Category Management
 - Manage > Categories has a full dialog with drag-and-drop reordering.
 - Category tree changes are reflected immediately on Browse without a refresh
   (frontend invalidates the ETag-cached `/api/categories/tree` query).
+
+#### Category Program Visibility
+Edit Category dialog has a "Visible to" radio group:
+- **All students** (default): no program restriction, chip panel hidden
+- **Specific programs**: shows chip toggle panel to select which programs can see the category
+
+Key behaviors:
+- Save/Create disabled when "Specific programs" selected but no chips toggled
+- Save disabled when label is empty (even if programs changed)
+- Inline rename (via category picker in image modals) does NOT show visibility controls
+  and does NOT wipe existing program associations
 
 #### Duplicate Category Name Validation
 
@@ -142,7 +196,8 @@ open for retry.
 3. Click pencil on a category → type an existing sibling name → Save → expect error
 4. **Clean up** any test categories created during step 2 (delete via the trash icon)
 
-#### Category Program Visibility Picker
+###
+# Category Program Visibility Picker
 
 The Add/Edit Category dialogs include a "Visible to" radio group:
 - **"All students"** (default for new categories) — `program_ids=[]`, chip panel hidden
