@@ -114,7 +114,7 @@ const CATEGORY_FIXTURE: ApiCategory = {
   id: 1,
   label: 'Architecture',
   parent_id: null,
-  program: null,
+  program_ids: [],
   status: null,
   metadata_extra: null,
   created_at: '2026-01-01T00:00:00Z',
