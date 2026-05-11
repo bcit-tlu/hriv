@@ -16,7 +16,7 @@ describe('EditCategoryDialog', () => {
         currentLabel="Architecture"
       />,
     )
-    expect(screen.getByText('Rename Category')).toBeInTheDocument()
+    expect(screen.getByText('Edit Category')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Architecture')).toBeInTheDocument()
   })
 
@@ -67,7 +67,7 @@ describe('EditCategoryDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith('New Name')
+      expect(onSave).toHaveBeenCalledWith('New Name', [])
     })
     expect(onClose).toHaveBeenCalled()
   })

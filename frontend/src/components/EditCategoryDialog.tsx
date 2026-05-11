@@ -1,22 +1,31 @@
 import { useState, useCallback, useMemo } from 'react'
 import Alert from '@mui/material/Alert'
 import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete'
+import Box from '@mui/material/Box'
+import Chip from '@mui/material/Chip'
 import { ApiError } from '../api'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import Radio from '@mui/material/Radio'
+import RadioGroup from '@mui/material/RadioGroup'
 import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
+import type { Program } from '../types'
 
 const filter = createFilterOptions<string>()
 
 interface EditCategoryDialogProps {
   open: boolean
   onClose: () => void
-  onSave: (newLabel: string) => void | Promise<void>
+  onSave: (newLabel: string, programIds: number[]) => void | Promise<void>
   currentLabel: string
   siblingNames?: string[]
+  programs?: Program[]
+  currentProgramIds?: number[]
 }
 
 export default function EditCategoryDialog({
@@ -25,10 +34,18 @@ export default function EditCategoryDialog({
   onSave,
   currentLabel,
   siblingNames = [],
+  programs = [],
+  currentProgramIds = [],
 }: EditCategoryDialogProps) {
   const [label, setLabel] = useState(currentLabel)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [visibility, setVisibility] = useState<'all' | 'specific'>(
+    currentProgramIds.length > 0 ? 'specific' : 'all',
+  )
+  const [selectedProgramIds, setSelectedProgramIds] = useState<Set<number>>(
+    new Set(currentProgramIds),
+  )
 
   const exactMatch = useMemo(
     () =>
@@ -40,7 +57,9 @@ export default function EditCategoryDialog({
   const handleEnter = useCallback(() => {
     setLabel(currentLabel)
     setError(null)
-  }, [currentLabel])
+    setVisibility(currentProgramIds.length > 0 ? 'specific' : 'all')
+    setSelectedProgramIds(new Set(currentProgramIds))
+  }, [currentLabel, currentProgramIds])
 
   const handleClose = () => {
     setLabel('')
@@ -48,13 +67,38 @@ export default function EditCategoryDialog({
     onClose()
   }
 
+  const toggleProgram = (programId: number) => {
+    setSelectedProgramIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(programId)) {
+        next.delete(programId)
+      } else {
+        next.add(programId)
+      }
+      return next
+    })
+  }
+
+  const programsChanged = useMemo(() => {
+    const currentSet = new Set(currentProgramIds)
+    const effectiveIds = visibility === 'specific' ? selectedProgramIds : new Set<number>()
+    if (currentSet.size !== effectiveIds.size) return true
+    for (const id of effectiveIds) {
+      if (!currentSet.has(id)) return true
+    }
+    return false
+  }, [currentProgramIds, selectedProgramIds, visibility])
+
   const handleSubmit = async () => {
     const trimmed = label.trim()
-    if (!trimmed || trimmed === currentLabel) return
+    if (!trimmed) return
+    const labelChanged = trimmed !== currentLabel
+    if (!labelChanged && !programsChanged) return
+    const programIds = visibility === 'specific' ? Array.from(selectedProgramIds) : []
     setSaving(true)
     setError(null)
     try {
-      await onSave(trimmed)
+      await onSave(trimmed, programIds)
       setLabel('')
       onClose()
     } catch (err) {
@@ -68,9 +112,11 @@ export default function EditCategoryDialog({
     }
   }
 
+  const labelChanged = label.trim() !== '' && label.trim() !== currentLabel
+
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth TransitionProps={{ onEnter: handleEnter }}>
-      <DialogTitle>Rename Category</DialogTitle>
+      <DialogTitle>Edit Category</DialogTitle>
       <DialogContent>
         <Autocomplete
           freeSolo
@@ -102,6 +148,34 @@ export default function EditCategoryDialog({
             />
           )}
         />
+        {programs.length > 0 && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Visible to
+            </Typography>
+            <RadioGroup
+              value={visibility}
+              onChange={(e) => setVisibility(e.target.value as 'all' | 'specific')}
+            >
+              <FormControlLabel value="all" control={<Radio size="small" />} label="All students" />
+              <FormControlLabel value="specific" control={<Radio size="small" />} label="Specific programs" />
+            </RadioGroup>
+            {visibility === 'specific' && (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
+                {programs.map((p) => (
+                  <Chip
+                    key={p.id}
+                    label={p.name}
+                    size="small"
+                    color={selectedProgramIds.has(p.id) ? 'primary' : 'default'}
+                    variant={selectedProgramIds.has(p.id) ? 'filled' : 'outlined'}
+                    onClick={() => toggleProgram(p.id)}
+                  />
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
         {error && (
           <Alert severity="error" sx={{ mt: 1 }} onClose={() => setError(null)}>
             {error}
@@ -113,7 +187,7 @@ export default function EditCategoryDialog({
         <Button
           onClick={handleSubmit}
           variant="contained"
-          disabled={!label.trim() || label.trim() === currentLabel || saving}
+          disabled={(!labelChanged && !programsChanged) || saving}
         >
           Save
         </Button>

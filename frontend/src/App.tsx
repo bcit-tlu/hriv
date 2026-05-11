@@ -1315,10 +1315,12 @@ export default function App() {
         async (
             label: string,
             parentId: number | null,
+            programIds: number[] = [],
         ): Promise<number | void> => {
             const created = await apiCreateCategory({
                 label,
                 parent_id: parentId,
+                program_ids: programIds,
             });
             await loadCategories();
             loadUncategorizedImages();
@@ -1346,8 +1348,15 @@ export default function App() {
     );
 
     const editCategoryInline = useCallback(
-        async (categoryId: number, newLabel: string) => {
-            await apiUpdateCategory(categoryId, { label: newLabel });
+        async (
+            categoryId: number,
+            newLabel: string,
+            programIds: number[] = [],
+        ) => {
+            await apiUpdateCategory(categoryId, {
+                label: newLabel,
+                program_ids: programIds,
+            });
             await loadCategories();
         },
         [loadCategories],
@@ -2844,6 +2853,7 @@ export default function App() {
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
                 onReorderCategories={reorderCategoriesInline}
+                programs={programs}
             />
 
             {/* Move category dialog */}
