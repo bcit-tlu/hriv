@@ -979,14 +979,14 @@ export default function CanvasOverlay({
     onAnnotationsChange([])
   }, [onAnnotationsChange])
 
-  const handleDone = useCallback(() => {
+  const handleDone = useCallback(async () => {
     console.debug(LOG_PREFIX, 'handleDone — emitting and flushing before exiting edit mode')
     emitAnnotations()
-    // Flush immediately (bypass debounce) so data is persisted before exit
+    // Flush immediately (bypass debounce) so data is persisted before exit.
+    // Await the flush so the PATCH completes before edit mode state changes.
     if (onFlushAnnotations) {
-      void onFlushAnnotations().then(() => {
-        console.debug(LOG_PREFIX, 'flush complete, exiting edit mode')
-      })
+      await onFlushAnnotations()
+      console.debug(LOG_PREFIX, 'flush complete, exiting edit mode')
     }
     onEditModeChange(false)
   }, [emitAnnotations, onEditModeChange, onFlushAnnotations])
