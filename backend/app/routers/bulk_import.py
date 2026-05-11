@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 from sqlalchemy import cast, select, update
 from sqlalchemy.dialects.postgresql import JSONB as JSONB_type
 from sqlalchemy.sql import func
@@ -94,6 +96,9 @@ async def _process_bulk_import(
                 try:
                     await process_source_image(src.id)
                 except Exception as exc:
+                    span = trace.get_current_span()
+                    span.record_exception(exc)
+                    span.set_status(StatusCode.ERROR, str(exc))
                     logger.exception(
                         "Bulk import: image processing failed",
                         extra={
@@ -141,6 +146,9 @@ async def _process_bulk_import(
             # Catch errors from SourceImage creation or any other unexpected
             # failure so that gather(return_exceptions=True) doesn't silently
             # swallow them without updating job counters.
+            span = trace.get_current_span()
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
             logger.exception(
                 "Bulk import: unexpected error",
                 extra={
