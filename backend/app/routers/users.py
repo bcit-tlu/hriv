@@ -39,6 +39,10 @@ async def _set_user_programs(
         progs = (await db.execute(
             select(Program).where(Program.id.in_(program_ids))
         )).scalars().all()
+        found_ids = {p.id for p in progs}
+        missing = set(program_ids) - found_ids
+        if missing:
+            raise HTTPException(422, f"Invalid program IDs: {sorted(missing)}")
         user.programs = list(progs)
     else:
         user.programs = []

@@ -185,6 +185,10 @@ async def create_category(
         progs = (await db.execute(
             select(Program).where(Program.id.in_(body.program_ids))
         )).scalars().all()
+        found_ids = {p.id for p in progs}
+        missing = set(body.program_ids) - found_ids
+        if missing:
+            raise HTTPException(422, f"Invalid program IDs: {sorted(missing)}")
         cat.programs = list(progs)
     db.add(cat)
     await db.commit()
@@ -243,10 +247,17 @@ async def update_category(
     for key, value in update_data.items():
         setattr(cat, key, value)
     if program_ids is not None:
-        progs = (await db.execute(
-            select(Program).where(Program.id.in_(program_ids))
-        )).scalars().all()
-        cat.programs = list(progs)
+        if program_ids:
+            progs = (await db.execute(
+                select(Program).where(Program.id.in_(program_ids))
+            )).scalars().all()
+            found_ids = {p.id for p in progs}
+            missing = set(program_ids) - found_ids
+            if missing:
+                raise HTTPException(422, f"Invalid program IDs: {sorted(missing)}")
+            cat.programs = list(progs)
+        else:
+            cat.programs = []
     await db.commit()
     await db.refresh(cat)
     return cat

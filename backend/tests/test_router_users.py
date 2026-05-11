@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from app.routers.users import (
     _user_to_out,
+    _set_user_programs,
     list_users,
     get_user,
     create_user,
@@ -178,9 +179,11 @@ async def test_bulk_update_program_success() -> None:
         nonlocal call_count
         call_count += 1
         mock_result = MagicMock()
-        if call_count <= 2:
-            # First two calls: select users, select programs
+        if call_count == 1:
+            # Select users
             mock_result.scalars.return_value.unique.return_value.all.return_value = users
+        elif call_count <= 3:
+            # _set_user_programs for each user: select programs
             mock_result.scalars.return_value.all.return_value = [prog]
         else:
             # Reload
@@ -244,3 +247,18 @@ async def test_delete_user_not_found() -> None:
     with pytest.raises(HTTPException) as exc:
         await delete_user(1, admin, db)
     assert exc.value.status_code == 404
+
+
+async def test_set_user_programs_invalid_ids() -> None:
+    user = _make_user()
+    prog = _make_program(1, "Biology")
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [prog]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    with pytest.raises(HTTPException) as exc:
+        await _set_user_programs(db, user, [1, 999])
+    assert exc.value.status_code == 422
+    assert "999" in str(exc.value.detail)

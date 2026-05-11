@@ -498,6 +498,7 @@ async def run_db_import(task_id: int) -> None:
                         )).scalars().all()
                         user.programs = list(progs)
                     data_session.add(user)
+                await data_session.flush()
 
                 # Import categories (topologically sorted)
                 await _update_task(status_session, task, log_line="Importing categories…", progress=35)

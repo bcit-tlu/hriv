@@ -301,6 +301,26 @@ async def test_create_category_same_label_different_parent_allowed() -> None:
     db.add.assert_called_once()
 
 
+async def test_create_category_invalid_program_ids() -> None:
+    body = CategoryCreate(label="New Cat", parent_id=None, program_ids=[1, 999])
+
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+
+    prog = SimpleNamespace(id=1, name="Biology")
+    prog_result = MagicMock()
+    prog_result.scalars.return_value.all.return_value = [prog]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[dup_result, prog_result])
+    db.add = MagicMock()
+
+    with pytest.raises(HTTPException) as exc:
+        await create_category(body, MagicMock(), db=db)
+    assert exc.value.status_code == 422
+    assert "999" in str(exc.value.detail)
+
+
 async def test_update_category_not_found() -> None:
     body = CategoryUpdate(label="Updated")
     db = AsyncMock()
