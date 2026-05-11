@@ -31,6 +31,7 @@ import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import AddPhotoAlternateIcon from "@mui/icons-material/AddPhotoAlternate";
 import DisabledVisibleIcon from "@mui/icons-material/DisabledVisible";
+import VisibilityIcon from "@mui/icons-material/Visibility";
 import EditIcon from "@mui/icons-material/Edit";
 import HomeIcon from "@mui/icons-material/Home";
 import LinkIcon from "@mui/icons-material/Link";
@@ -2377,14 +2378,19 @@ export default function App() {
                                         alignItems: "center",
                                     }}
                                 >
-                                    {!selectedImage.active && (
-                                        <Tooltip title="This image is inactive">
+                                    <Tooltip title={selectedImage.active ? "Visible" : "Hidden"}>
+                                        {selectedImage.active ? (
+                                            <VisibilityIcon
+                                                color="action"
+                                                sx={{ fontSize: 28 }}
+                                            />
+                                        ) : (
                                             <DisabledVisibleIcon
                                                 color="disabled"
-                                                sx={{ fontSize: 32 }}
+                                                sx={{ fontSize: 28 }}
                                             />
-                                        </Tooltip>
-                                    )}
+                                        )}
+                                    </Tooltip>
                                     {canEditContent && (
                                         <Tooltip
                                             title={
@@ -2541,6 +2547,43 @@ export default function App() {
                                         {new Date(
                                             selectedImage.updatedAt,
                                         ).toLocaleString()}
+                                    </Typography>
+                                )}
+                                {selectedImage.width != null &&
+                                    selectedImage.height != null && (
+                                    <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                        component="span"
+                                    >
+                                        <strong>Dimensions:</strong>{" "}
+                                        {selectedImage.width} &times;{" "}
+                                        {selectedImage.height}
+                                    </Typography>
+                                )}
+                                {selectedImage.fileSize != null && (
+                                    <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                        component="span"
+                                    >
+                                        <strong>Size:</strong>{" "}
+                                        {selectedImage.fileSize} MB
+                                    </Typography>
+                                )}
+                                {selectedImageMeasurement && (
+                                    <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                        component="span"
+                                    >
+                                        <strong>Measurement:</strong>{" "}
+                                        {selectedImageMeasurement.scale &&
+                                        selectedImageMeasurement.unit
+                                            ? `${selectedImageMeasurement.scale} px/${selectedImageMeasurement.unit}`
+                                            : selectedImageMeasurement.scale
+                                              ? `${selectedImageMeasurement.scale} px`
+                                              : selectedImageMeasurement.unit ?? ""}
                                     </Typography>
                                 )}
                             </Box>

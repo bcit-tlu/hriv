@@ -548,7 +548,7 @@ export default function AdminPage() {
             <input
               ref={filesRef}
               type="file"
-              accept=".tar.gz,.tgz"
+              accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar,application/x-compressed-tar"
               hidden
               onChange={handleFilesChange}
             />

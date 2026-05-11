@@ -562,6 +562,7 @@ export default function ManagePage({
                     onChange={(e) => handleSelectAll(e.target.checked)}
                   />
                 </TableCell>
+                <TableCell sx={{ width: 48, p: 0.5 }} />
                 <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'id'}
@@ -645,6 +646,7 @@ export default function ManagePage({
                     </IconButton>
                   )}
                 </TableCell>
+                <TableCell />
                 <TableCell>
                   <TextField
                     size="small"
@@ -748,6 +750,20 @@ export default function ManagePage({
                       onChange={(e) =>
                         handleSelectOne(img.id, e.target.checked)
                       }
+                    />
+                  </TableCell>
+                  <TableCell sx={{ p: 0.5 }}>
+                    <Box
+                      component="img"
+                      src={img.thumb}
+                      alt={img.name}
+                      sx={{
+                        width: 40,
+                        height: 40,
+                        objectFit: 'cover',
+                        borderRadius: 0.5,
+                        display: 'block',
+                      }}
                     />
                   </TableCell>
                   <TableCell>{img.id}</TableCell>
