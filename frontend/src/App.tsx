@@ -2578,17 +2578,12 @@ export default function App() {
                                         component="span"
                                     >
                                         <strong>Measurement:</strong>{" "}
-                                        {selectedImageMeasurement.scale
-                                            ? `${selectedImageMeasurement.scale}`
-                                            : ""}
                                         {selectedImageMeasurement.scale &&
                                         selectedImageMeasurement.unit
-                                            ? " "
-                                            : ""}
-                                        {selectedImageMeasurement.unit ?? ""}
-                                        {selectedImageMeasurement.scale
-                                            ? "/px"
-                                            : ""}
+                                            ? `${selectedImageMeasurement.scale} px/${selectedImageMeasurement.unit}`
+                                            : selectedImageMeasurement.scale
+                                              ? `${selectedImageMeasurement.scale} px`
+                                              : selectedImageMeasurement.unit ?? ""}
                                     </Typography>
                                 )}
                             </Box>
