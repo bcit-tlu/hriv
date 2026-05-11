@@ -18,7 +18,7 @@ import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
 import EditIcon from '@mui/icons-material/Edit'
 import VisibilityIcon from '@mui/icons-material/Visibility'
-import type { Category } from '../types'
+import type { Category, Program } from '../types'
 import { MAX_DEPTH } from '../types'
 import AddCategoryDialog from './AddCategoryDialog'
 import EditCategoryDialog from './EditCategoryDialog'
@@ -30,6 +30,7 @@ interface FlatOption {
   childCount: number
   status: string | null
   parentId: number | null
+  programIds: number[]
 }
 
 function countDescendants(node: Category): number {
@@ -43,7 +44,7 @@ function countDescendants(node: Category): number {
 function flattenTree(nodes: Category[], depth: number = 0, parentId: number | null = null): FlatOption[] {
   const result: FlatOption[] = []
   for (const node of nodes) {
-    result.push({ id: node.id, label: node.label, depth, childCount: countDescendants(node), status: node.status ?? 'active', parentId })
+    result.push({ id: node.id, label: node.label, depth, childCount: countDescendants(node), status: node.status ?? 'active', parentId, programIds: node.programIds })
     result.push(...flattenTree(node.children, depth + 1, node.id))
   }
   return result
@@ -149,9 +150,10 @@ interface ManageCategoriesDialogProps {
   open: boolean
   onClose: () => void
   categories: Category[]
-  onAddCategory: (label: string, parentId: number | null) => Promise<number | void>
+  onAddCategory: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   onDeleteCategory: (categoryId: number) => Promise<void>
-  onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
+  programs?: Program[]
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
   onReorderCategories?: (items: Array<{ id: number; parent_id: number | null; sort_order: number }>) => Promise<void>
 }
@@ -165,6 +167,7 @@ export default function ManageCategoriesDialog({
   onEditCategory,
   onToggleVisibility,
   onReorderCategories,
+  programs = [],
 }: ManageCategoriesDialogProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addParentId, setAddParentId] = useState<number | null>(null)
@@ -203,8 +206,8 @@ export default function ManageCategoriesDialog({
     setAddDialogOpen(true)
   }
 
-  const handleAddCategory = async (label: string) => {
-    await onAddCategory(label, addParentId)
+  const handleAddCategory = async (label: string, programIds: number[]) => {
+    await onAddCategory(label, addParentId, programIds)
   }
 
   const handleDeleteClick = useCallback((opt: FlatOption) => {
@@ -230,9 +233,9 @@ export default function ManageCategoriesDialog({
     setEditDialogOpen(true)
   }, [])
 
-  const handleEditSave = useCallback(async (newLabel: string) => {
+  const handleEditSave = useCallback(async (newLabel: string, programIds?: number[]) => {
     if (editingCategory && onEditCategory) {
-      await onEditCategory(editingCategory.id, newLabel)
+      await onEditCategory(editingCategory.id, newLabel, programIds)
     }
   }, [editingCategory, onEditCategory])
 
@@ -533,6 +536,7 @@ export default function ManageCategoriesDialog({
         onAdd={handleAddCategory}
         currentDepth={addParentDepth}
         siblingNames={addSiblingNames}
+        programs={programs}
       />
 
       <EditCategoryDialog
@@ -544,6 +548,8 @@ export default function ManageCategoriesDialog({
         onSave={handleEditSave}
         currentLabel={editingCategory?.label ?? ''}
         siblingNames={editSiblingNames}
+        programs={programs}
+        currentProgramIds={editingCategory?.programIds ?? []}
       />
 
       {/* Confirm delete dialog */}

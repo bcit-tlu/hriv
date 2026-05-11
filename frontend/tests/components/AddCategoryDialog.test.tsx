@@ -71,7 +71,7 @@ describe('AddCategoryDialog', () => {
     await user.type(getCategoryInput(), '  Histology  ')
     await user.click(getCreateButton())
 
-    expect(onAdd).toHaveBeenCalledWith('Histology')
+    expect(onAdd).toHaveBeenCalledWith('Histology', [])
     expect(onClose).toHaveBeenCalled()
   })
 
@@ -89,7 +89,7 @@ describe('AddCategoryDialog', () => {
     await user.type(getCategoryInput(), 'Pathology')
     await user.keyboard('{Enter}')
 
-    expect(onAdd).toHaveBeenCalledWith('Pathology')
+    expect(onAdd).toHaveBeenCalledWith('Pathology', [])
     expect(onClose).toHaveBeenCalled()
   })
 
@@ -125,7 +125,7 @@ describe('AddCategoryDialog', () => {
     await user.type(input, 'Test')
     await user.keyboard('{Enter}')
 
-    expect(onAdd).toHaveBeenCalledWith('Test')
+    expect(onAdd).toHaveBeenCalledWith('Test', [])
     // The outer div should NOT receive the Enter keydown thanks to stopPropagation
     const enterEvents = outerKeyDown.mock.calls.filter(
       (call: [KeyboardEvent]) => call[0].key === 'Enter',

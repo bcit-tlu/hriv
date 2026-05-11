@@ -121,8 +121,8 @@ interface ManagePageProps {
   onViewImage?: (image: ApiImage) => void
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
-  onAddCategory?: (label: string, parentId: number | null) => Promise<number | void>
-  onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
+  onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
   onReplaceImage?: (sourceImageId: number, filename: string, fileSize: number) => void
   onProcessingStarted?: (
