@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.11.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.10.0...frontend-v0.11.0) (2026-05-11)
+
+
+### Features
+
+* add program visibility picker to category dialogs ([#330](https://github.com/bcit-tlu/hriv/issues/330)) ([3918f71](https://github.com/bcit-tlu/hriv/commit/3918f7178e54fa58f52f48cc9ce4a73328907002))
+* implement RBAC with program-scoped category visibility ([#327](https://github.com/bcit-tlu/hriv/issues/327)) ([b8c5ee7](https://github.com/bcit-tlu/hriv/commit/b8c5ee71ba47b5d4dad80ca0ba9a9f8b0bf29e8f))
+* Order 14 — viewer metadata, thumbnails, canvas copy/paste, file picker ([#303](https://github.com/bcit-tlu/hriv/issues/303), [#275](https://github.com/bcit-tlu/hriv/issues/275), [#240](https://github.com/bcit-tlu/hriv/issues/240), [#251](https://github.com/bcit-tlu/hriv/issues/251), [#248](https://github.com/bcit-tlu/hriv/issues/248)) ([#342](https://github.com/bcit-tlu/hriv/issues/342)) ([2bc2209](https://github.com/bcit-tlu/hriv/commit/2bc2209efd86e61b5183458f74af3b076492a30b))
+
+
+### Bug Fixes
+
+* await canvas annotation flush before exiting edit mode ([#346](https://github.com/bcit-tlu/hriv/issues/346)) ([1090b92](https://github.com/bcit-tlu/hriv/commit/1090b92ce233d9d8906de20a40cb578986e9b021))
+* category dropdown counts, memoization, program dropdown UX ([#294](https://github.com/bcit-tlu/hriv/issues/294), [#277](https://github.com/bcit-tlu/hriv/issues/277), [#282](https://github.com/bcit-tlu/hriv/issues/282), [#244](https://github.com/bcit-tlu/hriv/issues/244)) ([#333](https://github.com/bcit-tlu/hriv/issues/333)) ([666e299](https://github.com/bcit-tlu/hriv/commit/666e29922a4ef06c98e9aaa4d6bb62c7ab159cf9))
+
 ## [0.10.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.9.0...frontend-v0.10.0) (2026-05-10)
 
 
