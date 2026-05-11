@@ -241,6 +241,7 @@ def main() -> int:
     )
     try:
         bootstrap()
+        logger.info("Alembic bootstrap completed successfully.")
     except Exception as exc:
         # Surface actionable hints for the two most common deployment
         # errors so operators don't have to trace through asyncpg internals.

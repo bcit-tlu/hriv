@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy import text
 
 # revision identifiers, used by Alembic.
 revision = "0003_rbac_program_scoping"
@@ -76,9 +77,21 @@ def upgrade() -> None:
     )
 
     # ── Drop old columns ──
-    op.drop_constraint(
-        "users_program_id_fkey", "users", type_="foreignkey"
-    )
+    # Look up the FK constraint name from pg_constraint instead of
+    # hard-coding it — CNPG environments may generate a different name
+    # than the default PostgreSQL convention.
+    conn = op.get_bind()
+    fk_name = conn.execute(
+        text(
+            "SELECT c.conname FROM pg_constraint c "
+            "JOIN pg_attribute a ON a.attrelid = c.conrelid "
+            "  AND a.attnum = ANY(c.conkey) "
+            "WHERE c.conrelid = 'users'::regclass "
+            "  AND c.contype = 'f' "
+            "  AND a.attname = 'program_id'"
+        )
+    ).scalar_one()
+    op.drop_constraint(fk_name, "users", type_="foreignkey")
     op.drop_column("users", "program_id")
     op.drop_column("categories", "program")
 
