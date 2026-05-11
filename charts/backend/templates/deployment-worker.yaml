@@ -61,6 +61,8 @@ spec:
               value: {{ .Values.otel.exporterEndpoint | quote }}
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
               value: {{ .Values.otel.exporterProtocol | quote }}
+            - name: OTEL_PYTHON_DISABLED_INSTRUMENTATIONS
+              value: "redis"
             {{- end }}
           {{- with .Values.redis.worker.resources }}
           resources:
