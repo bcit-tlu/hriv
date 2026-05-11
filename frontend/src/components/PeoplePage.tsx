@@ -91,7 +91,7 @@ export default function PeoplePage({ programs }: PeoplePageProps) {
     email: string
     role: Role
     password?: string
-    program_id?: number | null
+    program_ids?: number[]
   }) => {
     try {
       if (editingUser) {
@@ -103,7 +103,7 @@ export default function PeoplePage({ programs }: PeoplePageProps) {
           email: data.email,
           role: data.role,
           password: data.password,
-          program_id: data.program_id,
+          program_ids: data.program_ids,
         })
       }
       setAddEditOpen(false)
@@ -129,11 +129,11 @@ export default function PeoplePage({ programs }: PeoplePageProps) {
   }
 
   // Bulk edit handler
-  const handleBulkSave = async (programId: number | null) => {
+  const handleBulkSave = async (programIds: number[]) => {
     try {
       await bulkUpdateUserProgram({
         user_ids: Array.from(selected),
-        program_id: programId,
+        program_ids: programIds,
       })
       setBulkEditOpen(false)
       setSelected(new Set())
@@ -230,7 +230,7 @@ export default function PeoplePage({ programs }: PeoplePageProps) {
                   <TableCell>{user.name}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>{user.role}</TableCell>
-                  <TableCell>{user.program_name ?? '—'}</TableCell>
+                  <TableCell>{user.program_names.length > 0 ? user.program_names.join(', ') : '—'}</TableCell>
                   <TableCell>
                     {new Date(user.created_at).toLocaleDateString()}
                   </TableCell>

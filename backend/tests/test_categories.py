@@ -19,20 +19,24 @@ from app.routers.categories import (
 from app.schemas import CategoryCreate, CategoryUpdate, CategoryReorderRequest, CategoryReorderItem
 
 
+def _make_program(id: int = 1, name: str = "Test Program") -> SimpleNamespace:
+    return SimpleNamespace(id=id, name=name)
+
+
 def _make_category(
     id: int,
     label: str,
     parent_id: int | None = None,
     status: str = "active",
     sort_order: int = 0,
-    program: str | None = None,
+    programs: list | None = None,
 ) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
         id=id,
         label=label,
         parent_id=parent_id,
-        program=program,
+        programs=programs or [],
         status=status,
         sort_order=sort_order,
         metadata_=None,

@@ -241,7 +241,7 @@ async def run_db_export(task_id: int) -> None:
                         "id": c.id,
                         "label": c.label,
                         "parent_id": c.parent_id,
-                        "program": c.program,
+                        "program_ids": [p.id for p in c.programs],
                         "status": c.status,
                         "sort_order": c.sort_order,
                         "metadata": c.metadata_,
@@ -281,7 +281,7 @@ async def run_db_export(task_id: int) -> None:
                         # still contain these fields are accepted on import
                         # (the import path uses .get() with a None default).
                         "role": u.role,
-                        "program_id": u.program_id,
+                        "program_ids": [p.id for p in u.programs],
                         "last_access": dt(u.last_access),
                         "metadata": u.metadata_,
                         "created_at": dt(u.created_at),
@@ -453,7 +453,9 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.execute(text("DELETE FROM source_images"))
                 await data_session.execute(text("DELETE FROM image_programs"))
                 await data_session.execute(text("DELETE FROM images"))
+                await data_session.execute(text("DELETE FROM category_programs"))
                 await data_session.execute(text("DELETE FROM categories"))
+                await data_session.execute(text("DELETE FROM user_programs"))
                 await data_session.execute(text("DELETE FROM users"))
                 await data_session.execute(text("DELETE FROM announcements"))
                 await data_session.execute(text("DELETE FROM programs"))
@@ -480,12 +482,21 @@ async def run_db_import(task_id: int) -> None:
                         password_hash=u.get("password_hash"),
                         oidc_subject=u.get("oidc_subject"),
                         role=u.get("role", "student"),
-                        program_id=u.get("program_id"),
                         last_access=_parse_dt(u.get("last_access")),
                         metadata_=u.get("metadata", {}),
                         created_at=_parse_dt(u.get("created_at")),
                         updated_at=_parse_dt(u.get("updated_at")),
                     )
+                    # M2M program associations (new format: program_ids list;
+                    # old format: scalar program_id — auto-upgrade)
+                    prog_ids = u.get("program_ids", [])
+                    if not prog_ids and u.get("program_id") is not None:
+                        prog_ids = [u["program_id"]]
+                    if prog_ids:
+                        progs = (await data_session.execute(
+                            select(Program).where(Program.id.in_(prog_ids))
+                        )).scalars().all()
+                        user.programs = list(progs)
                     data_session.add(user)
 
                 # Import categories (topologically sorted)
@@ -502,13 +513,32 @@ async def run_db_import(task_id: int) -> None:
                                 id=c["id"],
                                 label=c["label"],
                                 parent_id=pid,
-                                program=c.get("program"),
                                 status=c.get("status", "active"),
                                 sort_order=c.get("sort_order", 0),
                                 metadata_=c.get("metadata", {}),
                                 created_at=_parse_dt(c.get("created_at")),
                                 updated_at=_parse_dt(c.get("updated_at")),
                             )
+                            # M2M program associations (new format:
+                            # program_ids list; old format: program string)
+                            prog_ids = c.get("program_ids", [])
+                            if not prog_ids and c.get("program"):
+                                # Backward compat: resolve old string name
+                                name_result = await data_session.execute(
+                                    select(Program).where(
+                                        Program.name == c["program"]
+                                    )
+                                )
+                                found = name_result.scalars().first()
+                                if found:
+                                    prog_ids = [found.id]
+                            if prog_ids:
+                                progs = (await data_session.execute(
+                                    select(Program).where(
+                                        Program.id.in_(prog_ids)
+                                    )
+                                )).scalars().all()
+                                cat.programs = list(progs)
                             data_session.add(cat)
                             inserted_ids.add(c["id"])
                             progress_made = True

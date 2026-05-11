@@ -12,6 +12,20 @@ image_programs = Table(
     Column("program_id", Integer, ForeignKey("programs.id", ondelete="CASCADE"), primary_key=True),
 )
 
+user_programs = Table(
+    "user_programs",
+    Base.metadata,
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("program_id", Integer, ForeignKey("programs.id", ondelete="CASCADE"), primary_key=True),
+)
+
+category_programs = Table(
+    "category_programs",
+    Base.metadata,
+    Column("category_id", Integer, ForeignKey("categories.id", ondelete="CASCADE"), primary_key=True),
+    Column("program_id", Integer, ForeignKey("programs.id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class Program(Base):
     __tablename__ = "programs"
@@ -25,7 +39,9 @@ class Program(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    users: Mapped[list["User"]] = relationship("User", back_populates="program_rel")
+    users: Mapped[list["User"]] = relationship(
+        "User", secondary=user_programs, back_populates="programs", viewonly=True,
+    )
 
 
 class Category(Base):
@@ -42,7 +58,6 @@ class Category(Base):
     parent_id: Mapped[int | None] = mapped_column(
         ForeignKey("categories.id", ondelete="CASCADE"), nullable=True
     )
-    program: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str | None] = mapped_column(
         String(50),
         nullable=True,
@@ -72,6 +87,9 @@ class Category(Base):
     )
     images: Mapped[list["Image"]] = relationship(
         "Image", back_populates="category"
+    )
+    programs: Mapped[list["Program"]] = relationship(
+        "Program", secondary=category_programs, lazy="selectin"
     )
 
 
@@ -237,9 +255,6 @@ class User(Base):
         default="student",
         server_default=text("'student'"),
     )
-    program_id: Mapped[int | None] = mapped_column(
-        ForeignKey("programs.id", ondelete="SET NULL"), nullable=True
-    )
     last_access: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -257,7 +272,9 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    program_rel: Mapped["Program | None"] = relationship("Program", back_populates="users")
+    programs: Mapped[list["Program"]] = relationship(
+        "Program", secondary=user_programs, back_populates="users", lazy="selectin"
+    )
 
 
 class AdminTask(Base):

@@ -310,7 +310,7 @@ async def test_oidc_callback_new_user_created() -> None:
     new_user = SimpleNamespace(
         id=1, name="New User", email="new@example.com",
         oidc_subject="oidc-sub-123", role="student",
-        program_rel=None, program_id=None,
+        programs=[],
     )
 
     db = AsyncMock()
@@ -349,7 +349,7 @@ async def test_oidc_callback_existing_user_login() -> None:
     existing_user = SimpleNamespace(
         id=2, name="Existing User", email="existing@example.com",
         oidc_subject="oidc-sub-456", role="admin",
-        program_rel=None, program_id=None, last_access=None,
+        programs=[], last_access=None,
     )
 
     mock_result = MagicMock()
@@ -394,7 +394,7 @@ async def test_oidc_callback_subject_mismatch() -> None:
     existing_user = SimpleNamespace(
         id=2, name="User", email="user@example.com",
         oidc_subject="different-sub", role="student",
-        program_rel=None, program_id=None,
+        programs=[],
     )
     mock_result_found = MagicMock()
     mock_result_found.scalars.return_value.first.return_value = existing_user
@@ -428,7 +428,7 @@ async def test_oidc_callback_no_redirect_configured() -> None:
     existing_user = SimpleNamespace(
         id=1, name="User", email="user@example.com",
         oidc_subject="oidc-sub-789", role="student",
-        program_rel=None, program_id=None, last_access=None,
+        programs=[], last_access=None,
     )
 
     mock_result = MagicMock()
@@ -533,7 +533,7 @@ async def test_oidc_callback_email_linking_with_trusted_email() -> None:
     existing_user = SimpleNamespace(
         id=2, name="User", email="user@example.com",
         oidc_subject=None, role="student",
-        program_rel=None, program_id=None, last_access=None,
+        programs=[], last_access=None,
     )
     mock_result_found = MagicMock()
     mock_result_found.scalars.return_value.first.return_value = existing_user
@@ -573,7 +573,7 @@ async def test_oidc_callback_role_resolved_from_groups() -> None:
     existing_user = SimpleNamespace(
         id=1, name="Admin", email="admin@example.com",
         oidc_subject="oidc-sub-admin", role="student",
-        program_rel=None, program_id=None, last_access=None,
+        programs=[], last_access=None,
     )
 
     mock_result = MagicMock()
@@ -614,7 +614,7 @@ async def test_oidc_callback_cors_origin_fallback() -> None:
     existing_user = SimpleNamespace(
         id=1, name="User", email="cors@example.com",
         oidc_subject="oidc-sub-cors", role="student",
-        program_rel=None, program_id=None, last_access=None,
+        programs=[], last_access=None,
     )
 
     mock_result = MagicMock()

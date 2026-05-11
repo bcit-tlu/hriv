@@ -85,7 +85,7 @@ class AnnouncementUpdate(BaseModel):
 class CategoryBase(BaseModel):
     label: str
     parent_id: int | None = None
-    program: str | None = None
+    program_ids: list[int] = []
     status: str | None = "active"
     sort_order: int = 0
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
@@ -98,7 +98,7 @@ class CategoryCreate(CategoryBase):
 class CategoryUpdate(BaseModel):
     label: str | None = None
     parent_id: int | None = None
-    program: str | None = None
+    program_ids: list[int] | None = None
     status: str | None = None
     sort_order: int | None = None
     metadata_extra: dict | None = None
@@ -120,6 +120,25 @@ class CategoryOut(CategoryBase):
     updated_at: datetime
 
     model_config = {"from_attributes": True, "populate_by_name": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_program_ids(cls, data: object) -> object:
+        """Convert the 'programs' relationship list into 'program_ids'."""
+        if hasattr(data, "programs"):
+            program_ids = [p.id for p in data.programs]
+            return dict(
+                label=data.label,
+                parent_id=data.parent_id,
+                program_ids=program_ids,
+                status=data.status,
+                sort_order=data.sort_order,
+                metadata_=data.metadata_,
+                id=data.id,
+                created_at=data.created_at,
+                updated_at=data.updated_at,
+            )
+        return data
 
 
 class CategoryTree(CategoryOut):
@@ -284,7 +303,7 @@ class UserBase(BaseModel):
     name: str
     email: str
     role: str = "student"
-    program_id: int | None = None
+    program_ids: list[int] = []
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
 
 
@@ -296,14 +315,14 @@ class UserUpdate(BaseModel):
     name: str | None = None
     email: str | None = None
     role: str | None = None
-    program_id: int | None = None
+    program_ids: list[int] | None = None
     password: str | None = None
     metadata_extra: dict | None = None
 
 
 class UserBulkUpdate(BaseModel):
     user_ids: list[int]
-    program_id: int | None = None
+    program_ids: list[int] = []
 
 
 # ── Image Bulk Operations ────────────────────────────────
@@ -326,7 +345,7 @@ class UserOut(UserBase):
     last_access: datetime | None = None
     created_at: datetime
     updated_at: datetime
-    program_name: str | None = None
+    program_names: list[str] = []
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 

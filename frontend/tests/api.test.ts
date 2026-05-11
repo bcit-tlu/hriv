@@ -151,8 +151,8 @@ const USER_FIXTURE: ApiUser = {
   name: 'Admin',
   email: 'admin@bcit.ca',
   role: 'admin',
-  program_id: null,
-  program_name: null,
+  program_ids: [],
+  program_names: [],
   last_access: null,
   metadata_extra: null,
   created_at: '2026-01-01T00:00:00Z',
@@ -480,7 +480,7 @@ describe('User API', () => {
 
   it('bulkUpdateUserProgram sends PATCH to /api/users/bulk/program', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse([USER_FIXTURE]))
-    await bulkUpdateUserProgram({ user_ids: [1, 2], program_id: 3 })
+    await bulkUpdateUserProgram({ user_ids: [1, 2], program_ids: [3] })
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/users/bulk/program')
     expect(init.method).toBe('PATCH')

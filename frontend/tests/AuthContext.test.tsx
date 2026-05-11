@@ -108,8 +108,8 @@ describe('AuthProvider', () => {
         name: 'Admin',
         email: 'admin@bcit.ca',
         role: 'admin',
-        program_id: null,
-        program_name: null,
+        program_ids: [],
+        program_names: [],
         last_access: null,
       }),
     })
@@ -180,8 +180,8 @@ describe('AuthProvider', () => {
         name: 'Instructor',
         email: 'instructor@bcit.ca',
         role: 'instructor',
-        program_id: null,
-        program_name: null,
+        program_ids: [],
+        program_names: [],
         last_access: null,
       },
     })
@@ -220,8 +220,8 @@ describe('AuthProvider', () => {
         name: 'A',
         email: 'a@bcit.ca',
         role: 'student',
-        program_id: null,
-        program_name: null,
+        program_ids: [],
+        program_names: [],
         last_access: null,
       }),
     })
@@ -255,8 +255,8 @@ describe('AuthProvider', () => {
         name: 'I',
         email: 'i@bcit.ca',
         role: 'instructor',
-        program_id: null,
-        program_name: null,
+        program_ids: [],
+        program_names: [],
         last_access: null,
       }),
     })
@@ -282,13 +282,13 @@ describe('AuthProvider', () => {
       ok: true,
       json: () => Promise.resolve({
         id: 1, name: 'A', email: 'admin@bcit.ca', role: 'admin',
-        program_id: null, program_name: null, last_access: null,
+        program_ids: [], program_names: [], last_access: null,
       }),
     })
     mockFetchUsers.mockResolvedValueOnce([])
     mockCreateUser.mockResolvedValueOnce({
       id: 5, name: 'New', email: 'new@bcit.ca', role: 'student',
-      program_id: null, program_name: null, last_access: null,
+      program_ids: [], program_names: [], last_access: null,
       metadata_extra: null, created_at: '', updated_at: '',
     })
 
@@ -311,7 +311,7 @@ describe('AuthProvider', () => {
       email: 'new@bcit.ca',
       role: 'student',
       password: 'pw',
-      program_id: undefined,
+      program_ids: undefined,
     })
   })
 
@@ -324,13 +324,13 @@ describe('AuthProvider', () => {
       ok: true,
       json: () => Promise.resolve({
         id: 1, name: 'A', email: 'admin@bcit.ca', role: 'admin',
-        program_id: null, program_name: null, last_access: null,
+        program_ids: [], program_names: [], last_access: null,
       }),
     })
     mockFetchUsers.mockResolvedValueOnce([
       {
         id: 5, name: 'Other', email: 'other@bcit.ca', role: 'student',
-        program_id: null, program_name: null, last_access: null,
+        program_ids: [], program_names: [], last_access: null,
         metadata_extra: null, created_at: '', updated_at: '',
       },
     ])

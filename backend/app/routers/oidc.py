@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+
 
 from ..auth import create_access_token
 from ..database import get_db, settings as _settings
@@ -327,7 +327,6 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
     # Upsert: find by oidc_subject first, then by email
     result = await db.execute(
         select(User)
-        .options(selectinload(User.program_rel))
         .where(User.oidc_subject == sub)
     )
     user = result.scalars().first()
@@ -341,7 +340,6 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
         if email_verified:
             result = await db.execute(
                 select(User)
-                .options(selectinload(User.program_rel))
                 .where(User.email == email)
             )
             user = result.scalars().first()
@@ -362,7 +360,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
         )
         db.add(user)
         await db.flush()
-        await db.refresh(user, ["program_rel"])
+        await db.refresh(user, ["programs"])
         logger.info(
             "OIDC: created new user",
             extra={
