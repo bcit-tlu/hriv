@@ -28,7 +28,9 @@ async def _load_tree(
     When *user_role* is ``"student"`` and *user_program_ids* is provided,
     categories with program restrictions are filtered to only those matching
     the student's program associations.  Categories with no program
-    restrictions (empty ``programs``) are visible to everyone.
+    restrictions (empty ``programs``) are visible to everyone.  Filtering
+    cascades: if a parent category is hidden from a student, its entire
+    subtree is also hidden—even if children have no program restrictions.
     """
 
     # ── Query 1: all categories in one shot ──
