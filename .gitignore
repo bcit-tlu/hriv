@@ -43,9 +43,6 @@ migrations/
 # …yet still exclude build artifacts that live under the re-included tree.
 backend/app/migrations/**/__pycache__/
 backend/app/migrations/**/*.pyc
-# Same for the re-included backend/tests tree below.
-backend/tests/**/__pycache__/
-backend/tests/**/*.pyc
 
 # Java / ANTLR
 *.class
@@ -95,6 +92,9 @@ celery.log
 tests/
 !backend/tests/
 !backend/tests/**
+# Re-ignore build artifacts inside the re-included backend/tests tree.
+backend/tests/**/__pycache__/
+backend/tests/**/*.pyc
 !frontend/tests/
 !frontend/tests/**
 database/

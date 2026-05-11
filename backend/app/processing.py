@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pyvips
 from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
@@ -320,12 +321,19 @@ def generate_tiles(
     image.dzsave(dzi_output, tile_size=254, overlap=1, suffix=".jpeg[Q=85]")
     t_dzsave_end = time.monotonic()
 
+    dzsave_duration_ms = round((t_dzsave_end - t_dzsave_start) * 1000)
+
+    span.add_event("tiles_generated", attributes={
+        "tile_count": estimated_tiles,
+        "duration_ms": dzsave_duration_ms,
+    })
+
     logger.info(
         "DZI tile generation completed",
         extra={
             "event": "tiles.generation_completed",
             "source_path": source_path,
-            "duration_ms": round((t_dzsave_end - t_dzsave_start) * 1000),
+            "duration_ms": dzsave_duration_ms,
             "estimated_tiles": estimated_tiles,
         },
     )
@@ -355,6 +363,8 @@ def generate_tiles(
     if tracker:
         tracker.set(85, "Thumbnail created")
 
+    span.add_event("thumbnail_saved")
+
     logger.info(
         "Thumbnail generated",
         extra={
@@ -363,7 +373,7 @@ def generate_tiles(
         },
     )
 
-    span.set_attribute("tiles.dzsave_duration_ms", round((t_dzsave_end - t_dzsave_start) * 1000))
+    span.set_attribute("tiles.dzsave_duration_ms", dzsave_duration_ms)
 
     return f"{dzi_basename}.dzi", "thumbnail.jpeg", image.width, image.height
 
@@ -418,6 +428,10 @@ async def process_source_image(source_image_id: int) -> None:
                     "pyramid.detected": True,
                     "pyramid.loader": pyramid_info.get("loader", ""),
                     "pyramid.level_count": pyramid_info.get("level_count", 0),
+                })
+                span.add_event("pyramid_detected", attributes={
+                    "loader": pyramid_info.get("loader", ""),
+                    "level_count": pyramid_info.get("level_count", 0),
                 })
                 logger.info(
                     "Pyramidal image detected",
@@ -622,7 +636,9 @@ async def process_source_image(source_image_id: int) -> None:
                 },
             )
 
-        except Exception:
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
             duration_ms = round((time.monotonic() - t_start) * 1000)
             logger.exception(
                 "Failed to process source image",
@@ -712,6 +728,10 @@ async def process_replace_image(
                     "pyramid.detected": True,
                     "pyramid.loader": pyramid_info.get("loader", ""),
                     "pyramid.level_count": pyramid_info.get("level_count", 0),
+                })
+                span.add_event("pyramid_detected", attributes={
+                    "loader": pyramid_info.get("loader", ""),
+                    "level_count": pyramid_info.get("level_count", 0),
                 })
                 logger.info(
                     "Pyramidal image detected (replacement)",
@@ -882,7 +902,9 @@ async def process_replace_image(
                 },
             )
 
-        except Exception:
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
             duration_ms = round((time.monotonic() - t_start) * 1000)
             logger.exception(
                 "Failed to process replacement image",

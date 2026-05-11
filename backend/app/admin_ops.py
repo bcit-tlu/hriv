@@ -19,6 +19,8 @@ from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -366,6 +368,9 @@ async def run_db_export(task_id: int) -> None:
             )
 
         except Exception as exc:
+            span = trace.get_current_span()
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
             logger.exception(
                 "Background DB export failed",
                 extra={"event": "admin_task.db_export_failed", "task_id": task_id},
@@ -666,6 +671,9 @@ async def run_db_import(task_id: int) -> None:
                 )
 
             except Exception as exc:
+                span = trace.get_current_span()
+                span.record_exception(exc)
+                span.set_status(StatusCode.ERROR, str(exc))
                 await data_session.rollback()
                 logger.exception(
                     "Background DB import failed",
@@ -1010,6 +1018,9 @@ async def run_files_export(task_id: int) -> None:
             )
 
         except Exception as exc:
+            span = trace.get_current_span()
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
             logger.exception(
                 "Background files export failed",
                 extra={"event": "admin_task.files_export_failed", "task_id": task_id},
@@ -1415,6 +1426,9 @@ async def run_files_import(task_id: int) -> None:
             )
 
         except Exception as exc:
+            span = trace.get_current_span()
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
             logger.exception(
                 "Background files import failed",
                 extra={"event": "admin_task.files_import_failed", "task_id": task_id},
