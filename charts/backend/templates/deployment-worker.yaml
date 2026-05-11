@@ -63,6 +63,8 @@ spec:
               value: {{ .Values.otel.exporterProtocol | quote }}
             - name: OTEL_PYTHON_DISABLED_INSTRUMENTATIONS
               value: "redis"
+            - name: OTEL_PYTHON_FASTAPI_EXCLUDED_URLS
+              value: {{ .Values.otel.excludedUrls | quote }}
             {{- end }}
           {{- with .Values.redis.worker.resources }}
           resources:
