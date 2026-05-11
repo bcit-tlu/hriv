@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.12.0...backend-v0.13.0) (2026-05-11)
+
+
+### Features
+
+* add exception recording and error status to worker OTEL spans ([#343](https://github.com/bcit-tlu/hriv/issues/343)) ([a1d98c2](https://github.com/bcit-tlu/hriv/commit/a1d98c289e4cffbc6edb89c5021003fbb43ff135))
+
 ## [0.12.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.11.0...backend-v0.12.0) (2026-05-11)
 
 
