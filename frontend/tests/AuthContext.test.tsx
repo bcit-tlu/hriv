@@ -28,6 +28,12 @@ vi.mock('../src/api', () => ({
   deleteUser: (...args: unknown[]) => mockDeleteUser(...args),
   setToken: (t: string | null) => { currentToken = t },
   getToken: () => currentToken,
+  clearUserStorage: () => {
+    Object.keys(storage).forEach((k) => {
+      if (k.startsWith('hriv_') || k.startsWith('hriv-')) delete storage[k]
+    })
+    currentToken = null
+  },
 }))
 
 const storage: Record<string, string> = {}
@@ -151,7 +157,7 @@ describe('AuthProvider', () => {
     })
     expect(screen.getByTestId('user').textContent).toBe('none')
     expect(currentToken).toBeNull()
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('hriv_user')
+    expect(storage['hriv_user']).toBeUndefined()
   })
 
   it('clears session when stored user JSON is invalid', async () => {
@@ -206,12 +212,92 @@ describe('AuthProvider', () => {
     expect(currentToken).toBe('new-jwt')
   })
 
+  it('login clears storage when a different user logs in', async () => {
+    let authCtx: AuthContextValue | null = null
+
+    // A previous user's data is in storage
+    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'Old', email: 'old@bcit.ca', role: 'student' })
+    storage['hriv-color-mode'] = 'dark'
+
+    mockLoginUser.mockResolvedValue({
+      access_token: 'new-jwt',
+      user: {
+        id: 2,
+        name: 'New',
+        email: 'new@bcit.ca',
+        role: 'student',
+        program_ids: [],
+        program_names: [],
+        last_access: null,
+      },
+    })
+
+    render(
+      <AuthProvider>
+        <AuthConsumer onContext={(ctx) => { authCtx = ctx }} />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading').textContent).toBe('false')
+    })
+
+    await act(async () => {
+      await authCtx!.login('new@bcit.ca', 'password')
+    })
+
+    // Previous user's color mode preference should be cleared
+    expect(storage['hriv-color-mode']).toBeUndefined()
+    // New user is set correctly
+    expect(screen.getByTestId('user').textContent).toBe('new@bcit.ca')
+    expect(currentToken).toBe('new-jwt')
+  })
+
+  it('login preserves storage when the same user logs in again', async () => {
+    let authCtx: AuthContextValue | null = null
+
+    storage['hriv_user'] = JSON.stringify({ id: 2, name: 'Same', email: 'same@bcit.ca', role: 'student' })
+    storage['hriv-color-mode'] = 'dark'
+
+    mockLoginUser.mockResolvedValue({
+      access_token: 'fresh-jwt',
+      user: {
+        id: 2,
+        name: 'Same',
+        email: 'same@bcit.ca',
+        role: 'student',
+        program_ids: [],
+        program_names: [],
+        last_access: null,
+      },
+    })
+
+    render(
+      <AuthProvider>
+        <AuthConsumer onContext={(ctx) => { authCtx = ctx }} />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByTestId('loading').textContent).toBe('false')
+    })
+
+    await act(async () => {
+      await authCtx!.login('same@bcit.ca', 'password')
+    })
+
+    // Same user re-logging in — color mode should be preserved
+    expect(storage['hriv-color-mode']).toBe('dark')
+    expect(currentToken).toBe('fresh-jwt')
+  })
+
   it('logout clears user and token', async () => {
     let authCtx: AuthContextValue | null = null
 
-    // Start with a valid session
+    // Start with a valid session + user preferences
     currentToken = 'valid-jwt'
     storage['hriv_user'] = JSON.stringify({ id: 1, name: 'A', email: 'a@bcit.ca', role: 'student' })
+    storage['hriv-color-mode'] = 'dark'
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -242,6 +328,8 @@ describe('AuthProvider', () => {
 
     expect(screen.getByTestId('user').textContent).toBe('none')
     expect(currentToken).toBeNull()
+    expect(storage['hriv_user']).toBeUndefined()
+    expect(storage['hriv-color-mode']).toBeUndefined()
   })
 
   it('canEditContent is true for instructor role', async () => {

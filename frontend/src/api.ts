@@ -20,6 +20,23 @@ export function getToken(): string | null {
   return _token
 }
 
+/**
+ * Remove all HRIV-scoped localStorage keys (`hriv_*` and `hriv-*`).
+ * Called on logout and when a different user logs in to prevent
+ * cross-account state leakage on shared browsers.
+ */
+export function clearUserStorage(): void {
+  const keysToRemove: string[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (key && (key.startsWith('hriv_') || key.startsWith('hriv-'))) {
+      keysToRemove.push(key)
+    }
+  }
+  keysToRemove.forEach((key) => localStorage.removeItem(key))
+  _token = null
+}
+
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { 'X-Session-ID': SESSION_ID }
   if (_token) h['Authorization'] = `Bearer ${_token}`

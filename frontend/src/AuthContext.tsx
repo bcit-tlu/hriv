@@ -9,6 +9,7 @@ import {
   deleteUser as apiDeleteUser,
   setToken,
   getToken,
+  clearUserStorage,
 } from './api'
 import type { ApiUser } from './api'
 
@@ -116,8 +117,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       try {
         JSON.parse(stored)
       } catch {
-        setToken(null)
-        localStorage.removeItem('hriv_user')
+        clearUserStorage()
         setLoading(false)
         return
       }
@@ -131,18 +131,29 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         if (res.ok) {
           const data = await res.json()
           const freshUser = toUser(data)
+          // If a different user was previously stored, clear all state
+          // to prevent cross-account leakage (shared student browsers).
+          if (stored) {
+            try {
+              const prevUser = JSON.parse(stored) as { id?: number }
+              if (prevUser.id !== freshUser.id) {
+                clearUserStorage()
+              }
+            } catch {
+              clearUserStorage()
+            }
+          }
           setCurrentUser(freshUser)
+          setToken(token)
           localStorage.setItem('hriv_user', JSON.stringify(freshUser))
         } else {
           // Token invalid or user no longer exists — clear session
-          setToken(null)
-          localStorage.removeItem('hriv_user')
+          clearUserStorage()
         }
       })
       .catch(() => {
         // Network error — clear session to be safe
-        setToken(null)
-        localStorage.removeItem('hriv_user')
+        clearUserStorage()
       })
       .finally(() => {
         setLoading(false)
@@ -159,8 +170,21 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (email: string, password: string) => {
       const resp = await apiLoginUser(email, password)
-      setToken(resp.access_token)
       const user = toUser(resp.user)
+      // If a different user was previously logged in, clear all stored state
+      // to prevent cross-account leakage (common with shared student browsers).
+      const prev = localStorage.getItem('hriv_user')
+      if (prev) {
+        try {
+          const prevUser = JSON.parse(prev) as { id?: number }
+          if (prevUser.id !== user.id) {
+            clearUserStorage()
+          }
+        } catch {
+          clearUserStorage()
+        }
+      }
+      setToken(resp.access_token)
       setCurrentUser(user)
       localStorage.setItem('hriv_user', JSON.stringify(user))
     },
@@ -169,8 +193,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     setCurrentUser(null)
-    setToken(null)
-    localStorage.removeItem('hriv_user')
+    clearUserStorage()
   }, [])
 
   const addUser = useCallback(
@@ -193,8 +216,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
         setUsers((prev) => prev.filter((u) => u.id !== userId))
         if (currentUser?.id === userId) {
           setCurrentUser(null)
-          setToken(null)
-          localStorage.removeItem('hriv_user')
+          clearUserStorage()
         }
       } catch (err) {
         console.error('Failed to delete user', err)
