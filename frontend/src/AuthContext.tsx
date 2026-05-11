@@ -56,10 +56,10 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       setUsers(data.map(toUser))
     } catch (err) {
       console.error('Failed to load users', err)
-      // If we get a 401, clear the stored token
+      // If we get a 401, clear the entire session
       if (err instanceof Error && err.message.includes('401')) {
-        setToken(null)
         setCurrentUser(null)
+        clearUserStorage()
       }
     } finally {
       setLoading(false)
