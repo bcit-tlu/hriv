@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.13.0...backend-v0.14.0) (2026-05-11)
+
+
+### Features
+
+* add exception recording and error status to admin and bulk impo… ([#350](https://github.com/bcit-tlu/hriv/issues/350)) ([4d21921](https://github.com/bcit-tlu/hriv/commit/4d21921ad551f5cf5d3da6888df2273e9ea3f3e8))
+
 ## [0.13.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.12.0...backend-v0.13.0) (2026-05-11)
 
 
