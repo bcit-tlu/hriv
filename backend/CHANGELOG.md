@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.11.0...backend-v0.12.0) (2026-05-11)
+
+
+### Features
+
+* implement RBAC with program-scoped category visibility ([#327](https://github.com/bcit-tlu/hriv/issues/327)) ([b8c5ee7](https://github.com/bcit-tlu/hriv/commit/b8c5ee71ba47b5d4dad80ca0ba9a9f8b0bf29e8f))
+
 ## [0.11.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.10.0...backend-v0.11.0) (2026-05-09)
 
 
