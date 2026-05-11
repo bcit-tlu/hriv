@@ -167,7 +167,7 @@ export default function AddCategoryDialog({
       </DialogContent>
       <DialogActions>
         <Button onClick={handleClose} disabled={saving}>Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={!label.trim() || saving}>
+        <Button onClick={handleSubmit} variant="contained" disabled={!label.trim() || (visibility === 'specific' && selectedProgramIds.size === 0) || saving}>
           Create
         </Button>
       </DialogActions>

@@ -188,6 +188,51 @@ describe('EditCategoryDialog', () => {
     expect(screen.queryByText('This name already exists at this level')).not.toBeInTheDocument()
   })
 
+  it('Save button disabled when label cleared but programs changed', async () => {
+    const user = userEvent.setup()
+    render(
+      <EditCategoryDialog
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        currentLabel="Architecture"
+        programs={[
+          { id: 1, name: 'Admin' },
+          { id: 2, name: 'Design' },
+        ]}
+        currentProgramIds={[2]}
+      />,
+    )
+
+    const input = screen.getByDisplayValue('Architecture')
+    await user.clear(input)
+    // Toggle a program to make programsChanged true
+    await user.click(screen.getByText('Admin'))
+    // Save should still be disabled because label is empty
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
+  it('Save button disabled when specific programs selected but none chosen', async () => {
+    const user = userEvent.setup()
+    render(
+      <EditCategoryDialog
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        currentLabel="Architecture"
+        programs={[
+          { id: 1, name: 'Admin' },
+          { id: 2, name: 'Design' },
+        ]}
+        currentProgramIds={[2]}
+      />,
+    )
+
+    // Deselect "Design" so no programs are selected under "Specific programs"
+    await user.click(screen.getByText('Design'))
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+  })
+
   it('cancel button calls onClose', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()

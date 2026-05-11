@@ -189,7 +189,7 @@ export default function EditCategoryDialog({
         <Button
           onClick={handleSubmit}
           variant="contained"
-          disabled={(!labelChanged && !programsChanged) || saving}
+          disabled={!label.trim() || (!labelChanged && !programsChanged) || (visibility === 'specific' && selectedProgramIds.size === 0 && programs.length > 0) || saving}
         >
           Save
         </Button>
