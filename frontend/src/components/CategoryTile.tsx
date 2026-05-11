@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
@@ -68,9 +68,9 @@ interface CategoryTileProps {
 export default function CategoryTile({ category, onClick, onMove, onSetCardImage, programs }: CategoryTileProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
 
-  const subCategoryCount = countAllSubcategories(category)
-  const imageCount = countAllImages(category)
-  const programIds = collectProgramIds(category)
+  const subCategoryCount = useMemo(() => countAllSubcategories(category), [category])
+  const imageCount = useMemo(() => countAllImages(category), [category])
+  const programIds = useMemo(() => collectProgramIds(category), [category])
 
   const detailParts: string[] = []
   if (subCategoryCount > 0) {

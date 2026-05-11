@@ -1,3 +1,4 @@
+import { useCallback, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Chip from '@mui/material/Chip'
 import FormControl from '@mui/material/FormControl'
@@ -38,11 +39,20 @@ export default function ImageMetadataFields({
   notePlaceholder = 'Image note',
 }: ImageMetadataFieldsProps) {
   const labelId = `${idPrefix}-program-select-label`
+  const [programMenuOpen, setProgramMenuOpen] = useState(false)
+  const ctrlHeld = useRef(false)
 
-  const handleProgramChange = (event: SelectChangeEvent<number[]>) => {
+  const handleProgramChange = useCallback((event: SelectChangeEvent<number[]>) => {
     const val = event.target.value
     onChange({ ...values, programIds: typeof val === 'string' ? [] : val })
-  }
+    if (!ctrlHeld.current) {
+      setProgramMenuOpen(false)
+    }
+  }, [onChange, values])
+
+  const handleItemMouseDown = useCallback((e: React.MouseEvent) => {
+    ctrlHeld.current = e.ctrlKey || e.metaKey
+  }, [])
 
   return (
     <>
@@ -67,6 +77,9 @@ export default function ImageMetadataFields({
         <Select
           labelId={labelId}
           multiple
+          open={programMenuOpen}
+          onOpen={() => setProgramMenuOpen(true)}
+          onClose={() => setProgramMenuOpen(false)}
           value={values.programIds}
           onChange={handleProgramChange}
           input={<OutlinedInput label="Program" />}
@@ -79,14 +92,17 @@ export default function ImageMetadataFields({
             </Box>
           )}
         >
+          <MenuItem disabled sx={{ fontStyle: 'italic', opacity: 0.7 }}>
+            Hold Ctrl to select multiple programs
+          </MenuItem>
           {programs.map((p) => (
-            <MenuItem key={p.id} value={p.id}>
+            <MenuItem key={p.id} value={p.id} onMouseDown={handleItemMouseDown}>
               {p.name}
             </MenuItem>
           ))}
         </Select>
         <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-          Multiple programs can be selected.
+          Hold Ctrl and click to select multiple programs.
         </Typography>
       </FormControl>
       <FormControlLabel

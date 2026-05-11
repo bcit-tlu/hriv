@@ -7,6 +7,7 @@ import ListItemText from '@mui/material/ListItemText'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import Tooltip from '@mui/material/Tooltip'
+import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
@@ -24,6 +25,7 @@ interface FlatOption {
   depth: number
   status: string | null
   parentId: number | null
+  imageCount: number
 }
 
 function flattenTree(
@@ -35,7 +37,7 @@ function flattenTree(
   const result: FlatOption[] = []
   for (const node of nodes) {
     if (excludeIds?.has(node.id)) continue
-    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId })
+    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId, imageCount: node.images.length })
     result.push(...flattenTree(node.children, depth + 1, excludeIds, node.id))
   }
   return result
@@ -212,6 +214,9 @@ export default function CategoryPickerSelect({
               >
                 <ListItemText>
                   {opt.depth > 0 ? '\u2514 ' : ''}<span style={{ opacity: opt.status === 'hidden' ? 0.5 : 1 }}>{opt.label}</span>
+                  <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
+                    ({opt.imageCount})
+                  </Typography>
                 </ListItemText>
                 {onToggleVisibility && (
                   <Tooltip title={opt.status === 'hidden' ? 'Show to students' : 'Hide from students'}>
