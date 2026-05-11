@@ -1315,13 +1315,14 @@ export default function App() {
         async (
             label: string,
             parentId: number | null,
-            programIds: number[] = [],
+            programIds?: number[],
         ): Promise<number | void> => {
-            const created = await apiCreateCategory({
+            const body: Parameters<typeof apiCreateCategory>[0] = {
                 label,
                 parent_id: parentId,
-                program_ids: programIds,
-            });
+            };
+            if (programIds !== undefined) body.program_ids = programIds;
+            const created = await apiCreateCategory(body);
             await loadCategories();
             loadUncategorizedImages();
             return created.id;
@@ -1351,12 +1352,13 @@ export default function App() {
         async (
             categoryId: number,
             newLabel: string,
-            programIds: number[] = [],
+            programIds?: number[],
         ) => {
-            await apiUpdateCategory(categoryId, {
+            const body: Parameters<typeof apiUpdateCategory>[1] = {
                 label: newLabel,
-                program_ids: programIds,
-            });
+            };
+            if (programIds !== undefined) body.program_ids = programIds;
+            await apiUpdateCategory(categoryId, body);
             await loadCategories();
         },
         [loadCategories],

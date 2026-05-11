@@ -68,11 +68,11 @@ interface CategoryPickerSelectProps {
   excludeCategoryId?: number
   includeRoot?: boolean
   /** When provided, a "+" button appears on each menu item to add a child category. */
-  onAddCategory?: (label: string, parentId: number | null, programIds: number[]) => Promise<number | void>
+  onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   /** When provided, a delete button appears on each menu item to delete that category. */
   onDeleteCategory?: (categoryId: number) => Promise<void>
   /** When provided, a pencil button appears on each menu item to rename that category. */
-  onEditCategory?: (categoryId: number, newLabel: string, programIds: number[]) => Promise<void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   /** When provided, a visibility toggle appears on each menu item. */
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
 }
@@ -139,7 +139,7 @@ export default function CategoryPickerSelect({
     setAddDialogOpen(true)
   }
 
-  const handleAddCategory = async (categoryLabel: string, programIds: number[]) => {
+  const handleAddCategory = async (categoryLabel: string, programIds?: number[]) => {
     if (onAddCategory) {
       const newId = await onAddCategory(categoryLabel, addParentId, programIds)
       if (typeof newId === 'number') {
@@ -158,7 +158,7 @@ export default function CategoryPickerSelect({
     setEditDialogOpen(true)
   }
 
-  const handleEditSave = async (newLabel: string, programIds: number[]) => {
+  const handleEditSave = async (newLabel: string, programIds?: number[]) => {
     if (editingOpt && onEditCategory) {
       await onEditCategory(editingOpt.id, newLabel, programIds)
     }
