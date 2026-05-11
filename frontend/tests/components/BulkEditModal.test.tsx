@@ -20,7 +20,7 @@ describe('BulkEditModal', () => {
         selectedCount={3}
       />,
     )
-    expect(screen.getByText('Bulk Edit Program')).toBeInTheDocument()
+    expect(screen.getByText('Bulk Edit Programs')).toBeInTheDocument()
     expect(screen.getByText(/3 selected/)).toBeInTheDocument()
     expect(screen.getByText(/people/)).toBeInTheDocument()
   })
@@ -53,7 +53,7 @@ describe('BulkEditModal', () => {
     )
 
     await user.click(screen.getByRole('button', { name: 'Save' }))
-    expect(onSave).toHaveBeenCalledWith(null)
+    expect(onSave).toHaveBeenCalledWith([])
   })
 
   it('cancel calls onClose', async () => {

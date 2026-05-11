@@ -39,7 +39,7 @@ const testCategory: Category = {
       version: 1,
     },
   ],
-  program: null,
+  programIds: [],
   status: null,
   cardImageId: null,
   metadataExtra: null,

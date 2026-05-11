@@ -397,7 +397,7 @@ async def test_run_db_export_success(tmp_path) -> None:
     images = []
     users = [SimpleNamespace(
         id=1, name="Admin", email="admin@test.com", password_hash="hash",
-        oidc_subject=None, role="admin", program_id=None, last_access=None,
+        oidc_subject=None, role="admin", programs=[], last_access=None,
         metadata_={}, created_at=now, updated_at=now,
     )]
     source_images = []

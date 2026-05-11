@@ -55,7 +55,7 @@ export interface ApiCategory {
   id: number
   label: string
   parent_id: number | null
-  program: string | null
+  program_ids: number[]
   status: string | null
   metadata_extra: Record<string, unknown> | null
   created_at: string
@@ -91,8 +91,8 @@ export interface ApiUser {
   name: string
   email: string
   role: string
-  program_id: number | null
-  program_name: string | null
+  program_ids: number[]
+  program_names: string[]
   last_access: string | null
   metadata_extra: Record<string, unknown> | null
   created_at: string
@@ -126,7 +126,7 @@ export function fetchCategoryTree(): Promise<ApiCategoryTree[]> {
 export function createCategory(body: {
   label: string
   parent_id?: number | null
-  program?: string
+  program_ids?: number[]
   status?: string
 }): Promise<ApiCategory> {
   return request('/categories/', {
@@ -140,7 +140,7 @@ export function updateCategory(
   body: {
     label?: string
     parent_id?: number | null
-    program?: string
+    program_ids?: number[]
     status?: string
     metadata_extra?: Record<string, unknown>
   },
@@ -276,7 +276,7 @@ export function createUser(body: {
   email: string
   role: string
   password: string
-  program_id?: number | null
+  program_ids?: number[]
 }): Promise<ApiUser> {
   return request('/users/', {
     method: 'POST',
@@ -291,7 +291,7 @@ export function updateUser(
     email?: string
     role?: string
     password?: string
-    program_id?: number | null
+    program_ids?: number[]
   },
 ): Promise<ApiUser> {
   return request(`/users/${id}`, {
@@ -306,7 +306,7 @@ export function deleteUser(id: number): Promise<void> {
 
 export function bulkUpdateUserProgram(body: {
   user_ids: number[]
-  program_id: number | null
+  program_ids: number[]
 }): Promise<ApiUser[]> {
   return request('/users/bulk/program', {
     method: 'PATCH',

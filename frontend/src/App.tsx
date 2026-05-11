@@ -153,7 +153,7 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
             height: img.height,
             fileSize: img.file_size,
         })),
-        program: node.program,
+        programIds: node.program_ids ?? [],
         status: node.status,
         cardImageId:
             typeof meta?.card_image_id === "number" ? meta.card_image_id : null,
@@ -424,8 +424,8 @@ export default function App() {
               name: currentUser.name,
               email: currentUser.email,
               role: currentUser.role,
-              program_id: currentUser.program_id ?? null,
-              program_name: currentUser.program_name ?? null,
+              program_ids: currentUser.program_ids ?? [],
+              program_names: currentUser.program_names ?? [],
               last_access: currentUser.lastAccess ?? null,
               metadata_extra: null,
               created_at: "",
@@ -2164,12 +2164,12 @@ export default function App() {
                                     >
                                         {currentUser.role}
                                     </Typography>
-                                    {currentUser.program_name && (
+                                    {currentUser.program_names.length > 0 && (
                                         <Typography
                                             variant="body2"
                                             color="text.secondary"
                                         >
-                                            {currentUser.program_name}
+                                            {currentUser.program_names.join(', ')}
                                         </Typography>
                                     )}
                                     <Box

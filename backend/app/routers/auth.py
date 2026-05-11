@@ -8,8 +8,6 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-
 from ..auth import verify_password, create_access_token, get_current_user
 from ..database import get_db
 from ..models import User
@@ -55,7 +53,7 @@ async def login(
         )
 
     result = await db.execute(
-        select(User).options(selectinload(User.program_rel)).where(User.email == body.email)
+        select(User).where(User.email == body.email)
     )
     user = result.scalars().first()
 
@@ -101,13 +99,14 @@ async def login(
     )
 
     token = create_access_token(user)
+    await db.refresh(user, ["programs"])
     user_data = {
         "id": user.id,
         "name": user.name,
         "email": user.email,
         "role": user.role,
-        "program_id": user.program_id,
-        "program_name": user.program_rel.name if user.program_rel else None,
+        "program_ids": [p.id for p in user.programs],
+        "program_names": [p.name for p in user.programs],
         "metadata_extra": user.metadata_,
         "last_access": user.last_access,
         "created_at": user.created_at,
@@ -125,14 +124,14 @@ async def get_me(
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
     """Return the currently authenticated user. Any role can access this."""
-    await db.refresh(current_user, ["program_rel"])
+    await db.refresh(current_user, ["programs"])
     return UserOut(
         id=current_user.id,
         name=current_user.name,
         email=current_user.email,
         role=current_user.role,
-        program_id=current_user.program_id,
-        program_name=current_user.program_rel.name if current_user.program_rel else None,
+        program_ids=[p.id for p in current_user.programs],
+        program_names=[p.name for p in current_user.programs],
         metadata_extra=current_user.metadata_,
         last_access=current_user.last_access,
         created_at=current_user.created_at,

@@ -8,16 +8,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
 from ..database import get_db
-from ..models import Category, Image, User
+from ..models import Category, Image, Program, User
 from ..schemas import CategoryCreate, CategoryUpdate, CategoryOut, CategoryTree, CategoryReorderRequest, ImageOut
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
 
-async def _load_tree(db: AsyncSession, parent_id: int | None, *, user_role: str = "admin") -> list[CategoryTree]:
+async def _load_tree(
+    db: AsyncSession,
+    parent_id: int | None,
+    *,
+    user_role: str = "admin",
+    user_program_ids: set[int] | None = None,
+) -> list[CategoryTree]:
     """Build the full category tree using two flat queries instead of
     recursive per-level SELECTs.  This reduces the number of DB round-trips
-    from O(depth) to exactly 2 regardless of tree depth."""
+    from O(depth) to exactly 2 regardless of tree depth.
+
+    When *user_role* is ``"student"`` and *user_program_ids* is provided,
+    categories with program restrictions are filtered to only those matching
+    the student's program associations.  Categories with no program
+    restrictions (empty ``programs``) are visible to everyone.  Filtering
+    cascades: if a parent category is hidden from a student, its entire
+    subtree is also hidden—even if children have no program restrictions.
+    """
 
     # ── Query 1: all categories in one shot ──
     cat_stmt = select(Category).order_by(Category.sort_order, Category.label)
@@ -45,6 +59,13 @@ async def _load_tree(db: AsyncSession, parent_id: int | None, *, user_role: str 
         for cat in children_by_parent.get(pid, []):
             if user_role == "student" and cat.status == "hidden":
                 continue
+            # Program-scoped visibility: students only see categories
+            # that either have no program restriction or share at least
+            # one program with the student.
+            if user_role == "student" and user_program_ids is not None:
+                cat_program_ids = {p.id for p in cat.programs}
+                if cat_program_ids and not cat_program_ids & user_program_ids:
+                    continue
             cat_images = images_by_cat.get(cat.id, [])
             if user_role == "student":
                 cat_images = [img for img in cat_images if img.active]
@@ -52,7 +73,7 @@ async def _load_tree(db: AsyncSession, parent_id: int | None, *, user_role: str 
                 id=cat.id,
                 label=cat.label,
                 parent_id=cat.parent_id,
-                program=cat.program,
+                program_ids=[p.id for p in cat.programs],
                 status=cat.status,
                 sort_order=cat.sort_order,
                 metadata_extra=cat.metadata_,
@@ -76,7 +97,14 @@ async def get_category_tree(
     _user: Annotated[User, Depends(get_current_user)],
     db: AsyncSession = Depends(get_db),
 ):
-    tree = await _load_tree(db, None, user_role=_user.role)
+    user_program_ids = (
+        {p.id for p in _user.programs}
+        if _user.role == "student"
+        else None
+    )
+    tree = await _load_tree(
+        db, None, user_role=_user.role, user_program_ids=user_program_ids,
+    )
 
     # ── ETag / Cache-Control ──
     # Compute a lightweight ETag from the serialised response so browsers
@@ -149,11 +177,19 @@ async def create_category(
     cat = Category(
         label=body.label,
         parent_id=body.parent_id,
-        program=body.program,
         status=body.status,
         sort_order=body.sort_order,
         metadata_=body.metadata_extra or {},
     )
+    if body.program_ids:
+        progs = (await db.execute(
+            select(Program).where(Program.id.in_(body.program_ids))
+        )).scalars().all()
+        found_ids = {p.id for p in progs}
+        missing = set(body.program_ids) - found_ids
+        if missing:
+            raise HTTPException(422, f"Invalid program IDs: {sorted(missing)}")
+        cat.programs = list(progs)
     db.add(cat)
     await db.commit()
     await db.refresh(cat)
@@ -205,10 +241,23 @@ async def update_category(
                 status_code=409,
                 detail="A category with this name already exists at this level",
             )
+    program_ids = update_data.pop("program_ids", None)
     if "metadata_extra" in update_data:
         update_data["metadata_"] = update_data.pop("metadata_extra")
     for key, value in update_data.items():
         setattr(cat, key, value)
+    if program_ids is not None:
+        if program_ids:
+            progs = (await db.execute(
+                select(Program).where(Program.id.in_(program_ids))
+            )).scalars().all()
+            found_ids = {p.id for p in progs}
+            missing = set(program_ids) - found_ids
+            if missing:
+                raise HTTPException(422, f"Invalid program IDs: {sorted(missing)}")
+            cat.programs = list(progs)
+        else:
+            cat.programs = []
     await db.commit()
     await db.refresh(cat)
     return cat

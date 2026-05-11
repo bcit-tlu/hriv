@@ -23,7 +23,7 @@ export interface Category {
   parentId: number | null
   children: Category[]
   images: ImageItem[]
-  program?: string | null
+  programIds: number[]
   status?: string | null
   cardImageId?: number | null
   metadataExtra?: Record<string, unknown> | null
@@ -38,8 +38,8 @@ export interface User {
   name: string
   email: string
   role: Role
-  program_id?: number | null
-  program_name?: string | null
+  program_ids: number[]
+  program_names: string[]
   lastAccess?: string | null
 }
 
