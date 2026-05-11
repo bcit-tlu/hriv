@@ -8,17 +8,11 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
-import FormControl from '@mui/material/FormControl'
 import FormControlLabel from '@mui/material/FormControlLabel'
-import InputLabel from '@mui/material/InputLabel'
-import MenuItem from '@mui/material/MenuItem'
-import OutlinedInput from '@mui/material/OutlinedInput'
-import Select from '@mui/material/Select'
 import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import type { SelectChangeEvent } from '@mui/material/Select'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import type { Category, Program } from '../types'
 
@@ -90,11 +84,15 @@ export default function BulkEditImagesModal({
     onClose()
   }
 
-  const handleProgramChange = (event: SelectChangeEvent<number[]>) => {
-    const value = event.target.value
-    setProgramIds(typeof value === 'string' ? [] : value)
-    setProgramChanged(true)
-  }
+  const toggleProgram = useCallback(
+    (id: number) => {
+      setProgramIds((prev) =>
+        prev.includes(id) ? prev.filter((pid) => pid !== id) : [...prev, id],
+      )
+      setProgramChanged(true)
+    },
+    [],
+  )
 
   const handleSave = async () => {
     const data: {
@@ -180,33 +178,23 @@ export default function BulkEditImagesModal({
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
-        <FormControl fullWidth>
-          <InputLabel id="bulk-program-select-label">Program</InputLabel>
-          <Select
-            labelId="bulk-program-select-label"
-            multiple
-            value={programIds}
-            onChange={handleProgramChange}
-            input={<OutlinedInput label="Program" />}
-            renderValue={(selected) => (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                {selected.map((id) => {
-                  const prog = programs.find((p) => p.id === id)
-                  return <Chip key={id} label={prog?.name ?? id} size="small" />
-                })}
-              </Box>
-            )}
-          >
-            {programs.map((p) => (
-              <MenuItem key={p.id} value={p.id}>
-                {p.name}
-              </MenuItem>
-            ))}
-          </Select>
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-            Multiple programs can be selected.
+        <Box>
+          <Typography variant="subtitle2" gutterBottom>
+            Program
           </Typography>
-        </FormControl>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+            {programs.map((p) => (
+              <Chip
+                key={p.id}
+                label={p.name}
+                size="small"
+                color={programIds.includes(p.id) ? 'primary' : 'default'}
+                variant={programIds.includes(p.id) ? 'filled' : 'outlined'}
+                onClick={() => toggleProgram(p.id)}
+              />
+            ))}
+          </Box>
+        </Box>
         <FormControlLabel
           control={
             <Switch
