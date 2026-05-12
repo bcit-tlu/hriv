@@ -310,8 +310,6 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
             email: str = userinfo.get("email", "")
             name: str = userinfo.get("name") or userinfo.get("preferred_username") or email
 
-            span.set_attribute("oidc.email", email)
-
             if not sub or not email:
                 # Log all available claim keys so admins can diagnose IdP template
                 # configuration issues without needing to decode the raw ID token.
