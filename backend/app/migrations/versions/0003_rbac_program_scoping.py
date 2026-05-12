@@ -31,19 +31,37 @@ depends_on = None
 
 
 def _best_owner_role() -> str | None:
-    """Return the most-privileged role the current user can assume for DDL.
+    """Return a role the current user should assume for DDL, or *None*.
 
-    Resolution order:
-    1. Database owner (``pg_database.datdba``) — if the current user is a
-       member (checked via ``pg_has_role``).
-    2. The first inherited non-system role — covers CNPG + Vault setups
-       where Vault creates dynamic roles ``IN ROLE <app_role>`` and the
-       database is owned by ``postgres``.
-    3. ``None`` — the current user is already sufficient (fresh-DB case
-       where all tables were created in the same migration run).
+    The function inspects the ``users`` table (the primary DDL target of
+    this migration) to decide whether a role switch is needed at all:
+
+    * **Current user owns the table** → return ``None`` (fresh-DB case
+      where all prior migrations ran in the same pod).
+    * **Table owned by another role** → try, in order: the table owner,
+      the database owner, or the first inherited non-system role.
+    * **Table does not exist yet** → return ``None`` (migrations 0001/0002
+      haven't committed yet; no DDL on existing tables needed).
     """
     conn = op.get_bind()
     current_user = conn.execute(text("SELECT current_user")).scalar_one()
+
+    table_owner = conn.execute(
+        text(
+            "SELECT tableowner FROM pg_tables "
+            "WHERE schemaname = 'public' AND tablename = 'users'"
+        )
+    ).scalar_one_or_none()
+
+    if table_owner is None or table_owner == current_user:
+        return None
+
+    can_assume_table_owner = conn.execute(
+        text("SELECT pg_has_role(current_user, :target, 'MEMBER')"),
+        {"target": table_owner},
+    ).scalar_one()
+    if can_assume_table_owner:
+        return table_owner
 
     db_owner = conn.execute(
         text(
@@ -52,16 +70,13 @@ def _best_owner_role() -> str | None:
             "WHERE d.datname = current_database()"
         )
     ).scalar_one()
-
-    if current_user == db_owner:
-        return None
-
-    can_assume_owner = conn.execute(
-        text("SELECT pg_has_role(current_user, :target, 'MEMBER')"),
-        {"target": db_owner},
-    ).scalar_one()
-    if can_assume_owner:
-        return db_owner
+    if db_owner != current_user:
+        can_assume_db_owner = conn.execute(
+            text("SELECT pg_has_role(current_user, :target, 'MEMBER')"),
+            {"target": db_owner},
+        ).scalar_one()
+        if can_assume_db_owner:
+            return db_owner
 
     inherited_role = conn.execute(
         text(
@@ -97,8 +112,11 @@ def _as_db_owner() -> Iterator[None]:
         yield
     finally:
         if role_switched:
-            conn = op.get_bind()
-            conn.execute(text("RESET ROLE"))
+            try:
+                conn = op.get_bind()
+                conn.execute(text("RESET ROLE"))
+            except Exception:
+                pass
 
 
 def upgrade() -> None:
