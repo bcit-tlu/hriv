@@ -121,7 +121,7 @@ export default function LoginScreen({
                 {/* Left side — form */}
                 <Box
                     sx={{
-                        flex: "0 0 50%",
+                        flex: { sm: "1 1 100%", md: "0 0 50%" },
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
