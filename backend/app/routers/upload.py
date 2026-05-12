@@ -9,6 +9,8 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +23,7 @@ from ..schemas import SourceImageOut
 from ..worker import enqueue_process_source_image
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 router = APIRouter(prefix="/source-images", tags=["source-images"])
 
@@ -45,77 +48,88 @@ async def upload_source_image(
     if not is_valid_image(file.filename, file.content_type):
         raise HTTPException(status_code=400, detail="File must be an image")
 
-    # Ensure the source images directory exists
-    os.makedirs(settings.source_images_dir, exist_ok=True)
+    with tracer.start_as_current_span("upload_source_image") as span:
+        try:
+            # Ensure the source images directory exists
+            os.makedirs(settings.source_images_dir, exist_ok=True)
 
-    # Generate a unique filename to avoid collisions
-    ext = os.path.splitext(file.filename)[1] or ".bin"
-    unique_name = f"{uuid.uuid4().hex}{ext}"
-    stored_path = os.path.join(settings.source_images_dir, unique_name)
+            # Generate a unique filename to avoid collisions
+            ext = os.path.splitext(file.filename)[1] or ".bin"
+            unique_name = f"{uuid.uuid4().hex}{ext}"
+            stored_path = os.path.join(settings.source_images_dir, unique_name)
 
-    # Stream the uploaded file to disk in chunks (handles large files)
-    try:
-        with open(stored_path, "wb") as f:
-            while True:
-                chunk = await file.read(UPLOAD_CHUNK_SIZE)
-                if not chunk:
-                    break
-                f.write(chunk)
-    except OSError as exc:
-        with contextlib.suppress(OSError):
-            os.unlink(stored_path)
-        if exc.errno == errno.ENOSPC:
-            logger.error(
-                "Upload failed: no space left on device",
+            # Stream the uploaded file to disk in chunks (handles large files)
+            try:
+                with open(stored_path, "wb") as f:
+                    while True:
+                        chunk = await file.read(UPLOAD_CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        f.write(chunk)
+            except OSError as exc:
+                with contextlib.suppress(OSError):
+                    os.unlink(stored_path)
+                if exc.errno == errno.ENOSPC:
+                    logger.error(
+                        "Upload failed: no space left on device",
+                        extra={
+                            "event": "upload.enospc",
+                            "original_filename": file.filename,
+                            "stored_path": stored_path,
+                        },
+                    )
+                    raise HTTPException(
+                        status_code=507,
+                        detail="Insufficient storage \u2014 the data volume is full",
+                    )
+                raise
+
+            # Get file size from what was written to disk
+            file_size = os.path.getsize(stored_path)
+
+            # Create the source image record
+            src = SourceImage(
+                original_filename=file.filename,
+                stored_path=stored_path,
+                status="pending",
+                name=name,
+                category_id=category_id,
+                copyright=copyright,
+                note=note,
+                active=active,
+                program=json.dumps(program_ids) if program_ids else None,
+                file_size=file_size,
+            )
+            db.add(src)
+            await db.commit()
+            await db.refresh(src)
+
+            span.set_attribute("source_image.id", src.id)
+            span.set_attribute("source_image.original_filename", file.filename)
+            span.set_attribute("source_image.file_size", file_size)
+
+            logger.info(
+                "Source image uploaded, queuing for processing",
                 extra={
-                    "event": "upload.enospc",
+                    "event": "upload.accepted",
+                    "source_image_id": src.id,
                     "original_filename": file.filename,
-                    "stored_path": stored_path,
+                    "category_id": category_id,
                 },
             )
-            raise HTTPException(
-                status_code=507,
-                detail="Insufficient storage — the data volume is full",
-            )
-        raise
 
-    # Get file size from what was written to disk
-    file_size = os.path.getsize(stored_path)
+            # Prefer the arq task queue; fall back to in-process BackgroundTasks
+            # when Redis is unavailable (e.g. local development without Redis).
+            enqueued = await enqueue_process_source_image(src.id)
+            span.set_attribute("source_image.enqueued", enqueued)
+            if not enqueued:
+                background_tasks.add_task(process_source_image, src.id)
 
-    # Create the source image record
-    src = SourceImage(
-        original_filename=file.filename,
-        stored_path=stored_path,
-        status="pending",
-        name=name,
-        category_id=category_id,
-        copyright=copyright,
-        note=note,
-        active=active,
-        program=json.dumps(program_ids) if program_ids else None,
-        file_size=file_size,
-    )
-    db.add(src)
-    await db.commit()
-    await db.refresh(src)
-
-    logger.info(
-        "Source image uploaded, queuing for processing",
-        extra={
-            "event": "upload.accepted",
-            "source_image_id": src.id,
-            "original_filename": file.filename,
-            "category_id": category_id,
-        },
-    )
-
-    # Prefer the arq task queue; fall back to in-process BackgroundTasks
-    # when Redis is unavailable (e.g. local development without Redis).
-    enqueued = await enqueue_process_source_image(src.id)
-    if not enqueued:
-        background_tasks.add_task(process_source_image, src.id)
-
-    return src
+            return src
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
+            raise
 
 
 @router.get("/", response_model=list[SourceImageOut])
