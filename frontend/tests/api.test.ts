@@ -814,6 +814,8 @@ describe('XHR upload abort support', () => {
       getItem: (key: string) => storage[key] ?? null,
       setItem: (key: string, val: string) => { storage[key] = val },
       removeItem: (key: string) => { delete storage[key] },
+      get length() { return Object.keys(storage).length },
+      key: (i: number) => Object.keys(storage)[i] ?? null,
     })
     vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
   })
