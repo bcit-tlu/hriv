@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.14.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.14.0...backend-v0.14.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* check actual table ownership before SET ROLE in migration 0003 ([#357](https://github.com/bcit-tlu/hriv/issues/357)) ([eac57c8](https://github.com/bcit-tlu/hriv/commit/eac57c84577ed595e75e59261d7e4ce49747d136))
+* fall back to inherited role when DB owner is not assumable ([#356](https://github.com/bcit-tlu/hriv/issues/356)) ([793485f](https://github.com/bcit-tlu/hriv/commit/793485f336e4599198b6b16614983d5af3cac04e))
+* migration 0003 silent failure — introspect FK name + fix logger suppression ([#352](https://github.com/bcit-tlu/hriv/issues/352)) ([17c18ab](https://github.com/bcit-tlu/hriv/commit/17c18abbef2533e0698bed171899aa93d24536e4))
+* SET ROLE to DB owner before DDL in migration 0003 ([#354](https://github.com/bcit-tlu/hriv/issues/354)) ([e50643f](https://github.com/bcit-tlu/hriv/commit/e50643f6e00baaae8c800fa1e51f41511594bbd4))
+
 ## [0.14.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.13.0...backend-v0.14.0) (2026-05-11)
 
 
