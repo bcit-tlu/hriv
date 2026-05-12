@@ -53,8 +53,12 @@ import AddEditPersonModal from "./components/AddEditPersonModal";
 import ManagePage from "./components/ManagePage";
 import PeoplePage from "./components/PeoplePage";
 import LoginScreen from "./components/LoginScreen";
+import FooterBar from "./components/FooterBar";
 import EditImageModal from "./components/EditImageModal";
-import type { ImageFormData, ReplaceImageData } from "./components/EditImageModal";
+import type {
+    ImageFormData,
+    ReplaceImageData,
+} from "./components/EditImageModal";
 import ProgramManagementModal from "./components/ProgramManagementModal";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
@@ -579,8 +583,7 @@ export default function App() {
         for (const [id, interval] of refs) {
             if (
                 !processingJobs.some(
-                    (j) =>
-                        j.bulkImportJobId === id && j.status === "importing",
+                    (j) => j.bulkImportJobId === id && j.status === "importing",
                 )
             ) {
                 clearInterval(interval);
@@ -713,7 +716,9 @@ export default function App() {
         setSearchUsers([]);
         processingPollRefs.current.forEach((handle) => handle.cancel());
         processingPollRefs.current.clear();
-        bulkImportPollRefs.current.forEach((interval) => clearInterval(interval));
+        bulkImportPollRefs.current.forEach((interval) =>
+            clearInterval(interval),
+        );
         bulkImportPollRefs.current.clear();
         serverProgressRef.current.clear();
         uploadProgressRef.current.clear();
@@ -1070,8 +1075,7 @@ export default function App() {
             saveTargetImageIdRef.current = targetImageId;
             canvasSaveInFlightRef.current = true;
             try {
-                const mergeValue =
-                    annotations.length > 0 ? annotations : null;
+                const mergeValue = annotations.length > 0 ? annotations : null;
                 const currentVersion =
                     latestVersionRef.current || selectedImage.version;
                 const updated = await apiUpdateImage(
@@ -1628,8 +1632,7 @@ export default function App() {
                         status,
                         kind: "bulk-import" as const,
                         bulkImportJobId: bulkJob.id,
-                        serverProgress:
-                            status === "completed" ? 100 : progress,
+                        serverProgress: status === "completed" ? 100 : progress,
                         fileSize,
                         startedAt: Date.now(),
                         totalCount: bulkJob.total_count,
@@ -1868,20 +1871,23 @@ export default function App() {
         [],
     );
 
-    const handleUploadFailed = useCallback((uploadId: number, error: string) => {
-        uploadProgressRef.current.delete(uploadId);
-        setProcessingJobs((prev) =>
-            prev.map((j) =>
-                j.uploadId === uploadId
-                    ? {
-                          ...j,
-                          status: "failed" as const,
-                          errorMessage: error,
-                      }
-                    : j,
-            ),
-        );
-    }, []);
+    const handleUploadFailed = useCallback(
+        (uploadId: number, error: string) => {
+            uploadProgressRef.current.delete(uploadId);
+            setProcessingJobs((prev) =>
+                prev.map((j) =>
+                    j.uploadId === uploadId
+                        ? {
+                              ...j,
+                              status: "failed" as const,
+                              errorMessage: error,
+                          }
+                        : j,
+                ),
+            );
+        },
+        [],
+    );
 
     const handleProcessingStarted = useCallback(
         (
@@ -1977,11 +1983,11 @@ export default function App() {
     const activeReplace = activeReplaceUploadIdRef.current;
     const viewerReplaceUploadProgress =
         activeReplace?.context === "viewer"
-            ? uploadProgressRef.current.get(activeReplace.uploadId) ?? 0
+            ? (uploadProgressRef.current.get(activeReplace.uploadId) ?? 0)
             : undefined;
     const browseReplaceUploadProgress =
         activeReplace?.context === "browse"
-            ? uploadProgressRef.current.get(activeReplace.uploadId) ?? 0
+            ? (uploadProgressRef.current.get(activeReplace.uploadId) ?? 0)
             : undefined;
 
     return (
@@ -2708,131 +2714,13 @@ export default function App() {
             </Box>
 
             {/* Footer */}
-            <Box
-                component="footer"
-                sx={{
-                    py: 1,
-                    px: 2,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    bgcolor:
-                        mode === "dark"
-                            ? "background.paper"
-                            : "background.default",
-                    borderTop: 1,
-                    borderColor: "divider",
-                }}
-            >
-                <Typography variant="caption" color="text.secondary">
-                    <strong>BCIT</strong>{" "}
-                    <Link
-                        href="https://www.bcit.ca/learning-teaching-centre/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        color="text.secondary"
-                        underline="hover"
-                    >
-                        Teaching and Learning Unit
-                    </Link>
-                    <Box
-                        component="span"
-                        sx={{ display: "inline-block", width: "3ch" }}
-                    />
-                    <strong>Source code:</strong>{" "}
-                    <Link
-                        href="https://www.mozilla.org/en-US/MPL/2.0/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        color="text.secondary"
-                        underline="hover"
-                    >
-                        MPL-2.0
-                    </Link>
-                    {canManageUsers &&
-                        (() => {
-                            // Versions are admin-only: the strings leak info
-                            // about the deployed image and are not relevant
-                            // to other roles.  Each component versions
-                            // independently (see release-please packages in
-                            // release-please-config.json) so the footer
-                            // lists three distinct values rather than a
-                            // single shared version.
-                            const frontendVer = frontendVersion || "dev";
-                            const releasesHref =
-                                "https://github.com/bcit-tlu/hriv/releases";
-                            const repoHref =
-                                "https://github.com/bcit-tlu/hriv";
-                            const hrefFor = (v: string) =>
-                                v && v !== "dev" ? releasesHref : repoHref;
-                            return (
-                                <>
-                                    <Box
-                                        component="span"
-                                        sx={{
-                                            display: "inline-block",
-                                            width: "3ch",
-                                        }}
-                                    />
-                                    <strong>Frontend:</strong>{" "}
-                                    <Link
-                                        href={hrefFor(frontendVer)}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        color="text.secondary"
-                                        underline="hover"
-                                    >
-                                        {frontendVer}
-                                    </Link>
-                                    <Box
-                                        component="span"
-                                        sx={{
-                                            display: "inline-block",
-                                            width: "3ch",
-                                        }}
-                                    />
-                                    <strong>Backend:</strong>{" "}
-                                    <Link
-                                        href={hrefFor(backendVersion ?? "")}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        color="text.secondary"
-                                        underline="hover"
-                                    >
-                                        {backendVersion ?? "…"}
-                                    </Link>
-                                    <Box
-                                        component="span"
-                                        sx={{
-                                            display: "inline-block",
-                                            width: "3ch",
-                                        }}
-                                    />
-                                    <strong>Backup:</strong>{" "}
-                                    <Link
-                                        href={hrefFor(backupVersion ?? "")}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        color="text.secondary"
-                                        underline="hover"
-                                    >
-                                        {backupVersion ?? "…"}
-                                    </Link>
-                                </>
-                            );
-                        })()}
-                </Typography>
-                <Link
-                    component="button"
-                    variant="caption"
-                    color="text.secondary"
-                    underline="hover"
-                    onClick={() => setReportIssueOpen(true)}
-                    sx={{ cursor: "pointer" }}
-                >
-                    Report issue
-                </Link>
-            </Box>
+            <FooterBar
+                canManageUsers={canManageUsers}
+                frontendVersion={frontendVersion || undefined}
+                backendVersion={backendVersion ?? undefined}
+                backupVersion={backupVersion ?? undefined}
+                setReportIssueOpen={setReportIssueOpen}
+            />
 
             {/* Manage categories dialog */}
             <ManageCategoriesDialog
@@ -3165,9 +3053,7 @@ export default function App() {
                                     </Typography>
                                     <LinearProgress
                                         variant="determinate"
-                                        value={Math.round(
-                                            uploadFraction * 100,
-                                        )}
+                                        value={Math.round(uploadFraction * 100)}
                                         sx={{
                                             height: 6,
                                             borderRadius: 1,
