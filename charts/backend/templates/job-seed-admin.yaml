@@ -47,18 +47,21 @@ spec:
               SELECT setval('programs_id_seq',
                 GREATEST((SELECT MAX(id) FROM programs), 1));
 
-              INSERT INTO users (id, name, email, password_hash, role, program_id, metadata)
+              INSERT INTO users (id, name, email, password_hash, role, metadata)
               VALUES (
                 1,
                 {{ .Values.seedAdmin.name         | replace "'" "''" | squote }},
                 {{ .Values.seedAdmin.email        | replace "'" "''" | squote }},
                 {{ .Values.seedAdmin.passwordHash | replace "'" "''" | squote }},
                 'admin',
-                1,
                 '{}'
               ) ON CONFLICT (id) DO NOTHING;
               SELECT setval('users_id_seq',
                 GREATEST((SELECT MAX(id) FROM users), 1));
+
+              INSERT INTO user_programs (user_id, program_id)
+              VALUES (1, 1)
+              ON CONFLICT (user_id, program_id) DO NOTHING;
               SQL
           env:
             - name: DATABASE_URL
