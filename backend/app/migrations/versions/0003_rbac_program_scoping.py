@@ -30,15 +30,21 @@ branch_labels = None
 depends_on = None
 
 
-@contextlib.contextmanager
-def _as_db_owner() -> Iterator[None]:
-    """SET ROLE to the database owner for DDL that requires ownership.
+def _best_owner_role() -> str | None:
+    """Return the most-privileged role the current user can assume for DDL.
 
-    In CNPG + Vault environments each pod gets a fresh dynamic role that
-    may not own tables created by a previous role.  This context manager
-    assumes the DB owner identity, runs the block, then resets.
+    Resolution order:
+    1. Database owner (``pg_database.datdba``) — if the current user is a
+       member (checked via ``pg_has_role``).
+    2. The first inherited non-system role — covers CNPG + Vault setups
+       where Vault creates dynamic roles ``IN ROLE <app_role>`` and the
+       database is owned by ``postgres``.
+    3. ``None`` — the current user is already sufficient (fresh-DB case
+       where all tables were created in the same migration run).
     """
     conn = op.get_bind()
+    current_user = conn.execute(text("SELECT current_user")).scalar_one()
+
     db_owner = conn.execute(
         text(
             "SELECT pg_catalog.pg_get_userbyid(d.datdba) "
@@ -46,16 +52,52 @@ def _as_db_owner() -> Iterator[None]:
             "WHERE d.datname = current_database()"
         )
     ).scalar_one()
-    current_user = conn.execute(text("SELECT current_user")).scalar_one()
+
+    if current_user == db_owner:
+        return None
+
+    can_assume_owner = conn.execute(
+        text("SELECT pg_has_role(current_user, :target, 'MEMBER')"),
+        {"target": db_owner},
+    ).scalar_one()
+    if can_assume_owner:
+        return db_owner
+
+    inherited_role = conn.execute(
+        text(
+            "SELECT r.rolname "
+            "FROM pg_auth_members m "
+            "JOIN pg_roles r ON r.oid = m.roleid "
+            "WHERE m.member = ( "
+            "    SELECT oid FROM pg_roles WHERE rolname = current_user "
+            ") "
+            "AND r.rolname NOT LIKE 'pg_%%' "
+            "ORDER BY r.rolname LIMIT 1"
+        )
+    ).scalar_one_or_none()
+    return inherited_role
+
+
+@contextlib.contextmanager
+def _as_db_owner() -> Iterator[None]:
+    """SET ROLE to a privileged role for DDL that requires ownership.
+
+    In CNPG + Vault environments each pod gets a fresh dynamic role that
+    may not own tables created by a previous role.  This context manager
+    assumes a suitable identity, runs the block, then resets.
+    """
+    target_role = _best_owner_role()
     role_switched = False
-    if current_user != db_owner:
-        safe_owner = db_owner.replace('"', '""')
-        conn.execute(text(f'SET ROLE "{safe_owner}"'))
+    if target_role is not None:
+        conn = op.get_bind()
+        safe_role = target_role.replace('"', '""')
+        conn.execute(text(f'SET ROLE "{safe_role}"'))
         role_switched = True
     try:
         yield
     finally:
         if role_switched:
+            conn = op.get_bind()
             conn.execute(text("RESET ROLE"))
 
 
