@@ -16,6 +16,8 @@ vi.stubGlobal('localStorage', {
   getItem: (key: string) => storage[key] ?? null,
   setItem: (key: string, val: string) => { storage[key] = val },
   removeItem: (key: string) => { delete storage[key] },
+  get length() { return Object.keys(storage).length },
+  key: (i: number) => Object.keys(storage)[i] ?? null,
 })
 
 // Stub crypto.randomUUID (SESSION_ID is captured at module load, so this
@@ -25,6 +27,7 @@ vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
 import {
   setToken,
   getToken,
+  clearUserStorage,
   ApiError,
   fetchStatus,
   fetchCategoryTree,
@@ -190,6 +193,22 @@ describe('Token management', () => {
     setToken(null)
     expect(getToken()).toBeNull()
     expect(storage['hriv_token']).toBeUndefined()
+  })
+
+  it('clearUserStorage removes all hriv_ and hriv- keys', () => {
+    storage['hriv_token'] = 'jwt'
+    storage['hriv_user'] = '{"id":1}'
+    storage['hriv-color-mode'] = 'dark'
+    storage['other-app-key'] = 'keep-me'
+    setToken('jwt')
+
+    clearUserStorage()
+
+    expect(getToken()).toBeNull()
+    expect(storage['hriv_token']).toBeUndefined()
+    expect(storage['hriv_user']).toBeUndefined()
+    expect(storage['hriv-color-mode']).toBeUndefined()
+    expect(storage['other-app-key']).toBe('keep-me')
   })
 })
 
@@ -795,6 +814,8 @@ describe('XHR upload abort support', () => {
       getItem: (key: string) => storage[key] ?? null,
       setItem: (key: string, val: string) => { storage[key] = val },
       removeItem: (key: string) => { delete storage[key] },
+      get length() { return Object.keys(storage).length },
+      key: (i: number) => Object.keys(storage)[i] ?? null,
     })
     vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
   })
