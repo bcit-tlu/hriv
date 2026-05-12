@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.11.0...frontend-v0.11.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* clear all HRIV localStorage on logout and user change ([#349](https://github.com/bcit-tlu/hriv/issues/349)) ([1750983](https://github.com/bcit-tlu/hriv/commit/17509837df8b5f6f116df70cb70abe60377efa0e))
+
 ## [0.11.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.10.0...frontend-v0.11.0) (2026-05-11)
 
 
