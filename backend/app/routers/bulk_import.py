@@ -38,6 +38,7 @@ router = APIRouter(prefix="/admin/bulk-import", tags=["admin"])
 _editor = require_role("admin", "instructor")
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 # Maximum concurrent tile-generation tasks per bulk import
 _MAX_CONCURRENCY = 4
@@ -253,168 +254,181 @@ async def bulk_import_images(
     if category is None:
         raise HTTPException(status_code=400, detail="Category not found")
 
-    os.makedirs(settings.source_images_dir, exist_ok=True)
+    with tracer.start_as_current_span("bulk_import.enqueue") as span:
+        try:
+            span.set_attribute("bulk_import.category_id", category_id)
 
-    file_entries: list[tuple[str, str]] = []  # (original_filename, stored_path)
+            os.makedirs(settings.source_images_dir, exist_ok=True)
 
-    try:
-        for upload in files:
-            if not upload.filename:
-                continue
+            file_entries: list[tuple[str, str]] = []  # (original_filename, stored_path)
 
-            # Handle zip files
-            if upload.filename.lower().endswith(".zip"):
-                # Stream zip to a temp file, then extract images.
-                # The try/finally wraps the entire lifecycle so the
-                # temp file is cleaned up even if streaming fails.
-                tmp_path: str | None = None
-                try:
-                    with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-                        tmp_path = tmp.name
-                        while True:
-                            chunk = await upload.read(UPLOAD_CHUNK_SIZE)
-                            if not chunk:
-                                break
-                            tmp.write(chunk)
+            try:
+                for upload in files:
+                    if not upload.filename:
+                        continue
 
-                    with zipfile.ZipFile(tmp_path, "r") as zf:
-                        for zip_entry in zf.namelist():
-                            # Skip directories and hidden/system files
-                            if zip_entry.endswith("/") or zip_entry.startswith("__MACOSX"):
-                                continue
-                            basename = os.path.basename(zip_entry)
-                            if not basename or basename.startswith("."):
-                                continue
-                            if not _is_image_filename(basename):
-                                continue
+                    # Handle zip files
+                    if upload.filename.lower().endswith(".zip"):
+                        # Stream zip to a temp file, then extract images.
+                        # The try/finally wraps the entire lifecycle so the
+                        # temp file is cleaned up even if streaming fails.
+                        tmp_path: str | None = None
+                        try:
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
+                                tmp_path = tmp.name
+                                while True:
+                                    chunk = await upload.read(UPLOAD_CHUNK_SIZE)
+                                    if not chunk:
+                                        break
+                                    tmp.write(chunk)
 
-                            ext = Path(basename).suffix or ".bin"
-                            unique_name = f"{uuid.uuid4().hex}{ext}"
-                            stored_path = os.path.join(
-                                settings.source_images_dir, unique_name
-                            )
+                            with zipfile.ZipFile(tmp_path, "r") as zf:
+                                for zip_entry in zf.namelist():
+                                    # Skip directories and hidden/system files
+                                    if zip_entry.endswith("/") or zip_entry.startswith("__MACOSX"):
+                                        continue
+                                    basename = os.path.basename(zip_entry)
+                                    if not basename or basename.startswith("."):
+                                        continue
+                                    if not _is_image_filename(basename):
+                                        continue
 
-                            try:
-                                with (
-                                    zf.open(zip_entry) as src,
-                                    open(stored_path, "wb") as dst,
-                                ):
-                                    shutil.copyfileobj(
-                                        src,
-                                        dst,
-                                        length=_ZIP_EXTRACT_CHUNK_SIZE,
+                                    ext = Path(basename).suffix or ".bin"
+                                    unique_name = f"{uuid.uuid4().hex}{ext}"
+                                    stored_path = os.path.join(
+                                        settings.source_images_dir, unique_name
                                     )
-                            except Exception:
+
+                                    try:
+                                        with (
+                                            zf.open(zip_entry) as src,
+                                            open(stored_path, "wb") as dst,
+                                        ):
+                                            shutil.copyfileobj(
+                                                src,
+                                                dst,
+                                                length=_ZIP_EXTRACT_CHUNK_SIZE,
+                                            )
+                                    except Exception:
+                                        with contextlib.suppress(OSError):
+                                            os.unlink(stored_path)
+                                        raise
+
+                                    file_entries.append((basename, stored_path))
+                        except zipfile.BadZipFile:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"File '{upload.filename}' is not a valid zip archive",
+                            )
+                        finally:
+                            if tmp_path is not None:
                                 with contextlib.suppress(OSError):
-                                    os.unlink(stored_path)
-                                raise
+                                    os.unlink(tmp_path)
+                    else:
+                        # Regular image file
+                        if not _is_image_filename(upload.filename):
+                            continue  # silently skip non-image files
 
-                            file_entries.append((basename, stored_path))
-                except zipfile.BadZipFile:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"File '{upload.filename}' is not a valid zip archive",
-                    )
-                finally:
-                    if tmp_path is not None:
-                        with contextlib.suppress(OSError):
-                            os.unlink(tmp_path)
-            else:
-                # Regular image file
-                if not _is_image_filename(upload.filename):
-                    continue  # silently skip non-image files
+                        ext = os.path.splitext(upload.filename)[1] or ".bin"
+                        unique_name = f"{uuid.uuid4().hex}{ext}"
+                        stored_path = os.path.join(settings.source_images_dir, unique_name)
 
-                ext = os.path.splitext(upload.filename)[1] or ".bin"
-                unique_name = f"{uuid.uuid4().hex}{ext}"
-                stored_path = os.path.join(settings.source_images_dir, unique_name)
+                        # Stream to disk in chunks (handles large TIFFs)
+                        try:
+                            with open(stored_path, "wb") as f:
+                                while True:
+                                    chunk = await upload.read(UPLOAD_CHUNK_SIZE)
+                                    if not chunk:
+                                        break
+                                    f.write(chunk)
+                        except Exception:
+                            with contextlib.suppress(OSError):
+                                os.unlink(stored_path)
+                            raise
 
-                # Stream to disk in chunks (handles large TIFFs)
-                try:
-                    with open(stored_path, "wb") as f:
-                        while True:
-                            chunk = await upload.read(UPLOAD_CHUNK_SIZE)
-                            if not chunk:
-                                break
-                            f.write(chunk)
-                except Exception:
+                        file_entries.append((upload.filename, stored_path))
+            except OSError as exc:
+                for _, stored_path in file_entries:
                     with contextlib.suppress(OSError):
                         os.unlink(stored_path)
-                    raise
+                if exc.errno == errno.ENOSPC:
+                    logger.error(
+                        "Bulk import failed: no space left on device",
+                        extra={"event": "bulk_import.enospc"},
+                    )
+                    raise HTTPException(
+                        status_code=507,
+                        detail="Insufficient storage \u2014 the data volume is full",
+                    )
+                raise
+            except Exception:
+                # Clean up any files already stored before re-raising
+                for _, stored_path in file_entries:
+                    with contextlib.suppress(OSError):
+                        os.unlink(stored_path)
+                raise
 
-                file_entries.append((upload.filename, stored_path))
-    except OSError as exc:
-        for _, stored_path in file_entries:
-            with contextlib.suppress(OSError):
-                os.unlink(stored_path)
-        if exc.errno == errno.ENOSPC:
-            logger.error(
-                "Bulk import failed: no space left on device",
-                extra={"event": "bulk_import.enospc"},
+            if not file_entries:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No valid image files found in the upload",
+                )
+
+            span.set_attribute("bulk_import.total_count", len(file_entries))
+
+            # Create the bulk import job record
+            job = BulkImportJob(
+                status="pending",
+                category_id=category_id,
+                total_count=len(file_entries),
+                completed_count=0,
+                failed_count=0,
+                errors=[],
             )
-            raise HTTPException(
-                status_code=507,
-                detail="Insufficient storage — the data volume is full",
+            db.add(job)
+            await db.commit()
+            await db.refresh(job)
+
+            span.set_attribute("bulk_import.job_id", job.id)
+
+            logger.info(
+                "Bulk import job created",
+                extra={
+                    "event": "bulk_import.job_created",
+                    "job_id": job.id,
+                    "category_id": category_id,
+                    "total_count": len(file_entries),
+                },
             )
-        raise
-    except Exception:
-        # Clean up any files already stored before re-raising
-        for _, stored_path in file_entries:
-            with contextlib.suppress(OSError):
-                os.unlink(stored_path)
-        raise
 
-    if not file_entries:
-        raise HTTPException(
-            status_code=400,
-            detail="No valid image files found in the upload",
-        )
+            # Prefer the arq task queue for resource isolation and job
+            # persistence; fall back to in-process BackgroundTasks when Redis
+            # is unavailable (e.g. local development without Redis).
+            enqueued = await enqueue_bulk_import(
+                job.id,
+                file_entries,
+                copyright=copyright,
+                note=note,
+                program_ids=program_ids,
+                active=active,
+            )
+            span.set_attribute("bulk_import.enqueued", enqueued)
+            if not enqueued:
+                background_tasks.add_task(
+                    _process_bulk_import,
+                    job.id,
+                    file_entries,
+                    copyright=copyright,
+                    note=note,
+                    program_ids=program_ids,
+                    active=active,
+                )
 
-    # Create the bulk import job record
-    job = BulkImportJob(
-        status="pending",
-        category_id=category_id,
-        total_count=len(file_entries),
-        completed_count=0,
-        failed_count=0,
-        errors=[],
-    )
-    db.add(job)
-    await db.commit()
-    await db.refresh(job)
-
-    logger.info(
-        "Bulk import job created",
-        extra={
-            "event": "bulk_import.job_created",
-            "job_id": job.id,
-            "category_id": category_id,
-            "total_count": len(file_entries),
-        },
-    )
-
-    # Prefer the arq task queue for resource isolation and job
-    # persistence; fall back to in-process BackgroundTasks when Redis
-    # is unavailable (e.g. local development without Redis).
-    enqueued = await enqueue_bulk_import(
-        job.id,
-        file_entries,
-        copyright=copyright,
-        note=note,
-        program_ids=program_ids,
-        active=active,
-    )
-    if not enqueued:
-        background_tasks.add_task(
-            _process_bulk_import,
-            job.id,
-            file_entries,
-            copyright=copyright,
-            note=note,
-            program_ids=program_ids,
-            active=active,
-        )
-
-    return job
+            return job
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
+            raise
 
 
 @router.get("/", response_model=list[BulkImportJobOut])

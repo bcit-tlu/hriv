@@ -207,7 +207,7 @@ async def test_audit_sets_span_attributes_for_authenticated_request() -> None:
         for call in mock_span.set_attribute.call_args_list
     }
     assert calls["enduser.id"] == 42
-    assert calls["enduser.email"] == "test@example.com"
+    assert "enduser.email" not in calls
     assert calls["enduser.role"] == "admin"
     assert calls["session.id"] == "session-xyz"
     assert "request.id" in calls

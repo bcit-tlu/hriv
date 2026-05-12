@@ -14,6 +14,8 @@ import httpx
 from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
+from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +25,7 @@ from ..database import get_db, settings as _settings
 from ..models import User
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 router = APIRouter(prefix="/auth/oidc", tags=["auth-oidc"])
 
@@ -241,185 +244,208 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
             log_detail="oauth.create_client('oidc') returned None",
         )
 
-    try:
-        token_data = await client.authorize_access_token(request)
-    except (httpx.ConnectError, httpx.TimeoutException) as exc:
-        return _oidc_callback_error(
-            _OIDC_ERR_PROVIDER_UNREACHABLE,
-            log_detail=str(exc),
-            extra={
-                "event": "oidc.provider_unreachable",
-                "issuer": _settings.oidc_issuer,
-                "phase": "token_exchange",
-            },
-        )
-    except Exception as exc:
-        return _oidc_callback_error(
-            _OIDC_ERR_TOKEN_EXCHANGE_FAILED,
-            log_detail=str(exc),
-            extra={"event": "oidc.token_exchange_failed"},
-        )
-
-    # Extract user info — authlib's authorize_access_token already parses
-    # the ID token and populates token_data["userinfo"] when available.
-    userinfo = token_data.get("userinfo")
-
-    # Log the raw token keys and userinfo for debugging IdP claim issues.
-    _token_keys = sorted(k for k in token_data if k != "userinfo")
-    logger.info(
-        "OIDC token exchange succeeded",
-        extra={
-            "event": "oidc.token_received",
-            "token_keys": _token_keys,
-            "userinfo_present": userinfo is not None,
-            "userinfo_claims": sorted(userinfo.keys()) if userinfo and hasattr(userinfo, "keys") else None,
-        },
-    )
-
-    if userinfo is None:
-        # Fall back to the userinfo endpoint
+    with tracer.start_as_current_span("oidc.callback") as span:
         try:
-            resp = await client.get("userinfo", token=token_data)
-            userinfo = resp.json()
+            try:
+                token_data = await client.authorize_access_token(request)
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                span.set_attribute("oidc.error_code", _OIDC_ERR_PROVIDER_UNREACHABLE)
+                span.set_status(StatusCode.ERROR, str(exc))
+                return _oidc_callback_error(
+                    _OIDC_ERR_PROVIDER_UNREACHABLE,
+                    log_detail=str(exc),
+                    extra={
+                        "event": "oidc.provider_unreachable",
+                        "issuer": _settings.oidc_issuer,
+                        "phase": "token_exchange",
+                    },
+                )
+            except Exception as exc:
+                span.set_attribute("oidc.error_code", _OIDC_ERR_TOKEN_EXCHANGE_FAILED)
+                span.set_status(StatusCode.ERROR, str(exc))
+                return _oidc_callback_error(
+                    _OIDC_ERR_TOKEN_EXCHANGE_FAILED,
+                    log_detail=str(exc),
+                    extra={"event": "oidc.token_exchange_failed"},
+                )
+
+            # Extract user info — authlib's authorize_access_token already parses
+            # the ID token and populates token_data["userinfo"] when available.
+            userinfo = token_data.get("userinfo")
+
+            # Log the raw token keys and userinfo for debugging IdP claim issues.
+            _token_keys = sorted(k for k in token_data if k != "userinfo")
             logger.info(
-                "OIDC userinfo fallback succeeded",
+                "OIDC token exchange succeeded",
                 extra={
-                    "event": "oidc.userinfo_fallback",
-                    "claims": sorted(userinfo.keys()) if hasattr(userinfo, "keys") else None,
+                    "event": "oidc.token_received",
+                    "token_keys": _token_keys,
+                    "userinfo_present": userinfo is not None,
+                    "userinfo_claims": sorted(userinfo.keys()) if userinfo and hasattr(userinfo, "keys") else None,
                 },
             )
-        except Exception as exc:
-            return _oidc_callback_error(
-                _OIDC_ERR_USERINFO_FAILED,
-                log_detail=str(exc),
-                extra={"event": "oidc.userinfo_fallback_failed"},
-            )
 
-    sub: str = userinfo.get("sub", "")
-    email: str = userinfo.get("email", "")
-    name: str = userinfo.get("name") or userinfo.get("preferred_username") or email
+            if userinfo is None:
+                # Fall back to the userinfo endpoint
+                try:
+                    resp = await client.get("userinfo", token=token_data)
+                    userinfo = resp.json()
+                    logger.info(
+                        "OIDC userinfo fallback succeeded",
+                        extra={
+                            "event": "oidc.userinfo_fallback",
+                            "claims": sorted(userinfo.keys()) if hasattr(userinfo, "keys") else None,
+                        },
+                    )
+                except Exception as exc:
+                    span.set_attribute("oidc.error_code", _OIDC_ERR_USERINFO_FAILED)
+                    span.set_status(StatusCode.ERROR, str(exc))
+                    return _oidc_callback_error(
+                        _OIDC_ERR_USERINFO_FAILED,
+                        log_detail=str(exc),
+                        extra={"event": "oidc.userinfo_fallback_failed"},
+                    )
 
-    if not sub or not email:
-        # Log all available claim keys so admins can diagnose IdP template
-        # configuration issues without needing to decode the raw ID token.
-        _available = sorted(userinfo.keys()) if hasattr(userinfo, "keys") else []
-        return _oidc_callback_error(
-            _OIDC_ERR_MISSING_CLAIMS,
-            log_detail=f"sub={bool(sub)} email={bool(email)}",
-            extra={
-                "event": "oidc.missing_claims",
-                "sub": sub,
-                "email": email,
-                "display_name": name,
-                "available_claims": _available,
-                "hint": "Ensure the IdP OIDC scope templates include 'email' "
-                        "and 'sub' claims. For Vault, check that "
-                        "vault_identity_oidc_scope resources exist for 'email' "
-                        "and 'profile', and that the provider's "
-                        "scopes_supported includes them.",
-            },
-        )
+            sub: str = userinfo.get("sub", "")
+            email: str = userinfo.get("email", "")
+            name: str = userinfo.get("name") or userinfo.get("preferred_username") or email
 
-    # Resolve role from IdP groups — None means no group matched a mapping
-    groups: list[str] = userinfo.get("groups", [])
-    resolved_role = _resolve_role(groups)
+            if not sub or not email:
+                # Log all available claim keys so admins can diagnose IdP template
+                # configuration issues without needing to decode the raw ID token.
+                _available = sorted(userinfo.keys()) if hasattr(userinfo, "keys") else []
+                span.set_attribute("oidc.error_code", _OIDC_ERR_MISSING_CLAIMS)
+                span.set_status(StatusCode.ERROR, "missing sub or email claim")
+                return _oidc_callback_error(
+                    _OIDC_ERR_MISSING_CLAIMS,
+                    log_detail=f"sub={bool(sub)} email={bool(email)}",
+                    extra={
+                        "event": "oidc.missing_claims",
+                        "sub": sub,
+                        "email": email,
+                        "display_name": name,
+                        "available_claims": _available,
+                        "hint": "Ensure the IdP OIDC scope templates include 'email' "
+                                "and 'sub' claims. For Vault, check that "
+                                "vault_identity_oidc_scope resources exist for 'email' "
+                                "and 'profile', and that the provider's "
+                                "scopes_supported includes them.",
+                    },
+                )
 
-    # Upsert: find by oidc_subject first, then by email
-    result = await db.execute(
-        select(User)
-        .where(User.oidc_subject == sub)
-    )
-    user = result.scalars().first()
+            # Resolve role from IdP groups — None means no group matched a mapping
+            groups: list[str] = userinfo.get("groups", [])
+            resolved_role = _resolve_role(groups)
 
-    if user is None:
-        # Try matching by email for first-time OIDC login by an existing user.
-        # Only allow email-based linking when the IdP confirms the email is
-        # verified; this prevents account takeover via unverified addresses on
-        # less restrictive IdPs.
-        email_verified = _settings.oidc_trust_email or userinfo.get("email_verified", False)
-        if email_verified:
+            # Upsert: find by oidc_subject first, then by email
             result = await db.execute(
                 select(User)
-                .where(User.email == email)
+                .where(User.oidc_subject == sub)
             )
             user = result.scalars().first()
-        else:
-            logger.info(
-                "OIDC: skipping email-based account linking (email not verified)",
-                extra={"event": "oidc.email_not_verified", "email": email, "sub": sub},
+
+            is_new_user = False
+
+            if user is None:
+                # Try matching by email for first-time OIDC login by an existing user.
+                # Only allow email-based linking when the IdP confirms the email is
+                # verified; this prevents account takeover via unverified addresses on
+                # less restrictive IdPs.
+                email_verified = _settings.oidc_trust_email or userinfo.get("email_verified", False)
+                if email_verified:
+                    result = await db.execute(
+                        select(User)
+                        .where(User.email == email)
+                    )
+                    user = result.scalars().first()
+                else:
+                    logger.info(
+                        "OIDC: skipping email-based account linking (email not verified)",
+                        extra={"event": "oidc.email_not_verified", "email": email, "sub": sub},
+                    )
+
+            if user is None:
+                is_new_user = True
+                # Brand-new user — create account (default to student if no mapping matched)
+                user = User(
+                    name=name,
+                    email=email,
+                    oidc_subject=sub,
+                    role=resolved_role or "student",
+                    last_access=datetime.now(timezone.utc),
+                )
+                db.add(user)
+                await db.flush()
+                await db.refresh(user, ["programs"])
+                logger.info(
+                    "OIDC: created new user",
+                    extra={
+                        "event": "oidc.user_created",
+                        "user_id": user.id,
+                        "email": email,
+                        "role": resolved_role or "student",
+                    },
+                )
+            else:
+                # Existing user — reject if already linked to a *different* OIDC identity
+                if user.oidc_subject and user.oidc_subject != sub:
+                    span.set_attribute("oidc.error_code", _OIDC_ERR_SUBJECT_MISMATCH)
+                    span.set_status(StatusCode.ERROR, "subject mismatch")
+                    return _oidc_callback_error(
+                        _OIDC_ERR_SUBJECT_MISMATCH,
+                        log_detail=f"email={email} existing_sub\u2260incoming_sub",
+                        extra={
+                            "event": "oidc.subject_mismatch",
+                            "email": email,
+                            "existing_sub": user.oidc_subject,
+                            "incoming_sub": sub,
+                        },
+                    )
+                if not user.oidc_subject:
+                    user.oidc_subject = sub
+                # Only update role when a group actually matched a mapping entry;
+                # this preserves admin-assigned promotions when the IdP sends
+                # unrecognised groups or no groups at all.
+                if resolved_role is not None:
+                    user.role = resolved_role
+                user.last_access = datetime.now(timezone.utc)
+                logger.info(
+                    "OIDC: logged in existing user",
+                    extra={
+                        "event": "oidc.login_success",
+                        "user_id": user.id,
+                        "email": email,
+                        "role": resolved_role,
+                    },
+                )
+
+            await db.commit()
+            await db.refresh(user)
+
+            span.set_attribute("oidc.user_id", user.id)
+            span.set_attribute("oidc.is_new_user", is_new_user)
+            span.set_attribute("oidc.role", user.role)
+
+            jwt_token = create_access_token(user)
+
+            # Redirect to the frontend with the JWT so AuthContext can bootstrap
+            # the session.  Use the dedicated setting if provided; otherwise fall
+            # back to the first non-wildcard CORS origin.
+            frontend_origin = _resolve_frontend_origin()
+            if not frontend_origin:
+                logger.error(
+                    "OIDC post-login redirect target not configured",
+                    extra={"event": "oidc.redirect_missing"},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail="OIDC post-login redirect is not configured. "
+                           "Set OIDC_POST_LOGIN_REDIRECT or a non-wildcard CORS_ORIGINS.",
+                )
+            return _fragment_redirect(
+                frontend_origin, f"oidc_token={jwt_token}"
             )
-
-    if user is None:
-        # Brand-new user — create account (default to student if no mapping matched)
-        user = User(
-            name=name,
-            email=email,
-            oidc_subject=sub,
-            role=resolved_role or "student",
-            last_access=datetime.now(timezone.utc),
-        )
-        db.add(user)
-        await db.flush()
-        await db.refresh(user, ["programs"])
-        logger.info(
-            "OIDC: created new user",
-            extra={
-                "event": "oidc.user_created",
-                "user_id": user.id,
-                "email": email,
-                "role": resolved_role or "student",
-            },
-        )
-    else:
-        # Existing user — reject if already linked to a *different* OIDC identity
-        if user.oidc_subject and user.oidc_subject != sub:
-            return _oidc_callback_error(
-                _OIDC_ERR_SUBJECT_MISMATCH,
-                log_detail=f"email={email} existing_sub≠incoming_sub",
-                extra={
-                    "event": "oidc.subject_mismatch",
-                    "email": email,
-                    "existing_sub": user.oidc_subject,
-                    "incoming_sub": sub,
-                },
-            )
-        if not user.oidc_subject:
-            user.oidc_subject = sub
-        # Only update role when a group actually matched a mapping entry;
-        # this preserves admin-assigned promotions when the IdP sends
-        # unrecognised groups or no groups at all.
-        if resolved_role is not None:
-            user.role = resolved_role
-        user.last_access = datetime.now(timezone.utc)
-        logger.info(
-            "OIDC: logged in existing user",
-            extra={
-                "event": "oidc.login_success",
-                "user_id": user.id,
-                "email": email,
-                "role": resolved_role,
-            },
-        )
-
-    await db.commit()
-    await db.refresh(user)
-
-    jwt_token = create_access_token(user)
-
-    # Redirect to the frontend with the JWT so AuthContext can bootstrap
-    # the session.  Use the dedicated setting if provided; otherwise fall
-    # back to the first non-wildcard CORS origin.
-    frontend_origin = _resolve_frontend_origin()
-    if not frontend_origin:
-        logger.error(
-            "OIDC post-login redirect target not configured",
-            extra={"event": "oidc.redirect_missing"},
-        )
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="OIDC post-login redirect is not configured. "
-                   "Set OIDC_POST_LOGIN_REDIRECT or a non-wildcard CORS_ORIGINS.",
-        )
-    return _fragment_redirect(
-        frontend_origin, f"oidc_token={jwt_token}"
-    )
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
+            raise

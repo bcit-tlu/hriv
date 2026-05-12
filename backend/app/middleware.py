@@ -206,8 +206,6 @@ class AuditMiddleware:
                     span.set_attribute("session.id", session_id)
                 if user_id is not None:
                     span.set_attribute("enduser.id", user_id)
-                if user_email:
-                    span.set_attribute("enduser.email", user_email)
                 if user_role:
                     span.set_attribute("enduser.role", user_role)
 
