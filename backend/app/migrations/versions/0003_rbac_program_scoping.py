@@ -77,23 +77,44 @@ def upgrade() -> None:
     )
 
     # ── Drop old columns ──
-    # Look up the FK constraint name from pg_constraint instead of
-    # hard-coding it — CNPG environments may generate a different name
-    # than the default PostgreSQL convention.
+    # In CNPG + Vault environments, each pod gets a fresh dynamic role
+    # that may not own the tables created by a previous role.  DDL like
+    # DROP CONSTRAINT / DROP COLUMN requires ownership, so we SET ROLE
+    # to the database owner (the static role CNPG creates) first.
     conn = op.get_bind()
-    fk_name = conn.execute(
+
+    db_owner = conn.execute(
         text(
-            "SELECT c.conname FROM pg_constraint c "
-            "JOIN pg_attribute a ON a.attrelid = c.conrelid "
-            "  AND a.attnum = ANY(c.conkey) "
-            "WHERE c.conrelid = 'users'::regclass "
-            "  AND c.contype = 'f' "
-            "  AND a.attname = 'program_id'"
+            "SELECT pg_catalog.pg_get_userbyid(d.datdba) "
+            "FROM pg_database d "
+            "WHERE d.datname = current_database()"
         )
     ).scalar_one()
-    op.drop_constraint(fk_name, "users", type_="foreignkey")
-    op.drop_column("users", "program_id")
-    op.drop_column("categories", "program")
+    current_user = conn.execute(text("SELECT current_user")).scalar_one()
+    role_switched = False
+    if current_user != db_owner:
+        conn.execute(text(f'SET ROLE "{db_owner}"'))
+        role_switched = True
+
+    try:
+        # Look up the FK constraint name from pg_constraint instead of
+        # hard-coding it — the name may vary across environments.
+        fk_name = conn.execute(
+            text(
+                "SELECT c.conname FROM pg_constraint c "
+                "JOIN pg_attribute a ON a.attrelid = c.conrelid "
+                "  AND a.attnum = ANY(c.conkey) "
+                "WHERE c.conrelid = 'users'::regclass "
+                "  AND c.contype = 'f' "
+                "  AND a.attname = 'program_id'"
+            )
+        ).scalar_one()
+        op.drop_constraint(fk_name, "users", type_="foreignkey")
+        op.drop_column("users", "program_id")
+        op.drop_column("categories", "program")
+    finally:
+        if role_switched:
+            conn.execute(text("RESET ROLE"))
 
 
 def downgrade() -> None:
