@@ -60,56 +60,56 @@ def _as_db_owner() -> Iterator[None]:
 
 
 def upgrade() -> None:
-    # ── Create user_programs junction table ──
-    op.create_table(
-        "user_programs",
-        sa.Column(
-            "user_id",
-            sa.Integer(),
-            sa.ForeignKey("users.id", ondelete="CASCADE"),
-            primary_key=True,
-        ),
-        sa.Column(
-            "program_id",
-            sa.Integer(),
-            sa.ForeignKey("programs.id", ondelete="CASCADE"),
-            primary_key=True,
-        ),
-    )
-
-    # ── Create category_programs junction table ──
-    op.create_table(
-        "category_programs",
-        sa.Column(
-            "category_id",
-            sa.Integer(),
-            sa.ForeignKey("categories.id", ondelete="CASCADE"),
-            primary_key=True,
-        ),
-        sa.Column(
-            "program_id",
-            sa.Integer(),
-            sa.ForeignKey("programs.id", ondelete="CASCADE"),
-            primary_key=True,
-        ),
-    )
-
-    # ── Migrate users.program_id → user_programs ──
-    op.execute(
-        "INSERT INTO user_programs (user_id, program_id) "
-        "SELECT id, program_id FROM users WHERE program_id IS NOT NULL"
-    )
-
-    # ── Migrate categories.program (text) → category_programs ──
-    op.execute(
-        "INSERT INTO category_programs (category_id, program_id) "
-        "SELECT c.id, p.id FROM categories c "
-        "JOIN programs p ON p.name = c.program "
-        "WHERE c.program IS NOT NULL"
-    )
-
-    # ── Drop old columns ──
     with _as_db_owner():
+        # ── Create user_programs junction table ──
+        op.create_table(
+            "user_programs",
+            sa.Column(
+                "user_id",
+                sa.Integer(),
+                sa.ForeignKey("users.id", ondelete="CASCADE"),
+                primary_key=True,
+            ),
+            sa.Column(
+                "program_id",
+                sa.Integer(),
+                sa.ForeignKey("programs.id", ondelete="CASCADE"),
+                primary_key=True,
+            ),
+        )
+
+        # ── Create category_programs junction table ──
+        op.create_table(
+            "category_programs",
+            sa.Column(
+                "category_id",
+                sa.Integer(),
+                sa.ForeignKey("categories.id", ondelete="CASCADE"),
+                primary_key=True,
+            ),
+            sa.Column(
+                "program_id",
+                sa.Integer(),
+                sa.ForeignKey("programs.id", ondelete="CASCADE"),
+                primary_key=True,
+            ),
+        )
+
+        # ── Migrate users.program_id → user_programs ──
+        op.execute(
+            "INSERT INTO user_programs (user_id, program_id) "
+            "SELECT id, program_id FROM users WHERE program_id IS NOT NULL"
+        )
+
+        # ── Migrate categories.program (text) → category_programs ──
+        op.execute(
+            "INSERT INTO category_programs (category_id, program_id) "
+            "SELECT c.id, p.id FROM categories c "
+            "JOIN programs p ON p.name = c.program "
+            "WHERE c.program IS NOT NULL"
+        )
+
+        # ── Drop old columns ──
         # Look up the FK constraint name from pg_constraint instead of
         # hard-coding it — the name may vary across environments.
         conn = op.get_bind()
