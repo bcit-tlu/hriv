@@ -17,6 +17,7 @@ Create Date: 2026-05-06
 from __future__ import annotations
 
 import contextlib
+import logging
 from collections.abc import Iterator
 
 import sqlalchemy as sa
@@ -116,7 +117,11 @@ def _as_db_owner() -> Iterator[None]:
                 conn = op.get_bind()
                 conn.execute(text("RESET ROLE"))
             except Exception:
-                pass
+                logging.getLogger(__name__).warning(
+                    "RESET ROLE failed during cleanup; "
+                    "connection will be closed",
+                    exc_info=True,
+                )
 
 
 def upgrade() -> None:
