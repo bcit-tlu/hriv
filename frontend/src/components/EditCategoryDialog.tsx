@@ -145,7 +145,11 @@ export default function EditCategoryDialog({
               helperText={exactMatch ? 'This name already exists at this level' : undefined}
               error={exactMatch}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSubmit()
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  handleSubmit()
+                }
               }}
             />
           )}
