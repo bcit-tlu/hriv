@@ -48,23 +48,23 @@ spec:
               value: {{ .Values.env.TILES_DIR | quote }}
             - name: REDIS_URL
               value: {{ .Values.redis.url | quote }}
-            {{- if .Values.otel.enabled }}
+            {{- if .Values.observability.openTelemetry.enabled }}
             - name: OTEL_SERVICE_NAME
-              value: {{ printf "%s-worker" .Values.otel.serviceName | quote }}
+              value: {{ printf "%s-worker" .Values.observability.openTelemetry.serviceName | quote }}
             - name: OTEL_TRACES_EXPORTER
-              value: {{ .Values.otel.tracesExporter | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.traces | quote }}
             - name: OTEL_METRICS_EXPORTER
-              value: {{ .Values.otel.metricsExporter | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.metrics | quote }}
             - name: OTEL_LOGS_EXPORTER
-              value: {{ .Values.otel.logsExporter | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.logs | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.otel.exporterEndpoint | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.endpoint | quote }}
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
-              value: {{ .Values.otel.exporterProtocol | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.protocol | quote }}
             - name: OTEL_PYTHON_DISABLED_INSTRUMENTATIONS
               value: "redis"
             - name: OTEL_PYTHON_FASTAPI_EXCLUDED_URLS
-              value: {{ .Values.otel.excludedUrls | quote }}
+              value: {{ .Values.observability.openTelemetry.excludedUrls | quote }}
             {{- end }}
           {{- with .Values.redis.worker.resources }}
           resources:

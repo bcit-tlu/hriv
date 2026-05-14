@@ -152,7 +152,7 @@ const IMAGE_FIXTURE: ApiImage = {
 const USER_FIXTURE: ApiUser = {
   id: 1,
   name: 'Admin',
-  email: 'admin@bcit.ca',
+  email: 'admin@example.ca',
   role: 'admin',
   program_ids: [],
   program_names: [],
@@ -465,17 +465,17 @@ describe('User API', () => {
   it('loginUser sends POST with credentials', async () => {
     const loginResp = { access_token: 'tok', token_type: 'bearer', user: USER_FIXTURE }
     mockFetch.mockReturnValueOnce(jsonResponse(loginResp))
-    const result = await loginUser('admin@bcit.ca', 'password')
+    const result = await loginUser('admin@example.ca', 'password')
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/auth/login')
     expect(init.method).toBe('POST')
-    expect(JSON.parse(init.body)).toEqual({ email: 'admin@bcit.ca', password: 'password' })
+    expect(JSON.parse(init.body)).toEqual({ email: 'admin@example.ca', password: 'password' })
     expect(result).toEqual(loginResp)
   })
 
   it('createUser sends POST to /api/users/', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse(USER_FIXTURE))
-    await createUser({ name: 'Test', email: 'test@bcit.ca', role: 'student', password: 'pw' })
+    await createUser({ name: 'Test', email: 'test@example.ca', role: 'student', password: 'pw' })
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/users/')
     expect(init.method).toBe('POST')

@@ -23,12 +23,12 @@ backend:
   # backend is deployed to a different namespace than the frontend.
   namespace: ""
 
-# Tile server for DZI deep-zoom tiles.  When the backend chart's
-# tileSidecar is enabled, set tileServer.port to the sidecar port
-# (default 8001) so the frontend nginx proxies /api/tiles/ directly
-# to the sidecar — bypassing the Python process.  When the tile
-# sidecar is disabled, leave tileServer.enabled=false and tile
-# requests fall through to the backend as before.
+# Tile server for DZI deep-zoom tiles. When the backend chart's
+# `tiles.enabled` option is enabled, set tileServer.port to the
+# sidecar port (default 8001) so frontend nginx proxies /api/tiles/
+# directly to the sidecar — bypassing the Python process. When
+# backend tiles sidecar is disabled, leave tileServer.enabled=false
+# and tile requests fall through to the backend as before.
 tileServer:
   enabled: false
   port: 8001
@@ -91,9 +91,10 @@ resources: {}
 # Requires nodes to be labeled with the chosen topologyKey.
 # NOTE: replicaCount must not exceed the number of distinct zones,
 # otherwise excess pods will remain Pending (hard scheduling constraint).
-zoneAntiAffinity:
-  enabled: false
-  topologyKey: topology.kubernetes.io/zone
+scheduling:
+  zoneAntiAffinity:
+    enabled: false
+    topologyKey: topology.kubernetes.io/zone
 
 nodeSelector: {}
 tolerations: []

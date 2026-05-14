@@ -297,7 +297,7 @@ async def test_oidc_callback_new_user_created() -> None:
     mock_client.authorize_access_token = AsyncMock(return_value={
         "userinfo": {
             "sub": "oidc-sub-123",
-            "email": "new@example.com",
+            "email": "new@example.ca",
             "name": "New User",
             "groups": [],
         },
@@ -308,7 +308,7 @@ async def test_oidc_callback_new_user_created() -> None:
     mock_result_empty.scalars.return_value.first.return_value = None
 
     new_user = SimpleNamespace(
-        id=1, name="New User", email="new@example.com",
+        id=1, name="New User", email="new@example.ca",
         oidc_subject="oidc-sub-123", role="student",
         programs=[],
     )
@@ -340,14 +340,14 @@ async def test_oidc_callback_existing_user_login() -> None:
     mock_client.authorize_access_token = AsyncMock(return_value={
         "userinfo": {
             "sub": "oidc-sub-456",
-            "email": "existing@example.com",
+            "email": "existing@example.ca",
             "name": "Existing User",
             "groups": [],
         },
     })
 
     existing_user = SimpleNamespace(
-        id=2, name="Existing User", email="existing@example.com",
+        id=2, name="Existing User", email="existing@example.ca",
         oidc_subject="oidc-sub-456", role="admin",
         programs=[], last_access=None,
     )
@@ -379,7 +379,7 @@ async def test_oidc_callback_subject_mismatch() -> None:
     mock_client.authorize_access_token = AsyncMock(return_value={
         "userinfo": {
             "sub": "new-sub",
-            "email": "user@example.com",
+            "email": "user@example.ca",
             "name": "User",
             "groups": [],
             "email_verified": True,
@@ -392,7 +392,7 @@ async def test_oidc_callback_subject_mismatch() -> None:
 
     # Second query (by email) returns user with different oidc_subject
     existing_user = SimpleNamespace(
-        id=2, name="User", email="user@example.com",
+        id=2, name="User", email="user@example.ca",
         oidc_subject="different-sub", role="student",
         programs=[],
     )
@@ -419,14 +419,14 @@ async def test_oidc_callback_no_redirect_configured() -> None:
     mock_client.authorize_access_token = AsyncMock(return_value={
         "userinfo": {
             "sub": "oidc-sub-789",
-            "email": "user@example.com",
+            "email": "user@example.ca",
             "name": "User",
             "groups": [],
         },
     })
 
     existing_user = SimpleNamespace(
-        id=1, name="User", email="user@example.com",
+        id=1, name="User", email="user@example.ca",
         oidc_subject="oidc-sub-789", role="student",
         programs=[], last_access=None,
     )
@@ -463,7 +463,7 @@ async def test_oidc_callback_userinfo_fallback() -> None:
     mock_resp = MagicMock()
     mock_resp.json.return_value = {
         "sub": "oidc-sub-fallback",
-        "email": "fallback@example.com",
+        "email": "fallback@example.ca",
         "name": "Fallback User",
         "groups": [],
     }
@@ -519,7 +519,7 @@ async def test_oidc_callback_email_linking_with_trusted_email() -> None:
     mock_client.authorize_access_token = AsyncMock(return_value={
         "userinfo": {
             "sub": "new-oidc-sub",
-            "email": "user@example.com",
+            "email": "user@example.ca",
             "name": "User",
             "groups": [],
         },
@@ -531,7 +531,7 @@ async def test_oidc_callback_email_linking_with_trusted_email() -> None:
 
     # Second query (by email) returns existing user without oidc_subject
     existing_user = SimpleNamespace(
-        id=2, name="User", email="user@example.com",
+        id=2, name="User", email="user@example.ca",
         oidc_subject=None, role="student",
         programs=[], last_access=None,
     )
@@ -564,14 +564,14 @@ async def test_oidc_callback_role_resolved_from_groups() -> None:
     mock_client.authorize_access_token = AsyncMock(return_value={
         "userinfo": {
             "sub": "oidc-sub-admin",
-            "email": "admin@example.com",
+            "email": "admin@example.ca",
             "name": "Admin",
             "groups": ["admin-group"],
         },
     })
 
     existing_user = SimpleNamespace(
-        id=1, name="Admin", email="admin@example.com",
+        id=1, name="Admin", email="admin@example.ca",
         oidc_subject="oidc-sub-admin", role="student",
         programs=[], last_access=None,
     )
@@ -605,14 +605,14 @@ async def test_oidc_callback_cors_origin_fallback() -> None:
     mock_client.authorize_access_token = AsyncMock(return_value={
         "userinfo": {
             "sub": "oidc-sub-cors",
-            "email": "cors@example.com",
+            "email": "cors@example.ca",
             "name": "User",
             "groups": [],
         },
     })
 
     existing_user = SimpleNamespace(
-        id=1, name="User", email="cors@example.com",
+        id=1, name="User", email="cors@example.ca",
         oidc_subject="oidc-sub-cors", role="student",
         programs=[], last_access=None,
     )

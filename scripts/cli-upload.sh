@@ -17,7 +17,7 @@
 #
 # Options:
 #   --url <base_url>       API base URL (default: http://localhost:8000)
-#   --email <email>        Login email (default: admin@bcit.ca)
+#   --email <email>        Login email (default: admin@example.ca)
 #   --password <password>  Login password (default: password)
 #   --name <name>          Image name (single upload only)
 #   --category <id>        Category ID (single upload only)
@@ -37,7 +37,7 @@
 set -euo pipefail
 
 BASE_URL="${HRIV_URL:-http://localhost:8000}"
-EMAIL="${HRIV_EMAIL:-admin@bcit.ca}"
+EMAIL="${HRIV_EMAIL:-admin@example.ca}"
 PASSWORD="${HRIV_PASSWORD:-password}"
 NAME=""
 CATEGORY_ID=""

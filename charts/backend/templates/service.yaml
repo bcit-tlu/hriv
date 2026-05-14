@@ -11,8 +11,8 @@ spec:
       targetPort: http
       protocol: TCP
       name: http
-    {{- if .Values.tileSidecar.enabled }}
-    - port: {{ .Values.tileSidecar.port }}
+    {{- if .Values.tiles.enabled }}
+    - port: {{ .Values.tiles.nginx.port }}
       targetPort: tiles
       protocol: TCP
       name: tiles

@@ -14,7 +14,6 @@ service:
 env:
   SOURCE_IMAGES_DIR: /data/source_images
   TILES_DIR: /data/tiles
-  GITHUB_REPO: "bcit-tlu/hriv"
 
 # Mount the ConfigMap published by the hriv-backup chart so
 # ``/api/admin/version`` can surface the deployed backup version
@@ -45,26 +44,29 @@ backupVersion: ""
 # ── OpenTelemetry observability ─────────────────────────────
 # When enabled=true, the backend Deployment renders six OTEL_* env vars
 # read by the OpenTelemetry Python SDK / auto-instrumentation (the stable
-# image wraps uvicorn with ``opentelemetry-instrument``).  Disabled by
+# image wraps uvicorn with ``opentelemetry-instrument``). Disabled by
 # default so deployments without an OTLP collector don't carry six
 # always-empty env vars in the pod spec.
 #
 # The exporter defaults below are chosen so that setting
-# ``otel.enabled=true`` + ``otel.exporterEndpoint`` is sufficient to
-# start shipping logs and traces.  Override individual exporters to
+# ``observability.openTelemetry.enabled=true`` +
+# ``observability.openTelemetry.exporter.endpoint`` is sufficient to
+# start shipping logs and traces. Override individual exporters to
 # ``"none"`` to disable a specific signal.
-otel:
-  enabled: false
-  serviceName: "hriv-backend"
-  tracesExporter: "otlp"
-  metricsExporter: "none"
-  logsExporter: "otlp"
-  exporterEndpoint: ""
-  exporterProtocol: "http/protobuf"
-  # Comma-delimited regexes passed to OTEL_PYTHON_FASTAPI_EXCLUDED_URLS.
-  # Prevents Kubernetes liveness/readiness probes from flooding the
-  # trace backend with low-value spans.
-  excludedUrls: "api/health,api/health/ready"
+observability:
+  openTelemetry:
+    enabled: false
+    serviceName: "hriv-backend"
+    exporter:
+      traces: "otlp"
+      metrics: "none"
+      logs: "otlp"
+      endpoint: ""
+      protocol: "http/protobuf"
+    # Comma-delimited regexes passed to OTEL_PYTHON_FASTAPI_EXCLUDED_URLS.
+    # Prevents Kubernetes liveness/readiness probes from flooding the
+    # trace backend with low-value spans.
+    excludedUrls: "api/health,api/health/ready"
 
 # Stable JWT signing secret shared across all Uvicorn workers.
 # Leave blank to auto-generate a random value at install time.
@@ -73,59 +75,63 @@ otel:
 # refuses to start if the secret is missing at runtime.
 jwtSecret: ""
 
-# ── OIDC / OAuth 2.0 authentication ─────────────────────────
+# ── OpenID Connect / OAuth 2.0 authentication ───────────────
 # Disabled by default so chart consumers can start with local
-# email/password login (see seedAdmin below).  Enable and supply
+# email/password login (see bootstrapAdmin below). Enable and supply
 # issuer + client credentials for SSO.
-oidc:
-  enabled: false
-  # Full issuer URL — the backend appends /.well-known/openid-configuration.
-  issuer: ""
-  # Public client identifier (safe for ConfigMap; not a secret per OAuth 2.0 spec).
-  clientId: ""
-  # Client secret — only used when vault.enabled=false and existingSecret is empty.
-  # When vault.enabled=true the secret is pulled from Vault via VSO.
-  # When existingSecret is set the chart-managed secret is not created at all.
-  clientSecret: ""
-  # Name of a pre-existing K8s Secret that contains 'client-id' and
-  # 'client-secret' keys.  When set, the chart does not create its own
-  # OIDC secret — use this to manage the secret outside of Helm/Vault
-  # (e.g. kubectl create secret generic <name> ...).  Leave empty to
-  # let the chart create the secret from clientId/clientSecret above.
-  existingSecret: ""
-  # Backend callback endpoint that the IdP redirects to after authentication.
-  redirectUri: ""
-  # Space-separated OAuth 2.0 scopes to request from the IdP.
-  scopes: "openid email profile"
-  # JSON object mapping IdP group names to HRIV roles (admin/instructor/student).
-  roleMapping: '{}'
-  # Frontend URL to redirect to after successful OIDC login.
-  postLoginRedirect: ""
-  # Trust email from IdP without requiring email_verified claim.
-  # Enable when your IdP does not emit the email_verified claim.
-  trustEmail: false
-  # CORS origins (comma-separated). Used as fallback redirect target when
-  # postLoginRedirect is empty.
-  corsOrigins: ""
+auth:
+  openidConnect:
+    enabled: false
+    # Full issuer URL — backend appends /.well-known/openid-configuration.
+    issuer: ""
+    # Public client identifier (safe for ConfigMap; not a secret per OAuth 2.0 spec).
+    clientId: ""
+    # Client secret — only used when vault.enabled=false and existingSecret is empty.
+    # When existingSecret is set, the chart-managed secret is not created.
+    clientSecret: ""
+    # Name of a pre-existing K8s Secret that contains 'client-id' and
+    # 'client-secret' keys. When set, the chart does not create its own
+    # OpenID Connect secret (e.g. kubectl create secret generic <name> ...).
+    # Leave empty to let the chart create the secret from clientId/clientSecret.
+    existingSecret: ""
+    # Backend callback endpoint that the IdP redirects to after authentication.
+    redirectUri: ""
+    # Space-separated OAuth 2.0 scopes to request from the IdP.
+    scopes: "openid email profile"
+    # JSON object mapping IdP group names to HRIV roles (admin/instructor/student).
+    roleMapping: "{}"
+    # Frontend URL to redirect to after successful login.
+    postLoginRedirect: ""
+    # Trust email from IdP without requiring email_verified claim.
+    # Enable when your IdP does not emit the email_verified claim.
+    trustEmail: false
+    # CORS origins (comma-separated). Used as fallback redirect target when
+    # postLoginRedirect is empty.
+    corsOrigins: ""
 
-# CloudNative-PG database cluster.
-# Set enabled=true to have the chart create a CNPG Cluster resource;
-# set enabled=false to bring your own PostgreSQL and supply the
-# connection string via cnpg.externalDatabaseUri (or vault.enabled=true).
-cnpg:
+# ── PostgreSQL database configuration ───────────────────────
+# Set enabled=true to have the chart create an in-cluster CloudNative-PG
+# Cluster resource. Set enabled=false to use an existing PostgreSQL
+# instance and provide postgres.uri (or vault.enabled=true).
+postgres:
   enabled: false
-  # Full PostgreSQL connection URI for BYO-database deployments.
-  # Only used when cnpg.enabled=false AND vault.enabled=false.
+  # Full PostgreSQL connection URI for external-database deployments.
+  # Only used when postgres.enabled=false AND vault.enabled=false.
+  # Defaults to a local/dev-friendly value so `helm template` and
+  # `helm lint` render without extra flags; override for real clusters.
   # Example: "postgresql://user:pass@db-host:5432/hriv"
-  externalDatabaseUri: ""
-  instances: 1
-  imageName: ghcr.io/cloudnative-pg/postgresql:16
-  database: hriv
-  owner: hriv
-  devPassword: password1234
-  enableSuperuserAccess: true
-  storage:
-    storageClass: longhorn
+  uri: "postgresql://hriv:password1234@localhost:5432/hriv"
+  cluster:
+    instances: 1
+    image: ghcr.io/cloudnative-pg/postgresql:16
+    enableSuperuserAccess: true
+  auth:
+    database: hriv
+    username: hriv
+    password: password1234
+  persistence:
+    # Leave empty to use the cluster default StorageClass.
+    storageClass: ""
     size: 5Gi
 
 # ── Redis / arq background worker ────────────────────────────
@@ -164,9 +170,9 @@ redis:
     # parallel processing slots.
     #
     # Prerequisites:
-    #   - Kubernetes Metrics Server must be running (bundled in RKE2)
-    #   - PVC must be ReadWriteMany when minReplicas > 1 (Longhorn
-    #     NFS or an RWX-capable StorageClass)
+    #   - Kubernetes Metrics Server must be running
+    #   - PVC must be ReadWriteMany when minReplicas > 1 (or use an
+    #     RWX-capable StorageClass)
     #
     # For queue-depth-based scaling (recommended for production),
     # install KEDA and use a ScaledObject targeting the arq Redis
@@ -178,57 +184,51 @@ redis:
       targetCPUUtilizationPercentage: 70
       targetMemoryUtilizationPercentage: 80
 
-# ── Issue reporting (GitHub PAT) ─────────────────────────────
+# ── GitHub integration (issue reporting) ─────────────────────
 # The backend creates GitHub Issues on behalf of end-users via
-# POST /api/issues/report.  It needs a GitHub PAT with Issues
+# POST /api/issues/report. It needs a GitHub PAT with Issues
 # read/write scope on the target repository.
 #
-# Secret resolution order:
-#   1. reportIssue.existingSecret  → operator-managed K8s Secret
-#   2. vault.enabled=true          → VSO creates the Secret from Vault KV
-#   3. Neither                     → chart creates a placeholder Secret
-#                                    (local dev only; token = "someGHtoken")
+# When github.enabled=false:
+#   - No GITHUB_* env vars are injected
+#   - No GitHub Secret is referenced
 #
-# To supply a real PAT without Vault:
-#   kubectl create secret generic hriv-backend-report-issue-pat \
-#     --from-literal=token=ghp_YOUR_SCOPED_PAT -n hriv
-# then set  reportIssue.existingSecret: hriv-backend-report-issue-pat
-reportIssue:
-  # Name of a pre-existing K8s Secret containing a 'token' key.
-  # When set, the chart does not create its own Secret — use this to
-  # manage the PAT outside of Helm/Vault.
-  existingSecret: ""
+# When github.enabled=true:
+#   - github.repository is required (e.g. "owner/repo")
+#   - github.token.existingSecret is required and must contain key `token`
+#
+# To supply a PAT:
+#   kubectl create secret generic <release>-backend-report-issue-pat \
+#     --from-literal=token=ghp_YOUR_SCOPED_PAT -n <namespace>
+github:
+  enabled: false
+  repository: ""
+  token:
+    existingSecret: ""
 
-# Vault Secrets Operator integration
+# Vault / external secret-management toggle.
 vault:
   enabled: false
-  kvMount: secret
-  authRef: vault-auth
-  refreshAfter: 1h
-  dbAppSecretPath: hriv/db-app
-  dbSuperuserSecretPath: hriv/db-superuser
-  reportIssuePatSecretPath: hriv/github-pat
-  oidcSecretPath: hriv/oidc
 
 # Nginx sidecar for serving /api/tiles directly from the PVC,
 # bypassing the Python process.  Tiles are immutable and cache-friendly.
-tileSidecar:
+tiles:
   enabled: false
-  image: nginx:1.27-alpine
-  port: 8001
-  resources: {}
+  nginx:
+    image: nginx:1.27-alpine
+    port: 8001
+    resources: {}
 
 persistence:
   enabled: false
-  storageClass: longhorn
+  # Leave empty to use the cluster default StorageClass.
+  storageClass: ""
   size: 10Gi
   # ReadWriteOnce is fine for single-replica dev/staging.
   # Production with redis.worker.enabled=true MUST use ReadWriteMany
   # so that the API pod and worker pod(s) can both access uploaded
   # source images and generated tiles on the shared data volume.
-  # Longhorn supports RWX via its NFS provisioner — create a
-  # StorageClass with ``parameters.nfsOptions`` or use a native
-  # RWX-capable backend.
+  # Use an RWX-capable StorageClass when scaling API/worker pods.
   accessModes:
     - ReadWriteOnce
 
@@ -240,9 +240,10 @@ resources: {}
 # Requires nodes to be labeled with the chosen topologyKey.
 #   kubectl label node <name> topology.kubernetes.io/zone=dtc
 #   kubectl label node <name> topology.kubernetes.io/zone=bby
-zoneAntiAffinity:
-  enabled: false
-  topologyKey: topology.kubernetes.io/zone
+scheduling:
+  zoneAntiAffinity:
+    enabled: false
+    topologyKey: topology.kubernetes.io/zone
 
 nodeSelector: {}
 tolerations: []
@@ -255,27 +256,27 @@ affinity: {}
 # post-install`` — not re-run on upgrades or rollbacks).
 #
 # Enabled by default so fresh ``helm install`` runs produce a working
-# local admin login even when OIDC isn't wired up yet.  Without this
-# seed (and without OIDC), there is no initial user and no way to
+# local admin login even when OpenID Connect isn't wired up yet. Without this
+# seed (and without OpenID Connect), there is no initial user and no way to
 # create one through the API (POST /api/users requires admin role).
 #
 # The default ``passwordHash`` is the same development hash used by
 # ``db/seed.sql`` in docker-compose; the operator's very first task
 # after the pods are healthy should be to log in as this account and
 # rotate the password via the normal change-password flow (or disable
-# the account once real admins are created through OIDC).
+# the account once real admins are created through OpenID Connect).
 #
-# Set ``seedAdmin.enabled: false`` to skip the Job entirely for
-# deployments that rely exclusively on OIDC from day one (see
-# ``oidc.roleMapping`` above).
-seedAdmin:
+# Set ``bootstrapAdmin.enabled: false`` to skip the Job entirely for
+# deployments that rely exclusively on OpenID Connect from day one (see
+# ``auth.openidConnect.roleMapping`` above).
+bootstrapAdmin:
   enabled: true
   name: "Haruki Tanaka"
-  email: "admin@bcit.ca"
+  email: "admin@example.ca"
   # bcrypt hash of the bootstrap password.  Defaults to the same
   # development hash shared by docker-compose seed users (intended
   # to be rotated immediately after first login).  Override with
-  # ``--set seedAdmin.passwordHash=...`` or in a values file for a
+  # ``--set bootstrapAdmin.passwordHash=...`` or in a values file for a
   # stronger initial password.
   # Generate a new hash with:
   #   python -c "import bcrypt; print(bcrypt.hashpw(b'<password>', bcrypt.gensalt()).decode())"

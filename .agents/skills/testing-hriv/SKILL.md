@@ -59,9 +59,9 @@ All use password: `password`
 
 | Email | Role | canEditContent | canManageUsers |
 |---|---|---|---|
-| admin@bcit.ca | admin | Yes | Yes |
-| instructor@bcit.ca | instructor | Yes | No |
-| student@bcit.ca | student | No | No |
+| admin@example.ca | admin | Yes | Yes |
+| instructor@example.ca | instructor | Yes | No |
+| student@example.ca | student | No | No |
 
 ## Seed Data
 
@@ -102,7 +102,7 @@ These are direct (first-child) counts, not subtree sums:
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@bcit.ca","password":"password"}' \
+  -d '{"email":"admin@example.ca","password":"password"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1
@@ -237,7 +237,7 @@ The Add/Edit Category dialogs include a "Visible to" radio group:
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@bcit.ca","password":"password"}' \
+  -d '{"email":"admin@example.ca","password":"password"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/categories/tree \
@@ -430,7 +430,7 @@ docker exec hriv-backend-1 tar -tzf /data/admin_tasks/<filename>.tar.gz | grep a
 
 ## Testing Image Upload + Processing
 
-1. Log in as admin@bcit.ca.
+1. Log in as admin@example.ca.
 2. Click **ADD IMAGE** on Browse.
 3. Use Playwright CDP for file selection (native chooser doesn't cooperate with computer-use):
    ```python

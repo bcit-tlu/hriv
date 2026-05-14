@@ -1,4 +1,4 @@
-{{- if .Values.tileSidecar.enabled }}
+{{- if .Values.tiles.enabled }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -8,7 +8,7 @@ metadata:
 data:
   default.conf: |
     server {
-        listen {{ .Values.tileSidecar.port }};
+        listen {{ .Values.tiles.nginx.port }};
         server_name _;
 
         # Serve DZI tiles directly from the PVC.

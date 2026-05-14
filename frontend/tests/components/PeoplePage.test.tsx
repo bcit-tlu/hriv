@@ -29,7 +29,7 @@ const USERS = [
   {
     id: 1,
     name: 'Admin User',
-    email: 'admin@bcit.ca',
+    email: 'admin@example.ca',
     role: 'admin',
     program_ids: [],
     program_names: [],
@@ -41,7 +41,7 @@ const USERS = [
   {
     id: 2,
     name: 'Test Student',
-    email: 'student@bcit.ca',
+    email: 'student@example.ca',
     role: 'student',
     program_ids: [1],
     program_names: ['Medical Lab'],
@@ -66,7 +66,7 @@ describe('PeoplePage', () => {
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
-    expect(screen.getByText('admin@bcit.ca')).toBeInTheDocument()
+    expect(screen.getByText('admin@example.ca')).toBeInTheDocument()
     expect(screen.getByText('Test Student')).toBeInTheDocument()
     expect(fetchUsers).toHaveBeenCalledOnce()
   })

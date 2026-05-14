@@ -9,7 +9,7 @@ description: Guide for testing the HRIV image processing pipeline including arq 
 The HRIV backend processes uploaded images into DZI tiles via pyvips. Processing runs in an arq worker (Redis-backed) or falls back to in-process BackgroundTasks.
 
 ## Devin Secrets Needed
-None required for local testing. Default credentials: `admin@bcit.ca` / `password`.
+None required for local testing. Default credentials: `admin@example.ca` / `password`.
 
 ## Local Environment Setup
 
@@ -52,7 +52,7 @@ Do NOT use synthetic zeros or constant-value images — pyvips compresses them t
 import requests, time, threading
 
 BASE = "http://localhost:8000"
-resp = requests.post(f"{BASE}/api/auth/login", json={"email": "admin@bcit.ca", "password": "password"})
+resp = requests.post(f"{BASE}/api/auth/login", json={"email": "admin@example.ca", "password": "password"})
 token = resp.json()["access_token"]
 headers = {"Authorization": f"Bearer {token}"}
 
@@ -147,7 +147,7 @@ Verify: `worker.enqueue_failed` event in backend logs, followed by `processing.s
 docker compose stop redis
 curl -s -X POST http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@bcit.ca","password":"password"}'
+  -d '{"email":"admin@example.ca","password":"password"}'
 # Should succeed with 200; backend logs show rate_limit.redis_unavailable warning
 docker compose start redis
 ```

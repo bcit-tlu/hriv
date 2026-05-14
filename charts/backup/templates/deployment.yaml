@@ -25,7 +25,7 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.cnpgSecretName }}
+                  name: {{ .Values.postgresSecretName }}
                   key: uri
             # Parity with the backend/frontend containers: expose the
             # deploy-time display version so ``docker inspect`` /
@@ -53,19 +53,19 @@ spec:
               value: {{ .Values.env.AZURE_STORAGE_CONTAINER | quote }}
             - name: AZURE_BLOB_PREFIX
               value: {{ .Values.env.AZURE_BLOB_PREFIX | quote }}
-            {{- if .Values.otel.enabled }}
+            {{- if .Values.observability.openTelemetry.enabled }}
             - name: OTEL_SERVICE_NAME
-              value: {{ .Values.otel.serviceName | quote }}
+              value: {{ .Values.observability.openTelemetry.serviceName | quote }}
             - name: OTEL_TRACES_EXPORTER
-              value: {{ .Values.otel.tracesExporter | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.traces | quote }}
             - name: OTEL_METRICS_EXPORTER
-              value: {{ .Values.otel.metricsExporter | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.metrics | quote }}
             - name: OTEL_LOGS_EXPORTER
-              value: {{ .Values.otel.logsExporter | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.logs | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.otel.exporterEndpoint | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.endpoint | quote }}
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
-              value: {{ .Values.otel.exporterProtocol | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.protocol | quote }}
             {{- end }}
           {{- with .Values.resources }}
           resources:

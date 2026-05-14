@@ -6,7 +6,9 @@ metadata:
   labels:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
+  {{- if .Values.persistence.storageClass }}
   storageClassName: {{ .Values.persistence.storageClass }}
+  {{- end }}
   accessModes:
     {{- range .Values.persistence.accessModes }}
     - {{ . }}

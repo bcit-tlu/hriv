@@ -83,7 +83,7 @@ server {
     # ── Tile serving ────────────────────────────────────────
     #
     # DZI tiles are immutable static files (JPEG/PNG/XML).  When the
-    # backend chart's ``tileSidecar`` is enabled, ``TILE_SERVER_URL``
+    # backend chart's ``tiles.enabled`` is enabled, ``TILE_SERVER_URL``
     # points at the nginx sidecar (port 8001) which serves tiles
     # directly from the PVC — bypassing the Python process entirely.
     # When the sidecar is disabled, ``TILE_SERVER_URL`` defaults to
