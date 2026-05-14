@@ -10,9 +10,11 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
+import EditIcon from '@mui/icons-material/Edit'
 import FolderIcon from '@mui/icons-material/Folder'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
-import MoreVertIcon from '@mui/icons-material/MoreVert'
+import ImageIcon from '@mui/icons-material/Image'
+import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { Category, ImageItem, Program } from '../types'
 import CardImagePickerModal from './CardImagePickerModal'
 
@@ -62,10 +64,12 @@ interface CategoryTileProps {
   onClick: (category: Category) => void
   onMove?: (category: Category) => void
   onSetCardImage?: (categoryId: number, imageId: number | null) => void
+  onToggleVisibility?: (categoryId: number, hidden: boolean) => void
+  onEditName?: (category: Category) => void
   programs: Program[]
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage, programs }: CategoryTileProps) {
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs }: CategoryTileProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const subCategoryCount = useMemo(() => countAllSubcategories(category), [category])
@@ -125,10 +129,19 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
               <Typography variant="h6" noWrap sx={{ opacity: category.status === 'hidden' ? 0.5 : 1 }}>
                 {category.label}
               </Typography>
-              {category.status === 'hidden' && (
-                <Tooltip title="Hidden from students">
-                  <DisabledVisibleIcon fontSize="small" color="disabled" />
-                </Tooltip>
+              {onEditName && (
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    onEditName(category)
+                  }}
+                  aria-label="Edit category name"
+                  sx={{ flexShrink: 0, ml: 0.25 }}
+                >
+                  <EditIcon sx={{ fontSize: 16 }} />
+                </IconButton>
               )}
             </Box>
             <Typography variant="body2" color="text.secondary">
@@ -152,23 +165,49 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             gap: 0.5,
           }}
         >
+          {onToggleVisibility && (
+            <Tooltip title={category.status === 'hidden' ? 'Show to students' : 'Hide from students'}>
+              <IconButton
+                size="small"
+                sx={{
+                  color: 'white',
+                  bgcolor: 'rgba(0,0,0,0.25)',
+                  '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  onToggleVisibility(category.id, category.status !== 'hidden')
+                }}
+                aria-label="Toggle visibility"
+              >
+                {category.status === 'hidden' ? (
+                  <DisabledVisibleIcon fontSize="small" />
+                ) : (
+                  <VisibilityIcon fontSize="small" />
+                )}
+              </IconButton>
+            </Tooltip>
+          )}
           {onSetCardImage && (
-            <IconButton
-              size="small"
-              sx={{
-                color: 'white',
-                bgcolor: 'rgba(0,0,0,0.25)',
-                '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
-              }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                setPickerOpen(true)
-              }}
-              aria-label="Set card image"
-            >
-              <MoreVertIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title="Set card image">
+              <IconButton
+                size="small"
+                sx={{
+                  color: 'white',
+                  bgcolor: 'rgba(0,0,0,0.25)',
+                  '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  setPickerOpen(true)
+                }}
+                aria-label="Set card image"
+              >
+                <ImageIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           )}
           {onMove && (
             <IconButton

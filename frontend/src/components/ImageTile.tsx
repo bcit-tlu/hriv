@@ -9,6 +9,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
+import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { ImageItem, Program } from '../types'
 
 interface ImageTileProps {
@@ -16,9 +17,10 @@ interface ImageTileProps {
   onClick: (image: ImageItem) => void
   programs: Program[]
   onEditDetails?: (image: ImageItem) => void
+  onToggleVisibility?: (imageId: number, active: boolean) => void
 }
 
-export default function ImageTile({ image, onClick, programs, onEditDetails }: ImageTileProps) {
+export default function ImageTile({ image, onClick, programs, onEditDetails, onToggleVisibility }: ImageTileProps) {
   const programChips = image.programIds
     .map((pid) => programs.find((p) => p.id === pid))
     .filter((p): p is Program => p != null)
@@ -29,25 +31,57 @@ export default function ImageTile({ image, onClick, programs, onEditDetails }: I
       elevation={2}
       sx={{ width: '100%', maxWidth: 300, position: 'relative' }}
     >
-      {onEditDetails && (
-        <IconButton
-          size="small"
-          onClick={(e) => {
-            e.stopPropagation()
-            onEditDetails(image)
-          }}
+      {(onToggleVisibility || onEditDetails) && (
+        <Box
           sx={{
             position: 'absolute',
             top: 4,
             right: 4,
             zIndex: 1,
-            color: 'white',
-            bgcolor: 'rgba(0,0,0,0.25)',
-            '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
+            display: 'flex',
+            gap: 0.5,
           }}
         >
-          <MoreVertIcon fontSize="small" />
-        </IconButton>
+          {onToggleVisibility && (
+            <Tooltip title={image.active ? 'Hide from students' : 'Show to students'}>
+              <IconButton
+                size="small"
+                sx={{
+                  color: 'white',
+                  bgcolor: 'rgba(0,0,0,0.25)',
+                  '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggleVisibility(image.id, !image.active)
+                }}
+                aria-label="Toggle visibility"
+              >
+                {image.active ? (
+                  <VisibilityIcon fontSize="small" />
+                ) : (
+                  <DisabledVisibleIcon fontSize="small" />
+                )}
+              </IconButton>
+            </Tooltip>
+          )}
+          {onEditDetails && (
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation()
+                onEditDetails(image)
+              }}
+              sx={{
+                color: 'white',
+                bgcolor: 'rgba(0,0,0,0.25)',
+                '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
+              }}
+            >
+              <MoreVertIcon fontSize="small" />
+            </IconButton>
+          )}
+        </Box>
       )}
       <CardActionArea onClick={() => onClick(image)} sx={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'stretch' }}>
         <CardMedia
@@ -62,7 +96,7 @@ export default function ImageTile({ image, onClick, programs, onEditDetails }: I
             <Typography variant="h6" noWrap sx={{ opacity: !image.active ? 0.5 : 1 }}>
               {image.name}
             </Typography>
-            {!image.active && (
+            {!image.active && !onToggleVisibility && (
               <Tooltip title="Inactive">
                 <DisabledVisibleIcon fontSize="small" color="disabled" />
               </Tooltip>

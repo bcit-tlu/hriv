@@ -30,6 +30,7 @@ import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import AddPhotoAlternateIcon from "@mui/icons-material/AddPhotoAlternate";
+import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import DisabledVisibleIcon from "@mui/icons-material/DisabledVisible";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import EditIcon from "@mui/icons-material/Edit";
@@ -94,6 +95,9 @@ import type {
 import { pollProcessingJob, type PollHandle } from "./pollProcessingJob";
 import MoveCategoryDialog from "./components/MoveCategoryDialog";
 import type { Category, ImageItem, Program } from "./types";
+import { MAX_DEPTH } from "./types";
+import AddCategoryDialog from "./components/AddCategoryDialog";
+import EditCategoryDialog from "./components/EditCategoryDialog";
 import { useColorMode } from "./useColorMode";
 import { getSurfaceVariant } from "./theme";
 
@@ -183,6 +187,8 @@ export default function App() {
     selectedImageRef.current = selectedImage;
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
+    const [addCatOpen, setAddCatOpen] = useState(false);
+    const [editNameCategory, setEditNameCategory] = useState<Category | null>(null);
     const [announcement, setAnnouncement] = useState("");
     const [uncategorizedImages, setUncategorizedImages] = useState<ImageItem[]>(
         [],
@@ -1446,6 +1452,19 @@ export default function App() {
         [loadCategories, categories],
     );
 
+    const toggleImageVisibility = useCallback(
+        async (imageId: number, active: boolean) => {
+            try {
+                await apiUpdateImage(imageId, { active });
+                await loadCategories();
+                loadUncategorizedImages();
+            } catch (err) {
+                console.error("Failed to toggle image visibility", err);
+            }
+        },
+        [loadCategories, loadUncategorizedImages],
+    );
+
     // Build ApiImage shape from selectedImage for EditImageModal on viewer page
     const selectedApiImage: ApiImage | null = selectedImage
         ? {
@@ -2384,19 +2403,21 @@ export default function App() {
                                         alignItems: "center",
                                     }}
                                 >
-                                    <Tooltip title={selectedImage.active ? "Visible" : "Hidden"}>
-                                        {selectedImage.active ? (
-                                            <VisibilityIcon
-                                                color="action"
-                                                sx={{ fontSize: 28 }}
-                                            />
-                                        ) : (
-                                            <DisabledVisibleIcon
-                                                color="disabled"
-                                                sx={{ fontSize: 28 }}
-                                            />
-                                        )}
-                                    </Tooltip>
+                                    {canEditContent && (
+                                        <Tooltip title={selectedImage.active ? "Visible" : "Hidden"}>
+                                            {selectedImage.active ? (
+                                                <VisibilityIcon
+                                                    color="action"
+                                                    sx={{ fontSize: 28 }}
+                                                />
+                                            ) : (
+                                                <DisabledVisibleIcon
+                                                    color="disabled"
+                                                    sx={{ fontSize: 28 }}
+                                                />
+                                            )}
+                                        </Tooltip>
+                                    )}
                                     {canEditContent && (
                                         <Tooltip
                                             title={
@@ -2669,6 +2690,19 @@ export default function App() {
                                             flexShrink: 0,
                                         }}
                                     >
+                                        {path.length < MAX_DEPTH && (
+                                            <Button
+                                                variant="outlined"
+                                                startIcon={
+                                                    <CreateNewFolderIcon />
+                                                }
+                                                onClick={() =>
+                                                    setAddCatOpen(true)
+                                                }
+                                            >
+                                                Add Category
+                                            </Button>
+                                        )}
                                         <Button
                                             variant="contained"
                                             startIcon={
@@ -2705,6 +2739,16 @@ export default function App() {
                                                 ? handleSetCardImage
                                                 : undefined
                                         }
+                                        onToggleVisibility={
+                                            canEditContent
+                                                ? toggleCategoryVisibility
+                                                : undefined
+                                        }
+                                        onEditName={
+                                            canEditContent
+                                                ? setEditNameCategory
+                                                : undefined
+                                        }
                                         programs={programs}
                                     />
                                 ))}
@@ -2720,6 +2764,11 @@ export default function App() {
                                                     ? setBrowseEditImage
                                                     : undefined
                                             }
+                                            onToggleVisibility={
+                                                canEditContent
+                                                    ? toggleImageVisibility
+                                                    : undefined
+                                            }
                                         />
                                     ))}
                                 {currentImages.map((img) => (
@@ -2731,6 +2780,11 @@ export default function App() {
                                         onEditDetails={
                                             canEditContent
                                                 ? setBrowseEditImage
+                                                : undefined
+                                        }
+                                        onToggleVisibility={
+                                            canEditContent
+                                                ? toggleImageVisibility
                                                 : undefined
                                         }
                                     />
@@ -2757,8 +2811,9 @@ export default function App() {
                                         color="text.secondary"
                                         sx={{ mt: 4, textAlign: "center" }}
                                     >
-                                        This category is empty. Add a
-                                        sub-category to get started.
+                                        {canEditContent
+                                            ? "This category is empty. Add an image or sub-category to get started."
+                                            : "This category is empty."}
                                     </Typography>
                                 )
                             )}
@@ -3009,6 +3064,44 @@ export default function App() {
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
+            />
+
+            {/* Add category dialog (home tab) */}
+            <AddCategoryDialog
+                open={addCatOpen}
+                onClose={() => setAddCatOpen(false)}
+                onAdd={async (label, programIds) => {
+                    await addCategoryInline(
+                        label,
+                        path.length > 0
+                            ? path[path.length - 1].id
+                            : null,
+                        programIds,
+                    );
+                }}
+                currentDepth={path.length}
+                siblingNames={currentCategories.map((c) => c.label)}
+                programs={programs}
+            />
+
+            {/* Edit category name dialog (home tab) */}
+            <EditCategoryDialog
+                open={editNameCategory != null}
+                onClose={() => setEditNameCategory(null)}
+                onSave={(newLabel, programIds) => {
+                    if (!editNameCategory) return;
+                    return editCategoryInline(
+                        editNameCategory.id,
+                        newLabel,
+                        programIds,
+                    );
+                }}
+                currentLabel={editNameCategory?.label ?? ""}
+                siblingNames={currentCategories
+                    .filter((c) => c.id !== editNameCategory?.id)
+                    .map((c) => c.label)}
+                programs={programs}
+                currentProgramIds={editNameCategory?.programIds ?? []}
             />
 
             {/* Self-edit profile modal */}

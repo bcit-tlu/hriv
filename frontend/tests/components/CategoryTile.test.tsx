@@ -71,12 +71,13 @@ describe('CategoryTile', () => {
   // ─── Hidden indicator ─────────────────────────────────────────────
 
   describe('hidden indicator', () => {
-    it('shows the hidden icon when category status is hidden', () => {
+    it('shows the hidden icon when category status is hidden and toggle provided', () => {
       render(
         <CategoryTile
           category={makeCategory({ status: 'hidden' })}
           onClick={vi.fn()}
           programs={[]}
+          onToggleVisibility={vi.fn()}
         />,
       )
       expect(screen.getByTestId('DisabledVisibleIcon')).toBeInTheDocument()
@@ -94,15 +95,29 @@ describe('CategoryTile', () => {
       expect(title).toHaveStyle({ opacity: 0.5 })
     })
 
-    it('does not show the hidden icon when category is visible', () => {
+    it('shows the visible icon when category is active and toggle provided', () => {
       render(
         <CategoryTile
           category={makeCategory({ status: null })}
           onClick={vi.fn()}
           programs={[]}
+          onToggleVisibility={vi.fn()}
         />,
       )
       expect(screen.queryByTestId('DisabledVisibleIcon')).not.toBeInTheDocument()
+      expect(screen.getByTestId('VisibilityIcon')).toBeInTheDocument()
+    })
+
+    it('does not show visibility icons when toggle is not provided', () => {
+      render(
+        <CategoryTile
+          category={makeCategory({ status: 'hidden' })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+      expect(screen.queryByTestId('DisabledVisibleIcon')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('VisibilityIcon')).not.toBeInTheDocument()
     })
 
     it('title has full opacity when category is visible', () => {
