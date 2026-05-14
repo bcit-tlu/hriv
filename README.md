@@ -44,7 +44,7 @@ All seed users share the password `password`.
 # Get a JWT token
 TOKEN=$(curl -s http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@example.ca","password":"password"}'
+  -d '{"email":"admin@example.ca","password":"password"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 ```
 
