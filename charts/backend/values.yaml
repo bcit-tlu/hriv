@@ -189,24 +189,21 @@ redis:
 # POST /api/issues/report. It needs a GitHub PAT with Issues
 # read/write scope on the target repository.
 #
-# Secret resolution order:
-#   1. github.token.existingSecret  → operator-managed K8s Secret
-#   2. vault.enabled=true           → external secret management
-#   3. Neither                      → chart creates a placeholder Secret
-#                                     (local dev only; token = "someGHtoken")
+# When github.enabled=false:
+#   - No GITHUB_* env vars are injected
+#   - No GitHub Secret is referenced
 #
-# To supply a real PAT without Vault:
-#   kubectl create secret generic <release>-hriv-backend-report-issue-pat \
+# When github.enabled=true:
+#   - github.repository is required (e.g. "owner/repo")
+#   - github.token.existingSecret is required and must contain key `token`
+#
+# To supply a PAT:
+#   kubectl create secret generic <release>-backend-report-issue-pat \
 #     --from-literal=token=ghp_YOUR_SCOPED_PAT -n <namespace>
-# then set github.token.existingSecret to that Secret name
 github:
-  # Target repository for issue creation (for example: "owner/repo").
-  # Leave empty to disable issue reporting by default.
+  enabled: false
   repository: ""
   token:
-    # Name of a pre-existing K8s Secret containing a 'token' key.
-    # When set, the chart does not create its own Secret — use this to
-    # manage the PAT outside of Helm/Vault.
     existingSecret: ""
 
 # Vault / external secret-management toggle.
@@ -275,7 +272,7 @@ affinity: {}
 bootstrapAdmin:
   enabled: true
   name: "Haruki Tanaka"
-  email: "admin@example.com"
+  email: "admin@example.ca"
   # bcrypt hash of the bootstrap password.  Defaults to the same
   # development hash shared by docker-compose seed users (intended
   # to be rotated immediately after first login).  Override with

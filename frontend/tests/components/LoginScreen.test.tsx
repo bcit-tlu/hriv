@@ -184,11 +184,11 @@ describe('LoginScreen', () => {
       const onLogin = vi.fn().mockResolvedValue(undefined)
       await renderOidcDisabled({ onLogin })
 
-      await user.type(getUsernameField(), 'admin@bcit.ca')
+      await user.type(getUsernameField(), 'admin@example.ca')
       await user.type(getPasswordField(), 'secret')
       await user.click(screen.getByRole('button', { name: 'LOGIN' }))
 
-      expect(onLogin).toHaveBeenCalledWith('admin@bcit.ca', 'secret')
+      expect(onLogin).toHaveBeenCalledWith('admin@example.ca', 'secret')
     })
 
     it('displays an error alert when onLogin rejects', async () => {
@@ -196,7 +196,7 @@ describe('LoginScreen', () => {
       const onLogin = vi.fn().mockRejectedValue(new Error('bad credentials'))
       await renderOidcDisabled({ onLogin })
 
-      await user.type(getUsernameField(), 'admin@bcit.ca')
+      await user.type(getUsernameField(), 'admin@example.ca')
       await user.type(getPasswordField(), 'wrong')
       await user.click(screen.getByRole('button', { name: 'LOGIN' }))
 

@@ -94,9 +94,9 @@ SELECT setval('announcements_id_seq', GREATEST((SELECT MAX(id) FROM announcement
 
 INSERT INTO users (id, name, email, password_hash, role, last_access, metadata)
 VALUES
-  (1, 'Haruki Tanaka',      'admin@bcit.ca',   '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'admin',      NULL, '{}'),
-  (2, 'Carlos Henrique Souza',   'instructor@bcit.ca',     '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'instructor', NULL, '{}'),
-  (3, 'Mira Patel',  'student@bcit.ca', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    NULL, '{}')
+  (1, 'Haruki Tanaka',      'admin@example.ca',   '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'admin',      NULL, '{}'),
+  (2, 'Carlos Henrique Souza',   'instructor@example.ca',     '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'instructor', NULL, '{}'),
+  (3, 'Mira Patel',  'student@example.ca', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    NULL, '{}')
 ON CONFLICT (id) DO NOTHING;
 
 SELECT setval('users_id_seq', GREATEST((SELECT MAX(id) FROM users), 1));

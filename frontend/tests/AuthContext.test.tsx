@@ -104,7 +104,7 @@ describe('AuthProvider', () => {
 
   it('validates stored token via /auth/me on mount', async () => {
     currentToken = 'stored-jwt'
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'Admin', email: 'admin@bcit.ca', role: 'admin' })
+    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'Admin', email: 'admin@example.ca', role: 'admin' })
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
@@ -112,7 +112,7 @@ describe('AuthProvider', () => {
       json: () => Promise.resolve({
         id: 1,
         name: 'Admin',
-        email: 'admin@bcit.ca',
+        email: 'admin@example.ca',
         role: 'admin',
         program_ids: [],
         program_names: [],
@@ -131,14 +131,14 @@ describe('AuthProvider', () => {
     await waitFor(() => {
       expect(screen.getByTestId('loading').textContent).toBe('false')
     })
-    expect(screen.getByTestId('user').textContent).toBe('admin@bcit.ca')
+    expect(screen.getByTestId('user').textContent).toBe('admin@example.ca')
     expect(screen.getByTestId('canManage').textContent).toBe('true')
     expect(screen.getByTestId('canEdit').textContent).toBe('true')
   })
 
   it('clears session when /auth/me returns 401', async () => {
     currentToken = 'expired-jwt'
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'Admin', email: 'admin@bcit.ca', role: 'admin' })
+    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'Admin', email: 'admin@example.ca', role: 'admin' })
 
     mockFetch.mockResolvedValueOnce({
       ok: false,
@@ -184,7 +184,7 @@ describe('AuthProvider', () => {
       user: {
         id: 2,
         name: 'Instructor',
-        email: 'instructor@bcit.ca',
+        email: 'instructor@example.ca',
         role: 'instructor',
         program_ids: [],
         program_names: [],
@@ -203,10 +203,10 @@ describe('AuthProvider', () => {
     })
 
     await act(async () => {
-      await authCtx!.login('instructor@bcit.ca', 'password')
+      await authCtx!.login('instructor@example.ca', 'password')
     })
 
-    expect(screen.getByTestId('user').textContent).toBe('instructor@bcit.ca')
+    expect(screen.getByTestId('user').textContent).toBe('instructor@example.ca')
     expect(screen.getByTestId('canEdit').textContent).toBe('true')
     expect(screen.getByTestId('canManage').textContent).toBe('false')
     expect(currentToken).toBe('new-jwt')
@@ -364,12 +364,12 @@ describe('AuthProvider', () => {
   it('addUser calls createUser and appends to users list', async () => {
     let authCtx: AuthContextValue | null = null
     currentToken = 'jwt'
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'A', email: 'admin@bcit.ca', role: 'admin' })
+    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'A', email: 'admin@example.ca', role: 'admin' })
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({
-        id: 1, name: 'A', email: 'admin@bcit.ca', role: 'admin',
+        id: 1, name: 'A', email: 'admin@example.ca', role: 'admin',
         program_ids: [], program_names: [], last_access: null,
       }),
     })
@@ -406,12 +406,12 @@ describe('AuthProvider', () => {
   it('deleteUser removes user from list', async () => {
     let authCtx: AuthContextValue | null = null
     currentToken = 'jwt'
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'A', email: 'admin@bcit.ca', role: 'admin' })
+    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'A', email: 'admin@example.ca', role: 'admin' })
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({
-        id: 1, name: 'A', email: 'admin@bcit.ca', role: 'admin',
+        id: 1, name: 'A', email: 'admin@example.ca', role: 'admin',
         program_ids: [], program_names: [], last_access: null,
       }),
     })

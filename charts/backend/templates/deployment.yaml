@@ -1,6 +1,12 @@
 {{- if and .Values.tiles.enabled (not .Values.persistence.enabled) }}
 {{- fail "tiles.enabled requires persistence.enabled — the sidecar serves tiles from the PVC" }}
 {{- end }}
+{{- if and .Values.github.enabled (not .Values.github.repository) }}
+{{- fail "github.enabled=true requires github.repository" }}
+{{- end }}
+{{- if and .Values.github.enabled (not .Values.github.token.existingSecret) }}
+{{- fail "github.enabled=true requires github.token.existingSecret (secret must contain key 'token')" }}
+{{- end }}
 {{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" .Values.persistence.accessModes)) }}
 {{- fail "replicaCount > 1 requires a ReadWriteMany PVC — background admin tasks write result files to the shared volume that any replica must be able to serve" }}
 {{- end }}
@@ -60,11 +66,11 @@ spec:
               value: {{ .Values.env.SOURCE_IMAGES_DIR | quote }}
             - name: TILES_DIR
               value: {{ .Values.env.TILES_DIR | quote }}
-            {{- if .Values.github.repository }}
+            {{- if .Values.github.enabled }}
             - name: GITHUB_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.github.token.existingSecret | default (printf "%s-report-issue-pat" (include "hriv-backend.fullname" .)) }}
+                  name: {{ .Values.github.token.existingSecret }}
                   key: token
             - name: GITHUB_REPO
               value: {{ .Values.github.repository | quote }}

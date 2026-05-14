@@ -20,9 +20,9 @@ All seed users share the password `password`.
 
 | **User**                | **Email**            | **Password** | **Role**     |
 |-------------------------|----------------------|--------------|--------------|
-| Haruki Tanaka           | admin@bcit.ca        | password     | admin        |
-| Carlos Henrique Souza   | instructor@bcit.ca   | password     | instructor   |
-| Mira Patel              | student@bcit.ca      | password     | student      |
+| Haruki Tanaka           | admin@example.ca        | password     | admin        |
+| Carlos Henrique Souza   | instructor@example.ca   | password     | instructor   |
+| Mira Patel              | student@example.ca      | password     | student      |
 
 ### Role Capabilities
 
@@ -44,7 +44,7 @@ All seed users share the password `password`.
 # Get a JWT token
 TOKEN=$(curl -s http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@bcit.ca","password":"password"}' \
+  -d '{"email":"admin@example.ca","password":"password"}'
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 ```
 

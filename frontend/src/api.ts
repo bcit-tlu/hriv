@@ -4,7 +4,7 @@ let _token: string | null = localStorage.getItem('hriv_token')
 
 // Unique per browser-tab identifier sent on every API call.  Allows the
 // backend audit log to correlate all requests from a single tab, even when
-// many students share the same JWT (shared "student@bcit.ca" account).
+// many students share the same JWT (shared "student@example.ca" account).
 const SESSION_ID = crypto.randomUUID()
 
 export function setToken(token: string | null): void {
