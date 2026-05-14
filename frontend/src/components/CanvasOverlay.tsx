@@ -187,6 +187,7 @@ export default function CanvasOverlay({
   const isDrawingRef = useRef(false)
   const drawStartRef = useRef<{ x: number; y: number } | null>(null)
   const drawObjRef = useRef<fabric.FabricObject | null>(null)
+  const clipboardRef = useRef<CanvasAnnotation[]>([])
 
   useEffect(() => {
     annotationsRef.current = annotations
@@ -674,6 +675,57 @@ export default function CanvasOverlay({
           emitAnnotations()
         }
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        const activeObj = fc.getActiveObject()
+        if (activeObj && activeObj instanceof fabric.IText && activeObj.isEditing) return
+        const activeObjs = fc.getActiveObjects()
+        if (activeObjs.length > 0) {
+          clipboardRef.current = activeObjs
+            .map((obj) => fabricToAnnotation(obj))
+            .filter((a): a is CanvasAnnotation => a != null)
+          console.debug(LOG_PREFIX, 'copied', clipboardRef.current.length, 'objects')
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        const activeObj = fc.getActiveObject()
+        if (activeObj && activeObj instanceof fabric.IText && activeObj.isEditing) return
+        if (clipboardRef.current.length === 0) return
+        e.preventDefault()
+        fc.discardActiveObject()
+        const offset = 0.02
+        const newObjs: fabric.FabricObject[] = []
+        for (const ann of clipboardRef.current) {
+          const shifted: CanvasAnnotation = {
+            ...ann,
+            id: uid(),
+            vpX: ann.vpX + offset,
+            vpY: ann.vpY + offset,
+            ...(ann.vpX2 != null ? { vpX2: ann.vpX2 + offset } : {}),
+            ...(ann.vpY2 != null ? { vpY2: ann.vpY2 + offset } : {}),
+          }
+          const obj = annotationToFabric(shifted)
+          if (obj) {
+            fc.add(obj)
+            newObjs.push(obj)
+          }
+        }
+        if (newObjs.length === 1) {
+          fc.setActiveObject(newObjs[0])
+        } else if (newObjs.length > 1) {
+          const sel = new fabric.ActiveSelection(newObjs, { canvas: fc })
+          fc.setActiveObject(sel)
+        }
+        fc.renderAll()
+        emitAnnotations()
+        clipboardRef.current = clipboardRef.current.map((ann) => ({
+          ...ann,
+          vpX: ann.vpX + offset,
+          vpY: ann.vpY + offset,
+          ...(ann.vpX2 != null ? { vpX2: ann.vpX2 + offset } : {}),
+          ...(ann.vpY2 != null ? { vpY2: ann.vpY2 + offset } : {}),
+        }))
+        console.debug(LOG_PREFIX, 'pasted', newObjs.length, 'objects')
+      }
     }
     document.addEventListener('keydown', handleKeyDown)
 
@@ -692,7 +744,7 @@ export default function CanvasOverlay({
         fabricCanvasRef.current = null
       }
     }
-  }, [editMode, viewer, annotationToFabric, emitAnnotations])
+  }, [editMode, viewer, annotationToFabric, fabricToAnnotation, emitAnnotations])
 
   // Drawing handlers for edit mode
 
@@ -927,14 +979,14 @@ export default function CanvasOverlay({
     onAnnotationsChange([])
   }, [onAnnotationsChange])
 
-  const handleDone = useCallback(() => {
+  const handleDone = useCallback(async () => {
     console.debug(LOG_PREFIX, 'handleDone — emitting and flushing before exiting edit mode')
     emitAnnotations()
-    // Flush immediately (bypass debounce) so data is persisted before exit
+    // Flush immediately (bypass debounce) so data is persisted before exit.
+    // Await the flush so the PATCH completes before edit mode state changes.
     if (onFlushAnnotations) {
-      void onFlushAnnotations().then(() => {
-        console.debug(LOG_PREFIX, 'flush complete, exiting edit mode')
-      })
+      await onFlushAnnotations()
+      console.debug(LOG_PREFIX, 'flush complete, exiting edit mode')
     }
     onEditModeChange(false)
   }, [emitAnnotations, onEditModeChange, onFlushAnnotations])

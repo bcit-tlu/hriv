@@ -1,6 +1,6 @@
-{{- if .Values.seedAdmin.enabled }}
-{{- if not .Values.seedAdmin.passwordHash }}
-{{- fail "seedAdmin.enabled=true but seedAdmin.passwordHash is blank — supply a bcrypt hash (see values.yaml)" }}
+{{- if .Values.bootstrapAdmin.enabled }}
+{{- if not .Values.bootstrapAdmin.passwordHash }}
+{{- fail "bootstrapAdmin.enabled=true but bootstrapAdmin.passwordHash is blank — supply a bcrypt hash (see values.yaml)" }}
 {{- end }}
 apiVersion: batch/v1
 kind: Job
@@ -35,7 +35,7 @@ spec:
                   key: uri
       containers:
         - name: seed-admin
-          image: {{ .Values.cnpg.imageName }}
+          image: {{ .Values.postgres.cluster.image }}
           command:
             - sh
             - -c
@@ -47,18 +47,21 @@ spec:
               SELECT setval('programs_id_seq',
                 GREATEST((SELECT MAX(id) FROM programs), 1));
 
-              INSERT INTO users (id, name, email, password_hash, role, program_id, metadata)
+              INSERT INTO users (id, name, email, password_hash, role, metadata)
               VALUES (
                 1,
-                {{ .Values.seedAdmin.name         | replace "'" "''" | squote }},
-                {{ .Values.seedAdmin.email        | replace "'" "''" | squote }},
-                {{ .Values.seedAdmin.passwordHash | replace "'" "''" | squote }},
+                {{ .Values.bootstrapAdmin.name         | replace "'" "''" | squote }},
+                {{ .Values.bootstrapAdmin.email        | replace "'" "''" | squote }},
+                {{ .Values.bootstrapAdmin.passwordHash | replace "'" "''" | squote }},
                 'admin',
-                1,
                 '{}'
               ) ON CONFLICT (id) DO NOTHING;
               SELECT setval('users_id_seq',
                 GREATEST((SELECT MAX(id) FROM users), 1));
+
+              INSERT INTO user_programs (user_id, program_id)
+              VALUES (1, 1)
+              ON CONFLICT (user_id, program_id) DO NOTHING;
               SQL
           env:
             - name: DATABASE_URL

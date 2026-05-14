@@ -31,6 +31,7 @@ import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import AddPhotoAlternateIcon from "@mui/icons-material/AddPhotoAlternate";
 import DisabledVisibleIcon from "@mui/icons-material/DisabledVisible";
+import VisibilityIcon from "@mui/icons-material/Visibility";
 import EditIcon from "@mui/icons-material/Edit";
 import HomeIcon from "@mui/icons-material/Home";
 import LinkIcon from "@mui/icons-material/Link";
@@ -157,7 +158,7 @@ function apiTreeToCategory(node: ApiCategoryTree): Category {
             height: img.height,
             fileSize: img.file_size,
         })),
-        program: node.program,
+        programIds: node.program_ids ?? [],
         status: node.status,
         cardImageId:
             typeof meta?.card_image_id === "number" ? meta.card_image_id : null,
@@ -428,8 +429,8 @@ export default function App() {
               name: currentUser.name,
               email: currentUser.email,
               role: currentUser.role,
-              program_id: currentUser.program_id ?? null,
-              program_name: currentUser.program_name ?? null,
+              program_ids: currentUser.program_ids ?? [],
+              program_names: currentUser.program_names ?? [],
               last_access: currentUser.lastAccess ?? null,
               metadata_extra: null,
               created_at: "",
@@ -1154,6 +1155,12 @@ export default function App() {
             for (let i = 0; i < 30 && canvasSaveInFlightRef.current; i++) {
                 await new Promise((r) => setTimeout(r, 100));
             }
+            // After waiting, save any data the in-flight handler didn't pick up
+            const stillPending = pendingCanvasAnnotationsRef.current;
+            if (stillPending && !canvasSaveInFlightRef.current) {
+                pendingCanvasAnnotationsRef.current = null;
+                await saveCanvasAnnotations(stillPending);
+            }
             return;
         }
         // Use the ref (always current) instead of localCanvasAnnotations state
@@ -1319,11 +1326,14 @@ export default function App() {
         async (
             label: string,
             parentId: number | null,
+            programIds?: number[],
         ): Promise<number | void> => {
-            const created = await apiCreateCategory({
+            const body: Parameters<typeof apiCreateCategory>[0] = {
                 label,
                 parent_id: parentId,
-            });
+            };
+            if (programIds !== undefined) body.program_ids = programIds;
+            const created = await apiCreateCategory(body);
             await loadCategories();
             loadUncategorizedImages();
             return created.id;
@@ -1350,8 +1360,16 @@ export default function App() {
     );
 
     const editCategoryInline = useCallback(
-        async (categoryId: number, newLabel: string) => {
-            await apiUpdateCategory(categoryId, { label: newLabel });
+        async (
+            categoryId: number,
+            newLabel: string,
+            programIds?: number[],
+        ) => {
+            const body: Parameters<typeof apiUpdateCategory>[1] = {
+                label: newLabel,
+            };
+            if (programIds !== undefined) body.program_ids = programIds;
+            await apiUpdateCategory(categoryId, body);
             await loadCategories();
         },
         [loadCategories],
@@ -2170,12 +2188,12 @@ export default function App() {
                                     >
                                         {currentUser.role}
                                     </Typography>
-                                    {currentUser.program_name && (
+                                    {currentUser.program_names.length > 0 && (
                                         <Typography
                                             variant="body2"
                                             color="text.secondary"
                                         >
-                                            {currentUser.program_name}
+                                            {currentUser.program_names.join(', ')}
                                         </Typography>
                                     )}
                                     <Box
@@ -2372,14 +2390,19 @@ export default function App() {
                                         alignItems: "center",
                                     }}
                                 >
-                                    {!selectedImage.active && (
-                                        <Tooltip title="This image is inactive">
+                                    <Tooltip title={selectedImage.active ? "Visible" : "Hidden"}>
+                                        {selectedImage.active ? (
+                                            <VisibilityIcon
+                                                color="action"
+                                                sx={{ fontSize: 28 }}
+                                            />
+                                        ) : (
                                             <DisabledVisibleIcon
                                                 color="disabled"
-                                                sx={{ fontSize: 32 }}
+                                                sx={{ fontSize: 28 }}
                                             />
-                                        </Tooltip>
-                                    )}
+                                        )}
+                                    </Tooltip>
                                     {canEditContent && (
                                         <Tooltip
                                             title={
@@ -2536,6 +2559,43 @@ export default function App() {
                                         {new Date(
                                             selectedImage.updatedAt,
                                         ).toLocaleString()}
+                                    </Typography>
+                                )}
+                                {selectedImage.width != null &&
+                                    selectedImage.height != null && (
+                                    <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                        component="span"
+                                    >
+                                        <strong>Dimensions:</strong>{" "}
+                                        {selectedImage.width} &times;{" "}
+                                        {selectedImage.height}
+                                    </Typography>
+                                )}
+                                {selectedImage.fileSize != null && (
+                                    <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                        component="span"
+                                    >
+                                        <strong>Size:</strong>{" "}
+                                        {selectedImage.fileSize} MB
+                                    </Typography>
+                                )}
+                                {selectedImageMeasurement && (
+                                    <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                        component="span"
+                                    >
+                                        <strong>Measurement:</strong>{" "}
+                                        {selectedImageMeasurement.scale &&
+                                        selectedImageMeasurement.unit
+                                            ? `${selectedImageMeasurement.scale} px/${selectedImageMeasurement.unit}`
+                                            : selectedImageMeasurement.scale
+                                              ? `${selectedImageMeasurement.scale} px`
+                                              : selectedImageMeasurement.unit ?? ""}
                                     </Typography>
                                 )}
                             </Box>
@@ -2732,6 +2792,7 @@ export default function App() {
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
                 onReorderCategories={reorderCategoriesInline}
+                programs={programs}
             />
 
             {/* Move category dialog */}

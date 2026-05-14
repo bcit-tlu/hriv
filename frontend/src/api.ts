@@ -4,7 +4,7 @@ let _token: string | null = localStorage.getItem('hriv_token')
 
 // Unique per browser-tab identifier sent on every API call.  Allows the
 // backend audit log to correlate all requests from a single tab, even when
-// many students share the same JWT (shared "student@bcit.ca" account).
+// many students share the same JWT (shared "student@example.ca" account).
 const SESSION_ID = crypto.randomUUID()
 
 export function setToken(token: string | null): void {
@@ -18,6 +18,23 @@ export function setToken(token: string | null): void {
 
 export function getToken(): string | null {
   return _token
+}
+
+/**
+ * Remove all HRIV-scoped localStorage keys (`hriv_*` and `hriv-*`).
+ * Called on logout and when a different user logs in to prevent
+ * cross-account state leakage on shared browsers.
+ */
+export function clearUserStorage(): void {
+  const keysToRemove: string[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (key && (key.startsWith('hriv_') || key.startsWith('hriv-'))) {
+      keysToRemove.push(key)
+    }
+  }
+  keysToRemove.forEach((key) => localStorage.removeItem(key))
+  _token = null
 }
 
 function authHeaders(): Record<string, string> {
@@ -55,7 +72,7 @@ export interface ApiCategory {
   id: number
   label: string
   parent_id: number | null
-  program: string | null
+  program_ids: number[]
   status: string | null
   metadata_extra: Record<string, unknown> | null
   created_at: string
@@ -91,8 +108,8 @@ export interface ApiUser {
   name: string
   email: string
   role: string
-  program_id: number | null
-  program_name: string | null
+  program_ids: number[]
+  program_names: string[]
   last_access: string | null
   metadata_extra: Record<string, unknown> | null
   created_at: string
@@ -126,7 +143,7 @@ export function fetchCategoryTree(): Promise<ApiCategoryTree[]> {
 export function createCategory(body: {
   label: string
   parent_id?: number | null
-  program?: string
+  program_ids?: number[]
   status?: string
 }): Promise<ApiCategory> {
   return request('/categories/', {
@@ -140,7 +157,7 @@ export function updateCategory(
   body: {
     label?: string
     parent_id?: number | null
-    program?: string
+    program_ids?: number[]
     status?: string
     metadata_extra?: Record<string, unknown>
   },
@@ -276,7 +293,7 @@ export function createUser(body: {
   email: string
   role: string
   password: string
-  program_id?: number | null
+  program_ids?: number[]
 }): Promise<ApiUser> {
   return request('/users/', {
     method: 'POST',
@@ -291,7 +308,7 @@ export function updateUser(
     email?: string
     role?: string
     password?: string
-    program_id?: number | null
+    program_ids?: number[]
   },
 ): Promise<ApiUser> {
   return request(`/users/${id}`, {
@@ -306,7 +323,7 @@ export function deleteUser(id: number): Promise<void> {
 
 export function bulkUpdateUserProgram(body: {
   user_ids: number[]
-  program_id: number | null
+  program_ids: number[]
 }): Promise<ApiUser[]> {
   return request('/users/bulk/program', {
     method: 'PATCH',
@@ -395,6 +412,7 @@ export async function uploadSourceImage(
   programIds?: number[],
   active?: boolean,
   onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<ApiSourceImage> {
   const form = new FormData()
   form.append('file', file)
@@ -443,6 +461,15 @@ export async function uploadSourceImage(
       reject(new Error('Upload failed: network error'))
     })
 
+    xhr.addEventListener('abort', () => {
+      reject(new DOMException('Upload aborted', 'AbortError'))
+    })
+
+    if (signal) {
+      if (signal.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
+
     xhr.send(form)
   })
 }
@@ -455,6 +482,7 @@ export async function replaceImage(
   imageId: number,
   file: File,
   onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<ApiSourceImage> {
   const form = new FormData()
   form.append('file', file)
@@ -492,6 +520,15 @@ export async function replaceImage(
       reject(new Error('Replace failed: network error'))
     })
 
+    xhr.addEventListener('abort', () => {
+      reject(new DOMException('Upload aborted', 'AbortError'))
+    })
+
+    if (signal) {
+      if (signal.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
+
     xhr.send(form)
   })
 }
@@ -518,6 +555,7 @@ export async function bulkImportImages(
   programIds?: number[],
   active?: boolean,
   onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<ApiBulkImportJob> {
   const form = new FormData()
   for (const file of files) {
@@ -565,6 +603,15 @@ export async function bulkImportImages(
     xhr.addEventListener('error', () => {
       reject(new Error('Bulk import failed: network error'))
     })
+
+    xhr.addEventListener('abort', () => {
+      reject(new DOMException('Upload aborted', 'AbortError'))
+    })
+
+    if (signal) {
+      if (signal.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
 
     xhr.send(form)
   })
@@ -655,6 +702,7 @@ export function uploadTaskFile(
   taskId: number,
   file: File,
   onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<AdminTask> {
   const form = new FormData()
   form.append('file', file)
@@ -692,6 +740,15 @@ export function uploadTaskFile(
       reject(new Error('Upload failed: network error'))
     })
 
+    xhr.addEventListener('abort', () => {
+      reject(new DOMException('Upload aborted', 'AbortError'))
+    })
+
+    if (signal) {
+      if (signal.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
+
     xhr.send(form)
   })
 }
@@ -707,10 +764,11 @@ export async function startFilesImport(
   file: File,
   onInitiated?: (task: AdminTask) => void,
   onUploadProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
 ): Promise<AdminTask> {
   const task = await initFilesImport(file.name)
   if (onInitiated) onInitiated(task)
-  return uploadTaskFile(task.id, file, onUploadProgress)
+  return uploadTaskFile(task.id, file, onUploadProgress, signal)
 }
 
 export function fetchAdminTasks(): Promise<AdminTask[]> {

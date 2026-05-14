@@ -19,20 +19,24 @@ from app.routers.categories import (
 from app.schemas import CategoryCreate, CategoryUpdate, CategoryReorderRequest, CategoryReorderItem
 
 
+def _make_program(id: int = 1, name: str = "Test Program") -> SimpleNamespace:
+    return SimpleNamespace(id=id, name=name)
+
+
 def _make_category(
     id: int,
     label: str,
     parent_id: int | None = None,
     status: str = "active",
     sort_order: int = 0,
-    program: str | None = None,
+    programs: list | None = None,
 ) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
         id=id,
         label=label,
         parent_id=parent_id,
-        program=program,
+        programs=programs or [],
         status=status,
         sort_order=sort_order,
         metadata_=None,
@@ -295,6 +299,26 @@ async def test_create_category_same_label_different_parent_allowed() -> None:
 
     await create_category(body, MagicMock(), db=db)
     db.add.assert_called_once()
+
+
+async def test_create_category_invalid_program_ids() -> None:
+    body = CategoryCreate(label="New Cat", parent_id=None, program_ids=[1, 999])
+
+    dup_result = MagicMock()
+    dup_result.scalar_one_or_none.return_value = None
+
+    prog = SimpleNamespace(id=1, name="Biology")
+    prog_result = MagicMock()
+    prog_result.scalars.return_value.all.return_value = [prog]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[dup_result, prog_result])
+    db.add = MagicMock()
+
+    with pytest.raises(HTTPException) as exc:
+        await create_category(body, MagicMock(), db=db)
+    assert exc.value.status_code == 422
+    assert "999" in str(exc.value.detail)
 
 
 async def test_update_category_not_found() -> None:

@@ -73,6 +73,11 @@ export default function AdminPage() {
 
   const pollRefs = useRef(new Map<number, ReturnType<typeof setTimeout>>())
 
+  // Abort controllers for in-flight XHR uploads, keyed by task ID.
+  // Used to abort the upload immediately when a user cancels an
+  // uploading task (#266).
+  const uploadAbortRefs = useRef(new Map<number, AbortController>())
+
   // Log viewer auto-scroll: the pre element that holds the streaming
   // task log, and a sticky-bottom flag that pauses auto-scroll if the
   // user scrolls up to read earlier output and resumes once they scroll
@@ -243,30 +248,47 @@ export default function AdminPage() {
       // upload via XHR with progress.
       setError(null)
       setStarting('files_import')
+      let task: AdminTask | undefined
       try {
-        const task = await initFilesImport(file.name)
-        setActiveTasks((prev) => [...prev, task])
+        task = await initFilesImport(file.name)
+        setActiveTasks((prev) => [...prev, task!])
         pollTask(task.id)
         setStarting(null) // task banner takes over
 
+        const abort = new AbortController()
+        uploadAbortRefs.current.set(task.id, abort)
         await uploadTaskFile(task.id, file, (fraction) => {
-          setUploadProgress((prev) => new Map(prev).set(task.id, fraction))
-        })
+          setUploadProgress((prev) => new Map(prev).set(task!.id, fraction))
+        }, abort.signal)
         // Upload done — clear local progress; polling picks up the rest.
         setUploadProgress((prev) => {
           const next = new Map(prev)
-          next.delete(task.id)
+          next.delete(task!.id)
           return next
         })
       } catch (err) {
-        setUploadProgress((prev) => {
-          const next = new Map(prev)
-          // Clean up stale entry for any task that existed
-          for (const id of next.keys()) next.delete(id)
-          return next
-        })
-        setError(err instanceof Error ? err.message : 'Operation failed')
+        // Suppress AbortError — the cancel handler already took care
+        // of UI cleanup and the backend cancellation request (#266).
+        if (err instanceof DOMException && err.name === 'AbortError') {
+          // noop — polling will pick up the cancelled status
+        } else if (task !== undefined) {
+          // Upload failed after the task was created — remove the
+          // stale task from the UI and stop its polling loop (#264).
+          stopPolling(task.id)
+          setActiveTasks((prev) => prev.filter((t) => t.id !== task!.id))
+          // Only clear the failed task's progress entry (#265).
+          setUploadProgress((prev) => {
+            const next = new Map(prev)
+            next.delete(task!.id)
+            return next
+          })
+          setError(err instanceof Error ? err.message : 'Operation failed')
+        } else {
+          setError(err instanceof Error ? err.message : 'Operation failed')
+        }
         setStarting(null)
+      } finally {
+        if (task !== undefined) uploadAbortRefs.current.delete(task.id)
       }
     }
   }
@@ -295,6 +317,20 @@ export default function AdminPage() {
     ) {
       return
     }
+    // Abort the in-flight XHR upload if one exists for this task
+    // (#266). This stops bandwidth waste immediately and prevents the
+    // duplicate "Upload failed" error notification.
+    const abort = uploadAbortRefs.current.get(taskId)
+    if (abort) {
+      abort.abort()
+      uploadAbortRefs.current.delete(taskId)
+      // Clear upload progress for the cancelled task.
+      setUploadProgress((prev) => {
+        const next = new Map(prev)
+        next.delete(taskId)
+        return next
+      })
+    }
     try {
       const updated = await cancelAdminTask(taskId)
       setActiveTasks((prev) =>
@@ -309,7 +345,10 @@ export default function AdminPage() {
     }
   }
 
-  const busy = starting !== null
+  // Disable action buttons while a task is being kicked off OR while
+  // any task is still uploading (#263 — setStarting(null) fires before
+  // the XHR upload completes, so also check for in-flight uploads).
+  const busy = starting !== null || activeTasks.some((t) => t.status === 'uploading')
 
   // Active (in-flight) tasks for the progress banner
   const runningTasks = activeTasks.filter(
@@ -509,7 +548,7 @@ export default function AdminPage() {
             <input
               ref={filesRef}
               type="file"
-              accept=".tar.gz,.tgz"
+              accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar,application/x-compressed-tar"
               hidden
               onChange={handleFilesChange}
             />

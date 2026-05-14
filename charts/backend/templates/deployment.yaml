@@ -1,5 +1,11 @@
-{{- if and .Values.tileSidecar.enabled (not .Values.persistence.enabled) }}
-{{- fail "tileSidecar.enabled requires persistence.enabled — the sidecar serves tiles from the PVC" }}
+{{- if and .Values.tiles.enabled (not .Values.persistence.enabled) }}
+{{- fail "tiles.enabled requires persistence.enabled — the sidecar serves tiles from the PVC" }}
+{{- end }}
+{{- if and .Values.github.enabled (not .Values.github.repository) }}
+{{- fail "github.enabled=true requires github.repository" }}
+{{- end }}
+{{- if and .Values.github.enabled (not .Values.github.token.existingSecret) }}
+{{- fail "github.enabled=true requires github.token.existingSecret (secret must contain key 'token')" }}
 {{- end }}
 {{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" .Values.persistence.accessModes)) }}
 {{- fail "replicaCount > 1 requires a ReadWriteMany PVC — background admin tasks write result files to the shared volume that any replica must be able to serve" }}
@@ -60,13 +66,15 @@ spec:
               value: {{ .Values.env.SOURCE_IMAGES_DIR | quote }}
             - name: TILES_DIR
               value: {{ .Values.env.TILES_DIR | quote }}
+            {{- if .Values.github.enabled }}
             - name: GITHUB_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.reportIssue.existingSecret | default (printf "%s-report-issue-pat" (include "hriv-backend.fullname" .)) }}
+                  name: {{ .Values.github.token.existingSecret }}
                   key: token
             - name: GITHUB_REPO
-              value: {{ .Values.env.GITHUB_REPO | quote }}
+              value: {{ .Values.github.repository | quote }}
+            {{- end }}
             # Backend component version surfaced by /api/admin/version
             # and the FastAPI `app.version` attribute. Rendered from
             # `.Values.image.tag | default .Chart.AppVersion` with the
@@ -91,19 +99,21 @@ spec:
             - name: BACKUP_VERSION_FILE
               value: {{ printf "%s/%s" (trimSuffix "/" .Values.backupVersionConfigMap.mountPath) .Values.backupVersionConfigMap.key | quote }}
             {{- end }}
-            {{- if .Values.otel.enabled }}
+            {{- if .Values.observability.openTelemetry.enabled }}
             - name: OTEL_SERVICE_NAME
-              value: {{ .Values.otel.serviceName | quote }}
+              value: {{ .Values.observability.openTelemetry.serviceName | quote }}
             - name: OTEL_TRACES_EXPORTER
-              value: {{ .Values.otel.tracesExporter | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.traces | quote }}
             - name: OTEL_METRICS_EXPORTER
-              value: {{ .Values.otel.metricsExporter | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.metrics | quote }}
             - name: OTEL_LOGS_EXPORTER
-              value: {{ .Values.otel.logsExporter | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.logs | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.otel.exporterEndpoint | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.endpoint | quote }}
             - name: OTEL_EXPORTER_OTLP_PROTOCOL
-              value: {{ .Values.otel.exporterProtocol | quote }}
+              value: {{ .Values.observability.openTelemetry.exporter.protocol | quote }}
+            - name: OTEL_PYTHON_FASTAPI_EXCLUDED_URLS
+              value: {{ .Values.observability.openTelemetry.excludedUrls | quote }}
             {{- end }}
             {{- if .Values.redis.enabled }}
             - name: REDIS_URL
@@ -119,8 +129,8 @@ spec:
             # so tokens signed by one worker validate on every other worker.
             - name: REQUIRE_JWT_SECRET
               value: "true"
-            {{- if .Values.oidc.enabled }}
-            {{- $oidcSecret := .Values.oidc.existingSecret | default (printf "%s-oidc" (include "hriv-backend.fullname" .)) }}
+            {{- if .Values.auth.openidConnect.enabled }}
+            {{- $oidcSecret := .Values.auth.openidConnect.existingSecret | default (printf "%s-openid-connect" (include "hriv-backend.fullname" .)) }}
             - name: OIDC_CLIENT_ID
               valueFrom:
                 secretKeyRef:
@@ -132,10 +142,10 @@ spec:
                   name: {{ $oidcSecret }}
                   key: client-secret
             {{- end }}
-          {{- if .Values.oidc.enabled }}
+          {{- if .Values.auth.openidConnect.enabled }}
           envFrom:
             - configMapRef:
-                name: {{ include "hriv-backend.fullname" . }}-oidc
+                name: {{ include "hriv-backend.fullname" . }}-openid-connect
           {{- end }}
           livenessProbe:
             httpGet:
@@ -165,12 +175,12 @@ spec:
               readOnly: true
             {{- end }}
           {{- end }}
-        {{- if .Values.tileSidecar.enabled }}
+        {{- if .Values.tiles.enabled }}
         - name: tile-server
-          image: {{ .Values.tileSidecar.image | quote }}
+          image: {{ .Values.tiles.nginx.image | quote }}
           ports:
             - name: tiles
-              containerPort: {{ .Values.tileSidecar.port }}
+              containerPort: {{ .Values.tiles.nginx.port }}
               protocol: TCP
           volumeMounts:
             - name: data
@@ -191,19 +201,19 @@ spec:
               port: tiles
             initialDelaySeconds: 3
             periodSeconds: 10
-          {{- with .Values.tileSidecar.resources }}
+          {{- with .Values.tiles.nginx.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
         {{- end }}
-      {{- if or .Values.persistence.enabled .Values.tileSidecar.enabled .Values.backupVersionConfigMap.enabled }}
+      {{- if or .Values.persistence.enabled .Values.tiles.enabled .Values.backupVersionConfigMap.enabled }}
       volumes:
         {{- if .Values.persistence.enabled }}
         - name: data
           persistentVolumeClaim:
             claimName: {{ include "hriv-backend.fullname" . }}-data
         {{- end }}
-        {{- if .Values.tileSidecar.enabled }}
+        {{- if .Values.tiles.enabled }}
         - name: nginx-tiles-config
           configMap:
             name: {{ include "hriv-backend.fullname" . }}-nginx-tiles
@@ -228,8 +238,8 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- $aff := deepCopy (.Values.affinity | default dict) }}
-      {{- if .Values.zoneAntiAffinity.enabled }}
-        {{- $zoneRule := dict "labelSelector" (dict "matchLabels" (include "hriv-backend.selectorLabels" . | fromYaml)) "topologyKey" .Values.zoneAntiAffinity.topologyKey }}
+      {{- if .Values.scheduling.zoneAntiAffinity.enabled }}
+        {{- $zoneRule := dict "labelSelector" (dict "matchLabels" (include "hriv-backend.selectorLabels" . | fromYaml)) "topologyKey" .Values.scheduling.zoneAntiAffinity.topologyKey }}
         {{- $existing := list }}
         {{- if and (hasKey $aff "podAntiAffinity") $aff.podAntiAffinity }}
           {{- $existing = $aff.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution | default list }}

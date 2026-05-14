@@ -4,6 +4,9 @@ import sys
 from types import ModuleType
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
+import pytest
+from opentelemetry.trace import StatusCode
+
 from app.worker import (
     admin_task_runner,
     enqueue_admin_task,
@@ -149,3 +152,55 @@ async def test_admin_task_runner_unknown_type() -> None:
     # None of the runners should have been called
     fake_admin_ops.run_db_export.assert_not_awaited()  # type: ignore[union-attr]
     fake_admin_ops.run_files_import.assert_not_awaited()  # type: ignore[union-attr]
+
+
+# ── Exception recording on spans ─────────────────────────
+
+
+async def test_process_source_image_task_records_exception_on_span() -> None:
+    """When processing raises, the span records the exception and sets ERROR status."""
+    error = RuntimeError("processing failed")
+    mock_process = AsyncMock(side_effect=error)
+    fake_processing = ModuleType("app.processing")
+    fake_processing.process_source_image = mock_process  # type: ignore[attr-defined]
+
+    mock_span = MagicMock()
+    with (
+        patch.dict(sys.modules, {"app.processing": fake_processing}),
+        patch("app.worker.tracer") as mock_tracer,
+    ):
+        mock_tracer.start_as_current_span.return_value.__enter__ = MagicMock(return_value=mock_span)
+        mock_tracer.start_as_current_span.return_value.__exit__ = MagicMock(return_value=False)
+
+        with pytest.raises(RuntimeError, match="processing failed"):
+            await process_source_image_task({}, 7)
+
+    mock_span.record_exception.assert_called_once_with(error)
+    set_status_call = mock_span.set_status.call_args
+    assert set_status_call[0][0].status_code == StatusCode.ERROR
+
+
+async def test_admin_task_runner_records_exception_on_span() -> None:
+    """When the admin runner raises, the span records the exception and sets ERROR status."""
+    error = RuntimeError("export failed")
+    mock_run = AsyncMock(side_effect=error)
+    fake_admin_ops = ModuleType("app.admin_ops")
+    fake_admin_ops.run_db_export = mock_run  # type: ignore[attr-defined]
+    fake_admin_ops.run_db_import = AsyncMock()  # type: ignore[attr-defined]
+    fake_admin_ops.run_files_export = AsyncMock()  # type: ignore[attr-defined]
+    fake_admin_ops.run_files_import = AsyncMock()  # type: ignore[attr-defined]
+
+    mock_span = MagicMock()
+    with (
+        patch.dict(sys.modules, {"app.admin_ops": fake_admin_ops}),
+        patch("app.worker.tracer") as mock_tracer,
+    ):
+        mock_tracer.start_as_current_span.return_value.__enter__ = MagicMock(return_value=mock_span)
+        mock_tracer.start_as_current_span.return_value.__exit__ = MagicMock(return_value=False)
+
+        with pytest.raises(RuntimeError, match="export failed"):
+            await admin_task_runner({}, 42, "db_export")
+
+    mock_span.record_exception.assert_called_once_with(error)
+    set_status_call = mock_span.set_status.call_args
+    assert set_status_call[0][0].status_code == StatusCode.ERROR

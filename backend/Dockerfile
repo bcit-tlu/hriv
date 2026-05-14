@@ -159,7 +159,8 @@ COPY alembic.ini ./alembic.ini
 #     true, which always wins over ``ENV`` defaults in the image.
 ENV OTEL_TRACES_EXPORTER=none \
     OTEL_METRICS_EXPORTER=none \
-    OTEL_LOGS_EXPORTER=none
+    OTEL_LOGS_EXPORTER=none \
+    PYTHONUNBUFFERED=1
 
 # Deliberately no ``ARG APP_VERSION``/``ENV APP_VERSION`` here.
 #

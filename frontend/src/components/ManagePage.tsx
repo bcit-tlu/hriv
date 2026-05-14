@@ -121,8 +121,8 @@ interface ManagePageProps {
   onViewImage?: (image: ApiImage) => void
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
-  onAddCategory?: (label: string, parentId: number | null) => Promise<number | void>
-  onEditCategory?: (categoryId: number, newLabel: string) => Promise<void>
+  onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
   onReplaceImage?: (sourceImageId: number, filename: string, fileSize: number) => void
   onProcessingStarted?: (
@@ -200,7 +200,6 @@ export default function ManagePage({
   // Delete confirmation dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleteDialogImage, setDeleteDialogImage] = useState<ApiImage | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   const loadImages = useCallback(async () => {
@@ -472,17 +471,12 @@ export default function ManagePage({
     if (image) {
       setDeleteDialogImage(image)
       setDeleteDialogOpen(true)
-      setConfirmDelete(false)
       setDeleting(false)
     }
   }
 
   const handleConfirmDeleteImage = async () => {
     if (!deleteDialogImage) return
-    if (!confirmDelete) {
-      setConfirmDelete(true)
-      return
-    }
     setDeleting(true)
     try {
       await deleteImage(deleteDialogImage.id)
@@ -493,7 +487,6 @@ export default function ManagePage({
       })
       setDeleteDialogOpen(false)
       setDeleteDialogImage(null)
-      setConfirmDelete(false)
       setDeleting(false)
       await loadImages()
       onCategoriesChanged?.()
@@ -506,7 +499,6 @@ export default function ManagePage({
   const handleCloseDeleteDialog = () => {
     setDeleteDialogOpen(false)
     setDeleteDialogImage(null)
-    setConfirmDelete(false)
     setDeleting(false)
   }
 
@@ -570,6 +562,7 @@ export default function ManagePage({
                     onChange={(e) => handleSelectAll(e.target.checked)}
                   />
                 </TableCell>
+                <TableCell sx={{ width: 48, p: 0.5 }} />
                 <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'id'}
@@ -653,6 +646,7 @@ export default function ManagePage({
                     </IconButton>
                   )}
                 </TableCell>
+                <TableCell />
                 <TableCell>
                   <TextField
                     size="small"
@@ -756,6 +750,20 @@ export default function ManagePage({
                       onChange={(e) =>
                         handleSelectOne(img.id, e.target.checked)
                       }
+                    />
+                  </TableCell>
+                  <TableCell sx={{ p: 0.5 }}>
+                    <Box
+                      component="img"
+                      src={img.thumb}
+                      alt={img.name}
+                      sx={{
+                        width: 40,
+                        height: 40,
+                        objectFit: 'cover',
+                        borderRadius: 0.5,
+                        display: 'block',
+                      }}
                     />
                   </TableCell>
                   <TableCell>{img.id}</TableCell>
@@ -951,24 +959,20 @@ export default function ManagePage({
           <Box>
             <Button
               color="error"
-              variant={confirmDelete ? 'contained' : 'outlined'}
+              variant="contained"
               onClick={handleConfirmDeleteImage}
               disabled={deleting}
               fullWidth
             >
-              {confirmDelete
-                ? 'Confirm Delete Image'
-                : 'Delete Image'}
+              Delete Image
             </Button>
-            {confirmDelete && (
-              <Typography
-                variant="caption"
-                color="error"
-                sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
-              >
-                This action cannot be undone. Click again to confirm.
-              </Typography>
-            )}
+            <Typography
+              variant="caption"
+              color="error"
+              sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
+            >
+              This action cannot be undone.
+            </Typography>
           </Box>
         </DialogContent>
         <DialogActions>

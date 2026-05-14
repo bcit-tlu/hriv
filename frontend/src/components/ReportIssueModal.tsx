@@ -50,7 +50,7 @@ export default function ReportIssueModal({ open, onClose }: ReportIssueModalProp
         description: trimmed,
         page_url: window.location.href,
       })
-      setSuccess(`Issue created successfully.`)
+      setSuccess('Your feedback was received successfully. Thanks!')
       setDescription('')
       // Auto-close after a short delay
       timerRef.current = setTimeout(() => {

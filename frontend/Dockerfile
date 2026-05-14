@@ -70,7 +70,7 @@ EXPOSE 8080
 # See: https://hub.docker.com/_/nginx  ("Using environment variables in nginx configuration")
 ENV BACKEND_URL=http://backend:8000
 # Tile server URL — defaults to the backend so tiles go through
-# FastAPI's StaticFiles mount.  When the backend chart's tileSidecar
+# FastAPI's StaticFiles mount. When backend chart `tiles.enabled`
 # is enabled, the Helm Deployment template overrides this to point at
 # the sidecar port (e.g. http://hriv-backend:8001).
 ENV TILE_SERVER_URL=http://backend:8000

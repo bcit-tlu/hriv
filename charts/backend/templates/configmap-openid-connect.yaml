@@ -1,0 +1,17 @@
+{{- if .Values.auth.openidConnect.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hriv-backend.fullname" . }}-openid-connect
+  labels:
+    {{- include "hriv-backend.labels" . | nindent 4 }}
+data:
+  OIDC_ENABLED: {{ .Values.auth.openidConnect.enabled | quote }}
+  OIDC_ISSUER: {{ .Values.auth.openidConnect.issuer | quote }}
+  OIDC_REDIRECT_URI: {{ .Values.auth.openidConnect.redirectUri | quote }}
+  OIDC_SCOPES: {{ .Values.auth.openidConnect.scopes | quote }}
+  OIDC_ROLE_MAPPING: {{ .Values.auth.openidConnect.roleMapping | quote }}
+  OIDC_POST_LOGIN_REDIRECT: {{ .Values.auth.openidConnect.postLoginRedirect | quote }}
+  OIDC_TRUST_EMAIL: {{ .Values.auth.openidConnect.trustEmail | quote }}
+  CORS_ORIGINS: {{ .Values.auth.openidConnect.corsOrigins | quote }}
+{{- end }}

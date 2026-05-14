@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
@@ -18,7 +20,7 @@ interface PersonFormData {
   email: string
   role: Role
   password?: string
-  program_id?: number | null
+  program_ids?: number[]
 }
 
 interface AddEditPersonModalProps {
@@ -41,8 +43,8 @@ function AddEditPersonForm({
   const [email, setEmail] = useState(user?.email ?? '')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<Role>((user?.role as Role) ?? 'student')
-  const [programId, setProgramId] = useState<number | ''>(
-    user?.program_id ?? '',
+  const [programIds, setProgramIds] = useState<number[]>(
+    user?.program_ids ?? [],
   )
 
   const handleSave = () => {
@@ -56,7 +58,7 @@ function AddEditPersonForm({
       name: trimmedName,
       email: trimmedEmail,
       role,
-      program_id: programId === '' ? null : programId,
+      program_ids: programIds,
     }
     if (trimmedPassword) {
       data.password = trimmedPassword
@@ -68,8 +70,9 @@ function AddEditPersonForm({
     setRole(e.target.value as Role)
   }
 
-  const handleProgramChange = (e: SelectChangeEvent<number | ''>) => {
-    setProgramId(e.target.value as number | '')
+  const handleProgramChange = (e: SelectChangeEvent<number[]>) => {
+    const val = e.target.value
+    setProgramIds(typeof val === 'string' ? [] : val)
   }
 
   const canSave = isEdit
@@ -115,15 +118,23 @@ function AddEditPersonForm({
           </Select>
         </FormControl>
         <FormControl fullWidth>
-          <InputLabel>Program</InputLabel>
+          <InputLabel>Programs</InputLabel>
           <Select
-            value={programId}
-            label="Program"
+            multiple
+            value={programIds}
+            label="Programs"
             onChange={handleProgramChange}
+            renderValue={(selected) => (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                {selected.map((id) => {
+                  const prog = programs.find((p) => p.id === id)
+                  return (
+                    <Chip key={id} label={prog?.name ?? id} size="small" />
+                  )
+                })}
+              </Box>
+            )}
           >
-            <MenuItem value="">
-              <em>None</em>
-            </MenuItem>
             {programs.map((p) => (
               <MenuItem key={p.id} value={p.id}>
                 {p.name}

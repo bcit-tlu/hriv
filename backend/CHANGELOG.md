@@ -1,5 +1,49 @@
 # Changelog
 
+## [0.14.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.14.0...backend-v0.14.1) (2026-05-12)
+
+
+### Bug Fixes
+
+* check actual table ownership before SET ROLE in migration 0003 ([#357](https://github.com/bcit-tlu/hriv/issues/357)) ([eac57c8](https://github.com/bcit-tlu/hriv/commit/eac57c84577ed595e75e59261d7e4ce49747d136))
+* fall back to inherited role when DB owner is not assumable ([#356](https://github.com/bcit-tlu/hriv/issues/356)) ([793485f](https://github.com/bcit-tlu/hriv/commit/793485f336e4599198b6b16614983d5af3cac04e))
+* migration 0003 silent failure — introspect FK name + fix logger suppression ([#352](https://github.com/bcit-tlu/hriv/issues/352)) ([17c18ab](https://github.com/bcit-tlu/hriv/commit/17c18abbef2533e0698bed171899aa93d24536e4))
+* SET ROLE to DB owner before DDL in migration 0003 ([#354](https://github.com/bcit-tlu/hriv/issues/354)) ([e50643f](https://github.com/bcit-tlu/hriv/commit/e50643f6e00baaae8c800fa1e51f41511594bbd4))
+
+## [0.14.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.13.0...backend-v0.14.0) (2026-05-11)
+
+
+### Features
+
+* add exception recording and error status to admin and bulk impo… ([#350](https://github.com/bcit-tlu/hriv/issues/350)) ([4d21921](https://github.com/bcit-tlu/hriv/commit/4d21921ad551f5cf5d3da6888df2273e9ea3f3e8))
+
+## [0.13.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.12.0...backend-v0.13.0) (2026-05-11)
+
+
+### Features
+
+* add exception recording and error status to worker OTEL spans ([#343](https://github.com/bcit-tlu/hriv/issues/343)) ([a1d98c2](https://github.com/bcit-tlu/hriv/commit/a1d98c289e4cffbc6edb89c5021003fbb43ff135))
+
+## [0.12.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.11.0...backend-v0.12.0) (2026-05-11)
+
+
+### Features
+
+* implement RBAC with program-scoped category visibility ([#327](https://github.com/bcit-tlu/hriv/issues/327)) ([b8c5ee7](https://github.com/bcit-tlu/hriv/commit/b8c5ee71ba47b5d4dad80ca0ba9a9f8b0bf29e8f))
+
+## [0.11.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.10.0...backend-v0.11.0) (2026-05-09)
+
+
+### Features
+
+* propagate user identity to OTEL trace spans ([#319](https://github.com/bcit-tlu/hriv/issues/319)) ([240a2d2](https://github.com/bcit-tlu/hriv/commit/240a2d2462839dd315822911f815bf94ad62b6b8))
+* reject duplicate category names within same parent ([#311](https://github.com/bcit-tlu/hriv/issues/311)) ([9a06a1b](https://github.com/bcit-tlu/hriv/commit/9a06a1b65705e6c54d4c46f2059bb932b346e3f9))
+
+
+### Bug Fixes
+
+* exclude OIDC subject and password hash from admin export ([#316](https://github.com/bcit-tlu/hriv/issues/316)) ([10e1ac9](https://github.com/bcit-tlu/hriv/commit/10e1ac9118d95ad2aeeccf763d8c840261520509))
+
 ## [0.10.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.9.0...backend-v0.10.0) (2026-05-06)
 
 

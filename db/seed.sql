@@ -22,16 +22,27 @@ SELECT setval('programs_id_seq', GREATEST((SELECT MAX(id) FROM programs), 1));
 
 -- ── Categories ────────────────────────────────────────────
 
-INSERT INTO categories (id, label, parent_id, program, status, metadata)
+INSERT INTO categories (id, label, parent_id, status, metadata)
 VALUES
-  (1, 'Architecture', NULL, 'Digital Design', 'active', '{}'),
-  (2, 'Panoramas',    NULL, 'Photography',    'active', '{}'),
-  (3, 'Italian',      1,    'Digital Design', 'active', '{}'),
-  (4, 'American',     1,    'Digital Design', 'active', '{}'),
-  (5, 'Gothic',       3,    'Digital Design', 'active', '{}')
+  (1, 'Architecture', NULL, 'active', '{}'),
+  (2, 'Panoramas',    NULL, 'active', '{}'),
+  (3, 'Italian',      1,    'active', '{}'),
+  (4, 'American',     1,    'active', '{}'),
+  (5, 'Gothic',       3,    'active', '{}')
 ON CONFLICT (id) DO NOTHING;
 
 SELECT setval('categories_id_seq', GREATEST((SELECT MAX(id) FROM categories), 1));
+
+-- ── Category–Program associations ───────────────────────
+
+INSERT INTO category_programs (category_id, program_id)
+VALUES
+  (1, 2),  -- Architecture -> Digital Design
+  (2, 3),  -- Panoramas -> Photography
+  (3, 2),  -- Italian -> Digital Design
+  (4, 2),  -- American -> Digital Design
+  (5, 2)   -- Gothic -> Digital Design
+ON CONFLICT (category_id, program_id) DO NOTHING;
 
 -- ── Images ────────────────────────────────────────────────
 
@@ -81,11 +92,20 @@ SELECT setval('announcements_id_seq', GREATEST((SELECT MAX(id) FROM announcement
 
 -- ── Users ─────────────────────────────────────────────────
 
-INSERT INTO users (id, name, email, password_hash, role, program_id, last_access, metadata)
+INSERT INTO users (id, name, email, password_hash, role, last_access, metadata)
 VALUES
-  (1, 'Haruki Tanaka',      'admin@bcit.ca',   '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'admin',      1, NULL, '{}'),
-  (2, 'Carlos Henrique Souza',   'instructor@bcit.ca',     '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'instructor', 2, NULL, '{}'),
-  (3, 'Mira Patel',  'student@bcit.ca', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    2, NULL, '{}')
+  (1, 'Haruki Tanaka',      'admin@example.ca',   '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'admin',      NULL, '{}'),
+  (2, 'Carlos Henrique Souza',   'instructor@example.ca',     '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'instructor', NULL, '{}'),
+  (3, 'Mira Patel',  'student@example.ca', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    NULL, '{}')
 ON CONFLICT (id) DO NOTHING;
 
 SELECT setval('users_id_seq', GREATEST((SELECT MAX(id) FROM users), 1));
+
+-- ── User–Program associations ───────────────────────────
+
+INSERT INTO user_programs (user_id, program_id)
+VALUES
+  (1, 1),  -- admin -> Administration
+  (2, 2),  -- instructor -> Digital Design
+  (3, 2)   -- student -> Digital Design
+ON CONFLICT (user_id, program_id) DO NOTHING;

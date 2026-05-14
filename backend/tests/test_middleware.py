@@ -177,6 +177,76 @@ async def test_audit_extracts_user_from_jwt() -> None:
             assert extra["user_role"] == "admin"
 
 
+async def test_audit_sets_span_attributes_for_authenticated_request() -> None:
+    """User identity + correlation IDs are propagated to the OTEL span."""
+    mw = AuditMiddleware(app=AsyncMock())
+
+    from jose import jwt as jose_jwt
+    token = jose_jwt.encode(
+        {"sub": "42", "email": "test@example.com", "role": "admin"},
+        "test-secret",
+        algorithm="HS256",
+    )
+    scope = _make_scope(headers={
+        "Authorization": f"Bearer {token}",
+        "X-Session-ID": "session-xyz",
+    })
+
+    mock_span = MagicMock()
+    mock_span.is_recording.return_value = True
+
+    with patch("app.middleware.auth_settings") as mock_settings:
+        mock_settings.jwt_secret = "test-secret"
+        mock_settings.jwt_algorithm = "HS256"
+        with patch("app.middleware.trace.get_current_span", return_value=mock_span):
+            with patch("app.middleware.logger"):
+                await _invoke(mw, scope)
+
+    calls = {
+        call.args[0]: call.args[1]
+        for call in mock_span.set_attribute.call_args_list
+    }
+    assert calls["enduser.id"] == 42
+    assert "enduser.email" not in calls
+    assert calls["enduser.role"] == "admin"
+    assert calls["session.id"] == "session-xyz"
+    assert "request.id" in calls
+
+
+async def test_audit_sets_span_attributes_for_anonymous_request() -> None:
+    """Anonymous requests still get request.id on the span but no enduser.*."""
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope()
+
+    mock_span = MagicMock()
+    mock_span.is_recording.return_value = True
+
+    with patch("app.middleware.trace.get_current_span", return_value=mock_span):
+        with patch("app.middleware.logger"):
+            await _invoke(mw, scope)
+
+    attr_names = [call.args[0] for call in mock_span.set_attribute.call_args_list]
+    assert "request.id" in attr_names
+    assert "enduser.id" not in attr_names
+    assert "enduser.email" not in attr_names
+    assert "session.id" not in attr_names
+
+
+async def test_audit_skips_span_when_not_recording() -> None:
+    """When the span is not recording (OTEL disabled), set_attribute is not called."""
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(headers={"X-Session-ID": "session-abc"})
+
+    mock_span = MagicMock()
+    mock_span.is_recording.return_value = False
+
+    with patch("app.middleware.trace.get_current_span", return_value=mock_span):
+        with patch("app.middleware.logger"):
+            await _invoke(mw, scope)
+
+    mock_span.set_attribute.assert_not_called()
+
+
 async def test_audit_handles_invalid_jwt_gracefully() -> None:
     mw = AuditMiddleware(app=AsyncMock())
     scope = _make_scope(headers={"Authorization": "Bearer invalid-token"})

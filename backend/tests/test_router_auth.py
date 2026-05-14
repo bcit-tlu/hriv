@@ -24,8 +24,7 @@ def _make_user(
     email: str = "test@example.com",
     password_hash: str | None = None,
     role: str = "student",
-    program_id: int | None = None,
-    program_rel: object = None,
+    programs: list | None = None,
 ) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
@@ -34,8 +33,7 @@ def _make_user(
         email=email,
         password_hash=password_hash,
         role=role,
-        program_id=program_id,
-        program_rel=program_rel,
+        programs=programs or [],
         metadata_=None,
         last_access=now,
         created_at=now,
@@ -111,9 +109,9 @@ async def test_login_wrong_password() -> None:
     assert exc.value.status_code == 401
 
 
-async def test_login_with_program_rel() -> None:
-    program = SimpleNamespace(name="Biology")
-    user = _make_user(password_hash="hashed", program_id=1, program_rel=program)
+async def test_login_with_programs() -> None:
+    program = SimpleNamespace(id=1, name="Biology")
+    user = _make_user(password_hash="hashed", programs=[program])
 
     mock_result = MagicMock()
     mock_result.scalars.return_value.first.return_value = user
@@ -129,26 +127,29 @@ async def test_login_with_program_rel() -> None:
         with patch("app.routers.auth.create_access_token", return_value="jwt-token"):
             result = await login(body, _mock_request(), db)
 
-    assert result.user.program_name == "Biology"
+    assert result.user.program_names == ["Biology"]
+    assert result.user.program_ids == [1]
 
 
 async def test_get_me_returns_current_user() -> None:
-    program = SimpleNamespace(name="Chemistry")
-    user = _make_user(program_id=2, program_rel=program)
+    program = SimpleNamespace(id=2, name="Chemistry")
+    user = _make_user(programs=[program])
 
     db = AsyncMock()
     db.refresh = AsyncMock()
 
     result = await get_me(user, db)
     assert result.email == "test@example.com"
-    assert result.program_name == "Chemistry"
+    assert result.program_names == ["Chemistry"]
+    assert result.program_ids == [2]
 
 
-async def test_get_me_without_program() -> None:
+async def test_get_me_without_programs() -> None:
     user = _make_user()
 
     db = AsyncMock()
     db.refresh = AsyncMock()
 
     result = await get_me(user, db)
-    assert result.program_name is None
+    assert result.program_names == []
+    assert result.program_ids == []

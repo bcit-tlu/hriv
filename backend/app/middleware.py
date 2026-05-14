@@ -12,6 +12,7 @@ import uuid
 from contextvars import ContextVar
 
 from jose import jwt
+from opentelemetry import trace
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -195,6 +196,18 @@ class AuditMiddleware:
 
             if content_length is not None:
                 log_extra["content_length"] = content_length
+
+            # Propagate identity and correlation IDs to the current
+            # OTEL span so distributed traces carry user context.
+            span = trace.get_current_span()
+            if span.is_recording():
+                span.set_attribute("request.id", req_id)
+                if session_id:
+                    span.set_attribute("session.id", session_id)
+                if user_id is not None:
+                    span.set_attribute("enduser.id", user_id)
+                if user_role:
+                    span.set_attribute("enduser.role", user_role)
 
             is_excluded = any(path.startswith(p) for p in _EXCLUDE_PREFIXES)
             _log = logger.debug if is_excluded else logger.info

@@ -115,7 +115,7 @@ def test_all_exempt_paths_listed() -> None:
 
 
 def _make_admin() -> SimpleNamespace:
-    return SimpleNamespace(id=1, role="admin", email="admin@bcit.ca")
+    return SimpleNamespace(id=1, role="admin", email="admin@example.ca")
 
 
 @patch("app.routers.admin.is_maintenance_mode", return_value=False)

@@ -6,7 +6,9 @@ metadata:
   labels:
     {{- include "hriv-backup.labels" . | nindent 4 }}
 spec:
+  {{- if .Values.persistence.data.storageClass }}
   storageClassName: {{ .Values.persistence.data.storageClass }}
+  {{- end }}
   accessModes:
     {{- range .Values.persistence.data.accessModes }}
     - {{ . }}
@@ -24,7 +26,9 @@ metadata:
   labels:
     {{- include "hriv-backup.labels" . | nindent 4 }}
 spec:
+  {{- if .Values.persistence.backups.storageClass }}
   storageClassName: {{ .Values.persistence.backups.storageClass }}
+  {{- end }}
   accessModes:
     {{- range .Values.persistence.backups.accessModes }}
     - {{ . }}
