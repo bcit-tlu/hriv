@@ -37,8 +37,8 @@ spec:
           env:
             - name: BACKEND_URL
               value: {{ .Values.env.BACKEND_URL | default (printf "http://%s.%s.svc.cluster.local:%d" .Values.backend.host (.Values.backend.namespace | default .Release.Namespace) (.Values.backend.port | int)) | quote }}
-            # Tile server URL — when the backend's tileSidecar is
-            # enabled, points at the sidecar port so the frontend
+            # Tile server URL — when backend chart `tiles.enabled`
+            # is enabled, points at the sidecar port so frontend
             # nginx serves /api/tiles/ directly from the PVC via
             # nginx, bypassing the Python process.  When disabled,
             # defaults to BACKEND_URL (tiles served via FastAPI).
@@ -102,8 +102,8 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- $aff := deepCopy (.Values.affinity | default dict) }}
-      {{- if .Values.zoneAntiAffinity.enabled }}
-        {{- $zoneRule := dict "labelSelector" (dict "matchLabels" (include "hriv-frontend.selectorLabels" . | fromYaml)) "topologyKey" .Values.zoneAntiAffinity.topologyKey }}
+      {{- if .Values.scheduling.zoneAntiAffinity.enabled }}
+        {{- $zoneRule := dict "labelSelector" (dict "matchLabels" (include "hriv-frontend.selectorLabels" . | fromYaml)) "topologyKey" .Values.scheduling.zoneAntiAffinity.topologyKey }}
         {{- $existing := list }}
         {{- if and (hasKey $aff "podAntiAffinity") $aff.podAntiAffinity }}
           {{- $existing = $aff.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution | default list }}

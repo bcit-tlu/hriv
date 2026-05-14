@@ -14,9 +14,9 @@ versionConfigMap:
   name: hriv-backup-version
   key: version
 
-# Name of the CNPG-generated Secret containing the database URI.
-# This is the <cluster>-app secret created by the backend chart's CNPG Cluster.
-cnpgSecretName: hriv-backend-db-app
+# Name of the backend chart Secret containing the database URI.
+# Defaults to the Secret created by the backend chart.
+postgresSecretName: hriv-backend-db-app
 
 # Pod label used for pod affinity when sharing the backend's RWO data PVC.
 # Ensures the backup pod is co-located on the same node as the backend.
@@ -37,17 +37,20 @@ env:
 # carry always-empty env vars in the pod spec.
 #
 # The exporter defaults below are chosen so that setting
-# ``otel.enabled=true`` + ``otel.exporterEndpoint`` is sufficient to
-# start shipping logs and traces.  Override individual exporters to
+# ``observability.openTelemetry.enabled=true`` +
+# ``observability.openTelemetry.exporter.endpoint`` is sufficient to
+# start shipping logs and traces. Override individual exporters to
 # ``"none"`` to disable a specific signal.
-otel:
-  enabled: false
-  serviceName: "hriv-backup"
-  tracesExporter: "otlp"
-  metricsExporter: "none"
-  logsExporter: "otlp"
-  exporterEndpoint: ""
-  exporterProtocol: "http/protobuf"
+observability:
+  openTelemetry:
+    enabled: false
+    serviceName: "hriv-backup"
+    exporter:
+      traces: "otlp"
+      metrics: "none"
+      logs: "otlp"
+      endpoint: ""
+      protocol: "http/protobuf"
 
 # Vault Secrets Operator integration.
 # Disabled by default so standalone chart users are not required to use Vault.
@@ -62,14 +65,16 @@ vault:
 persistence:
   data:
     enabled: true
-    existingClaim: ""  # Set to backend PVC name to share its data volume
-    storageClass: longhorn
+    existingClaim: "" # Set to backend PVC name to share its data volume
+    # Leave empty to use the cluster default StorageClass.
+    storageClass: ""
     size: 5Gi
     accessModes:
       - ReadWriteOnce
   backups:
     enabled: true
-    storageClass: longhorn
+    # Leave empty to use the cluster default StorageClass.
+    storageClass: ""
     size: 10Gi
     accessModes:
       - ReadWriteOnce

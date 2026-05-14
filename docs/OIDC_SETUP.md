@@ -15,10 +15,10 @@ admin bootstrap accounts.
 | `OIDC_ISSUER` | Yes (when enabled) | — | The IdP issuer URL, e.g. `https://login.microsoftonline.com/{tenant}/v2.0`. Must expose `/.well-known/openid-configuration`. |
 | `OIDC_CLIENT_ID` | Yes | — | OAuth 2.0 client / application ID registered with the IdP. |
 | `OIDC_CLIENT_SECRET` | Yes | — | OAuth 2.0 client secret. |
-| `OIDC_REDIRECT_URI` | Yes | — | The callback URL registered with the IdP, e.g. `https://hriv.bcit.ca/api/auth/oidc/callback`. |
+| `OIDC_REDIRECT_URI` | Yes | — | The callback URL registered with the IdP, e.g. `https://hriv.example.com/api/auth/oidc/callback`. |
 | `OIDC_SCOPES` | No | `openid email profile` | Space-separated list of scopes to request. |
 | `OIDC_ROLE_MAPPING` | No | `{}` | JSON object mapping IdP group names to HRIV roles. See [Role Mapping](#role-mapping). |
-| `OIDC_POST_LOGIN_REDIRECT` | No | — | Frontend URL to redirect to after OIDC login (e.g. `https://hriv.bcit.ca`). Falls back to the first non-wildcard `CORS_ORIGINS` entry. |
+| `OIDC_POST_LOGIN_REDIRECT` | No | — | Frontend URL to redirect to after OIDC login (e.g. `https://hriv.example.com`). Falls back to the first non-wildcard `CORS_ORIGINS` entry. |
 | `OIDC_TRUST_EMAIL` | No | `false` | Set to `true` to skip the `email_verified` check when linking existing accounts by email. **Only enable this with trusted corporate IdPs** (e.g. Vault, internal LDAP) where all emails are known to be valid. Do not enable with public/self-registration IdPs. |
 
 All variables should be provided via Kubernetes Secrets or a `.env` file
@@ -54,9 +54,9 @@ names and values are HRIV roles:
 
 ```json
 {
-  "bcit-tlu-admins": "admin",
-  "bcit-tlu-instructors": "instructor",
-  "bcit-tlu-students": "student"
+  "hriv-admins": "admin",
+  "hriv-instructors": "instructor",
+  "hriv-students": "student"
 }
 ```
 
@@ -74,7 +74,7 @@ group maps to exactly one role.
 
 ## How It Works
 
-1. User clicks **"Sign in with BCIT"** on the login page.
+1. User clicks **"Sign in with SSO"** on the login page.
 2. The browser navigates to `GET /api/auth/oidc/login`, which redirects
    to the IdP authorization endpoint.
 3. After the user authenticates, the IdP redirects back to
@@ -120,12 +120,12 @@ configuration.
 
 ---
 
-## HashiCorp Vault as OIDC Provider
+## Organization-specific example: HashiCorp Vault (BCIT)
 
-BCIT uses HashiCorp Vault's [OIDC identity
+One deployment of HRIV uses HashiCorp Vault's [OIDC identity
 provider](https://developer.hashicorp.com/vault/docs/secrets/identity/oidc-provider)
-for SSO.  This section documents the Vault-specific configuration
-required for local testing.
+for SSO. This section documents that BCIT-specific setup as an example
+for teams using Vault as their IdP.
 
 ### Vault OIDC provider details
 
@@ -162,7 +162,7 @@ docker compose up --build
 open http://localhost:5173
 ```
 
-Click **"Sign in with BCIT"** on the login page.  The browser will
+Click **"Sign in with SSO"** on the login page. The browser will
 redirect to the Vault authorization endpoint.  After authenticating,
 Vault redirects back to
 `http://localhost:8000/api/auth/oidc/callback`, which exchanges the

@@ -2,7 +2,7 @@
 
 How code gets from a merged PR on `main` to a running pod, for each of the
 three components (`frontend`, `backend`, `backup`). This is the contract
-between this repo and `bcit-tlu/flux-fleet`.
+between this repo and your downstream FluxCD repository (for example, `bcit-tlu/flux-fleet`).
 
 ## At a glance
 
@@ -69,7 +69,7 @@ Full title rules and rationale: [.github/CONTRIBUTING.md](../.github/CONTRIBUTIN
 
 ## flux-fleet side
 
-Both environments in `bcit-tlu/flux-fleet` share the same
+Both environments in a downstream FluxCD repo (for example, `bcit-tlu/flux-fleet`) share the same
 `OCIRepository`, `HelmRelease`, and chart (from `apps/hriv/base/`). They
 differ only in the `ImagePolicy` regex and the `image.tag` value the
 `ImageUpdateAutomation` writes into the env's `patch-<component>.yaml`.

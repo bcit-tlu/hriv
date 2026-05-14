@@ -1,4 +1,4 @@
-{{- if .Values.cnpg.enabled }}
+{{- if .Values.postgres.enabled }}
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
@@ -6,8 +6,8 @@ metadata:
   labels:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
-  instances: {{ .Values.cnpg.instances }}
-  imageName: {{ .Values.cnpg.imageName }}
+  instances: {{ .Values.postgres.cluster.instances }}
+  imageName: {{ .Values.postgres.cluster.image }}
 
   bootstrap:
     # Schema is managed by Alembic, not by CNPG.  The backend Deployment's
@@ -17,23 +17,25 @@ spec:
     # and grant schema privileges; the tables themselves are created by
     # the initContainer on first install.
     initdb:
-      database: {{ .Values.cnpg.database }}
-      owner: {{ .Values.cnpg.owner }}
+      database: {{ .Values.postgres.auth.database }}
+      owner: {{ .Values.postgres.auth.username }}
       secret:
         name: {{ include "hriv-backend.fullname" . }}-db-bootstrap
       postInitApplicationSQL:
-        - GRANT ALL ON SCHEMA public TO {{ .Values.cnpg.owner | quote }}
-        - ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO {{ .Values.cnpg.owner | quote }}
-        - ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO {{ .Values.cnpg.owner | quote }}
+        - GRANT ALL ON SCHEMA public TO {{ .Values.postgres.auth.username | quote }}
+        - ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES TO {{ .Values.postgres.auth.username | quote }}
+        - ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON SEQUENCES TO {{ .Values.postgres.auth.username | quote }}
 
   superuserSecret:
     name: {{ include "hriv-backend.fullname" . }}-db-superuser-bootstrap
 
   storage:
-    storageClass: {{ .Values.cnpg.storage.storageClass }}
-    size: {{ .Values.cnpg.storage.size }}
+    {{- if .Values.postgres.persistence.storageClass }}
+    storageClass: {{ .Values.postgres.persistence.storageClass }}
+    {{- end }}
+    size: {{ .Values.postgres.persistence.size }}
 
-  {{- if .Values.cnpg.enableSuperuserAccess }}
+  {{- if .Values.postgres.cluster.enableSuperuserAccess }}
   enableSuperuserAccess: true
   {{- end }}
 {{- end }}
