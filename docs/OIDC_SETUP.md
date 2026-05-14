@@ -74,7 +74,7 @@ group maps to exactly one role.
 
 ## How It Works
 
-1. User clicks **"Sign in with SSO"** on the login page.
+1. User clicks **"Sign in with BCIT"** on the login page.
 2. The browser navigates to `GET /api/auth/oidc/login`, which redirects
    to the IdP authorization endpoint.
 3. After the user authenticates, the IdP redirects back to
@@ -162,7 +162,7 @@ docker compose up --build
 open http://localhost:5173
 ```
 
-Click **"Sign in with SSO"** on the login page. The browser will
+Click **"Sign in with BCIT"** on the login page. The browser will
 redirect to the Vault authorization endpoint.  After authenticating,
 Vault redirects back to
 `http://localhost:8000/api/auth/oidc/callback`, which exchanges the

@@ -475,7 +475,7 @@ describe('User API', () => {
 
   it('createUser sends POST to /api/users/', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse(USER_FIXTURE))
-    await createUser({ name: 'Test', email: 'test@bcit.ca', role: 'student', password: 'pw' })
+    await createUser({ name: 'Test', email: 'test@example.ca', role: 'student', password: 'pw' })
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/users/')
     expect(init.method).toBe('POST')

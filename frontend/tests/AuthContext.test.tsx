@@ -216,7 +216,7 @@ describe('AuthProvider', () => {
     let authCtx: AuthContextValue | null = null
 
     // A previous user's data is in storage
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'Old', email: 'old@bcit.ca', role: 'student' })
+    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'Old', email: 'old@example.ca', role: 'student' })
     storage['hriv-color-mode'] = 'dark'
 
     mockLoginUser.mockResolvedValue({
@@ -224,7 +224,7 @@ describe('AuthProvider', () => {
       user: {
         id: 2,
         name: 'New',
-        email: 'new@bcit.ca',
+        email: 'new@example.ca',
         role: 'student',
         program_ids: [],
         program_names: [],
@@ -243,20 +243,20 @@ describe('AuthProvider', () => {
     })
 
     await act(async () => {
-      await authCtx!.login('new@bcit.ca', 'password')
+      await authCtx!.login('new@example.ca', 'password')
     })
 
     // Previous user's color mode preference should be cleared
     expect(storage['hriv-color-mode']).toBeUndefined()
     // New user is set correctly
-    expect(screen.getByTestId('user').textContent).toBe('new@bcit.ca')
+    expect(screen.getByTestId('user').textContent).toBe('new@example.ca')
     expect(currentToken).toBe('new-jwt')
   })
 
   it('login preserves storage when the same user logs in again', async () => {
     let authCtx: AuthContextValue | null = null
 
-    storage['hriv_user'] = JSON.stringify({ id: 2, name: 'Same', email: 'same@bcit.ca', role: 'student' })
+    storage['hriv_user'] = JSON.stringify({ id: 2, name: 'Same', email: 'same@example.ca', role: 'student' })
     storage['hriv-color-mode'] = 'dark'
 
     mockLoginUser.mockResolvedValue({
@@ -264,7 +264,7 @@ describe('AuthProvider', () => {
       user: {
         id: 2,
         name: 'Same',
-        email: 'same@bcit.ca',
+        email: 'same@example.ca',
         role: 'student',
         program_ids: [],
         program_names: [],
@@ -283,7 +283,7 @@ describe('AuthProvider', () => {
     })
 
     await act(async () => {
-      await authCtx!.login('same@bcit.ca', 'password')
+      await authCtx!.login('same@example.ca', 'password')
     })
 
     // Same user re-logging in — color mode should be preserved
@@ -296,7 +296,7 @@ describe('AuthProvider', () => {
 
     // Start with a valid session + user preferences
     currentToken = 'valid-jwt'
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'A', email: 'a@bcit.ca', role: 'student' })
+    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'A', email: 'a@example.ca', role: 'student' })
     storage['hriv-color-mode'] = 'dark'
 
     mockFetch.mockResolvedValueOnce({
@@ -304,7 +304,7 @@ describe('AuthProvider', () => {
       json: () => Promise.resolve({
         id: 1,
         name: 'A',
-        email: 'a@bcit.ca',
+        email: 'a@example.ca',
         role: 'student',
         program_ids: [],
         program_names: [],
@@ -319,7 +319,7 @@ describe('AuthProvider', () => {
     )
 
     await waitFor(() => {
-      expect(screen.getByTestId('user').textContent).toBe('a@bcit.ca')
+      expect(screen.getByTestId('user').textContent).toBe('a@example.ca')
     })
 
     act(() => {
@@ -334,14 +334,14 @@ describe('AuthProvider', () => {
 
   it('canEditContent is true for instructor role', async () => {
     currentToken = 'jwt'
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'I', email: 'i@bcit.ca', role: 'instructor' })
+    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'I', email: 'i@example.ca', role: 'instructor' })
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: () => Promise.resolve({
         id: 1,
         name: 'I',
-        email: 'i@bcit.ca',
+        email: 'i@example.ca',
         role: 'instructor',
         program_ids: [],
         program_names: [],
@@ -375,7 +375,7 @@ describe('AuthProvider', () => {
     })
     mockFetchUsers.mockResolvedValueOnce([])
     mockCreateUser.mockResolvedValueOnce({
-      id: 5, name: 'New', email: 'new@bcit.ca', role: 'student',
+      id: 5, name: 'New', email: 'new@example.ca', role: 'student',
       program_ids: [], program_names: [], last_access: null,
       metadata_extra: null, created_at: '', updated_at: '',
     })
@@ -391,12 +391,12 @@ describe('AuthProvider', () => {
     })
 
     await act(async () => {
-      await authCtx!.addUser('New', 'new@bcit.ca', 'student', 'pw')
+      await authCtx!.addUser('New', 'new@example.ca', 'student', 'pw')
     })
 
     expect(mockCreateUser).toHaveBeenCalledWith({
       name: 'New',
-      email: 'new@bcit.ca',
+      email: 'new@example.ca',
       role: 'student',
       password: 'pw',
       program_ids: undefined,
@@ -417,7 +417,7 @@ describe('AuthProvider', () => {
     })
     mockFetchUsers.mockResolvedValueOnce([
       {
-        id: 5, name: 'Other', email: 'other@bcit.ca', role: 'student',
+        id: 5, name: 'Other', email: 'other@example.ca', role: 'student',
         program_ids: [], program_names: [], last_access: null,
         metadata_extra: null, created_at: '', updated_at: '',
       },

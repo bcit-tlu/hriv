@@ -218,7 +218,7 @@ export default function LoginScreen({
 
                             <TextField
                                 label="Username"
-                                placeholder="username@bcit.ca"
+                                placeholder="username@example.ca"
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}

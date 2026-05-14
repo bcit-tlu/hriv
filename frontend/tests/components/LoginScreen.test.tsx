@@ -47,7 +47,7 @@ import { useAuth } from '../../src/useAuth'
 // ---------------------------------------------------------------------------
 
 function getUsernameField() {
-  return screen.getByPlaceholderText('username@bcit.ca')
+  return screen.getByPlaceholderText('username@example.ca')
 }
 
 function getPasswordField() {
@@ -55,7 +55,7 @@ function getPasswordField() {
 }
 
 function queryUsernameField() {
-  return screen.queryByPlaceholderText('username@bcit.ca')
+  return screen.queryByPlaceholderText('username@example.ca')
 }
 
 /** Render with OIDC disabled */

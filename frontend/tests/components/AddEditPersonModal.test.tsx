@@ -12,7 +12,7 @@ const programs: Program[] = [
 const existingUser: ApiUser = {
   id: 5,
   name: 'Test User',
-  email: 'test@bcit.ca',
+  email: 'test@example.ca',
   role: 'student',
   program_ids: [1],
   program_names: ['Medical Lab'],
@@ -61,7 +61,7 @@ describe('AddEditPersonModal', () => {
       />,
     )
     expect(screen.getByDisplayValue('Test User')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('test@bcit.ca')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('test@example.ca')).toBeInTheDocument()
   })
 
   it('Add button is disabled when required fields are empty', () => {
@@ -89,7 +89,7 @@ describe('AddEditPersonModal', () => {
     )
 
     await user.type(screen.getByLabelText(/full name/i), 'New Person')
-    await user.type(screen.getByLabelText(/email/i), 'new@bcit.ca')
+    await user.type(screen.getByLabelText(/email/i), 'new@example.ca')
     await user.type(screen.getByLabelText('Password'), 'secret123')
 
     await user.click(screen.getByRole('button', { name: 'Add' }))
@@ -97,7 +97,7 @@ describe('AddEditPersonModal', () => {
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'New Person',
-        email: 'new@bcit.ca',
+        email: 'new@example.ca',
         password: 'secret123',
         role: 'student',
       }),
@@ -127,7 +127,7 @@ describe('AddEditPersonModal', () => {
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Updated Name',
-        email: 'test@bcit.ca',
+        email: 'test@example.ca',
       }),
     )
     // Password should not be in the data when left blank
