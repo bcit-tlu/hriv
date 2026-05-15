@@ -87,6 +87,13 @@ def setup_logging(level: int = logging.INFO) -> None:
     root = logging.getLogger()
     root.setLevel(level)
 
+    # Preserve any OTEL LoggingHandler so OTLP log export continues working.
+    # Uses module name check to avoid hard-importing the OTEL SDK.
+    otel_handlers = [
+        h for h in root.handlers
+        if type(h).__module__.startswith("opentelemetry")
+    ]
+
     # Remove any pre-existing handlers (e.g. from basicConfig)
     for handler in root.handlers[:]:
         root.removeHandler(handler)
@@ -94,6 +101,10 @@ def setup_logging(level: int = logging.INFO) -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(JSONFormatter())
     root.addHandler(handler)
+
+    # Re-attach preserved OTEL handlers
+    for h in otel_handlers:
+        root.addHandler(h)
 
     # Quiet third-party loggers
     logging.getLogger("uvicorn").setLevel(logging.WARNING)

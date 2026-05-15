@@ -111,13 +111,70 @@ def test_setup_logging_configures_root_logger() -> None:
     try:
         setup_logging(level=logging.DEBUG)
         assert root.level == logging.DEBUG
-        assert len(root.handlers) == 1
-        assert isinstance(root.handlers[0].formatter, JSONFormatter)
+        # At minimum the JSON StreamHandler must be present
+        json_handlers = [
+            h for h in root.handlers if isinstance(h.formatter, JSONFormatter)
+        ]
+        assert len(json_handlers) == 1
 
         # Check third-party loggers are quieted
         assert logging.getLogger("uvicorn").level == logging.WARNING
         assert logging.getLogger("sqlalchemy.engine").level == logging.WARNING
     finally:
         # Restore original state
+        root.handlers = original_handlers
+        root.setLevel(original_level)
+
+
+def test_setup_logging_preserves_otel_handler() -> None:
+    """OTEL LoggingHandler survives the handler reset in setup_logging()."""
+    root = logging.getLogger()
+    original_handlers = root.handlers[:]
+    original_level = root.level
+
+    # Create a fake handler whose type lives in an "opentelemetry" module,
+    # simulating the real opentelemetry.sdk._logs.LoggingHandler.
+    fake_otel_handler = logging.Handler()
+    fake_otel_handler.__class__ = type(
+        "LoggingHandler", (logging.Handler,), {"__module__": "opentelemetry.sdk._logs"}
+    )
+    root.addHandler(fake_otel_handler)
+
+    try:
+        setup_logging(level=logging.INFO)
+
+        # The fake OTEL handler must still be attached
+        assert fake_otel_handler in root.handlers
+
+        # The JSON StreamHandler must also be present
+        json_handlers = [
+            h for h in root.handlers if isinstance(h.formatter, JSONFormatter)
+        ]
+        assert len(json_handlers) == 1
+
+        # Exactly 2 handlers: JSON stdout + OTEL
+        assert len(root.handlers) == 2
+    finally:
+        root.handlers = original_handlers
+        root.setLevel(original_level)
+
+
+def test_setup_logging_without_otel_handler() -> None:
+    """When no OTEL handler is present, only the JSON StreamHandler remains."""
+    root = logging.getLogger()
+    original_handlers = root.handlers[:]
+    original_level = root.level
+
+    # Add a plain non-OTEL handler that should be removed
+    stale_handler = logging.StreamHandler()
+    root.addHandler(stale_handler)
+
+    try:
+        setup_logging(level=logging.INFO)
+
+        assert stale_handler not in root.handlers
+        assert len(root.handlers) == 1
+        assert isinstance(root.handlers[0].formatter, JSONFormatter)
+    finally:
         root.handlers = original_handlers
         root.setLevel(original_level)
