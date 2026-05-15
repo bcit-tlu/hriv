@@ -85,6 +85,7 @@ import {
     updateProgram,
     deleteProgram,
     reorderCategories as apiReorderCategories,
+    ApiError,
 } from "./api";
 import type {
     ApiBulkImportJob,
@@ -131,6 +132,13 @@ function findCategoryPath(
         if (found) return found;
     }
     return null;
+}
+
+function userMessage(err: unknown, fallback: string): string {
+    if (err instanceof ApiError && err.status === 409) {
+        return "This item was modified by another user. Please refresh and try again.";
+    }
+    return fallback;
 }
 
 function apiTreeToCategory(node: ApiCategoryTree): Category {
@@ -202,6 +210,7 @@ export default function App() {
     // Lock-engaged: whether the clear button is disabled (separate from metadata persistence)
     const [lockEngaged, setLockEngaged] = useState(false);
     const [snackOpen, setSnackOpen] = useState(false);
+    const [errorSnack, setErrorSnack] = useState<string | null>(null);
     const pendingImageId = useRef<number | null>(null);
     const pendingViewport = useRef<ViewportState | undefined>(undefined);
     const pendingOverlays = useRef<OverlayRect[] | undefined>(undefined);
@@ -872,6 +881,7 @@ export default function App() {
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to add program", err);
+                setErrorSnack(userMessage(err, "Failed to add program."));
             }
         },
         [loadPrograms],
@@ -884,6 +894,7 @@ export default function App() {
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to edit program", err);
+                setErrorSnack(userMessage(err, "Failed to edit program."));
             }
         },
         [loadPrograms],
@@ -896,6 +907,7 @@ export default function App() {
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to delete program", err);
+                setErrorSnack(userMessage(err, "Failed to delete program."));
             }
         },
         [loadPrograms],
@@ -1099,6 +1111,7 @@ export default function App() {
                 loadUncategorizedImages();
             } catch (err) {
                 console.error("Failed to save canvas annotations", err);
+                setErrorSnack(userMessage(err, "Failed to save annotations."));
             } finally {
                 // Only clear in-flight flag and flush queue if still targeting the same image
                 if (saveTargetImageIdRef.current === targetImageId) {
@@ -1217,6 +1230,7 @@ export default function App() {
                 loadUncategorizedImages();
             } catch (err) {
                 console.error("Failed to lock overlays", err);
+                setErrorSnack(userMessage(err, "Failed to lock overlays."));
             }
         },
         [
@@ -1256,6 +1270,7 @@ export default function App() {
             loadUncategorizedImages();
         } catch (err) {
             console.error("Failed to clear locked overlays", err);
+            setErrorSnack(userMessage(err, "Failed to clear locked overlays."));
         }
     }, [
         selectedImage,
@@ -1356,6 +1371,7 @@ export default function App() {
                 loadUncategorizedImages();
             } catch (err) {
                 console.error("Failed to delete category", err);
+                setErrorSnack(userMessage(err, "Failed to delete category."));
             }
         },
         [loadCategories, loadUncategorizedImages],
@@ -1389,6 +1405,7 @@ export default function App() {
                 await loadCategories();
             } catch (err) {
                 console.error("Failed to toggle category visibility", err);
+                setErrorSnack(userMessage(err, "Failed to toggle category visibility."));
             }
         },
         [categories, loadCategories],
@@ -1407,6 +1424,7 @@ export default function App() {
                 await loadCategories();
             } catch (err) {
                 console.error("Failed to reorder categories", err);
+                setErrorSnack(userMessage(err, "Failed to reorder categories."));
             }
         },
         [loadCategories],
@@ -1421,6 +1439,7 @@ export default function App() {
                 await loadCategories();
             } catch (err) {
                 console.error("Failed to move category", err);
+                setErrorSnack(userMessage(err, "Failed to move category."));
             }
         },
         [loadCategories],
@@ -1450,6 +1469,7 @@ export default function App() {
                 await loadCategories();
             } catch (err) {
                 console.error("Failed to set card image", err);
+                setErrorSnack(userMessage(err, "Failed to set card image."));
             }
         },
         [loadCategories, categories],
@@ -1472,6 +1492,7 @@ export default function App() {
                 loadUncategorizedImages();
             } catch (err) {
                 console.error("Failed to toggle image visibility", err);
+                setErrorSnack(userMessage(err, "Failed to toggle image visibility."));
             }
         },
         [categories, uncategorizedImages, loadCategories, loadUncategorizedImages],
@@ -1531,6 +1552,7 @@ export default function App() {
                 loadUncategorizedImages();
             } catch (err) {
                 console.error("Failed to update image", err);
+                setErrorSnack(userMessage(err, "Failed to update image."));
             }
         },
         [browseEditImage, loadCategories, loadUncategorizedImages],
@@ -1577,6 +1599,7 @@ export default function App() {
                 loadUncategorizedImages();
             } catch (err) {
                 console.error("Failed to update image", err);
+                setErrorSnack(userMessage(err, "Failed to update image."));
             }
         },
         [selectedImage, loadUncategorizedImages],
@@ -3130,6 +3153,7 @@ export default function App() {
                         window.location.reload();
                     } catch (err) {
                         console.error("Failed to update profile", err);
+                        setErrorSnack(userMessage(err, "Failed to update profile."));
                     }
                 }}
                 programs={programs}
@@ -3255,6 +3279,23 @@ export default function App() {
                     },
                 }}
             />
+
+            {/* Error snackbar */}
+            <Snackbar
+                open={errorSnack !== null}
+                autoHideDuration={6000}
+                onClose={() => setErrorSnack(null)}
+                anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+                sx={{ zIndex: 1500 }}
+            >
+                <Alert
+                    severity="error"
+                    onClose={() => setErrorSnack(null)}
+                    variant="filled"
+                >
+                    {errorSnack}
+                </Alert>
+            </Snackbar>
 
             {/* Image upload + processing snackbars (one per job, stacked) */}
             {visibleJobs.map((job, index) => {
