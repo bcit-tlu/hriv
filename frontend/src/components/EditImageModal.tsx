@@ -73,7 +73,7 @@ interface EditImageModalProps {
   programs: Program[]
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
-  onToggleVisibility?: (categoryId: number, hide: boolean) => Promise<void>
+  onToggleVisibility?: (categoryId: number) => Promise<void>
   onViewImage?: () => void
 }
 

@@ -64,7 +64,7 @@ interface CategoryTileProps {
   onClick: (category: Category) => void
   onMove?: (category: Category) => void
   onSetCardImage?: (categoryId: number, imageId: number | null) => void
-  onToggleVisibility?: (categoryId: number, hide: boolean) => Promise<void>
+  onToggleVisibility?: (categoryId: number) => Promise<void>
   onEditName?: (category: Category) => void
   programs: Program[]
 }
@@ -177,7 +177,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
                 onClick={(e) => {
                   e.stopPropagation()
                   e.preventDefault()
-                  onToggleVisibility(category.id, category.status !== 'hidden')
+                  onToggleVisibility(category.id)
                 }}
                 aria-label="Toggle visibility"
               >

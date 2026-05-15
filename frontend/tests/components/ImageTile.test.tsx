@@ -242,7 +242,7 @@ describe('ImageTile', () => {
       expect(screen.queryByTestId('VisibilityIcon')).not.toBeInTheDocument()
     })
 
-    it('calls onToggleVisibility with (id, hide=true) when hiding an active image', async () => {
+    it('calls onToggleVisibility with the image id when toggling', async () => {
       const user = userEvent.setup()
       const onToggle = vi.fn()
       render(
@@ -255,23 +255,7 @@ describe('ImageTile', () => {
       )
 
       await user.click(screen.getByLabelText('Toggle visibility'))
-      expect(onToggle).toHaveBeenCalledWith(42, true)
-    })
-
-    it('calls onToggleVisibility with (id, hide=false) when showing an inactive image', async () => {
-      const user = userEvent.setup()
-      const onToggle = vi.fn()
-      render(
-        <ImageTile
-          image={makeImage({ id: 7, active: false })}
-          onClick={vi.fn()}
-          programs={[]}
-          onToggleVisibility={onToggle}
-        />,
-      )
-
-      await user.click(screen.getByLabelText('Toggle visibility'))
-      expect(onToggle).toHaveBeenCalledWith(7, false)
+      expect(onToggle).toHaveBeenCalledWith(42)
     })
 
     it('does not render the toggle button when onToggleVisibility is not provided', () => {

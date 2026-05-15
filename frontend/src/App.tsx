@@ -1378,17 +1378,20 @@ export default function App() {
     );
 
     const toggleCategoryVisibility = useCallback(
-        async (categoryId: number, hide: boolean) => {
+        async (categoryId: number) => {
             try {
+                const path = findCategoryPath(categories, categoryId);
+                const current = path?.[path.length - 1];
                 await apiUpdateCategory(categoryId, {
-                    status: hide ? "hidden" : "active",
+                    status:
+                        current?.status === "hidden" ? "active" : "hidden",
                 });
                 await loadCategories();
             } catch (err) {
                 console.error("Failed to toggle category visibility", err);
             }
         },
-        [loadCategories],
+        [categories, loadCategories],
     );
 
     const reorderCategoriesInline = useCallback(
@@ -1453,17 +1456,16 @@ export default function App() {
     );
 
     const toggleImageVisibility = useCallback(
-        async (imageId: number, hide: boolean) => {
+        async (imageId: number) => {
             try {
                 const found = findImageInTree(categories, imageId);
-                const version =
-                    found?.image.version ??
-                    uncategorizedImages.find((img) => img.id === imageId)
-                        ?.version;
+                const img =
+                    found?.image ??
+                    uncategorizedImages.find((i) => i.id === imageId);
                 await apiUpdateImage(
                     imageId,
-                    { active: !hide },
-                    version,
+                    { active: !img?.active },
+                    img?.version,
                 );
                 await loadCategories();
                 loadUncategorizedImages();

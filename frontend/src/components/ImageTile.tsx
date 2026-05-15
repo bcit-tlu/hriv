@@ -17,7 +17,7 @@ interface ImageTileProps {
   onClick: (image: ImageItem) => void
   programs: Program[]
   onEditDetails?: (image: ImageItem) => void
-  onToggleVisibility?: (imageId: number, hide: boolean) => Promise<void>
+  onToggleVisibility?: (imageId: number) => Promise<void>
 }
 
 export default function ImageTile({ image, onClick, programs, onEditDetails, onToggleVisibility }: ImageTileProps) {
@@ -52,7 +52,7 @@ export default function ImageTile({ image, onClick, programs, onEditDetails, onT
               }}
               onClick={(e) => {
                 e.stopPropagation()
-                onToggleVisibility(image.id, image.active)
+                onToggleVisibility(image.id)
               }}
               aria-label="Toggle visibility"
             >
