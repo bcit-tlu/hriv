@@ -2975,6 +2975,7 @@ export default function App() {
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
+                programs={programs}
             />
 
             {/* Image edit modal (viewer page) — no View Image button since we're already viewing */}

@@ -6,7 +6,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Typography from '@mui/material/Typography'
 import CategoryPickerSelect from './CategoryPickerSelect'
-import type { Category } from '../types'
+import type { Category, Program } from '../types'
 
 interface MoveCategoryDialogProps {
   open: boolean
@@ -17,6 +17,7 @@ interface MoveCategoryDialogProps {
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  programs?: Program[]
 }
 
 export default function MoveCategoryDialog({
@@ -28,6 +29,7 @@ export default function MoveCategoryDialog({
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
+  programs,
 }: MoveCategoryDialogProps) {
   const [newParentId, setNewParentId] = useState<number | null>(null)
 
@@ -58,6 +60,7 @@ export default function MoveCategoryDialog({
           onAddCategory={onAddCategory}
           onEditCategory={onEditCategory}
           onToggleVisibility={onToggleVisibility}
+          programs={programs}
         />
       </DialogContent>
       <DialogActions>

@@ -393,6 +393,7 @@ function EditImageForm({
             onAddCategory={onAddCategory}
             onEditCategory={onEditCategory}
             onToggleVisibility={onToggleVisibility}
+            programs={programs}
           />
         </Box>
         <TextField

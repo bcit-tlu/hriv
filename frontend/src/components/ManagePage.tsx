@@ -993,6 +993,7 @@ export default function ManagePage({
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
+        programs={programs}
       />
     </Box>
   )

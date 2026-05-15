@@ -14,7 +14,7 @@ import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import EditIcon from '@mui/icons-material/Edit'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { SelectChangeEvent } from '@mui/material/Select'
-import type { Category } from '../types'
+import type { Category, Program } from '../types'
 import { MAX_DEPTH } from '../types'
 import AddCategoryDialog from './AddCategoryDialog'
 import EditCategoryDialog from './EditCategoryDialog'
@@ -26,6 +26,7 @@ interface FlatOption {
   status: string | null
   parentId: number | null
   imageCount: number
+  programIds: number[]
 }
 
 function flattenTree(
@@ -37,7 +38,7 @@ function flattenTree(
   const result: FlatOption[] = []
   for (const node of nodes) {
     if (excludeIds?.has(node.id)) continue
-    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId, imageCount: node.images.length })
+    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId, imageCount: node.images.length, programIds: node.programIds })
     result.push(...flattenTree(node.children, depth + 1, excludeIds, node.id))
   }
   return result
@@ -77,6 +78,8 @@ interface CategoryPickerSelectProps {
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   /** When provided, a visibility toggle appears on each menu item. */
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  /** Available programs for the add/edit category dialogs. */
+  programs?: Program[]
 }
 
 export default function CategoryPickerSelect({
@@ -90,6 +93,7 @@ export default function CategoryPickerSelect({
   onDeleteCategory,
   onEditCategory,
   onToggleVisibility,
+  programs,
 }: CategoryPickerSelectProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addParentId, setAddParentId] = useState<number | null>(null)
@@ -287,6 +291,7 @@ export default function CategoryPickerSelect({
           onAdd={handleAddCategory}
           parentLabel={addParentLabel}
           siblingNames={addSiblingNames}
+          programs={programs}
         />
       )}
 
@@ -300,6 +305,8 @@ export default function CategoryPickerSelect({
           onSave={handleEditSave}
           currentLabel={editingOpt?.label ?? ''}
           siblingNames={editSiblingNames}
+          programs={programs}
+          currentProgramIds={editingOpt?.programIds ?? []}
         />
       )}
     </>

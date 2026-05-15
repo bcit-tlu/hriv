@@ -162,6 +162,7 @@ export default function BulkEditImagesModal({
             onAddCategory={onAddCategory}
             onEditCategory={onEditCategory}
             onToggleVisibility={onToggleVisibility}
+            programs={programs}
           />
         </Box>
         <TextField

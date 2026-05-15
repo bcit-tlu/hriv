@@ -439,6 +439,7 @@ export default function UploadImageModal({
                 onAddCategory={onAddCategory}
                 onEditCategory={onEditCategory}
                 onToggleVisibility={onToggleVisibility}
+                programs={programs}
               />
             </Box>
             <ImageMetadataFields

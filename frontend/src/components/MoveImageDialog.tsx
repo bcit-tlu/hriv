@@ -7,7 +7,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Typography from '@mui/material/Typography'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import type { ApiImage } from '../api'
-import type { Category } from '../types'
+import type { Category, Program } from '../types'
 
 interface MoveImageDialogProps {
   open: boolean
@@ -18,6 +18,7 @@ interface MoveImageDialogProps {
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  programs?: Program[]
 }
 
 export default function MoveImageDialog({
@@ -29,6 +30,7 @@ export default function MoveImageDialog({
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
+  programs,
 }: MoveImageDialogProps) {
   const [newCategoryId, setNewCategoryId] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
@@ -63,6 +65,7 @@ export default function MoveImageDialog({
           onAddCategory={onAddCategory}
           onEditCategory={onEditCategory}
           onToggleVisibility={onToggleVisibility}
+          programs={programs}
         />
       </DialogContent>
       <DialogActions>
