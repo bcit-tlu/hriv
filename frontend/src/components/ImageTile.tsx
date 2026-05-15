@@ -17,7 +17,7 @@ interface ImageTileProps {
   onClick: (image: ImageItem) => void
   programs: Program[]
   onEditDetails?: (image: ImageItem) => void
-  onToggleVisibility?: (imageId: number, hidden: boolean) => void
+  onToggleVisibility?: (imageId: number, hidden: boolean) => Promise<void>
 }
 
 export default function ImageTile({ image, onClick, programs, onEditDetails, onToggleVisibility }: ImageTileProps) {
