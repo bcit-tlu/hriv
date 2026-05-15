@@ -93,7 +93,7 @@ export default function CategoryPickerSelect({
 }: CategoryPickerSelectProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addParentId, setAddParentId] = useState<number | null>(null)
-  const [addParentDepth, setAddParentDepth] = useState(0)
+  const [addParentLabel, setAddParentLabel] = useState<string | undefined>(undefined)
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editingOpt, setEditingOpt] = useState<FlatOption | null>(null)
@@ -132,12 +132,12 @@ export default function CategoryPickerSelect({
   const handleAddClick = (
     e: React.MouseEvent,
     parentId: number | null,
-    depth: number,
+    parentLabel?: string,
   ) => {
     e.stopPropagation()
     e.preventDefault()
     setAddParentId(parentId)
-    setAddParentDepth(depth)
+    setAddParentLabel(parentLabel)
     setAddDialogOpen(true)
   }
 
@@ -192,7 +192,7 @@ export default function CategoryPickerSelect({
                   <Tooltip title="Add child category">
                     <IconButton
                       size="small"
-                      onClick={(e) => handleAddClick(e, null, 0)}
+                      onClick={(e) => handleAddClick(e, null)}
                       sx={{ ml: 1, p: 0.5 }}
                     >
                       <AddIcon fontSize="small" />
@@ -252,7 +252,7 @@ export default function CategoryPickerSelect({
                   <Tooltip title="Add child category">
                     <IconButton
                       size="small"
-                      onClick={(e) => handleAddClick(e, opt.id, opt.depth + 1)}
+                      onClick={(e) => handleAddClick(e, opt.id, opt.label)}
                       sx={{ ml: 1, p: 0.5 }}
                     >
                       <AddIcon fontSize="small" />
@@ -285,7 +285,7 @@ export default function CategoryPickerSelect({
           open={addDialogOpen}
           onClose={() => setAddDialogOpen(false)}
           onAdd={handleAddCategory}
-          currentDepth={addParentDepth}
+          parentLabel={addParentLabel}
           siblingNames={addSiblingNames}
         />
       )}

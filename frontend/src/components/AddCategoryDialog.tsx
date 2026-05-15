@@ -22,7 +22,7 @@ interface AddCategoryDialogProps {
   open: boolean
   onClose: () => void
   onAdd: (label: string, programIds: number[]) => void | Promise<void>
-  currentDepth: number
+  parentLabel?: string
   siblingNames?: string[]
   programs?: Program[]
 }
@@ -31,7 +31,7 @@ export default function AddCategoryDialog({
   open,
   onClose,
   onAdd,
-  currentDepth,
+  parentLabel,
   siblingNames = [],
   programs = [],
 }: AddCategoryDialogProps) {
@@ -96,7 +96,7 @@ export default function AddCategoryDialog({
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth TransitionProps={{ onEntered: handleEntered }}>
-      <DialogTitle>New Category (Level {currentDepth + 1})</DialogTitle>
+      <DialogTitle>{parentLabel ? `New Category in ${parentLabel}` : 'New Category'}</DialogTitle>
       <DialogContent>
         <Autocomplete
           freeSolo

@@ -186,7 +186,8 @@ describe('ImageTile', () => {
           onEditDetails={vi.fn()}
         />,
       )
-      expect(screen.getByTestId('MoreVertIcon')).toBeInTheDocument()
+      expect(screen.getByLabelText('Edit image details')).toBeInTheDocument()
+      expect(screen.getByTestId('EditIcon')).toBeInTheDocument()
     })
 
     it('calls onEditDetails when the edit button is clicked', async () => {
@@ -202,13 +203,13 @@ describe('ImageTile', () => {
         />,
       )
 
-      await user.click(screen.getByTestId('MoreVertIcon'))
+      await user.click(screen.getByLabelText('Edit image details'))
       expect(onEditDetails).toHaveBeenCalledWith(image)
     })
 
     it('does not render the edit button when onEditDetails is not provided', () => {
       render(<ImageTile image={makeImage()} onClick={vi.fn()} programs={[]} />)
-      expect(screen.queryByTestId('MoreVertIcon')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Edit image details')).not.toBeInTheDocument()
     })
   })
 

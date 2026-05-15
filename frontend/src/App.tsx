@@ -3079,7 +3079,7 @@ export default function App() {
                         programIds,
                     );
                 }}
-                currentDepth={path.length}
+                parentLabel={path.length > 0 ? path[path.length - 1].label : undefined}
                 siblingNames={currentCategories.map((c) => c.label)}
                 programs={programs}
             />

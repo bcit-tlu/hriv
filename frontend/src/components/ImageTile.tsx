@@ -8,7 +8,7 @@ import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
-import MoreVertIcon from '@mui/icons-material/MoreVert'
+import EditIcon from '@mui/icons-material/Edit'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { ImageItem, Program } from '../types'
 
@@ -31,7 +31,7 @@ export default function ImageTile({ image, onClick, programs, onEditDetails, onT
       elevation={2}
       sx={{ width: '100%', maxWidth: 300, position: 'relative' }}
     >
-      {(onToggleVisibility || onEditDetails) && (
+      {onToggleVisibility && (
         <Box
           sx={{
             position: 'absolute',
@@ -42,45 +42,27 @@ export default function ImageTile({ image, onClick, programs, onEditDetails, onT
             gap: 0.5,
           }}
         >
-          {onToggleVisibility && (
-            <Tooltip title={image.active ? 'Hide from students' : 'Show to students'}>
-              <IconButton
-                size="small"
-                sx={{
-                  color: 'white',
-                  bgcolor: 'rgba(0,0,0,0.25)',
-                  '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onToggleVisibility(image.id, image.active)
-                }}
-                aria-label="Toggle visibility"
-              >
-                {image.active ? (
-                  <VisibilityIcon fontSize="small" />
-                ) : (
-                  <DisabledVisibleIcon fontSize="small" />
-                )}
-              </IconButton>
-            </Tooltip>
-          )}
-          {onEditDetails && (
+          <Tooltip title={image.active ? 'Hide from students' : 'Show to students'}>
             <IconButton
               size="small"
-              onClick={(e) => {
-                e.stopPropagation()
-                onEditDetails(image)
-              }}
               sx={{
                 color: 'white',
                 bgcolor: 'rgba(0,0,0,0.25)',
                 '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
               }}
+              onClick={(e) => {
+                e.stopPropagation()
+                onToggleVisibility(image.id, image.active)
+              }}
+              aria-label="Toggle visibility"
             >
-              <MoreVertIcon fontSize="small" />
+              {image.active ? (
+                <VisibilityIcon fontSize="small" />
+              ) : (
+                <DisabledVisibleIcon fontSize="small" />
+              )}
             </IconButton>
-          )}
+          </Tooltip>
         </Box>
       )}
       <CardActionArea onClick={() => onClick(image)} sx={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'stretch' }}>
@@ -100,6 +82,20 @@ export default function ImageTile({ image, onClick, programs, onEditDetails, onT
               <Tooltip title="Inactive">
                 <DisabledVisibleIcon fontSize="small" color="disabled" />
               </Tooltip>
+            )}
+            {onEditDetails && (
+              <IconButton
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  onEditDetails(image)
+                }}
+                aria-label="Edit image details"
+                sx={{ flexShrink: 0, ml: 0.25 }}
+              >
+                <EditIcon sx={{ fontSize: 16 }} />
+              </IconButton>
             )}
           </Box>
           {programChips.length > 0 && (
