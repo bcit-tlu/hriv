@@ -73,9 +73,9 @@ export default function ImageTile({ image, onClick, programs, onEditDetails, onT
           alt={image.name}
           sx={{ objectFit: 'cover', objectPosition: 'center' }}
         />
-        <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
+        <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, opacity: !image.active ? 0.5 : 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Typography variant="h6" noWrap sx={{ opacity: !image.active ? 0.5 : 1 }}>
+            <Typography variant="h6" noWrap>
               {image.name}
             </Typography>
             {!image.active && !onToggleVisibility && (

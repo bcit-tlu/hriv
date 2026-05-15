@@ -83,7 +83,7 @@ describe('CategoryTile', () => {
       expect(screen.getByTestId('DisabledVisibleIcon')).toBeInTheDocument()
     })
 
-    it('dims the title text when category is hidden', () => {
+    it('dims the card content when category is hidden', () => {
       render(
         <CategoryTile
           category={makeCategory({ status: 'hidden', label: 'Hidden Cat' })}
@@ -92,7 +92,7 @@ describe('CategoryTile', () => {
         />,
       )
       const title = screen.getByText('Hidden Cat')
-      expect(title).toHaveStyle({ opacity: 0.5 })
+      expect(title.closest('.MuiCardContent-root')).toHaveStyle({ opacity: 0.5 })
     })
 
     it('shows the visible icon when category is active and toggle provided', () => {
@@ -120,7 +120,7 @@ describe('CategoryTile', () => {
       expect(screen.queryByTestId('VisibilityIcon')).not.toBeInTheDocument()
     })
 
-    it('title has full opacity when category is visible', () => {
+    it('card content has full opacity when category is visible', () => {
       render(
         <CategoryTile
           category={makeCategory({ status: null, label: 'Visible Cat' })}
@@ -129,7 +129,7 @@ describe('CategoryTile', () => {
         />,
       )
       const title = screen.getByText('Visible Cat')
-      expect(title).toHaveStyle({ opacity: 1 })
+      expect(title.closest('.MuiCardContent-root')).toHaveStyle({ opacity: 1 })
     })
   })
 

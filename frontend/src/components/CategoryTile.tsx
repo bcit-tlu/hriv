@@ -123,10 +123,10 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
               <FolderIcon sx={{ fontSize: 64, opacity: 0.85 }} />
             </Box>
           )}
-          <CardContent>
+          <CardContent sx={{ opacity: category.status === 'hidden' ? 0.5 : 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <FolderOutlinedIcon fontSize="small" color="action" sx={{ flexShrink: 0 }} />
-              <Typography variant="h6" noWrap sx={{ opacity: category.status === 'hidden' ? 0.5 : 1 }}>
+              <Typography variant="h6" noWrap>
                 {category.label}
               </Typography>
               {onEditName && (

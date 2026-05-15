@@ -84,7 +84,7 @@ describe('ImageTile', () => {
       expect(screen.getByTestId('DisabledVisibleIcon')).toBeInTheDocument()
     })
 
-    it('dims the title text when image is inactive', () => {
+    it('dims the card content when image is inactive', () => {
       render(
         <ImageTile
           image={makeImage({ active: false, name: 'Inactive Slide' })}
@@ -93,7 +93,7 @@ describe('ImageTile', () => {
         />,
       )
       const title = screen.getByText('Inactive Slide')
-      expect(title).toHaveStyle({ opacity: 0.5 })
+      expect(title.closest('.MuiCardContent-root')).toHaveStyle({ opacity: 0.5 })
     })
 
     it('does not show the inactive icon when image is active', () => {
@@ -107,7 +107,7 @@ describe('ImageTile', () => {
       expect(screen.queryByTestId('DisabledVisibleIcon')).not.toBeInTheDocument()
     })
 
-    it('title has full opacity when image is active', () => {
+    it('card content has full opacity when image is active', () => {
       render(
         <ImageTile
           image={makeImage({ active: true, name: 'Active Slide' })}
@@ -116,7 +116,7 @@ describe('ImageTile', () => {
         />,
       )
       const title = screen.getByText('Active Slide')
-      expect(title).toHaveStyle({ opacity: 1 })
+      expect(title.closest('.MuiCardContent-root')).toHaveStyle({ opacity: 1 })
     })
   })
 
