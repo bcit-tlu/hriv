@@ -123,7 +123,7 @@ interface ManagePageProps {
   onCategoriesChanged?: () => void
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
-  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  onToggleVisibility?: (categoryId: number) => Promise<void>
   onReplaceImage?: (sourceImageId: number, filename: string, fileSize: number) => void
   onProcessingStarted?: (
     sourceImageId: number,
@@ -993,6 +993,7 @@ export default function ManagePage({
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
+        programs={programs}
       />
     </Box>
   )

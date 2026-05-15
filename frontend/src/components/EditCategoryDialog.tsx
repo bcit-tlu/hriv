@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import Alert from '@mui/material/Alert'
 import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
@@ -37,15 +37,23 @@ export default function EditCategoryDialog({
   programs = [],
   currentProgramIds = [],
 }: EditCategoryDialogProps) {
-  const [label, setLabel] = useState(currentLabel)
+  const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [visibility, setVisibility] = useState<'all' | 'specific'>(
-    currentProgramIds.length > 0 ? 'specific' : 'all',
-  )
-  const [selectedProgramIds, setSelectedProgramIds] = useState<Set<number>>(
-    new Set(currentProgramIds),
-  )
+  const [visibility, setVisibility] = useState<'all' | 'specific'>('all')
+  const [selectedProgramIds, setSelectedProgramIds] = useState<Set<number>>(new Set())
+
+  // Populate state from props when dialog opens (false → true transition only)
+  const prevOpen = useRef(false)
+  useEffect(() => {
+    if (open && !prevOpen.current) {
+      setLabel(currentLabel)
+      setError(null)
+      setVisibility(currentProgramIds.length > 0 ? 'specific' : 'all')
+      setSelectedProgramIds(new Set(currentProgramIds))
+    }
+    prevOpen.current = open
+  })
 
   const exactMatch = useMemo(
     () =>
@@ -54,16 +62,11 @@ export default function EditCategoryDialog({
     [siblingNames, label, currentLabel],
   )
 
-  const handleEnter = useCallback(() => {
-    setLabel(currentLabel)
-    setError(null)
-    setVisibility(currentProgramIds.length > 0 ? 'specific' : 'all')
-    setSelectedProgramIds(new Set(currentProgramIds))
-  }, [currentLabel, currentProgramIds])
-
   const handleClose = () => {
     setLabel('')
     setError(null)
+    setVisibility('all')
+    setSelectedProgramIds(new Set())
     onClose()
   }
 
@@ -102,6 +105,8 @@ export default function EditCategoryDialog({
     try {
       await onSave(trimmed, programIds)
       setLabel('')
+      setVisibility('all')
+      setSelectedProgramIds(new Set())
       onClose()
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -117,7 +122,7 @@ export default function EditCategoryDialog({
   const labelChanged = label.trim() !== '' && label.trim() !== currentLabel
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth TransitionProps={{ onEnter: handleEnter }}>
+    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
       <DialogTitle>Edit Category</DialogTitle>
       <DialogContent>
         <Autocomplete
@@ -145,7 +150,11 @@ export default function EditCategoryDialog({
               helperText={exactMatch ? 'This name already exists at this level' : undefined}
               error={exactMatch}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') handleSubmit()
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  handleSubmit()
+                }
               }}
             />
           )}

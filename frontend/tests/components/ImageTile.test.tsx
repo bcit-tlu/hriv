@@ -8,6 +8,7 @@
  * 4. Program chips — renders program labels
  * 5. Copyright text — renders copyright when present
  * 6. Edit details button — renders and calls callback
+ * 7. Visibility toggle — renders toggle button, calls callback, correct icon states
  */
 
 import { describe, it, expect, vi } from 'vitest'
@@ -83,7 +84,7 @@ describe('ImageTile', () => {
       expect(screen.getByTestId('DisabledVisibleIcon')).toBeInTheDocument()
     })
 
-    it('dims the title text when image is inactive', () => {
+    it('dims the card content when image is inactive', () => {
       render(
         <ImageTile
           image={makeImage({ active: false, name: 'Inactive Slide' })}
@@ -92,7 +93,7 @@ describe('ImageTile', () => {
         />,
       )
       const title = screen.getByText('Inactive Slide')
-      expect(title).toHaveStyle({ opacity: 0.5 })
+      expect(title.closest('.MuiCardContent-root')).toHaveStyle({ opacity: 0.5 })
     })
 
     it('does not show the inactive icon when image is active', () => {
@@ -106,7 +107,7 @@ describe('ImageTile', () => {
       expect(screen.queryByTestId('DisabledVisibleIcon')).not.toBeInTheDocument()
     })
 
-    it('title has full opacity when image is active', () => {
+    it('card content has full opacity when image is active', () => {
       render(
         <ImageTile
           image={makeImage({ active: true, name: 'Active Slide' })}
@@ -115,7 +116,7 @@ describe('ImageTile', () => {
         />,
       )
       const title = screen.getByText('Active Slide')
-      expect(title).toHaveStyle({ opacity: 1 })
+      expect(title.closest('.MuiCardContent-root')).toHaveStyle({ opacity: 1 })
     })
   })
 
@@ -185,7 +186,8 @@ describe('ImageTile', () => {
           onEditDetails={vi.fn()}
         />,
       )
-      expect(screen.getByTestId('MoreVertIcon')).toBeInTheDocument()
+      expect(screen.getByLabelText('Edit image details')).toBeInTheDocument()
+      expect(screen.getByTestId('EditIcon')).toBeInTheDocument()
     })
 
     it('calls onEditDetails when the edit button is clicked', async () => {
@@ -201,13 +203,84 @@ describe('ImageTile', () => {
         />,
       )
 
-      await user.click(screen.getByTestId('MoreVertIcon'))
+      await user.click(screen.getByLabelText('Edit image details'))
       expect(onEditDetails).toHaveBeenCalledWith(image)
     })
 
     it('does not render the edit button when onEditDetails is not provided', () => {
       render(<ImageTile image={makeImage()} onClick={vi.fn()} programs={[]} />)
-      expect(screen.queryByTestId('MoreVertIcon')).not.toBeInTheDocument()
+      expect(screen.queryByLabelText('Edit image details')).not.toBeInTheDocument()
+    })
+  })
+
+  // ─── Visibility toggle ────────────────────────────────────────────
+
+  describe('visibility toggle', () => {
+    it('renders the VisibilityIcon when image is active and toggle provided', () => {
+      render(
+        <ImageTile
+          image={makeImage({ active: true })}
+          onClick={vi.fn()}
+          programs={[]}
+          onToggleVisibility={vi.fn()}
+        />,
+      )
+      expect(screen.getByTestId('VisibilityIcon')).toBeInTheDocument()
+      expect(screen.queryByTestId('DisabledVisibleIcon')).not.toBeInTheDocument()
+    })
+
+    it('renders the DisabledVisibleIcon when image is inactive and toggle provided', () => {
+      render(
+        <ImageTile
+          image={makeImage({ active: false })}
+          onClick={vi.fn()}
+          programs={[]}
+          onToggleVisibility={vi.fn()}
+        />,
+      )
+      expect(screen.getByTestId('DisabledVisibleIcon')).toBeInTheDocument()
+      expect(screen.queryByTestId('VisibilityIcon')).not.toBeInTheDocument()
+    })
+
+    it('calls onToggleVisibility with the image id when toggling', async () => {
+      const user = userEvent.setup()
+      const onToggle = vi.fn()
+      render(
+        <ImageTile
+          image={makeImage({ id: 42, active: true })}
+          onClick={vi.fn()}
+          programs={[]}
+          onToggleVisibility={onToggle}
+        />,
+      )
+
+      await user.click(screen.getByLabelText('Toggle visibility'))
+      expect(onToggle).toHaveBeenCalledWith(42)
+    })
+
+    it('does not render the toggle button when onToggleVisibility is not provided', () => {
+      render(
+        <ImageTile
+          image={makeImage({ active: false })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+      expect(screen.queryByLabelText('Toggle visibility')).not.toBeInTheDocument()
+    })
+
+    it('suppresses inline DisabledVisibleIcon when toggle is provided', () => {
+      render(
+        <ImageTile
+          image={makeImage({ active: false })}
+          onClick={vi.fn()}
+          programs={[]}
+          onToggleVisibility={vi.fn()}
+        />,
+      )
+      // Only one DisabledVisibleIcon (in the toggle button), not the inline one next to title
+      const icons = screen.getAllByTestId('DisabledVisibleIcon')
+      expect(icons).toHaveLength(1)
     })
   })
 })

@@ -154,7 +154,7 @@ interface ManageCategoriesDialogProps {
   onDeleteCategory: (categoryId: number) => Promise<void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   programs?: Program[]
-  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  onToggleVisibility?: (categoryId: number) => Promise<void>
   onReorderCategories?: (items: Array<{ id: number; parent_id: number | null; sort_order: number }>) => Promise<void>
 }
 
@@ -171,7 +171,7 @@ export default function ManageCategoriesDialog({
 }: ManageCategoriesDialogProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addParentId, setAddParentId] = useState<number | null>(null)
-  const [addParentDepth, setAddParentDepth] = useState(0)
+  const [addParentLabel, setAddParentLabel] = useState<string | undefined>(undefined)
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<FlatOption | null>(null)
@@ -200,9 +200,9 @@ export default function ManageCategoriesDialog({
     [options, editingCategory],
   )
 
-  const handleAddClick = (parentId: number | null, depth: number) => {
+  const handleAddClick = (parentId: number | null, parentLabel?: string) => {
     setAddParentId(parentId)
-    setAddParentDepth(depth)
+    setAddParentLabel(parentLabel)
     setAddDialogOpen(true)
   }
 
@@ -389,7 +389,7 @@ export default function ManageCategoriesDialog({
                   <IconButton
                     edge="end"
                     size="small"
-                    onClick={() => handleAddClick(null, 0)}
+                    onClick={() => handleAddClick(null)}
                   >
                     <AddIcon fontSize="small" />
                   </IconButton>
@@ -421,7 +421,7 @@ export default function ManageCategoriesDialog({
                           <IconButton
                             edge="end"
                             size="small"
-                            onClick={() => onToggleVisibility(opt.id, opt.status !== 'hidden')}
+                            onClick={() => onToggleVisibility(opt.id)}
                           >
                             {opt.status === 'hidden' ? (
                               <DisabledVisibleIcon fontSize="small" color="disabled" />
@@ -447,7 +447,7 @@ export default function ManageCategoriesDialog({
                           <IconButton
                             edge="end"
                             size="small"
-                            onClick={() => handleAddClick(opt.id, opt.depth + 1)}
+                            onClick={() => handleAddClick(opt.id, opt.label)}
                           >
                             <AddIcon fontSize="small" />
                           </IconButton>
@@ -534,7 +534,7 @@ export default function ManageCategoriesDialog({
         open={addDialogOpen}
         onClose={() => setAddDialogOpen(false)}
         onAdd={handleAddCategory}
-        currentDepth={addParentDepth}
+        parentLabel={addParentLabel}
         siblingNames={addSiblingNames}
         programs={programs}
       />

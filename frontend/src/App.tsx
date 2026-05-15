@@ -30,6 +30,7 @@ import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import AddPhotoAlternateIcon from "@mui/icons-material/AddPhotoAlternate";
+import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import DisabledVisibleIcon from "@mui/icons-material/DisabledVisible";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import EditIcon from "@mui/icons-material/Edit";
@@ -84,6 +85,7 @@ import {
     updateProgram,
     deleteProgram,
     reorderCategories as apiReorderCategories,
+    ApiError,
 } from "./api";
 import type {
     ApiBulkImportJob,
@@ -94,6 +96,9 @@ import type {
 import { pollProcessingJob, type PollHandle } from "./pollProcessingJob";
 import MoveCategoryDialog from "./components/MoveCategoryDialog";
 import type { Category, ImageItem, Program } from "./types";
+import { MAX_DEPTH } from "./types";
+import AddCategoryDialog from "./components/AddCategoryDialog";
+import EditCategoryDialog from "./components/EditCategoryDialog";
 import { useColorMode } from "./useColorMode";
 import { getSurfaceVariant } from "./theme";
 
@@ -127,6 +132,13 @@ function findCategoryPath(
         if (found) return found;
     }
     return null;
+}
+
+function userMessage(err: unknown, fallback: string): string {
+    if (err instanceof ApiError && err.status === 409) {
+        return "This item was modified by another user. Please refresh and try again.";
+    }
+    return fallback;
 }
 
 function apiTreeToCategory(node: ApiCategoryTree): Category {
@@ -183,6 +195,8 @@ export default function App() {
     selectedImageRef.current = selectedImage;
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
+    const [addCatOpen, setAddCatOpen] = useState(false);
+    const [editNameCategory, setEditNameCategory] = useState<Category | null>(null);
     const [announcement, setAnnouncement] = useState("");
     const [uncategorizedImages, setUncategorizedImages] = useState<ImageItem[]>(
         [],
@@ -196,6 +210,7 @@ export default function App() {
     // Lock-engaged: whether the clear button is disabled (separate from metadata persistence)
     const [lockEngaged, setLockEngaged] = useState(false);
     const [snackOpen, setSnackOpen] = useState(false);
+    const [errorSnack, setErrorSnack] = useState<string | null>(null);
     const pendingImageId = useRef<number | null>(null);
     const pendingViewport = useRef<ViewportState | undefined>(undefined);
     const pendingOverlays = useRef<OverlayRect[] | undefined>(undefined);
@@ -866,6 +881,7 @@ export default function App() {
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to add program", err);
+                setErrorSnack(userMessage(err, "Failed to add program."));
             }
         },
         [loadPrograms],
@@ -878,6 +894,7 @@ export default function App() {
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to edit program", err);
+                setErrorSnack(userMessage(err, "Failed to edit program."));
             }
         },
         [loadPrograms],
@@ -890,6 +907,7 @@ export default function App() {
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to delete program", err);
+                setErrorSnack(userMessage(err, "Failed to delete program."));
             }
         },
         [loadPrograms],
@@ -1093,6 +1111,7 @@ export default function App() {
                 loadUncategorizedImages();
             } catch (err) {
                 console.error("Failed to save canvas annotations", err);
+                setErrorSnack(userMessage(err, "Failed to save annotations."));
             } finally {
                 // Only clear in-flight flag and flush queue if still targeting the same image
                 if (saveTargetImageIdRef.current === targetImageId) {
@@ -1211,6 +1230,7 @@ export default function App() {
                 loadUncategorizedImages();
             } catch (err) {
                 console.error("Failed to lock overlays", err);
+                setErrorSnack(userMessage(err, "Failed to lock overlays."));
             }
         },
         [
@@ -1250,6 +1270,7 @@ export default function App() {
             loadUncategorizedImages();
         } catch (err) {
             console.error("Failed to clear locked overlays", err);
+            setErrorSnack(userMessage(err, "Failed to clear locked overlays."));
         }
     }, [
         selectedImage,
@@ -1350,6 +1371,7 @@ export default function App() {
                 loadUncategorizedImages();
             } catch (err) {
                 console.error("Failed to delete category", err);
+                setErrorSnack(userMessage(err, "Failed to delete category."));
             }
         },
         [loadCategories, loadUncategorizedImages],
@@ -1372,17 +1394,21 @@ export default function App() {
     );
 
     const toggleCategoryVisibility = useCallback(
-        async (categoryId: number, hidden: boolean) => {
+        async (categoryId: number) => {
             try {
+                const catPath = findCategoryPath(categories, categoryId);
+                const current = catPath?.[catPath.length - 1];
                 await apiUpdateCategory(categoryId, {
-                    status: hidden ? "hidden" : "active",
+                    status:
+                        current?.status === "hidden" ? "active" : "hidden",
                 });
                 await loadCategories();
             } catch (err) {
                 console.error("Failed to toggle category visibility", err);
+                setErrorSnack(userMessage(err, "Failed to toggle category visibility."));
             }
         },
-        [loadCategories],
+        [categories, loadCategories],
     );
 
     const reorderCategoriesInline = useCallback(
@@ -1398,6 +1424,7 @@ export default function App() {
                 await loadCategories();
             } catch (err) {
                 console.error("Failed to reorder categories", err);
+                setErrorSnack(userMessage(err, "Failed to reorder categories."));
             }
         },
         [loadCategories],
@@ -1412,6 +1439,7 @@ export default function App() {
                 await loadCategories();
             } catch (err) {
                 console.error("Failed to move category", err);
+                setErrorSnack(userMessage(err, "Failed to move category."));
             }
         },
         [loadCategories],
@@ -1441,9 +1469,33 @@ export default function App() {
                 await loadCategories();
             } catch (err) {
                 console.error("Failed to set card image", err);
+                setErrorSnack(userMessage(err, "Failed to set card image."));
             }
         },
         [loadCategories, categories],
+    );
+
+    const toggleImageVisibility = useCallback(
+        async (imageId: number) => {
+            try {
+                const found = findImageInTree(categories, imageId);
+                const img =
+                    found?.image ??
+                    uncategorizedImages.find((i) => i.id === imageId);
+                if (!img) return;
+                await apiUpdateImage(
+                    imageId,
+                    { active: !img.active },
+                    img.version,
+                );
+                await loadCategories();
+                loadUncategorizedImages();
+            } catch (err) {
+                console.error("Failed to toggle image visibility", err);
+                setErrorSnack(userMessage(err, "Failed to toggle image visibility."));
+            }
+        },
+        [categories, uncategorizedImages, loadCategories, loadUncategorizedImages],
     );
 
     // Build ApiImage shape from selectedImage for EditImageModal on viewer page
@@ -1500,6 +1552,7 @@ export default function App() {
                 loadUncategorizedImages();
             } catch (err) {
                 console.error("Failed to update image", err);
+                setErrorSnack(userMessage(err, "Failed to update image."));
             }
         },
         [browseEditImage, loadCategories, loadUncategorizedImages],
@@ -1546,6 +1599,7 @@ export default function App() {
                 loadUncategorizedImages();
             } catch (err) {
                 console.error("Failed to update image", err);
+                setErrorSnack(userMessage(err, "Failed to update image."));
             }
         },
         [selectedImage, loadUncategorizedImages],
@@ -2384,19 +2438,21 @@ export default function App() {
                                         alignItems: "center",
                                     }}
                                 >
-                                    <Tooltip title={selectedImage.active ? "Visible" : "Hidden"}>
-                                        {selectedImage.active ? (
-                                            <VisibilityIcon
-                                                color="action"
-                                                sx={{ fontSize: 28 }}
-                                            />
-                                        ) : (
-                                            <DisabledVisibleIcon
-                                                color="disabled"
-                                                sx={{ fontSize: 28 }}
-                                            />
-                                        )}
-                                    </Tooltip>
+                                    {canEditContent && (
+                                        <Tooltip title={selectedImage.active ? "Visible" : "Hidden"}>
+                                            {selectedImage.active ? (
+                                                <VisibilityIcon
+                                                    color="action"
+                                                    sx={{ fontSize: 28 }}
+                                                />
+                                            ) : (
+                                                <DisabledVisibleIcon
+                                                    color="disabled"
+                                                    sx={{ fontSize: 28 }}
+                                                />
+                                            )}
+                                        </Tooltip>
+                                    )}
                                     {canEditContent && (
                                         <Tooltip
                                             title={
@@ -2669,6 +2725,19 @@ export default function App() {
                                             flexShrink: 0,
                                         }}
                                     >
+                                        {path.length < MAX_DEPTH && (
+                                            <Button
+                                                variant="outlined"
+                                                startIcon={
+                                                    <CreateNewFolderIcon />
+                                                }
+                                                onClick={() =>
+                                                    setAddCatOpen(true)
+                                                }
+                                            >
+                                                Add Category
+                                            </Button>
+                                        )}
                                         <Button
                                             variant="contained"
                                             startIcon={
@@ -2705,6 +2774,16 @@ export default function App() {
                                                 ? handleSetCardImage
                                                 : undefined
                                         }
+                                        onToggleVisibility={
+                                            canEditContent
+                                                ? toggleCategoryVisibility
+                                                : undefined
+                                        }
+                                        onEditName={
+                                            canEditContent
+                                                ? setEditNameCategory
+                                                : undefined
+                                        }
                                         programs={programs}
                                     />
                                 ))}
@@ -2720,6 +2799,11 @@ export default function App() {
                                                     ? setBrowseEditImage
                                                     : undefined
                                             }
+                                            onToggleVisibility={
+                                                canEditContent
+                                                    ? toggleImageVisibility
+                                                    : undefined
+                                            }
                                         />
                                     ))}
                                 {currentImages.map((img) => (
@@ -2731,6 +2815,11 @@ export default function App() {
                                         onEditDetails={
                                             canEditContent
                                                 ? setBrowseEditImage
+                                                : undefined
+                                        }
+                                        onToggleVisibility={
+                                            canEditContent
+                                                ? toggleImageVisibility
                                                 : undefined
                                         }
                                     />
@@ -2757,8 +2846,9 @@ export default function App() {
                                         color="text.secondary"
                                         sx={{ mt: 4, textAlign: "center" }}
                                     >
-                                        This category is empty. Add a
-                                        sub-category to get started.
+                                        {canEditContent
+                                            ? "This category is empty. Add an image or sub-category to get started."
+                                            : "This category is empty."}
                                     </Typography>
                                 )
                             )}
@@ -2920,6 +3010,7 @@ export default function App() {
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
+                programs={programs}
             />
 
             {/* Image edit modal (viewer page) — no View Image button since we're already viewing */}
@@ -3011,6 +3102,44 @@ export default function App() {
                 onToggleVisibility={toggleCategoryVisibility}
             />
 
+            {/* Add category dialog (home tab) */}
+            <AddCategoryDialog
+                open={addCatOpen}
+                onClose={() => setAddCatOpen(false)}
+                onAdd={async (label, programIds) => {
+                    await addCategoryInline(
+                        label,
+                        path.length > 0
+                            ? path[path.length - 1].id
+                            : null,
+                        programIds,
+                    );
+                }}
+                parentLabel={path.length > 0 ? path[path.length - 1].label : undefined}
+                siblingNames={currentCategories.map((c) => c.label)}
+                programs={programs}
+            />
+
+            {/* Edit category name dialog (home tab) */}
+            <EditCategoryDialog
+                open={editNameCategory != null}
+                onClose={() => setEditNameCategory(null)}
+                onSave={(newLabel, programIds) => {
+                    if (!editNameCategory) return;
+                    return editCategoryInline(
+                        editNameCategory.id,
+                        newLabel,
+                        programIds,
+                    );
+                }}
+                currentLabel={editNameCategory?.label ?? ""}
+                siblingNames={currentCategories
+                    .filter((c) => c.id !== editNameCategory?.id)
+                    .map((c) => c.label)}
+                programs={programs}
+                currentProgramIds={editNameCategory?.programIds ?? []}
+            />
+
             {/* Self-edit profile modal */}
             <AddEditPersonModal
                 open={editModalOpen}
@@ -3024,6 +3153,7 @@ export default function App() {
                         window.location.reload();
                     } catch (err) {
                         console.error("Failed to update profile", err);
+                        setErrorSnack(userMessage(err, "Failed to update profile."));
                     }
                 }}
                 programs={programs}
@@ -3149,6 +3279,23 @@ export default function App() {
                     },
                 }}
             />
+
+            {/* Error snackbar */}
+            <Snackbar
+                open={errorSnack !== null}
+                autoHideDuration={6000}
+                onClose={() => setErrorSnack(null)}
+                anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+                sx={{ zIndex: 1500 }}
+            >
+                <Alert
+                    severity="error"
+                    onClose={() => setErrorSnack(null)}
+                    variant="filled"
+                >
+                    {errorSnack}
+                </Alert>
+            </Snackbar>
 
             {/* Image upload + processing snackbars (one per job, stacked) */}
             {visibleJobs.map((job, index) => {

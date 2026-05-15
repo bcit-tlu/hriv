@@ -14,7 +14,7 @@ import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import EditIcon from '@mui/icons-material/Edit'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { SelectChangeEvent } from '@mui/material/Select'
-import type { Category } from '../types'
+import type { Category, Program } from '../types'
 import { MAX_DEPTH } from '../types'
 import AddCategoryDialog from './AddCategoryDialog'
 import EditCategoryDialog from './EditCategoryDialog'
@@ -26,6 +26,7 @@ interface FlatOption {
   status: string | null
   parentId: number | null
   imageCount: number
+  programIds: number[]
 }
 
 function flattenTree(
@@ -37,7 +38,7 @@ function flattenTree(
   const result: FlatOption[] = []
   for (const node of nodes) {
     if (excludeIds?.has(node.id)) continue
-    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId, imageCount: node.images.length })
+    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId, imageCount: node.images.length, programIds: node.programIds })
     result.push(...flattenTree(node.children, depth + 1, excludeIds, node.id))
   }
   return result
@@ -76,7 +77,9 @@ interface CategoryPickerSelectProps {
   /** When provided, a pencil button appears on each menu item to rename that category. */
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   /** When provided, a visibility toggle appears on each menu item. */
-  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  onToggleVisibility?: (categoryId: number) => Promise<void>
+  /** Available programs for the add/edit category dialogs. */
+  programs?: Program[]
 }
 
 export default function CategoryPickerSelect({
@@ -90,10 +93,11 @@ export default function CategoryPickerSelect({
   onDeleteCategory,
   onEditCategory,
   onToggleVisibility,
+  programs,
 }: CategoryPickerSelectProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addParentId, setAddParentId] = useState<number | null>(null)
-  const [addParentDepth, setAddParentDepth] = useState(0)
+  const [addParentLabel, setAddParentLabel] = useState<string | undefined>(undefined)
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editingOpt, setEditingOpt] = useState<FlatOption | null>(null)
@@ -132,12 +136,12 @@ export default function CategoryPickerSelect({
   const handleAddClick = (
     e: React.MouseEvent,
     parentId: number | null,
-    depth: number,
+    parentLabel?: string,
   ) => {
     e.stopPropagation()
     e.preventDefault()
     setAddParentId(parentId)
-    setAddParentDepth(depth)
+    setAddParentLabel(parentLabel)
     setAddDialogOpen(true)
   }
 
@@ -192,7 +196,7 @@ export default function CategoryPickerSelect({
                   <Tooltip title="Add child category">
                     <IconButton
                       size="small"
-                      onClick={(e) => handleAddClick(e, null, 0)}
+                      onClick={(e) => handleAddClick(e, null)}
                       sx={{ ml: 1, p: 0.5 }}
                     >
                       <AddIcon fontSize="small" />
@@ -225,7 +229,7 @@ export default function CategoryPickerSelect({
                       onClick={(e) => {
                         e.stopPropagation()
                         e.preventDefault()
-                        onToggleVisibility(opt.id, opt.status !== 'hidden')
+                        onToggleVisibility(opt.id)
                       }}
                       sx={{ p: 0.5 }}
                     >
@@ -252,7 +256,7 @@ export default function CategoryPickerSelect({
                   <Tooltip title="Add child category">
                     <IconButton
                       size="small"
-                      onClick={(e) => handleAddClick(e, opt.id, opt.depth + 1)}
+                      onClick={(e) => handleAddClick(e, opt.id, opt.label)}
                       sx={{ ml: 1, p: 0.5 }}
                     >
                       <AddIcon fontSize="small" />
@@ -285,8 +289,9 @@ export default function CategoryPickerSelect({
           open={addDialogOpen}
           onClose={() => setAddDialogOpen(false)}
           onAdd={handleAddCategory}
-          currentDepth={addParentDepth}
+          parentLabel={addParentLabel}
           siblingNames={addSiblingNames}
+          programs={programs}
         />
       )}
 
@@ -300,6 +305,8 @@ export default function CategoryPickerSelect({
           onSave={handleEditSave}
           currentLabel={editingOpt?.label ?? ''}
           siblingNames={editSiblingNames}
+          programs={programs}
+          currentProgramIds={editingOpt?.programIds ?? []}
         />
       )}
     </>
