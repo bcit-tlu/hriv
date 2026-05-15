@@ -1455,14 +1455,23 @@ export default function App() {
     const toggleImageVisibility = useCallback(
         async (imageId: number, hidden: boolean) => {
             try {
-                await apiUpdateImage(imageId, { active: !hidden });
+                const found = findImageInTree(categories, imageId);
+                const version =
+                    found?.image.version ??
+                    uncategorizedImages.find((img) => img.id === imageId)
+                        ?.version;
+                await apiUpdateImage(
+                    imageId,
+                    { active: !hidden },
+                    version,
+                );
                 await loadCategories();
                 loadUncategorizedImages();
             } catch (err) {
                 console.error("Failed to toggle image visibility", err);
             }
         },
-        [loadCategories, loadUncategorizedImages],
+        [categories, uncategorizedImages, loadCategories, loadUncategorizedImages],
     );
 
     // Build ApiImage shape from selectedImage for EditImageModal on viewer page
