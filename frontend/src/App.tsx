@@ -1453,9 +1453,9 @@ export default function App() {
     );
 
     const toggleImageVisibility = useCallback(
-        async (imageId: number, active: boolean) => {
+        async (imageId: number, hidden: boolean) => {
             try {
-                await apiUpdateImage(imageId, { active });
+                await apiUpdateImage(imageId, { active: !hidden });
                 await loadCategories();
                 loadUncategorizedImages();
             } catch (err) {
