@@ -1380,8 +1380,8 @@ export default function App() {
     const toggleCategoryVisibility = useCallback(
         async (categoryId: number) => {
             try {
-                const path = findCategoryPath(categories, categoryId);
-                const current = path?.[path.length - 1];
+                const catPath = findCategoryPath(categories, categoryId);
+                const current = catPath?.[catPath.length - 1];
                 await apiUpdateCategory(categoryId, {
                     status:
                         current?.status === "hidden" ? "active" : "hidden",
@@ -1462,10 +1462,11 @@ export default function App() {
                 const img =
                     found?.image ??
                     uncategorizedImages.find((i) => i.id === imageId);
+                if (!img) return;
                 await apiUpdateImage(
                     imageId,
-                    { active: !img?.active },
-                    img?.version,
+                    { active: !img.active },
+                    img.version,
                 );
                 await loadCategories();
                 loadUncategorizedImages();
