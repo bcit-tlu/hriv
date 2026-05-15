@@ -181,6 +181,44 @@ async def _should_stamp_legacy(conn: AsyncConnection) -> bool:
     return row_count == 0
 
 
+class SchemaPrivilegeError(RuntimeError):
+    """Raised when the bootstrap user lacks CREATE on the target schema."""
+
+
+async def _check_schema_privilege(conn: AsyncConnection) -> None:
+    """Verify the current role has CREATE on ``public`` before migrating.
+
+    PostgreSQL 15+ revokes the default CREATE privilege on the ``public``
+    schema for non-owner roles.  When Vault dynamic credentials are used,
+    the ephemeral role may inherit table-level grants but still lack
+    schema-level CREATE — causing a cryptic ``InsufficientPrivilegeError``
+    deep inside Alembic's ``_ensure_version_table``.  This pre-flight
+    check surfaces the problem with an actionable remediation hint.
+    """
+    has_create = (
+        await conn.execute(
+            text(
+                "SELECT has_schema_privilege(current_user, 'public', 'CREATE')"
+            )
+        )
+    ).scalar_one()
+    if not has_create:
+        current_user = (
+            await conn.execute(text("SELECT current_user"))
+        ).scalar_one()
+        raise SchemaPrivilegeError(
+            f"Role '{current_user}' lacks CREATE privilege on schema "
+            f"'public'.  On PostgreSQL 15+ the default CREATE grant on "
+            f"'public' was revoked.  Fix: a superuser or the database "
+            f"owner must run:\n\n"
+            f"    GRANT CREATE ON SCHEMA public TO \"{current_user}\";\n\n"
+            f"If credentials are provisioned by Vault, add a "
+            f"'GRANT ALL ON SCHEMA public TO \"<app_role>\"' statement "
+            f"to the dynamic role's creation_statements "
+            f"(see vault/modules/postgresql/main.tf)."
+        )
+
+
 async def _async_bootstrap() -> None:
     """Async entrypoint holding the advisory lock across the upgrade.
 
@@ -198,6 +236,7 @@ async def _async_bootstrap() -> None:
     """
     cfg = _alembic_config()
     async with _advisory_lock() as conn:
+        await _check_schema_privilege(conn)
         if await _should_stamp_legacy(conn):
             logger.info(
                 "Detected legacy database schema (alembic_version missing or empty); "
@@ -257,6 +296,11 @@ def main() -> int:
                 "the password the CNPG cluster was originally bootstrapped "
                 "with.  To reset: ALTER USER <owner> PASSWORD '<pw>' via "
                 "the superuser, or update the Vault KV secret to match."
+            )
+        elif isinstance(exc, SchemaPrivilegeError):
+            logger.error(
+                "%s",
+                exc,
             )
         elif "could not translate host name" in msg or "Name or service not known" in msg:
             logger.error(
