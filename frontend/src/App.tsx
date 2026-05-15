@@ -1378,10 +1378,10 @@ export default function App() {
     );
 
     const toggleCategoryVisibility = useCallback(
-        async (categoryId: number, hidden: boolean) => {
+        async (categoryId: number, hide: boolean) => {
             try {
                 await apiUpdateCategory(categoryId, {
-                    status: hidden ? "hidden" : "active",
+                    status: hide ? "hidden" : "active",
                 });
                 await loadCategories();
             } catch (err) {
@@ -1453,7 +1453,7 @@ export default function App() {
     );
 
     const toggleImageVisibility = useCallback(
-        async (imageId: number, hidden: boolean) => {
+        async (imageId: number, hide: boolean) => {
             try {
                 const found = findImageInTree(categories, imageId);
                 const version =
@@ -1462,7 +1462,7 @@ export default function App() {
                         ?.version;
                 await apiUpdateImage(
                     imageId,
-                    { active: !hidden },
+                    { active: !hide },
                     version,
                 );
                 await loadCategories();

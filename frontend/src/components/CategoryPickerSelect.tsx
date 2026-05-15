@@ -77,7 +77,7 @@ interface CategoryPickerSelectProps {
   /** When provided, a pencil button appears on each menu item to rename that category. */
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   /** When provided, a visibility toggle appears on each menu item. */
-  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  onToggleVisibility?: (categoryId: number, hide: boolean) => Promise<void>
   /** Available programs for the add/edit category dialogs. */
   programs?: Program[]
 }

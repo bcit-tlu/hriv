@@ -154,7 +154,7 @@ interface ManageCategoriesDialogProps {
   onDeleteCategory: (categoryId: number) => Promise<void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   programs?: Program[]
-  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  onToggleVisibility?: (categoryId: number, hide: boolean) => Promise<void>
   onReorderCategories?: (items: Array<{ id: number; parent_id: number | null; sort_order: number }>) => Promise<void>
 }
 

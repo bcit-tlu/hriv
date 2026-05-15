@@ -64,7 +64,7 @@ interface CategoryTileProps {
   onClick: (category: Category) => void
   onMove?: (category: Category) => void
   onSetCardImage?: (categoryId: number, imageId: number | null) => void
-  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  onToggleVisibility?: (categoryId: number, hide: boolean) => Promise<void>
   onEditName?: (category: Category) => void
   programs: Program[]
 }

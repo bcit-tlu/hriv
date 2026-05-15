@@ -242,7 +242,7 @@ describe('ImageTile', () => {
       expect(screen.queryByTestId('VisibilityIcon')).not.toBeInTheDocument()
     })
 
-    it('calls onToggleVisibility with (id, hidden=true) when hiding an active image', async () => {
+    it('calls onToggleVisibility with (id, hide=true) when hiding an active image', async () => {
       const user = userEvent.setup()
       const onToggle = vi.fn()
       render(
@@ -258,7 +258,7 @@ describe('ImageTile', () => {
       expect(onToggle).toHaveBeenCalledWith(42, true)
     })
 
-    it('calls onToggleVisibility with (id, hidden=false) when showing an inactive image', async () => {
+    it('calls onToggleVisibility with (id, hide=false) when showing an inactive image', async () => {
       const user = userEvent.setup()
       const onToggle = vi.fn()
       render(
