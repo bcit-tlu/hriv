@@ -238,21 +238,26 @@ export default function ManagePage({
     return fullPath.map((c) => c.label).join(' : ')
   }, [categoryPaths])
 
-  // Collect cumulative program restrictions inherited from the category tree
-  const getInheritedProgramIds = useCallback((img: ApiImage): number[] => {
-    if (img.category_id == null) return []
+  // Collect cumulative program restrictions inherited from the category tree,
+  // split into direct (from the image's own category) and ancestor (inherited).
+  const getInheritedProgramIds = useCallback((img: ApiImage): { direct: number[]; ancestor: number[] } => {
+    if (img.category_id == null) return { direct: [], ancestor: [] }
     const seg = categoryPaths.get(img.category_id)
-    if (!seg) return []
-    const ids = new Set<number>()
-    for (const cat of [...seg.ancestors, seg.category]) {
-      for (const pid of cat.programIds) ids.add(pid)
+    if (!seg) return { direct: [], ancestor: [] }
+    const directIds = new Set(seg.category.programIds)
+    const ancestorIds = new Set<number>()
+    for (const cat of seg.ancestors) {
+      for (const pid of cat.programIds) {
+        if (!directIds.has(pid)) ancestorIds.add(pid)
+      }
     }
-    return [...ids]
+    return { direct: [...directIds], ancestor: [...ancestorIds] }
   }, [categoryPaths])
 
   // Helper to get program names for sorting/filtering
   const getProgramNames = useCallback((img: ApiImage): string => {
-    return getInheritedProgramIds(img)
+    const { direct, ancestor } = getInheritedProgramIds(img)
+    return [...direct, ...ancestor]
       .map((pid) => programs.find((p) => p.id === pid)?.name ?? '')
       .join(', ')
   }, [programs, getInheritedProgramIds])
@@ -791,11 +796,15 @@ export default function ManagePage({
                   <TableCell>{img.note ?? '—'}</TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     {(() => {
-                      const pids = getInheritedProgramIds(img)
-                      if (pids.length === 0) return '—'
+                      const { direct, ancestor } = getInheritedProgramIds(img)
+                      if (direct.length === 0 && ancestor.length === 0) return '—'
+                      const chipClick = (name: string) => {
+                        setShowFilters(true)
+                        handleFilterChange('program', name)
+                      }
                       return (
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                          {pids
+                          {direct
                             .map((pid) => programs.find((p) => p.id === pid))
                             .filter((p): p is Program => p != null)
                             .map((p) => (
@@ -804,11 +813,21 @@ export default function ManagePage({
                                 label={p.name}
                                 size="small"
                                 color="primary"
-                                onClick={() => {
-                                  setShowFilters(true)
-                                  handleFilterChange('program', p.name)
-                                }}
+                                onClick={() => chipClick(p.name)}
                                 sx={{ cursor: 'pointer' }}
+                              />
+                            ))}
+                          {ancestor
+                            .map((pid) => programs.find((p) => p.id === pid))
+                            .filter((p): p is Program => p != null)
+                            .map((p) => (
+                              <Chip
+                                key={p.id}
+                                label={p.name}
+                                size="small"
+                                color="primary"
+                                onClick={() => chipClick(p.name)}
+                                sx={{ cursor: 'pointer', opacity: 0.5 }}
                               />
                             ))}
                         </Box>
