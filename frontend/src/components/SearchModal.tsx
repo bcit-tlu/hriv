@@ -274,6 +274,7 @@ export default function SearchModal({
       if (initialQuery != null || initialTypeFilter != null) {
         if (initialQuery != null) setQuery(initialQuery)
         if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
+        setFieldFilters(new Set())
         wasSeededRef.current = true
       }
     }
