@@ -1322,6 +1322,19 @@ export default function App() {
 
     const { cats: resolvedCategories, imgs: currentImages } = resolve();
 
+    // Resolve ancestor program IDs from the fresh categories tree (not stale path objects)
+    const ancestorProgramIds = useMemo(() => {
+        const ids = new Set<number>();
+        let node = categories;
+        for (const segment of path) {
+            const found = node.find((c) => c.id === segment.id);
+            if (!found) break;
+            for (const pid of found.programIds) ids.add(pid);
+            node = found.children;
+        }
+        return [...ids];
+    }, [categories, path]);
+
     // Filter out hidden categories for students in browse mode
     const isStudent = currentUser?.role === "student";
     const currentCategories = isStudent
@@ -2792,7 +2805,7 @@ export default function App() {
                                                 : undefined
                                         }
                                         programs={programs}
-                                        ancestorProgramIds={[...new Set(path.flatMap((c) => c.programIds))]}
+                                        ancestorProgramIds={ancestorProgramIds}
                                     />
                                 ))}
                                 {path.length === 0 &&
