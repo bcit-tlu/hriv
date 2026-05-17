@@ -203,19 +203,28 @@ export default function ManageCategoriesDialog({
     [options, editingCategory],
   )
 
+  // Narrowing semantics: collect ancestors bottom-up, then walk top-down
+  // so each ancestor with own programIds narrows (intersects) the effective set.
   const inheritedProgramIds = useMemo(() => {
     if (!editingCategory) return []
-    const ids: number[] = []
+    const ancestors: FlatOption[] = []
     let curParentId: number | null = editingCategory.parentId
     while (curParentId != null) {
       const ancestor: FlatOption | undefined = options.find((o) => o.id === curParentId)
       if (!ancestor) break
-      for (const pid of ancestor.programIds) {
-        if (!ids.includes(pid)) ids.push(pid)
-      }
+      ancestors.push(ancestor)
       curParentId = ancestor.parentId
     }
-    return ids
+    ancestors.reverse()
+    let effective: number[] = []
+    for (const anc of ancestors) {
+      if (anc.programIds.length > 0) {
+        effective = effective.length > 0
+          ? anc.programIds.filter((pid) => effective.includes(pid))
+          : [...anc.programIds]
+      }
+    }
+    return effective
   }, [editingCategory, options])
 
   const handleAddClick = (parentId: number | null, parentLabel?: string) => {
@@ -450,7 +459,7 @@ export default function ManageCategoriesDialog({
                         </Tooltip>
                       )}
                       {onEditCategory && (
-                        <Tooltip title="Rename category">
+                        <Tooltip title="Edit category">
                           <IconButton
                             edge="end"
                             size="small"

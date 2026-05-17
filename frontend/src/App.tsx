@@ -1322,17 +1322,26 @@ export default function App() {
 
     const { cats: resolvedCategories, imgs: currentImages } = resolve();
 
-    // Resolve ancestor program IDs from the fresh categories tree (not stale path objects)
+    // Resolve ancestor program IDs from the fresh categories tree (not stale path objects).
+    // Uses narrowing semantics: each category with own programIds REPLACES (narrows)
+    // the inherited set rather than extending it via union.
     const ancestorProgramIds = useMemo(() => {
-        const ids = new Set<number>();
+        let effective: number[] = [];
         let node = categories;
         for (const segment of path) {
             const found = node.find((c) => c.id === segment.id);
             if (!found) break;
-            for (const pid of found.programIds) ids.add(pid);
+            if (found.programIds.length > 0) {
+                effective =
+                    effective.length > 0
+                        ? found.programIds.filter((pid) =>
+                              effective.includes(pid),
+                          )
+                        : [...found.programIds];
+            }
             node = found.children;
         }
-        return [...ids];
+        return effective;
     }, [categories, path]);
 
     // Filter out hidden categories for students in browse mode

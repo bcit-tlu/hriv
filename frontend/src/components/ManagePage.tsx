@@ -240,20 +240,26 @@ export default function ManagePage({
     return fullPath.map((c) => c.label).join(' : ')
   }, [categoryPaths])
 
-  // Collect cumulative program restrictions inherited from the category tree,
-  // split into direct (from the image's own category) and ancestor (inherited).
+  // Collect effective program restrictions from the category tree using narrowing
+  // semantics: each category with own programIds narrows (intersects) the set.
+  // "direct" = programs from the image's own category, "ancestor" = remaining inherited.
   const getInheritedProgramIds = useCallback((img: ApiImage): { direct: number[]; ancestor: number[] } => {
     if (img.category_id == null) return { direct: [], ancestor: [] }
     const seg = categoryPaths.get(img.category_id)
     if (!seg) return { direct: [], ancestor: [] }
-    const directIds = new Set(seg.category.programIds)
-    const ancestorIds = new Set<number>()
-    for (const cat of seg.ancestors) {
-      for (const pid of cat.programIds) {
-        if (!directIds.has(pid)) ancestorIds.add(pid)
+    const fullPath = [...seg.ancestors, seg.category]
+    let effective: number[] = []
+    for (const cat of fullPath) {
+      if (cat.programIds.length > 0) {
+        effective = effective.length > 0
+          ? cat.programIds.filter((pid) => effective.includes(pid))
+          : [...cat.programIds]
       }
     }
-    return { direct: [...directIds], ancestor: [...ancestorIds] }
+    const directIds = new Set(seg.category.programIds)
+    const direct = effective.filter((pid) => directIds.has(pid))
+    const ancestor = effective.filter((pid) => !directIds.has(pid))
+    return { direct, ancestor }
   }, [categoryPaths])
 
   // Helper to get program names for sorting/filtering
