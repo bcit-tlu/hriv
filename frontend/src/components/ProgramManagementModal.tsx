@@ -6,6 +6,7 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import IconButton from '@mui/material/IconButton'
+import Chip from '@mui/material/Chip'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
@@ -146,7 +147,11 @@ export default function ProgramManagementModal({
                     sx={{ mr: 2 }}
                   />
                 ) : (
-                  <ListItemText primary={p.name} />
+                  <ListItemText
+                    primary={
+                      <Chip label={p.name} size="small" variant="outlined" color="error" />
+                    }
+                  />
                 )}
               </ListItem>
             ))}

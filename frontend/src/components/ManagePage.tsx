@@ -354,7 +354,6 @@ export default function ManagePage({
     category_id?: number | null
     copyright?: string
     note?: string
-    program_ids?: number[]
     active?: boolean
   }) => {
     try {
@@ -914,7 +913,6 @@ export default function ManagePage({
           onCategoriesChanged?.()
         }}
         categories={categories}
-        programs={programs}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
@@ -932,7 +930,6 @@ export default function ManagePage({
         onSave={handleBulkSave}
         onDelete={handleBulkDelete}
         categories={categories}
-        programs={programs}
         selectedCount={selected.size}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}

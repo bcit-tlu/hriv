@@ -47,17 +47,6 @@ function countAllImages(cat: Category): number {
   return count
 }
 
-/** Collect all unique program IDs from a category and all its descendants. */
-function collectProgramIds(cat: Category): Set<number> {
-  const ids = new Set<number>()
-  for (const img of cat.images) {
-    for (const pid of img.programIds) ids.add(pid)
-  }
-  for (const child of cat.children) {
-    for (const pid of collectProgramIds(child)) ids.add(pid)
-  }
-  return ids
-}
 
 interface CategoryTileProps {
   category: Category
@@ -74,7 +63,6 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
 
   const subCategoryCount = useMemo(() => countAllSubcategories(category), [category])
   const imageCount = useMemo(() => countAllImages(category), [category])
-  const programIds = useMemo(() => collectProgramIds(category), [category])
 
   const detailParts: string[] = []
   if (subCategoryCount > 0) {
@@ -85,7 +73,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
   }
   const detailText = detailParts.length > 0 ? detailParts.join(' \u00b7 ') : 'Empty'
 
-  const programChips = Array.from(programIds)
+  const programChips = category.programIds
     .map((pid) => programs.find((p) => p.id === pid))
     .filter((p): p is Program => p != null)
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -150,7 +138,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             {programChips.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {programChips.map((p) => (
-                  <Chip key={p.id} label={p.name} size="small" />
+                  <Chip key={p.id} label={p.name} size="small" variant="outlined" color="error" />
                 ))}
               </Box>
             )}

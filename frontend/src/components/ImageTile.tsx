@@ -3,29 +3,22 @@ import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import CardMedia from '@mui/material/CardMedia'
 import CardContent from '@mui/material/CardContent'
-import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import EditIcon from '@mui/icons-material/Edit'
 import VisibilityIcon from '@mui/icons-material/Visibility'
-import type { ImageItem, Program } from '../types'
+import type { ImageItem } from '../types'
 
 interface ImageTileProps {
   image: ImageItem
   onClick: (image: ImageItem) => void
-  programs: Program[]
   onEditDetails?: (image: ImageItem) => void
   onToggleVisibility?: (imageId: number) => Promise<void>
 }
 
-export default function ImageTile({ image, onClick, programs, onEditDetails, onToggleVisibility }: ImageTileProps) {
-  const programChips = image.programIds
-    .map((pid) => programs.find((p) => p.id === pid))
-    .filter((p): p is Program => p != null)
-    .sort((a, b) => a.name.localeCompare(b.name))
-
+export default function ImageTile({ image, onClick, onEditDetails, onToggleVisibility }: ImageTileProps) {
   return (
     <Card
       elevation={2}
@@ -98,13 +91,6 @@ export default function ImageTile({ image, onClick, programs, onEditDetails, onT
               </IconButton>
             )}
           </Box>
-          {programChips.length > 0 && (
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-              {programChips.map((p) => (
-                <Chip key={p.id} label={p.name} size="small" />
-              ))}
-            </Box>
-          )}
           {image.copyright && (
             <Typography variant="body2" color="text.secondary" noWrap sx={{ mt: 1 }}>
               &copy; {image.copyright}

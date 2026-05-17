@@ -17,6 +17,7 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
 import EditIcon from '@mui/icons-material/Edit'
+import LockIcon from '@mui/icons-material/Lock'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { Category, Program } from '../types'
 import { MAX_DEPTH } from '../types'
@@ -482,6 +483,11 @@ export default function ManageCategoriesDialog({
                       <Typography component="span" sx={{ opacity: opt.status === 'hidden' ? 0.5 : 1 }}>
                         {opt.label}
                       </Typography>
+                      {opt.programIds.length > 0 && (
+                        <Tooltip title="Restricted to specific programs">
+                          <LockIcon sx={{ fontSize: 14, color: 'error.main', ml: 0.5, verticalAlign: 'middle' }} />
+                        </Tooltip>
+                      )}
                     </>
                   }
                 />

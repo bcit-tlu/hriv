@@ -5,6 +5,7 @@ import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
+import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import LinearProgress from "@mui/material/LinearProgress";
 import Container from "@mui/material/Container";
@@ -2237,12 +2238,11 @@ export default function App() {
                                         {currentUser.role}
                                     </Typography>
                                     {currentUser.program_names.length > 0 && (
-                                        <Typography
-                                            variant="body2"
-                                            color="text.secondary"
-                                        >
-                                            {currentUser.program_names.join(', ')}
-                                        </Typography>
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                                            {currentUser.program_names.map((name) => (
+                                                <Chip key={name} label={name} size="small" variant="outlined" color="error" />
+                                            ))}
+                                        </Box>
                                     )}
                                     <Box
                                         sx={{
@@ -2793,7 +2793,6 @@ export default function App() {
                                             key={img.id}
                                             image={img}
                                             onClick={setSelectedImage}
-                                            programs={programs}
                                             onEditDetails={
                                                 canEditContent
                                                     ? setBrowseEditImage
@@ -2811,7 +2810,6 @@ export default function App() {
                                         key={img.id}
                                         image={img}
                                         onClick={setSelectedImage}
-                                        programs={programs}
                                         onEditDetails={
                                             canEditContent
                                                 ? setBrowseEditImage
@@ -3096,7 +3094,6 @@ export default function App() {
                 onBulkImportStarted={handleBulkImportStarted}
                 categoryId={path.length > 0 ? path[path.length - 1].id : null}
                 categories={categories}
-                programs={programs}
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}

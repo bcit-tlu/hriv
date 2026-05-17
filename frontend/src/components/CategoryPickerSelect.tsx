@@ -12,6 +12,7 @@ import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import EditIcon from '@mui/icons-material/Edit'
+import LockIcon from '@mui/icons-material/Lock'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import type { Category, Program } from '../types'
@@ -221,6 +222,11 @@ export default function CategoryPickerSelect({
                   <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
                     ({opt.imageCount})
                   </Typography>
+                  {opt.programIds.length > 0 && (
+                    <Tooltip title="Restricted to specific programs">
+                      <LockIcon sx={{ fontSize: 14, color: 'error.main', ml: 0.5, verticalAlign: 'middle' }} />
+                    </Tooltip>
+                  )}
                 </ListItemText>
                 {onToggleVisibility && (
                   <Tooltip title={opt.status === 'hidden' ? 'Show to students' : 'Hide from students'}>
