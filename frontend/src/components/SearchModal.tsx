@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
@@ -241,6 +241,10 @@ interface SearchModalProps {
   onSelectImage: (image: ImageItem, path: Category[]) => void
   onSelectProgram: () => void
   onSelectUser: () => void
+  /** Pre-fill the search query when the modal opens. */
+  initialQuery?: string
+  /** Pre-select a type filter when the modal opens. */
+  initialTypeFilter?: TypeFilter
 }
 
 export default function SearchModal({
@@ -255,10 +259,27 @@ export default function SearchModal({
   onSelectImage,
   onSelectProgram,
   onSelectUser,
+  initialQuery,
+  initialTypeFilter,
 }: SearchModalProps) {
   const [query, setQuery] = useState('')
   const [typeFilters, setTypeFilters] = useState<Set<TypeFilter>>(new Set())
   const [fieldFilters, setFieldFilters] = useState<Set<FieldFilter>>(new Set())
+
+  // Apply initial values when the modal opens with them
+  const prevOpenRef = useRef(false)
+  useEffect(() => {
+    if (open && !prevOpenRef.current) {
+      if (initialQuery != null) setQuery(initialQuery)
+      if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
+    }
+    if (!open && prevOpenRef.current) {
+      setQuery('')
+      setTypeFilters(new Set())
+      setFieldFilters(new Set())
+    }
+    prevOpenRef.current = open
+  }, [open, initialQuery, initialTypeFilter])
 
   const toggleTypeFilter = useCallback((key: TypeFilter) => {
     setTypeFilters((prev) => {

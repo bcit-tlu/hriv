@@ -141,6 +141,7 @@ interface ManagePageProps {
     uploadId: number,
   ) => void
   onUploadFailed?: (uploadId: number, error: string) => void
+  onSearchProgram?: (programName: string) => void
 }
 
 export default function ManagePage({
@@ -158,6 +159,7 @@ export default function ManagePage({
   onUploadProgress,
   onBulkImportStarted,
   onUploadFailed,
+  onSearchProgram,
 }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
@@ -799,8 +801,12 @@ export default function ManagePage({
                       const { direct, ancestor } = getInheritedProgramIds(img)
                       if (direct.length === 0 && ancestor.length === 0) return '—'
                       const chipClick = (name: string) => {
-                        setShowFilters(true)
-                        handleFilterChange('program', name)
+                        if (onSearchProgram) {
+                          onSearchProgram(name)
+                        } else {
+                          setShowFilters(true)
+                          handleFilterChange('program', name)
+                        }
                       }
                       return (
                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>

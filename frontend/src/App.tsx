@@ -376,6 +376,8 @@ export default function App() {
     // Search modal state
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchUsers, setSearchUsers] = useState<ApiUser[]>([]);
+    const [searchInitialQuery, setSearchInitialQuery] = useState<string | undefined>(undefined);
+    const [searchInitialTypeFilter, setSearchInitialTypeFilter] = useState<string | undefined>(undefined);
 
     // Manage menu state
     const [manageMenuAnchor, setManageMenuAnchor] =
@@ -2360,6 +2362,11 @@ export default function App() {
                             onUploadProgress={handleUploadProgress}
                             onBulkImportStarted={handleBulkImportStarted}
                             onUploadFailed={handleUploadFailed}
+                            onSearchProgram={(programName) => {
+                                setSearchInitialQuery(programName);
+                                setSearchInitialTypeFilter('program');
+                                setSearchOpen(true);
+                            }}
                         />
                     ) : selectedImage ? (
                         /* ---- Viewer mode ---- */
@@ -3238,7 +3245,13 @@ export default function App() {
             {/* Search modal */}
             <SearchModal
                 open={searchOpen}
-                onClose={() => setSearchOpen(false)}
+                onClose={() => {
+                    setSearchOpen(false);
+                    setSearchInitialQuery(undefined);
+                    setSearchInitialTypeFilter(undefined);
+                }}
+                initialQuery={searchInitialQuery}
+                initialTypeFilter={searchInitialTypeFilter as 'category' | 'image' | 'program' | 'user' | undefined}
                 categories={categories}
                 uncategorizedImages={uncategorizedImages}
                 programs={programs}
