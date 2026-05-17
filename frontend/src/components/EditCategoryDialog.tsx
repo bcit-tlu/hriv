@@ -26,6 +26,8 @@ interface EditCategoryDialogProps {
   siblingNames?: string[]
   programs?: Program[]
   currentProgramIds?: number[]
+  /** Program IDs inherited from ancestor categories (read-only display). */
+  inheritedProgramIds?: number[]
 }
 
 export default function EditCategoryDialog({
@@ -36,6 +38,7 @@ export default function EditCategoryDialog({
   siblingNames = [],
   programs = [],
   currentProgramIds = [],
+  inheritedProgramIds = [],
 }: EditCategoryDialogProps) {
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -159,7 +162,7 @@ export default function EditCategoryDialog({
             />
           )}
         />
-        {programs.length > 0 && (
+        {programs.length > 0 && inheritedProgramIds.length === 0 && (
           <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle2" gutterBottom>
               Visible to
@@ -185,6 +188,28 @@ export default function EditCategoryDialog({
                 ))}
               </Box>
             )}
+          </Box>
+        )}
+        {inheritedProgramIds.length > 0 && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Restricted by parent category
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+              {inheritedProgramIds.map((pid) => {
+                const prog = programs.find((p) => p.id === pid)
+                return prog ? (
+                  <Chip
+                    key={pid}
+                    label={prog.name}
+                    size="small"
+                    color="primary"
+                    variant="filled"
+                    sx={{ opacity: 0.5 }}
+                  />
+                ) : null
+              })}
+            </Box>
           </Box>
         )}
         {error && (

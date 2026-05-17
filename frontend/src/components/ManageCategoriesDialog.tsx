@@ -203,6 +203,21 @@ export default function ManageCategoriesDialog({
     [options, editingCategory],
   )
 
+  const inheritedProgramIds = useMemo(() => {
+    if (!editingCategory || !editingCategory.inheritedRestriction) return []
+    const ids: number[] = []
+    let curParentId: number | null = editingCategory.parentId
+    while (curParentId != null) {
+      const ancestor: FlatOption | undefined = options.find((o) => o.id === curParentId)
+      if (!ancestor) break
+      for (const pid of ancestor.programIds) {
+        if (!ids.includes(pid)) ids.push(pid)
+      }
+      curParentId = ancestor.parentId
+    }
+    return ids
+  }, [editingCategory, options])
+
   const handleAddClick = (parentId: number | null, parentLabel?: string) => {
     setAddParentId(parentId)
     setAddParentLabel(parentLabel)
@@ -567,6 +582,7 @@ export default function ManageCategoriesDialog({
         siblingNames={editSiblingNames}
         programs={programs}
         currentProgramIds={editingCategory?.programIds ?? []}
+        inheritedProgramIds={inheritedProgramIds}
       />
 
       {/* Confirm delete dialog */}
