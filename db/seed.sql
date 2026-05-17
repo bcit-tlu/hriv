@@ -34,14 +34,26 @@ ON CONFLICT (id) DO NOTHING;
 SELECT setval('categories_id_seq', GREATEST((SELECT MAX(id) FROM categories), 1));
 
 -- ── Category–Program associations ───────────────────────
+-- Seed data exercises the inheritance hierarchy introduced by the
+-- restricted-category-indicators feature (issue #382):
+--
+--   Architecture  -> Digital Design + Photography  (multi-program parent)
+--     Italian     -> (none — inherits DD + Photo from Architecture)
+--       Gothic    -> (none — inherits via Italian -> Architecture)
+--     American    -> Digital Design               (narrows parent's set)
+--   Panoramas    -> Photography                   (independent parent)
+--
+-- Clear seed-managed rows first so re-runs don't leave stale associations
+-- from previous seed versions (e.g. children that no longer have direct
+-- restrictions).
+DELETE FROM category_programs WHERE category_id IN (1, 2, 3, 4, 5);
 
 INSERT INTO category_programs (category_id, program_id)
 VALUES
-  (1, 2),  -- Architecture -> Digital Design
-  (2, 3),  -- Panoramas -> Photography
-  (3, 2),  -- Italian -> Digital Design
-  (4, 2),  -- American -> Digital Design
-  (5, 2)   -- Gothic -> Digital Design
+  (1, 2),  -- Architecture -> Digital Design  (parent restriction)
+  (1, 3),  -- Architecture -> Photography     (parent restriction)
+  (2, 3),  -- Panoramas    -> Photography     (independent parent)
+  (4, 2)   -- American     -> Digital Design  (narrows parent's {DD, Photo})
 ON CONFLICT (category_id, program_id) DO NOTHING;
 
 -- ── Images ────────────────────────────────────────────────
