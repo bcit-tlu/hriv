@@ -3,22 +3,31 @@ import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import CardMedia from '@mui/material/CardMedia'
 import CardContent from '@mui/material/CardContent'
+import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import EditIcon from '@mui/icons-material/Edit'
 import VisibilityIcon from '@mui/icons-material/Visibility'
-import type { ImageItem } from '../types'
+import type { ImageItem, Program } from '../types'
 
 interface ImageTileProps {
   image: ImageItem
   onClick: (image: ImageItem) => void
   onEditDetails?: (image: ImageItem) => void
   onToggleVisibility?: (imageId: number) => Promise<void>
+  /** All programs available in the site. */
+  programs?: Program[]
+  /** Cumulative program IDs inherited from the category tree. */
+  restrictionProgramIds?: number[]
 }
 
-export default function ImageTile({ image, onClick, onEditDetails, onToggleVisibility }: ImageTileProps) {
+export default function ImageTile({ image, onClick, onEditDetails, onToggleVisibility, programs = [], restrictionProgramIds = [] }: ImageTileProps) {
+  const restrictionChips = restrictionProgramIds
+    .map((pid) => programs.find((p) => p.id === pid))
+    .filter((p): p is Program => p != null)
+    .sort((a, b) => a.name.localeCompare(b.name))
   return (
     <Card
       elevation={2}
@@ -91,6 +100,13 @@ export default function ImageTile({ image, onClick, onEditDetails, onToggleVisib
               </IconButton>
             )}
           </Box>
+          {restrictionChips.length > 0 && (
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+              {restrictionChips.map((p) => (
+                <Chip key={p.id} label={p.name} size="small" color="primary" sx={{ opacity: 0.5 }} />
+              ))}
+            </Box>
+          )}
           {image.copyright && (
             <Typography variant="body2" color="text.secondary" noWrap sx={{ mt: 1 }}>
               &copy; {image.copyright}

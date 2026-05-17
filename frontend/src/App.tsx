@@ -2841,6 +2841,8 @@ export default function App() {
                                                 ? toggleImageVisibility
                                                 : undefined
                                         }
+                                        programs={programs}
+                                        restrictionProgramIds={ancestorProgramIds}
                                     />
                                 ))}
                             </Box>
