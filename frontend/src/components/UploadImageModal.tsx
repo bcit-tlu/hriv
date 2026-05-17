@@ -17,7 +17,7 @@ import type { ApiBulkImportJob } from '../api'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import ImageMetadataFields from './ImageMetadataFields'
 import type { ImageMetadataValues } from './ImageMetadataFields'
-import type { Category } from '../types'
+import type { Category, Program } from '../types'
 
 /**
  * File-picker ``accept`` list. We list explicit MIME types instead of the
@@ -89,6 +89,7 @@ interface UploadImageModalProps {
   onUploadFailed?: (uploadId: number, error: string) => void
   categoryId?: number | null
   categories: Category[]
+  programs?: Program[]
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
@@ -101,6 +102,7 @@ export default function UploadImageModal({
   onProcessingStarted,
   categoryId: initialCategoryId,
   categories,
+  programs,
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
@@ -436,6 +438,7 @@ export default function UploadImageModal({
                 onAddCategory={onAddCategory}
                 onEditCategory={onEditCategory}
                 onToggleVisibility={onToggleVisibility}
+                programs={programs}
               />
             </Box>
             <ImageMetadataFields

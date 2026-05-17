@@ -3094,6 +3094,7 @@ export default function App() {
                 onBulkImportStarted={handleBulkImportStarted}
                 categoryId={path.length > 0 ? path[path.length - 1].id : null}
                 categories={categories}
+                programs={programs}
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}

@@ -913,6 +913,7 @@ export default function ManagePage({
           onCategoriesChanged?.()
         }}
         categories={categories}
+        programs={programs}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
@@ -931,6 +932,7 @@ export default function ManagePage({
         onDelete={handleBulkDelete}
         categories={categories}
         selectedCount={selected.size}
+        programs={programs}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
