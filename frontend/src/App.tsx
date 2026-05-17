@@ -2785,7 +2785,7 @@ export default function App() {
                                                 : undefined
                                         }
                                         programs={programs}
-                                        ancestorProgramIds={path.flatMap((c) => c.programIds)}
+                                        ancestorProgramIds={[...new Set(path.flatMap((c) => c.programIds))]}
                                     />
                                 ))}
                                 {path.length === 0 &&
