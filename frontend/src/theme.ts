@@ -9,9 +9,9 @@ import { createTheme, type ThemeOptions } from '@mui/material/styles'
 /** Light-mode colours (the original HRIV palette). */
 const lightPalette = {
   primary: {
-    main: '#A74A4A',
-    light: '#D58881',
-    dark: '#7A3535',
+    main: '#AC3030',
+    light: '#D47272',
+    dark: '#7A2020',
     contrastText: '#ECECEC',
   },
   secondary: {
@@ -32,9 +32,9 @@ const lightPalette = {
 /** Dark-mode colours – a complementary set that keeps the same brand feel. */
 const darkPalette = {
   primary: {
-    main: '#D58881',
-    light: '#E8AFA8',
-    dark: '#A74A4A',
+    main: '#D47272',
+    light: '#E8A0A0',
+    dark: '#AC3030',
     contrastText: '#1E1E1E',
   },
   secondary: {

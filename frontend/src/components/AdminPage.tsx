@@ -388,7 +388,7 @@ export default function AdminPage() {
               ) : (
                 <Button
                   size="small"
-                  color="primary"
+                  color="error"
                   startIcon={<CancelIcon />}
                   onClick={() => handleCancel(task.id, true)}
                 >
@@ -614,7 +614,7 @@ export default function AdminPage() {
                 {task.status === 'cancelling' && (
                   <IconButton
                     size="small"
-                    color="primary"
+                    color="error"
                     onClick={() => handleCancel(task.id, true)}
                     title="Force cancel (runner appears stuck)"
                   >
@@ -802,7 +802,7 @@ export default function AdminPage() {
               )}
               {logTask.status === 'cancelling' && (
                 <Button
-                  color="primary"
+                  color="error"
                   startIcon={<CancelIcon />}
                   onClick={() => handleCancel(logTask.id, true)}
                 >

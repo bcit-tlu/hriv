@@ -580,14 +580,14 @@ export default function ManageCategoriesDialog({
             All images in this category will become uncategorized (they will not be deleted).
           </DialogContentText>
           {(pendingDelete?.childCount ?? 0) > 0 && (
-            <DialogContentText sx={{ mt: 1 }} color="primary">
+            <DialogContentText sx={{ mt: 1 }} color="error">
               This category has {pendingDelete?.childCount} sub-categor{pendingDelete?.childCount === 1 ? 'y' : 'ies'} that will also be permanently deleted.
             </DialogContentText>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCancelDelete}>Cancel</Button>
-          <Button onClick={handleConfirmDelete} color="primary" variant="contained">
+          <Button onClick={handleConfirmDelete} color="error" variant="contained">
             Delete
           </Button>
         </DialogActions>

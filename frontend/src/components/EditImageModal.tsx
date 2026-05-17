@@ -444,7 +444,7 @@ function EditImageForm({
             <Divider />
             <Box>
               <Button
-                color="primary"
+                color="error"
                 variant={confirmDelete ? 'contained' : 'outlined'}
                 onClick={handleDelete}
                 disabled={disableActions}
@@ -457,7 +457,7 @@ function EditImageForm({
               {confirmDelete && (
                 <Typography
                   variant="caption"
-                  color="primary"
+                  color="error"
                   sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
                 >
                   This action cannot be undone. Click again to confirm.

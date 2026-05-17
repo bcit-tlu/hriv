@@ -238,12 +238,24 @@ export default function ManagePage({
     return fullPath.map((c) => c.label).join(' : ')
   }, [categoryPaths])
 
-  // Helper to get program names for sorting
+  // Collect cumulative program restrictions inherited from the category tree
+  const getInheritedProgramIds = useCallback((img: ApiImage): number[] => {
+    if (img.category_id == null) return []
+    const seg = categoryPaths.get(img.category_id)
+    if (!seg) return []
+    const ids = new Set<number>()
+    for (const cat of [...seg.ancestors, seg.category]) {
+      for (const pid of cat.programIds) ids.add(pid)
+    }
+    return [...ids]
+  }, [categoryPaths])
+
+  // Helper to get program names for sorting/filtering
   const getProgramNames = useCallback((img: ApiImage): string => {
-    return img.program_ids
+    return getInheritedProgramIds(img)
       .map((pid) => programs.find((p) => p.id === pid)?.name ?? '')
       .join(', ')
-  }, [programs])
+  }, [programs, getInheritedProgramIds])
 
   // Filtered and sorted images
   const filteredImages = useMemo(() => {
@@ -777,17 +789,31 @@ export default function ManagePage({
                   </TableCell>
                   <TableCell>{img.copyright ?? '—'}</TableCell>
                   <TableCell>{img.note ?? '—'}</TableCell>
-                  <TableCell>
-                    {img.program_ids.length > 0
-                      ? <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                          {img.program_ids
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    {(() => {
+                      const pids = getInheritedProgramIds(img)
+                      if (pids.length === 0) return '—'
+                      return (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {pids
                             .map((pid) => programs.find((p) => p.id === pid))
                             .filter((p): p is Program => p != null)
                             .map((p) => (
-                              <Chip key={p.id} label={p.name} size="small" color="primary" />
+                              <Chip
+                                key={p.id}
+                                label={p.name}
+                                size="small"
+                                color="primary"
+                                onClick={() => {
+                                  setShowFilters(true)
+                                  handleFilterChange('program', p.name)
+                                }}
+                                sx={{ cursor: 'pointer' }}
+                              />
                             ))}
                         </Box>
-                      : '—'}
+                      )
+                    })()}
                   </TableCell>
                   <TableCell
                     onClick={(e) => e.stopPropagation()}
@@ -963,7 +989,7 @@ export default function ManagePage({
           <Divider />
           <Box>
             <Button
-              color="primary"
+              color="error"
               variant="contained"
               onClick={handleConfirmDeleteImage}
               disabled={deleting}
@@ -973,7 +999,7 @@ export default function ManagePage({
             </Button>
             <Typography
               variant="caption"
-              color="primary"
+              color="error"
               sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
             >
               This action cannot be undone.
