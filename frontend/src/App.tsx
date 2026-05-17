@@ -3159,6 +3159,7 @@ export default function App() {
                     .map((c) => c.label)}
                 programs={programs}
                 currentProgramIds={editNameCategory?.programIds ?? []}
+                inheritedProgramIds={ancestorProgramIds}
             />
 
             {/* Self-edit profile modal */}
