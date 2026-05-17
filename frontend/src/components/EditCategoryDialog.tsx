@@ -91,14 +91,19 @@ export default function EditCategoryDialog({
   }
 
   const programsChanged = useMemo(() => {
-    const currentSet = new Set(currentProgramIds)
+    // Use the same filtered baseline that was used to initialize selectedProgramIds,
+    // so that filtering out unreachable programs on open doesn't count as a change.
+    const baseline = inheritedProgramIds.length > 0
+      ? currentProgramIds.filter((id) => inheritedProgramIds.includes(id))
+      : currentProgramIds
+    const currentSet = new Set(baseline)
     const effectiveIds = visibility === 'specific' ? selectedProgramIds : new Set<number>()
     if (currentSet.size !== effectiveIds.size) return true
     for (const id of effectiveIds) {
       if (!currentSet.has(id)) return true
     }
     return false
-  }, [currentProgramIds, selectedProgramIds, visibility])
+  }, [currentProgramIds, inheritedProgramIds, selectedProgramIds, visibility])
 
   const handleSubmit = async () => {
     const trimmed = label.trim()
