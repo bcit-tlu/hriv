@@ -16,14 +16,14 @@ describe("buildTheme", () => {
         expect(theme.palette.mode).toBe("dark");
     });
 
-    it("uses the original primary colour (#A74A4A) in light mode", () => {
+    it("uses the primary colour (#AC3030) in light mode", () => {
         const theme = buildTheme("light");
-        expect(theme.palette.primary.main).toBe("#A74A4A");
+        expect(theme.palette.primary.main).toBe("#AC3030");
     });
 
-    it("uses the dark-mode primary colour (#D58881) in dark mode", () => {
+    it("uses the dark-mode primary colour (#D47272) in dark mode", () => {
         const theme = buildTheme("dark");
-        expect(theme.palette.primary.main).toBe("#D58881");
+        expect(theme.palette.primary.main).toBe("#D47272");
     });
 
     it("sets light background.default to #ECECEC", () => {
