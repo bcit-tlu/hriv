@@ -137,21 +137,18 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             <Typography variant="body2" color="text.secondary">
               {detailText}
             </Typography>
-            {programChips.length > 0 && (
+            {(programChips.length > 0 || ancestorProgramIds.length > 0) && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {programChips.map((p) => (
                   <Chip key={p.id} label={p.name} size="small" color="primary" />
                 ))}
-              </Box>
-            )}
-            {programChips.length === 0 && ancestorProgramIds.length > 0 && (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5, opacity: 0.5 }}>
                 {ancestorProgramIds
+                  .filter((pid) => !category.programIds.includes(pid))
                   .map((pid) => programs.find((p) => p.id === pid))
                   .filter((p): p is Program => p != null)
                   .sort((a, b) => a.name.localeCompare(b.name))
                   .map((p) => (
-                    <Chip key={p.id} label={p.name} size="small" color="primary" />
+                    <Chip key={p.id} label={p.name} size="small" color="primary" sx={{ opacity: 0.5 }} />
                   ))}
               </Box>
             )}
