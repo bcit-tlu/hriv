@@ -56,9 +56,11 @@ interface CategoryTileProps {
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onEditName?: (category: Category) => void
   programs: Program[]
+  /** Program IDs inherited from an ancestor category (shown at reduced opacity). */
+  ancestorProgramIds?: number[]
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs }: CategoryTileProps) {
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, ancestorProgramIds = [] }: CategoryTileProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const subCategoryCount = useMemo(() => countAllSubcategories(category), [category])
@@ -138,8 +140,19 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             {programChips.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {programChips.map((p) => (
-                  <Chip key={p.id} label={p.name} size="small" variant="outlined" color="error" />
+                  <Chip key={p.id} label={p.name} size="small" color="primary" />
                 ))}
+              </Box>
+            )}
+            {programChips.length === 0 && ancestorProgramIds.length > 0 && (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5, opacity: 0.5 }}>
+                {ancestorProgramIds
+                  .map((pid) => programs.find((p) => p.id === pid))
+                  .filter((p): p is Program => p != null)
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((p) => (
+                    <Chip key={p.id} label={p.name} size="small" color="primary" />
+                  ))}
               </Box>
             )}
           </CardContent>

@@ -2240,7 +2240,7 @@ export default function App() {
                                     {currentUser.program_names.length > 0 && (
                                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                                             {currentUser.program_names.map((name) => (
-                                                <Chip key={name} label={name} size="small" variant="outlined" color="error" />
+                                                <Chip key={name} label={name} size="small" color="primary" />
                                             ))}
                                         </Box>
                                     )}
@@ -2785,6 +2785,7 @@ export default function App() {
                                                 : undefined
                                         }
                                         programs={programs}
+                                        ancestorProgramIds={path.flatMap((c) => c.programIds)}
                                     />
                                 ))}
                                 {path.length === 0 &&

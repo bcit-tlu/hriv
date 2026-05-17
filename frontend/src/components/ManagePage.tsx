@@ -29,6 +29,7 @@ import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
+import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
@@ -778,9 +779,14 @@ export default function ManagePage({
                   <TableCell>{img.note ?? '—'}</TableCell>
                   <TableCell>
                     {img.program_ids.length > 0
-                      ? img.program_ids
-                          .map((pid) => programs.find((p) => p.id === pid)?.name ?? pid)
-                          .join(', ')
+                      ? <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {img.program_ids
+                            .map((pid) => programs.find((p) => p.id === pid))
+                            .filter((p): p is Program => p != null)
+                            .map((p) => (
+                              <Chip key={p.id} label={p.name} size="small" color="primary" />
+                            ))}
+                        </Box>
                       : '—'}
                   </TableCell>
                   <TableCell
@@ -957,7 +963,7 @@ export default function ManagePage({
           <Divider />
           <Box>
             <Button
-              color="error"
+              color="primary"
               variant="contained"
               onClick={handleConfirmDeleteImage}
               disabled={deleting}
@@ -967,7 +973,7 @@ export default function ManagePage({
             </Button>
             <Typography
               variant="caption"
-              color="error"
+              color="primary"
               sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
             >
               This action cannot be undone.

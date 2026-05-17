@@ -28,6 +28,7 @@ interface FlatOption {
   parentId: number | null
   imageCount: number
   programIds: number[]
+  inheritedRestriction: boolean
 }
 
 function flattenTree(
@@ -35,12 +36,14 @@ function flattenTree(
   depth: number = 0,
   excludeIds?: Set<number>,
   parentId: number | null = null,
+  ancestorRestricted: boolean = false,
 ): FlatOption[] {
   const result: FlatOption[] = []
   for (const node of nodes) {
     if (excludeIds?.has(node.id)) continue
-    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId, imageCount: node.images.length, programIds: node.programIds })
-    result.push(...flattenTree(node.children, depth + 1, excludeIds, node.id))
+    const hasOwnRestriction = node.programIds.length > 0
+    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId, imageCount: node.images.length, programIds: node.programIds, inheritedRestriction: !hasOwnRestriction && ancestorRestricted })
+    result.push(...flattenTree(node.children, depth + 1, excludeIds, node.id, ancestorRestricted || hasOwnRestriction))
   }
   return result
 }
@@ -222,9 +225,9 @@ export default function CategoryPickerSelect({
                   <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
                     ({opt.imageCount})
                   </Typography>
-                  {opt.programIds.length > 0 && (
-                    <Tooltip title="Restricted to specific programs">
-                      <LockIcon sx={{ fontSize: 14, color: 'error.main', ml: 0.5, verticalAlign: 'middle' }} />
+                  {(opt.programIds.length > 0 || opt.inheritedRestriction) && (
+                    <Tooltip title={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}>
+                      <LockIcon sx={{ fontSize: 14, color: 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1, ml: 0.5, verticalAlign: 'middle' }} />
                     </Tooltip>
                   )}
                 </ListItemText>

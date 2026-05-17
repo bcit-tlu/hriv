@@ -179,7 +179,7 @@ export default function BulkEditImagesModal({
         {/* Delete */}
         <Box>
           <Button
-            color="error"
+            color="primary"
             variant={confirmDelete ? 'contained' : 'outlined'}
             onClick={handleDelete}
             disabled={saving}
@@ -192,7 +192,7 @@ export default function BulkEditImagesModal({
           {confirmDelete && (
             <Typography
               variant="caption"
-              color="error"
+              color="primary"
               sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
             >
               This action cannot be undone. Click again to confirm.

@@ -32,6 +32,7 @@ interface FlatOption {
   status: string | null
   parentId: number | null
   programIds: number[]
+  inheritedRestriction: boolean
 }
 
 function countDescendants(node: Category): number {
@@ -42,11 +43,12 @@ function countDescendants(node: Category): number {
   return count
 }
 
-function flattenTree(nodes: Category[], depth: number = 0, parentId: number | null = null): FlatOption[] {
+function flattenTree(nodes: Category[], depth: number = 0, parentId: number | null = null, ancestorRestricted: boolean = false): FlatOption[] {
   const result: FlatOption[] = []
   for (const node of nodes) {
-    result.push({ id: node.id, label: node.label, depth, childCount: countDescendants(node), status: node.status ?? 'active', parentId, programIds: node.programIds })
-    result.push(...flattenTree(node.children, depth + 1, node.id))
+    const hasOwnRestriction = node.programIds.length > 0
+    result.push({ id: node.id, label: node.label, depth, childCount: countDescendants(node), status: node.status ?? 'active', parentId, programIds: node.programIds, inheritedRestriction: !hasOwnRestriction && ancestorRestricted })
+    result.push(...flattenTree(node.children, depth + 1, node.id, ancestorRestricted || hasOwnRestriction))
   }
   return result
 }
@@ -483,9 +485,18 @@ export default function ManageCategoriesDialog({
                       <Typography component="span" sx={{ opacity: opt.status === 'hidden' ? 0.5 : 1 }}>
                         {opt.label}
                       </Typography>
-                      {opt.programIds.length > 0 && (
-                        <Tooltip title="Restricted to specific programs">
-                          <LockIcon sx={{ fontSize: 14, color: 'error.main', ml: 0.5, verticalAlign: 'middle' }} />
+                      {(opt.programIds.length > 0 || opt.inheritedRestriction) && (
+                        <Tooltip title={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}>
+                          <IconButton
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleEditClick(opt)
+                            }}
+                            sx={{ p: 0, ml: 0.5, verticalAlign: 'middle' }}
+                          >
+                            <LockIcon sx={{ fontSize: 14, color: 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
+                          </IconButton>
                         </Tooltip>
                       )}
                     </>
@@ -569,14 +580,14 @@ export default function ManageCategoriesDialog({
             All images in this category will become uncategorized (they will not be deleted).
           </DialogContentText>
           {(pendingDelete?.childCount ?? 0) > 0 && (
-            <DialogContentText sx={{ mt: 1 }} color="error">
+            <DialogContentText sx={{ mt: 1 }} color="primary">
               This category has {pendingDelete?.childCount} sub-categor{pendingDelete?.childCount === 1 ? 'y' : 'ies'} that will also be permanently deleted.
             </DialogContentText>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCancelDelete}>Cancel</Button>
-          <Button onClick={handleConfirmDelete} color="error" variant="contained">
+          <Button onClick={handleConfirmDelete} color="primary" variant="contained">
             Delete
           </Button>
         </DialogActions>

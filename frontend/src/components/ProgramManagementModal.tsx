@@ -149,7 +149,7 @@ export default function ProgramManagementModal({
                 ) : (
                   <ListItemText
                     primary={
-                      <Chip label={p.name} size="small" variant="outlined" color="error" />
+                      <Chip label={p.name} size="small" color="primary" />
                     }
                   />
                 )}
