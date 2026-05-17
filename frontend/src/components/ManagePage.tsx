@@ -799,7 +799,7 @@ export default function ManagePage({
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     {(() => {
                       const { direct, ancestor } = getInheritedProgramIds(img)
-                      if (direct.length === 0 && ancestor.length === 0) return '—'
+                      if (direct.length === 0 && ancestor.length === 0) return 'All programs'
                       const chipClick = (name: string) => {
                         if (onSearchProgram) {
                           onSearchProgram(name)

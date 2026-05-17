@@ -2574,7 +2574,7 @@ export default function App() {
                                         {selectedImage.copyright}
                                     </Typography>
                                 )}
-                                {selectedImage.programIds.length > 0 && (
+                                {ancestorProgramIds.length > 0 && (
                                     <Typography
                                         variant="body2"
                                         color="text.secondary"
@@ -2582,12 +2582,12 @@ export default function App() {
                                     >
                                         <strong>
                                             Program
-                                            {selectedImage.programIds.length > 1
+                                            {ancestorProgramIds.length > 1
                                                 ? "s"
                                                 : ""}
                                             :
                                         </strong>{" "}
-                                        {selectedImage.programIds
+                                        {ancestorProgramIds
                                             .map(
                                                 (pid) =>
                                                     programs.find(

@@ -257,14 +257,13 @@ describe('EditCategoryDialog', () => {
       // Switch to "Specific programs" to see chips
       screen.getByLabelText('Specific programs').click()
 
-      // Programs A and B also appear in inherited pills, so target picker section
-      const pickerChips = screen.getByText('Visible to').parentElement!.querySelectorAll('.MuiChip-root')
-      const chipMap = new Map<string, Element>()
-      pickerChips.forEach((c) => chipMap.set(c.textContent ?? '', c))
+      const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
+      const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
+      const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
 
-      expect(chipMap.get('Program A')).not.toHaveClass('Mui-disabled')
-      expect(chipMap.get('Program B')).not.toHaveClass('Mui-disabled')
-      expect(chipMap.get('Program C')).toHaveClass('Mui-disabled')
+      expect(chipA).not.toHaveClass('Mui-disabled')
+      expect(chipB).not.toHaveClass('Mui-disabled')
+      expect(chipC).toHaveClass('Mui-disabled')
     })
 
     it('filters out invalid selections on dialog open', () => {
@@ -280,16 +279,14 @@ describe('EditCategoryDialog', () => {
         />,
       )
       // "Specific programs" should be pre-selected since currentProgramIds is non-empty
-      // The picker section is below "Visible to", get chips from there
-      const pickerChips = screen.getByText('Visible to').parentElement!.querySelectorAll('.MuiChip-root')
-      const chipMap = new Map<string, Element>()
-      pickerChips.forEach((c) => chipMap.set(c.textContent ?? '', c))
+      const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
+      const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
 
       // Program A (id=1) is valid and should be selected (filled)
-      expect(chipMap.get('Program A')).toHaveClass('MuiChip-filled')
+      expect(chipA).toHaveClass('MuiChip-filled')
 
       // Program C (id=3) is NOT in inherited set — should not be selected
-      expect(chipMap.get('Program C')).not.toHaveClass('MuiChip-filled')
+      expect(chipC).not.toHaveClass('MuiChip-filled')
     })
 
     it('allows toggling programs within the inherited set', async () => {
@@ -306,9 +303,7 @@ describe('EditCategoryDialog', () => {
         />,
       )
 
-      // Program B appears twice (inherited pills + picker). Target the picker chip.
-      const pickerChips = screen.getByText('Visible to').parentElement!.querySelectorAll('.MuiChip-root')
-      const chipB = Array.from(pickerChips).find((c) => c.textContent === 'Program B')!
+      const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
       await user.click(chipB)
 
       // After clicking, Program B should now be selected (filled)
@@ -387,7 +382,7 @@ describe('EditCategoryDialog', () => {
       expect(chipC).not.toHaveClass('Mui-disabled')
     })
 
-    it('displays inherited program pills at 0.5 opacity', () => {
+    it('displays inherited programs at 0.5 opacity in consolidated picker', () => {
       render(
         <EditCategoryDialog
           open
@@ -399,15 +394,17 @@ describe('EditCategoryDialog', () => {
           inheritedProgramIds={[1, 2]}
         />,
       )
+      // Switch to "Specific programs" to see chips
+      screen.getByLabelText('Specific programs').click()
 
-      expect(screen.getByText('Restricted by parent category')).toBeInTheDocument()
-      // Inherited pills should be present
-      const inheritedSection = screen.getByText('Restricted by parent category').parentElement!
-      const chips = inheritedSection.querySelectorAll('.MuiChip-root')
-      expect(chips).toHaveLength(2)
-      chips.forEach((chip) => {
-        expect(chip).toHaveStyle({ opacity: '0.5' })
-      })
+      // Inherited programs should render at 0.5 opacity (not selected as own)
+      const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
+      const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
+      expect(chipA).toHaveStyle({ opacity: '0.5' })
+      expect(chipB).toHaveStyle({ opacity: '0.5' })
+      // Both should be filled primary
+      expect(chipA).toHaveClass('MuiChip-filled')
+      expect(chipB).toHaveClass('MuiChip-filled')
     })
   })
 
