@@ -204,7 +204,7 @@ export default function ManageCategoriesDialog({
   )
 
   const inheritedProgramIds = useMemo(() => {
-    if (!editingCategory || !editingCategory.inheritedRestriction) return []
+    if (!editingCategory) return []
     const ids: number[] = []
     let curParentId: number | null = editingCategory.parentId
     while (curParentId != null) {

@@ -133,7 +133,7 @@ export default function CategoryPickerSelect({
   )
 
   const inheritedProgramIds = useMemo(() => {
-    if (!editingOpt || !editingOpt.inheritedRestriction) return []
+    if (!editingOpt) return []
     const ids: number[] = []
     let curParentId: number | null = editingOpt.parentId
     while (curParentId != null) {
