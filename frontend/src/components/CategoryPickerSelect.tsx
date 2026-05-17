@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
@@ -131,6 +131,21 @@ export default function CategoryPickerSelect({
         : [],
     [options, editingOpt],
   )
+
+  const inheritedProgramIds = useMemo(() => {
+    if (!editingOpt || !editingOpt.inheritedRestriction) return []
+    const ids: number[] = []
+    let curParentId: number | null = editingOpt.parentId
+    while (curParentId != null) {
+      const ancestor: FlatOption | undefined = options.find((o) => o.id === curParentId)
+      if (!ancestor) break
+      for (const pid of ancestor.programIds) {
+        if (!ids.includes(pid)) ids.push(pid)
+      }
+      curParentId = ancestor.parentId
+    }
+    return ids
+  }, [editingOpt, options])
 
   const handleChange = (e: SelectChangeEvent<string>) => {
     const val = e.target.value
@@ -316,6 +331,7 @@ export default function CategoryPickerSelect({
           siblingNames={editSiblingNames}
           programs={programs}
           currentProgramIds={editingOpt?.programIds ?? []}
+          inheritedProgramIds={inheritedProgramIds}
         />
       )}
     </>
