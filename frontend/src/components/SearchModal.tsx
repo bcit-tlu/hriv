@@ -268,15 +268,20 @@ export default function SearchModal({
 
   // Apply initial values when the modal opens with them
   const prevOpenRef = useRef(false)
+  const wasSeededRef = useRef(false)
   useEffect(() => {
     if (open && !prevOpenRef.current) {
-      if (initialQuery != null) setQuery(initialQuery)
-      if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
+      if (initialQuery != null || initialTypeFilter != null) {
+        if (initialQuery != null) setQuery(initialQuery)
+        if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
+        wasSeededRef.current = true
+      }
     }
-    if (!open && prevOpenRef.current) {
+    if (!open && prevOpenRef.current && wasSeededRef.current) {
       setQuery('')
       setTypeFilters(new Set())
       setFieldFilters(new Set())
+      wasSeededRef.current = false
     }
     prevOpenRef.current = open
   }, [open, initialQuery, initialTypeFilter])
