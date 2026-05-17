@@ -17,7 +17,7 @@ env:
 permissions:
   contents: read
   packages: write
-  id-token: write          # Cosign keyless (Sigstore OIDC)
+  id-token: write # Cosign keyless (Sigstore OIDC)
 
 jobs:
   retag:

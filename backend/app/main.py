@@ -1,5 +1,3 @@
-import app.otel_bootstrap  # noqa: F401 — side-effect: configure OTEL SDK
-
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -8,18 +6,32 @@ import httpx
 from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.middleware.sessions import SessionMiddleware
+
+import app.otel_bootstrap  # noqa: F401 — side-effect: configure OTEL SDK
 
 from .admin_ops import reconcile_stale_tasks
-from .processing import reconcile_stale_source_images
 from .auth import auth_settings
 from .database import get_async_session, get_db, settings
 from .logging_config import setup_logging
 from .maintenance import is_maintenance_mode
 from .middleware import AuditMiddleware, MaintenanceMiddleware
-from .routers import admin, announcement, auth, bulk_import, categories, images, issues, oidc, programs, upload, users
+from .processing import reconcile_stale_source_images
+from .routers import (
+    admin,
+    announcement,
+    auth,
+    bulk_import,
+    categories,
+    images,
+    issues,
+    oidc,
+    programs,
+    upload,
+    users,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -139,10 +151,10 @@ app = FastAPI(
 
 # CORS: read allowed origins from the CORS_ORIGINS env var (comma-separated).
 # Defaults to "*" for local development; production deployments should set
-# this to the actual frontend origin(s), e.g. "https://hriv.bcit.ca".
-_cors_origins = [
-    o.strip() for o in settings.cors_origins.split(",") if o.strip()
-] or ["*"]
+# this to the actual frontend origin(s), e.g. "https://hriv.example.ca".
+_cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()] or [
+    "*"
+]
 
 app.add_middleware(MaintenanceMiddleware)
 app.add_middleware(AuditMiddleware)

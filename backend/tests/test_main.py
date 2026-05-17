@@ -18,6 +18,7 @@ def _fake_data_dir(tmp_path, monkeypatch):
     source.mkdir()
 
     from app.database import settings
+
     monkeypatch.setattr(settings, "tiles_dir", str(tiles))
     monkeypatch.setattr(settings, "source_images_dir", str(source))
 
@@ -31,6 +32,7 @@ def _stub_pyvips(monkeypatch):
 
 async def test_health_endpoint() -> None:
     from app.main import app, health
+
     result = await health()
     assert result == {"status": "ok", "version": app.version}
 
@@ -41,6 +43,7 @@ async def test_health_endpoint() -> None:
 async def test_check_oidc_connectivity_success(monkeypatch) -> None:
     """Logs info when the OIDC metadata endpoint is reachable."""
     from app.database import settings as _settings
+
     monkeypatch.setattr(_settings, "oidc_issuer", "https://vault.example.com/v1/oidc")
 
     mock_response = AsyncMock()
@@ -53,16 +56,18 @@ async def test_check_oidc_connectivity_success(monkeypatch) -> None:
 
     with patch("app.main.httpx.AsyncClient", return_value=mock_client):
         from app.main import _check_oidc_connectivity
+
         await _check_oidc_connectivity()  # Should not raise
 
     mock_client.get.assert_awaited_once_with(
-        "https://vault.example.com/v1/oidc/.well-known/openid-configuration"
+        "https://vault.example.ca/v1/oidc/.well-known/openid-configuration"
     )
 
 
 async def test_check_oidc_connectivity_connect_error(monkeypatch) -> None:
     """Logs error when the OIDC provider is unreachable (ConnectError)."""
     from app.database import settings as _settings
+
     monkeypatch.setattr(_settings, "oidc_issuer", "https://vault.example.com/v1/oidc")
 
     mock_client = AsyncMock()
@@ -74,18 +79,22 @@ async def test_check_oidc_connectivity_connect_error(monkeypatch) -> None:
 
     with patch("app.main.httpx.AsyncClient", return_value=mock_client):
         from app.main import _check_oidc_connectivity
+
         await _check_oidc_connectivity()  # Should not raise — logs error instead
 
 
 async def test_check_oidc_connectivity_http_error(monkeypatch) -> None:
     """Logs warning when the metadata endpoint returns an HTTP error."""
     from app.database import settings as _settings
+
     monkeypatch.setattr(_settings, "oidc_issuer", "https://vault.example.com/v1/oidc")
 
     mock_response = AsyncMock()
     mock_response.status_code = 404
     mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
-        "Not Found", request=httpx.Request("GET", "https://example.com"), response=mock_response,
+        "Not Found",
+        request=httpx.Request("GET", "https://example.com"),
+        response=mock_response,
     )
 
     mock_client = AsyncMock()
@@ -95,12 +104,14 @@ async def test_check_oidc_connectivity_http_error(monkeypatch) -> None:
 
     with patch("app.main.httpx.AsyncClient", return_value=mock_client):
         from app.main import _check_oidc_connectivity
+
         await _check_oidc_connectivity()  # Should not raise — logs warning instead
 
 
 async def test_check_oidc_connectivity_timeout(monkeypatch) -> None:
     """Logs error when the OIDC provider times out (TimeoutException)."""
     from app.database import settings as _settings
+
     monkeypatch.setattr(_settings, "oidc_issuer", "https://vault.example.com/v1/oidc")
 
     mock_client = AsyncMock()
@@ -110,12 +121,14 @@ async def test_check_oidc_connectivity_timeout(monkeypatch) -> None:
 
     with patch("app.main.httpx.AsyncClient", return_value=mock_client):
         from app.main import _check_oidc_connectivity
+
         await _check_oidc_connectivity()  # Should not raise — logs error instead
 
 
 async def test_check_oidc_connectivity_generic_error(monkeypatch) -> None:
     """Logs warning for unexpected errors (e.g. SSL, protocol)."""
     from app.database import settings as _settings
+
     monkeypatch.setattr(_settings, "oidc_issuer", "https://vault.example.com/v1/oidc")
 
     mock_client = AsyncMock()
@@ -125,4 +138,5 @@ async def test_check_oidc_connectivity_generic_error(monkeypatch) -> None:
 
     with patch("app.main.httpx.AsyncClient", return_value=mock_client):
         from app.main import _check_oidc_connectivity
+
         await _check_oidc_connectivity()  # Should not raise — logs warning instead

@@ -1,11 +1,11 @@
 {{- if and .Values.tiles.enabled (not .Values.persistence.enabled) }}
 {{- fail "tiles.enabled requires persistence.enabled — the sidecar serves tiles from the PVC" }}
 {{- end }}
-{{- if and .Values.github.enabled (not .Values.github.repository) }}
-{{- fail "github.enabled=true requires github.repository" }}
+{{- if and (index .Values "github-issue" "enabled") (not (index .Values "github-issue" "repository")) }}
+{{- fail "github-issue.enabled=true requires github-issue.repository" }}
 {{- end }}
-{{- if and .Values.github.enabled (not .Values.github.token.existingSecret) }}
-{{- fail "github.enabled=true requires github.token.existingSecret (secret must contain key 'token')" }}
+{{- if and (index .Values "github-issue" "enabled") (not (index .Values "github-issue" "token" "existingSecret")) }}
+{{- fail "github-issue.enabled=true requires github-issue.token.existingSecret (secret must contain key 'token')" }}
 {{- end }}
 {{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" .Values.persistence.accessModes)) }}
 {{- fail "replicaCount > 1 requires a ReadWriteMany PVC — background admin tasks write result files to the shared volume that any replica must be able to serve" }}
@@ -46,7 +46,7 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "hriv-backend.fullname" . }}-db-app
+                  name: postgres-db-credentials
                   key: uri
       containers:
         - name: backend
@@ -60,20 +60,20 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "hriv-backend.fullname" . }}-db-app
+                  name: postgres-db-credentials
                   key: uri
             - name: SOURCE_IMAGES_DIR
               value: {{ .Values.env.SOURCE_IMAGES_DIR | quote }}
             - name: TILES_DIR
               value: {{ .Values.env.TILES_DIR | quote }}
-            {{- if .Values.github.enabled }}
+            {{- if (index .Values "github-issue" "enabled") }}
             - name: GITHUB_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.github.token.existingSecret }}
+                  name: {{ index .Values "github-issue" "token" "existingSecret" }}
                   key: token
             - name: GITHUB_REPO
-              value: {{ .Values.github.repository | quote }}
+              value: {{ index .Values "github-issue" "repository" | quote }}
             {{- end }}
             # Backend component version surfaced by /api/admin/version
             # and the FastAPI `app.version` attribute. Rendered from
