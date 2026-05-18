@@ -782,8 +782,10 @@ export default function ManagePage({
                   <TableCell
                     sx={{ p: 0.5 }}
                     onClick={(e) => {
-                      e.stopPropagation()
-                      if (onViewImage) onViewImage(img)
+                      if (onViewImage) {
+                        e.stopPropagation()
+                        onViewImage(img)
+                      }
                     }}
                   >
                     <Box
