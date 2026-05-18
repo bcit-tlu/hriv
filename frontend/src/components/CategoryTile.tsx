@@ -108,21 +108,29 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
     setDragging(false)
   }, [])
 
+  const hasHrivType = useCallback((e: React.DragEvent) => {
+    const types = e.dataTransfer.types
+    return types.includes(MIME_HRIV_IMAGE) || types.includes(MIME_HRIV_CATEGORY)
+  }, [])
+
   const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (!hasHrivType(e)) return
     e.preventDefault()
     dragCounter.current += 1
     if (dragCounter.current === 1) setDragOver(true)
-  }, [])
+  }, [hasHrivType])
 
-  const handleDragLeave = useCallback(() => {
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!hasHrivType(e)) return
     dragCounter.current -= 1
     if (dragCounter.current === 0) setDragOver(false)
-  }, [])
+  }, [hasHrivType])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!hasHrivType(e)) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-  }, [])
+  }, [hasHrivType])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
