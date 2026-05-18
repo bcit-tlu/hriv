@@ -491,5 +491,32 @@ describe('CategoryTile', () => {
       fireEvent.dragEnd(card)
       expect(card).toHaveStyle({ opacity: 1 })
     })
+
+    it('calls onDropFiles when native files are dropped', () => {
+      const onDropFiles = vi.fn()
+      const { container } = render(
+        <CategoryTile
+          category={makeCategory({ id: 8 })}
+          onClick={vi.fn()}
+          programs={[]}
+          onDropFiles={onDropFiles}
+        />,
+      )
+      const card = container.querySelector('.MuiCard-root')!
+      const event = new Event('drop', { bubbles: true })
+      Object.assign(event, {
+        dataTransfer: {
+          setData: vi.fn(),
+          getData: () => '',
+          effectAllowed: '',
+          dropEffect: '',
+          types: ['Files'],
+        },
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      })
+      fireEvent(card, event)
+      expect(onDropFiles).toHaveBeenCalledWith(8)
+    })
   })
 })

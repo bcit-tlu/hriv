@@ -65,11 +65,13 @@ interface CategoryTileProps {
   onDropImage?: (imageId: number, categoryId: number) => void
   /** Called when another category is dropped onto this category tile (reparent). */
   onDropCategory?: (draggedCategoryId: number, targetCategoryId: number) => void
+  /** Called when native files are dropped onto this category tile. */
+  onDropFiles?: (categoryId: number) => void
   /** Enable HTML5 drag for this tile (editors only). */
   draggable?: boolean
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, ancestorProgramIds = [], onDropImage, onDropCategory, draggable = false }: CategoryTileProps) {
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, ancestorProgramIds = [], onDropImage, onDropCategory, onDropFiles, draggable = false }: CategoryTileProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -96,7 +98,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
     ? findImageInCategory(category, category.cardImageId)
     : null
 
-  const isDropTarget = onDropImage != null || onDropCategory != null
+  const isDropTarget = onDropImage != null || onDropCategory != null || onDropFiles != null
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
     e.dataTransfer.setData(MIME_HRIV_CATEGORY, JSON.stringify({ id: category.id }))
@@ -108,29 +110,29 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
     setDragging(false)
   }, [])
 
-  const hasHrivType = useCallback((e: React.DragEvent) => {
+  const isAcceptedDrag = useCallback((e: React.DragEvent) => {
     const types = e.dataTransfer.types
-    return types.includes(MIME_HRIV_IMAGE) || types.includes(MIME_HRIV_CATEGORY)
-  }, [])
+    return types.includes(MIME_HRIV_IMAGE) || types.includes(MIME_HRIV_CATEGORY) || (onDropFiles != null && types.includes('Files'))
+  }, [onDropFiles])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (!hasHrivType(e)) return
+    if (!isAcceptedDrag(e)) return
     e.preventDefault()
     dragCounter.current += 1
     if (dragCounter.current === 1) setDragOver(true)
-  }, [hasHrivType])
+  }, [isAcceptedDrag])
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
-    if (!hasHrivType(e)) return
+    if (!isAcceptedDrag(e)) return
     dragCounter.current -= 1
     if (dragCounter.current === 0) setDragOver(false)
-  }, [hasHrivType])
+  }, [isAcceptedDrag])
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (!hasHrivType(e)) return
+    if (!isAcceptedDrag(e)) return
     e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-  }, [hasHrivType])
+    e.dataTransfer.dropEffect = e.dataTransfer.types.includes('Files') ? 'copy' : 'move'
+  }, [isAcceptedDrag])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -154,8 +156,14 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
           onDropCategory(id, category.id)
         }
       } catch { /* ignore malformed data */ }
+      return
     }
-  }, [category.id, onDropImage, onDropCategory])
+
+    if (e.dataTransfer.types.includes('Files') && onDropFiles) {
+      e.stopPropagation()
+      onDropFiles(category.id)
+    }
+  }, [category.id, onDropImage, onDropCategory, onDropFiles])
 
   return (
     <>

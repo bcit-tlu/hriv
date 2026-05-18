@@ -196,6 +196,9 @@ export default function App() {
     selectedImageRef.current = selectedImage;
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
+    const [fileDropCategoryId, setFileDropCategoryId] = useState<
+        number | null
+    >(null);
     const [addCatOpen, setAddCatOpen] = useState(false);
     const [editNameCategory, setEditNameCategory] = useState<Category | null>(null);
     const [announcement, setAnnouncement] = useState("");
@@ -2901,6 +2904,16 @@ export default function App() {
                                                 ? handleDropCategoryOnCategory
                                                 : undefined
                                         }
+                                        onDropFiles={
+                                            canEditContent
+                                                ? (categoryId) => {
+                                                      setFileDropCategoryId(
+                                                          categoryId,
+                                                      );
+                                                      setUploadOpen(true);
+                                                  }
+                                                : undefined
+                                        }
                                         draggable={canEditContent}
                                     />
                                 ))}
@@ -3203,7 +3216,10 @@ export default function App() {
             {/* Upload image modal */}
             <UploadImageModal
                 open={uploadOpen}
-                onClose={() => setUploadOpen(false)}
+                onClose={() => {
+                    setUploadOpen(false);
+                    setFileDropCategoryId(null);
+                }}
                 onUploaded={() => {
                     loadCategories();
                     loadUncategorizedImages();
@@ -3213,7 +3229,7 @@ export default function App() {
                 onUploadFailed={handleUploadFailed}
                 onProcessingStarted={handleProcessingStarted}
                 onBulkImportStarted={handleBulkImportStarted}
-                categoryId={path.length > 0 ? path[path.length - 1].id : null}
+                categoryId={fileDropCategoryId ?? (path.length > 0 ? path[path.length - 1].id : null)}
                 categories={categories}
                 programs={programs}
                 onAddCategory={addCategoryInline}
