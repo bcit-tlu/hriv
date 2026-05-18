@@ -70,7 +70,7 @@ export default function BulkEditModal({
                 {selected.map((id) => {
                   const prog = programs.find((p) => p.id === id)
                   return (
-                    <Chip key={id} label={prog?.name ?? id} size="small" />
+                    <Chip key={id} label={prog?.name ?? id} size="small" color="primary" />
                   )
                 })}
               </Box>

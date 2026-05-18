@@ -16,7 +16,7 @@ describe("buildTheme", () => {
         expect(theme.palette.mode).toBe("dark");
     });
 
-    it("uses the original primary colour (#A74A4A) in light mode", () => {
+    it("uses the primary colour (#A74A4A) in light mode", () => {
         const theme = buildTheme("light");
         expect(theme.palette.primary.main).toBe("#A74A4A");
     });

@@ -47,17 +47,6 @@ function countAllImages(cat: Category): number {
   return count
 }
 
-/** Collect all unique program IDs from a category and all its descendants. */
-function collectProgramIds(cat: Category): Set<number> {
-  const ids = new Set<number>()
-  for (const img of cat.images) {
-    for (const pid of img.programIds) ids.add(pid)
-  }
-  for (const child of cat.children) {
-    for (const pid of collectProgramIds(child)) ids.add(pid)
-  }
-  return ids
-}
 
 interface CategoryTileProps {
   category: Category
@@ -67,14 +56,15 @@ interface CategoryTileProps {
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onEditName?: (category: Category) => void
   programs: Program[]
+  /** Program IDs inherited from an ancestor category (shown at reduced opacity). */
+  ancestorProgramIds?: number[]
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs }: CategoryTileProps) {
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, ancestorProgramIds = [] }: CategoryTileProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
 
   const subCategoryCount = useMemo(() => countAllSubcategories(category), [category])
   const imageCount = useMemo(() => countAllImages(category), [category])
-  const programIds = useMemo(() => collectProgramIds(category), [category])
 
   const detailParts: string[] = []
   if (subCategoryCount > 0) {
@@ -85,7 +75,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
   }
   const detailText = detailParts.length > 0 ? detailParts.join(' \u00b7 ') : 'Empty'
 
-  const programChips = Array.from(programIds)
+  const programChips = category.programIds
     .map((pid) => programs.find((p) => p.id === pid))
     .filter((p): p is Program => p != null)
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -147,11 +137,19 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             <Typography variant="body2" color="text.secondary">
               {detailText}
             </Typography>
-            {programChips.length > 0 && (
+            {(programChips.length > 0 || ancestorProgramIds.length > 0) && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {programChips.map((p) => (
-                  <Chip key={p.id} label={p.name} size="small" />
+                  <Chip key={p.id} label={p.name} size="small" color="primary" />
                 ))}
+                {ancestorProgramIds
+                  .filter((pid) => !category.programIds.includes(pid))
+                  .map((pid) => programs.find((p) => p.id === pid))
+                  .filter((p): p is Program => p != null)
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((p) => (
+                    <Chip key={p.id} label={p.name} size="small" color="primary" sx={{ opacity: 0.5 }} />
+                  ))}
               </Box>
             )}
           </CardContent>

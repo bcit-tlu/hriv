@@ -5,6 +5,7 @@ import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
+import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import LinearProgress from "@mui/material/LinearProgress";
 import Container from "@mui/material/Container";
@@ -375,6 +376,8 @@ export default function App() {
     // Search modal state
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchUsers, setSearchUsers] = useState<ApiUser[]>([]);
+    const [searchInitialQuery, setSearchInitialQuery] = useState<string | undefined>(undefined);
+    const [searchInitialTypeFilter, setSearchInitialTypeFilter] = useState<string | undefined>(undefined);
 
     // Manage menu state
     const [manageMenuAnchor, setManageMenuAnchor] =
@@ -1319,6 +1322,29 @@ export default function App() {
 
     const { cats: resolvedCategories, imgs: currentImages } = resolve();
 
+    // Resolve ancestor program IDs from the fresh categories tree (not stale path objects).
+    // Uses narrowing semantics: each category with own programIds REPLACES (narrows)
+    // the inherited set rather than extending it via union.
+    const ancestorProgramIds = useMemo(() => {
+        let effective: number[] = [];
+        let initialized = false;
+        let node = categories;
+        for (const segment of path) {
+            const found = node.find((c) => c.id === segment.id);
+            if (!found) break;
+            if (found.programIds.length > 0) {
+                effective = initialized
+                    ? found.programIds.filter((pid) =>
+                          effective.includes(pid),
+                      )
+                    : [...found.programIds];
+                initialized = true;
+            }
+            node = found.children;
+        }
+        return effective;
+    }, [categories, path]);
+
     // Filter out hidden categories for students in browse mode
     const isStudent = currentUser?.role === "student";
     const currentCategories = isStudent
@@ -2237,12 +2263,11 @@ export default function App() {
                                         {currentUser.role}
                                     </Typography>
                                     {currentUser.program_names.length > 0 && (
-                                        <Typography
-                                            variant="body2"
-                                            color="text.secondary"
-                                        >
-                                            {currentUser.program_names.join(', ')}
-                                        </Typography>
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                                            {currentUser.program_names.map((name) => (
+                                                <Chip key={name} label={name} size="small" color="primary" />
+                                            ))}
+                                        </Box>
                                     )}
                                     <Box
                                         sx={{
@@ -2360,6 +2385,11 @@ export default function App() {
                             onUploadProgress={handleUploadProgress}
                             onBulkImportStarted={handleBulkImportStarted}
                             onUploadFailed={handleUploadFailed}
+                            onSearchProgram={(programName) => {
+                                setSearchInitialQuery(programName);
+                                setSearchInitialTypeFilter('program');
+                                setSearchOpen(true);
+                            }}
                         />
                     ) : selectedImage ? (
                         /* ---- Viewer mode ---- */
@@ -2554,7 +2584,7 @@ export default function App() {
                                         {selectedImage.copyright}
                                     </Typography>
                                 )}
-                                {selectedImage.programIds.length > 0 && (
+                                {ancestorProgramIds.length > 0 && (
                                     <Typography
                                         variant="body2"
                                         color="text.secondary"
@@ -2562,12 +2592,12 @@ export default function App() {
                                     >
                                         <strong>
                                             Program
-                                            {selectedImage.programIds.length > 1
+                                            {ancestorProgramIds.length > 1
                                                 ? "s"
                                                 : ""}
                                             :
                                         </strong>{" "}
-                                        {selectedImage.programIds
+                                        {ancestorProgramIds
                                             .map(
                                                 (pid) =>
                                                     programs.find(
@@ -2785,6 +2815,7 @@ export default function App() {
                                                 : undefined
                                         }
                                         programs={programs}
+                                        ancestorProgramIds={ancestorProgramIds}
                                     />
                                 ))}
                                 {path.length === 0 &&
@@ -2793,7 +2824,6 @@ export default function App() {
                                             key={img.id}
                                             image={img}
                                             onClick={setSelectedImage}
-                                            programs={programs}
                                             onEditDetails={
                                                 canEditContent
                                                     ? setBrowseEditImage
@@ -2811,7 +2841,6 @@ export default function App() {
                                         key={img.id}
                                         image={img}
                                         onClick={setSelectedImage}
-                                        programs={programs}
                                         onEditDetails={
                                             canEditContent
                                                 ? setBrowseEditImage
@@ -2822,6 +2851,8 @@ export default function App() {
                                                 ? toggleImageVisibility
                                                 : undefined
                                         }
+                                        programs={programs}
+                                        restrictionProgramIds={ancestorProgramIds}
                                     />
                                 ))}
                             </Box>
@@ -3118,6 +3149,7 @@ export default function App() {
                 parentLabel={path.length > 0 ? path[path.length - 1].label : undefined}
                 siblingNames={currentCategories.map((c) => c.label)}
                 programs={programs}
+                inheritedProgramIds={ancestorProgramIds}
             />
 
             {/* Edit category name dialog (home tab) */}
@@ -3138,6 +3170,7 @@ export default function App() {
                     .map((c) => c.label)}
                 programs={programs}
                 currentProgramIds={editNameCategory?.programIds ?? []}
+                inheritedProgramIds={ancestorProgramIds}
             />
 
             {/* Self-edit profile modal */}
@@ -3239,7 +3272,13 @@ export default function App() {
             {/* Search modal */}
             <SearchModal
                 open={searchOpen}
-                onClose={() => setSearchOpen(false)}
+                onClose={() => {
+                    setSearchOpen(false);
+                    setSearchInitialQuery(undefined);
+                    setSearchInitialTypeFilter(undefined);
+                }}
+                initialQuery={searchInitialQuery}
+                initialTypeFilter={searchInitialTypeFilter as 'category' | 'image' | 'program' | 'user' | undefined}
                 categories={categories}
                 uncategorizedImages={uncategorizedImages}
                 programs={programs}

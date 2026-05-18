@@ -15,17 +15,19 @@ import type { ImageItem, Program } from '../types'
 interface ImageTileProps {
   image: ImageItem
   onClick: (image: ImageItem) => void
-  programs: Program[]
   onEditDetails?: (image: ImageItem) => void
   onToggleVisibility?: (imageId: number) => Promise<void>
+  /** All programs available in the site. */
+  programs?: Program[]
+  /** Cumulative program IDs inherited from the category tree. */
+  restrictionProgramIds?: number[]
 }
 
-export default function ImageTile({ image, onClick, programs, onEditDetails, onToggleVisibility }: ImageTileProps) {
-  const programChips = image.programIds
+export default function ImageTile({ image, onClick, onEditDetails, onToggleVisibility, programs = [], restrictionProgramIds = [] }: ImageTileProps) {
+  const restrictionChips = restrictionProgramIds
     .map((pid) => programs.find((p) => p.id === pid))
     .filter((p): p is Program => p != null)
     .sort((a, b) => a.name.localeCompare(b.name))
-
   return (
     <Card
       elevation={2}
@@ -98,10 +100,10 @@ export default function ImageTile({ image, onClick, programs, onEditDetails, onT
               </IconButton>
             )}
           </Box>
-          {programChips.length > 0 && (
+          {restrictionChips.length > 0 && (
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-              {programChips.map((p) => (
-                <Chip key={p.id} label={p.name} size="small" />
+              {restrictionChips.map((p) => (
+                <Chip key={p.id} label={p.name} size="small" color="primary" sx={{ opacity: 0.5 }} />
               ))}
             </Box>
           )}
