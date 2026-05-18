@@ -1,3 +1,6 @@
+{{- if not .Values.postgresSecretName }}
+{{- fail "postgresSecretName is required — set it to the name of the K8s Secret containing the database URI (key: uri)" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
