@@ -1327,17 +1327,18 @@ export default function App() {
     // the inherited set rather than extending it via union.
     const ancestorProgramIds = useMemo(() => {
         let effective: number[] = [];
+        let initialized = false;
         let node = categories;
         for (const segment of path) {
             const found = node.find((c) => c.id === segment.id);
             if (!found) break;
             if (found.programIds.length > 0) {
-                effective =
-                    effective.length > 0
-                        ? found.programIds.filter((pid) =>
-                              effective.includes(pid),
-                          )
-                        : [...found.programIds];
+                effective = initialized
+                    ? found.programIds.filter((pid) =>
+                          effective.includes(pid),
+                      )
+                    : [...found.programIds];
+                initialized = true;
             }
             node = found.children;
         }

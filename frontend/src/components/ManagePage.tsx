@@ -249,11 +249,13 @@ export default function ManagePage({
     if (!seg) return { direct: [], ancestor: [] }
     const fullPath = [...seg.ancestors, seg.category]
     let effective: number[] = []
+    let initialized = false
     for (const cat of fullPath) {
       if (cat.programIds.length > 0) {
-        effective = effective.length > 0
+        effective = initialized
           ? cat.programIds.filter((pid) => effective.includes(pid))
           : [...cat.programIds]
+        initialized = true
       }
     }
     const directIds = new Set(seg.category.programIds)

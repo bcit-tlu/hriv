@@ -217,11 +217,13 @@ export default function ManageCategoriesDialog({
     }
     ancestors.reverse()
     let effective: number[] = []
+    let initialized = false
     for (const anc of ancestors) {
       if (anc.programIds.length > 0) {
-        effective = effective.length > 0
+        effective = initialized
           ? anc.programIds.filter((pid) => effective.includes(pid))
           : [...anc.programIds]
+        initialized = true
       }
     }
     return effective
