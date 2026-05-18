@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.6.0...backup-v0.6.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* **backup:** correct stale S3 reference in run_backup docstring ([#412](https://github.com/bcit-tlu/hriv/issues/412)) ([fa20c91](https://github.com/bcit-tlu/hriv/commit/fa20c910732df1602e830363a9f8ce3a40b3f05c))
+
 ## [0.6.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.5.0...backup-v0.6.0) (2026-05-09)
 
 
