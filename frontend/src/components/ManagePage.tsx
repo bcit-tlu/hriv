@@ -779,7 +779,15 @@ export default function ManagePage({
                       }
                     />
                   </TableCell>
-                  <TableCell sx={{ p: 0.5 }}>
+                  <TableCell
+                    sx={{ p: 0.5 }}
+                    onClick={(e) => {
+                      if (onViewImage) {
+                        e.stopPropagation()
+                        onViewImage(img)
+                      }
+                    }}
+                  >
                     <Box
                       component="img"
                       src={img.thumb}
@@ -790,6 +798,7 @@ export default function ManagePage({
                         objectFit: 'cover',
                         borderRadius: 0.5,
                         display: 'block',
+                        cursor: onViewImage ? 'pointer' : 'default',
                       }}
                     />
                   </TableCell>
