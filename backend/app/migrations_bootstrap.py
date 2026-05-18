@@ -15,6 +15,7 @@ parallel ``docker-compose up``), the upgrade runs under a PostgreSQL
 advisory lock so concurrent pods serialize on the database itself rather
 than racing on the baseline ``CREATE TABLE``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -197,21 +198,17 @@ async def _check_schema_privilege(conn: AsyncConnection) -> None:
     """
     has_create = (
         await conn.execute(
-            text(
-                "SELECT has_schema_privilege(current_user, 'public', 'CREATE')"
-            )
+            text("SELECT has_schema_privilege(current_user, 'public', 'CREATE')")
         )
     ).scalar_one()
     if not has_create:
-        current_user = (
-            await conn.execute(text("SELECT current_user"))
-        ).scalar_one()
+        current_user = (await conn.execute(text("SELECT current_user"))).scalar_one()
         raise SchemaPrivilegeError(
             f"Role '{current_user}' lacks CREATE privilege on schema "
             f"'public'.  On PostgreSQL 15+ the default CREATE grant on "
             f"'public' was revoked.  Fix: a superuser or the database "
             f"owner must run:\n\n"
-            f"    GRANT CREATE ON SCHEMA public TO \"{current_user}\";\n\n"
+            f'    GRANT CREATE ON SCHEMA public TO "{current_user}";\n\n'
             f"If credentials are provisioned by Vault, add a "
             f"'GRANT ALL ON SCHEMA public TO \"<app_role>\"' statement "
             f"to the dynamic role's creation_statements "
@@ -292,7 +289,7 @@ def main() -> int:
                 "Database authentication failed.  The password in "
                 "DATABASE_URL does not match the PostgreSQL role's "
                 "password.  If credentials are sourced from Vault, verify "
-                "that the KV secret (e.g. apps/hriv/<env>/db-app) contains "
+                "that the KV secret (e.g. apps/hriv/<env>/postgres-db-credentials) contains "
                 "the password the CNPG cluster was originally bootstrapped "
                 "with.  To reset: ALTER USER <owner> PASSWORD '<pw>' via "
                 "the superuser, or update the Vault KV secret to match."
@@ -302,7 +299,9 @@ def main() -> int:
                 "%s",
                 exc,
             )
-        elif "could not translate host name" in msg or "Name or service not known" in msg:
+        elif (
+            "could not translate host name" in msg or "Name or service not known" in msg
+        ):
             logger.error(
                 "Database host unreachable — is the CNPG cluster running "
                 "and does the Service '%s-db-rw' exist?",

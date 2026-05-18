@@ -74,7 +74,7 @@ group maps to exactly one role.
 
 ## How It Works
 
-1. User clicks **"Sign in with BCIT"** on the login page.
+1. User clicks **"Sign in with ..."** on the login page.
 2. The browser navigates to `GET /api/auth/oidc/login`, which redirects
    to the IdP authorization endpoint.
 3. After the user authenticates, the IdP redirects back to
@@ -120,28 +120,28 @@ configuration.
 
 ---
 
-## Organization-specific example: HashiCorp Vault (BCIT)
+## Organization-specific example: HashiCorp Vault
 
 One deployment of HRIV uses HashiCorp Vault's [OIDC identity
 provider](https://developer.hashicorp.com/vault/docs/secrets/identity/oidc-provider)
-for SSO. This section documents that BCIT-specific setup as an example
+for SSO. This section documents that org-specific setup as an example
 for teams using Vault as their IdP.
 
 ### Vault OIDC provider details
 
 | Field | Value |
 |---|---|
-| Issuer | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider` |
-| Discovery URL | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/openid-configuration` |
-| Authorization endpoint | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/authorize` |
-| Token endpoint | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/token` |
-| JWKS URI | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/keys` |
+| Issuer | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider` |
+| Discovery URL | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/openid-configuration` |
+| Authorization endpoint | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/authorize` |
+| Token endpoint | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/token` |
+| JWKS URI | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/keys` |
 | Client ID (HRIV) | `hkPdYUJqqEYWxiVwIrgrAjiS8fLja2ip` |
 
 > **Important:** `OIDC_ISSUER` must be the **full provider path**
 > including port 8200 and `/v1/identity/oidc/provider/vault-provider`.
 > The backend appends `/.well-known/openid-configuration` automatically.
-> Using a short URL like `https://vault.ltc.bcit.ca` will fail because
+> Using a short URL like `https://vault.example.ca` will fail because
 > the discovery document will not be found at that path.
 
 ### Quick start (local Docker)
@@ -162,7 +162,7 @@ docker compose up --build
 open http://localhost:5173
 ```
 
-Click **"Sign in with BCIT"** on the login page. The browser will
+Click **"Sign in with ..."** on the login page. The browser will
 redirect to the Vault authorization endpoint.  After authenticating,
 Vault redirects back to
 `http://localhost:8000/api/auth/oidc/callback`, which exchanges the
@@ -217,7 +217,7 @@ curl -s http://localhost:8000/api/auth/oidc/enabled | python3 -m json.tool
 # 2. Verify Vault discovery is reachable from the backend container
 docker compose exec backend python3 -c "
 import urllib.request, json
-url = 'https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/openid-configuration'
+url = 'https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/openid-configuration'
 data = json.loads(urllib.request.urlopen(url).read())
 print(json.dumps(data, indent=2))
 "

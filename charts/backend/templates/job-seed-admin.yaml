@@ -31,7 +31,7 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "hriv-backend.fullname" . }}-db-app
+                  name: postgres-db-credentials
                   key: uri
       containers:
         - name: seed-admin
@@ -67,7 +67,7 @@ spec:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "hriv-backend.fullname" . }}-db-app
+                  name: postgres-db-credentials
                   key: uri
       {{- with .Values.nodeSelector }}
       nodeSelector:

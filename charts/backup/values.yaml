@@ -16,7 +16,11 @@ versionConfigMap:
 
 # Name of the backend chart Secret containing the database URI.
 # Defaults to the Secret created by the backend chart.
-postgresSecretName: hriv-backend-db-app
+postgresSecretName: postgres-db-credentials
+
+# Name of the Kubernetes Secret containing the Azure Storage connection string.
+# Defaults to the Secret created by this chart when vault.enabled is false.
+azureSecretName: azure-storage-credentials
 
 # Pod label used for pod affinity when sharing the backend's RWO data PVC.
 # Ensures the backup pod is co-located on the same node as the backend.
@@ -57,9 +61,6 @@ observability:
 # Override to true in Flux overlays (flux-fleet) for org deployments.
 vault:
   enabled: false
-  kvMount: secret
-  authRef: vault-auth
-  refreshAfter: 1h
   azureSecretPath: hriv/azure-storage
 
 persistence:
