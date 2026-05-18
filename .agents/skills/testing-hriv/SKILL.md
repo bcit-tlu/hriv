@@ -1,12 +1,12 @@
 ---
 name: testing-hriv
-description: End-to-end testing guide for the HRIV app including local stack setup, seed data, auth, UI navigation, metadata operations, admin export/import, image upload, image replacement, and tile sidecar routing.
+description: End-to-end testing guide for the HRIV app including local stack setup, seed data, auth, UI navigation, metadata operations, admin export/import, image upload, image replacement, drag-and-drop, and tile sidecar routing.
 ---
 
 # Testing HRIV
 
 End-to-end testing guide for the HRIV app: local stack bring-up, seed data, auth,
-UI navigation, metadata operations, admin export/import, and image upload. For
+UI navigation, metadata operations, admin export/import, drag-and-drop, and image upload. For
 domain-specific flows see the sibling skills `testing-image-processing`
 (tile pipeline / pyvips) and `testing-backup-service` (disaster recovery).
 
@@ -66,11 +66,11 @@ All use password: `password`
 ## Seed Data
 
 ### Categories (hierarchical)
-- Architecture
-  - American
-  - Italian
-    - Gothic
-- Panoramas
+- Architecture (id=1)
+  - American (id=4)
+  - Italian (id=3)
+    - Gothic (id=5)
+- Panoramas (id=2)
 
 ### Programs
 | ID | Name |
@@ -384,6 +384,133 @@ docker exec hriv-db-1 psql -U hriv -d hriv -c \
 ```
 Then open that image in the browser to verify graceful handling.
 
+## Testing Drag-and-Drop (Browse Page)
+
+The Browse page supports HTML5 native drag-and-drop for images, categories, and files.
+All drag interactions are gated behind `canEditContent` — students see no drag affordances.
+
+### Custom MIME Types
+- `application/x-hriv-image` — image tile drag payload (`{"id": <imageId>}`)
+- `application/x-hriv-category` — category tile drag payload (`{"id": <categoryId>}`)
+- `Files` — native file drag from OS
+
+### DnD Interactions to Test
+
+| Action | Expected Result |
+|---|---|
+| Drag image tile onto category tile | Image moves to target category |
+| Drag category tile onto another category | Category reparented under target |
+| Drag category onto itself | No-op (self-drop guard) |
+| Drop files on category tile | Upload dialog opens with that category pre-selected |
+| Drop files on grid (not on a tile) | Upload dialog opens with current path category |
+| Student views any tile | `draggable="false"`, no drop handlers |
+| Drag text/URL onto category tile | No highlight, drop rejected (MIME filtering) |
+
+### Testing DnD with Synthetic Events
+
+Native HTML5 DnD requires physical mouse gestures that computer-use tools may not
+reliably trigger. Use Playwright CDP with synthetic `DragEvent` dispatch instead:
+
+```python
+import asyncio
+from playwright.async_api import async_playwright
+
+async def drag_image_to_category():
+    async with async_playwright() as p:
+        browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+        page = browser.contexts[0].pages[0]
+
+        result = await page.evaluate("""
+            () => {
+                const cards = document.querySelectorAll('.MuiCard-root');
+                const sourceCard = cards[1]; // image tile
+                const targetCard = cards[0]; // category tile
+
+                const dt = new DataTransfer();
+                dt.setData('application/x-hriv-image', JSON.stringify({ id: 1 }));
+
+                sourceCard.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+                targetCard.dispatchEvent(new DragEvent('dragenter', { bubbles: true, dataTransfer: dt }));
+                targetCard.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+                targetCard.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+                sourceCard.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+
+                return 'DnD dispatched';
+            }
+        """)
+        print(result)
+
+asyncio.run(drag_image_to_category())
+```
+
+**Important notes for synthetic DnD:**
+- The full event sequence is required: `dragstart` → `dragenter` → `dragover` → `drop` → `dragend`
+- `dragover` must have `cancelable: true` and the handler must call `preventDefault()` to allow the drop
+- For file drops, use `dt.items.add(new File(['test'], 'test.jpg', { type: 'image/jpeg' }))` to populate the `Files` type
+- Visual highlight (outline color change) may not be observable via `getComputedStyle` with synthetic events because React state updates are asynchronous — verify functional behavior via `defaultPrevented` instead
+- After destructive tests (moves/reparents), restore seed data via API PATCH
+
+### Verifying MIME Type Filtering
+
+The `isAcceptedDrag` callback checks `e.dataTransfer.types` before allowing drops.
+Verify filtering by checking `defaultPrevented` on `dragover` events:
+
+```javascript
+// In browser console or Playwright evaluate:
+const card = document.querySelectorAll('.MuiCard-root')[0];
+
+// text/plain should be REJECTED (defaultPrevented = false)
+const dtText = new DataTransfer();
+dtText.setData('text/plain', 'test');
+const textOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dtText });
+card.dispatchEvent(textOver);
+console.log('text/plain prevented:', textOver.defaultPrevented); // false
+
+// HRIV MIME should be ACCEPTED (defaultPrevented = true)
+const dtCat = new DataTransfer();
+dtCat.setData('application/x-hriv-category', '{"id":2}');
+const catOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dtCat });
+card.dispatchEvent(catOver);
+console.log('x-hriv-category prevented:', catOver.defaultPrevented); // true
+```
+
+### Verifying File Drop Category Pre-Selection
+
+When files are dropped on a category tile, the upload dialog should open with that
+category pre-selected. After the dialog opens, verify:
+
+```javascript
+const dialog = document.querySelector('.MuiDialog-root');
+const dialogText = dialog.textContent;
+// Should contain "CategoryArchitecture(0)" (or whichever category was dropped on)
+// NOT just "Category" with no selection
+```
+
+After closing and reopening the dialog normally (via ADD IMAGES button), the category
+field should be empty (no stale pre-selection from the previous file drop).
+
+### Data Restoration After DnD Tests
+
+```bash
+# Restore image back to original category
+VERSION=$(curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1 \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+curl -s -X PATCH http://localhost:8000/api/images/1 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -H "If-Match: $VERSION" -d '{"category_id": 3}'  # Italian
+
+# Restore category parent
+curl -s -X PATCH http://localhost:8000/api/categories/2 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"parent_id": null}'  # Panoramas back to root
+```
+
+### Chrome CDP Port
+
+When launching Chrome manually (e.g. because the CDP proxy on :29229 is not running),
+use `--remote-debugging-port=9222` and connect Playwright to `http://localhost:9222`
+instead of `:29229`.
+
 ## Testing Admin Export/Import
 
 ### Filesystem Export UI Flow
@@ -594,3 +721,6 @@ docker-compose testing (Vite dev proxy has no body limit).
   on first load usually mean the CDN is still warming — wait a few seconds.
 - **Small vs large test images:** a 1024×1024 solid-color JPEG processes in
   milliseconds; anything beyond ~200 MB is needed to observe tile-processing progress.
+- **Chrome CDP proxy may not be running:** If `curl -s http://localhost:29229/json/version`
+  returns empty, launch Chrome manually with `--remote-debugging-port=9222` and
+  connect Playwright to `http://localhost:9222` instead.
