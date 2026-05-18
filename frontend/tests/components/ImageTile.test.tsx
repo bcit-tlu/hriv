@@ -11,9 +11,10 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ImageTile from "../../src/components/ImageTile";
+import { MIME_HRIV_IMAGE } from "../../src/components/ImageTile";
 import type { ImageItem } from "../../src/types";
 
 // ---------------------------------------------------------------------------
@@ -254,6 +255,78 @@ describe("ImageTile", () => {
             // Only one DisabledVisibleIcon (in the toggle button), not the inline one next to title
             const icons = screen.getAllByTestId("DisabledVisibleIcon");
             expect(icons).toHaveLength(1);
+        });
+    });
+
+    // ─── Drag and drop ─────────────────────────────────────────────────
+
+    describe("drag and drop", () => {
+        it("sets draggable attribute when draggable prop is true", () => {
+            const { container } = render(
+                <ImageTile
+                    image={makeImage()}
+                    onClick={vi.fn()}
+                    draggable
+                />,
+            );
+            const card = container.querySelector(".MuiCard-root");
+            expect(card).toHaveAttribute("draggable", "true");
+        });
+
+        it("does not set draggable when draggable prop is false", () => {
+            const { container } = render(
+                <ImageTile image={makeImage()} onClick={vi.fn()} />,
+            );
+            const card = container.querySelector(".MuiCard-root");
+            expect(card).not.toHaveAttribute("draggable", "true");
+        });
+
+        it("sets image data on drag start", () => {
+            const { container } = render(
+                <ImageTile
+                    image={makeImage({ id: 42 })}
+                    onClick={vi.fn()}
+                    draggable
+                />,
+            );
+            const card = container.querySelector(".MuiCard-root")!;
+            const dataStore: Record<string, string> = {};
+            const dragEvent = new Event("dragstart", { bubbles: true });
+            Object.assign(dragEvent, {
+                dataTransfer: {
+                    setData: (type: string, data: string) => {
+                        dataStore[type] = data;
+                    },
+                    effectAllowed: "",
+                },
+            });
+            fireEvent(card, dragEvent);
+            expect(dataStore[MIME_HRIV_IMAGE]).toBe(
+                JSON.stringify({ id: 42 }),
+            );
+        });
+
+        it("reduces opacity while dragging", () => {
+            const { container } = render(
+                <ImageTile
+                    image={makeImage()}
+                    onClick={vi.fn()}
+                    draggable
+                />,
+            );
+            const card = container.querySelector(".MuiCard-root")!;
+            const dragStart = new Event("dragstart", { bubbles: true });
+            Object.assign(dragStart, {
+                dataTransfer: {
+                    setData: vi.fn(),
+                    effectAllowed: "",
+                },
+            });
+            fireEvent(card, dragStart);
+            expect(card).toHaveStyle({ opacity: 0.4 });
+
+            fireEvent.dragEnd(card);
+            expect(card).toHaveStyle({ opacity: 1 });
         });
     });
 });
