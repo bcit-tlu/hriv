@@ -89,7 +89,7 @@ interface UploadImageModalProps {
   onUploadFailed?: (uploadId: number, error: string) => void
   categoryId?: number | null
   categories: Category[]
-  programs: Program[]
+  programs?: Program[]
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
@@ -118,7 +118,6 @@ export default function UploadImageModal({
   const [metadata, setMetadata] = useState<ImageMetadataValues>({
     copyright: '',
     note: '',
-    programIds: [],
     active: true,
   })
   const [dragOver, setDragOver] = useState(false)
@@ -155,7 +154,7 @@ export default function UploadImageModal({
     setFiles([])
     setName('')
     setCategoryId(initialCategoryId ?? null)
-    setMetadata({ copyright: '', note: '', programIds: [], active: true })
+    setMetadata({ copyright: '', note: '', active: true })
     setDragOver(false)
     setUploading(false)
     setUploadProgress(null)
@@ -243,7 +242,7 @@ export default function UploadImageModal({
           categoryId,
           metadata.copyright || undefined,
           metadata.note || undefined,
-          metadata.programIds.length > 0 ? metadata.programIds : undefined,
+          undefined,
           metadata.active,
           (fraction) => {
             setUploadProgress(fraction)
@@ -287,7 +286,7 @@ export default function UploadImageModal({
           categoryId ?? undefined,
           metadata.copyright || undefined,
           metadata.note || undefined,
-          metadata.programIds.length > 0 ? metadata.programIds : undefined,
+          undefined,
           metadata.active,
           (fraction) => {
             setUploadProgress(fraction)
@@ -445,7 +444,6 @@ export default function UploadImageModal({
             <ImageMetadataFields
               values={metadata}
               onChange={setMetadata}
-              programs={programs}
               idPrefix="upload"
             />
             {uploading && uploadProgress !== null && (

@@ -26,6 +26,8 @@ interface EditCategoryDialogProps {
   siblingNames?: string[]
   programs?: Program[]
   currentProgramIds?: number[]
+  /** Program IDs inherited from ancestor categories (read-only display). */
+  inheritedProgramIds?: number[]
 }
 
 export default function EditCategoryDialog({
@@ -36,6 +38,7 @@ export default function EditCategoryDialog({
   siblingNames = [],
   programs = [],
   currentProgramIds = [],
+  inheritedProgramIds = [],
 }: EditCategoryDialogProps) {
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -50,7 +53,12 @@ export default function EditCategoryDialog({
       setLabel(currentLabel)
       setError(null)
       setVisibility(currentProgramIds.length > 0 ? 'specific' : 'all')
-      setSelectedProgramIds(new Set(currentProgramIds))
+      // When ancestor restrictions exist, filter out any selected programs
+      // that aren't in the inherited set (they'd be unreachable anyway).
+      const validIds = inheritedProgramIds.length > 0
+        ? currentProgramIds.filter((id) => inheritedProgramIds.includes(id))
+        : currentProgramIds
+      setSelectedProgramIds(new Set(validIds))
     }
     prevOpen.current = open
   })
@@ -83,14 +91,19 @@ export default function EditCategoryDialog({
   }
 
   const programsChanged = useMemo(() => {
-    const currentSet = new Set(currentProgramIds)
+    // Use the same filtered baseline that was used to initialize selectedProgramIds,
+    // so that filtering out unreachable programs on open doesn't count as a change.
+    const baseline = inheritedProgramIds.length > 0
+      ? currentProgramIds.filter((id) => inheritedProgramIds.includes(id))
+      : currentProgramIds
+    const currentSet = new Set(baseline)
     const effectiveIds = visibility === 'specific' ? selectedProgramIds : new Set<number>()
     if (currentSet.size !== effectiveIds.size) return true
     for (const id of effectiveIds) {
       if (!currentSet.has(id)) return true
     }
     return false
-  }, [currentProgramIds, selectedProgramIds, visibility])
+  }, [currentProgramIds, inheritedProgramIds, selectedProgramIds, visibility])
 
   const handleSubmit = async () => {
     const trimmed = label.trim()
@@ -173,16 +186,22 @@ export default function EditCategoryDialog({
             </RadioGroup>
             {visibility === 'specific' && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-                {programs.map((p) => (
-                  <Chip
-                    key={p.id}
-                    label={p.name}
-                    size="small"
-                    color={selectedProgramIds.has(p.id) ? 'primary' : 'default'}
-                    variant={selectedProgramIds.has(p.id) ? 'filled' : 'outlined'}
-                    onClick={() => toggleProgram(p.id)}
-                  />
-                ))}
+                {programs.map((p) => {
+                  const disabled = inheritedProgramIds.length > 0 && !inheritedProgramIds.includes(p.id)
+                  const isInheritedOnly = inheritedProgramIds.includes(p.id) && !selectedProgramIds.has(p.id)
+                  return (
+                    <Chip
+                      key={p.id}
+                      label={p.name}
+                      size="small"
+                      color={selectedProgramIds.has(p.id) || isInheritedOnly ? 'primary' : 'default'}
+                      variant={selectedProgramIds.has(p.id) || isInheritedOnly ? 'filled' : 'outlined'}
+                      onClick={disabled ? undefined : () => toggleProgram(p.id)}
+                      disabled={disabled}
+                      sx={isInheritedOnly ? { opacity: 0.5 } : undefined}
+                    />
+                  )
+                })}
               </Box>
             )}
           </Box>

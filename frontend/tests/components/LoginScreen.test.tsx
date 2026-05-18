@@ -5,7 +5,7 @@
  * 1. OIDC-disabled: local credential form renders directly (no toggle)
  * 2. OIDC-enabled default view: only OIDC button + "Use a local user" link
  * 3. Toggle: clicking "Use a local user" reveals the local form
- * 4. Toggle back: clicking "Sign in with ..." returns to OIDC view
+ * 4. Toggle back: clicking "Sign in with BCIT" returns to OIDC view
  * 5. Local form submission calls onLogin with email & password
  * 6. Login error displays an alert
  * 7. Announcement banner renders when provided
@@ -119,7 +119,7 @@ describe("LoginScreen", () => {
         it("does not show the OIDC button or toggle links", async () => {
             await renderOidcDisabled();
             expect(
-                screen.queryByRole("button", { name: /Sign in with .../i }),
+                screen.queryByRole("button", { name: /Sign in with BCIT/i }),
             ).not.toBeInTheDocument();
             expect(
                 screen.queryByText("Use a local user"),
@@ -129,7 +129,7 @@ describe("LoginScreen", () => {
         it('does not show "Sign in with ..." link in the local form', async () => {
             await renderOidcDisabled();
             expect(
-                screen.queryByRole("button", { name: /Sign in with .../i }),
+                screen.queryByRole("button", { name: /Sign in with BCIT/i }),
             ).not.toBeInTheDocument();
         });
     });
@@ -140,7 +140,7 @@ describe("LoginScreen", () => {
         it("shows the OIDC button", async () => {
             await renderOidcEnabled();
             expect(
-                screen.getByRole("button", { name: /Sign in with .../i }),
+                screen.getByRole("button", { name: /Sign in with BCIT/i }),
             ).toBeInTheDocument();
         });
 
@@ -174,16 +174,16 @@ describe("LoginScreen", () => {
             ).toBeInTheDocument();
         });
 
-        it('local form shows "Sign in with ..." link to toggle back', async () => {
+        it('local form shows "Sign in with BCIT" link to toggle back', async () => {
             const user = userEvent.setup();
             await renderOidcEnabled();
 
             await user.click(screen.getByText("Use a local user"));
 
-            expect(screen.getByText("Sign in with ...")).toBeInTheDocument();
+            expect(screen.getByText("Sign in with BCIT")).toBeInTheDocument();
         });
 
-        it('clicking "Sign in with ..." link returns to OIDC view', async () => {
+        it('clicking "Sign in with BCIT" link returns to OIDC view', async () => {
             const user = userEvent.setup();
             await renderOidcEnabled();
 
@@ -192,10 +192,10 @@ describe("LoginScreen", () => {
             expect(getUsernameField()).toBeInTheDocument();
 
             // Toggle back to OIDC view
-            await user.click(screen.getByText("Sign in with ..."));
+            await user.click(screen.getByText("Sign in with BCIT"));
             expect(queryUsernameField()).not.toBeInTheDocument();
             expect(
-                screen.getByRole("button", { name: /Sign in with .../i }),
+                screen.getByRole("button", { name: /Sign in with BCIT/i }),
             ).toBeInTheDocument();
         });
     });

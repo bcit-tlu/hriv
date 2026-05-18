@@ -29,6 +29,7 @@ import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
+import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
@@ -140,6 +141,7 @@ interface ManagePageProps {
     uploadId: number,
   ) => void
   onUploadFailed?: (uploadId: number, error: string) => void
+  onSearchProgram?: (programName: string) => void
 }
 
 export default function ManagePage({
@@ -157,6 +159,7 @@ export default function ManagePage({
   onUploadProgress,
   onBulkImportStarted,
   onUploadFailed,
+  onSearchProgram,
 }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
@@ -237,12 +240,37 @@ export default function ManagePage({
     return fullPath.map((c) => c.label).join(' : ')
   }, [categoryPaths])
 
-  // Helper to get program names for sorting
+  // Collect effective program restrictions from the category tree using narrowing
+  // semantics: each category with own programIds narrows (intersects) the set.
+  // "direct" = programs from the image's own category, "ancestor" = remaining inherited.
+  const getInheritedProgramIds = useCallback((img: ApiImage): { direct: number[]; ancestor: number[] } => {
+    if (img.category_id == null) return { direct: [], ancestor: [] }
+    const seg = categoryPaths.get(img.category_id)
+    if (!seg) return { direct: [], ancestor: [] }
+    const fullPath = [...seg.ancestors, seg.category]
+    let effective: number[] = []
+    let initialized = false
+    for (const cat of fullPath) {
+      if (cat.programIds.length > 0) {
+        effective = initialized
+          ? cat.programIds.filter((pid) => effective.includes(pid))
+          : [...cat.programIds]
+        initialized = true
+      }
+    }
+    const directIds = new Set(seg.category.programIds)
+    const direct = effective.filter((pid) => directIds.has(pid))
+    const ancestor = effective.filter((pid) => !directIds.has(pid))
+    return { direct, ancestor }
+  }, [categoryPaths])
+
+  // Helper to get program names for sorting/filtering
   const getProgramNames = useCallback((img: ApiImage): string => {
-    return img.program_ids
+    const { direct, ancestor } = getInheritedProgramIds(img)
+    return [...direct, ...ancestor]
       .map((pid) => programs.find((p) => p.id === pid)?.name ?? '')
       .join(', ')
-  }, [programs])
+  }, [programs, getInheritedProgramIds])
 
   // Filtered and sorted images
   const filteredImages = useMemo(() => {
@@ -354,7 +382,6 @@ export default function ManagePage({
     category_id?: number | null
     copyright?: string
     note?: string
-    program_ids?: number[]
     active?: boolean
   }) => {
     try {
@@ -777,12 +804,49 @@ export default function ManagePage({
                   </TableCell>
                   <TableCell>{img.copyright ?? '—'}</TableCell>
                   <TableCell>{img.note ?? '—'}</TableCell>
-                  <TableCell>
-                    {img.program_ids.length > 0
-                      ? img.program_ids
-                          .map((pid) => programs.find((p) => p.id === pid)?.name ?? pid)
-                          .join(', ')
-                      : '—'}
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    {(() => {
+                      const { direct, ancestor } = getInheritedProgramIds(img)
+                      if (direct.length === 0 && ancestor.length === 0) return 'All programs'
+                      const chipClick = (name: string) => {
+                        if (onSearchProgram) {
+                          onSearchProgram(name)
+                        } else {
+                          setShowFilters(true)
+                          handleFilterChange('program', name)
+                        }
+                      }
+                      return (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {direct
+                            .map((pid) => programs.find((p) => p.id === pid))
+                            .filter((p): p is Program => p != null)
+                            .map((p) => (
+                              <Chip
+                                key={p.id}
+                                label={p.name}
+                                size="small"
+                                color="primary"
+                                onClick={() => chipClick(p.name)}
+                                sx={{ cursor: 'pointer' }}
+                              />
+                            ))}
+                          {ancestor
+                            .map((pid) => programs.find((p) => p.id === pid))
+                            .filter((p): p is Program => p != null)
+                            .map((p) => (
+                              <Chip
+                                key={p.id}
+                                label={p.name}
+                                size="small"
+                                color="primary"
+                                onClick={() => chipClick(p.name)}
+                                sx={{ cursor: 'pointer', opacity: 0.5 }}
+                              />
+                            ))}
+                        </Box>
+                      )
+                    })()}
                   </TableCell>
                   <TableCell
                     onClick={(e) => e.stopPropagation()}
@@ -932,8 +996,8 @@ export default function ManagePage({
         onSave={handleBulkSave}
         onDelete={handleBulkDelete}
         categories={categories}
-        programs={programs}
         selectedCount={selected.size}
+        programs={programs}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}

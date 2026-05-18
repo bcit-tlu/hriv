@@ -25,6 +25,8 @@ interface AddCategoryDialogProps {
   parentLabel?: string
   siblingNames?: string[]
   programs?: Program[]
+  /** Effective inherited program IDs from ancestors (narrowing semantics). */
+  inheritedProgramIds?: number[]
 }
 
 export default function AddCategoryDialog({
@@ -34,6 +36,7 @@ export default function AddCategoryDialog({
   parentLabel,
   siblingNames = [],
   programs = [],
+  inheritedProgramIds = [],
 }: AddCategoryDialogProps) {
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -145,16 +148,22 @@ export default function AddCategoryDialog({
             </RadioGroup>
             {visibility === 'specific' && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-                {programs.map((p) => (
-                  <Chip
-                    key={p.id}
-                    label={p.name}
-                    size="small"
-                    color={selectedProgramIds.has(p.id) ? 'primary' : 'default'}
-                    variant={selectedProgramIds.has(p.id) ? 'filled' : 'outlined'}
-                    onClick={() => toggleProgram(p.id)}
-                  />
-                ))}
+                {programs.map((p) => {
+                  const disabled = inheritedProgramIds.length > 0 && !inheritedProgramIds.includes(p.id)
+                  const isInheritedOnly = inheritedProgramIds.includes(p.id) && !selectedProgramIds.has(p.id)
+                  return (
+                    <Chip
+                      key={p.id}
+                      label={p.name}
+                      size="small"
+                      color={selectedProgramIds.has(p.id) || isInheritedOnly ? 'primary' : 'default'}
+                      variant={selectedProgramIds.has(p.id) || isInheritedOnly ? 'filled' : 'outlined'}
+                      onClick={disabled ? undefined : () => toggleProgram(p.id)}
+                      disabled={disabled}
+                      sx={isInheritedOnly ? { opacity: 0.5 } : undefined}
+                    />
+                  )
+                })}
               </Box>
             )}
           </Box>

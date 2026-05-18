@@ -6,7 +6,7 @@
  * 2. Hidden indicator — dimmed title and DisabledVisible icon when status='hidden'
  * 3. Visible categories — no hidden indicator when status is not 'hidden'
  * 4. Card image — renders thumbnail when cardImageId is set
- * 5. Program chips — renders program labels from descendant images
+ * 5. Program chips — renders program labels from category programIds
  * 6. Detail text — correct sub-category and image counts
  * 7. Move button — renders and calls callback
  */
@@ -28,6 +28,7 @@ function makeCategory(overrides: Partial<Category> = {}): Category {
     parentId: null,
     children: [],
     images: [],
+    programIds: [],
     status: null,
     cardImageId: null,
     ...overrides,
@@ -252,14 +253,10 @@ describe('CategoryTile', () => {
   // ─── Program chips ────────────────────────────────────────────────
 
   describe('program chips', () => {
-    it('renders program chips from image programIds', () => {
+    it('renders program chips from category programIds', () => {
       render(
         <CategoryTile
-          category={makeCategory({
-            images: [
-              { id: 1, name: 'Img', thumb: '', tileSources: '', programIds: [10, 20], active: true, version: 1 },
-            ],
-          })}
+          category={makeCategory({ programIds: [10, 20] })}
           onClick={vi.fn()}
           programs={samplePrograms}
         />,
@@ -268,7 +265,7 @@ describe('CategoryTile', () => {
       expect(screen.getByText('Radiology')).toBeInTheDocument()
     })
 
-    it('does not render program chips when no images have programIds', () => {
+    it('does not render program chips when programIds is empty', () => {
       render(
         <CategoryTile
           category={makeCategory()}

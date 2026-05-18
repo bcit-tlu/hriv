@@ -60,7 +60,7 @@ async def test_check_oidc_connectivity_success(monkeypatch) -> None:
         await _check_oidc_connectivity()  # Should not raise
 
     mock_client.get.assert_awaited_once_with(
-        "https://vault.example.ca/v1/oidc/.well-known/openid-configuration"
+        "https://vault.example.com/v1/oidc/.well-known/openid-configuration"
     )
 
 

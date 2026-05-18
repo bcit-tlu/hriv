@@ -2,7 +2,6 @@ import { useState, useCallback } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
@@ -23,13 +22,12 @@ interface BulkEditImagesModalProps {
     category_id?: number | null
     copyright?: string
     note?: string
-    program_ids?: number[]
     active?: boolean
   }) => Promise<void>
   onDelete: () => Promise<void>
   categories: Category[]
-  programs: Program[]
   selectedCount: number
+  programs?: Program[]
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
@@ -41,8 +39,8 @@ export default function BulkEditImagesModal({
   onSave,
   onDelete,
   categories,
-  programs,
   selectedCount,
+  programs,
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
@@ -51,8 +49,6 @@ export default function BulkEditImagesModal({
   const [categoryChanged, setCategoryChanged] = useState(false)
   const [copyright, setCopyright] = useState('')
   const [note, setNote] = useState('')
-  const [programIds, setProgramIds] = useState<number[]>([])
-  const [programChanged, setProgramChanged] = useState(false)
   const [active, setActive] = useState(true)
   const [activeChanged, setActiveChanged] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -65,8 +61,6 @@ export default function BulkEditImagesModal({
     setCategoryChanged(false)
     setCopyright('')
     setNote('')
-    setProgramIds([])
-    setProgramChanged(false)
     setActive(true)
     setActiveChanged(false)
     setConfirmDelete(false)
@@ -84,28 +78,16 @@ export default function BulkEditImagesModal({
     onClose()
   }
 
-  const toggleProgram = useCallback(
-    (id: number) => {
-      setProgramIds((prev) =>
-        prev.includes(id) ? prev.filter((pid) => pid !== id) : [...prev, id],
-      )
-      setProgramChanged(true)
-    },
-    [],
-  )
-
   const handleSave = async () => {
     const data: {
       category_id?: number | null
       copyright?: string
       note?: string
-      program_ids?: number[]
       active?: boolean
     } = {}
     if (categoryChanged) data.category_id = categoryId
     if (copyright.trim()) data.copyright = copyright.trim()
     if (note.trim()) data.note = note.trim()
-    if (programChanged) data.program_ids = programIds
     if (activeChanged) data.active = active
     setSaving(true)
     try {
@@ -179,23 +161,6 @@ export default function BulkEditImagesModal({
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
-        <Box>
-          <Typography variant="subtitle2" gutterBottom>
-            Program
-          </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-            {programs.map((p) => (
-              <Chip
-                key={p.id}
-                label={p.name}
-                size="small"
-                color={programIds.includes(p.id) ? 'primary' : 'default'}
-                variant={programIds.includes(p.id) ? 'filled' : 'outlined'}
-                onClick={() => toggleProgram(p.id)}
-              />
-            ))}
-          </Box>
-        </Box>
         <FormControlLabel
           control={
             <Switch
