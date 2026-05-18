@@ -18,6 +18,10 @@ versionConfigMap:
 # Defaults to the Secret created by the backend chart.
 postgresSecretName: postgres-db-credentials
 
+# Name of the Kubernetes Secret containing the Azure Storage connection string.
+# Defaults to the Secret created by this chart when vault.enabled is false.
+azureSecretName: azure-storage-credentials
+
 # Pod label used for pod affinity when sharing the backend's RWO data PVC.
 # Ensures the backup pod is co-located on the same node as the backend.
 colocateWithPodLabel: hriv-backend

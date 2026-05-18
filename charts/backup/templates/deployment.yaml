@@ -47,7 +47,7 @@ spec:
             - name: AZURE_STORAGE_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:
-                  name: azure-storage-credentials
+                  name: {{ .Values.azureSecretName }}
                   key: AZURE_STORAGE_CONNECTION_STRING
             - name: AZURE_STORAGE_CONTAINER
               value: {{ .Values.env.AZURE_STORAGE_CONTAINER | quote }}
