@@ -61,7 +61,7 @@ export default function EditCategoryDialog({
       setSelectedProgramIds(new Set(validIds))
     }
     prevOpen.current = open
-  })
+  }, [open, currentLabel, currentProgramIds, inheritedProgramIds])
 
   const exactMatch = useMemo(
     () =>
