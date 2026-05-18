@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.12.0...frontend-v0.12.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* **frontend:** add dependency array to useEffect in EditCategoryDialog ([#404](https://github.com/bcit-tlu/hriv/issues/404)) ([db9ab44](https://github.com/bcit-tlu/hriv/commit/db9ab44e4714d99c3d862f2affe0cd35fa98dfd8))
+
 ## [0.12.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.11.1...frontend-v0.12.0) (2026-05-18)
 
 
