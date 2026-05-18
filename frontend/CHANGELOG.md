@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.12.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.11.1...frontend-v0.12.0) (2026-05-18)
+
+
+### Features
+
+* add restricted category indicators and deprecate image-level programs ([#385](https://github.com/bcit-tlu/hriv/issues/385)) ([a8bc55b](https://github.com/bcit-tlu/hriv/commit/a8bc55bb2304e6746597020420e6a6c3434f3d6c))
+* card icon tweaks, add category button, role-based UX fixes ([#372](https://github.com/bcit-tlu/hriv/issues/372)) ([4241001](https://github.com/bcit-tlu/hriv/commit/4241001fb7ae95a54f37929a65ad43af8cc1af37))
+* **frontend:** add drag-and-drop for images and categories ([#398](https://github.com/bcit-tlu/hriv/issues/398)) ([8ecb5d2](https://github.com/bcit-tlu/hriv/commit/8ecb5d2bcf4e9e1d86d21f27c5a8f34d4ee15d67))
+
+
+### Bug Fixes
+
+* **frontend:** resolve category modal overlap, dropdown action icons, and image preview navigation ([#397](https://github.com/bcit-tlu/hriv/issues/397)) ([5c74b1c](https://github.com/bcit-tlu/hriv/commit/5c74b1c4c4ad666717a0d0cf977af2c0471336f1))
+
 ## [0.11.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.11.0...frontend-v0.11.1) (2026-05-12)
 
 
