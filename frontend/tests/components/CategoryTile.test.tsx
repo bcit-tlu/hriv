@@ -12,9 +12,11 @@
  */
 
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CategoryTile from '../../src/components/CategoryTile'
+import { MIME_HRIV_CATEGORY } from '../../src/components/CategoryTile'
+import { MIME_HRIV_IMAGE } from '../../src/components/ImageTile'
 import type { Category, Program } from '../../src/types'
 
 // ---------------------------------------------------------------------------
@@ -350,6 +352,171 @@ describe('CategoryTile', () => {
         />,
       )
       expect(screen.queryByLabelText('Move category')).not.toBeInTheDocument()
+    })
+  })
+
+  // ─── Drag and drop ──────────────────────────────────────────────────
+
+  describe('drag and drop', () => {
+    // Helper to build a minimal DragEvent with a mocked dataTransfer
+    function makeDragEvent(type: string, dataStore: Record<string, string> = {}) {
+      const event = new Event(type, { bubbles: true })
+      Object.assign(event, {
+        dataTransfer: {
+          setData: (mime: string, value: string) => { dataStore[mime] = value },
+          getData: (mime: string) => dataStore[mime] ?? '',
+          effectAllowed: '',
+          dropEffect: '',
+          types: Object.keys(dataStore),
+        },
+        preventDefault: vi.fn(),
+      })
+      return event
+    }
+
+    it('sets draggable attribute when draggable prop is true', () => {
+      const { container } = render(
+        <CategoryTile category={makeCategory()} onClick={vi.fn()} programs={[]} draggable />,
+      )
+      const card = container.querySelector('.MuiCard-root')
+      expect(card).toHaveAttribute('draggable', 'true')
+    })
+
+    it('does not set draggable when draggable prop is false', () => {
+      const { container } = render(
+        <CategoryTile category={makeCategory()} onClick={vi.fn()} programs={[]} />,
+      )
+      const card = container.querySelector('.MuiCard-root')
+      expect(card).not.toHaveAttribute('draggable', 'true')
+    })
+
+    it('sets category data on drag start', () => {
+      const { container } = render(
+        <CategoryTile
+          category={makeCategory({ id: 7 })}
+          onClick={vi.fn()}
+          programs={[]}
+          draggable
+        />,
+      )
+      const card = container.querySelector('.MuiCard-root')!
+      const dataStore: Record<string, string> = {}
+      fireEvent(card, makeDragEvent('dragstart', dataStore))
+      expect(dataStore[MIME_HRIV_CATEGORY]).toBe(JSON.stringify({ id: 7 }))
+    })
+
+    it('calls onDropImage when an image is dropped', () => {
+      const onDropImage = vi.fn()
+      const { container } = render(
+        <CategoryTile
+          category={makeCategory({ id: 5 })}
+          onClick={vi.fn()}
+          programs={[]}
+          onDropImage={onDropImage}
+        />,
+      )
+      const card = container.querySelector('.MuiCard-root')!
+      const dataStore: Record<string, string> = {
+        [MIME_HRIV_IMAGE]: JSON.stringify({ id: 99 }),
+      }
+      fireEvent(card, makeDragEvent('drop', dataStore))
+      expect(onDropImage).toHaveBeenCalledWith(99, 5)
+    })
+
+    it('calls onDropCategory when a category is dropped', () => {
+      const onDropCategory = vi.fn()
+      const { container } = render(
+        <CategoryTile
+          category={makeCategory({ id: 10 })}
+          onClick={vi.fn()}
+          programs={[]}
+          onDropCategory={onDropCategory}
+        />,
+      )
+      const card = container.querySelector('.MuiCard-root')!
+      const dataStore: Record<string, string> = {
+        [MIME_HRIV_CATEGORY]: JSON.stringify({ id: 3 }),
+      }
+      fireEvent(card, makeDragEvent('drop', dataStore))
+      expect(onDropCategory).toHaveBeenCalledWith(3, 10)
+    })
+
+    it('ignores category drop onto itself', () => {
+      const onDropCategory = vi.fn()
+      const { container } = render(
+        <CategoryTile
+          category={makeCategory({ id: 10 })}
+          onClick={vi.fn()}
+          programs={[]}
+          onDropCategory={onDropCategory}
+        />,
+      )
+      const card = container.querySelector('.MuiCard-root')!
+      const dataStore: Record<string, string> = {
+        [MIME_HRIV_CATEGORY]: JSON.stringify({ id: 10 }),
+      }
+      fireEvent(card, makeDragEvent('drop', dataStore))
+      expect(onDropCategory).not.toHaveBeenCalled()
+    })
+
+    it('prioritizes image drop over category drop when both MIME types present', () => {
+      const onDropImage = vi.fn()
+      const onDropCategory = vi.fn()
+      const { container } = render(
+        <CategoryTile
+          category={makeCategory({ id: 5 })}
+          onClick={vi.fn()}
+          programs={[]}
+          onDropImage={onDropImage}
+          onDropCategory={onDropCategory}
+        />,
+      )
+      const card = container.querySelector('.MuiCard-root')!
+      const dataStore: Record<string, string> = {
+        [MIME_HRIV_IMAGE]: JSON.stringify({ id: 1 }),
+        [MIME_HRIV_CATEGORY]: JSON.stringify({ id: 2 }),
+      }
+      fireEvent(card, makeDragEvent('drop', dataStore))
+      expect(onDropImage).toHaveBeenCalledWith(1, 5)
+      expect(onDropCategory).not.toHaveBeenCalled()
+    })
+
+    it('reduces opacity while dragging', () => {
+      const { container } = render(
+        <CategoryTile category={makeCategory()} onClick={vi.fn()} programs={[]} draggable />,
+      )
+      const card = container.querySelector('.MuiCard-root')!
+      fireEvent(card, makeDragEvent('dragstart'))
+      expect(card).toHaveStyle({ opacity: 0.4 })
+      fireEvent.dragEnd(card)
+      expect(card).toHaveStyle({ opacity: 1 })
+    })
+
+    it('calls onDropFiles when native files are dropped', () => {
+      const onDropFiles = vi.fn()
+      const { container } = render(
+        <CategoryTile
+          category={makeCategory({ id: 8 })}
+          onClick={vi.fn()}
+          programs={[]}
+          onDropFiles={onDropFiles}
+        />,
+      )
+      const card = container.querySelector('.MuiCard-root')!
+      const event = new Event('drop', { bubbles: true })
+      Object.assign(event, {
+        dataTransfer: {
+          setData: vi.fn(),
+          getData: () => '',
+          effectAllowed: '',
+          dropEffect: '',
+          types: ['Files'],
+        },
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      })
+      fireEvent(card, event)
+      expect(onDropFiles).toHaveBeenCalledWith(8)
     })
   })
 })

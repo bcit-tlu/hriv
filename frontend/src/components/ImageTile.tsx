@@ -1,3 +1,4 @@
+import { useCallback, useState } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
@@ -12,6 +13,8 @@ import EditIcon from '@mui/icons-material/Edit'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { ImageItem, Program } from '../types'
 
+export const MIME_HRIV_IMAGE = 'application/x-hriv-image'
+
 interface ImageTileProps {
   image: ImageItem
   onClick: (image: ImageItem) => void
@@ -21,9 +24,23 @@ interface ImageTileProps {
   programs?: Program[]
   /** Cumulative program IDs inherited from the category tree. */
   restrictionProgramIds?: number[]
+  /** Enable HTML5 drag for this tile (editors only). */
+  draggable?: boolean
 }
 
-export default function ImageTile({ image, onClick, onEditDetails, onToggleVisibility, programs = [], restrictionProgramIds = [] }: ImageTileProps) {
+export default function ImageTile({ image, onClick, onEditDetails, onToggleVisibility, programs = [], restrictionProgramIds = [], draggable = false }: ImageTileProps) {
+  const [dragging, setDragging] = useState(false)
+
+  const handleDragStart = useCallback((e: React.DragEvent) => {
+    e.dataTransfer.setData(MIME_HRIV_IMAGE, JSON.stringify({ id: image.id }))
+    e.dataTransfer.effectAllowed = 'move'
+    setDragging(true)
+  }, [image.id])
+
+  const handleDragEnd = useCallback(() => {
+    setDragging(false)
+  }, [])
+
   const restrictionChips = restrictionProgramIds
     .map((pid) => programs.find((p) => p.id === pid))
     .filter((p): p is Program => p != null)
@@ -31,7 +48,10 @@ export default function ImageTile({ image, onClick, onEditDetails, onToggleVisib
   return (
     <Card
       elevation={2}
-      sx={{ width: '100%', maxWidth: 300, position: 'relative' }}
+      draggable={draggable}
+      onDragStart={draggable ? handleDragStart : undefined}
+      onDragEnd={draggable ? handleDragEnd : undefined}
+      sx={{ width: '100%', maxWidth: 300, position: 'relative', opacity: dragging ? 0.4 : 1, transition: 'opacity 0.15s' }}
     >
       {onToggleVisibility && (
         <Box
