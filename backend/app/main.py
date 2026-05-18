@@ -1,3 +1,5 @@
+import app.otel_bootstrap  # noqa: F401, I001 — side-effect: MUST run before any framework import
+
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -9,8 +11,6 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.sessions import SessionMiddleware
-
-import app.otel_bootstrap  # noqa: F401 — side-effect: configure OTEL SDK
 
 from .admin_ops import reconcile_stale_tasks
 from .auth import auth_settings
