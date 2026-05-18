@@ -3149,6 +3149,7 @@ export default function App() {
                 parentLabel={path.length > 0 ? path[path.length - 1].label : undefined}
                 siblingNames={currentCategories.map((c) => c.label)}
                 programs={programs}
+                inheritedProgramIds={ancestorProgramIds}
             />
 
             {/* Edit category name dialog (home tab) */}

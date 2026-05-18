@@ -132,6 +132,31 @@ export default function CategoryPickerSelect({
     [options, editingOpt],
   )
 
+  // Compute inherited program IDs for the "add child" context.
+  const addInheritedProgramIds = useMemo(() => {
+    if (addParentId == null) return []
+    const ancestors: FlatOption[] = []
+    let curId: number | null = addParentId
+    while (curId != null) {
+      const anc: FlatOption | undefined = options.find((o) => o.id === curId)
+      if (!anc) break
+      ancestors.push(anc)
+      curId = anc.parentId
+    }
+    ancestors.reverse()
+    let effective: number[] = []
+    let initialized = false
+    for (const anc of ancestors) {
+      if (anc.programIds.length > 0) {
+        effective = initialized
+          ? anc.programIds.filter((pid) => effective.includes(pid))
+          : [...anc.programIds]
+        initialized = true
+      }
+    }
+    return effective
+  }, [addParentId, options])
+
   // Narrowing semantics: collect ancestors bottom-up, then walk top-down
   // so each ancestor with own programIds narrows (intersects) the effective set.
   const inheritedProgramIds = useMemo(() => {
@@ -327,6 +352,7 @@ export default function CategoryPickerSelect({
           parentLabel={addParentLabel}
           siblingNames={addSiblingNames}
           programs={programs}
+          inheritedProgramIds={addInheritedProgramIds}
         />
       )}
 
