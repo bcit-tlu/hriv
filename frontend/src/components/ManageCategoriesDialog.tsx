@@ -465,6 +465,7 @@ export default function ManageCategoriesDialog({
                 onDragEnd={handleDragEnd}
                 sx={{
                   pl: 2 + opt.depth * 3,
+                  pr: 18,
                   opacity: dragId === opt.id ? 0.4 : 1,
                   transition: 'opacity 0.15s',
                 }}

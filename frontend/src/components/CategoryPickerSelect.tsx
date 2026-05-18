@@ -251,6 +251,7 @@ export default function CategoryPickerSelect({
                   <Tooltip title="Add child category">
                     <IconButton
                       size="small"
+                      onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => handleAddClick(e, null)}
                       sx={{ ml: 1, p: 0.5 }}
                     >
@@ -286,6 +287,7 @@ export default function CategoryPickerSelect({
                   <Tooltip title={opt.status === 'hidden' ? 'Show to students' : 'Hide from students'}>
                     <IconButton
                       size="small"
+                      onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
                         e.preventDefault()
@@ -305,6 +307,7 @@ export default function CategoryPickerSelect({
                   <Tooltip title="Edit category">
                     <IconButton
                       size="small"
+                      onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => handleEditClick(e, opt)}
                       sx={{ p: 0.5 }}
                     >
@@ -316,6 +319,7 @@ export default function CategoryPickerSelect({
                   <Tooltip title="Add child category">
                     <IconButton
                       size="small"
+                      onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => handleAddClick(e, opt.id, opt.label)}
                       sx={{ ml: 1, p: 0.5 }}
                     >
@@ -327,6 +331,7 @@ export default function CategoryPickerSelect({
                   <Tooltip title="Delete category">
                     <IconButton
                       size="small"
+                      onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
                         e.preventDefault()
