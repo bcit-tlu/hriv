@@ -1476,6 +1476,52 @@ export default function App() {
         setMoveCatOpen(true);
     }, []);
 
+    const handleDropImageOnCategory = useCallback(
+        async (imageId: number, categoryId: number) => {
+            try {
+                const found = findImageInTree(categories, imageId);
+                const img =
+                    found?.image ??
+                    uncategorizedImages.find((i) => i.id === imageId);
+                if (!img) return;
+                if (img.categoryId === categoryId) return;
+                await apiUpdateImage(
+                    imageId,
+                    { category_id: categoryId },
+                    img.version,
+                );
+                await loadCategories();
+                loadUncategorizedImages();
+            } catch (err) {
+                console.error("Failed to move image via drag-and-drop", err);
+                setErrorSnack(
+                    userMessage(err, "Failed to move image to category."),
+                );
+            }
+        },
+        [categories, uncategorizedImages, loadCategories, loadUncategorizedImages],
+    );
+
+    const handleDropCategoryOnCategory = useCallback(
+        async (draggedCategoryId: number, targetCategoryId: number) => {
+            try {
+                await apiUpdateCategory(draggedCategoryId, {
+                    parent_id: targetCategoryId,
+                });
+                await loadCategories();
+            } catch (err) {
+                console.error(
+                    "Failed to move category via drag-and-drop",
+                    err,
+                );
+                setErrorSnack(
+                    userMessage(err, "Failed to move category."),
+                );
+            }
+        },
+        [loadCategories],
+    );
+
     const handleSetCardImage = useCallback(
         async (categoryId: number, imageId: number | null) => {
             try {
@@ -2788,6 +2834,35 @@ export default function App() {
                                     flexWrap: "wrap",
                                     gap: 2,
                                 }}
+                                onDragOver={
+                                    canEditContent
+                                        ? (e) => {
+                                              if (
+                                                  e.dataTransfer.types.includes(
+                                                      "Files",
+                                                  )
+                                              ) {
+                                                  e.preventDefault();
+                                                  e.dataTransfer.dropEffect =
+                                                      "copy";
+                                              }
+                                          }
+                                        : undefined
+                                }
+                                onDrop={
+                                    canEditContent
+                                        ? (e) => {
+                                              if (
+                                                  e.dataTransfer.types.includes(
+                                                      "Files",
+                                                  )
+                                              ) {
+                                                  e.preventDefault();
+                                                  setUploadOpen(true);
+                                              }
+                                          }
+                                        : undefined
+                                }
                             >
                                 {currentCategories.map((cat) => (
                                     <CategoryTile
@@ -2816,6 +2891,17 @@ export default function App() {
                                         }
                                         programs={programs}
                                         ancestorProgramIds={ancestorProgramIds}
+                                        onDropImage={
+                                            canEditContent
+                                                ? handleDropImageOnCategory
+                                                : undefined
+                                        }
+                                        onDropCategory={
+                                            canEditContent
+                                                ? handleDropCategoryOnCategory
+                                                : undefined
+                                        }
+                                        draggable={canEditContent}
                                     />
                                 ))}
                                 {path.length === 0 &&
@@ -2834,6 +2920,7 @@ export default function App() {
                                                     ? toggleImageVisibility
                                                     : undefined
                                             }
+                                            draggable={canEditContent}
                                         />
                                     ))}
                                 {currentImages.map((img) => (
@@ -2853,6 +2940,7 @@ export default function App() {
                                         }
                                         programs={programs}
                                         restrictionProgramIds={ancestorProgramIds}
+                                        draggable={canEditContent}
                                     />
                                 ))}
                             </Box>

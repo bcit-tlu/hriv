@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
@@ -16,7 +16,10 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import ImageIcon from '@mui/icons-material/Image'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { Category, ImageItem, Program } from '../types'
+import { MIME_HRIV_IMAGE } from './ImageTile'
 import CardImagePickerModal from './CardImagePickerModal'
+
+export const MIME_HRIV_CATEGORY = 'application/x-hriv-category'
 
 function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
   for (const img of cat.images) {
@@ -58,10 +61,19 @@ interface CategoryTileProps {
   programs: Program[]
   /** Program IDs inherited from an ancestor category (shown at reduced opacity). */
   ancestorProgramIds?: number[]
+  /** Called when an image is dropped onto this category tile. */
+  onDropImage?: (imageId: number, categoryId: number) => void
+  /** Called when another category is dropped onto this category tile (reparent). */
+  onDropCategory?: (draggedCategoryId: number, targetCategoryId: number) => void
+  /** Enable HTML5 drag for this tile (editors only). */
+  draggable?: boolean
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, ancestorProgramIds = [] }: CategoryTileProps) {
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, ancestorProgramIds = [], onDropImage, onDropCategory, draggable = false }: CategoryTileProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const dragCounter = useRef(0)
 
   const subCategoryCount = useMemo(() => countAllSubcategories(category), [category])
   const imageCount = useMemo(() => countAllImages(category), [category])
@@ -84,11 +96,79 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
     ? findImageInCategory(category, category.cardImageId)
     : null
 
+  const isDropTarget = onDropImage != null || onDropCategory != null
+
+  const handleDragStart = useCallback((e: React.DragEvent) => {
+    e.dataTransfer.setData(MIME_HRIV_CATEGORY, JSON.stringify({ id: category.id }))
+    e.dataTransfer.effectAllowed = 'move'
+    setDragging(true)
+  }, [category.id])
+
+  const handleDragEnd = useCallback(() => {
+    setDragging(false)
+  }, [])
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounter.current += 1
+    if (dragCounter.current === 1) setDragOver(true)
+  }, [])
+
+  const handleDragLeave = useCallback(() => {
+    dragCounter.current -= 1
+    if (dragCounter.current === 0) setDragOver(false)
+  }, [])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounter.current = 0
+    setDragOver(false)
+
+    const imageData = e.dataTransfer.getData(MIME_HRIV_IMAGE)
+    if (imageData && onDropImage) {
+      try {
+        const { id } = JSON.parse(imageData) as { id: number }
+        onDropImage(id, category.id)
+      } catch { /* ignore malformed data */ }
+      return
+    }
+
+    const categoryData = e.dataTransfer.getData(MIME_HRIV_CATEGORY)
+    if (categoryData && onDropCategory) {
+      try {
+        const { id } = JSON.parse(categoryData) as { id: number }
+        if (id !== category.id) {
+          onDropCategory(id, category.id)
+        }
+      } catch { /* ignore malformed data */ }
+    }
+  }, [category.id, onDropImage, onDropCategory])
+
   return (
     <>
       <Card
-        elevation={2}
-        sx={{ width: '100%', maxWidth: 300, position: 'relative' }}
+        elevation={dragOver ? 8 : 2}
+        draggable={draggable}
+        onDragStart={draggable ? handleDragStart : undefined}
+        onDragEnd={draggable ? handleDragEnd : undefined}
+        onDragEnter={isDropTarget ? handleDragEnter : undefined}
+        onDragLeave={isDropTarget ? handleDragLeave : undefined}
+        onDragOver={isDropTarget ? handleDragOver : undefined}
+        onDrop={isDropTarget ? handleDrop : undefined}
+        sx={{
+          width: '100%',
+          maxWidth: 300,
+          position: 'relative',
+          opacity: dragging ? 0.4 : 1,
+          transition: 'opacity 0.15s, box-shadow 0.15s, outline-color 0.15s',
+          outline: dragOver ? '2px solid' : '2px solid transparent',
+          outlineColor: dragOver ? 'primary.main' : 'transparent',
+        }}
       >
         <CardActionArea onClick={() => onClick(category)}>
           {cardImage ? (
