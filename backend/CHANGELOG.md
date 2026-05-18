@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.14.1...backend-v0.15.0) (2026-05-18)
+
+
+### Features
+
+* add OpenTelemetry tracing to image and bulk import operations ([#366](https://github.com/bcit-tlu/hriv/issues/366)) ([345b85a](https://github.com/bcit-tlu/hriv/commit/345b85ac819bccfe63edc370e2baa04c158e8d55))
+
+
+### Bug Fixes
+
+* add pre-flight schema privilege check to Alembic bootstrap ([#380](https://github.com/bcit-tlu/hriv/issues/380)) ([19f22df](https://github.com/bcit-tlu/hriv/commit/19f22df621a23afddc899bdb7f45909be498b10f))
+* preserve OpenTelemetry LoggingHandler during logging setup ([#378](https://github.com/bcit-tlu/hriv/issues/378)) ([393349d](https://github.com/bcit-tlu/hriv/commit/393349d7da846f29fdfcfe9886c61f2d8e722d19))
+
 ## [0.14.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.14.0...backend-v0.14.1) (2026-05-12)
 
 
