@@ -78,9 +78,13 @@ jobs:
   # checks before merging.  Since release-please PRs only modify version
   # files and changelogs (the code was already tested when it landed on
   # main), we create passing check-runs directly.
+  #
+  # This job must run unconditionally (not gated on releases_created)
+  # because in a monorepo with `separate-pull-requests: true`, releasing
+  # one component rebases sibling release PRs to a new HEAD SHA,
+  # invalidating any check-runs that existed on the old SHA.
   set-pr-checks:
     needs: release
-    if: needs.release.outputs.releases_created != 'true'
     runs-on: ubuntu-latest
     permissions:
       checks: write
