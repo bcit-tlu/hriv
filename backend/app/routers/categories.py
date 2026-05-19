@@ -10,7 +10,7 @@ from ..auth import get_current_user, require_role
 from ..database import get_db
 from ..models import Category, Image, Program, User
 from ..schemas import CategoryCreate, CategoryUpdate, CategoryOut, CategoryTree, CategoryReorderRequest, ImageOut
-from ..visibility import get_student_excluded_category_ids
+from ..visibility import compute_excluded_category_ids, get_student_excluded_category_ids, is_category_visible_to_student
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -54,19 +54,19 @@ async def _load_tree(
     for cat in all_categories:
         children_by_parent.setdefault(cat.parent_id, []).append(cat)
 
+    # ── Compute excluded category IDs for students ──
+    excluded: set[int] = set()
+    if user_role == "student":
+        excluded = compute_excluded_category_ids(
+            all_categories, user_program_ids or set(),
+        )
+
     # ── Recursive assembly (in-memory only, no DB calls) ──
     def _assemble(pid: int | None) -> list[CategoryTree]:
         tree: list[CategoryTree] = []
         for cat in children_by_parent.get(pid, []):
-            if user_role == "student" and cat.status == "hidden":
+            if user_role == "student" and cat.id in excluded:
                 continue
-            # Program-scoped visibility: students only see categories
-            # that either have no program restriction or share at least
-            # one program with the student.
-            if user_role == "student" and user_program_ids is not None:
-                cat_program_ids = {p.id for p in cat.programs}
-                if cat_program_ids and not cat_program_ids & user_program_ids:
-                    continue
             cat_images = images_by_cat.get(cat.id, [])
             if user_role == "student":
                 cat_images = [img for img in cat_images if img.active]
@@ -158,24 +158,9 @@ async def get_category(
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
     if _user.role == "student":
-        if cat.status == "hidden":
-            raise HTTPException(status_code=404, detail="Category not found")
         user_program_ids = {p.id for p in _user.programs}
-        cat_program_ids = {p.id for p in cat.programs}
-        if cat_program_ids and not cat_program_ids & user_program_ids:
+        if not await is_category_visible_to_student(db, category_id, user_program_ids):
             raise HTTPException(status_code=404, detail="Category not found")
-        # Check ancestor visibility (cascade rule)
-        ancestor_id = cat.parent_id
-        while ancestor_id is not None:
-            ancestor = await db.get(Category, ancestor_id)
-            if ancestor is None:
-                break
-            if ancestor.status == "hidden":
-                raise HTTPException(status_code=404, detail="Category not found")
-            anc_prog_ids = {p.id for p in ancestor.programs}
-            if anc_prog_ids and not anc_prog_ids & user_program_ids:
-                raise HTTPException(status_code=404, detail="Category not found")
-            ancestor_id = ancestor.parent_id
     return cat
 
 

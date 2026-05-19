@@ -9,17 +9,19 @@ also hidden from the student.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import Category
 
 
-async def get_student_excluded_category_ids(
-    db: AsyncSession,
+def compute_excluded_category_ids(
+    categories: Sequence[Category],
     user_program_ids: set[int],
 ) -> set[int]:
-    """Return the set of category IDs a student must not access.
+    """Pure in-memory computation of excluded category IDs.
 
     A category is excluded when any of the following is true:
     * Its ``status`` is ``"hidden"``.
@@ -29,13 +31,9 @@ async def get_student_excluded_category_ids(
 
     Categories with an empty programs list are visible to everyone.
     """
-    stmt = select(Category).order_by(Category.id)
-    result = await db.execute(stmt)
-    all_cats = result.scalars().unique().all()
-
-    cat_by_id: dict[int, Category] = {c.id: c for c in all_cats}
+    cat_by_id: dict[int, Category] = {c.id: c for c in categories}
     children_by_parent: dict[int | None, list[int]] = {}
-    for cat in all_cats:
+    for cat in categories:
         children_by_parent.setdefault(cat.parent_id, []).append(cat.id)
 
     excluded: set[int] = set()
@@ -54,6 +52,21 @@ async def get_student_excluded_category_ids(
 
     _walk(None)
     return excluded
+
+
+async def get_student_excluded_category_ids(
+    db: AsyncSession,
+    user_program_ids: set[int],
+) -> set[int]:
+    """Return the set of category IDs a student must not access.
+
+    Loads all categories from the database and delegates to
+    :func:`compute_excluded_category_ids`.
+    """
+    stmt = select(Category).order_by(Category.id)
+    result = await db.execute(stmt)
+    all_cats = result.scalars().unique().all()
+    return compute_excluded_category_ids(all_cats, user_program_ids)
 
 
 async def is_category_visible_to_student(
