@@ -1881,7 +1881,7 @@ export default function App() {
                 .catch(() => {
                     uploadProgressRef.current.delete(uploadId);
                     activeReplaceUploadIdRef.current = null;
-                    setSelectedImage(prevImage);
+                    setSelectedImage((prev) => prev?.id === prevImage.id ? prevImage : prev);
                     setProcessingJobs((prev) =>
                         prev.map((j) =>
                             j.uploadId === uploadId
