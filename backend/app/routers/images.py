@@ -276,7 +276,10 @@ async def replace_image(
                 if name is not None:
                     img.name = name
                 if category_id is not None:
-                    parsed_cat = int(category_id) if category_id != "" else None
+                    try:
+                        parsed_cat = int(category_id) if category_id != "" else None
+                    except (ValueError, TypeError):
+                        raise HTTPException(status_code=400, detail="Invalid category_id")
                     img.category_id = parsed_cat
                 if copyright is not None:
                     img.copyright = copyright if copyright != "" else None
@@ -285,7 +288,10 @@ async def replace_image(
                 if active is not None:
                     img.active = active.lower() in ("true", "1")
                 if program_ids is not None:
-                    parsed_ids = json.loads(program_ids) if program_ids else []
+                    try:
+                        parsed_ids = json.loads(program_ids) if program_ids else []
+                    except (json.JSONDecodeError, TypeError):
+                        raise HTTPException(status_code=400, detail="Invalid program_ids")
                     progs = (
                         await db.execute(
                             select(Program).where(Program.id.in_(parsed_ids))
@@ -293,7 +299,10 @@ async def replace_image(
                     ).scalars().all()
                     img.programs = list(progs)
                 if metadata_extra is not None:
-                    img.metadata_ = json.loads(metadata_extra) if metadata_extra else None
+                    try:
+                        img.metadata_ = json.loads(metadata_extra) if metadata_extra else None
+                    except (json.JSONDecodeError, TypeError):
+                        raise HTTPException(status_code=400, detail="Invalid metadata_extra")
                 img.version = img.version + 1
             else:
                 span.set_attribute("image.metadata_update", False)
