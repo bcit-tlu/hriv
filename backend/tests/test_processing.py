@@ -234,61 +234,6 @@ async def test_process_source_image_failure() -> None:
     assert src.error_message is not None
 
 
-async def test_process_source_image_with_programs() -> None:
-    """When source image has program JSON, programs are associated."""
-    src = SimpleNamespace(
-        id=3,
-        original_filename="progs.tiff",
-        stored_path="/data/source_images/progs.tiff",
-        status="pending",
-        progress=0,
-        name="Prog Image",
-        category_id=1,
-        copyright=None,
-        note=None,
-        active=True,
-        program="[10, 20]",
-        image_id=None,
-        file_size=10485760,
-    )
-
-    mock_img = SimpleNamespace(id=100, programs=[])
-
-    mock_session = AsyncMock()
-    mock_session.get.return_value = src
-    mock_session.add = MagicMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=False)
-
-    # Mock flush to set image id
-    async def mock_flush():
-        pass
-
-    mock_session.flush = AsyncMock(side_effect=mock_flush)
-
-    # Mock db.execute for program query
-    mock_prog_result = MagicMock()
-    mock_prog_result.scalars.return_value.all.return_value = [
-        SimpleNamespace(id=10, name="Prog A"),
-        SimpleNamespace(id=20, name="Prog B"),
-    ]
-    mock_session.execute = AsyncMock(return_value=mock_prog_result)
-    mock_session.refresh = AsyncMock()
-
-    with patch("app.processing.async_session", return_value=mock_session):
-        with patch("app.processing.generate_tiles", return_value=("image.dzi", "thumbnail.jpeg", 2048, 1536)):
-            with patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)):
-                with patch("app.processing.settings") as mock_settings:
-                    mock_settings.tiles_dir = "/data/tiles"
-                    with patch("app.processing.Image") as MockImage:
-                        mock_img_instance = MagicMock()
-                        mock_img_instance.id = 100
-                        MockImage.return_value = mock_img_instance
-                        await process_source_image(3)
-
-    assert src.status == "completed"
-
-
 # ── reconcile_stale_source_images tests ──────────────────
 
 

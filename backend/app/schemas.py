@@ -155,7 +155,6 @@ class ImageBase(BaseModel):
     category_id: int | None = None
     copyright: str | None = None
     note: str | None = None
-    program_ids: list[int] = []
     active: bool = True
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
     width: int | None = None
@@ -174,7 +173,6 @@ class ImageUpdate(BaseModel):
     category_id: int | None = None
     copyright: str | None = None
     note: str | None = None
-    program_ids: list[int] | None = None
     active: bool | None = None
     metadata_extra: dict | None = None
     metadata_extra_merge: dict | None = None
@@ -202,31 +200,6 @@ class ImageOut(ImageBase):
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
-    @model_validator(mode="before")
-    @classmethod
-    def extract_program_ids(cls, data: object) -> object:
-        """Convert the 'programs' relationship list into 'program_ids'."""
-        if hasattr(data, "programs"):
-            data = dict(
-                name=data.name,
-                thumb=data.thumb,
-                tile_sources=data.tile_sources,
-                category_id=data.category_id,
-                copyright=data.copyright,
-                note=data.note,
-                active=data.active,
-                metadata_=data.metadata_,
-                id=data.id,
-                version=data.version,
-                width=data.width,
-                height=data.height,
-                file_size=data.file_size,
-                created_at=data.created_at,
-                updated_at=data.updated_at,
-                program_ids=[p.id for p in data.programs],
-            )
-        return data
-
 
 # ── Source Image ─────────────────────────────────────────
 
@@ -242,43 +215,12 @@ class SourceImageOut(BaseModel):
     copyright: str | None = None
     note: str | None = None
     active: bool = True
-    program_ids: list[int] = []
     image_id: int | None = None
     file_size: int | None = None
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
-
-    @model_validator(mode="before")
-    @classmethod
-    def extract_program_ids_from_json(cls, data: object) -> object:
-        """Convert the 'program' JSON string into 'program_ids' list."""
-        import json as _json
-
-        program_val = None
-        if hasattr(data, "program"):
-            program_val = data.program
-        elif isinstance(data, dict):
-            program_val = data.get("program")
-
-        program_ids: list[int] = []
-        if program_val and isinstance(program_val, str):
-            try:
-                parsed = _json.loads(program_val)
-                if isinstance(parsed, list):
-                    program_ids = [int(x) for x in parsed]
-            except (ValueError, TypeError):
-                pass
-
-        if hasattr(data, "__dict__"):
-            result = {k: v for k, v in data.__dict__.items() if not k.startswith("_")}
-            result["program_ids"] = program_ids
-            return result
-        elif isinstance(data, dict):
-            data["program_ids"] = program_ids
-            return data
-        return data
 
 
 # ── Bulk Import Job ──────────────────────────────────────
@@ -332,7 +274,6 @@ class ImageBulkUpdate(BaseModel):
     category_id: int | None = None
     copyright: str | None = None
     note: str | None = None
-    program_ids: list[int] | None = None
     active: bool | None = None
 
 

@@ -6,7 +6,6 @@ export interface ImageItem {
   categoryId?: number | null
   copyright?: string | null
   note?: string | null
-  programIds: number[]
   active: boolean
   version: number
   createdAt?: string | null
