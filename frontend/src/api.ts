@@ -483,9 +483,27 @@ export async function replaceImage(
   file: File,
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
+  metadata?: {
+    name?: string
+    category_id?: number | null
+    copyright?: string
+    note?: string
+    active?: boolean
+    program_ids?: number[]
+  },
 ): Promise<ApiSourceImage> {
   const form = new FormData()
   form.append('file', file)
+  if (metadata) {
+    if (metadata.name !== undefined) form.append('name', metadata.name)
+    if (metadata.category_id !== undefined)
+      form.append('category_id', metadata.category_id === null ? '' : String(metadata.category_id))
+    if (metadata.copyright !== undefined) form.append('copyright', metadata.copyright)
+    if (metadata.note !== undefined) form.append('note', metadata.note)
+    if (metadata.active !== undefined) form.append('active', String(metadata.active))
+    if (metadata.program_ids !== undefined)
+      form.append('program_ids', JSON.stringify(metadata.program_ids))
+  }
 
   return new Promise<ApiSourceImage>((resolve, reject) => {
     const xhr = new XMLHttpRequest()

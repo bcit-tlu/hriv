@@ -6,7 +6,7 @@ import os
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from sqlalchemy import select, update as sql_update
@@ -235,12 +235,22 @@ async def replace_image(
     background_tasks: BackgroundTasks,
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
+    name: Annotated[str | None, Form()] = None,
+    category_id: Annotated[str | None, Form()] = None,
+    copyright: Annotated[str | None, Form()] = None,
+    note: Annotated[str | None, Form()] = None,
+    active: Annotated[str | None, Form()] = None,
+    program_ids: Annotated[str | None, Form()] = None,
 ) -> SourceImage:
-    """Replace an existing image file.
+    """Replace an existing image file, optionally updating metadata atomically.
 
     Uploads a new source file and triggers background processing that will
     regenerate tiles and thumbnails, update image dimensions and file size,
     and clear all canvas annotations and overlay metadata.
+
+    When metadata fields are included in the multipart form, the image record
+    is updated in the same transaction as the source-image creation, ensuring
+    both succeed or both fail.
     """
     with tracer.start_as_current_span("image.replace") as span:
         try:
@@ -254,6 +264,36 @@ async def replace_image(
 
             if not is_valid_image(file.filename, file.content_type):
                 raise HTTPException(status_code=400, detail="File must be an image")
+
+            # ── Apply optional metadata updates atomically ──────────
+            has_metadata = any(
+                v is not None
+                for v in (name, category_id, copyright, note, active, program_ids)
+            )
+            if has_metadata:
+                span.set_attribute("image.metadata_update", True)
+                if name is not None:
+                    img.name = name
+                if category_id is not None:
+                    parsed_cat = int(category_id) if category_id != "" else None
+                    img.category_id = parsed_cat
+                if copyright is not None:
+                    img.copyright = copyright if copyright != "" else None
+                if note is not None:
+                    img.note = note if note != "" else None
+                if active is not None:
+                    img.active = active.lower() in ("true", "1")
+                if program_ids is not None:
+                    parsed_ids = json.loads(program_ids) if program_ids else []
+                    progs = (
+                        await db.execute(
+                            select(Program).where(Program.id.in_(parsed_ids))
+                        )
+                    ).scalars().all()
+                    img.programs = list(progs)
+                img.version = img.version + 1
+            else:
+                span.set_attribute("image.metadata_update", False)
 
             os.makedirs(settings.source_images_dir, exist_ok=True)
 

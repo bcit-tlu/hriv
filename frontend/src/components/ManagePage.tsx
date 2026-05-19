@@ -956,8 +956,7 @@ export default function ManagePage({
           onCategoriesChanged?.()
         } : undefined}
         onReplace={editingImage ? async ({ file, formData }: ReplaceImageData) => {
-          await updateImage(editingImage.id, formData)
-          const result = await replaceImage(editingImage.id, file)
+          const result = await replaceImage(editingImage.id, file, undefined, undefined, formData)
           onReplaceImage?.(result.id, file.name, file.size)
           setEditOpen(false)
           setEditingImage(null)
