@@ -241,6 +241,7 @@ async def replace_image(
     note: Annotated[str | None, Form()] = None,
     active: Annotated[str | None, Form()] = None,
     program_ids: Annotated[str | None, Form()] = None,
+    metadata_extra: Annotated[str | None, Form()] = None,
 ) -> SourceImage:
     """Replace an existing image file, optionally updating metadata atomically.
 
@@ -268,7 +269,7 @@ async def replace_image(
             # ── Apply optional metadata updates atomically ──────────
             has_metadata = any(
                 v is not None
-                for v in (name, category_id, copyright, note, active, program_ids)
+                for v in (name, category_id, copyright, note, active, program_ids, metadata_extra)
             )
             if has_metadata:
                 span.set_attribute("image.metadata_update", True)
@@ -291,6 +292,8 @@ async def replace_image(
                         )
                     ).scalars().all()
                     img.programs = list(progs)
+                if metadata_extra is not None:
+                    img.metadata_ = json.loads(metadata_extra) if metadata_extra else None
                 img.version = img.version + 1
             else:
                 span.set_attribute("image.metadata_update", False)

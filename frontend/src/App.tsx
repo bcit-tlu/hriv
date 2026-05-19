@@ -1798,6 +1798,9 @@ export default function App() {
         async ({ file, formData }: ReplaceImageData) => {
             if (!selectedImage) return;
 
+            // Snapshot for rollback on failure
+            const prevImage = selectedImage;
+
             // Optimistically update the local image state with metadata
             // changes so the UI reflects them immediately.
             setSelectedImage((prev) =>
@@ -1878,6 +1881,7 @@ export default function App() {
                 .catch(() => {
                     uploadProgressRef.current.delete(uploadId);
                     activeReplaceUploadIdRef.current = null;
+                    setSelectedImage(prevImage);
                     setProcessingJobs((prev) =>
                         prev.map((j) =>
                             j.uploadId === uploadId

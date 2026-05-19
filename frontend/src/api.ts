@@ -490,6 +490,7 @@ export async function replaceImage(
     note?: string
     active?: boolean
     program_ids?: number[]
+    metadata_extra?: Record<string, unknown>
   },
 ): Promise<ApiSourceImage> {
   const form = new FormData()
@@ -503,6 +504,8 @@ export async function replaceImage(
     if (metadata.active !== undefined) form.append('active', String(metadata.active))
     if (metadata.program_ids !== undefined)
       form.append('program_ids', JSON.stringify(metadata.program_ids))
+    if (metadata.metadata_extra !== undefined)
+      form.append('metadata_extra', JSON.stringify(metadata.metadata_extra))
   }
 
   return new Promise<ApiSourceImage>((resolve, reject) => {
