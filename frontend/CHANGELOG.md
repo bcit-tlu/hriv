@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.12.1...frontend-v0.13.0) (2026-05-19)
+
+
+### Features
+
+* cancel orphaned tasks on upload failure + atomic replace-image ([#418](https://github.com/bcit-tlu/hriv/issues/418)) ([e8be0f3](https://github.com/bcit-tlu/hriv/commit/e8be0f3448f6ef6507c9d245655cfd2a3830c8ac))
+
 ## [0.12.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.12.0...frontend-v0.12.1) (2026-05-18)
 
 
