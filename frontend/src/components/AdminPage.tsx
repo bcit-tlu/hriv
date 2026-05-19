@@ -282,6 +282,7 @@ export default function AdminPage() {
             next.delete(task!.id)
             return next
           })
+          cancelAdminTask(task.id).catch(() => {})
           setError(err instanceof Error ? err.message : 'Operation failed')
         } else {
           setError(err instanceof Error ? err.message : 'Operation failed')

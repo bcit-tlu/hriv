@@ -1797,26 +1797,24 @@ export default function App() {
     const handleReplaceViewerImage = useCallback(
         async ({ file, formData }: ReplaceImageData) => {
             if (!selectedImage) return;
-            // Save metadata changes first (awaited — can throw on validation)
-            const updated = await apiUpdateImage(selectedImage.id, formData);
-            setSelectedImage({
-                id: updated.id,
-                name: updated.name,
-                thumb: updated.thumb,
-                tileSources: updated.tile_sources,
-                categoryId: updated.category_id,
-                copyright: updated.copyright,
-                note: updated.note,
-                programIds: updated.program_ids,
-                active: updated.active,
-                version: updated.version,
-                createdAt: updated.created_at,
-                updatedAt: updated.updated_at,
-                metadataExtra: updated.metadata_extra,
-                width: updated.width,
-                height: updated.height,
-                fileSize: updated.file_size,
-            });
+
+            // Snapshot for rollback on failure
+            const prevImage = selectedImage;
+
+            // Optimistically update the local image state with metadata
+            // changes so the UI reflects them immediately.
+            setSelectedImage((prev) =>
+                prev
+                    ? {
+                          ...prev,
+                          name: formData.name ?? prev.name,
+                          categoryId: formData.category_id !== undefined ? formData.category_id : prev.categoryId,
+                          copyright: formData.copyright !== undefined ? formData.copyright : prev.copyright,
+                          note: formData.note !== undefined ? formData.note : prev.note,
+                          active: formData.active !== undefined ? formData.active : prev.active,
+                      }
+                    : prev,
+            );
 
             // Create an uploading job so progress is tracked in snackbar/modal
             const uploadId = nextReplaceUploadIdRef.current++;
@@ -1847,10 +1845,16 @@ export default function App() {
                 ];
             });
 
-            // Fire-and-forget: upload runs in the background with progress
-            apiReplaceImage(selectedImage.id, file, (fraction) => {
-                uploadProgressRef.current.set(uploadId, fraction);
-            })
+            // Atomic replace: metadata + file in a single request (#271)
+            apiReplaceImage(
+                selectedImage.id,
+                file,
+                (fraction) => {
+                    uploadProgressRef.current.set(uploadId, fraction);
+                },
+                undefined,
+                formData,
+            )
                 .then((result) => {
                     uploadProgressRef.current.delete(uploadId);
                     activeReplaceUploadIdRef.current = null;
@@ -1877,6 +1881,7 @@ export default function App() {
                 .catch(() => {
                     uploadProgressRef.current.delete(uploadId);
                     activeReplaceUploadIdRef.current = null;
+                    setSelectedImage((prev) => prev?.id === prevImage.id ? prevImage : prev);
                     setProcessingJobs((prev) =>
                         prev.map((j) =>
                             j.uploadId === uploadId
@@ -1899,7 +1904,6 @@ export default function App() {
     const handleReplaceBrowseImage = useCallback(
         async ({ file, formData }: ReplaceImageData) => {
             if (!browseEditImage) return;
-            await apiUpdateImage(browseEditImage.id, formData);
 
             const uploadId = nextReplaceUploadIdRef.current++;
             activeReplaceUploadIdRef.current = { uploadId, context: "browse" };
@@ -1929,9 +1933,16 @@ export default function App() {
                 ];
             });
 
-            apiReplaceImage(browseEditImage.id, file, (fraction) => {
-                uploadProgressRef.current.set(uploadId, fraction);
-            })
+            // Atomic replace: metadata + file in a single request (#271)
+            apiReplaceImage(
+                browseEditImage.id,
+                file,
+                (fraction) => {
+                    uploadProgressRef.current.set(uploadId, fraction);
+                },
+                undefined,
+                formData,
+            )
                 .then((result) => {
                     uploadProgressRef.current.delete(uploadId);
                     activeReplaceUploadIdRef.current = null;
