@@ -150,7 +150,7 @@ async def test_upload_source_image_success(tmp_path) -> None:
         result = await upload_source_image(
             file=file, background_tasks=bg, _user=MagicMock(),
             name="Test Image", category_id=1, copyright="CC0",
-            note="A note", program_ids=[1, 2], active=True,
+            note="A note", active=True,
             db=db,
         )
 

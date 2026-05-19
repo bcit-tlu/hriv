@@ -176,27 +176,6 @@ async def test_create_image_success() -> None:
     db.add.assert_called_once()
 
 
-async def test_create_image_with_programs() -> None:
-    progs = [SimpleNamespace(id=10), SimpleNamespace(id=20)]
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = progs
-
-    db = AsyncMock()
-    db.add = MagicMock()
-    db.commit = AsyncMock()
-    db.refresh = AsyncMock()
-    db.execute = AsyncMock(return_value=mock_result)
-
-    body = ImageCreate(
-        name="new-img",
-        thumb="/thumb.jpg",
-        tile_sources="/tiles/new",
-        program_ids=[10, 20],
-    )
-    result = await create_image(body, _make_user(), db)
-    db.execute.assert_awaited_once()
-
-
 async def test_update_image_success() -> None:
     img = _make_image()
     db = AsyncMock()
@@ -287,23 +266,6 @@ async def test_update_image_if_match_invalid() -> None:
     assert exc.value.status_code == 400
 
 
-async def test_update_image_with_programs() -> None:
-    img = _make_image()
-    progs = [SimpleNamespace(id=10)]
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = progs
-
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=img)
-    db.commit = AsyncMock()
-    db.refresh = AsyncMock()
-    db.execute = AsyncMock(return_value=mock_result)
-
-    body = ImageUpdate(program_ids=[10])
-    result = await update_image(1, body, _mock_request(), _make_user(), db)
-    assert img.programs == progs
-
-
 async def test_bulk_update_images_success() -> None:
     imgs = [_make_image(id=1), _make_image(id=2)]
 
@@ -339,32 +301,6 @@ async def test_bulk_update_images_not_found() -> None:
     with pytest.raises(HTTPException) as exc:
         await bulk_update_images(body, _make_user(), db)
     assert exc.value.status_code == 404
-
-
-async def test_bulk_update_images_with_programs() -> None:
-    imgs = [_make_image(id=1)]
-    progs = [SimpleNamespace(id=10)]
-
-    call_count = 0
-
-    async def mock_execute(stmt):
-        nonlocal call_count
-        call_count += 1
-        mock_result = MagicMock()
-        if call_count == 1:
-            mock_result.scalars.return_value.all.return_value = imgs
-        elif call_count == 2:
-            mock_result.scalars.return_value.all.return_value = progs
-        else:
-            mock_result.scalars.return_value.all.return_value = imgs
-        return mock_result
-
-    db = AsyncMock()
-    db.execute = AsyncMock(side_effect=mock_execute)
-    db.commit = AsyncMock()
-
-    body = ImageBulkUpdate(image_ids=[1], program_ids=[10])
-    result = await bulk_update_images(body, _make_user(), db)
 
 
 async def test_bulk_delete_images_success() -> None:
@@ -492,7 +428,6 @@ def _make_source_image(id: int = 10, image_id: int = 1) -> SimpleNamespace:
         copyright=None,
         note=None,
         active=True,
-        program=None,
         image_id=image_id,
         file_size=1024,
         created_at=now,

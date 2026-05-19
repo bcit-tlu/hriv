@@ -5,13 +5,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 
-image_programs = Table(
-    "image_programs",
-    Base.metadata,
-    Column("image_id", Integer, ForeignKey("images.id", ondelete="CASCADE"), primary_key=True),
-    Column("program_id", Integer, ForeignKey("programs.id", ondelete="CASCADE"), primary_key=True),
-)
-
 user_programs = Table(
     "user_programs",
     Base.metadata,
@@ -131,9 +124,6 @@ class Image(Base):
     )
 
     category: Mapped["Category | None"] = relationship("Category", back_populates="images")
-    programs: Mapped[list["Program"]] = relationship(
-        "Program", secondary=image_programs, lazy="selectin"
-    )
 
 
 class SourceImage(Base):
@@ -164,7 +154,6 @@ class SourceImage(Base):
     copyright: Mapped[str | None] = mapped_column(String(500), nullable=True)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
-    program: Mapped[str | None] = mapped_column(String(255), nullable=True)
     image_id: Mapped[int | None] = mapped_column(
         ForeignKey("images.id", ondelete="SET NULL"), nullable=True
     )

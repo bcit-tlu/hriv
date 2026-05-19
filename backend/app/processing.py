@@ -6,7 +6,6 @@ to periodically flush progress updates to the database.
 """
 
 import asyncio
-import json
 import logging
 import math
 import os
@@ -19,12 +18,12 @@ from pathlib import Path
 import pyvips
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
 from .database import async_session, settings
-from .models import Image, Program, SourceImage
+from .models import Image, SourceImage
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -581,41 +580,6 @@ async def process_source_image(source_image_id: int) -> None:
                 )
                 db.add(img)
                 await db.flush()
-
-                # Associate programs if stored on source image
-                if src.program:
-                    src.progress = 93
-                    src.status_message = "Associating programs"
-                    await db.commit()
-
-                    try:
-                        program_ids = json.loads(src.program)
-                        if isinstance(program_ids, list) and program_ids:
-                            result = await db.execute(
-                                select(Program).where(Program.id.in_(program_ids))
-                            )
-                            programs = list(result.scalars().all())
-                            await db.refresh(img, ["programs"])
-                            img.programs = programs
-                            await db.flush()
-
-                            logger.info(
-                                "Programs associated with image",
-                                extra={
-                                    "event": "processing.programs_associated",
-                                    "source_image_id": src.id,
-                                    "image_id": img.id,
-                                    "program_count": len(programs),
-                                },
-                            )
-                    except (json.JSONDecodeError, TypeError):
-                        logger.warning(
-                            "Could not parse program_ids from source image",
-                            extra={
-                                "event": "processing.program_parse_error",
-                                "source_image_id": src.id,
-                            },
-                        )
 
                 src.image_id = img.id
                 src.status = "completed"

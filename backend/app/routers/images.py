@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import get_current_user, require_role
 from ..database import get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
-from ..models import Category, Image, Program, SourceImage, User
+from ..models import Category, Image, SourceImage, User
 from ..schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageOut, SourceImageOut
 
 logger = logging.getLogger(__name__)
@@ -89,9 +89,6 @@ async def create_image(
                 height=body.height,
                 file_size=body.file_size,
             )
-            if body.program_ids:
-                progs = (await db.execute(select(Program).where(Program.id.in_(body.program_ids)))).scalars().all()
-                img.programs = list(progs)
             db.add(img)
             await db.commit()
             await db.refresh(img)
@@ -119,16 +116,10 @@ async def bulk_update_images(
             images = result.scalars().all()
             if len(images) != len(set(body.image_ids)):
                 raise HTTPException(status_code=404, detail="One or more images not found")
-            update_data = body.model_dump(exclude_unset=True, exclude={"image_ids", "program_ids"})
-            program_ids = body.program_ids
-            progs: list[Program] | None = None
-            if program_ids is not None:
-                progs = list((await db.execute(select(Program).where(Program.id.in_(program_ids)))).scalars().all())
+            update_data = body.model_dump(exclude_unset=True, exclude={"image_ids"})
             for img in images:
                 for key, value in update_data.items():
                     setattr(img, key, value)
-                if progs is not None:
-                    img.programs = progs
                 img.version = img.version + 1
             await db.commit()
             # Reload updated images
@@ -203,12 +194,8 @@ async def update_image(
                     else:
                         current[key] = value
                 update_data["metadata_"] = current if current else None
-            program_ids = update_data.pop("program_ids", None)
             for key, value in update_data.items():
                 setattr(img, key, value)
-            if program_ids is not None:
-                progs = (await db.execute(select(Program).where(Program.id.in_(program_ids)))).scalars().all()
-                img.programs = list(progs)
 
             await db.commit()
             await db.refresh(img)
@@ -240,7 +227,6 @@ async def replace_image(
     copyright: Annotated[str | None, Form()] = None,
     note: Annotated[str | None, Form()] = None,
     active: Annotated[str | None, Form()] = None,
-    program_ids: Annotated[str | None, Form()] = None,
     metadata_extra: Annotated[str | None, Form()] = None,
 ) -> SourceImage:
     """Replace an existing image file, optionally updating metadata atomically.
@@ -269,7 +255,7 @@ async def replace_image(
             # ── Apply optional metadata updates atomically ──────────
             has_metadata = any(
                 v is not None
-                for v in (name, category_id, copyright, note, active, program_ids, metadata_extra)
+                for v in (name, category_id, copyright, note, active, metadata_extra)
             )
             if has_metadata:
                 span.set_attribute("image.metadata_update", True)
@@ -287,17 +273,6 @@ async def replace_image(
                     img.note = note if note != "" else None
                 if active is not None:
                     img.active = active.lower() in ("true", "1")
-                if program_ids is not None:
-                    try:
-                        parsed_ids = json.loads(program_ids) if program_ids else []
-                    except (json.JSONDecodeError, TypeError):
-                        raise HTTPException(status_code=400, detail="Invalid program_ids")
-                    progs = (
-                        await db.execute(
-                            select(Program).where(Program.id.in_(parsed_ids))
-                        )
-                    ).scalars().all()
-                    img.programs = list(progs)
                 if metadata_extra is not None:
                     try:
                         img.metadata_ = json.loads(metadata_extra) if metadata_extra else None

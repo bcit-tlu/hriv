@@ -261,7 +261,6 @@ async def run_db_export(task_id: int) -> None:
                         "category_id": i.category_id,
                         "copyright": i.copyright,
                         "note": i.note,
-                        "program_ids": [p.id for p in i.programs],
                         "active": i.active,
                         "metadata": i.metadata_,
                         "created_at": dt(i.created_at),
@@ -304,7 +303,6 @@ async def run_db_export(task_id: int) -> None:
                         "copyright": s.copyright,
                         "note": s.note,
                         "active": s.active,
-                        "program": s.program,
                         "image_id": s.image_id,
                         "file_size": s.file_size,
                         "created_at": dt(s.created_at),
@@ -456,7 +454,6 @@ async def run_db_import(task_id: int) -> None:
                 await status_session.commit()
 
                 await data_session.execute(text("DELETE FROM source_images"))
-                await data_session.execute(text("DELETE FROM image_programs"))
                 await data_session.execute(text("DELETE FROM images"))
                 await data_session.execute(text("DELETE FROM category_programs"))
                 await data_session.execute(text("DELETE FROM categories"))
@@ -573,12 +570,9 @@ async def run_db_import(task_id: int) -> None:
                         created_at=_parse_dt(i.get("created_at")),
                         updated_at=_parse_dt(i.get("updated_at")),
                     )
-                    prog_ids = i.get("program_ids", [])
-                    if prog_ids:
-                        progs = (await data_session.execute(
-                            select(Program).where(Program.id.in_(prog_ids))
-                        )).scalars().all()
-                        img.programs = list(progs)
+                    # Old exports may contain image-level program_ids;
+                    # these are intentionally ignored — program restrictions
+                    # are now managed at the category level (PR #385).
                     data_session.add(img)
                 await data_session.flush()
 
@@ -597,7 +591,6 @@ async def run_db_import(task_id: int) -> None:
                         copyright=s.get("copyright"),
                         note=s.get("note"),
                         active=s.get("active", True),
-                        program=s.get("program"),
                         image_id=s.get("image_id"),
                         file_size=s.get("file_size"),
                         created_at=_parse_dt(s.get("created_at")),

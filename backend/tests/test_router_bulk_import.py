@@ -454,7 +454,6 @@ async def test_process_bulk_import_completes_successful_job(tmp_path) -> None:
             file_entries=[("a.png", str(tmp_path / "a.png"))],
             copyright="CC0",
             note=None,
-            program_ids=[1],
             active=True,
         )
 

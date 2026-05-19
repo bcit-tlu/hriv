@@ -7,7 +7,6 @@ and processes them in the background with concurrency limiting.
 import asyncio
 import contextlib
 import errno
-import json
 import logging
 import os
 import shutil
@@ -55,7 +54,6 @@ async def _process_bulk_import(
     file_entries: list[tuple[str, str]],
     copyright: str | None = None,
     note: str | None = None,
-    program_ids: list[int] | None = None,
     active: bool = True,
 ) -> None:
     """Background task: process all images for a bulk import job.
@@ -84,7 +82,6 @@ async def _process_bulk_import(
                     copyright=copyright or "Public Domain",
                     note=note,
                     active=active,
-                    program=json.dumps(program_ids) if program_ids else None,
                 )
                 db.add(src)
                 await db.commit()
@@ -237,7 +234,6 @@ async def bulk_import_images(
     db: AsyncSession = Depends(get_db),
     copyright: Annotated[str | None, Form()] = None,
     note: Annotated[str | None, Form()] = None,
-    program_ids: Annotated[list[int] | None, Form()] = None,
     active: Annotated[bool, Form()] = True,
 ) -> BulkImportJob:
     """Upload multiple image files and/or zip archives for bulk import.
@@ -409,7 +405,6 @@ async def bulk_import_images(
                 file_entries,
                 copyright=copyright,
                 note=note,
-                program_ids=program_ids,
                 active=active,
             )
             span.set_attribute("bulk_import.enqueued", enqueued)
@@ -420,7 +415,6 @@ async def bulk_import_images(
                     file_entries,
                     copyright=copyright,
                     note=note,
-                    program_ids=program_ids,
                     active=active,
                 )
 

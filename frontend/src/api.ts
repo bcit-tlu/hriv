@@ -92,7 +92,6 @@ export interface ApiImage {
   category_id: number | null
   copyright: string | null
   note: string | null
-  program_ids: number[]
   active: boolean
   metadata_extra: Record<string, unknown> | null
   version: number
@@ -205,7 +204,6 @@ export function updateImage(
     category_id?: number | null
     copyright?: string
     note?: string
-    program_ids?: number[]
     active?: boolean
     metadata_extra?: Record<string, unknown>
     metadata_extra_merge?: Record<string, unknown | null>
@@ -233,7 +231,6 @@ export function bulkUpdateImages(body: {
   category_id?: number | null
   copyright?: string
   note?: string
-  program_ids?: number[]
   active?: boolean
 }): Promise<ApiImage[]> {
   return request('/images/bulk', {
@@ -396,7 +393,6 @@ export interface ApiSourceImage {
   copyright: string | null
   note: string | null
   active: boolean
-  program_ids: number[]
   image_id: number | null
   file_size: number | null
   created_at: string
@@ -409,7 +405,6 @@ export async function uploadSourceImage(
   categoryId?: number | null,
   copyright?: string,
   note?: string,
-  programIds?: number[],
   active?: boolean,
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
@@ -420,11 +415,6 @@ export async function uploadSourceImage(
   if (categoryId != null) form.append('category_id', String(categoryId))
   if (copyright) form.append('copyright', copyright)
   if (note) form.append('note', note)
-  if (programIds) {
-    for (const id of programIds) {
-      form.append('program_ids', String(id))
-    }
-  }
   if (active !== undefined) form.append('active', String(active))
 
   // Use XMLHttpRequest for upload progress reporting (essential for large TIFFs)
@@ -489,7 +479,6 @@ export async function replaceImage(
     copyright?: string
     note?: string
     active?: boolean
-    program_ids?: number[]
     metadata_extra?: Record<string, unknown>
   },
 ): Promise<ApiSourceImage> {
@@ -502,8 +491,6 @@ export async function replaceImage(
     if (metadata.copyright !== undefined) form.append('copyright', metadata.copyright)
     if (metadata.note !== undefined) form.append('note', metadata.note)
     if (metadata.active !== undefined) form.append('active', String(metadata.active))
-    if (metadata.program_ids !== undefined)
-      form.append('program_ids', JSON.stringify(metadata.program_ids))
     if (metadata.metadata_extra !== undefined)
       form.append('metadata_extra', JSON.stringify(metadata.metadata_extra))
   }
@@ -573,7 +560,6 @@ export async function bulkImportImages(
   categoryId: number,
   copyright?: string,
   note?: string,
-  programIds?: number[],
   active?: boolean,
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
@@ -585,11 +571,6 @@ export async function bulkImportImages(
   form.append('category_id', String(categoryId))
   if (copyright) form.append('copyright', copyright)
   if (note) form.append('note', note)
-  if (programIds) {
-    for (const id of programIds) {
-      form.append('program_ids', String(id))
-    }
-  }
   if (active !== undefined) form.append('active', String(active))
 
   return new Promise<ApiBulkImportJob>((resolve, reject) => {
