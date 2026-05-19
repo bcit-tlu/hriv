@@ -242,9 +242,8 @@ export default function UploadImageModal({
           categoryId,
           metadata.copyright || undefined,
           metadata.note || undefined,
-          undefined,
           metadata.active,
-          (fraction) => {
+          (fraction: number) => {
             setUploadProgress(fraction)
             onUploadProgress?.(uploadId, fraction)
           },
@@ -286,9 +285,8 @@ export default function UploadImageModal({
           categoryId ?? undefined,
           metadata.copyright || undefined,
           metadata.note || undefined,
-          undefined,
           metadata.active,
-          (fraction) => {
+          (fraction: number) => {
             setUploadProgress(fraction)
             onUploadProgress?.(uploadId, fraction)
           },
