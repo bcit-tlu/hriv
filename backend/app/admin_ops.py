@@ -570,9 +570,6 @@ async def run_db_import(task_id: int) -> None:
                         created_at=_parse_dt(i.get("created_at")),
                         updated_at=_parse_dt(i.get("updated_at")),
                     )
-                    # Old exports may contain image-level program_ids;
-                    # these are intentionally ignored — program restrictions
-                    # are now managed at the category level (PR #385).
                     data_session.add(img)
                 await data_session.flush()
 

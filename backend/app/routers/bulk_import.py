@@ -239,8 +239,8 @@ async def bulk_import_images(
     """Upload multiple image files and/or zip archives for bulk import.
 
     All images are assigned to the specified category.  Metadata fields
-    (copyright, note, program_ids, active) are applied uniformly to every
-    image in the batch.  Omitted fields fall back to sensible defaults.
+    (copyright, note, active) are applied uniformly to every image in the
+    batch.  Omitted fields fall back to sensible defaults.
     """
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
