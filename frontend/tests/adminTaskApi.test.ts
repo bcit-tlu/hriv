@@ -329,7 +329,6 @@ describe('Background Admin Task API', () => {
         2,
         'Public Domain',
         'Note',
-        [1, 3],
         true,
         onProgress,
       )
@@ -353,7 +352,6 @@ describe('Background Admin Task API', () => {
       const form = xhrInstance.send.mock.calls[0][0] as FormData
       expect(form.get('files')).toBe(zip)
       expect(form.get('category_id')).toBe('2')
-      expect(form.getAll('program_ids')).toEqual(['1', '3'])
       expect(result).toEqual(BULK_IMPORT_FIXTURE)
     })
 
