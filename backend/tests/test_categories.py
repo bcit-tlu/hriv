@@ -476,3 +476,159 @@ async def test_delete_category_not_found() -> None:
     with pytest.raises(HTTPException) as exc:
         await delete_category(999, MagicMock(), db=db)
     assert exc.value.status_code == 404
+
+
+# ── Program-scoped student filtering ────────────────────────
+
+
+def _make_student_user(programs: list | None = None) -> SimpleNamespace:
+    return SimpleNamespace(id=1, role="student", email="s@example.com", programs=programs or [])
+
+
+async def test_list_categories_student_excludes_restricted() -> None:
+    """Student without matching program should not see restricted categories."""
+    prog = _make_program(10)
+    cats = [
+        _make_category(1, "Open"),
+        _make_category(2, "Restricted", programs=[prog]),
+    ]
+    # First call: visibility helper fetches all cats; second call: list query result
+    vis_result = MagicMock()
+    vis_result.scalars.return_value.unique.return_value.all.return_value = cats
+
+    list_result = MagicMock()
+    list_result.scalars.return_value.all.return_value = [cats[0]]
+
+    call_count = 0
+
+    async def execute_side_effect(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return vis_result
+        return list_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+
+    result = await list_categories(_make_student_user(), parent_id=None, db=db)
+    assert len(result) == 1
+    assert result[0].label == "Open"
+
+
+async def test_list_categories_student_sees_matching_program() -> None:
+    prog = _make_program(10)
+    cats = [_make_category(1, "Match", programs=[prog])]
+
+    vis_result = MagicMock()
+    vis_result.scalars.return_value.unique.return_value.all.return_value = cats
+
+    list_result = MagicMock()
+    list_result.scalars.return_value.all.return_value = cats
+
+    call_count = 0
+
+    async def execute_side_effect(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return vis_result
+        return list_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=execute_side_effect)
+
+    result = await list_categories(
+        _make_student_user(programs=[_make_program(10)]),
+        parent_id=None,
+        db=db,
+    )
+    assert len(result) == 1
+
+
+async def test_list_categories_admin_sees_all() -> None:
+    """Admin should not be filtered by program restrictions."""
+    prog = _make_program(10)
+    cats = [
+        _make_category(1, "Open"),
+        _make_category(2, "Restricted", programs=[prog]),
+    ]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = cats
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    admin = SimpleNamespace(id=1, role="admin", email="a@example.com", programs=[])
+    result = await list_categories(admin, parent_id=None, db=db)
+    assert len(result) == 2
+
+
+async def test_get_category_student_hidden() -> None:
+    cat = _make_category(1, "Hidden", status="hidden")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+
+    with pytest.raises(HTTPException) as exc:
+        await get_category(1, _make_student_user(), db=db)
+    assert exc.value.status_code == 404
+
+
+async def test_get_category_student_program_restricted() -> None:
+    cat = _make_category(1, "Restricted", programs=[_make_program(10)])
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+
+    with pytest.raises(HTTPException) as exc:
+        await get_category(1, _make_student_user(), db=db)
+    assert exc.value.status_code == 404
+
+
+async def test_get_category_student_matching_program() -> None:
+    cat = _make_category(1, "Match", programs=[_make_program(10)])
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+
+    result = await get_category(
+        1, _make_student_user(programs=[_make_program(10)]), db=db,
+    )
+    assert result.label == "Match"
+
+
+async def test_get_category_student_hidden_ancestor() -> None:
+    child = _make_category(2, "Child", parent_id=1)
+    parent = _make_category(1, "Parent", status="hidden")
+
+    async def mock_get(model, id_val):
+        return {1: parent, 2: child}.get(id_val)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=mock_get)
+
+    with pytest.raises(HTTPException) as exc:
+        await get_category(2, _make_student_user(), db=db)
+    assert exc.value.status_code == 404
+
+
+async def test_get_category_student_restricted_ancestor() -> None:
+    child = _make_category(2, "Child", parent_id=1)
+    parent = _make_category(1, "Parent", programs=[_make_program(10)])
+
+    async def mock_get(model, id_val):
+        return {1: parent, 2: child}.get(id_val)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=mock_get)
+
+    with pytest.raises(HTTPException) as exc:
+        await get_category(2, _make_student_user(programs=[_make_program(20)]), db=db)
+    assert exc.value.status_code == 404
+
+
+async def test_get_category_student_unrestricted() -> None:
+    cat = _make_category(1, "Open")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+
+    result = await get_category(1, _make_student_user(), db=db)
+    assert result.label == "Open"

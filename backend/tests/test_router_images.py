@@ -48,8 +48,8 @@ def _make_image(
     )
 
 
-def _make_user(role: str = "admin") -> SimpleNamespace:
-    return SimpleNamespace(id=1, role=role, email="u@example.com")
+def _make_user(role: str = "admin", programs: list | None = None) -> SimpleNamespace:
+    return SimpleNamespace(id=1, role=role, email="u@example.com", programs=programs or [])
 
 
 def _mock_request(if_match: str | None = None) -> MagicMock:
@@ -102,8 +102,21 @@ async def test_list_images_student_filters() -> None:
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = imgs
 
+    # Visibility helper needs a categories query; return empty (no exclusions)
+    cat_result = MagicMock()
+    cat_result.scalars.return_value.unique.return_value.all.return_value = []
+
+    call_count = 0
+
+    async def execute_side_effect(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return cat_result
+        return mock_result
+
     db = AsyncMock()
-    db.execute = AsyncMock(return_value=mock_result)
+    db.execute = AsyncMock(side_effect=execute_side_effect)
 
     result = await list_images(_make_user("student"), db=db)
     assert len(result) == 1
@@ -139,7 +152,7 @@ async def test_get_image_student_inactive() -> None:
 
 async def test_get_image_student_hidden_category() -> None:
     img = _make_image(category_id=5)
-    cat = SimpleNamespace(id=5, status="hidden")
+    cat = SimpleNamespace(id=5, status="hidden", programs=[], parent_id=None)
 
     db = AsyncMock()
     db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
@@ -151,12 +164,58 @@ async def test_get_image_student_hidden_category() -> None:
 
 async def test_get_image_student_visible_category() -> None:
     img = _make_image(category_id=5)
-    cat = SimpleNamespace(id=5, status="active")
+    cat = SimpleNamespace(id=5, status="active", programs=[], parent_id=None)
 
     db = AsyncMock()
     db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
 
     result = await get_image(1, _make_user("student"), db)
+    assert result.name == "test-img"
+
+
+async def test_get_image_student_program_restricted() -> None:
+    prog = SimpleNamespace(id=10)
+    img = _make_image(category_id=5)
+    cat = SimpleNamespace(id=5, status="active", programs=[prog], parent_id=None)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
+
+    with pytest.raises(HTTPException) as exc:
+        await get_image(1, _make_user("student"), db)
+    assert exc.value.status_code == 404
+
+
+async def test_get_image_student_matching_program() -> None:
+    prog = SimpleNamespace(id=10)
+    img = _make_image(category_id=5)
+    cat = SimpleNamespace(id=5, status="active", programs=[prog], parent_id=None)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
+
+    result = await get_image(1, _make_user("student", programs=[prog]), db)
+    assert result.name == "test-img"
+
+
+async def test_get_image_student_uncategorized_visible() -> None:
+    img = _make_image(category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    result = await get_image(1, _make_user("student"), db)
+    assert result.name == "test-img"
+
+
+async def test_get_image_admin_sees_restricted() -> None:
+    prog = SimpleNamespace(id=10)
+    img = _make_image(category_id=5)
+    cat = SimpleNamespace(id=5, status="active", programs=[prog], parent_id=None)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
+
+    result = await get_image(1, _make_user("admin"), db)
     assert result.name == "test-img"
 
 

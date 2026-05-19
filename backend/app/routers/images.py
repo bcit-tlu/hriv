@@ -17,6 +17,7 @@ from ..database import get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import Category, Image, SourceImage, User
 from ..schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageOut, SourceImageOut
+from ..visibility import get_student_excluded_category_ids, is_category_visible_to_student
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -38,11 +39,12 @@ async def list_images(
         stmt = stmt.where(Image.category_id == category_id)
     if _user.role == "student":
         stmt = stmt.where(Image.active.is_(True))
-        # Exclude images belonging to hidden categories
-        hidden_cat_ids = select(Category.id).where(Category.status == "hidden").scalar_subquery()
-        stmt = stmt.where(
-            (Image.category_id.is_(None)) | (~Image.category_id.in_(hidden_cat_ids))
-        )
+        user_program_ids = {p.id for p in _user.programs}
+        excluded = await get_student_excluded_category_ids(db, user_program_ids)
+        if excluded:
+            stmt = stmt.where(
+                (Image.category_id.is_(None)) | (~Image.category_id.in_(excluded))
+            )
     stmt = stmt.order_by(Image.name)
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -60,11 +62,9 @@ async def get_image(
     if _user.role == "student":
         if not img.active:
             raise HTTPException(status_code=404, detail="Image not found")
-        # Block access to images in hidden categories
-        if img.category_id is not None:
-            cat = await db.get(Category, img.category_id)
-            if cat and cat.status == "hidden":
-                raise HTTPException(status_code=404, detail="Image not found")
+        user_program_ids = {p.id for p in _user.programs}
+        if not await is_category_visible_to_student(db, img.category_id, user_program_ids):
+            raise HTTPException(status_code=404, detail="Image not found")
     return img
 
 

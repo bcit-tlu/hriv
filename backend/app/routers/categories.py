@@ -10,6 +10,7 @@ from ..auth import get_current_user, require_role
 from ..database import get_db
 from ..models import Category, Image, Program, User
 from ..schemas import CategoryCreate, CategoryUpdate, CategoryOut, CategoryTree, CategoryReorderRequest, ImageOut
+from ..visibility import get_student_excluded_category_ids
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -137,6 +138,11 @@ async def list_categories(
         stmt = stmt.where(Category.parent_id == parent_id)
     else:
         stmt = stmt.where(Category.parent_id.is_(None))
+    if _user.role == "student":
+        user_program_ids = {p.id for p in _user.programs}
+        excluded = await get_student_excluded_category_ids(db, user_program_ids)
+        if excluded:
+            stmt = stmt.where(~Category.id.in_(excluded))
     stmt = stmt.order_by(Category.sort_order, Category.label)
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -151,6 +157,25 @@ async def get_category(
     cat = await db.get(Category, category_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
+    if _user.role == "student":
+        if cat.status == "hidden":
+            raise HTTPException(status_code=404, detail="Category not found")
+        user_program_ids = {p.id for p in _user.programs}
+        cat_program_ids = {p.id for p in cat.programs}
+        if cat_program_ids and not cat_program_ids & user_program_ids:
+            raise HTTPException(status_code=404, detail="Category not found")
+        # Check ancestor visibility (cascade rule)
+        ancestor_id = cat.parent_id
+        while ancestor_id is not None:
+            ancestor = await db.get(Category, ancestor_id)
+            if ancestor is None:
+                break
+            if ancestor.status == "hidden":
+                raise HTTPException(status_code=404, detail="Category not found")
+            anc_prog_ids = {p.id for p in ancestor.programs}
+            if anc_prog_ids and not anc_prog_ids & user_program_ids:
+                raise HTTPException(status_code=404, detail="Category not found")
+            ancestor_id = ancestor.parent_id
     return cat
 
 
