@@ -45,7 +45,6 @@ def _make_image(
         file_size=None,
         created_at=now,
         updated_at=now,
-        programs=[],
     )
 
 
