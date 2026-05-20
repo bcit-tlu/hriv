@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.14.0...frontend-v0.15.0) (2026-05-20)
+
+
+### Features
+
+* add edit pencil icon to breadcrumb for current category ([#442](https://github.com/bcit-tlu/hriv/issues/442)) ([d570b80](https://github.com/bcit-tlu/hriv/commit/d570b8004c15b064184d0a0c88eca6e61fdaebc2))
+* overflow handling for breadcrumb program pills ([#441](https://github.com/bcit-tlu/hriv/issues/441)) ([ab8fbc7](https://github.com/bcit-tlu/hriv/commit/ab8fbc7bf9eda3e82262101550ba55f5d6ad76d8))
+
+
+### Bug Fixes
+
+* show program pills only on categories with own restrictions ([#439](https://github.com/bcit-tlu/hriv/issues/439)) ([d39e089](https://github.com/bcit-tlu/hriv/commit/d39e08954c338eaf390969f93c9b0d9c1d108ee8))
+
 ## [0.14.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.13.0...frontend-v0.14.0) (2026-05-20)
 
 
