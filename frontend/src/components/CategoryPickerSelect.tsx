@@ -282,7 +282,6 @@ export default function CategoryPickerSelect({
                       <span
                         role="img"
                         aria-label={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}
-                        tabIndex={0}
                         style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: 4 }}
                       >
                         <LockIcon sx={{ fontSize: 14, color: 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />

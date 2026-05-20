@@ -3,7 +3,7 @@
  *
  * Covers:
  * 1. LockIcon renders for restricted categories
- * 2. LockIcon is wrapped in a focusable element (keyboard-accessible)
+ * 2. LockIcon is wrapped in a semantic span with aria-label
  * 3. Inherited restriction shows correct aria-label
  */
 
@@ -51,7 +51,7 @@ describe('CategoryPickerSelect — LockIcon', () => {
     expect(screen.getByLabelText('Restricted to specific programs')).toBeInTheDocument()
   })
 
-  it('wraps LockIcon in a focusable element for keyboard accessibility', async () => {
+  it('wraps LockIcon in a semantic span with aria-label for screen readers', async () => {
     const user = userEvent.setup()
     const categories = [makeCategory({ id: 1, label: 'Restricted', programIds: [10] })]
     render(
@@ -63,7 +63,6 @@ describe('CategoryPickerSelect — LockIcon', () => {
     )
     await user.click(screen.getByRole('combobox'))
     const lockElement = screen.getByLabelText('Restricted to specific programs')
-    expect(lockElement).toHaveAttribute('tabindex', '0')
     expect(lockElement).toHaveAttribute('role', 'img')
   })
 
