@@ -1352,6 +1352,44 @@ export default function App() {
         ? resolvedCategories.filter((c) => c.status !== "hidden")
         : resolvedCategories;
 
+    const editCategoryContext = useMemo(() => {
+        if (!editNameCategory) return { siblingNames: [] as string[], inheritedProgramIds: [] as number[] };
+        const isBreadcrumbCategory =
+            path.length > 0 && path[path.length - 1].id === editNameCategory.id;
+        if (isBreadcrumbCategory) {
+            let parentChildren = categories;
+            for (let i = 0; i < path.length - 1; i++) {
+                const found = parentChildren.find((c) => c.id === path[i].id);
+                if (!found) break;
+                parentChildren = found.children;
+            }
+            const siblingNames = parentChildren
+                .filter((c) => c.id !== editNameCategory.id)
+                .map((c) => c.label);
+            let effective: number[] = [];
+            let initialized = false;
+            let node = categories;
+            for (let i = 0; i < path.length - 1; i++) {
+                const found = node.find((c) => c.id === path[i].id);
+                if (!found) break;
+                if (found.programIds.length > 0) {
+                    effective = initialized
+                        ? found.programIds.filter((pid) => effective.includes(pid))
+                        : [...found.programIds];
+                    initialized = true;
+                }
+                node = found.children;
+            }
+            return { siblingNames, inheritedProgramIds: effective };
+        }
+        return {
+            siblingNames: currentCategories
+                .filter((c) => c.id !== editNameCategory.id)
+                .map((c) => c.label),
+            inheritedProgramIds: ancestorProgramIds,
+        };
+    }, [editNameCategory, path, categories, currentCategories, ancestorProgramIds]);
+
     const clearImage = useCallback(() => {
         setSelectedImage(null);
         setViewportState(undefined);
@@ -2803,6 +2841,7 @@ export default function App() {
                                                         alignItems:
                                                             "center",
                                                         gap: 0.25,
+                                                        minWidth: 0,
                                                     }}
                                                 >
                                                     <Link
@@ -2821,6 +2860,12 @@ export default function App() {
                                                         }
                                                         sx={{
                                                             cursor: "pointer",
+                                                            overflow:
+                                                                "hidden",
+                                                            textOverflow:
+                                                                "ellipsis",
+                                                            whiteSpace:
+                                                                "nowrap",
                                                         }}
                                                     >
                                                         {cat.label}
@@ -3347,12 +3392,10 @@ export default function App() {
                     );
                 }}
                 currentLabel={editNameCategory?.label ?? ""}
-                siblingNames={currentCategories
-                    .filter((c) => c.id !== editNameCategory?.id)
-                    .map((c) => c.label)}
+                siblingNames={editCategoryContext.siblingNames}
                 programs={programs}
                 currentProgramIds={editNameCategory?.programIds ?? []}
-                inheritedProgramIds={ancestorProgramIds}
+                inheritedProgramIds={editCategoryContext.inheritedProgramIds}
             />
 
             {/* Self-edit profile modal */}
