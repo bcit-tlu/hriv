@@ -3403,13 +3403,15 @@ export default function App() {
                         newLabel,
                         programIds,
                     );
-                    setPath((prev) =>
-                        prev.map((p) =>
-                            p.id === editNameCategory.id
-                                ? { ...p, label: newLabel, programIds: programIds ?? p.programIds }
-                                : p,
-                        ),
-                    );
+                    if (path.some((p) => p.id === editNameCategory.id)) {
+                        setPath((prev) =>
+                            prev.map((p) =>
+                                p.id === editNameCategory.id
+                                    ? { ...p, label: newLabel, programIds: programIds ?? p.programIds }
+                                    : p,
+                            ),
+                        );
+                    }
                 }}
                 currentLabel={editCategoryContext.freshLabel}
                 siblingNames={editCategoryContext.siblingNames}
