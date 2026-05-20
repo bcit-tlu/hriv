@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.14.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.13.0...frontend-v0.14.0) (2026-05-20)
+
+
+### Features
+
+* OIDC group-to-program mapping for automated user provisioning ([#432](https://github.com/bcit-tlu/hriv/issues/432)) ([d602c35](https://github.com/bcit-tlu/hriv/commit/d602c3584e42144a260b9a9fcb020a97feb3586b))
+* program restriction design overhaul ([#438](https://github.com/bcit-tlu/hriv/issues/438)) ([ea65a45](https://github.com/bcit-tlu/hriv/commit/ea65a45fb1aa37781da547a0167a459ca03ca9ff))
+* remove image-level program associations ([#386](https://github.com/bcit-tlu/hriv/issues/386), [#387](https://github.com/bcit-tlu/hriv/issues/387), [#396](https://github.com/bcit-tlu/hriv/issues/396)) ([#422](https://github.com/bcit-tlu/hriv/issues/422)) ([29918ab](https://github.com/bcit-tlu/hriv/commit/29918abb1e471ca985fbf56e55a2963cf95d533f))
+
+
+### Bug Fixes
+
+* add LockIcon guard and keyboard accessibility ([#395](https://github.com/bcit-tlu/hriv/issues/395), [#393](https://github.com/bcit-tlu/hriv/issues/393)) ([#433](https://github.com/bcit-tlu/hriv/issues/433)) ([484cbf8](https://github.com/bcit-tlu/hriv/commit/484cbf8adbc541a42038f947499a8cbbff288ab0))
+
 ## [0.13.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.12.1...frontend-v0.13.0) (2026-05-19)
 
 
