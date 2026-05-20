@@ -46,7 +46,7 @@ const testCategory: Category = {
 };
 
 const testPrograms: Program[] = [
-    { id: 1, name: "Medical Lab Science", created_at: "", updated_at: "" },
+    { id: 1, name: "Medical Lab Science", oidc_group: null, created_at: "", updated_at: "" },
 ];
 
 const testUsers: ApiUser[] = [];

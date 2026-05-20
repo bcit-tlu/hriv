@@ -837,6 +837,7 @@ export default function App() {
                 p.map((pg) => ({
                     id: pg.id,
                     name: pg.name,
+                    oidc_group: pg.oidc_group,
                     created_at: pg.created_at,
                     updated_at: pg.updated_at,
                 })),
@@ -878,9 +879,9 @@ export default function App() {
 
     // Program management handlers (for Manage menu)
     const handleAddProgram = useCallback(
-        async (name: string) => {
+        async (name: string, oidcGroup: string | null) => {
             try {
-                await createProgram({ name });
+                await createProgram({ name, oidc_group: oidcGroup });
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to add program", err);
@@ -891,9 +892,9 @@ export default function App() {
     );
 
     const handleEditProgram = useCallback(
-        async (id: number, name: string) => {
+        async (id: number, name: string, oidcGroup: string | null) => {
             try {
-                await updateProgram(id, { name });
+                await updateProgram(id, { name, oidc_group: oidcGroup });
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to edit program", err);

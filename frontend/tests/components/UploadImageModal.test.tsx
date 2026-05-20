@@ -32,7 +32,7 @@ const categories: Category[] = [
 ]
 
 const programs: Program[] = [
-  { id: 1, name: 'Medical Lab', created_at: '', updated_at: '' },
+  { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
 ]
 
 describe('UploadImageModal', () => {

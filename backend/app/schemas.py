@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ── Overlay Rect (shared validation for locked_overlays in metadata_extra) ────
@@ -47,16 +47,29 @@ class ProgramBase(BaseModel):
     name: str
 
 
+def _normalize_oidc_group(v: str | None) -> str | None:
+    if isinstance(v, str):
+        v = v.strip()
+        return v or None
+    return v
+
+
 class ProgramCreate(ProgramBase):
-    pass
+    oidc_group: str | None = None
+
+    _norm_oidc = field_validator("oidc_group", mode="before")(_normalize_oidc_group)
 
 
 class ProgramUpdate(BaseModel):
     name: str | None = None
+    oidc_group: str | None = None
+
+    _norm_oidc = field_validator("oidc_group", mode="before")(_normalize_oidc_group)
 
 
 class ProgramOut(ProgramBase):
     id: int
+    oidc_group: str | None = None
     created_at: datetime
     updated_at: datetime
 

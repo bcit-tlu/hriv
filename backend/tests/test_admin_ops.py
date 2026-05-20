@@ -392,7 +392,7 @@ async def test_run_db_export_success(tmp_path) -> None:
         result_filename=None, result_path=None, input_path=None, error_message=None,
     )
 
-    programs = [SimpleNamespace(id=1, name="CS", created_at=now, updated_at=now)]
+    programs = [SimpleNamespace(id=1, name="CS", oidc_group=None, created_at=now, updated_at=now)]
     categories = []
     images = []
     users = [SimpleNamespace(

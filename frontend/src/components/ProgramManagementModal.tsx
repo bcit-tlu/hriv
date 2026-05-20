@@ -20,8 +20,8 @@ interface ProgramManagementModalProps {
   open: boolean
   onClose: () => void
   programs: Program[]
-  onAdd: (name: string) => void
-  onEdit: (id: number, name: string) => void
+  onAdd: (name: string, oidcGroup: string | null) => void
+  onEdit: (id: number, name: string, oidcGroup: string | null) => void
   onDelete: (id: number) => void
 }
 
@@ -34,41 +34,47 @@ export default function ProgramManagementModal({
   onDelete,
 }: ProgramManagementModalProps) {
   const [newName, setNewName] = useState('')
+  const [newOidcGroup, setNewOidcGroup] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
   const [editingName, setEditingName] = useState('')
+  const [editingOidcGroup, setEditingOidcGroup] = useState('')
 
   const handleAdd = () => {
     const trimmed = newName.trim()
     if (trimmed) {
-      onAdd(trimmed)
+      onAdd(trimmed, newOidcGroup.trim() || null)
       setNewName('')
+      setNewOidcGroup('')
     }
   }
 
   const startEdit = (program: Program) => {
     setEditingId(program.id)
     setEditingName(program.name)
+    setEditingOidcGroup(program.oidc_group ?? '')
   }
 
   const handleEditSave = () => {
     const trimmed = editingName.trim()
     if (editingId !== null && trimmed) {
-      onEdit(editingId, trimmed)
+      onEdit(editingId, trimmed, editingOidcGroup.trim() || null)
       setEditingId(null)
       setEditingName('')
+      setEditingOidcGroup('')
     }
   }
 
   const handleEditCancel = () => {
     setEditingId(null)
     setEditingName('')
+    setEditingOidcGroup('')
   }
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
       <DialogTitle>Manage Programs</DialogTitle>
       <DialogContent>
-        <Box sx={{ display: 'flex', gap: 1, mb: 2, mt: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1, mb: 2, mt: 1, flexWrap: 'wrap' }}>
           <TextField
             label="New program name"
             size="small"
@@ -78,6 +84,17 @@ export default function ProgramManagementModal({
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleAdd()
             }}
+          />
+          <TextField
+            label="OIDC group (optional)"
+            size="small"
+            fullWidth
+            value={newOidcGroup}
+            onChange={(e) => setNewOidcGroup(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleAdd()
+            }}
+            helperText="IdP group name for auto-assignment"
           />
           <Button
             variant="contained"
@@ -135,22 +152,35 @@ export default function ProgramManagementModal({
                 }
               >
                 {editingId === p.id ? (
-                  <TextField
-                    size="small"
-                    value={editingName}
-                    onChange={(e) => setEditingName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleEditSave()
-                      if (e.key === 'Escape') handleEditCancel()
-                    }}
-                    autoFocus
-                    sx={{ mr: 2 }}
-                  />
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mr: 2 }}>
+                    <TextField
+                      size="small"
+                      label="Name"
+                      value={editingName}
+                      onChange={(e) => setEditingName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleEditSave()
+                        if (e.key === 'Escape') handleEditCancel()
+                      }}
+                      autoFocus
+                    />
+                    <TextField
+                      size="small"
+                      label="OIDC group"
+                      value={editingOidcGroup}
+                      onChange={(e) => setEditingOidcGroup(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleEditSave()
+                        if (e.key === 'Escape') handleEditCancel()
+                      }}
+                    />
+                  </Box>
                 ) : (
                   <ListItemText
                     primary={
                       <Chip label={p.name} size="small" color="primary" />
                     }
+                    secondary={p.oidc_group ? `OIDC group: ${p.oidc_group}` : undefined}
                   />
                 )}
               </ListItem>
