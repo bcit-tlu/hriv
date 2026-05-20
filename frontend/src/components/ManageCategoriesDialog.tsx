@@ -622,19 +622,21 @@ export default function ManageCategoriesDialog({
         inheritedProgramIds={addInheritedProgramIds}
       />
 
-      <EditCategoryDialog
-        open={editDialogOpen}
-        onClose={() => {
-          setEditDialogOpen(false)
-          setEditingCategory(null)
-        }}
-        onSave={handleEditSave}
-        currentLabel={editingCategory?.label ?? ''}
-        siblingNames={editSiblingNames}
-        programs={programs}
-        currentProgramIds={editingCategory?.programIds ?? []}
-        inheritedProgramIds={inheritedProgramIds}
-      />
+      {onEditCategory && (
+        <EditCategoryDialog
+          open={editDialogOpen}
+          onClose={() => {
+            setEditDialogOpen(false)
+            setEditingCategory(null)
+          }}
+          onSave={handleEditSave}
+          currentLabel={editingCategory?.label ?? ''}
+          siblingNames={editSiblingNames}
+          programs={programs}
+          currentProgramIds={editingCategory?.programIds ?? []}
+          inheritedProgramIds={inheritedProgramIds}
+        />
+      )}
 
       {/* Confirm delete dialog */}
       <Dialog open={confirmDeleteOpen} onClose={handleCancelDelete}>
