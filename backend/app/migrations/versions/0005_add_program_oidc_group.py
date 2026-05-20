@@ -1,15 +1,15 @@
 """Add oidc_group column to programs table.
 
-Revision ID: 0005
-Revises: 0004
+Revision ID: 0005_add_program_oidc_group
+Revises: 0004_drop_image_level_programs
 Create Date: 2026-05-20
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0005"
-down_revision = "0004"
+revision = "0005_add_program_oidc_group"
+down_revision = "0004_drop_image_level_programs"
 branch_labels = None
 depends_on = None
 
