@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.14.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.13.0...frontend-v0.14.0) (2026-05-20)
+
+
+### Features
+
+* remove image-level program associations ([#386](https://github.com/bcit-tlu/hriv/issues/386), [#387](https://github.com/bcit-tlu/hriv/issues/387), [#396](https://github.com/bcit-tlu/hriv/issues/396)) ([#422](https://github.com/bcit-tlu/hriv/issues/422)) ([29918ab](https://github.com/bcit-tlu/hriv/commit/29918abb1e471ca985fbf56e55a2963cf95d533f))
+
 ## [0.13.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.12.1...frontend-v0.13.0) (2026-05-19)
 
 
