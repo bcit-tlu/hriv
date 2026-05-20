@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.17.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.16.0...backend-v0.17.0) (2026-05-20)
+
+
+### Features
+
+* enforce program-scoped student visibility filtering in API ([#431](https://github.com/bcit-tlu/hriv/issues/431)) ([7a4228a](https://github.com/bcit-tlu/hriv/commit/7a4228ad8a261b9d276147ef5966d0da1cf76f81))
+* OIDC group-to-program mapping for automated user provisioning ([#432](https://github.com/bcit-tlu/hriv/issues/432)) ([d602c35](https://github.com/bcit-tlu/hriv/commit/d602c3584e42144a260b9a9fcb020a97feb3586b))
+* remove image-level program associations ([#386](https://github.com/bcit-tlu/hriv/issues/386), [#387](https://github.com/bcit-tlu/hriv/issues/387), [#396](https://github.com/bcit-tlu/hriv/issues/396)) ([#422](https://github.com/bcit-tlu/hriv/issues/422)) ([29918ab](https://github.com/bcit-tlu/hriv/commit/29918abb1e471ca985fbf56e55a2963cf95d533f))
+
 ## [0.16.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.15.0...backend-v0.16.0) (2026-05-19)
 
 
