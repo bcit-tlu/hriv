@@ -3398,12 +3398,19 @@ export default function App() {
             <EditCategoryDialog
                 open={editNameCategory != null}
                 onClose={() => setEditNameCategory(null)}
-                onSave={(newLabel, programIds) => {
+                onSave={async (newLabel, programIds) => {
                     if (!editNameCategory) return;
-                    return editCategoryInline(
+                    await editCategoryInline(
                         editNameCategory.id,
                         newLabel,
                         programIds,
+                    );
+                    setPath((prev) =>
+                        prev.map((p) =>
+                            p.id === editNameCategory.id
+                                ? { ...p, label: newLabel, programIds: programIds ?? p.programIds }
+                                : p,
+                        ),
                     );
                 }}
                 currentLabel={editCategoryContext.freshLabel}
