@@ -199,6 +199,8 @@ export default function App() {
         number | null
     >(null);
     const [addCatOpen, setAddCatOpen] = useState(false);
+    const [programsPopoverAnchor, setProgramsPopoverAnchor] =
+        useState<HTMLElement | null>(null);
     const [editNameCategory, setEditNameCategory] = useState<Category | null>(null);
     const [announcement, setAnnouncement] = useState("");
     const [uncategorizedImages, setUncategorizedImages] = useState<ImageItem[]>(
@@ -2814,32 +2816,117 @@ export default function App() {
                                             </Link>
                                         ))}
                                     </MuiBreadcrumbs>
-                                    {ancestorProgramIds.length > 0 &&
-                                        ancestorProgramIds
-                                            .map((pid) =>
-                                                programs.find(
-                                                    (p) => p.id === pid,
-                                                ),
-                                            )
-                                            .filter(
-                                                (
-                                                    p,
-                                                ): p is Program =>
-                                                    p != null,
-                                            )
-                                            .sort((a, b) =>
-                                                a.name.localeCompare(
-                                                    b.name,
-                                                ),
-                                            )
-                                            .map((p) => (
-                                                <Chip
-                                                    key={p.id}
-                                                    label={p.name}
-                                                    size="small"
-                                                    color="primary"
-                                                />
-                                            ))}
+                                    {(() => {
+                                        const resolved =
+                                            ancestorProgramIds
+                                                .map((pid) =>
+                                                    programs.find(
+                                                        (p) =>
+                                                            p.id === pid,
+                                                    ),
+                                                )
+                                                .filter(
+                                                    (
+                                                        p,
+                                                    ): p is Program =>
+                                                        p != null,
+                                                )
+                                                .sort((a, b) =>
+                                                    a.name.localeCompare(
+                                                        b.name,
+                                                    ),
+                                                );
+                                        if (resolved.length === 0)
+                                            return null;
+                                        const MAX_INLINE = 2;
+                                        const inline = resolved.slice(
+                                            0,
+                                            MAX_INLINE,
+                                        );
+                                        const overflow =
+                                            resolved.length - MAX_INLINE;
+                                        return (
+                                            <>
+                                                {inline.map((p) => (
+                                                    <Chip
+                                                        key={p.id}
+                                                        label={p.name}
+                                                        size="small"
+                                                        color="primary"
+                                                    />
+                                                ))}
+                                                {overflow > 0 && (
+                                                    <>
+                                                        <Chip
+                                                            label={`+${overflow}`}
+                                                            size="small"
+                                                            color="primary"
+                                                            variant="outlined"
+                                                            onClick={(
+                                                                e,
+                                                            ) =>
+                                                                setProgramsPopoverAnchor(
+                                                                    e.currentTarget,
+                                                                )
+                                                            }
+                                                            aria-label={`${overflow} more programs`}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                            }}
+                                                        />
+                                                        <Popover
+                                                            open={
+                                                                programsPopoverAnchor !=
+                                                                null
+                                                            }
+                                                            anchorEl={
+                                                                programsPopoverAnchor
+                                                            }
+                                                            onClose={() =>
+                                                                setProgramsPopoverAnchor(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            anchorOrigin={{
+                                                                vertical:
+                                                                    "bottom",
+                                                                horizontal:
+                                                                    "left",
+                                                            }}
+                                                        >
+                                                            <Box
+                                                                sx={{
+                                                                    p: 1.5,
+                                                                    display:
+                                                                        "flex",
+                                                                    flexDirection:
+                                                                        "column",
+                                                                    gap: 0.5,
+                                                                }}
+                                                            >
+                                                                {resolved.map(
+                                                                    (
+                                                                        p,
+                                                                    ) => (
+                                                                        <Chip
+                                                                            key={
+                                                                                p.id
+                                                                            }
+                                                                            label={
+                                                                                p.name
+                                                                            }
+                                                                            size="small"
+                                                                            color="primary"
+                                                                        />
+                                                                    ),
+                                                                )}
+                                                            </Box>
+                                                        </Popover>
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
                                 </Box>
                                 {canEditContent && (
                                     <Box
