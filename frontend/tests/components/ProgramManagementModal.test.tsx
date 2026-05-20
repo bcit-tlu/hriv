@@ -5,8 +5,8 @@ import ProgramManagementModal from '../../src/components/ProgramManagementModal'
 import type { Program } from '../../src/types'
 
 const programs: Program[] = [
-  { id: 1, name: 'Medical Lab', created_at: '', updated_at: '' },
-  { id: 2, name: 'Dental Hygiene', created_at: '', updated_at: '' },
+  { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
+  { id: 2, name: 'Dental Hygiene', oidc_group: null, created_at: '', updated_at: '' },
 ]
 
 describe('ProgramManagementModal', () => {
@@ -60,7 +60,7 @@ describe('ProgramManagementModal', () => {
     await user.type(input, 'New Program')
     await user.click(screen.getByRole('button', { name: 'Add' }))
 
-    expect(onAdd).toHaveBeenCalledWith('New Program')
+    expect(onAdd).toHaveBeenCalledWith('New Program', null)
   })
 
   it('calls onAdd when pressing Enter in the text field', async () => {
@@ -80,7 +80,7 @@ describe('ProgramManagementModal', () => {
     const input = screen.getByLabelText(/new program name/i)
     await user.type(input, 'Enter Program{Enter}')
 
-    expect(onAdd).toHaveBeenCalledWith('Enter Program')
+    expect(onAdd).toHaveBeenCalledWith('Enter Program', null)
   })
 
   it('Add button is disabled when input is empty', () => {
@@ -139,7 +139,7 @@ describe('ProgramManagementModal', () => {
     await user.type(editInput, 'Updated Lab')
 
     await user.click(screen.getByRole('button', { name: 'Save' }))
-    expect(onEdit).toHaveBeenCalledWith(1, 'Updated Lab')
+    expect(onEdit).toHaveBeenCalledWith(1, 'Updated Lab', null)
   })
 
   it('cancels edit mode', async () => {
