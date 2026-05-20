@@ -94,6 +94,8 @@ describe('ManageCategoriesDialog — LockIcon', () => {
     const lockSpan = screen.getByLabelText('Restricted to specific programs')
     expect(lockSpan.tagName).toBe('SPAN')
     expect(lockSpan.closest('button')).toBeNull()
+    expect(lockSpan).toHaveAttribute('tabindex', '0')
+    expect(lockSpan).toHaveAttribute('role', 'img')
   })
 
   it('renders inherited restriction LockIcon for child categories', () => {
