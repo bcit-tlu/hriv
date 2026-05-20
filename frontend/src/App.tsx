@@ -1353,7 +1353,13 @@ export default function App() {
         : resolvedCategories;
 
     const editCategoryContext = useMemo(() => {
-        if (!editNameCategory) return { siblingNames: [] as string[], inheritedProgramIds: [] as number[] };
+        const fallback = {
+            siblingNames: [] as string[],
+            inheritedProgramIds: [] as number[],
+            freshLabel: editNameCategory?.label ?? "",
+            freshProgramIds: editNameCategory?.programIds ?? [],
+        };
+        if (!editNameCategory) return fallback;
         const isBreadcrumbCategory =
             path.length > 0 && path[path.length - 1].id === editNameCategory.id;
         if (isBreadcrumbCategory) {
@@ -1363,6 +1369,7 @@ export default function App() {
                 if (!found) break;
                 parentChildren = found.children;
             }
+            const freshCat = parentChildren.find((c) => c.id === editNameCategory.id);
             const siblingNames = parentChildren
                 .filter((c) => c.id !== editNameCategory.id)
                 .map((c) => c.label);
@@ -1380,13 +1387,21 @@ export default function App() {
                 }
                 node = found.children;
             }
-            return { siblingNames, inheritedProgramIds: effective };
+            return {
+                siblingNames,
+                inheritedProgramIds: effective,
+                freshLabel: freshCat?.label ?? editNameCategory.label,
+                freshProgramIds: freshCat?.programIds ?? editNameCategory.programIds,
+            };
         }
+        const freshChild = currentCategories.find((c) => c.id === editNameCategory.id);
         return {
             siblingNames: currentCategories
                 .filter((c) => c.id !== editNameCategory.id)
                 .map((c) => c.label),
             inheritedProgramIds: ancestorProgramIds,
+            freshLabel: freshChild?.label ?? editNameCategory.label,
+            freshProgramIds: freshChild?.programIds ?? editNameCategory.programIds,
         };
     }, [editNameCategory, path, categories, currentCategories, ancestorProgramIds]);
 
@@ -3391,10 +3406,10 @@ export default function App() {
                         programIds,
                     );
                 }}
-                currentLabel={editNameCategory?.label ?? ""}
+                currentLabel={editCategoryContext.freshLabel}
                 siblingNames={editCategoryContext.siblingNames}
                 programs={programs}
-                currentProgramIds={editNameCategory?.programIds ?? []}
+                currentProgramIds={editCategoryContext.freshProgramIds}
                 inheritedProgramIds={editCategoryContext.inheritedProgramIds}
             />
 
