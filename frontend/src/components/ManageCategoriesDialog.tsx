@@ -538,18 +538,31 @@ export default function ManageCategoriesDialog({
                         {opt.label}
                       </Typography>
                       {(opt.programIds.length > 0 || opt.inheritedRestriction) && (
-                        <Tooltip title={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}>
-                          <IconButton
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleEditClick(opt)
-                            }}
-                            sx={{ p: 0, ml: 0.5, verticalAlign: 'middle' }}
-                          >
-                            <LockIcon sx={{ fontSize: 14, color: 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
-                          </IconButton>
-                        </Tooltip>
+                        onEditCategory ? (
+                          <Tooltip title={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}>
+                            <IconButton
+                              aria-label={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditClick(opt)
+                              }}
+                              sx={{ p: 0, ml: 0.5, verticalAlign: 'middle' }}
+                            >
+                              <LockIcon sx={{ fontSize: 14, color: 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
+                            </IconButton>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip title={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}>
+                            <span
+                              role="img"
+                              aria-label={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}
+                              style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: 4 }}
+                            >
+                              <LockIcon sx={{ fontSize: 14, color: 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
+                            </span>
+                          </Tooltip>
+                        )
                       )}
                     </>
                   }
