@@ -52,7 +52,7 @@ export default function EditCategoryDialog({
     if (open && !prevOpen.current) {
       setLabel(currentLabel)
       setError(null)
-      setVisibility(currentProgramIds.length > 0 ? 'specific' : 'all')
+      setVisibility(currentProgramIds.length > 0 || inheritedProgramIds.length > 0 ? 'specific' : 'all')
       // When ancestor restrictions exist, filter out any selected programs
       // that aren't in the inherited set (they'd be unreachable anyway).
       const validIds = inheritedProgramIds.length > 0
@@ -217,7 +217,7 @@ export default function EditCategoryDialog({
         <Button
           onClick={handleSubmit}
           variant="contained"
-          disabled={!label.trim() || (!labelChanged && !programsChanged) || (visibility === 'specific' && selectedProgramIds.size === 0 && programs.length > 0) || saving}
+          disabled={!label.trim() || (!labelChanged && !programsChanged) || (visibility === 'specific' && selectedProgramIds.size === 0 && programs.length > 0 && inheritedProgramIds.length === 0) || saving}
         >
           Save
         </Button>

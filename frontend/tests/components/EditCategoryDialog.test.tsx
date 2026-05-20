@@ -254,8 +254,7 @@ describe('EditCategoryDialog', () => {
           inheritedProgramIds={[1, 2]}
         />,
       )
-      // Switch to "Specific programs" to see chips
-      screen.getByLabelText('Specific programs').click()
+      // "Specific programs" is auto-selected when inheritedProgramIds exist
 
       const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
       const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
@@ -322,7 +321,7 @@ describe('EditCategoryDialog', () => {
           inheritedProgramIds={[1, 2]}
         />,
       )
-      screen.getByLabelText('Specific programs').click()
+      // "Specific programs" is auto-selected when inheritedProgramIds exist
 
       // Program C should be disabled (pointer-events: none prevents clicks)
       const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
@@ -382,7 +381,7 @@ describe('EditCategoryDialog', () => {
       expect(chipC).not.toHaveClass('Mui-disabled')
     })
 
-    it('displays inherited programs at 0.5 opacity in consolidated picker', () => {
+    it('defaults to specific-programs view when inherited restrictions exist', () => {
       render(
         <EditCategoryDialog
           open
@@ -394,8 +393,8 @@ describe('EditCategoryDialog', () => {
           inheritedProgramIds={[1, 2]}
         />,
       )
-      // Switch to "Specific programs" to see chips
-      screen.getByLabelText('Specific programs').click()
+      // Should auto-select "Specific programs" when inheritedProgramIds exist
+      expect(screen.getByLabelText('Specific programs')).toBeChecked()
 
       // Inherited programs should render at 0.5 opacity (not selected as own)
       const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
@@ -405,6 +404,32 @@ describe('EditCategoryDialog', () => {
       // Both should be filled primary
       expect(chipA).toHaveClass('MuiChip-filled')
       expect(chipB).toHaveClass('MuiChip-filled')
+    })
+
+    it('allows saving label change with inherited-only programs (no own selection)', async () => {
+      const user = userEvent.setup()
+      const onSave = vi.fn().mockResolvedValue(undefined)
+      render(
+        <EditCategoryDialog
+          open
+          onClose={vi.fn()}
+          onSave={onSave}
+          currentLabel="Child"
+          programs={allPrograms}
+          currentProgramIds={[]}
+          inheritedProgramIds={[1, 2]}
+        />,
+      )
+      // Change label — Save should be enabled even with 0 own selections
+      const input = screen.getByDisplayValue('Child')
+      await user.clear(input)
+      await user.type(input, 'Renamed Child')
+      const saveBtn = screen.getByRole('button', { name: 'Save' })
+      expect(saveBtn).not.toBeDisabled()
+      await user.click(saveBtn)
+      await waitFor(() => {
+        expect(onSave).toHaveBeenCalledWith('Renamed Child', [])
+      })
     })
   })
 
