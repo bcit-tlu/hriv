@@ -118,6 +118,7 @@ export interface ApiUser {
 export interface ApiProgram {
   id: number
   name: string
+  oidc_group: string | null
   created_at: string
   updated_at: string
 }
@@ -334,7 +335,7 @@ export function fetchPrograms(): Promise<ApiProgram[]> {
   return request('/programs/')
 }
 
-export function createProgram(body: { name: string }): Promise<ApiProgram> {
+export function createProgram(body: { name: string; oidc_group?: string | null }): Promise<ApiProgram> {
   return request('/programs/', {
     method: 'POST',
     body: JSON.stringify(body),
@@ -343,7 +344,7 @@ export function createProgram(body: { name: string }): Promise<ApiProgram> {
 
 export function updateProgram(
   id: number,
-  body: { name: string },
+  body: { name?: string; oidc_group?: string | null },
 ): Promise<ApiProgram> {
   return request(`/programs/${id}`, {
     method: 'PATCH',

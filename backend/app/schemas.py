@@ -48,15 +48,17 @@ class ProgramBase(BaseModel):
 
 
 class ProgramCreate(ProgramBase):
-    pass
+    oidc_group: str | None = None
 
 
 class ProgramUpdate(BaseModel):
     name: str | None = None
+    oidc_group: str | None = None
 
 
 class ProgramOut(ProgramBase):
     id: int
+    oidc_group: str | None = None
     created_at: datetime
     updated_at: datetime
 

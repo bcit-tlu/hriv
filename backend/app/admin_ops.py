@@ -229,15 +229,16 @@ async def run_db_export(task_id: int) -> None:
 
             dump = {
                 "exported_at": datetime.now(timezone.utc).isoformat(),
-                "programs": [
-                    {
-                        "id": p.id,
-                        "name": p.name,
-                        "created_at": dt(p.created_at),
-                        "updated_at": dt(p.updated_at),
-                    }
-                    for p in programs
-                ],
+                    "programs": [
+                        {
+                            "id": p.id,
+                            "name": p.name,
+                            "oidc_group": p.oidc_group,
+                            "created_at": dt(p.created_at),
+                            "updated_at": dt(p.updated_at),
+                        }
+                        for p in programs
+                    ],
                 "categories": [
                     {
                         "id": c.id,
@@ -468,6 +469,7 @@ async def run_db_import(task_id: int) -> None:
                     program = Program(
                         id=p["id"],
                         name=p["name"],
+                        oidc_group=p.get("oidc_group"),
                         created_at=_parse_dt(p.get("created_at")),
                         updated_at=_parse_dt(p.get("updated_at")),
                     )

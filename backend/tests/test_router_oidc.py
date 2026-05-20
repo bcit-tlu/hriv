@@ -11,7 +11,8 @@ from fastapi import HTTPException
 from fastapi.responses import HTMLResponse
 
 from app.routers.oidc import (
-    _parse_role_mapping, _resolve_role, _ensure_oidc_enabled,
+    _parse_role_mapping, _resolve_role, _resolve_programs, _sync_programs,
+    _ensure_oidc_enabled,
     _resolve_frontend_origin, _fragment_redirect,
     oidc_enabled, oidc_login, oidc_callback,
 )
@@ -637,3 +638,222 @@ async def test_oidc_callback_cors_origin_fallback() -> None:
 
     assert result.status_code == 200
     assert "frontend.example.com" in result.body.decode()
+
+
+# ── _resolve_programs / _sync_programs helpers ───────────
+
+
+async def test_resolve_programs_returns_matching() -> None:
+    """_resolve_programs queries programs whose oidc_group is in groups."""
+    prog_a = SimpleNamespace(id=1, name="MRAD", oidc_group="mrad-group")
+    prog_b = SimpleNamespace(id=2, name="MLT", oidc_group="mlt-group")
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [prog_a, prog_b]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    result = await _resolve_programs(db, ["mrad-group", "mlt-group"])
+    assert result == [prog_a, prog_b]
+    db.execute.assert_called_once()
+
+
+async def test_resolve_programs_empty_groups() -> None:
+    """_resolve_programs short-circuits on empty groups list."""
+    db = AsyncMock()
+    result = await _resolve_programs(db, [])
+    assert result == []
+    db.execute.assert_not_called()
+
+
+def test_sync_programs_merges_oidc_and_manual() -> None:
+    """_sync_programs returns OIDC programs + manually-assigned programs."""
+    oidc_prog = SimpleNamespace(id=1, name="MRAD", oidc_group="mrad-group")
+    manual_prog = SimpleNamespace(id=2, name="Custom", oidc_group=None)
+    old_oidc_prog = SimpleNamespace(id=3, name="MLT", oidc_group="mlt-group")
+
+    user = SimpleNamespace(programs=[manual_prog, old_oidc_prog])
+    result = _sync_programs(user, [oidc_prog])
+
+    ids = {p.id for p in result}
+    assert ids == {1, 2}
+
+
+def test_sync_programs_no_oidc_keeps_manual() -> None:
+    """When no OIDC programs matched, manual assignments are preserved."""
+    manual_prog = SimpleNamespace(id=1, name="Custom", oidc_group=None)
+    user = SimpleNamespace(programs=[manual_prog])
+
+    result = _sync_programs(user, [])
+    assert len(result) == 1
+    assert result[0].id == 1
+
+
+def test_sync_programs_no_duplicates() -> None:
+    """If an OIDC program is already manually assigned, no duplicates."""
+    prog = SimpleNamespace(id=1, name="MRAD", oidc_group="mrad-group")
+    user = SimpleNamespace(programs=[prog])
+
+    result = _sync_programs(user, [prog])
+    assert len(result) == 1
+    assert result[0].id == 1
+
+
+# ── OIDC callback with program sync ─────────────────────
+
+
+async def test_oidc_callback_new_user_with_programs() -> None:
+    """New user created via OIDC gets programs from group claims."""
+    request = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.authorize_access_token = AsyncMock(return_value={
+        "userinfo": {
+            "sub": "oidc-sub-prog-new",
+            "email": "newprog@example.ca",
+            "name": "New Prog User",
+            "groups": ["mrad-group"],
+        },
+    })
+
+    prog = SimpleNamespace(id=10, name="MRAD", oidc_group="mrad-group")
+
+    # First execute: user lookup by oidc_subject → None
+    mock_user_empty = MagicMock()
+    mock_user_empty.scalars.return_value.first.return_value = None
+
+    # Second execute: _resolve_programs → [prog]
+    mock_prog_result = MagicMock()
+    mock_prog_result.scalars.return_value.all.return_value = [prog]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[mock_user_empty, mock_prog_result])
+    db.add = MagicMock()
+    db.flush = AsyncMock()
+    db.commit = AsyncMock()
+
+    captured_user = None
+
+    async def mock_refresh(user, attrs=None):
+        nonlocal captured_user
+        captured_user = user
+        if attrs:
+            user.programs = []
+
+    db.refresh = AsyncMock(side_effect=mock_refresh)
+
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_enabled = True
+        mock_settings.oidc_trust_email = False
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
+        mock_settings.oidc_role_mapping = "{}"
+        with patch("app.routers.oidc.oauth") as mock_oauth:
+            mock_oauth.create_client.return_value = mock_client
+            with patch("app.routers.oidc.create_access_token", return_value="jwt"):
+                result = await oidc_callback(request, db)
+
+    assert result.status_code == 200
+    assert captured_user is not None
+    assert [p.id for p in captured_user.programs] == [10]
+
+
+async def test_oidc_callback_existing_user_program_sync() -> None:
+    """Existing user's programs are synced from OIDC groups on login."""
+    request = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.authorize_access_token = AsyncMock(return_value={
+        "userinfo": {
+            "sub": "oidc-sub-sync",
+            "email": "sync@example.ca",
+            "name": "Sync User",
+            "groups": ["mrad-group"],
+        },
+    })
+
+    oidc_prog = SimpleNamespace(id=10, name="MRAD", oidc_group="mrad-group")
+    manual_prog = SimpleNamespace(id=20, name="Custom", oidc_group=None)
+    old_oidc_prog = SimpleNamespace(id=30, name="MLT", oidc_group="mlt-group")
+
+    existing_user = SimpleNamespace(
+        id=5, name="Sync User", email="sync@example.ca",
+        oidc_subject="oidc-sub-sync", role="student",
+        programs=[manual_prog, old_oidc_prog], last_access=None,
+    )
+
+    # First execute: user lookup → existing_user
+    mock_user_result = MagicMock()
+    mock_user_result.scalars.return_value.first.return_value = existing_user
+
+    # Second execute: _resolve_programs → [oidc_prog]
+    mock_prog_result = MagicMock()
+    mock_prog_result.scalars.return_value.all.return_value = [oidc_prog]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[mock_user_result, mock_prog_result])
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_enabled = True
+        mock_settings.oidc_trust_email = False
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
+        mock_settings.oidc_role_mapping = "{}"
+        with patch("app.routers.oidc.oauth") as mock_oauth:
+            mock_oauth.create_client.return_value = mock_client
+            with patch("app.routers.oidc.create_access_token", return_value="jwt"):
+                result = await oidc_callback(request, db)
+
+    assert result.status_code == 200
+    prog_ids = {p.id for p in existing_user.programs}
+    # OIDC-derived (10) + manual (20); old OIDC (30) dropped
+    assert prog_ids == {10, 20}
+
+
+async def test_oidc_callback_role_and_program_sync() -> None:
+    """Both role and programs are updated from groups on existing user login."""
+    request = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.authorize_access_token = AsyncMock(return_value={
+        "userinfo": {
+            "sub": "oidc-sub-both",
+            "email": "both@example.ca",
+            "name": "Both User",
+            "groups": ["admin-group", "mrad-group"],
+        },
+    })
+
+    oidc_prog = SimpleNamespace(id=10, name="MRAD", oidc_group="mrad-group")
+
+    existing_user = SimpleNamespace(
+        id=7, name="Both User", email="both@example.ca",
+        oidc_subject="oidc-sub-both", role="student",
+        programs=[], last_access=None,
+    )
+
+    mock_user_result = MagicMock()
+    mock_user_result.scalars.return_value.first.return_value = existing_user
+
+    mock_prog_result = MagicMock()
+    mock_prog_result.scalars.return_value.all.return_value = [oidc_prog]
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[mock_user_result, mock_prog_result])
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_enabled = True
+        mock_settings.oidc_trust_email = False
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
+        mock_settings.oidc_role_mapping = '{"admin-group": "admin"}'
+        with patch("app.routers.oidc.oauth") as mock_oauth:
+            mock_oauth.create_client.return_value = mock_client
+            with patch("app.routers.oidc.create_access_token", return_value="jwt"):
+                result = await oidc_callback(request, db)
+
+    assert result.status_code == 200
+    assert existing_user.role == "admin"
+    assert [p.id for p in existing_user.programs] == [10]
