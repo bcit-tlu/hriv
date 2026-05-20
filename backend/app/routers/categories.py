@@ -10,6 +10,7 @@ from ..auth import get_current_user, require_role
 from ..database import get_db
 from ..models import Category, Image, Program, User
 from ..schemas import CategoryCreate, CategoryUpdate, CategoryOut, CategoryTree, CategoryReorderRequest, ImageOut
+from ..visibility import compute_excluded_category_ids, get_student_excluded_category_ids, is_category_visible_to_student
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -53,19 +54,19 @@ async def _load_tree(
     for cat in all_categories:
         children_by_parent.setdefault(cat.parent_id, []).append(cat)
 
+    # ── Compute excluded category IDs for students ──
+    excluded: set[int] = set()
+    if user_role == "student":
+        excluded = compute_excluded_category_ids(
+            all_categories, user_program_ids or set(),
+        )
+
     # ── Recursive assembly (in-memory only, no DB calls) ──
     def _assemble(pid: int | None) -> list[CategoryTree]:
         tree: list[CategoryTree] = []
         for cat in children_by_parent.get(pid, []):
-            if user_role == "student" and cat.status == "hidden":
+            if user_role == "student" and cat.id in excluded:
                 continue
-            # Program-scoped visibility: students only see categories
-            # that either have no program restriction or share at least
-            # one program with the student.
-            if user_role == "student" and user_program_ids is not None:
-                cat_program_ids = {p.id for p in cat.programs}
-                if cat_program_ids and not cat_program_ids & user_program_ids:
-                    continue
             cat_images = images_by_cat.get(cat.id, [])
             if user_role == "student":
                 cat_images = [img for img in cat_images if img.active]
@@ -137,6 +138,11 @@ async def list_categories(
         stmt = stmt.where(Category.parent_id == parent_id)
     else:
         stmt = stmt.where(Category.parent_id.is_(None))
+    if _user.role == "student":
+        user_program_ids = {p.id for p in _user.programs}
+        excluded = await get_student_excluded_category_ids(db, user_program_ids)
+        if excluded:
+            stmt = stmt.where(~Category.id.in_(excluded))
     stmt = stmt.order_by(Category.sort_order, Category.label)
     result = await db.execute(stmt)
     return result.scalars().all()
@@ -151,6 +157,10 @@ async def get_category(
     cat = await db.get(Category, category_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
+    if _user.role == "student":
+        user_program_ids = {p.id for p in _user.programs}
+        if not await is_category_visible_to_student(db, category_id, user_program_ids):
+            raise HTTPException(status_code=404, detail="Category not found")
     return cat
 
 
