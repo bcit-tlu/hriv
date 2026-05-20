@@ -2801,6 +2801,42 @@ export default function App() {
                                         </Link>
                                     ))}
                                 </MuiBreadcrumbs>
+                                {ancestorProgramIds.length > 0 && (
+                                    <Box
+                                        sx={{
+                                            display: "flex",
+                                            flexWrap: "wrap",
+                                            gap: 0.5,
+                                            flexShrink: 0,
+                                        }}
+                                    >
+                                        {ancestorProgramIds
+                                            .map((pid) =>
+                                                programs.find(
+                                                    (p) => p.id === pid,
+                                                ),
+                                            )
+                                            .filter(
+                                                (
+                                                    p,
+                                                ): p is Program =>
+                                                    p != null,
+                                            )
+                                            .sort((a, b) =>
+                                                a.name.localeCompare(
+                                                    b.name,
+                                                ),
+                                            )
+                                            .map((p) => (
+                                                <Chip
+                                                    key={p.id}
+                                                    label={p.name}
+                                                    size="small"
+                                                    color="primary"
+                                                />
+                                            ))}
+                                    </Box>
+                                )}
                                 {canEditContent && (
                                     <Box
                                         sx={{
@@ -2956,8 +2992,6 @@ export default function App() {
                                                 ? toggleImageVisibility
                                                 : undefined
                                         }
-                                        programs={programs}
-                                        restrictionProgramIds={ancestorProgramIds}
                                         draggable={canEditContent}
                                     />
                                 ))}
