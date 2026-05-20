@@ -1310,49 +1310,100 @@ export default function App() {
 
     // Resolve the live children/images from the categories state tree
     // so newly added categories appear immediately.
-    const resolve = useCallback((): { cats: Category[]; imgs: ImageItem[] } => {
+    const { cats: resolvedCategories, imgs: currentImages } = useMemo(() => {
         let node = categories;
         for (const segment of path) {
             const found = node.find((c) => c.id === segment.id);
-            if (!found) return { cats: [], imgs: [] };
+            if (!found) return { cats: [] as Category[], imgs: [] as ImageItem[] };
             node = found.children;
             if (segment === path[path.length - 1]) {
                 return { cats: found.children, imgs: found.images };
             }
         }
-        return { cats: node, imgs: [] };
+        return { cats: node, imgs: [] as ImageItem[] };
     }, [categories, path]);
 
-    const { cats: resolvedCategories, imgs: currentImages } = resolve();
-
-    // Resolve ancestor program IDs from the fresh categories tree (not stale path objects).
-    // Uses narrowing semantics: each category with own programIds REPLACES (narrows)
-    // the inherited set rather than extending it via union.
-    const ancestorProgramIds = useMemo(() => {
-        let effective: number[] = [];
-        let initialized = false;
-        let node = categories;
-        for (const segment of path) {
-            const found = node.find((c) => c.id === segment.id);
-            if (!found) break;
-            if (found.programIds.length > 0) {
-                effective = initialized
-                    ? found.programIds.filter((pid) =>
-                          effective.includes(pid),
-                      )
-                    : [...found.programIds];
-                initialized = true;
+    // Walk the categories tree along the given path segments applying narrowing
+    // semantics: each category with its own programIds REPLACES (narrows) the
+    // inherited set rather than extending it via union. `depth` controls how many
+    // path segments to traverse (defaults to all).
+    const narrowProgramIds = useCallback(
+        (depth?: number): number[] => {
+            let effective: number[] = [];
+            let initialized = false;
+            let node = categories;
+            const limit = depth ?? path.length;
+            for (let i = 0; i < limit; i++) {
+                const found = node.find((c) => c.id === path[i].id);
+                if (!found) break;
+                if (found.programIds.length > 0) {
+                    effective = initialized
+                        ? found.programIds.filter((pid) =>
+                              effective.includes(pid),
+                          )
+                        : [...found.programIds];
+                    initialized = true;
+                }
+                node = found.children;
             }
-            node = found.children;
-        }
-        return effective;
-    }, [categories, path]);
+            return effective;
+        },
+        [categories, path],
+    );
+
+    const ancestorProgramIds = useMemo(
+        () => narrowProgramIds(),
+        [narrowProgramIds],
+    );
 
     // Filter out hidden categories for students in browse mode
     const isStudent = currentUser?.role === "student";
-    const currentCategories = isStudent
-        ? resolvedCategories.filter((c) => c.status !== "hidden")
-        : resolvedCategories;
+    const currentCategories = useMemo(
+        () =>
+            isStudent
+                ? resolvedCategories.filter((c) => c.status !== "hidden")
+                : resolvedCategories,
+        [isStudent, resolvedCategories],
+    );
+
+    const editCategoryContext = useMemo(() => {
+        const fallback = {
+            siblingNames: [] as string[],
+            inheritedProgramIds: [] as number[],
+            freshLabel: editNameCategory?.label ?? "",
+            freshProgramIds: editNameCategory?.programIds ?? [],
+        };
+        if (!editNameCategory) return fallback;
+        const isBreadcrumbCategory =
+            path.length > 0 && path[path.length - 1].id === editNameCategory.id;
+        if (isBreadcrumbCategory) {
+            let parentChildren = categories;
+            for (let i = 0; i < path.length - 1; i++) {
+                const found = parentChildren.find((c) => c.id === path[i].id);
+                if (!found) break;
+                parentChildren = found.children;
+            }
+            const freshCat = parentChildren.find((c) => c.id === editNameCategory.id);
+            const siblingNames = parentChildren
+                .filter((c) => c.id !== editNameCategory.id)
+                .map((c) => c.label);
+            return {
+                siblingNames,
+                inheritedProgramIds: narrowProgramIds(path.length - 1),
+                freshLabel: freshCat?.label ?? editNameCategory.label,
+                freshProgramIds: freshCat?.programIds ?? editNameCategory.programIds,
+            };
+        }
+        const freshChild = currentCategories.find((c) => c.id === editNameCategory.id);
+        return {
+            siblingNames: currentCategories
+                .filter((c) => c.id !== editNameCategory.id)
+                .map((c) => c.label),
+            inheritedProgramIds: ancestorProgramIds,
+            freshLabel: freshChild?.label ?? editNameCategory.label,
+            freshProgramIds: freshChild?.programIds ?? editNameCategory.programIds,
+        };
+    }, [editNameCategory, path, categories, currentCategories, ancestorProgramIds, narrowProgramIds]);
 
     const clearImage = useCallback(() => {
         setSelectedImage(null);
@@ -2794,27 +2845,70 @@ export default function App() {
                                             <HomeIcon fontSize="small" />
                                             Home
                                         </Link>
-                                        {path.map((cat, i) => (
-                                            <Link
-                                                key={cat.id}
-                                                component="button"
-                                                variant="body2"
-                                                underline="hover"
-                                                color={
-                                                    i === path.length - 1
-                                                        ? "text.primary"
-                                                        : "inherit"
-                                                }
-                                                onClick={() =>
-                                                    navigateToDepth(i + 1)
-                                                }
-                                                sx={{
-                                                    cursor: "pointer",
-                                                }}
-                                            >
-                                                {cat.label}
-                                            </Link>
-                                        ))}
+                                        {path.map((cat, i) => {
+                                            const isLast =
+                                                i === path.length - 1;
+                                            return (
+                                                <Box
+                                                    key={cat.id}
+                                                    sx={{
+                                                        display: "flex",
+                                                        alignItems:
+                                                            "center",
+                                                        gap: 0.25,
+                                                        minWidth: 0,
+                                                    }}
+                                                >
+                                                    <Link
+                                                        component="button"
+                                                        variant="body2"
+                                                        underline="hover"
+                                                        color={
+                                                            isLast
+                                                                ? "text.primary"
+                                                                : "inherit"
+                                                        }
+                                                        onClick={() =>
+                                                            navigateToDepth(
+                                                                i + 1,
+                                                            )
+                                                        }
+                                                        sx={{
+                                                            cursor: "pointer",
+                                                            overflow:
+                                                                "hidden",
+                                                            textOverflow:
+                                                                "ellipsis",
+                                                            whiteSpace:
+                                                                "nowrap",
+                                                        }}
+                                                    >
+                                                        {cat.label}
+                                                    </Link>
+                                                    {isLast &&
+                                                        canEditContent && (
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() =>
+                                                                    setEditNameCategory(
+                                                                        cat,
+                                                                    )
+                                                                }
+                                                                aria-label="Edit category"
+                                                                sx={{
+                                                                    ml: 0.25,
+                                                                }}
+                                                            >
+                                                                <EditIcon
+                                                                    sx={{
+                                                                        fontSize: 16,
+                                                                    }}
+                                                                />
+                                                            </IconButton>
+                                                        )}
+                                                </Box>
+                                            );
+                                        })}
                                     </MuiBreadcrumbs>
                                     {(() => {
                                         const resolved =
@@ -3389,21 +3483,28 @@ export default function App() {
             <EditCategoryDialog
                 open={editNameCategory != null}
                 onClose={() => setEditNameCategory(null)}
-                onSave={(newLabel, programIds) => {
+                onSave={async (newLabel, programIds) => {
                     if (!editNameCategory) return;
-                    return editCategoryInline(
+                    await editCategoryInline(
                         editNameCategory.id,
                         newLabel,
                         programIds,
                     );
+                    if (path.some((p) => p.id === editNameCategory.id)) {
+                        setPath((prev) =>
+                            prev.map((p) =>
+                                p.id === editNameCategory.id
+                                    ? { ...p, label: newLabel, programIds: programIds ?? p.programIds }
+                                    : p,
+                            ),
+                        );
+                    }
                 }}
-                currentLabel={editNameCategory?.label ?? ""}
-                siblingNames={currentCategories
-                    .filter((c) => c.id !== editNameCategory?.id)
-                    .map((c) => c.label)}
+                currentLabel={editCategoryContext.freshLabel}
+                siblingNames={editCategoryContext.siblingNames}
                 programs={programs}
-                currentProgramIds={editNameCategory?.programIds ?? []}
-                inheritedProgramIds={ancestorProgramIds}
+                currentProgramIds={editCategoryContext.freshProgramIds}
+                inheritedProgramIds={editCategoryContext.inheritedProgramIds}
             />
 
             {/* Self-edit profile modal */}
