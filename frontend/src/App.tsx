@@ -2747,70 +2747,75 @@ export default function App() {
                                     gap: 1,
                                 }}
                             >
-                                <MuiBreadcrumbs
-                                    aria-label="category breadcrumb"
+                                <Box
                                     sx={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 1,
                                         minWidth: 0,
-                                        "& .MuiBreadcrumbs-ol": {
-                                            flexWrap: "nowrap",
-                                        },
-                                        "& .MuiBreadcrumbs-li:last-of-type": {
-                                            overflow: "hidden",
-                                            textOverflow: "ellipsis",
-                                            whiteSpace: "nowrap",
-                                        },
                                     }}
                                 >
-                                    <Link
-                                        component="button"
-                                        variant="body2"
-                                        underline="hover"
-                                        color={
-                                            path.length === 0
-                                                ? "text.primary"
-                                                : "inherit"
-                                        }
-                                        onClick={() => navigateToDepth(0)}
+                                    <MuiBreadcrumbs
+                                        aria-label="category breadcrumb"
                                         sx={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 0.5,
-                                            cursor: "pointer",
+                                            minWidth: 0,
+                                            "& .MuiBreadcrumbs-ol": {
+                                                flexWrap: "nowrap",
+                                            },
+                                            "& .MuiBreadcrumbs-li:last-of-type":
+                                                {
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap",
+                                                },
                                         }}
                                     >
-                                        <HomeIcon fontSize="small" />
-                                        Home
-                                    </Link>
-                                    {path.map((cat, i) => (
                                         <Link
-                                            key={cat.id}
                                             component="button"
                                             variant="body2"
                                             underline="hover"
                                             color={
-                                                i === path.length - 1
+                                                path.length === 0
                                                     ? "text.primary"
                                                     : "inherit"
                                             }
                                             onClick={() =>
-                                                navigateToDepth(i + 1)
+                                                navigateToDepth(0)
                                             }
-                                            sx={{ cursor: "pointer" }}
+                                            sx={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 0.5,
+                                                cursor: "pointer",
+                                            }}
                                         >
-                                            {cat.label}
+                                            <HomeIcon fontSize="small" />
+                                            Home
                                         </Link>
-                                    ))}
-                                </MuiBreadcrumbs>
-                                {ancestorProgramIds.length > 0 && (
-                                    <Box
-                                        sx={{
-                                            display: "flex",
-                                            flexWrap: "wrap",
-                                            gap: 0.5,
-                                            flexShrink: 0,
-                                        }}
-                                    >
-                                        {ancestorProgramIds
+                                        {path.map((cat, i) => (
+                                            <Link
+                                                key={cat.id}
+                                                component="button"
+                                                variant="body2"
+                                                underline="hover"
+                                                color={
+                                                    i === path.length - 1
+                                                        ? "text.primary"
+                                                        : "inherit"
+                                                }
+                                                onClick={() =>
+                                                    navigateToDepth(i + 1)
+                                                }
+                                                sx={{
+                                                    cursor: "pointer",
+                                                }}
+                                            >
+                                                {cat.label}
+                                            </Link>
+                                        ))}
+                                    </MuiBreadcrumbs>
+                                    {ancestorProgramIds.length > 0 &&
+                                        ancestorProgramIds
                                             .map((pid) =>
                                                 programs.find(
                                                     (p) => p.id === pid,
@@ -2835,8 +2840,7 @@ export default function App() {
                                                     color="primary"
                                                 />
                                             ))}
-                                    </Box>
-                                )}
+                                </Box>
                                 {canEditContent && (
                                     <Box
                                         sx={{
@@ -2934,7 +2938,6 @@ export default function App() {
                                                 : undefined
                                         }
                                         programs={programs}
-                                        ancestorProgramIds={ancestorProgramIds}
                                         onDropImage={
                                             canEditContent
                                                 ? handleDropImageOnCategory
