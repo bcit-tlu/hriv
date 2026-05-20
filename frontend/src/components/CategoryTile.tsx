@@ -59,8 +59,6 @@ interface CategoryTileProps {
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onEditName?: (category: Category) => void
   programs: Program[]
-  /** Program IDs inherited from an ancestor category (shown at reduced opacity). */
-  ancestorProgramIds?: number[]
   /** Called when an image is dropped onto this category tile. */
   onDropImage?: (imageId: number, categoryId: number) => void
   /** Called when another category is dropped onto this category tile (reparent). */
@@ -71,7 +69,7 @@ interface CategoryTileProps {
   draggable?: boolean
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, ancestorProgramIds = [], onDropImage, onDropCategory, onDropFiles, draggable = false }: CategoryTileProps) {
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, onDropImage, onDropCategory, onDropFiles, draggable = false }: CategoryTileProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -89,13 +87,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
   }
   const detailText = detailParts.length > 0 ? detailParts.join(' \u00b7 ') : 'Empty'
 
-  const effectiveProgramIds = category.programIds.length > 0
-    ? (ancestorProgramIds.length > 0
-        ? category.programIds.filter((pid) => ancestorProgramIds.includes(pid))
-        : category.programIds)
-    : ancestorProgramIds
-
-  const programChips = effectiveProgramIds
+  const programChips = category.programIds
     .map((pid) => programs.find((p) => p.id === pid))
     .filter((p): p is Program => p != null)
     .sort((a, b) => a.name.localeCompare(b.name))

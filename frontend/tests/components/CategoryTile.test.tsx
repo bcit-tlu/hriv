@@ -6,7 +6,7 @@
  * 2. Hidden indicator — dimmed title and DisabledVisible icon when status='hidden'
  * 3. Visible categories — no hidden indicator when status is not 'hidden'
  * 4. Card image — renders thumbnail when cardImageId is set
- * 5. Effective program chips — renders narrowed program labels from category + ancestor programIds
+ * 5. Program chips — renders program labels from category's own programIds only
  * 6. Detail text — correct sub-category and image counts
  * 7. Move button — renders and calls callback
  */
@@ -252,10 +252,10 @@ describe('CategoryTile', () => {
     })
   })
 
-  // ─── Effective program chips ──────────────────────────────────────
+  // ─── Program chips ────────────────────────────────────────────────
 
-  describe('effective program chips', () => {
-    it('renders program chips from category programIds when no ancestors', () => {
+  describe('program chips', () => {
+    it('renders program chips only from category own programIds', () => {
       render(
         <CategoryTile
           category={makeCategory({ programIds: [10, 20] })}
@@ -267,7 +267,7 @@ describe('CategoryTile', () => {
       expect(screen.getByText('Radiology')).toBeInTheDocument()
     })
 
-    it('does not render program chips when programIds is empty and no ancestors', () => {
+    it('does not render program chips when programIds is empty', () => {
       render(
         <CategoryTile
           category={makeCategory()}
@@ -276,48 +276,6 @@ describe('CategoryTile', () => {
         />,
       )
       expect(screen.queryByText('Pathology')).not.toBeInTheDocument()
-    })
-
-    it('shows ancestor programs when category has no own programIds', () => {
-      render(
-        <CategoryTile
-          category={makeCategory()}
-          onClick={vi.fn()}
-          programs={samplePrograms}
-          ancestorProgramIds={[10, 20]}
-        />,
-      )
-      expect(screen.getByText('Pathology')).toBeInTheDocument()
-      expect(screen.getByText('Radiology')).toBeInTheDocument()
-    })
-
-    it('narrows to intersection when both category and ancestor have programIds', () => {
-      render(
-        <CategoryTile
-          category={makeCategory({ programIds: [10] })}
-          onClick={vi.fn()}
-          programs={samplePrograms}
-          ancestorProgramIds={[10, 20]}
-        />,
-      )
-      expect(screen.getByText('Pathology')).toBeInTheDocument()
-      expect(screen.queryByText('Radiology')).not.toBeInTheDocument()
-    })
-
-    it('renders all chips at full opacity (no half-opacity ancestor chips)', () => {
-      const { container } = render(
-        <CategoryTile
-          category={makeCategory({ programIds: [10] })}
-          onClick={vi.fn()}
-          programs={samplePrograms}
-          ancestorProgramIds={[10, 20]}
-        />,
-      )
-      const chips = container.querySelectorAll('.MuiChip-root')
-      expect(chips).toHaveLength(1)
-      for (const chip of chips) {
-        expect(chip).not.toHaveStyle({ opacity: 0.5 })
-      }
     })
   })
 
