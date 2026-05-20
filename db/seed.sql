@@ -84,16 +84,6 @@ ON CONFLICT (id) DO NOTHING;
 
 SELECT setval('images_id_seq', GREATEST((SELECT MAX(id) FROM images), 1));
 
--- ── Image–Program associations ──────────────────────────
-
-INSERT INTO image_programs (image_id, program_id)
-VALUES
-  (1, 2),  -- Duomo di Milano -> Digital Design
-  (2, 2),  -- Duomo di Milano (Gothic Detail) -> Digital Design
-  (3, 3),  -- Highsmith Panorama -> Photography
-  (4, 3)   -- Library of Congress -> Photography
-ON CONFLICT (image_id, program_id) DO NOTHING;
-
 -- ── Announcements ───────────────────────────────────────────
 
 INSERT INTO announcements (id, message, enabled)
