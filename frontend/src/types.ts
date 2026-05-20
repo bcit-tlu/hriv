@@ -45,6 +45,7 @@ export interface User {
 export interface Program {
   id: number
   name: string
+  oidc_group: string | null
   created_at: string
   updated_at: string
 }

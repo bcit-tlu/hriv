@@ -38,8 +38,8 @@ function makeCategory(overrides: Partial<Category> = {}): Category {
 }
 
 const samplePrograms: Program[] = [
-  { id: 10, name: 'Pathology', created_at: '2024-01-01', updated_at: '2024-01-01' },
-  { id: 20, name: 'Radiology', created_at: '2024-01-01', updated_at: '2024-01-01' },
+  { id: 10, name: 'Pathology', oidc_group: null, created_at: '2024-01-01', updated_at: '2024-01-01' },
+  { id: 20, name: 'Radiology', oidc_group: null, created_at: '2024-01-01', updated_at: '2024-01-01' },
 ]
 
 // ---------------------------------------------------------------------------

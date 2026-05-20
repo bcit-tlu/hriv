@@ -165,6 +165,7 @@ const USER_FIXTURE: ApiUser = {
 const PROGRAM_FIXTURE: ApiProgram = {
   id: 1,
   name: 'Medical Lab',
+  oidc_group: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 }
