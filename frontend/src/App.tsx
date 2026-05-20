@@ -2792,27 +2792,63 @@ export default function App() {
                                             <HomeIcon fontSize="small" />
                                             Home
                                         </Link>
-                                        {path.map((cat, i) => (
-                                            <Link
-                                                key={cat.id}
-                                                component="button"
-                                                variant="body2"
-                                                underline="hover"
-                                                color={
-                                                    i === path.length - 1
-                                                        ? "text.primary"
-                                                        : "inherit"
-                                                }
-                                                onClick={() =>
-                                                    navigateToDepth(i + 1)
-                                                }
-                                                sx={{
-                                                    cursor: "pointer",
-                                                }}
-                                            >
-                                                {cat.label}
-                                            </Link>
-                                        ))}
+                                        {path.map((cat, i) => {
+                                            const isLast =
+                                                i === path.length - 1;
+                                            return (
+                                                <Box
+                                                    key={cat.id}
+                                                    sx={{
+                                                        display: "flex",
+                                                        alignItems:
+                                                            "center",
+                                                        gap: 0.25,
+                                                    }}
+                                                >
+                                                    <Link
+                                                        component="button"
+                                                        variant="body2"
+                                                        underline="hover"
+                                                        color={
+                                                            isLast
+                                                                ? "text.primary"
+                                                                : "inherit"
+                                                        }
+                                                        onClick={() =>
+                                                            navigateToDepth(
+                                                                i + 1,
+                                                            )
+                                                        }
+                                                        sx={{
+                                                            cursor: "pointer",
+                                                        }}
+                                                    >
+                                                        {cat.label}
+                                                    </Link>
+                                                    {isLast &&
+                                                        canEditContent && (
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() =>
+                                                                    setEditNameCategory(
+                                                                        cat,
+                                                                    )
+                                                                }
+                                                                aria-label="Edit category"
+                                                                sx={{
+                                                                    ml: 0.25,
+                                                                }}
+                                                            >
+                                                                <EditIcon
+                                                                    sx={{
+                                                                        fontSize: 16,
+                                                                    }}
+                                                                />
+                                                            </IconButton>
+                                                        )}
+                                                </Box>
+                                            );
+                                        })}
                                     </MuiBreadcrumbs>
                                     {ancestorProgramIds.length > 0 &&
                                         ancestorProgramIds
