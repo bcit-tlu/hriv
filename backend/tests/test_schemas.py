@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from app.schemas import ImageOut, ImageUpdate, SourceImageOut
+from app.schemas import ImageOut, ImageUpdate, ProgramCreate, ProgramUpdate, SourceImageOut
 
 
 def test_image_out_from_orm() -> None:
@@ -97,6 +97,49 @@ def test_source_image_out_from_dict() -> None:
     out = SourceImageOut.model_validate(data)
     assert out.original_filename == "dict.png"
     assert out.status == "pending"
+
+
+# ── oidc_group normalization ─────────────────────────────
+
+
+def test_program_create_oidc_group_empty_string_becomes_none() -> None:
+    p = ProgramCreate(name="Test", oidc_group="")
+    assert p.oidc_group is None
+
+
+def test_program_create_oidc_group_whitespace_becomes_none() -> None:
+    p = ProgramCreate(name="Test", oidc_group="   ")
+    assert p.oidc_group is None
+
+
+def test_program_create_oidc_group_valid_string_preserved() -> None:
+    p = ProgramCreate(name="Test", oidc_group="mrad-group")
+    assert p.oidc_group == "mrad-group"
+
+
+def test_program_create_oidc_group_strips_whitespace() -> None:
+    p = ProgramCreate(name="Test", oidc_group="  mrad-group  ")
+    assert p.oidc_group == "mrad-group"
+
+
+def test_program_create_oidc_group_none_stays_none() -> None:
+    p = ProgramCreate(name="Test", oidc_group=None)
+    assert p.oidc_group is None
+
+
+def test_program_update_oidc_group_empty_string_becomes_none() -> None:
+    p = ProgramUpdate(oidc_group="")
+    assert p.oidc_group is None
+
+
+def test_program_update_oidc_group_whitespace_becomes_none() -> None:
+    p = ProgramUpdate(oidc_group="   ")
+    assert p.oidc_group is None
+
+
+def test_program_update_oidc_group_valid_string_preserved() -> None:
+    p = ProgramUpdate(oidc_group="mlt-group")
+    assert p.oidc_group == "mlt-group"
 
 
 # ── locked_overlays validation ────────────────────────────
