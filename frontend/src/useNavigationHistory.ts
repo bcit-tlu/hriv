@@ -55,15 +55,25 @@ export function useNavigationHistory(
         return () => window.removeEventListener("popstate", handler);
     }, []);
 
+    /**
+     * Push a history entry. `catIds` and `imageId` are only meaningful
+     * for the "browse" page — they are stored in state but omitted from
+     * the URL for other pages.
+     */
     const pushNavState = useCallback(
-        (page: string, catIds: number[], imageId: number | null) => {
+        (
+            page: string,
+            catIds: number[] = [],
+            imageId: number | null = null,
+        ) => {
             const state = buildNavHistoryState(page, catIds, imageId);
             const params = new URLSearchParams();
-            if (page !== "browse") params.set("page", page);
-            if (page === "browse" && catIds.length > 0)
-                params.set("cat", catIds.join(","));
-            if (page === "browse" && imageId != null)
-                params.set("image", String(imageId));
+            if (page !== "browse") {
+                params.set("page", page);
+            } else {
+                if (catIds.length > 0) params.set("cat", catIds.join(","));
+                if (imageId != null) params.set("image", String(imageId));
+            }
             const qs = params.toString();
             const url = qs
                 ? `${window.location.pathname}?${qs}`

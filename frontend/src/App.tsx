@@ -2383,7 +2383,7 @@ export default function App() {
                                 setPage(v);
                                 clearImage();
                                 setPath([]);
-                                pushNavState(v, [], null);
+                                pushNavState(v);
                                 if (v === "browse") {
                                     loadCategories();
                                     loadUncategorizedImages();
@@ -2407,7 +2407,7 @@ export default function App() {
                                 setPage("browse");
                                 clearImage();
                                 setPath([]);
-                                pushNavState("browse", [], null);
+                                pushNavState("browse");
                             }}
                         />
                         {canEditContent && (
@@ -2641,7 +2641,6 @@ export default function App() {
                                 pushNavState(
                                     "browse",
                                     categoryPath.map((c) => c.id),
-                                    null,
                                 );
                             }}
                             onCategoriesChanged={() => {
@@ -2696,11 +2695,7 @@ export default function App() {
                                         onClick={() => {
                                             clearImage();
                                             navigateToDepth(0);
-                                            pushNavState(
-                                                "browse",
-                                                [],
-                                                null,
-                                            );
+                                            pushNavState("browse");
                                         }}
                                         sx={{
                                             display: "flex",
@@ -2727,7 +2722,6 @@ export default function App() {
                                                     path
                                                         .slice(0, i + 1)
                                                         .map((c) => c.id),
-                                                    null,
                                                 );
                                             }}
                                             sx={{ cursor: "pointer" }}
@@ -3009,11 +3003,7 @@ export default function App() {
                                             }
                                             onClick={() => {
                                                 navigateToDepth(0);
-                                                pushNavState(
-                                                    "browse",
-                                                    [],
-                                                    null,
-                                                );
+                                                pushNavState("browse");
                                             }}
                                             sx={{
                                                 display: "flex",
@@ -3063,7 +3053,6 @@ export default function App() {
                                                                         (c) =>
                                                                             c.id,
                                                                     ),
-                                                                null,
                                                             );
                                                         }}
                                                         sx={{
@@ -3300,7 +3289,6 @@ export default function App() {
                                                     ),
                                                     cat.id,
                                                 ],
-                                                null,
                                             );
                                         }}
                                         onMove={
@@ -3834,7 +3822,6 @@ export default function App() {
                     pushNavState(
                         "browse",
                         catPath.map((c) => c.id),
-                        null,
                     );
                 }}
                 onSelectImage={(image, catPath) => {
@@ -3852,13 +3839,13 @@ export default function App() {
                 onSelectProgram={() => {
                     if (canManageUsers) {
                         setPage("people");
-                        pushNavState("people", [], null);
+                        pushNavState("people");
                     }
                 }}
                 onSelectUser={() => {
                     if (canManageUsers) {
                         setPage("people");
-                        pushNavState("people", [], null);
+                        pushNavState("people");
                     }
                 }}
             />
