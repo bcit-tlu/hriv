@@ -559,12 +559,9 @@ export default function App() {
             }
         }
 
-        return () => {
-            for (const [, handle] of refs) {
-                handle.cancel();
-            }
-            refs.clear();
-        };
+        // No cleanup return — the inline stale-job loop above handles
+        // removal, and the effect body is idempotent (skips already-tracked
+        // jobs).  Full teardown on unmount is handled by a separate effect.
     }, [processingJobs]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
@@ -612,13 +609,25 @@ export default function App() {
             }
         }
 
-        return () => {
-            for (const [, interval] of refs) {
-                clearInterval(interval);
-            }
-            refs.clear();
-        };
+        // No cleanup return — same reasoning as the processing-poll effect
+        // above.  Without the teardown/recreate cycle, setInterval timers
+        // keep their cadence instead of resetting on every state change.
     }, [processingJobs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Unmount-only cleanup for both polling ref maps.  The effects above
+    // no longer return cleanup functions (to avoid the teardown/recreate
+    // churn), so this effect handles the final teardown when the component
+    // unmounts.
+    useEffect(() => {
+        const procRefs = processingPollRefs.current;
+        const bulkRefs = bulkImportPollRefs.current;
+        return () => {
+            procRefs.forEach((handle) => handle.cancel());
+            procRefs.clear();
+            bulkRefs.forEach((interval) => clearInterval(interval));
+            bulkRefs.clear();
+        };
+    }, []);
 
     // Interpolation timer: triggers re-render every 500 ms so the progress bar
     // advances smoothly between server polls while any job is processing.

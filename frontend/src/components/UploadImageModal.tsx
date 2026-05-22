@@ -125,14 +125,6 @@ export default function UploadImageModal({
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Stable ref for onUploaded so polling/reset callbacks don't depend
-  // on the (potentially unstable) inline closure from the parent.
-  const onUploadedRef = useRef(onUploaded)
-  onUploadedRef.current = onUploaded
-
-  const hadBulkJobRef = useRef(false)
-  const bulkRefreshDoneRef = useRef(false)
-
   const bulk = isBulkMode(files)
 
   // Sync categoryId state when the dialog opens with a new prop value
@@ -143,14 +135,6 @@ export default function UploadImageModal({
   }, [open, initialCategoryId])
 
   const handleReset = useCallback(() => {
-    // If a bulk job was started but onUploaded hasn't fired yet
-    // (e.g. user closed the dialog while import was still running),
-    // notify the parent so it can refresh data.
-    if (hadBulkJobRef.current && !bulkRefreshDoneRef.current) {
-      onUploadedRef.current()
-    }
-    hadBulkJobRef.current = false
-    bulkRefreshDoneRef.current = false
     setFiles([])
     setName('')
     setCategoryId(initialCategoryId ?? null)
@@ -249,7 +233,6 @@ export default function UploadImageModal({
           },
           abort.signal,
         )
-        hadBulkJobRef.current = true
         onBulkImportStarted?.(result, uploadFilename, uploadFileSize, uploadId)
         onClose()
       } catch (err) {
