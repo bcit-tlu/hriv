@@ -12,9 +12,7 @@ import Typography from '@mui/material/Typography'
 import CategoryIcon from '@mui/icons-material/Folder'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import CopyrightIcon from '@mui/icons-material/Copyright'
-import EmailIcon from '@mui/icons-material/Email'
 import ImageIcon from '@mui/icons-material/Image'
-import LabelIcon from '@mui/icons-material/Label'
 import NoteIcon from '@mui/icons-material/StickyNote2'
 import PersonIcon from '@mui/icons-material/Person'
 import BadgeIcon from '@mui/icons-material/Badge'
@@ -69,7 +67,7 @@ interface UserPayload {
 // ── Filter definitions ─────────────────────────────────
 
 export type TypeFilter = ResultKind
-type FieldFilter = 'Name' | 'Copyright' | 'Note' | 'Email' | 'Role' | 'Program' | 'Category'
+type FieldFilter = 'Copyright' | 'Note' | 'Role'
 
 interface FilterDef<T extends string> {
   key: T
@@ -86,13 +84,9 @@ const TYPE_FILTERS: FilterDef<TypeFilter>[] = [
 ]
 
 const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
-  { key: 'Name', label: 'Name', icon: <LabelIcon fontSize="small" />, tooltip: 'Name field only' },
   { key: 'Copyright', label: 'Copyright', icon: <CopyrightIcon fontSize="small" />, tooltip: 'Copyright field only' },
   { key: 'Note', label: 'Note', icon: <NoteIcon fontSize="small" />, tooltip: 'Note field only' },
-  { key: 'Email', label: 'Email', icon: <EmailIcon fontSize="small" />, tooltip: 'Email field only' },
   { key: 'Role', label: 'Role', icon: <BadgeIcon fontSize="small" />, tooltip: 'Role field only' },
-  { key: 'Program', label: 'Program', icon: <SchoolIcon fontSize="small" />, tooltip: 'Program field only' },
-  { key: 'Category', label: 'Category', icon: <CategoryIcon fontSize="small" />, tooltip: 'Category field only' },
 ]
 
 // ── Constants ──────────────────────────────────────────
@@ -394,20 +388,22 @@ export default function SearchModal({
         addImageMatches(img, terms, [], results, programMap)
       }
 
-      // 4. Programs
-      for (const prog of programs) {
-        const m = findFirstTermMatch(prog.name, terms)
-        if (m) {
-          results.push({
-            kind: 'program',
-            id: prog.id,
-            label: prog.name,
-            field: 'Name',
-            fieldValue: prog.name,
-            matchIndex: m.index,
-            matchLength: m.length,
-            payload: { kind: 'program', programId: prog.id },
-          })
+      // 4. Programs (hidden from students)
+      if (!isStudent) {
+        for (const prog of programs) {
+          const m = findFirstTermMatch(prog.name, terms)
+          if (m) {
+            results.push({
+              kind: 'program',
+              id: prog.id,
+              label: prog.name,
+              field: 'Name',
+              fieldValue: prog.name,
+              matchIndex: m.index,
+              matchLength: m.length,
+              payload: { kind: 'program', programId: prog.id },
+            })
+          }
         }
       }
 
@@ -521,7 +517,7 @@ export default function SearchModal({
             <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', mr: 0.5 }}>
               Type:
             </Typography>
-            {TYPE_FILTERS.map((f) => (
+            {TYPE_FILTERS.filter((f) => !(isStudent && f.key === 'program')).map((f) => (
               <Tooltip key={f.key} title={f.tooltip}>
                 <Chip
                   icon={f.icon}
@@ -602,14 +598,18 @@ export default function SearchModal({
                             flexShrink: 0,
                           }}
                         />
-                      ) : (
+                      ) : result.kind !== 'program' ? (
                         <Box sx={{ mt: 0.25 }}>{iconForKind(result.kind)}</Box>
-                      )}
+                      ) : null}
                       <Box sx={{ minWidth: 0, flex: 1 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25, flexWrap: 'wrap' }}>
-                          <Typography variant="subtitle2" noWrap>
-                            {result.label}
-                          </Typography>
+                          {result.kind === 'program' ? (
+                            <Chip label={result.label} size="small" />
+                          ) : (
+                            <Typography variant="subtitle2" noWrap>
+                              {result.label}
+                            </Typography>
+                          )}
                           <Typography
                             variant="caption"
                             sx={{
@@ -622,7 +622,7 @@ export default function SearchModal({
                           >
                             {labelForKind(result.kind)}
                           </Typography>
-                          {chipNames.length > 0 && (
+                          {!isStudent && chipNames.length > 0 && (
                             <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                               {chipNames.map((name) => (
                                 <Chip key={name} label={name} size="small" color="primary" />

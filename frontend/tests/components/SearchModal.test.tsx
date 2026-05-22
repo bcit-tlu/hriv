@@ -354,4 +354,50 @@ describe("SearchModal", () => {
         const chips = screen.getAllByText("Medical Lab Science");
         expect(chips.length).toBeGreaterThan(0);
     });
+
+    it("renders program results as a chip without an icon", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Medical Lab");
+
+        // Program result label should be rendered as a chip (MuiChip)
+        const chipElements = screen
+            .getAllByText("Medical Lab Science")
+            .filter((el) => el.closest('[class*="MuiChip-root"]'));
+        expect(chipElements.length).toBeGreaterThan(0);
+    });
+
+    it("hides program results from student role", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} isStudent={true} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Medical Lab");
+
+        // Should still find categories and images via program search,
+        // but should NOT show the program type filter chip
+        expect(screen.queryByText("Programs")).not.toBeInTheDocument();
+    });
+
+    it("hides program chips on results from student role", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} isStudent={true} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Histology");
+
+        // Category result should not show the program chip for students
+        const programChips = screen
+            .queryAllByText("Medical Lab Science")
+            .filter((el) => el.closest('[class*="MuiChip-root"]'));
+        expect(programChips.length).toBe(0);
+    });
 });
