@@ -104,6 +104,10 @@ import AddCategoryDialog from "./components/AddCategoryDialog";
 import EditCategoryDialog from "./components/EditCategoryDialog";
 import { useColorMode } from "./useColorMode";
 import { getSurfaceVariant } from "./theme";
+import {
+    useNavigationHistory,
+    buildNavHistoryState,
+} from "./useNavigationHistory";
 
 /** Search the category tree for an image by ID, returning the image and its category path. */
 function findImageInTree(
@@ -144,6 +148,18 @@ function userMessage(err: unknown, fallback: string): string {
     return fallback;
 }
 
+/** Walk the category tree following an ordered list of IDs to reconstruct a path. */
+function resolveCategoryPath(tree: Category[], ids: number[]): Category[] {
+    const result: Category[] = [];
+    let current = tree;
+    for (const id of ids) {
+        const cat = current.find((c) => c.id === id);
+        if (!cat) break;
+        result.push(cat);
+        current = cat.children;
+    }
+    return result;
+}
 function apiTreeToCategory(node: ApiCategoryTree): Category {
     const meta = node.metadata_extra as Record<string, unknown> | null;
     return {
@@ -188,10 +204,16 @@ export default function App() {
     const { mode } = useColorMode();
 
     type Page = "browse" | "manage" | "people" | "admin";
-    const [page, setPage] = useState<Page>("browse");
+    const [page, setPage] = useState<Page>(() => {
+        const p = new URLSearchParams(window.location.search).get("page");
+        if (p === "manage" || p === "people" || p === "admin") return p;
+        return "browse";
+    });
     const [categories, setCategories] = useState<Category[]>([]);
     const [categoriesLoading, setCategoriesLoading] = useState(true);
     const [path, setPath] = useState<Category[]>([]);
+    const pathRef = useRef(path);
+    pathRef.current = path;
     const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
     const selectedImageRef = useRef<ImageItem | null>(null);
     selectedImageRef.current = selectedImage;
@@ -222,6 +244,7 @@ export default function App() {
     const pendingViewport = useRef<ViewportState | undefined>(undefined);
     const pendingOverlays = useRef<OverlayRect[] | undefined>(undefined);
     const uncategorizedLoaded = useRef(false);
+    const pendingCatIds = useRef<number[] | null>(null);
     // Track the latest known image version independently from selectedImage
     // to avoid stale-version 409s when clearing overlays after locking
     // (lock intentionally does NOT update selectedImage to avoid viewer remount).
@@ -458,6 +481,62 @@ export default function App() {
               updated_at: "",
           }
         : null;
+
+    // Refs for the popstate handler (always reflect latest state)
+    const categoriesRef = useRef(categories);
+    categoriesRef.current = categories;
+    const uncategorizedImagesRef = useRef(uncategorizedImages);
+    uncategorizedImagesRef.current = uncategorizedImages;
+
+    // Browser history integration for back/forward navigation
+    const handlePopState = useCallback(
+        (popPage: string, catIds: number[], imageId: number | null) => {
+            const validPage = (
+                ["browse", "manage", "people", "admin"].includes(popPage)
+                    ? popPage
+                    : "browse"
+            ) as Page;
+            setPage(validPage);
+
+            if (validPage !== "browse") {
+                setPath([]);
+                setSelectedImage(null);
+                setViewportState(undefined);
+                setOverlays([]);
+                return;
+            }
+
+            const catPath = resolveCategoryPath(
+                categoriesRef.current,
+                catIds,
+            );
+            setPath(catPath);
+
+            if (imageId != null) {
+                const result = findImageInTree(
+                    categoriesRef.current,
+                    imageId,
+                );
+                if (result) {
+                    setSelectedImage(result.image);
+                    setPath(result.path);
+                } else {
+                    const uncatImg = uncategorizedImagesRef.current.find(
+                        (img) => img.id === imageId,
+                    );
+                    setSelectedImage(uncatImg ?? null);
+                    if (uncatImg) setPath([]);
+                }
+            } else {
+                setSelectedImage(null);
+            }
+            setViewportState(undefined);
+            setOverlays([]);
+        },
+        [],
+    );
+
+    const { pushNavState } = useNavigationHistory(handlePopState);
 
     // Start polling for each new processing job.  The per-job state machine
     // (fetch -> dispatch -> reschedule / cancel) lives in `pollProcessingJob`;
@@ -732,6 +811,19 @@ export default function App() {
                 }
             }
         }
+        // Parse initial category path from URL (resolved when categories load)
+        if (!imgId) {
+            const catStr = params.get("cat");
+            if (catStr) {
+                const ids = catStr
+                    .split(",")
+                    .map(Number)
+                    .filter((n) => !Number.isNaN(n));
+                if (ids.length > 0) {
+                    pendingCatIds.current = ids;
+                }
+            }
+        }
     }, []);
 
     // Reset navigation state when user identity changes (login/logout/switch)
@@ -755,6 +847,11 @@ export default function App() {
         uploadProgressRef.current.clear();
         serverStatusMessageRef.current.clear();
         setProcessingJobs([]);
+        window.history.replaceState(
+            buildNavHistoryState("browse", [], null),
+            "",
+            window.location.pathname,
+        );
     }, [currentUser]);
 
     // Load users for search when modal opens (admin/instructor only)
@@ -977,45 +1074,83 @@ export default function App() {
             pendingImageId.current = null;
             pendingViewport.current = undefined;
             pendingOverlays.current = undefined;
-            window.history.replaceState(null, "", window.location.pathname);
+            window.history.replaceState(
+                buildNavHistoryState("browse", [], null),
+                "",
+                window.location.pathname,
+            );
         }
         // Otherwise keep pendingImageId so we retry on the next data update.
     }, [categories, uncategorizedImages, categoriesLoading]);
+
+    // Resolve pending category path from URL (when no image param is present)
+    useEffect(() => {
+        if (pendingCatIds.current === null || categoriesLoading) return;
+        const ids = pendingCatIds.current;
+        pendingCatIds.current = null;
+        const resolved = resolveCategoryPath(categories, ids);
+        if (resolved.length > 0) {
+            setPath(resolved);
+        }
+    }, [categories, categoriesLoading]);
 
     // Keep URL search params in sync with the current view
     useEffect(() => {
         // Don't overwrite URL while a shared-link image is still pending resolution
         if (pendingImageId.current !== null) return;
         const params = new URLSearchParams();
-        if (selectedImage) {
-            params.set("image", String(selectedImage.id));
-            if (viewportState) {
-                params.set("zoom", viewportState.zoom.toFixed(4));
-                params.set("x", viewportState.x.toFixed(6));
-                params.set("y", viewportState.y.toFixed(6));
-                if (viewportState.rotation) {
-                    params.set("rotation", viewportState.rotation.toFixed(1));
-                }
-            }
-            // Serialize overlay rectangles (up to MAX_SHARE_OVERLAYS)
-            for (
-                let i = 0;
-                i < Math.min(overlays.length, MAX_SHARE_OVERLAYS);
-                i++
-            ) {
-                const r = overlays[i];
+        if (page !== "browse") {
+            params.set("page", page);
+        } else {
+            if (path.length > 0) {
                 params.set(
-                    `ov${i}`,
-                    [r.x, r.y, r.w, r.h].map((n) => n.toPrecision(8)).join(","),
+                    "cat",
+                    path.map((c) => c.id).join(","),
                 );
+            }
+            if (selectedImage) {
+                params.set("image", String(selectedImage.id));
+                if (viewportState) {
+                    params.set("zoom", viewportState.zoom.toFixed(4));
+                    params.set("x", viewportState.x.toFixed(6));
+                    params.set("y", viewportState.y.toFixed(6));
+                    if (viewportState.rotation) {
+                        params.set(
+                            "rotation",
+                            viewportState.rotation.toFixed(1),
+                        );
+                    }
+                }
+                // Serialize overlay rectangles (up to MAX_SHARE_OVERLAYS)
+                for (
+                    let i = 0;
+                    i < Math.min(overlays.length, MAX_SHARE_OVERLAYS);
+                    i++
+                ) {
+                    const r = overlays[i];
+                    params.set(
+                        `ov${i}`,
+                        [r.x, r.y, r.w, r.h]
+                            .map((n) => n.toPrecision(8))
+                            .join(","),
+                    );
+                }
             }
         }
         const qs = params.toString();
         const newUrl = qs
             ? `${window.location.pathname}?${qs}`
             : window.location.pathname;
-        window.history.replaceState(null, "", newUrl);
-    }, [selectedImage, viewportState, overlays]);
+        window.history.replaceState(
+            buildNavHistoryState(
+                page,
+                path.map((c) => c.id),
+                selectedImage?.id ?? null,
+            ),
+            "",
+            newUrl,
+        );
+    }, [page, path, selectedImage, viewportState, overlays]);
 
     const handleViewportChange = useCallback((state: ViewportState) => {
         setViewportState(state);
@@ -1415,6 +1550,18 @@ export default function App() {
         setViewportState(undefined);
         setOverlays([]);
     }, []);
+
+    const handleImageClick = useCallback(
+        (img: ImageItem) => {
+            setSelectedImage(img);
+            pushNavState(
+                "browse",
+                pathRef.current.map((c) => c.id),
+                img.id,
+            );
+        },
+        [pushNavState],
+    );
 
     const navigateToCategory = (cat: Category) => {
         setPath((prev) => [...prev, cat]);
@@ -2236,6 +2383,7 @@ export default function App() {
                                 setPage(v);
                                 clearImage();
                                 setPath([]);
+                                pushNavState(v);
                                 if (v === "browse") {
                                     loadCategories();
                                     loadUncategorizedImages();
@@ -2259,6 +2407,7 @@ export default function App() {
                                 setPage("browse");
                                 clearImage();
                                 setPath([]);
+                                pushNavState("browse");
                             }}
                         />
                         {canEditContent && (
@@ -2471,21 +2620,28 @@ export default function App() {
                                     height: img.height,
                                     fileSize: img.file_size,
                                 });
-                                // Build breadcrumb path from the image's category
-                                if (img.category_id != null) {
-                                    const catPath = findCategoryPath(
-                                        categories,
-                                        img.category_id,
-                                    );
-                                    if (catPath) setPath(catPath);
-                                } else {
-                                    setPath([]);
-                                }
+                                const catPath =
+                                    img.category_id != null
+                                        ? findCategoryPath(
+                                              categories,
+                                              img.category_id,
+                                          )
+                                        : null;
+                                setPath(catPath ?? []);
                                 setPage("browse");
+                                pushNavState(
+                                    "browse",
+                                    catPath?.map((c) => c.id) ?? [],
+                                    img.id,
+                                );
                             }}
                             onNavigateCategory={(categoryPath) => {
                                 setPath(categoryPath);
                                 setPage("browse");
+                                pushNavState(
+                                    "browse",
+                                    categoryPath.map((c) => c.id),
+                                );
                             }}
                             onCategoriesChanged={() => {
                                 loadCategories();
@@ -2539,6 +2695,7 @@ export default function App() {
                                         onClick={() => {
                                             clearImage();
                                             navigateToDepth(0);
+                                            pushNavState("browse");
                                         }}
                                         sx={{
                                             display: "flex",
@@ -2560,6 +2717,12 @@ export default function App() {
                                             onClick={() => {
                                                 clearImage();
                                                 navigateToDepth(i + 1);
+                                                pushNavState(
+                                                    "browse",
+                                                    path
+                                                        .slice(0, i + 1)
+                                                        .map((c) => c.id),
+                                                );
                                             }}
                                             sx={{ cursor: "pointer" }}
                                         >
@@ -2838,9 +3001,10 @@ export default function App() {
                                                     ? "text.primary"
                                                     : "inherit"
                                             }
-                                            onClick={() =>
-                                                navigateToDepth(0)
-                                            }
+                                            onClick={() => {
+                                                navigateToDepth(0);
+                                                pushNavState("browse");
+                                            }}
                                             sx={{
                                                 display: "flex",
                                                 alignItems: "center",
@@ -2874,11 +3038,23 @@ export default function App() {
                                                                 ? "text.primary"
                                                                 : "inherit"
                                                         }
-                                                        onClick={() =>
+                                                        onClick={() => {
                                                             navigateToDepth(
                                                                 i + 1,
-                                                            )
-                                                        }
+                                                            );
+                                                            pushNavState(
+                                                                "browse",
+                                                                path
+                                                                    .slice(
+                                                                        0,
+                                                                        i + 1,
+                                                                    )
+                                                                    .map(
+                                                                        (c) =>
+                                                                            c.id,
+                                                                    ),
+                                                            );
+                                                        }}
                                                         sx={{
                                                             cursor: "pointer",
                                                             overflow:
@@ -3103,7 +3279,18 @@ export default function App() {
                                     <CategoryTile
                                         key={cat.id}
                                         category={cat}
-                                        onClick={navigateToCategory}
+                                        onClick={(cat) => {
+                                            navigateToCategory(cat);
+                                            pushNavState(
+                                                "browse",
+                                                [
+                                                    ...path.map(
+                                                        (c) => c.id,
+                                                    ),
+                                                    cat.id,
+                                                ],
+                                            );
+                                        }}
                                         onMove={
                                             canEditContent
                                                 ? handleRequestMoveCategory
@@ -3153,7 +3340,7 @@ export default function App() {
                                         <ImageTile
                                             key={img.id}
                                             image={img}
-                                            onClick={setSelectedImage}
+                                            onClick={handleImageClick}
                                             onEditDetails={
                                                 canEditContent
                                                     ? setBrowseEditImage
@@ -3171,7 +3358,7 @@ export default function App() {
                                     <ImageTile
                                         key={img.id}
                                         image={img}
-                                        onClick={setSelectedImage}
+                                        onClick={handleImageClick}
                                         onEditDetails={
                                             canEditContent
                                                 ? setBrowseEditImage
@@ -3428,15 +3615,19 @@ export default function App() {
                         ? () => {
                               setSelectedImage(browseEditImage);
                               setBrowseEditImage(null);
-                              if (browseEditImage.categoryId != null) {
-                                  const catPath = findCategoryPath(
-                                      categories,
-                                      browseEditImage.categoryId,
-                                  );
-                                  if (catPath) setPath(catPath);
-                              } else {
-                                  setPath([]);
-                              }
+                              const catPath =
+                                  browseEditImage.categoryId != null
+                                      ? findCategoryPath(
+                                            categories,
+                                            browseEditImage.categoryId,
+                                        )
+                                      : null;
+                              setPath(catPath ?? []);
+                              pushNavState(
+                                  "browse",
+                                  catPath?.map((c) => c.id) ?? [],
+                                  browseEditImage.id,
+                              );
                           }
                         : undefined
                 }
@@ -3628,6 +3819,10 @@ export default function App() {
                     setPage("browse");
                     setPath(catPath);
                     clearImage();
+                    pushNavState(
+                        "browse",
+                        catPath.map((c) => c.id),
+                    );
                 }}
                 onSelectImage={(image, catPath) => {
                     setPage("browse");
@@ -3635,12 +3830,23 @@ export default function App() {
                     setSelectedImage(image);
                     setViewportState(undefined);
                     setOverlays([]);
+                    pushNavState(
+                        "browse",
+                        catPath.map((c) => c.id),
+                        image.id,
+                    );
                 }}
                 onSelectProgram={() => {
-                    if (canManageUsers) setPage("people");
+                    if (canManageUsers) {
+                        setPage("people");
+                        pushNavState("people");
+                    }
                 }}
                 onSelectUser={() => {
-                    if (canManageUsers) setPage("people");
+                    if (canManageUsers) {
+                        setPage("people");
+                        pushNavState("people");
+                    }
                 }}
             />
 
@@ -3882,6 +4088,13 @@ export default function App() {
                                                             undefined,
                                                         );
                                                         setOverlays([]);
+                                                        pushNavState(
+                                                            "browse",
+                                                            result.path.map(
+                                                                (c) => c.id,
+                                                            ),
+                                                            result.image.id,
+                                                        );
                                                         found = true;
                                                     }
                                                 } catch {
@@ -3935,6 +4148,11 @@ export default function App() {
                                                                 undefined,
                                                             );
                                                             setOverlays([]);
+                                                            pushNavState(
+                                                                "browse",
+                                                                [],
+                                                                uncatImg.id,
+                                                            );
                                                             found = true;
                                                         }
                                                     } catch {
