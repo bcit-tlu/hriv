@@ -1,14 +1,15 @@
 ---
 name: testing-hriv
-description: End-to-end testing guide for the HRIV app including local stack setup, seed data, auth, UI navigation, metadata operations, admin export/import, image upload, image replacement, drag-and-drop, and tile sidecar routing.
+description: End-to-end testing guide for the HRIV app including local stack setup, seed data, auth, UI navigation, metadata operations, admin export/import, image upload, image replacement, drag-and-drop, tile sidecar routing, and bulk import with ManagePage auto-refresh.
 ---
 
 # Testing HRIV
 
 End-to-end testing guide for the HRIV app: local stack bring-up, seed data, auth,
-UI navigation, metadata operations, admin export/import, drag-and-drop, and image upload. For
-domain-specific flows see the sibling skills `testing-image-processing`
-(tile pipeline / pyvips) and `testing-backup-service` (disaster recovery).
+UI navigation, metadata operations, admin export/import, drag-and-drop, image upload,
+and bulk import. For domain-specific flows see the sibling skills
+`testing-image-processing` (tile pipeline / pyvips) and `testing-backup-service`
+(disaster recovery).
 
 ## Local Setup
 
@@ -578,6 +579,99 @@ The snackbar auto-dismisses after 6 s — use Playwright `wait_for` to catch the
 deterministically. For deeper image-processing tests (progress flush timing,
 synthetic large images, pyvips eval signals) see `testing-image-processing`.
 
+## Testing Bulk Import + ManagePage Auto-Refresh
+
+Bulk imports happen when the user uploads a ZIP file or multiple images at once.
+The backend creates a `BulkImportJob` and processes images asynchronously via arq.
+App.tsx polls for job status every 2 seconds and bumps an `imagesVersion` counter
+when the job completes, which triggers ManagePage's `loadImages()` useEffect.
+
+### Creating Test Images for Bulk Import
+
+Use ImageMagick to create small test images and ZIP them:
+```bash
+# Create test JPEGs (PIL may not be installed)
+for i in 1 2 3; do
+  convert -size 200x200 "xc:rgb($((50*i)),100,150)" /tmp/test_bulk_${i}.jpg
+done
+
+# Create ZIP archive
+python3 -c "
+import zipfile
+with zipfile.ZipFile('/tmp/test_bulk_import.zip', 'w') as zf:
+    for i in range(1, 4):
+        zf.write(f'/tmp/test_bulk_{i}.jpg', f'test_bulk_{i}.jpg')
+"
+```
+
+### Bulk Import from ManagePage (Images Tab)
+
+1. Navigate to **Images** tab (ManagePage) — note the current row count.
+2. Click **ADD IMAGES** to open the upload modal.
+3. Inject the ZIP file via Playwright (the native file picker won't work with computer-use):
+   ```python
+   import asyncio
+   from playwright.async_api import async_playwright
+
+   async def inject_zip():
+       async with async_playwright() as p:
+           browser = await p.chromium.connect_over_cdp('http://localhost:29229')
+           context = browser.contexts[0]
+           page = [pg for pg in context.pages if 'localhost:5173' in pg.url][0]
+           file_input = page.locator('input[type="file"]')
+           await file_input.set_input_files('/tmp/test_bulk_import.zip')
+
+   asyncio.run(inject_zip())
+   ```
+4. Select a target category from the dropdown.
+5. Click **IMPORT 1 FILE** (the button shows file count, not image count).
+6. The upload modal closes, a snackbar shows import progress.
+7. **Without navigating away**, wait for the import to complete (~5-10 seconds for small images).
+8. Verify the image table auto-refreshes with the new rows.
+
+**Key behavior:** The table should update automatically when the bulk import
+completes. The `imagesVersion` counter in App.tsx increments on both:
+- Bulk import job completion (polling path at `App.tsx:592-594`)
+- Single-image processing completion (processing job path at `App.tsx:477-481`)
+
+ManagePage watches `imagesVersion` in its useEffect dependency array (`ManagePage.tsx:223-225`).
+
+### Verifying No Polling Churn
+
+The old bug (#292) caused useEffect teardown/recreate on every state update, leading
+to rapid burst polling. To verify this is fixed:
+
+1. Instrument `window.fetch` before starting a bulk import:
+   ```python
+   # Via Playwright evaluate:
+   await page.evaluate('''
+       window._pollLog = [];
+       const origFetch = window.fetch;
+       window.fetch = function(...args) {
+           const url = typeof args[0] === "string" ? args[0] : (args[0]?.url || "");
+           if (url.includes("bulk-import")) {
+               window._pollLog.push({ time: Date.now(), url });
+           }
+           return origFetch.apply(this, args);
+       };
+   ''')
+   ```
+2. Start a bulk import.
+3. After completion, check the logged intervals:
+   ```python
+   result = await page.evaluate('''
+       const log = window._pollLog;
+       const intervals = [];
+       for (let i = 1; i < log.length; i++)
+           intervals.push(log[i].time - log[i-1].time);
+       return { total: log.length, intervals };
+   ''')
+   ```
+4. **Pass criteria:** Intervals are ~2000ms apart (the `setInterval(2000)` period). No rapid bursts.
+5. **Note:** Very small test images may process within a single poll interval, so
+   you may see only 1-2 requests total. That's expected — the absence of rapid
+   bursts is what confirms no churn.
+
 ## Testing Image Replacement
 
 The Edit Details modal supports one-to-one image replacement with a two-step
@@ -723,4 +817,6 @@ docker-compose testing (Vite dev proxy has no body limit).
   milliseconds; anything beyond ~200 MB is needed to observe tile-processing progress.
 - **Chrome CDP proxy may not be running:** If `curl -s http://localhost:29229/json/version`
   returns empty, launch Chrome manually with `--remote-debugging-port=9222` and
-  connect Playwright to `http://localhost:9222` instead.
+  connect Playwright to `http://localhost:9222`.
+- **Playwright may not be pre-installed.** Install with `pip install playwright && python3 -m playwright install chromium`.
+  Use ImageMagick `convert` instead of PIL for generating test images (it's available by default).
