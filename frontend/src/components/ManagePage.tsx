@@ -120,6 +120,7 @@ type SortDirection = 'asc' | 'desc'
 interface ManagePageProps {
   categories: Category[]
   programs: Program[]
+  imagesVersion?: number
   onViewImage?: (image: ApiImage) => void
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
@@ -148,6 +149,7 @@ interface ManagePageProps {
 export default function ManagePage({
   categories,
   programs,
+  imagesVersion,
   onViewImage,
   onNavigateCategory,
   onCategoriesChanged,
@@ -220,7 +222,7 @@ export default function ManagePage({
 
   useEffect(() => {
     loadImages()
-  }, [loadImages])
+  }, [loadImages, imagesVersion])
 
   // Sort handler
   const handleSort = (column: SortableColumn) => {

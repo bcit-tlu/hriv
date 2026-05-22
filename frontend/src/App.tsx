@@ -441,6 +441,7 @@ export default function App() {
     const [profileOpen, setProfileOpen] = useState(false);
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [programs, setPrograms] = useState<Program[]>([]);
+    const [imagesVersion, setImagesVersion] = useState(0);
 
     // Build ApiUser shape from currentUser for AddEditPersonModal
     const currentApiUser: ApiUser | null = currentUser
@@ -477,6 +478,7 @@ export default function App() {
                         loadCategories(),
                         loadUncategorizedImages(),
                     ]);
+                    setImagesVersion((v) => v + 1);
                     // If the completed job is for the currently-viewed image,
                     // refresh it so the viewer picks up new tile URLs.
                     const current = selectedImageRef.current;
@@ -589,6 +591,7 @@ export default function App() {
                         }
                         loadCategories();
                         loadUncategorizedImages();
+                        setImagesVersion((v) => v + 1);
                     }
                 } catch {
                     // ignore poll errors
@@ -2447,6 +2450,7 @@ export default function App() {
                         <ManagePage
                             categories={categories}
                             programs={programs}
+                            imagesVersion={imagesVersion}
                             onEditCategory={editCategoryInline}
                             onToggleVisibility={toggleCategoryVisibility}
                             onViewImage={(img) => {
