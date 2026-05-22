@@ -20,6 +20,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import LockIcon from '@mui/icons-material/Lock'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { Category, Program } from '../types'
+import { narrowProgramIds } from '../categoryUtils'
 import { MAX_DEPTH } from '../types'
 import AddCategoryDialog from './AddCategoryDialog'
 import EditCategoryDialog from './EditCategoryDialog'
@@ -203,7 +204,6 @@ export default function ManageCategoriesDialog({
     [options, editingCategory],
   )
 
-  // Compute inherited program IDs for the "add child" context.
   const addInheritedProgramIds = useMemo(() => {
     if (addParentId == null) return []
     const ancestors: FlatOption[] = []
@@ -215,21 +215,9 @@ export default function ManageCategoriesDialog({
       curId = anc.parentId
     }
     ancestors.reverse()
-    let effective: number[] = []
-    let initialized = false
-    for (const anc of ancestors) {
-      if (anc.programIds.length > 0) {
-        effective = initialized
-          ? anc.programIds.filter((pid) => effective.includes(pid))
-          : [...anc.programIds]
-        initialized = true
-      }
-    }
-    return effective
+    return narrowProgramIds(ancestors)
   }, [addParentId, options])
 
-  // Narrowing semantics: collect ancestors bottom-up, then walk top-down
-  // so each ancestor with own programIds narrows (intersects) the effective set.
   const inheritedProgramIds = useMemo(() => {
     if (!editingCategory) return []
     const ancestors: FlatOption[] = []
@@ -241,17 +229,7 @@ export default function ManageCategoriesDialog({
       curParentId = ancestor.parentId
     }
     ancestors.reverse()
-    let effective: number[] = []
-    let initialized = false
-    for (const anc of ancestors) {
-      if (anc.programIds.length > 0) {
-        effective = initialized
-          ? anc.programIds.filter((pid) => effective.includes(pid))
-          : [...anc.programIds]
-        initialized = true
-      }
-    }
-    return effective
+    return narrowProgramIds(ancestors)
   }, [editingCategory, options])
 
   const handleAddClick = (parentId: number | null, parentLabel?: string) => {
