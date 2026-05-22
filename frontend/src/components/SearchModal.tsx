@@ -66,7 +66,7 @@ interface UserPayload {
 
 // ── Filter definitions ─────────────────────────────────
 
-type TypeFilter = ResultKind
+export type TypeFilter = ResultKind
 type FieldFilter = 'Name' | 'Copyright' | 'Note' | 'Email' | 'Role'
 
 interface FilterDef<T extends string> {

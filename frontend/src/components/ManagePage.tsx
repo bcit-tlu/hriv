@@ -43,6 +43,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility'
 import { fetchImages, updateImage, deleteImage, replaceImage, bulkUpdateImages, bulkDeleteImages } from '../api'
 import type { ApiBulkImportJob, ApiImage } from '../api'
 import type { Category, Program } from '../types'
+import { narrowProgramIds } from '../categoryUtils'
 import BulkEditImagesModal from './BulkEditImagesModal'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
@@ -248,16 +249,7 @@ export default function ManagePage({
     const seg = categoryPaths.get(img.category_id)
     if (!seg) return { direct: [], ancestor: [] }
     const fullPath = [...seg.ancestors, seg.category]
-    let effective: number[] = []
-    let initialized = false
-    for (const cat of fullPath) {
-      if (cat.programIds.length > 0) {
-        effective = initialized
-          ? cat.programIds.filter((pid) => effective.includes(pid))
-          : [...cat.programIds]
-        initialized = true
-      }
-    }
+    const effective = narrowProgramIds(fullPath)
     const directIds = new Set(seg.category.programIds)
     const direct = effective.filter((pid) => directIds.has(pid))
     const ancestor = effective.filter((pid) => !directIds.has(pid))
