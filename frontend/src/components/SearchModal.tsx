@@ -10,6 +10,7 @@ import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import CategoryIcon from '@mui/icons-material/Folder'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import CopyrightIcon from '@mui/icons-material/Copyright'
 import EmailIcon from '@mui/icons-material/Email'
 import ImageIcon from '@mui/icons-material/Image'
@@ -62,6 +63,7 @@ interface ProgramPayload {
 interface UserPayload {
   kind: 'user'
   userId: number
+  programNames: string[]
 }
 
 // ── Filter definitions ─────────────────────────────────
@@ -151,6 +153,32 @@ function findFirstTermMatch(
     }
   }
   return best
+}
+
+/** Resolve program names for a search result (categories, images, users). */
+function getResultProgramNames(
+  result: SearchResult,
+  programMap: Map<number, string>,
+): string[] {
+  const { payload } = result
+  switch (payload.kind) {
+    case 'category': {
+      const cat = payload.categoryPath[payload.categoryPath.length - 1]
+      return cat?.programIds
+        .map((pid) => programMap.get(pid))
+        .filter((n): n is string => n != null) ?? []
+    }
+    case 'image': {
+      const parentCat = payload.categoryPath[payload.categoryPath.length - 1]
+      return parentCat?.programIds
+        .map((pid) => programMap.get(pid))
+        .filter((n): n is string => n != null) ?? []
+    }
+    case 'user':
+      return payload.programNames
+    default:
+      return []
+  }
 }
 
 // ── Tree traversal helpers ─────────────────────────────
@@ -297,6 +325,8 @@ export default function SearchModal({
   const [typeFilters, setTypeFilters] = useState<Set<TypeFilter>>(new Set())
   const [fieldFilters, setFieldFilters] = useState<Set<FieldFilter>>(new Set())
 
+  const programMap = useMemo(() => new Map(programs.map((p) => [p.id, p.name])), [programs])
+
   // Apply initial values when the modal opens with them
   const prevOpenRef = useRef(false)
   const wasSeededRef = useRef(false)
@@ -353,8 +383,6 @@ export default function SearchModal({
       if (terms.length === 0) return []
       const results: SearchResult[] = []
 
-      const programMap = new Map(programs.map((p) => [p.id, p.name]))
-
       // 1. Categories
       collectCategoryResults(categories, terms, [], results, isStudent, programMap)
 
@@ -405,7 +433,7 @@ export default function SearchModal({
               fieldValue: value,
               matchIndex: m.index,
               matchLength: m.length,
-              payload: { kind: 'user', userId: user.id },
+              payload: { kind: 'user', userId: user.id, programNames: user.program_names ?? [] },
             })
           }
         }
@@ -413,7 +441,7 @@ export default function SearchModal({
 
       return results
     },
-    [categories, uncategorizedImages, programs, users, isStudent],
+    [categories, uncategorizedImages, programs, users, isStudent, programMap],
   )
 
   const allResults = useMemo(() => buildResults(query), [query, buildResults])
@@ -552,15 +580,33 @@ export default function SearchModal({
                   result.matchIndex,
                   result.matchLength,
                 )
+                const chipNames = getResultProgramNames(result, programMap)
+                const catPath = result.payload.kind === 'image' ? result.payload.categoryPath : null
+                const thumb = result.payload.kind === 'image' ? result.payload.image.thumb : null
                 return (
                   <Card key={`${result.kind}-${result.id}-${i}`} variant="outlined">
                     <CardActionArea
                       onClick={() => handleSelect(result)}
                       sx={{ p: 2, display: 'flex', alignItems: 'flex-start', gap: 2 }}
                     >
-                      <Box sx={{ mt: 0.25 }}>{iconForKind(result.kind)}</Box>
+                      {thumb ? (
+                        <Box
+                          component="img"
+                          src={thumb}
+                          alt={result.label}
+                          sx={{
+                            width: 40,
+                            height: 40,
+                            objectFit: 'cover',
+                            borderRadius: 0.5,
+                            flexShrink: 0,
+                          }}
+                        />
+                      ) : (
+                        <Box sx={{ mt: 0.25 }}>{iconForKind(result.kind)}</Box>
+                      )}
                       <Box sx={{ minWidth: 0, flex: 1 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25, flexWrap: 'wrap' }}>
                           <Typography variant="subtitle2" noWrap>
                             {result.label}
                           </Typography>
@@ -576,6 +622,13 @@ export default function SearchModal({
                           >
                             {labelForKind(result.kind)}
                           </Typography>
+                          {chipNames.length > 0 && (
+                            <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                              {chipNames.map((name) => (
+                                <Chip key={name} label={name} size="small" color="primary" />
+                              ))}
+                            </Box>
+                          )}
                         </Box>
                         <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
                           <Typography variant="caption" color="text.disabled" component="span">
@@ -590,6 +643,19 @@ export default function SearchModal({
                           </Box>
                           {after}
                         </Typography>
+                        {catPath && catPath.length > 0 && (
+                          <Box sx={{ display: 'inline-flex', alignItems: 'center', mt: 0.5, flexWrap: 'wrap' }}>
+                            <CategoryIcon sx={{ fontSize: 14, color: 'text.disabled', mr: 0.5 }} />
+                            {catPath.map((cat, ci) => (
+                              <Box component="span" key={cat.id} sx={{ display: 'inline-flex', alignItems: 'center' }}>
+                                {ci > 0 && <ChevronRightIcon sx={{ fontSize: 14, color: 'text.disabled', mx: 0.25 }} />}
+                                <Typography variant="caption" color="text.secondary">
+                                  {cat.label}
+                                </Typography>
+                              </Box>
+                            ))}
+                          </Box>
+                        )}
                       </Box>
                     </CardActionArea>
                   </Card>

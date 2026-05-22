@@ -294,4 +294,64 @@ describe("SearchModal", () => {
         const userResults = screen.getAllByText("Jane Doe");
         expect(userResults.length).toBeGreaterThan(0);
     });
+
+    it("displays thumbnail for image results", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Liver");
+
+        const thumbs = screen.getAllByAltText("Liver Section");
+        expect(thumbs.length).toBeGreaterThan(0);
+        expect(thumbs[0]).toHaveAttribute("src", "/thumb/10.jpg");
+    });
+
+    it("displays category path for image results", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Liver");
+
+        // The parent category "Histology" should appear in the image result card
+        // as part of the category path (not just as a separate category result)
+        const cards = screen.getAllByText("Liver Section");
+        expect(cards.length).toBeGreaterThan(0);
+        // Category path rendered inside image result
+        const histologyLabels = screen.getAllByText("Histology");
+        expect(histologyLabels.length).toBeGreaterThan(0);
+    });
+
+    it("displays right-aligned program chips on category results", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Histology");
+
+        // Program chip "Medical Lab Science" should appear on the category result
+        const chips = screen.getAllByText("Medical Lab Science");
+        expect(chips.length).toBeGreaterThan(0);
+    });
+
+    it("displays right-aligned program chips on user results", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Jane");
+
+        // Program chip "Medical Lab Science" should appear on the user result
+        const chips = screen.getAllByText("Medical Lab Science");
+        expect(chips.length).toBeGreaterThan(0);
+    });
 });
