@@ -67,7 +67,7 @@ interface UserPayload {
 // ── Filter definitions ─────────────────────────────────
 
 type TypeFilter = ResultKind
-type FieldFilter = 'Name' | 'Copyright' | 'Note' | 'Email' | 'Role'
+type FieldFilter = 'Name' | 'Copyright' | 'Note' | 'Email' | 'Role' | 'Program' | 'Category'
 
 interface FilterDef<T extends string> {
   key: T
@@ -89,6 +89,8 @@ const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
   { key: 'Note', label: 'Note', icon: <NoteIcon fontSize="small" />, tooltip: 'Note field only' },
   { key: 'Email', label: 'Email', icon: <EmailIcon fontSize="small" />, tooltip: 'Email field only' },
   { key: 'Role', label: 'Role', icon: <BadgeIcon fontSize="small" />, tooltip: 'Role field only' },
+  { key: 'Program', label: 'Program', icon: <SchoolIcon fontSize="small" />, tooltip: 'Program field only' },
+  { key: 'Category', label: 'Category', icon: <CategoryIcon fontSize="small" />, tooltip: 'Category field only' },
 ]
 
 // ── Constants ──────────────────────────────────────────
@@ -159,6 +161,7 @@ function collectCategoryResults(
   path: Category[],
   results: SearchResult[],
   excludeHidden: boolean,
+  programMap: Map<number, string>,
 ): void {
   for (const cat of cats) {
     if (excludeHidden && cat.status === 'hidden') continue
@@ -176,7 +179,25 @@ function collectCategoryResults(
         payload: { kind: 'category', categoryPath: currentPath },
       })
     }
-    collectCategoryResults(cat.children, terms, currentPath, results, excludeHidden)
+    for (const pid of cat.programIds) {
+      const pName = programMap.get(pid)
+      if (!pName) continue
+      const pm = findFirstTermMatch(pName, terms)
+      if (pm) {
+        results.push({
+          kind: 'category',
+          id: cat.id * 1000 + pid,
+          label: cat.label,
+          field: 'Program',
+          fieldValue: pName,
+          matchIndex: pm.index,
+          matchLength: pm.length,
+          payload: { kind: 'category', categoryPath: currentPath },
+        })
+        break
+      }
+    }
+    collectCategoryResults(cat.children, terms, currentPath, results, excludeHidden, programMap)
   }
 }
 
@@ -186,14 +207,15 @@ function collectImageResults(
   path: Category[],
   results: SearchResult[],
   excludeHidden: boolean,
+  programMap: Map<number, string>,
 ): void {
   for (const cat of cats) {
     if (excludeHidden && cat.status === 'hidden') continue
     const currentPath = [...path, cat]
     for (const img of cat.images) {
-      addImageMatches(img, terms, currentPath, results)
+      addImageMatches(img, terms, currentPath, results, programMap)
     }
-    collectImageResults(cat.children, terms, currentPath, results, excludeHidden)
+    collectImageResults(cat.children, terms, currentPath, results, excludeHidden, programMap)
   }
 }
 
@@ -202,12 +224,21 @@ function addImageMatches(
   terms: string[],
   categoryPath: Category[],
   results: SearchResult[],
+  programMap: Map<number, string>,
 ): void {
+  const parentCat = categoryPath.length > 0 ? categoryPath[categoryPath.length - 1] : null
   const fields: { field: string; value: string | null | undefined }[] = [
     { field: 'Name', value: img.name },
     { field: 'Copyright', value: img.copyright },
     { field: 'Note', value: img.note },
   ]
+  if (parentCat) {
+    fields.push({ field: 'Category', value: parentCat.label })
+    for (const pid of parentCat.programIds) {
+      const pName = programMap.get(pid)
+      if (pName) fields.push({ field: 'Program', value: pName })
+    }
+  }
   for (let fi = 0; fi < fields.length; fi++) {
     const { field, value } = fields[fi]
     if (!value) continue
@@ -322,15 +353,17 @@ export default function SearchModal({
       if (terms.length === 0) return []
       const results: SearchResult[] = []
 
+      const programMap = new Map(programs.map((p) => [p.id, p.name]))
+
       // 1. Categories
-      collectCategoryResults(categories, terms, [], results, isStudent)
+      collectCategoryResults(categories, terms, [], results, isStudent, programMap)
 
       // 2. Images within category tree
-      collectImageResults(categories, terms, [], results, isStudent)
+      collectImageResults(categories, terms, [], results, isStudent, programMap)
 
       // 3. Uncategorized images
       for (const img of uncategorizedImages) {
-        addImageMatches(img, terms, [], results)
+        addImageMatches(img, terms, [], results, programMap)
       }
 
       // 4. Programs
@@ -357,6 +390,9 @@ export default function SearchModal({
           { field: 'Email', value: user.email },
           { field: 'Role', value: user.role },
         ]
+        for (const pName of user.program_names ?? []) {
+          userFields.push({ field: 'Program', value: pName })
+        }
         for (let fi = 0; fi < userFields.length; fi++) {
           const { field, value } = userFields[fi]
           const m = findFirstTermMatch(value, terms)

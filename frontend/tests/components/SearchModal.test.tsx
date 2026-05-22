@@ -7,6 +7,10 @@
  * 3. Search results display correctly for a matching query
  * 4. No results message displays for a non-matching query
  * 5. Selecting a result calls onClose and the appropriate navigation callback
+ * 6. Searching by program name finds associated categories
+ * 7. Searching by program name finds images within associated categories
+ * 8. Searching by category name finds images within that category
+ * 9. Searching by program name finds users assigned to that program
  */
 
 import { describe, it, expect, vi } from "vitest";
@@ -34,12 +38,11 @@ const testCategory: Category = {
             categoryId: 1,
             copyright: "2026 BCIT",
             note: "Sample liver tissue",
-            programIds: [1],
             active: true,
             version: 1,
         },
     ],
-    programIds: [],
+    programIds: [1],
     status: null,
     cardImageId: null,
     metadataExtra: null,
@@ -49,7 +52,20 @@ const testPrograms: Program[] = [
     { id: 1, name: "Medical Lab Science", oidc_group: null, created_at: "", updated_at: "" },
 ];
 
-const testUsers: ApiUser[] = [];
+const testUsers: ApiUser[] = [
+    {
+        id: 50,
+        name: "Jane Doe",
+        email: "jane@bcit.ca",
+        role: "instructor",
+        program_ids: [1],
+        program_names: ["Medical Lab Science"],
+        last_access: null,
+        metadata_extra: null,
+        created_at: "",
+        updated_at: "",
+    },
+];
 
 const defaultProps = {
     open: true,
@@ -215,5 +231,67 @@ describe("SearchModal", () => {
 
         expect(onClose).toHaveBeenCalled();
         expect(onSelectCategory).toHaveBeenCalledWith([testCategory]);
+    });
+
+    it("finds categories by associated program name", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Medical Lab");
+
+        // Should find "Histology" category via its program association
+        const labels = screen.getAllByText("Histology");
+        expect(labels.length).toBeGreaterThan(0);
+
+        // The matched field should show "Program"
+        expect(screen.getAllByText(/Program:/).length).toBeGreaterThan(0);
+    });
+
+    it("finds images by parent category name", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Histology");
+
+        // Should find "Liver Section" image via its parent category name
+        const imageResults = screen.getAllByText("Liver Section");
+        expect(imageResults.length).toBeGreaterThan(0);
+
+        // One of the matched fields should show "Category"
+        expect(screen.getAllByText(/Category:/).length).toBeGreaterThan(0);
+    });
+
+    it("finds images by program name of parent category", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Medical Lab");
+
+        // Should find "Liver Section" image via its parent category's program
+        const imageResults = screen.getAllByText("Liver Section");
+        expect(imageResults.length).toBeGreaterThan(0);
+    });
+
+    it("finds users by assigned program name", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Medical Lab");
+
+        // Should find "Jane Doe" user via her program assignment
+        const userResults = screen.getAllByText("Jane Doe");
+        expect(userResults.length).toBeGreaterThan(0);
     });
 });
