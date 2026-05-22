@@ -61,6 +61,8 @@ import type { ImageFormData, ReplaceImageData } from "./components/EditImageModa
 import ProgramManagementModal from "./components/ProgramManagementModal";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
+import type { TypeFilter } from "./components/SearchModal";
+import { narrowProgramIds } from "./categoryUtils";
 import UploadImageModal from "./components/UploadImageModal";
 import { useAuth } from "./useAuth";
 import {
@@ -1324,36 +1326,27 @@ export default function App() {
     }, [categories, path]);
 
     // Walk the categories tree along the given path segments applying narrowing
-    // semantics: each category with its own programIds REPLACES (narrows) the
-    // inherited set rather than extending it via union. `depth` controls how many
-    // path segments to traverse (defaults to all).
-    const narrowProgramIds = useCallback(
+    // (intersection) semantics. `depth` controls how many path segments to
+    // traverse (defaults to all).
+    const getPathRestriction = useCallback(
         (depth?: number): number[] => {
-            let effective: number[] = [];
-            let initialized = false;
+            const ancestors: Category[] = [];
             let node = categories;
             const limit = depth ?? path.length;
             for (let i = 0; i < limit; i++) {
                 const found = node.find((c) => c.id === path[i].id);
                 if (!found) break;
-                if (found.programIds.length > 0) {
-                    effective = initialized
-                        ? found.programIds.filter((pid) =>
-                              effective.includes(pid),
-                          )
-                        : [...found.programIds];
-                    initialized = true;
-                }
+                ancestors.push(found);
                 node = found.children;
             }
-            return effective;
+            return narrowProgramIds(ancestors);
         },
         [categories, path],
     );
 
     const ancestorProgramIds = useMemo(
-        () => narrowProgramIds(),
-        [narrowProgramIds],
+        () => getPathRestriction(),
+        [getPathRestriction],
     );
 
     // Filter out hidden categories for students in browse mode
@@ -1389,7 +1382,7 @@ export default function App() {
                 .map((c) => c.label);
             return {
                 siblingNames,
-                inheritedProgramIds: narrowProgramIds(path.length - 1),
+                inheritedProgramIds: getPathRestriction(path.length - 1),
                 freshLabel: freshCat?.label ?? editNameCategory.label,
                 freshProgramIds: freshCat?.programIds ?? editNameCategory.programIds,
             };
@@ -1403,7 +1396,7 @@ export default function App() {
             freshLabel: freshChild?.label ?? editNameCategory.label,
             freshProgramIds: freshChild?.programIds ?? editNameCategory.programIds,
         };
-    }, [editNameCategory, path, categories, currentCategories, ancestorProgramIds, narrowProgramIds]);
+    }, [editNameCategory, path, categories, currentCategories, ancestorProgramIds, getPathRestriction]);
 
     const clearImage = useCallback(() => {
         setSelectedImage(null);
@@ -3612,7 +3605,7 @@ export default function App() {
                     setSearchInitialTypeFilter(undefined);
                 }}
                 initialQuery={searchInitialQuery}
-                initialTypeFilter={searchInitialTypeFilter as 'category' | 'image' | 'program' | 'user' | undefined}
+                initialTypeFilter={searchInitialTypeFilter as TypeFilter | undefined}
                 categories={categories}
                 uncategorizedImages={uncategorizedImages}
                 programs={programs}
