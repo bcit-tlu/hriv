@@ -441,6 +441,7 @@ export default function App() {
     const [profileOpen, setProfileOpen] = useState(false);
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [programs, setPrograms] = useState<Program[]>([]);
+    const [imagesVersion, setImagesVersion] = useState(0);
 
     // Build ApiUser shape from currentUser for AddEditPersonModal
     const currentApiUser: ApiUser | null = currentUser
@@ -477,6 +478,7 @@ export default function App() {
                         loadCategories(),
                         loadUncategorizedImages(),
                     ]);
+                    setImagesVersion((v) => v + 1);
                     // If the completed job is for the currently-viewed image,
                     // refresh it so the viewer picks up new tile URLs.
                     const current = selectedImageRef.current;
@@ -559,12 +561,9 @@ export default function App() {
             }
         }
 
-        return () => {
-            for (const [, handle] of refs) {
-                handle.cancel();
-            }
-            refs.clear();
-        };
+        // No cleanup return — the inline stale-job loop above handles
+        // removal, and the effect body is idempotent (skips already-tracked
+        // jobs).  Full teardown on unmount is handled by a separate effect.
     }, [processingJobs]); // eslint-disable-line react-hooks/exhaustive-deps
 
     useEffect(() => {
@@ -592,6 +591,7 @@ export default function App() {
                         }
                         loadCategories();
                         loadUncategorizedImages();
+                        setImagesVersion((v) => v + 1);
                     }
                 } catch {
                     // ignore poll errors
@@ -612,13 +612,25 @@ export default function App() {
             }
         }
 
-        return () => {
-            for (const [, interval] of refs) {
-                clearInterval(interval);
-            }
-            refs.clear();
-        };
+        // No cleanup return — same reasoning as the processing-poll effect
+        // above.  Without the teardown/recreate cycle, setInterval timers
+        // keep their cadence instead of resetting on every state change.
     }, [processingJobs]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Unmount-only cleanup for both polling ref maps.  The effects above
+    // no longer return cleanup functions (to avoid the teardown/recreate
+    // churn), so this effect handles the final teardown when the component
+    // unmounts.
+    useEffect(() => {
+        const procRefs = processingPollRefs.current;
+        const bulkRefs = bulkImportPollRefs.current;
+        return () => {
+            procRefs.forEach((handle) => handle.cancel());
+            procRefs.clear();
+            bulkRefs.forEach((interval) => clearInterval(interval));
+            bulkRefs.clear();
+        };
+    }, []);
 
     // Interpolation timer: triggers re-render every 500 ms so the progress bar
     // advances smoothly between server polls while any job is processing.
@@ -2438,6 +2450,7 @@ export default function App() {
                         <ManagePage
                             categories={categories}
                             programs={programs}
+                            imagesVersion={imagesVersion}
                             onEditCategory={editCategoryInline}
                             onToggleVisibility={toggleCategoryVisibility}
                             onViewImage={(img) => {
