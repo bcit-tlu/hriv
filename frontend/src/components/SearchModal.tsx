@@ -11,9 +11,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import CategoryIcon from '@mui/icons-material/Folder'
 import CopyrightIcon from '@mui/icons-material/Copyright'
-import EmailIcon from '@mui/icons-material/Email'
 import ImageIcon from '@mui/icons-material/Image'
-import LabelIcon from '@mui/icons-material/Label'
 import NoteIcon from '@mui/icons-material/StickyNote2'
 import PersonIcon from '@mui/icons-material/Person'
 import BadgeIcon from '@mui/icons-material/Badge'
@@ -67,7 +65,7 @@ interface UserPayload {
 // ── Filter definitions ─────────────────────────────────
 
 export type TypeFilter = ResultKind
-type FieldFilter = 'Name' | 'Copyright' | 'Note' | 'Email' | 'Role'
+type FieldFilter = 'Copyright' | 'Note' | 'Role'
 
 interface FilterDef<T extends string> {
   key: T
@@ -84,10 +82,8 @@ const TYPE_FILTERS: FilterDef<TypeFilter>[] = [
 ]
 
 const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
-  { key: 'Name', label: 'Name', icon: <LabelIcon fontSize="small" />, tooltip: 'Name field only' },
   { key: 'Copyright', label: 'Copyright', icon: <CopyrightIcon fontSize="small" />, tooltip: 'Copyright field only' },
   { key: 'Note', label: 'Note', icon: <NoteIcon fontSize="small" />, tooltip: 'Note field only' },
-  { key: 'Email', label: 'Email', icon: <EmailIcon fontSize="small" />, tooltip: 'Email field only' },
   { key: 'Role', label: 'Role', icon: <BadgeIcon fontSize="small" />, tooltip: 'Role field only' },
 ]
 
@@ -116,7 +112,7 @@ function iconForKind(kind: ResultKind) {
     case 'image':
       return <ImageIcon color="secondary" />
     case 'program':
-      return <SchoolIcon sx={{ color: '#6a8a5b' }} />
+      return null
     case 'user':
       return <PersonIcon sx={{ color: '#5b7a8a' }} />
   }
@@ -522,12 +518,18 @@ export default function SearchModal({
                       onClick={() => handleSelect(result)}
                       sx={{ p: 2, display: 'flex', alignItems: 'flex-start', gap: 2 }}
                     >
-                      <Box sx={{ mt: 0.25 }}>{iconForKind(result.kind)}</Box>
+                      {result.kind !== 'program' && (
+                        <Box sx={{ mt: 0.25 }}>{iconForKind(result.kind)}</Box>
+                      )}
                       <Box sx={{ minWidth: 0, flex: 1 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25 }}>
-                          <Typography variant="subtitle2" noWrap>
-                            {result.label}
-                          </Typography>
+                          {result.kind === 'program' ? (
+                            <Chip label={result.label} size="small" />
+                          ) : (
+                            <Typography variant="subtitle2" noWrap>
+                              {result.label}
+                            </Typography>
+                          )}
                           <Typography
                             variant="caption"
                             sx={{
