@@ -10,7 +10,7 @@
             "extra-files": [
                 {
                     "type": "generic",
-                    "path": "charts/frontend/Chart.yaml"
+                    "path": "../charts/frontend/Chart.yaml"
                 }
             ]
         },
@@ -21,7 +21,7 @@
             "extra-files": [
                 {
                     "type": "generic",
-                    "path": "charts/backend/Chart.yaml"
+                    "path": "../charts/backend/Chart.yaml"
                 }
             ]
         },
@@ -32,7 +32,7 @@
             "extra-files": [
                 {
                     "type": "generic",
-                    "path": "charts/backup/Chart.yaml"
+                    "path": "../charts/backup/Chart.yaml"
                 }
             ]
         }
