@@ -249,7 +249,7 @@ spec:
         {{- $merged := dict "podAntiAffinity" (dict "requiredDuringSchedulingIgnoredDuringExecution" (append $existing $zoneRule)) }}
         {{- $aff = mustMergeOverwrite $aff $merged }}
       {{- end }}
-      {{- if $aff }}
+      {{- if ne (toJson $aff) "{}" }}
       affinity:
         {{- toYaml $aff | nindent 8 }}
       {{- end }}
