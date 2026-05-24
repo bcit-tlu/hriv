@@ -211,11 +211,10 @@ jobs:
           FRONTEND_VERSION: ${{ needs.build-frontend.outputs.rc_version }}
           BACKEND_VERSION: ${{ needs.build-backend.outputs.rc_version }}
           BACKUP_VERSION: ${{ needs.build-backup.outputs.rc_version }}
+          OCI_BASE: oci://${{ env.REGISTRY }}/${{ github.repository }}/charts
+          IMAGE_BASE: ${{ env.REGISTRY }}/${{ github.repository }}/charts
         run: |
           set -euo pipefail
-
-          OCI_BASE="oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
-          IMAGE_BASE="${{ env.REGISTRY }}/${{ github.repository }}/charts"
 
           declare -A VERSIONS=(
             [frontend]="${FRONTEND_VERSION}"
@@ -231,7 +230,7 @@ jobs:
             fi
 
             CHART_DIR="charts/${component}"
-            CHART_NAME=$(awk '/^name:/{print $2; exit}' "${CHART_DIR}/Chart.yaml")
+            CHART_NAME=$(yq '.name' "${CHART_DIR}/Chart.yaml")
             DEST_DIR="/tmp/charts"
             mkdir -p "${DEST_DIR}"
 
