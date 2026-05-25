@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -236,6 +236,19 @@ export default function ManageCategoriesDialog({
     () => editingCategory?.programIds ?? [],
     [editingCategory?.programIds],
   )
+
+  // Keep editingCategory in sync when categories prop changes externally
+  useEffect(() => {
+    if (editingCategory) {
+      const fresh = options.find((o) => o.id === editingCategory.id)
+      if (!fresh) {
+        setEditingCategory(null)
+        setEditDialogOpen(false)
+      } else if (fresh !== editingCategory) {
+        setEditingCategory(fresh)
+      }
+    }
+  }, [options, editingCategory])
 
   const handleAddClick = (parentId: number | null, parentLabel?: string) => {
     setAddParentId(parentId)

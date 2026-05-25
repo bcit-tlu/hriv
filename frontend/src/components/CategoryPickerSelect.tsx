@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
@@ -165,6 +165,19 @@ export default function CategoryPickerSelect({
     () => editingOpt?.programIds ?? [],
     [editingOpt?.programIds],
   )
+
+  // Keep editingOpt in sync when categories prop changes externally
+  useEffect(() => {
+    if (editingOpt) {
+      const fresh = options.find((o) => o.id === editingOpt.id)
+      if (!fresh) {
+        setEditingOpt(null)
+        setEditDialogOpen(false)
+      } else if (fresh !== editingOpt) {
+        setEditingOpt(fresh)
+      }
+    }
+  }, [options, editingOpt])
 
   const handleChange = (e: SelectChangeEvent<string>) => {
     const val = e.target.value
