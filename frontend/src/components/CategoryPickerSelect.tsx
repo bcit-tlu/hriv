@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
@@ -105,7 +105,7 @@ export default function CategoryPickerSelect({
   const [addParentLabel, setAddParentLabel] = useState<string | undefined>(undefined)
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
-  const [editingOpt, setEditingOpt] = useState<FlatOption | null>(null)
+  const [editingOptId, setEditingOptId] = useState<number | null>(null)
 
   const options = useMemo(() => {
     let excludeIds: Set<number> | undefined
@@ -121,6 +121,12 @@ export default function CategoryPickerSelect({
   const addSiblingNames = useMemo(
     () => options.filter((o) => o.parentId === addParentId).map((o) => o.label),
     [options, addParentId],
+  )
+
+  // Derive editingOpt from ID + options so it stays fresh without an extra render
+  const editingOpt = useMemo(
+    () => editingOptId != null ? options.find((o) => o.id === editingOptId) ?? null : null,
+    [editingOptId, options],
   )
 
   const editSiblingNames = useMemo(
@@ -166,18 +172,6 @@ export default function CategoryPickerSelect({
     [editingOpt?.programIds],
   )
 
-  // Keep editingOpt in sync when categories prop changes externally
-  useEffect(() => {
-    if (editingOpt) {
-      const fresh = options.find((o) => o.id === editingOpt.id)
-      if (!fresh) {
-        setEditingOpt(null)
-        setEditDialogOpen(false)
-      } else if (fresh !== editingOpt) {
-        setEditingOpt(fresh)
-      }
-    }
-  }, [options, editingOpt])
 
   const handleChange = (e: SelectChangeEvent<string>) => {
     const val = e.target.value
@@ -211,7 +205,7 @@ export default function CategoryPickerSelect({
   ) => {
     e.stopPropagation()
     e.preventDefault()
-    setEditingOpt(opt)
+    setEditingOptId(opt.id)
     setEditDialogOpen(true)
   }
 
@@ -365,10 +359,10 @@ export default function CategoryPickerSelect({
 
       {onEditCategory && (
         <EditCategoryDialog
-          open={editDialogOpen}
+          open={editDialogOpen && editingOpt != null}
           onClose={() => {
             setEditDialogOpen(false)
-            setEditingOpt(null)
+            setEditingOptId(null)
           }}
           onSave={handleEditSave}
           currentLabel={editingOpt?.label ?? ''}

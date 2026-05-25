@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -181,7 +181,7 @@ export default function ManageCategoriesDialog({
   const [pendingDelete, setPendingDelete] = useState<FlatOption | null>(null)
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
-  const [editingCategory, setEditingCategory] = useState<FlatOption | null>(null)
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null)
 
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
@@ -192,6 +192,12 @@ export default function ManageCategoriesDialog({
   const addSiblingNames = useMemo(
     () => options.filter((o) => o.parentId === addParentId).map((o) => o.label),
     [options, addParentId],
+  )
+
+  // Derive editingCategory from ID + options so it stays fresh without an extra render
+  const editingCategory = useMemo(
+    () => editingCategoryId != null ? options.find((o) => o.id === editingCategoryId) ?? null : null,
+    [editingCategoryId, options],
   )
 
   const editSiblingNames = useMemo(
@@ -237,18 +243,6 @@ export default function ManageCategoriesDialog({
     [editingCategory?.programIds],
   )
 
-  // Keep editingCategory in sync when categories prop changes externally
-  useEffect(() => {
-    if (editingCategory) {
-      const fresh = options.find((o) => o.id === editingCategory.id)
-      if (!fresh) {
-        setEditingCategory(null)
-        setEditDialogOpen(false)
-      } else if (fresh !== editingCategory) {
-        setEditingCategory(fresh)
-      }
-    }
-  }, [options, editingCategory])
 
   const handleAddClick = (parentId: number | null, parentLabel?: string) => {
     setAddParentId(parentId)
@@ -279,7 +273,7 @@ export default function ManageCategoriesDialog({
   }, [])
 
   const handleEditClick = useCallback((opt: FlatOption) => {
-    setEditingCategory(opt)
+    setEditingCategoryId(opt.id)
     setEditDialogOpen(true)
   }, [])
 
@@ -620,10 +614,10 @@ export default function ManageCategoriesDialog({
 
       {onEditCategory && (
         <EditCategoryDialog
-          open={editDialogOpen}
+          open={editDialogOpen && editingCategory != null}
           onClose={() => {
             setEditDialogOpen(false)
-            setEditingCategory(null)
+            setEditingCategoryId(null)
           }}
           onSave={handleEditSave}
           currentLabel={editingCategory?.label ?? ''}
