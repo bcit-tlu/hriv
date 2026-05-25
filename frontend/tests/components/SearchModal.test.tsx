@@ -414,9 +414,14 @@ describe("SearchModal", () => {
         await user.type(input, "Medical Lab");
 
         // Should still find categories and images via program search,
-        // but should NOT show the program or people type filter chips
+        // but should NOT show the program, people, or role filter chips
         expect(screen.queryByText("Programs")).not.toBeInTheDocument();
         expect(screen.queryByText("People")).not.toBeInTheDocument();
+        expect(
+            screen.queryAllByText("Role").filter(
+                (el) => el.closest('[class*="MuiChip-root"]'),
+            ),
+        ).toHaveLength(0);
     });
 
     it("calls onSelectProgram with program name when a program result is clicked", async () => {

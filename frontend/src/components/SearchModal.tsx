@@ -589,7 +589,7 @@ export default function SearchModal({
             <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', mr: 0.5 }}>
               Field:
             </Typography>
-            {FIELD_FILTERS.map((f) => (
+            {FIELD_FILTERS.filter((f) => !(isStudent && f.key === 'Role')).map((f) => (
               <Tooltip key={f.key} title={f.tooltip}>
                 <Chip
                   icon={f.icon}
