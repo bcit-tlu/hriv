@@ -115,6 +115,11 @@ async def test_report_issue_success() -> None:
     assert body_text.index("Found a bug") < sep_pos
     assert body_text.index("**Reported by:**") > sep_pos
     assert body_text.index("**Page:**") > sep_pos
+    # PII must not appear in the issue body
+    assert "Test User" not in body_text
+    assert "t@example.com" not in body_text
+    # Non-identifying role and internal ID used instead
+    assert "student (user #8888)" in body_text
 
     # Verify the label call (second POST)
     label_call = mock_client.post.call_args_list[1]
