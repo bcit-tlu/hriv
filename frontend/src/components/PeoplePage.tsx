@@ -47,6 +47,8 @@ import BulkEditModal from './BulkEditModal'
 type SortableColumn = 'id' | 'name' | 'email' | 'role' | 'program' | 'last_access' | 'created_at'
 type SortDirection = 'asc' | 'desc'
 
+const ROLES: Role[] = ['admin', 'instructor', 'student']
+
 interface PeoplePageProps {
   programs: Program[]
 }
@@ -177,7 +179,10 @@ export default function PeoplePage({ programs }: PeoplePageProps) {
     setCurrentPage(0)
   }
 
-  const pageUsers = sortedUsers.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage)
+  const pageUsers = useMemo(
+    () => sortedUsers.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage),
+    [sortedUsers, currentPage, rowsPerPage],
+  )
 
   const selectedInView = useMemo(
     () => pageUsers.filter((u) => selected.has(u.id)).length,
@@ -487,9 +492,7 @@ export default function PeoplePage({ programs }: PeoplePageProps) {
                       sx={{ fontSize: '0.8rem' }}
                     >
                       <MenuItem value=""><em>All</em></MenuItem>
-                      <MenuItem value="admin">admin</MenuItem>
-                      <MenuItem value="instructor">instructor</MenuItem>
-                      <MenuItem value="student">student</MenuItem>
+                      {ROLES.map((r) => <MenuItem key={r} value={r}>{r}</MenuItem>)}
                     </Select>
                   </FormControl>
                 </TableCell>
@@ -615,9 +618,7 @@ export default function PeoplePage({ programs }: PeoplePageProps) {
               value={bulkRole}
               onChange={(e: SelectChangeEvent) => setBulkRole(e.target.value)}
             >
-              <MenuItem value="admin">admin</MenuItem>
-              <MenuItem value="instructor">instructor</MenuItem>
-              <MenuItem value="student">student</MenuItem>
+              {ROLES.map((r) => <MenuItem key={r} value={r}>{r}</MenuItem>)}
             </Select>
           </FormControl>
         </DialogContent>

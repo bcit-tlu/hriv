@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.routers.users import (
+    VALID_ROLES,
     _user_to_out,
     _set_user_programs,
     list_users,
