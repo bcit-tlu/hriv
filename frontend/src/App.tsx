@@ -1046,8 +1046,11 @@ export default function App() {
     }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms]);
 
     // Background refresh: re-fetch categories and uncategorized images every
-    // 30 s while the tab is visible.  Uses ETag-based conditional requests so
-    // the server returns 304 when nothing changed (no payload transferred).
+    // 30 s while the tab is visible.  The category tree endpoint returns
+    // ETag + Cache-Control: private, no-cache so the browser's default fetch
+    // cache mode transparently sends If-None-Match and receives 304 when
+    // nothing changed (relies on browser-level HTTP caching, not explicit
+    // header management in api.ts).
     const backgroundRefresh = useCallback(async () => {
         await loadCategories(true);
         await loadUncategorizedImages();
