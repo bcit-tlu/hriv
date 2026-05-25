@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.3](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.2...backend-v0.17.3) (2026-05-25)
+
+
+### Bug Fixes
+
+* **backend:** remove PII from GitHub issue reports ([#474](https://github.com/bcit-tlu/hriv/issues/474)) ([31609ae](https://github.com/bcit-tlu/hriv/commit/31609aef657e76b104b195341dfddec4c0f2205f))
+
 ## [0.17.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.1...backend-v0.17.2) (2026-05-25)
 
 
