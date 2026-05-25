@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.16.2...frontend-v0.17.0) (2026-05-25)
+
+
+### Features
+
+* **frontend:** PeoplePage bulk management, filters, pagination, and program pills ([#482](https://github.com/bcit-tlu/hriv/issues/482)) ([20558b1](https://github.com/bcit-tlu/hriv/commit/20558b1d638e308cb25f537c070a0812a179a40c))
+
+
+### Bug Fixes
+
+* **backend:** allow instructors to see people in search results ([#478](https://github.com/bcit-tlu/hriv/issues/478)) ([1c013e6](https://github.com/bcit-tlu/hriv/commit/1c013e6c12bccb944fab725399d20f6413eddc38))
+* **frontend:** Programs label overlap + search-to-edit-modal linking ([#484](https://github.com/bcit-tlu/hriv/issues/484)) ([f61c59d](https://github.com/bcit-tlu/hriv/commit/f61c59d9945736d5b21ee7cd450b333b8fdfb42c))
+
 ## [0.16.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.16.1...frontend-v0.16.2) (2026-05-25)
 
 
