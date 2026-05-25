@@ -7,12 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import require_role, hash_password
 from ..database import get_db
 from ..models import Program, User
-from ..schemas import UserCreate, UserUpdate, UserBulkUpdate, UserOut
+from ..schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete, UserOut
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 _admin = require_role("admin")
 _editor = require_role("admin", "instructor")
+
+VALID_ROLES = {"admin", "instructor", "student"}
 
 
 def _user_to_out(user: User) -> dict:
@@ -60,20 +62,6 @@ async def list_users(
     return [_user_to_out(u) for u in users]
 
 
-@router.get("/{user_id}", response_model=UserOut)
-async def get_user(
-    user_id: int,
-    _user: Annotated[User, Depends(_admin)],
-    db: AsyncSession = Depends(get_db),
-):
-    stmt = select(User).where(User.id == user_id)
-    result = await db.execute(stmt)
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return _user_to_out(user)
-
-
 @router.post("/", response_model=UserOut, status_code=201)
 async def create_user(
     body: UserCreate,
@@ -92,6 +80,84 @@ async def create_user(
     await _set_user_programs(db, user, body.program_ids)
     await db.commit()
     await db.refresh(user, ["programs"])
+    return _user_to_out(user)
+
+
+@router.patch("/bulk/program", response_model=list[UserOut])
+async def bulk_update_program(
+    body: UserBulkUpdate,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-update the program associations for multiple users."""
+    stmt = select(User).where(User.id.in_(body.user_ids))
+    result = await db.execute(stmt)
+    users = result.scalars().unique().all()
+    if len(users) != len(set(body.user_ids)):
+        raise HTTPException(status_code=404, detail="One or more users not found")
+    for user in users:
+        await _set_user_programs(db, user, body.program_ids)
+    await db.commit()
+    # Reload to get updated programs
+    stmt = select(User).where(User.id.in_(body.user_ids))
+    result = await db.execute(stmt)
+    users = result.scalars().unique().all()
+    return [_user_to_out(u) for u in users]
+
+
+@router.patch("/bulk/role", response_model=list[UserOut])
+async def bulk_update_role(
+    body: UserBulkRoleUpdate,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-update the role for multiple users."""
+    if body.role not in VALID_ROLES:
+        raise HTTPException(status_code=422, detail=f"Invalid role: {body.role}")
+    stmt = select(User).where(User.id.in_(body.user_ids))
+    result = await db.execute(stmt)
+    users = result.scalars().unique().all()
+    if len(users) != len(set(body.user_ids)):
+        raise HTTPException(status_code=404, detail="One or more users not found")
+    for user in users:
+        user.role = body.role
+    await db.commit()
+    stmt = select(User).where(User.id.in_(body.user_ids))
+    result = await db.execute(stmt)
+    users = result.scalars().unique().all()
+    return [_user_to_out(u) for u in users]
+
+
+@router.delete("/bulk", status_code=204)
+async def bulk_delete_users(
+    body: UserBulkDelete,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-delete multiple users."""
+    if _user.id in body.user_ids:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    stmt = select(User).where(User.id.in_(body.user_ids))
+    result = await db.execute(stmt)
+    users = result.scalars().unique().all()
+    if len(users) != len(set(body.user_ids)):
+        raise HTTPException(status_code=404, detail="One or more users not found")
+    for user in users:
+        await db.delete(user)
+    await db.commit()
+
+
+@router.get("/{user_id}", response_model=UserOut)
+async def get_user(
+    user_id: int,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    stmt = select(User).where(User.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
     return _user_to_out(user)
 
 
@@ -120,28 +186,6 @@ async def update_user(
     await db.commit()
     await db.refresh(user, ["programs"])
     return _user_to_out(user)
-
-
-@router.patch("/bulk/program", response_model=list[UserOut])
-async def bulk_update_program(
-    body: UserBulkUpdate,
-    _user: Annotated[User, Depends(_admin)],
-    db: AsyncSession = Depends(get_db),
-):
-    """Bulk-update the program associations for multiple users."""
-    stmt = select(User).where(User.id.in_(body.user_ids))
-    result = await db.execute(stmt)
-    users = result.scalars().unique().all()
-    if len(users) != len(body.user_ids):
-        raise HTTPException(status_code=404, detail="One or more users not found")
-    for user in users:
-        await _set_user_programs(db, user, body.program_ids)
-    await db.commit()
-    # Reload to get updated programs
-    stmt = select(User).where(User.id.in_(body.user_ids))
-    result = await db.execute(stmt)
-    users = result.scalars().unique().all()
-    return [_user_to_out(u) for u in users]
 
 
 @router.delete("/{user_id}", status_code=204)
