@@ -180,9 +180,10 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
           maxWidth: 300,
           position: 'relative',
           opacity: dragging ? 0.4 : 1,
-          transition: 'opacity 0.15s, box-shadow 0.15s, border-color 0.2s, transform 0.15s',
-          border: dragOver ? '3px dashed' : '3px solid transparent',
-          borderColor: dragOver ? 'primary.main' : 'transparent',
+          transition: 'opacity 0.15s, box-shadow 0.15s, outline-color 0.2s, transform 0.15s',
+          outline: '3px dashed',
+          outlineColor: dragOver ? 'primary.main' : 'transparent',
+          outlineOffset: -3,
           transform: dragOver ? 'scale(1.03)' : 'scale(1)',
         }}
       >
