@@ -1774,9 +1774,13 @@ export default function App() {
             fileDragCounter.current += 1;
             if (fileDragCounter.current === 1) setFileDragActive(true);
         };
-        const handleDragLeave = () => {
+        const handleDragLeave = (e: DragEvent) => {
+            if (!e.dataTransfer?.types.includes("Files")) return;
             fileDragCounter.current -= 1;
             if (fileDragCounter.current === 0) setFileDragActive(false);
+        };
+        const handleDragOver = (e: DragEvent) => {
+            if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
         };
         const handleDrop = () => {
             fileDragCounter.current = 0;
@@ -1784,10 +1788,12 @@ export default function App() {
         };
         window.addEventListener("dragenter", handleDragEnter);
         window.addEventListener("dragleave", handleDragLeave);
+        window.addEventListener("dragover", handleDragOver);
         window.addEventListener("drop", handleDrop);
         return () => {
             window.removeEventListener("dragenter", handleDragEnter);
             window.removeEventListener("dragleave", handleDragLeave);
+            window.removeEventListener("dragover", handleDragOver);
             window.removeEventListener("drop", handleDrop);
         };
     }, [canEditContent]);
