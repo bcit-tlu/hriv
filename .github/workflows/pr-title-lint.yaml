@@ -102,10 +102,10 @@ jobs:
               echo "::warning::PR scope is '$scope' but files touch multiple components: $touched_names. Use an unscoped title or split into separate PRs to keep changelogs accurate."
               echo "mismatch=true" >> "$GITHUB_OUTPUT"
               echo "reason=Scope **$scope** but files touch multiple components: **$touched_names**." >> "$GITHUB_OUTPUT"
-            elif [[ $touched_count -eq 1 && -z "${touched[$scope]+x}" ]]; then
-              echo "::warning::PR scope is '$scope' but no files in $scope/ were changed (only $touched_names). The changelog entry will have a misleading label."
+            elif [[ -z "${touched[$scope]+x}" ]]; then
+              echo "::warning::PR scope is '$scope' but no files in $scope/ were changed (touched: ${touched_names:-none}). The changelog entry will have a misleading label."
               echo "mismatch=true" >> "$GITHUB_OUTPUT"
-              echo "reason=Scope **$scope** but only **$touched_names** files changed." >> "$GITHUB_OUTPUT"
+              echo "reason=Scope **$scope** but only **${touched_names:-root/other}** files changed." >> "$GITHUB_OUTPUT"
             else
               echo "mismatch=false" >> "$GITHUB_OUTPUT"
             fi
@@ -128,7 +128,7 @@ jobs:
             **To fix:** either remove the scope (e.g. `fix: ...`) so the label is neutral, or split the changes into separate PRs per component.
 
       - name: Clear scope mismatch warning
-        if: steps.scope-check.outputs.mismatch != 'true'
+        if: always() && steps.scope-check.outputs.mismatch != 'true'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: scope-mismatch
