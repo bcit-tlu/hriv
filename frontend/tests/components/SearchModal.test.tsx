@@ -41,6 +41,17 @@ const testCategory: Category = {
             active: true,
             version: 1,
         },
+        {
+            id: 11,
+            name: "Kidney Cross",
+            thumb: "/thumb/11.jpg",
+            tileSources: "/tiles/11.dzi",
+            categoryId: 1,
+            copyright: "Kidney Foundation 2026",
+            note: "Cross-section of kidney cortex",
+            active: true,
+            version: 1,
+        },
     ],
     programIds: [1],
     status: null,
@@ -371,18 +382,92 @@ describe("SearchModal", () => {
         expect(chipElements.length).toBeGreaterThan(0);
     });
 
-    it("hides program results from student role", async () => {
+    it("deduplicates results matching multiple fields into a single card", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        // "Kidney" matches both image name ("Kidney Cross") and copyright ("Kidney Foundation 2026")
+        await user.type(input, "Kidney");
+
+        // Should show one card (deduplicated) with both field matches
+        const cards = screen.getAllByText("Kidney Cross").filter(
+            (el) => el.closest('[class*="MuiCardActionArea"]'),
+        );
+        expect(cards).toHaveLength(1);
+
+        // Both matched fields should be visible within the same card
+        const card = cards[0].closest('[class*="MuiCard"]')!;
+        expect(card.textContent).toContain("Name:");
+        expect(card.textContent).toContain("Copyright:");
+    });
+
+    it("hides program and people results from student role", async () => {
         const user = userEvent.setup();
         render(<SearchModal {...defaultProps} isStudent={true} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories and images",
+        );
+        await user.type(input, "Medical Lab");
+
+        // Should still find categories and images via program search,
+        // but should NOT show the program or people type filter chips
+        expect(screen.queryByText("Programs")).not.toBeInTheDocument();
+        expect(screen.queryByText("People")).not.toBeInTheDocument();
+    });
+
+    it("calls onSelectProgram with program name when a program result is clicked", async () => {
+        const user = userEvent.setup();
+        const onClose = vi.fn();
+        const onSelectProgram = vi.fn();
+        render(
+            <SearchModal
+                {...defaultProps}
+                onClose={onClose}
+                onSelectProgram={onSelectProgram}
+                open={true}
+            />,
+        );
 
         const input = screen.getByPlaceholderText(
             "Search categories, images, programs, people",
         );
         await user.type(input, "Medical Lab");
 
-        // Should still find categories and images via program search,
-        // but should NOT show the program type filter chip
-        expect(screen.queryByText("Programs")).not.toBeInTheDocument();
+        // Program results render their label as a default Chip (no color prop),
+        // while other results show program names as color="primary" chips.
+        const chips = screen
+            .getAllByText("Medical Lab Science")
+            .filter((el) => {
+                const chip = el.closest('[class*="MuiChip-root"]');
+                return (
+                    chip &&
+                    !chip.className.includes("MuiChip-colorPrimary") &&
+                    el.closest('[class*="MuiCardActionArea"]')
+                );
+            });
+        expect(chips.length).toBeGreaterThan(0);
+        const actionArea = chips[0].closest('[class*="MuiCardActionArea"]')!;
+        await user.click(actionArea);
+
+        expect(onClose).toHaveBeenCalled();
+        expect(onSelectProgram).toHaveBeenCalledWith("Medical Lab Science");
+    });
+
+    it("hides user results from student role", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} isStudent={true} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories and images",
+        );
+        await user.type(input, "Jane");
+
+        // Student should not see user results
+        expect(screen.queryByText("Jane Doe")).not.toBeInTheDocument();
     });
 
     it("hides program chips on results from student role", async () => {
@@ -390,7 +475,7 @@ describe("SearchModal", () => {
         render(<SearchModal {...defaultProps} isStudent={true} open={true} />);
 
         const input = screen.getByPlaceholderText(
-            "Search categories, images, programs, people",
+            "Search categories and images",
         );
         await user.type(input, "Histology");
 

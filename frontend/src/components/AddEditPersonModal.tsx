@@ -148,7 +148,11 @@ function AddEditPersonForm({
               </MenuItem>
             ))}
           </Select>
-          <FormHelperText>Select one or more programs to restrict access</FormHelperText>
+          <FormHelperText>
+            {role === 'student'
+              ? 'Select one or more programs to restrict access'
+              : 'Instructors and admins can see all content regardless of program assignment'}
+          </FormHelperText>
         </FormControl>
       </DialogContent>
       <DialogActions>
