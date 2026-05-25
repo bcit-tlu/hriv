@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.0...backend-v0.17.1) (2026-05-25)
+
+
+### Bug Fixes
+
+* **backend:** extract shared get_client_ip and configure proxy headers ([#461](https://github.com/bcit-tlu/hriv/issues/461)) ([04bff47](https://github.com/bcit-tlu/hriv/commit/04bff476436d9c41c66d0832980e1bfbac80c3ea))
+
 ## [0.17.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.16.0...backend-v0.17.0) (2026-05-20)
 
 
