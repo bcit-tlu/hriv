@@ -99,14 +99,14 @@ jobs:
           done
 
           if [[ "$is_component_scope" == "true" ]]; then
-            if [[ $touched_count -gt 1 ]]; then
+            if [[ -z "${touched[$scope]+x}" ]]; then
+              echo "::warning::PR scope is '$scope' but no files in $scope/ were changed (touched: ${touched_names:-none}). The changelog entry will have a misleading label."
+              echo "mismatch=true" >> "$GITHUB_OUTPUT"
+              echo "reason=Scope **$scope** but no files in \`$scope/\` were changed (touched: **${touched_names:-root/other}**)." >> "$GITHUB_OUTPUT"
+            elif [[ $touched_count -gt 1 ]]; then
               echo "::warning::PR scope is '$scope' but files touch multiple components: $touched_names. Use an unscoped title or split into separate PRs to keep changelogs accurate."
               echo "mismatch=true" >> "$GITHUB_OUTPUT"
               echo "reason=Scope **$scope** but files touch multiple components: **$touched_names**." >> "$GITHUB_OUTPUT"
-            elif [[ -z "${touched[$scope]+x}" ]]; then
-              echo "::warning::PR scope is '$scope' but no files in $scope/ were changed (touched: ${touched_names:-none}). The changelog entry will have a misleading label."
-              echo "mismatch=true" >> "$GITHUB_OUTPUT"
-              echo "reason=Scope **$scope** but only **${touched_names:-root/other}** files changed." >> "$GITHUB_OUTPUT"
             else
               echo "mismatch=false" >> "$GITHUB_OUTPUT"
             fi
