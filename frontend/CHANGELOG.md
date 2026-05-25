@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.16.0...frontend-v0.16.1) (2026-05-25)
+
+
+### Bug Fixes
+
+* **frontend:** defer fileDragActive reset so FileDropZone onDrop fires ([#466](https://github.com/bcit-tlu/hriv/issues/466)) ([ae6bad8](https://github.com/bcit-tlu/hriv/commit/ae6bad845bf0c7dfa2220450ee707270626d08de))
+
 ## [0.16.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.15.0...frontend-v0.16.0) (2026-05-25)
 
 
