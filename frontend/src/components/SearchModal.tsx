@@ -25,9 +25,18 @@ import type { ApiUser } from '../api'
 
 type ResultKind = 'category' | 'image' | 'program' | 'user'
 
+interface FieldMatch {
+  field: string
+  fieldValue: string
+  matchIndex: number
+  matchLength: number
+}
+
 interface SearchResult {
   kind: ResultKind
   id: number
+  /** Real entity identifier for deduplication (e.g. cat.id, img.id, user.id) */
+  entityId: number
   /** Primary label shown in bold */
   label: string
   /** Which field matched */
@@ -39,6 +48,14 @@ interface SearchResult {
   /** Length of the matched query string */
   matchLength: number
   /** Extra payload needed for navigation */
+  payload: CategoryPayload | ImagePayload | ProgramPayload | UserPayload
+}
+
+interface GroupedResult {
+  kind: ResultKind
+  entityId: number
+  label: string
+  matches: FieldMatch[]
   payload: CategoryPayload | ImagePayload | ProgramPayload | UserPayload
 }
 
@@ -151,7 +168,7 @@ function findFirstTermMatch(
 
 /** Resolve program names for a search result (categories, images, users). */
 function getResultProgramNames(
-  result: SearchResult,
+  result: SearchResult | GroupedResult,
   programMap: Map<number, string>,
 ): string[] {
   const { payload } = result
@@ -193,6 +210,7 @@ function collectCategoryResults(
       results.push({
         kind: 'category',
         id: cat.id,
+        entityId: cat.id,
         label: cat.label,
         field: 'Name',
         fieldValue: cat.label,
@@ -209,6 +227,7 @@ function collectCategoryResults(
         results.push({
           kind: 'category',
           id: cat.id * 1000 + pid,
+          entityId: cat.id,
           label: cat.label,
           field: 'Program',
           fieldValue: pName,
@@ -269,6 +288,7 @@ function addImageMatches(
       results.push({
         kind: 'image',
         id: img.id * 1000 + fi,
+        entityId: img.id,
         label: img.name,
         field,
         fieldValue: value,
@@ -292,7 +312,7 @@ interface SearchModalProps {
   isStudent: boolean
   onSelectCategory: (path: Category[]) => void
   onSelectImage: (image: ImageItem, path: Category[]) => void
-  onSelectProgram: () => void
+  onSelectProgram: (programName: string) => void
   onSelectUser: () => void
   /** Pre-fill the search query when the modal opens. */
   initialQuery?: string
@@ -396,6 +416,7 @@ export default function SearchModal({
             results.push({
               kind: 'program',
               id: prog.id,
+              entityId: prog.id,
               label: prog.name,
               field: 'Name',
               fieldValue: prog.name,
@@ -407,30 +428,33 @@ export default function SearchModal({
         }
       }
 
-      // 5. Users
-      for (const user of users) {
-        const userFields: { field: string; value: string }[] = [
-          { field: 'Name', value: user.name },
-          { field: 'Email', value: user.email },
-          { field: 'Role', value: user.role },
-        ]
-        for (const pName of user.program_names ?? []) {
-          userFields.push({ field: 'Program', value: pName })
-        }
-        for (let fi = 0; fi < userFields.length; fi++) {
-          const { field, value } = userFields[fi]
-          const m = findFirstTermMatch(value, terms)
-          if (m) {
-            results.push({
-              kind: 'user',
-              id: user.id * 1000 + fi,
-              label: user.name,
-              field,
-              fieldValue: value,
-              matchIndex: m.index,
-              matchLength: m.length,
-              payload: { kind: 'user', userId: user.id, programNames: user.program_names ?? [] },
-            })
+      // 5. Users (hidden from students)
+      if (!isStudent) {
+        for (const user of users) {
+          const userFields: { field: string; value: string }[] = [
+            { field: 'Name', value: user.name },
+            { field: 'Email', value: user.email },
+            { field: 'Role', value: user.role },
+          ]
+          for (const pName of user.program_names ?? []) {
+            userFields.push({ field: 'Program', value: pName })
+          }
+          for (let fi = 0; fi < userFields.length; fi++) {
+            const { field, value } = userFields[fi]
+            const m = findFirstTermMatch(value, terms)
+            if (m) {
+              results.push({
+                kind: 'user',
+                id: user.id * 1000 + fi,
+                entityId: user.id,
+                label: user.name,
+                field,
+                fieldValue: value,
+                matchIndex: m.index,
+                matchLength: m.length,
+                payload: { kind: 'user', userId: user.id, programNames: user.program_names ?? [] },
+              })
+            }
           }
         }
       }
@@ -454,12 +478,43 @@ export default function SearchModal({
     return filtered
   }, [allResults, typeFilters, fieldFilters])
 
+  // Deduplicate: group by entity (kind + entityId), merge field matches
+  const groupedResults = useMemo(() => {
+    const groups = new Map<string, GroupedResult>()
+    for (const r of filteredResults) {
+      const key = `${r.kind}-${r.entityId}`
+      const existing = groups.get(key)
+      if (existing) {
+        existing.matches.push({
+          field: r.field,
+          fieldValue: r.fieldValue,
+          matchIndex: r.matchIndex,
+          matchLength: r.matchLength,
+        })
+      } else {
+        groups.set(key, {
+          kind: r.kind,
+          entityId: r.entityId,
+          label: r.label,
+          matches: [{
+            field: r.field,
+            fieldValue: r.fieldValue,
+            matchIndex: r.matchIndex,
+            matchLength: r.matchLength,
+          }],
+          payload: r.payload,
+        })
+      }
+    }
+    return [...groups.values()]
+  }, [filteredResults])
+
   const displayResults = useMemo(
-    () => filteredResults.slice(0, MAX_RESULTS),
-    [filteredResults],
+    () => groupedResults.slice(0, MAX_RESULTS),
+    [groupedResults],
   )
 
-  const handleSelect = (result: SearchResult) => {
+  const handleSelect = (result: GroupedResult) => {
     onClose()
     switch (result.payload.kind) {
       case 'category':
@@ -469,7 +524,7 @@ export default function SearchModal({
         onSelectImage(result.payload.image, result.payload.categoryPath)
         break
       case 'program':
-        onSelectProgram()
+        onSelectProgram(result.label)
         break
       case 'user':
         onSelectUser()
@@ -497,7 +552,7 @@ export default function SearchModal({
         <TextField
           autoFocus
           fullWidth
-          placeholder="Search categories, images, programs, people"
+          placeholder={isStudent ? "Search categories and images" : "Search categories, images, programs, people"}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           slotProps={{
@@ -517,7 +572,7 @@ export default function SearchModal({
             <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', mr: 0.5 }}>
               Type:
             </Typography>
-            {TYPE_FILTERS.filter((f) => !(isStudent && f.key === 'program')).map((f) => (
+            {TYPE_FILTERS.filter((f) => !(isStudent && (f.key === 'program' || f.key === 'user'))).map((f) => (
               <Tooltip key={f.key} title={f.tooltip}>
                 <Chip
                   icon={f.icon}
@@ -534,7 +589,7 @@ export default function SearchModal({
             <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', mr: 0.5 }}>
               Field:
             </Typography>
-            {FIELD_FILTERS.map((f) => (
+            {FIELD_FILTERS.filter((f) => !(isStudent && f.key === 'Role')).map((f) => (
               <Tooltip key={f.key} title={f.tooltip}>
                 <Chip
                   icon={f.icon}
@@ -557,7 +612,7 @@ export default function SearchModal({
                 Start typing to search&hellip;
               </Typography>
             </Box>
-          ) : filteredResults.length === 0 ? (
+          ) : groupedResults.length === 0 ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: 200 }}>
               <Typography variant="body1" color="text.secondary">
                 No results found for &ldquo;{query}&rdquo;
@@ -566,21 +621,16 @@ export default function SearchModal({
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
               <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                {filteredResults.length > MAX_RESULTS
-                  ? `Showing ${MAX_RESULTS} of ${filteredResults.length} results`
-                  : `${filteredResults.length} result${filteredResults.length !== 1 ? 's' : ''}`}
+                {groupedResults.length > MAX_RESULTS
+                  ? `Showing ${MAX_RESULTS} of ${groupedResults.length} results`
+                  : `${groupedResults.length} result${groupedResults.length !== 1 ? 's' : ''}`}
               </Typography>
-              {displayResults.map((result, i) => {
-                const { before, match, after } = contextSnippet(
-                  result.fieldValue,
-                  result.matchIndex,
-                  result.matchLength,
-                )
+              {displayResults.map((result) => {
                 const chipNames = getResultProgramNames(result, programMap)
                 const catPath = result.payload.kind === 'image' ? result.payload.categoryPath : null
                 const thumb = result.payload.kind === 'image' ? result.payload.image.thumb : null
                 return (
-                  <Card key={`${result.kind}-${result.id}-${i}`} variant="outlined">
+                  <Card key={`${result.kind}-${result.entityId}`} variant="outlined">
                     <CardActionArea
                       onClick={() => handleSelect(result)}
                       sx={{ p: 2, display: 'flex', alignItems: 'flex-start', gap: 2 }}
@@ -630,19 +680,28 @@ export default function SearchModal({
                             </Box>
                           )}
                         </Box>
-                        <Typography variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
-                          <Typography variant="caption" color="text.disabled" component="span">
-                            {result.field}:{' '}
-                          </Typography>
-                          {before}
-                          <Box
-                            component="span"
-                            sx={{ bgcolor: 'warning.light', color: 'warning.contrastText', borderRadius: 0.5, px: 0.25 }}
-                          >
-                            {match}
-                          </Box>
-                          {after}
-                        </Typography>
+                        {result.matches.map((fm, mi) => {
+                          const { before, match, after } = contextSnippet(
+                            fm.fieldValue,
+                            fm.matchIndex,
+                            fm.matchLength,
+                          )
+                          return (
+                            <Typography key={mi} variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                              <Typography variant="caption" color="text.disabled" component="span">
+                                {fm.field}:{' '}
+                              </Typography>
+                              {before}
+                              <Box
+                                component="span"
+                                sx={{ bgcolor: 'warning.light', color: 'warning.contrastText', borderRadius: 0.5, px: 0.25 }}
+                              >
+                                {match}
+                              </Box>
+                              {after}
+                            </Typography>
+                          )
+                        })}
                         {catPath && catPath.length > 0 && (
                           <Box sx={{ display: 'inline-flex', alignItems: 'center', mt: 0.5, flexWrap: 'wrap' }}>
                             <CategoryIcon sx={{ fontSize: 14, color: 'text.disabled', mr: 0.5 }} />

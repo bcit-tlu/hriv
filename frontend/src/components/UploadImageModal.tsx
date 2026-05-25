@@ -431,13 +431,7 @@ export default function UploadImageModal({
               </Box>
             )}
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-              Images are processed after upload to generate a zoomable view, with the name set to their filename.
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: -1 }}>
-              ---
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: -1 }}>
-              Zip files will be extracted and all image files inside will be imported. You can bulk-edit metadata later from the <strong>Images</strong> page.
+              Uploaded images are processed into zoomable views and named from their filenames. ZIP uploads are automatically extracted and imported, and metadata can be bulk-edited later from the <strong>Images</strong> page.
             </Typography>
         {error && (
           <Alert severity="error" sx={{ mt: 1 }} onClose={() => setError(null)}>

@@ -145,6 +145,8 @@ interface ManagePageProps {
   onUploadFailed?: (uploadId: number, error: string) => void
   onUploadOpenChange?: (isOpen: boolean) => void
   onSearchProgram?: (programName: string) => void
+  initialProgramFilter?: string
+  onInitialProgramFilterConsumed?: () => void
 }
 
 export default function ManagePage({
@@ -165,6 +167,8 @@ export default function ManagePage({
   onUploadFailed,
   onUploadOpenChange,
   onSearchProgram,
+  initialProgramFilter,
+  onInitialProgramFilterConsumed,
 }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
@@ -209,6 +213,16 @@ export default function ManagePage({
   // Pagination state
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [currentPage, setCurrentPage] = useState(0)
+
+  // Apply initial program filter from external navigation (e.g. search)
+  useEffect(() => {
+    if (initialProgramFilter) {
+      setFilters((prev) => ({ ...prev, program: initialProgramFilter }))
+      setShowFilters(true)
+      setCurrentPage(0)
+      onInitialProgramFilterConsumed?.()
+    }
+  }, [initialProgramFilter, onInitialProgramFilterConsumed])
 
   // Action menu state
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)

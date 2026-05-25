@@ -418,6 +418,10 @@ export default function App() {
     const [searchInitialQuery, setSearchInitialQuery] = useState<string | undefined>(undefined);
     const [searchInitialTypeFilter, setSearchInitialTypeFilter] = useState<string | undefined>(undefined);
 
+    // Initial program filter for ManagePage (set when navigating from search)
+    const [manageProgramFilter, setManageProgramFilter] = useState<string | undefined>(undefined);
+    const clearManageProgramFilter = useCallback(() => setManageProgramFilter(undefined), []);
+
     // Manage menu state
     const [manageMenuAnchor, setManageMenuAnchor] =
         useState<HTMLElement | null>(null);
@@ -2760,6 +2764,8 @@ export default function App() {
                                 setSearchInitialTypeFilter('program');
                                 setSearchOpen(true);
                             }}
+                            initialProgramFilter={manageProgramFilter}
+                            onInitialProgramFilterConsumed={clearManageProgramFilter}
                         />
                     ) : selectedImage ? (
                         /* ---- Viewer mode ---- */
@@ -3996,10 +4002,11 @@ export default function App() {
                         image.id,
                     );
                 }}
-                onSelectProgram={() => {
-                    if (canManageUsers) {
-                        setPage("people");
-                        pushNavState("people");
+                onSelectProgram={(programName) => {
+                    if (canEditContent) {
+                        setManageProgramFilter(programName);
+                        setPage("manage");
+                        pushNavState("manage");
                     }
                 }}
                 onSelectUser={() => {
