@@ -64,6 +64,7 @@ import SearchModal from "./components/SearchModal";
 import type { TypeFilter } from "./components/SearchModal";
 import { narrowProgramIds } from "./categoryUtils";
 import UploadImageModal from "./components/UploadImageModal";
+import { isAcceptedFile } from "./fileUtils";
 import { useAuth } from "./useAuth";
 import {
     fetchCategoryTree,
@@ -242,6 +243,7 @@ export default function App() {
     const [lockEngaged, setLockEngaged] = useState(false);
     const [snackOpen, setSnackOpen] = useState(false);
     const [errorSnack, setErrorSnack] = useState<string | null>(null);
+    const [warnSnack, setWarnSnack] = useState<string | null>(null);
     const pendingImageId = useRef<number | null>(null);
     const pendingViewport = useRef<ViewportState | undefined>(undefined);
     const pendingOverlays = useRef<OverlayRect[] | undefined>(undefined);
@@ -3301,12 +3303,25 @@ export default function App() {
                                                   )
                                               ) {
                                                   e.preventDefault();
-                                                  setDroppedFiles(
-                                                      Array.from(
-                                                          e.dataTransfer.files,
-                                                      ),
+                                                  const all = Array.from(
+                                                      e.dataTransfer.files,
                                                   );
-                                                  setUploadOpen(true);
+                                                  const accepted =
+                                                      all.filter(
+                                                          isAcceptedFile,
+                                                      );
+                                                  const rejected =
+                                                      all.length -
+                                                      accepted.length;
+                                                  if (rejected > 0) {
+                                                      setWarnSnack(
+                                                          `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
+                                                      );
+                                                  }
+                                                  if (accepted.length > 0) {
+                                                      setDroppedFiles(accepted);
+                                                      setUploadOpen(true);
+                                                  }
                                               }
                                           }
                                         : undefined
@@ -3361,10 +3376,27 @@ export default function App() {
                                         }
                                         onDropFiles={
                                             canEditContent
-                                                ? (categoryId) => {
+                                                ? (categoryId, files) => {
+                                                      const accepted =
+                                                          files.filter(
+                                                              isAcceptedFile,
+                                                          );
+                                                      const rejected =
+                                                          files.length -
+                                                          accepted.length;
+                                                      if (rejected > 0) {
+                                                          setWarnSnack(
+                                                              `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
+                                                          );
+                                                      }
                                                       setFileDropCategoryId(
                                                           categoryId,
                                                       );
+                                                      if (accepted.length > 0) {
+                                                          setDroppedFiles(
+                                                              accepted,
+                                                          );
+                                                      }
                                                       setUploadOpen(true);
                                                   }
                                                 : undefined
@@ -3905,6 +3937,23 @@ export default function App() {
                     },
                 }}
             />
+
+            {/* Warning snackbar (e.g. unsupported file drops) */}
+            <Snackbar
+                open={warnSnack !== null}
+                autoHideDuration={6000}
+                onClose={() => setWarnSnack(null)}
+                anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+                sx={{ zIndex: 1500 }}
+            >
+                <Alert
+                    severity="warning"
+                    onClose={() => setWarnSnack(null)}
+                    variant="filled"
+                >
+                    {warnSnack}
+                </Alert>
+            </Snackbar>
 
             {/* Error snackbar */}
             <Snackbar
