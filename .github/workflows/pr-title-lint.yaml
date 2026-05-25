@@ -43,6 +43,89 @@ jobs:
             lowercase letter (imperative mood, no trailing period). See
             CONTRIBUTING.md for examples.
 
+      - name: Check scope matches changed components
+        if: success()
+        id: scope-check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          title="${{ github.event.pull_request.title }}"
+
+          # Extract scope from title (e.g. "backend" from "fix(backend): ...")
+          scope=""
+          if [[ "$title" =~ ^[a-z]+\(([^)]+)\) ]]; then
+            scope="${BASH_REMATCH[1]}"
+          fi
+
+          # If no scope, nothing to validate
+          if [[ -z "$scope" ]]; then
+            echo "No scope in title — skipping cross-component check"
+            exit 0
+          fi
+
+          # Component directories (from release-please-config.json)
+          components=("frontend" "backend" "backup")
+
+          # Get changed files via GitHub API
+          files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --paginate --jq '.[].filename')
+
+          # Determine which components have changed files
+          declare -A touched
+          for f in $files; do
+            for comp in "${components[@]}"; do
+              if [[ "$f" == "${comp}/"* ]]; then
+                touched["$comp"]=1
+              fi
+            done
+          done
+
+          touched_count=${#touched[@]}
+          touched_names="${!touched[*]}"
+          echo "Scope: $scope"
+          echo "Components touched ($touched_count): ${touched_names:-none}"
+
+          # If scope names a single component but files span multiple, warn
+          is_component_scope=false
+          for comp in "${components[@]}"; do
+            if [[ "$scope" == "$comp" ]]; then
+              is_component_scope=true
+              break
+            fi
+          done
+
+          if [[ "$is_component_scope" == "true" && $touched_count -gt 1 ]]; then
+            echo "::warning::PR scope is '$scope' but files touch multiple components: $touched_names. Use an unscoped title or split into separate PRs to keep changelogs accurate."
+            echo "mismatch=true" >> "$GITHUB_OUTPUT"
+            echo "scope=$scope" >> "$GITHUB_OUTPUT"
+            echo "touched=$touched_names" >> "$GITHUB_OUTPUT"
+          else
+            echo "mismatch=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post scope mismatch warning
+        if: steps.scope-check.outputs.mismatch == 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: scope-mismatch
+          message: |
+            ## Scope vs. changed files mismatch
+
+            This PR title uses scope **${{ steps.scope-check.outputs.scope }}** but the diff touches files in multiple release-please components: **${{ steps.scope-check.outputs.touched }}**.
+
+            release-please routes commits to changelogs by **file path**, not by scope — so this commit will appear in all touched components' changelogs with the `${{ steps.scope-check.outputs.scope }}` label.
+
+            **To fix:** either remove the scope (e.g. `fix: ...`) so the label is neutral, or split the changes into separate PRs per component.
+
+      - name: Clear scope mismatch warning
+        if: steps.scope-check.outputs.mismatch != 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: scope-mismatch
+          delete: true
+
       - name: Post failure explainer comment
         if: failure() && steps.lint.outcome == 'failure'
         uses: marocchino/sticky-pull-request-comment@v2
