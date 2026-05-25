@@ -1782,7 +1782,8 @@ export default function App() {
         const handleDragOver = (e: DragEvent) => {
             if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
         };
-        const handleDrop = () => {
+        const handleDrop = (e: DragEvent) => {
+            if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
             fileDragCounter.current = 0;
             setFileDragActive(false);
         };
