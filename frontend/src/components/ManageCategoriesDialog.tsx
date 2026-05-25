@@ -181,7 +181,7 @@ export default function ManageCategoriesDialog({
   const [pendingDelete, setPendingDelete] = useState<FlatOption | null>(null)
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
-  const [editingCategory, setEditingCategory] = useState<FlatOption | null>(null)
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null)
 
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
@@ -192,6 +192,12 @@ export default function ManageCategoriesDialog({
   const addSiblingNames = useMemo(
     () => options.filter((o) => o.parentId === addParentId).map((o) => o.label),
     [options, addParentId],
+  )
+
+  // Derive editingCategory from ID + options so it stays fresh without an extra render
+  const editingCategory = useMemo(
+    () => editingCategoryId != null ? options.find((o) => o.id === editingCategoryId) ?? null : null,
+    [editingCategoryId, options],
   )
 
   const editSiblingNames = useMemo(
@@ -232,6 +238,12 @@ export default function ManageCategoriesDialog({
     return narrowProgramIds(ancestors)
   }, [editingCategory, options])
 
+  const currentProgramIds = useMemo(
+    () => editingCategory?.programIds ?? [],
+    [editingCategory?.programIds],
+  )
+
+
   const handleAddClick = (parentId: number | null, parentLabel?: string) => {
     setAddParentId(parentId)
     setAddParentLabel(parentLabel)
@@ -261,7 +273,7 @@ export default function ManageCategoriesDialog({
   }, [])
 
   const handleEditClick = useCallback((opt: FlatOption) => {
-    setEditingCategory(opt)
+    setEditingCategoryId(opt.id)
     setEditDialogOpen(true)
   }, [])
 
@@ -602,16 +614,16 @@ export default function ManageCategoriesDialog({
 
       {onEditCategory && (
         <EditCategoryDialog
-          open={editDialogOpen}
+          open={editDialogOpen && editingCategory != null}
           onClose={() => {
             setEditDialogOpen(false)
-            setEditingCategory(null)
+            setEditingCategoryId(null)
           }}
           onSave={handleEditSave}
           currentLabel={editingCategory?.label ?? ''}
           siblingNames={editSiblingNames}
           programs={programs}
-          currentProgramIds={editingCategory?.programIds ?? []}
+          currentProgramIds={currentProgramIds}
           inheritedProgramIds={inheritedProgramIds}
         />
       )}

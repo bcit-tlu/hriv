@@ -27,3 +27,21 @@ export function narrowProgramIds(
   }
   return effective
 }
+
+/**
+ * Given an ordered top-down category path (ancestors followed by the leaf
+ * category), compute the effective program restriction via narrowing and split
+ * the result into "direct" IDs (present on the leaf category itself) and
+ * "ancestor" IDs (inherited from above but not on the leaf).
+ */
+export function splitDirectAncestorProgramIds(
+  fullPath: ReadonlyArray<{ programIds: number[] }>,
+): { direct: number[]; ancestor: number[] } {
+  if (fullPath.length === 0) return { direct: [], ancestor: [] }
+  const ownCategory = fullPath[fullPath.length - 1]
+  const effective = narrowProgramIds(fullPath)
+  const directIds = new Set(ownCategory.programIds)
+  const direct = effective.filter((pid) => directIds.has(pid))
+  const ancestor = effective.filter((pid) => !directIds.has(pid))
+  return { direct, ancestor }
+}
