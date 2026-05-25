@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "hriv-backend"
-version = "0.17.3"
+version = "0.17.4"
 description = "HRIV Image Library API"
 authors = ["Devin AI"]
 package-mode = false
