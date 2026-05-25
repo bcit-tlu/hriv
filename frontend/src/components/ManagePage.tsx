@@ -195,8 +195,9 @@ export default function ManagePage({
     onUploadOpenChange?.(uploadOpen)
   }, [uploadOpen, onUploadOpenChange])
 
-  // Replace-image abort controller
+  // Replace-image abort controller and progress
   const replaceAbortRef = useRef<AbortController | null>(null)
+  const [replaceProgress, setReplaceProgress] = useState<number | undefined>(undefined)
 
   // Move modal state
   const [moveOpen, setMoveOpen] = useState(false)
@@ -962,8 +963,15 @@ export default function ManagePage({
         onReplace={editingImage ? async ({ file, formData }: ReplaceImageData) => {
           const abort = new AbortController()
           replaceAbortRef.current = abort
+          setReplaceProgress(0)
           try {
-            const result = await replaceImage(editingImage.id, file, undefined, abort.signal, formData)
+            const result = await replaceImage(
+              editingImage.id,
+              file,
+              (fraction) => { setReplaceProgress(fraction) },
+              abort.signal,
+              formData,
+            )
             onReplaceImage?.(result.id, file.name, file.size)
             setEditOpen(false)
             setEditingImage(null)
@@ -978,9 +986,11 @@ export default function ManagePage({
             throw err
           } finally {
             replaceAbortRef.current = null
+            setReplaceProgress(undefined)
           }
         } : undefined}
         onCancelReplace={() => replaceAbortRef.current?.abort()}
+        replaceUploadProgress={replaceProgress}
         image={editingImage}
         categories={categories}
         programs={programs}

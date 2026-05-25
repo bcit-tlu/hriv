@@ -140,7 +140,12 @@ export default function UploadImageModal({
   // Pre-populate files from external drag-and-drop
   useEffect(() => {
     if (open && initialFiles && initialFiles.length > 0) {
-      setFiles(initialFiles)
+      const accepted = initialFiles.filter(isAcceptedFile)
+      if (accepted.length === 0) return
+      setFiles(accepted)
+      if (accepted.length === 1 && isImageFile(accepted[0])) {
+        setName(accepted[0].name.replace(/\.[^.]+$/, ''))
+      }
     }
   }, [open, initialFiles])
 
