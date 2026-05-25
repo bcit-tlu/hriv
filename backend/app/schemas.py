@@ -280,6 +280,15 @@ class UserBulkUpdate(BaseModel):
     program_ids: list[int] = []
 
 
+class UserBulkRoleUpdate(BaseModel):
+    user_ids: list[int]
+    role: str
+
+
+class UserBulkDelete(BaseModel):
+    user_ids: list[int]
+
+
 # ── Image Bulk Operations ────────────────────────────────
 
 class ImageBulkUpdate(BaseModel):

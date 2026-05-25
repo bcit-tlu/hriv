@@ -329,6 +329,25 @@ export function bulkUpdateUserProgram(body: {
   })
 }
 
+export function bulkUpdateUserRole(body: {
+  user_ids: number[]
+  role: string
+}): Promise<ApiUser[]> {
+  return request('/users/bulk/role', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function bulkDeleteUsers(body: {
+  user_ids: number[]
+}): Promise<void> {
+  return request('/users/bulk', {
+    method: 'DELETE',
+    body: JSON.stringify(body),
+  })
+}
+
 // ── Programs ────────────────────────────────────────────
 
 export function fetchPrograms(): Promise<ApiProgram[]> {

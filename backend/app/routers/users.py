@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import require_role, hash_password
 from ..database import get_db
 from ..models import Program, User
-from ..schemas import UserCreate, UserUpdate, UserBulkUpdate, UserOut
+from ..schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete, UserOut
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -142,6 +142,49 @@ async def bulk_update_program(
     result = await db.execute(stmt)
     users = result.scalars().unique().all()
     return [_user_to_out(u) for u in users]
+
+
+@router.patch("/bulk/role", response_model=list[UserOut])
+async def bulk_update_role(
+    body: UserBulkRoleUpdate,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-update the role for multiple users."""
+    valid_roles = {"admin", "instructor", "student"}
+    if body.role not in valid_roles:
+        raise HTTPException(status_code=422, detail=f"Invalid role: {body.role}")
+    stmt = select(User).where(User.id.in_(body.user_ids))
+    result = await db.execute(stmt)
+    users = result.scalars().unique().all()
+    if len(users) != len(body.user_ids):
+        raise HTTPException(status_code=404, detail="One or more users not found")
+    for user in users:
+        user.role = body.role
+    await db.commit()
+    stmt = select(User).where(User.id.in_(body.user_ids))
+    result = await db.execute(stmt)
+    users = result.scalars().unique().all()
+    return [_user_to_out(u) for u in users]
+
+
+@router.delete("/bulk", status_code=204)
+async def bulk_delete_users(
+    body: UserBulkDelete,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-delete multiple users."""
+    if _user.id in body.user_ids:
+        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+    stmt = select(User).where(User.id.in_(body.user_ids))
+    result = await db.execute(stmt)
+    users = result.scalars().unique().all()
+    if len(users) != len(body.user_ids):
+        raise HTTPException(status_code=404, detail="One or more users not found")
+    for user in users:
+        await db.delete(user)
+    await db.commit()
 
 
 @router.delete("/{user_id}", status_code=204)
