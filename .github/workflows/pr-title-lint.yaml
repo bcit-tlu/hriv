@@ -63,6 +63,7 @@ jobs:
           # If no scope, nothing to validate
           if [[ -z "$scope" ]]; then
             echo "No scope in title — skipping cross-component check"
+            echo "mismatch=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
