@@ -48,10 +48,11 @@ jobs:
         id: scope-check
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           set -euo pipefail
 
-          title="${{ github.event.pull_request.title }}"
+          title="$PR_TITLE"
 
           # Extract scope from title (e.g. "backend" from "fix(backend): ...")
           scope=""
