@@ -97,11 +97,18 @@ jobs:
             fi
           done
 
-          if [[ "$is_component_scope" == "true" && $touched_count -gt 1 ]]; then
-            echo "::warning::PR scope is '$scope' but files touch multiple components: $touched_names. Use an unscoped title or split into separate PRs to keep changelogs accurate."
-            echo "mismatch=true" >> "$GITHUB_OUTPUT"
-            echo "scope=$scope" >> "$GITHUB_OUTPUT"
-            echo "touched=$touched_names" >> "$GITHUB_OUTPUT"
+          if [[ "$is_component_scope" == "true" ]]; then
+            if [[ $touched_count -gt 1 ]]; then
+              echo "::warning::PR scope is '$scope' but files touch multiple components: $touched_names. Use an unscoped title or split into separate PRs to keep changelogs accurate."
+              echo "mismatch=true" >> "$GITHUB_OUTPUT"
+              echo "reason=Scope **$scope** but files touch multiple components: **$touched_names**." >> "$GITHUB_OUTPUT"
+            elif [[ $touched_count -eq 1 && -z "${touched[$scope]+x}" ]]; then
+              echo "::warning::PR scope is '$scope' but no files in $scope/ were changed (only $touched_names). The changelog entry will have a misleading label."
+              echo "mismatch=true" >> "$GITHUB_OUTPUT"
+              echo "reason=Scope **$scope** but only **$touched_names** files changed." >> "$GITHUB_OUTPUT"
+            else
+              echo "mismatch=false" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "mismatch=false" >> "$GITHUB_OUTPUT"
           fi
@@ -114,9 +121,9 @@ jobs:
           message: |
             ## Scope vs. changed files mismatch
 
-            This PR title uses scope **${{ steps.scope-check.outputs.scope }}** but the diff touches files in multiple release-please components: **${{ steps.scope-check.outputs.touched }}**.
+            ${{ steps.scope-check.outputs.reason }}
 
-            release-please routes commits to changelogs by **file path**, not by scope — so this commit will appear in all touched components' changelogs with the `${{ steps.scope-check.outputs.scope }}` label.
+            release-please routes commits to changelogs by **file path**, not by scope — so changelog entries will have a misleading scope label.
 
             **To fix:** either remove the scope (e.g. `fix: ...`) so the label is neutral, or split the changes into separate PRs per component.
 
@@ -154,7 +161,7 @@ jobs:
             Edit the PR title in GitHub; this check reruns automatically.
 
       - name: Clear failure explainer on success
-        if: success() && steps.lint.outcome == 'success'
+        if: always() && steps.lint.outcome == 'success'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: pr-title-lint
