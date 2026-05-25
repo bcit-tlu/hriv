@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.16.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.15.0...frontend-v0.16.0) (2026-05-25)
+
+
+### Features
+
+* expand search to include all metadata fields ([#447](https://github.com/bcit-tlu/hriv/issues/447)) ([9eb2425](https://github.com/bcit-tlu/hriv/commit/9eb24257154c5c70a558ffce80fade7896163503))
+* **frontend:** add browser back/forward navigation via History API pushState ([#449](https://github.com/bcit-tlu/hriv/issues/449)) ([6c72ca0](https://github.com/bcit-tlu/hriv/commit/6c72ca09ed94b0c6f82a977cf5e78470bbbfb29f))
+* **frontend:** background refresh for image/category status propagation ([#460](https://github.com/bcit-tlu/hriv/issues/460)) ([019ac85](https://github.com/bcit-tlu/hriv/commit/019ac850422d35ebc1d1fb9eade3246d5fa92a19))
+* **frontend:** prominent file dropzone + enhanced card drag-over UX ([#462](https://github.com/bcit-tlu/hriv/issues/462)) ([ca88315](https://github.com/bcit-tlu/hriv/commit/ca88315ee47d1114b677fa8e7bcae3eabd74a9bd))
+
+
+### Bug Fixes
+
+* eliminate bulk import polling churn, remove dead refs, refresh ManagePage ([#292](https://github.com/bcit-tlu/hriv/issues/292), [#293](https://github.com/bcit-tlu/hriv/issues/293)) ([#448](https://github.com/bcit-tlu/hriv/issues/448)) ([baf9780](https://github.com/bcit-tlu/hriv/commit/baf97804eccaa3d4e0b86a9a62912bbb5c753a09))
+* **frontend:** UX polish batch — error toasts, replace-image abort, file drop ([#458](https://github.com/bcit-tlu/hriv/issues/458)) ([1b35a45](https://github.com/bcit-tlu/hriv/commit/1b35a45b03fbbae8d128e9503944059c9d942991))
+
+
+### Performance Improvements
+
+* **frontend:** stabilize array refs + restriction splitting tests ([#459](https://github.com/bcit-tlu/hriv/issues/459)) ([c656cf9](https://github.com/bcit-tlu/hriv/commit/c656cf969d6b11ed17aaa2752fcb54c85631bbe7))
+
 ## [0.15.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.14.0...frontend-v0.15.0) (2026-05-20)
 
 
