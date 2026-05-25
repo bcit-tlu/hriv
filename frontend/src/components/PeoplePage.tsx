@@ -281,6 +281,7 @@ export default function PeoplePage({ programs }: PeoplePageProps) {
         role: bulkRole,
       })
       setBulkRoleOpen(false)
+      setBulkRole('student')
       setSelected(new Set())
       await loadData()
     } catch (err) {
