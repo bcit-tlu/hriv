@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import verify_password, create_access_token, get_current_user
 from ..database import get_db
 from ..models import User
+from ..middleware import get_client_ip
 from ..rate_limit import check_login_rate_limit, reset_login_rate_limit
 from ..schemas import UserOut
 
@@ -38,12 +39,7 @@ async def login(
 ):
     """Authenticate with email + password. Returns a JWT bearer token."""
     # Rate limiting (Phase 5.3)
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    client_ip = (
-        forwarded_for.split(",")[0].strip()
-        if forwarded_for
-        else (request.client.host if request.client else "unknown")
-    )
+    client_ip = get_client_ip(request.scope)
     retry_after = await check_login_rate_limit(client_ip, body.email)
     if retry_after is not None:
         raise HTTPException(
