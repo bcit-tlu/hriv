@@ -313,7 +313,7 @@ interface SearchModalProps {
   onSelectCategory: (path: Category[]) => void
   onSelectImage: (image: ImageItem, path: Category[]) => void
   onSelectProgram: (programName: string) => void
-  onSelectUser: () => void
+  onSelectUser: (userId: number) => void
   /** Pre-fill the search query when the modal opens. */
   initialQuery?: string
   /** Pre-select a type filter when the modal opens. */
@@ -527,7 +527,7 @@ export default function SearchModal({
         onSelectProgram(result.label)
         break
       case 'user':
-        onSelectUser()
+        onSelectUser(result.payload.userId)
         break
     }
   }

@@ -51,9 +51,11 @@ const ROLES: Role[] = ['admin', 'instructor', 'student']
 
 interface PeoplePageProps {
   programs: Program[]
+  initialEditUserId?: number | null
+  onEditUserHandled?: () => void
 }
 
-export default function PeoplePage({ programs }: PeoplePageProps) {
+export default function PeoplePage({ programs, initialEditUserId, onEditUserHandled }: PeoplePageProps) {
   const [users, setUsers] = useState<ApiUser[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -100,6 +102,19 @@ export default function PeoplePage({ programs }: PeoplePageProps) {
   useEffect(() => {
     loadData()
   }, [loadData])
+
+  useEffect(() => {
+    if (initialEditUserId != null && !loading && users.length > 0) {
+      const target = users.find((u) => u.id === initialEditUserId)
+      if (target) {
+        setEditingUser(target)
+        setAddEditOpen(true)
+      } else {
+        console.warn(`User ${initialEditUserId} not found in loaded users`)
+      }
+      onEditUserHandled?.()
+    }
+  }, [initialEditUserId, loading, users, onEditUserHandled])
 
   // Sort handler
   const handleSort = (column: SortableColumn) => {

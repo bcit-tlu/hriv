@@ -252,4 +252,33 @@ describe('PeoplePage', () => {
     // MUI TablePagination renders rows per page text
     expect(screen.getByText('Rows per page:')).toBeInTheDocument()
   })
+
+  it('opens edit modal automatically when initialEditUserId is provided', async () => {
+    const handleEditHandled = vi.fn()
+    render(
+      <PeoplePage
+        programs={programs}
+        initialEditUserId={2}
+        onEditUserHandled={handleEditHandled}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Person')).toBeInTheDocument()
+    })
+    expect(screen.getByDisplayValue('Test Student')).toBeInTheDocument()
+    expect(handleEditHandled).toHaveBeenCalled()
+  })
+
+  it('does not open edit modal when initialEditUserId is null', async () => {
+    render(
+      <PeoplePage programs={programs} initialEditUserId={null} />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText('Edit Person')).not.toBeInTheDocument()
+  })
 })
