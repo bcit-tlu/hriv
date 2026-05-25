@@ -17,6 +17,7 @@ import Typography from '@mui/material/Typography'
 import type { Program } from '../types'
 
 const filter = createFilterOptions<string>()
+const EMPTY_IDS: number[] = []
 
 interface AddCategoryDialogProps {
   open: boolean
@@ -36,7 +37,7 @@ export default function AddCategoryDialog({
   parentLabel,
   siblingNames = [],
   programs = [],
-  inheritedProgramIds = [],
+  inheritedProgramIds = EMPTY_IDS,
 }: AddCategoryDialogProps) {
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -51,6 +52,7 @@ export default function AddCategoryDialog({
     if (open && !prevOpen.current) {
       setLabel('')
       setError(null)
+      setSaving(false)
       if (inheritedProgramIds.length > 0) {
         setVisibility('specific')
         setSelectedProgramIds(new Set(inheritedProgramIds))
