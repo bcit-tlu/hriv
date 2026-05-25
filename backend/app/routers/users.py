@@ -157,7 +157,7 @@ async def bulk_update_role(
     stmt = select(User).where(User.id.in_(body.user_ids))
     result = await db.execute(stmt)
     users = result.scalars().unique().all()
-    if len(users) != len(body.user_ids):
+    if len(users) != len(set(body.user_ids)):
         raise HTTPException(status_code=404, detail="One or more users not found")
     for user in users:
         user.role = body.role
@@ -180,7 +180,7 @@ async def bulk_delete_users(
     stmt = select(User).where(User.id.in_(body.user_ids))
     result = await db.execute(stmt)
     users = result.scalars().unique().all()
-    if len(users) != len(body.user_ids):
+    if len(users) != len(set(body.user_ids)):
         raise HTTPException(status_code=404, detail="One or more users not found")
     for user in users:
         await db.delete(user)
