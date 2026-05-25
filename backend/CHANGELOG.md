@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.1...backend-v0.17.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* **backend:** prioritize isinstance check in exception handler + add migration role tests ([#467](https://github.com/bcit-tlu/hriv/issues/467)) ([5dd5bc5](https://github.com/bcit-tlu/hriv/commit/5dd5bc538ac2edfa80414a3c9c861b2cb9a6092d))
+
 ## [0.17.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.0...backend-v0.17.1) (2026-05-25)
 
 
