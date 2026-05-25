@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.16.1...frontend-v0.16.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* **frontend:** improve CategoryTile drag-over visibility ([#472](https://github.com/bcit-tlu/hriv/issues/472)) ([7a14d7d](https://github.com/bcit-tlu/hriv/commit/7a14d7db1984a2686dbffebed96407970e7ab2da))
+* **frontend:** search UX improvements, helper text, and deduplication ([#470](https://github.com/bcit-tlu/hriv/issues/470)) ([5846bd3](https://github.com/bcit-tlu/hriv/commit/5846bd3495eabfa9afe7db74b319415064a49b91))
+
 ## [0.16.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.16.0...frontend-v0.16.1) (2026-05-25)
 
 
