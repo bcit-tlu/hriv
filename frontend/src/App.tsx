@@ -104,6 +104,7 @@ import { MAX_DEPTH } from "./types";
 import AddCategoryDialog from "./components/AddCategoryDialog";
 import EditCategoryDialog from "./components/EditCategoryDialog";
 import { useColorMode } from "./useColorMode";
+import { useBackgroundRefresh } from "./useBackgroundRefresh";
 import { getSurfaceVariant } from "./theme";
 import {
     useNavigationHistory,
@@ -908,15 +909,15 @@ export default function App() {
             });
     }, [canManageUsers]);
 
-    const loadCategories = useCallback(async () => {
+    const loadCategories = useCallback(async (silent = false) => {
         try {
-            setCategoriesLoading(true);
+            if (!silent) setCategoriesLoading(true);
             const tree = await fetchCategoryTree();
             setCategories(tree.map(apiTreeToCategory));
         } catch (err) {
             console.error("Failed to load categories", err);
         } finally {
-            setCategoriesLoading(false);
+            if (!silent) setCategoriesLoading(false);
         }
     }, []);
 
@@ -1043,6 +1044,15 @@ export default function App() {
             loadPrograms();
         }
     }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms]);
+
+    // Background refresh: re-fetch categories and uncategorized images every
+    // 30 s while the tab is visible.  Uses ETag-based conditional requests so
+    // the server returns 304 when nothing changed (no payload transferred).
+    const backgroundRefresh = useCallback(async () => {
+        await loadCategories(true);
+        await loadUncategorizedImages();
+    }, [loadCategories, loadUncategorizedImages]);
+    useBackgroundRefresh(backgroundRefresh, currentUser != null);
 
     // Once categories are loaded, restore a pending shared-link image
     useEffect(() => {
