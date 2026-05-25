@@ -3389,15 +3389,15 @@ export default function App() {
                                                               `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
                                                           );
                                                       }
-                                                      setFileDropCategoryId(
-                                                          categoryId,
-                                                      );
                                                       if (accepted.length > 0) {
+                                                          setFileDropCategoryId(
+                                                              categoryId,
+                                                          );
                                                           setDroppedFiles(
                                                               accepted,
                                                           );
+                                                          setUploadOpen(true);
                                                       }
-                                                      setUploadOpen(true);
                                                   }
                                                 : undefined
                                         }
