@@ -12,6 +12,7 @@ from ..schemas import UserCreate, UserUpdate, UserBulkUpdate, UserOut
 router = APIRouter(prefix="/users", tags=["users"])
 
 _admin = require_role("admin")
+_editor = require_role("admin", "instructor")
 
 
 def _user_to_out(user: User) -> dict:
@@ -50,7 +51,7 @@ async def _set_user_programs(
 
 @router.get("/", response_model=list[UserOut])
 async def list_users(
-    _user: Annotated[User, Depends(_admin)],
+    _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(User).order_by(User.name)
