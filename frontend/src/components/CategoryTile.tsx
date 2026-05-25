@@ -183,7 +183,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
           transition: 'opacity 0.15s, box-shadow 0.15s, outline-color 0.2s, transform 0.15s',
           outline: '3px dashed',
           outlineColor: dragOver ? 'primary.main' : 'transparent',
-          outlineOffset: -3,
+          outlineOffset: 3,
           transform: dragOver ? 'scale(1.03)' : 'scale(1)',
         }}
       >
@@ -198,7 +198,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.10),
+              bgcolor: (theme) => alpha(theme.palette.background.paper, 0.82),
               borderRadius: 'inherit',
               pointerEvents: 'none',
               gap: 0.5,
