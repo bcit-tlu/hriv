@@ -43,7 +43,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility'
 import { fetchImages, updateImage, deleteImage, replaceImage, bulkUpdateImages, bulkDeleteImages } from '../api'
 import type { ApiBulkImportJob, ApiImage } from '../api'
 import type { Category, Program } from '../types'
-import { narrowProgramIds } from '../categoryUtils'
+import { splitDirectAncestorProgramIds } from '../categoryUtils'
 import BulkEditImagesModal from './BulkEditImagesModal'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
@@ -261,12 +261,7 @@ export default function ManagePage({
     if (img.category_id == null) return { direct: [], ancestor: [] }
     const seg = categoryPaths.get(img.category_id)
     if (!seg) return { direct: [], ancestor: [] }
-    const fullPath = [...seg.ancestors, seg.category]
-    const effective = narrowProgramIds(fullPath)
-    const directIds = new Set(seg.category.programIds)
-    const direct = effective.filter((pid) => directIds.has(pid))
-    const ancestor = effective.filter((pid) => !directIds.has(pid))
-    return { direct, ancestor }
+    return splitDirectAncestorProgramIds([...seg.ancestors, seg.category])
   }, [categoryPaths])
 
   // Helper to get program names for sorting/filtering

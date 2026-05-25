@@ -161,6 +161,11 @@ export default function CategoryPickerSelect({
     return narrowProgramIds(ancestors)
   }, [editingOpt, options])
 
+  const currentProgramIds = useMemo(
+    () => editingOpt?.programIds ?? [],
+    [editingOpt?.programIds],
+  )
+
   const handleChange = (e: SelectChangeEvent<string>) => {
     const val = e.target.value
     onChange(val === '' ? null : Number(val))
@@ -356,7 +361,7 @@ export default function CategoryPickerSelect({
           currentLabel={editingOpt?.label ?? ''}
           siblingNames={editSiblingNames}
           programs={programs}
-          currentProgramIds={editingOpt?.programIds ?? []}
+          currentProgramIds={currentProgramIds}
           inheritedProgramIds={inheritedProgramIds}
         />
       )}

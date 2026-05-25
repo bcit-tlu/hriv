@@ -232,6 +232,11 @@ export default function ManageCategoriesDialog({
     return narrowProgramIds(ancestors)
   }, [editingCategory, options])
 
+  const currentProgramIds = useMemo(
+    () => editingCategory?.programIds ?? [],
+    [editingCategory?.programIds],
+  )
+
   const handleAddClick = (parentId: number | null, parentLabel?: string) => {
     setAddParentId(parentId)
     setAddParentLabel(parentLabel)
@@ -611,7 +616,7 @@ export default function ManageCategoriesDialog({
           currentLabel={editingCategory?.label ?? ''}
           siblingNames={editSiblingNames}
           programs={programs}
-          currentProgramIds={editingCategory?.programIds ?? []}
+          currentProgramIds={currentProgramIds}
           inheritedProgramIds={inheritedProgramIds}
         />
       )}
