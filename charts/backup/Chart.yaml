@@ -1,7 +1,6 @@
 apiVersion: v2
 name: hriv-backup
 description: HRIV Backup Service – scheduled database and filesystem snapshots
-# CI stamps version and appVersion from the release tag at helm-publish time.
-version: 0.1.0
-appVersion: "0.1.0"
 type: application
+version: 0.1.0 # x-release-please-version
+appVersion: "0.1.0" # x-release-please-version

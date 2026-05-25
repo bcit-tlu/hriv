@@ -14,10 +14,7 @@ spec:
       labels:
         {{- include "hriv-frontend.selectorLabels" . | nindent 8 }}
       annotations:
-        {{- /* Restart pods automatically when ConfigMap content changes.
-               Hash covers both inline ``data`` and any file-backed
-               ``files`` entries so edits to chart-relative files (e.g.
-               ``files/default.conf.template``) still trigger a rollout. */}}
+        {{- /* Restart pods when ConfigMap content changes. */}}
         {{- range $m := (.Values.configMounts | default list) }}
         {{- $parts := list (toYaml ($m.data | default dict)) }}
         {{- range $key, $path := ($m.files | default dict) }}
@@ -111,7 +108,7 @@ spec:
         {{- $merged := dict "podAntiAffinity" (dict "requiredDuringSchedulingIgnoredDuringExecution" (append $existing $zoneRule)) }}
         {{- $aff = mustMergeOverwrite $aff $merged }}
       {{- end }}
-      {{- if $aff }}
+      {{- if ne (toJson $aff) "{}" }}
       affinity:
         {{- toYaml $aff | nindent 8 }}
       {{- end }}

@@ -4,16 +4,16 @@ on:
   push:
     branches: [main]
 
-# Least-privilege default: only `checkout` needs read access.
-# Each job elevates permissions to just what that job requires.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+# Default to least privilege; jobs elevate only when needed.
 permissions:
   contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    # release-please creates/updates release PRs, tags, GitHub releases
-    # and comments on associated issues.
     permissions:
       contents: write
       issues: write
@@ -23,28 +23,13 @@ jobs:
       paths_released: ${{ steps.rp.outputs.paths_released }}
       outputs: ${{ toJSON(steps.rp.outputs) }}
     steps:
-      # Manifest mode is inferred from the presence of
-      # `release-please-config.json` + `.release-please-manifest.json`;
-      # the top-level `release-type` input only accepts the leaf values
-      # (ruby|python|node|terraform-module) and must be omitted here so
-      # each component's `release-type` from the config drives the
-      # per-package strategy.
       - uses: googleapis/release-please-action@v4
         id: rp
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # `release-as` per-package is a one-shot: once the release PR it
-      # triggered has merged and the manifest has caught up, the override
-      # must be removed, otherwise every subsequent release-please run
-      # keeps pinning the same version and blocks normal semver bumps
-      # from feat:/fix: commits. This guard runs *after* release-please
-      # and is skipped whenever `releases_created=true`, so the
-      # tag/release finalization that happens on the merge-of-chore-PR
-      # push (where manifest has just caught up to release-as) isn't
-      # blocked. On any subsequent push where the state is still stale
-      # and there's nothing to release, the workflow fails loudly to
-      # force the cleanup PR.
+      # `release-as` is one-shot. Once manifest catches up, remove it;
+      # otherwise future semver bumps are pinned and releases stall.
       - uses: actions/checkout@v6
         if: steps.rp.outputs.releases_created != 'true'
       - name: Guard against stale `release-as` entries
@@ -68,21 +53,7 @@ jobs:
               sys.exit(1)
           PY
 
-  # ── Status checks for release-please PRs ──────────────────
-  #
-  # release-please creates PRs with GITHUB_TOKEN, which means the
-  # `pull_request`-triggered CI workflow (ci.yaml) never fires on them.
-  # The `pull_request_target`-triggered pr-title-lint workflow is also
-  # gated behind "Require approval for first-time contributors", so its
-  # `lint` check never appears either.  Branch protection requires these
-  # checks before merging.  Since release-please PRs only modify version
-  # files and changelogs (the code was already tested when it landed on
-  # main), we create passing check-runs directly.
-  #
-  # This job must run unconditionally (not gated on releases_created)
-  # because in a monorepo with `separate-pull-requests: true`, releasing
-  # one component rebases sibling release PRs to a new HEAD SHA,
-  # invalidating any check-runs that existed on the old SHA.
+  # Create passing CI checks on release-please PRs (code was already tested on main).
   set-pr-checks:
     needs: release
     runs-on: ubuntu-latest
@@ -96,8 +67,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Required status checks that ci.yaml / pr-title-lint normally
-          # provide.  Keep in sync with the repo's branch-protection rules.
+          # Keep in sync with branch-protection required status checks.
           REQUIRED_CHECKS=(backend-tests frontend-checks helm-lint lint)
 
           mapfile -t prs < <(
@@ -135,9 +105,7 @@ jobs:
             echo "::endgroup::"
           done
 
-  # Releases created via GITHUB_TOKEN do NOT trigger workflows that listen
-  # on `release: published` or `push: tags:`. Dispatch helm-publish and
-  # release-retag explicitly for each released tag.
+  # Dispatch helm-publish and release-retag for each released tag.
   dispatch-publish:
     needs: release
     if: needs.release.outputs.releases_created == 'true'
