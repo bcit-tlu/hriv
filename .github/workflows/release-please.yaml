@@ -72,6 +72,7 @@ jobs:
 
           # Retry loop: the release job may have just created/updated a PR and
           # the GitHub API can take a few seconds to reflect it (eventual consistency).
+          prs=()
           for attempt in 1 2 3 4 5; do
             gh_stderr=$(mktemp)
             if ! gh_output=$(gh pr list \
