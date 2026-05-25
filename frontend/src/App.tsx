@@ -909,21 +909,34 @@ export default function App() {
             });
     }, [canManageUsers]);
 
-    const loadCategories = useCallback(async (silent = false) => {
+    // Ref holds the invalidateBackground function once the hook mounts.
+    // loadCategories reads it to cancel in-flight background requests on
+    // foreground fetches without requiring every call site to change.
+    const invalidateRef = useRef<(() => void) | null>(null);
+
+    const loadCategories = useCallback(async (opts?: { silent?: boolean; signal?: AbortSignal }) => {
+        const { silent = false, signal } = opts ?? {};
+        // Foreground fetch: abort any in-flight background request to avoid
+        // a stale background response overwriting fresher foreground data.
+        if (!signal) invalidateRef.current?.();
         try {
             if (!silent) setCategoriesLoading(true);
-            const tree = await fetchCategoryTree();
+            const tree = await fetchCategoryTree(signal ? { signal } : undefined);
+            if (signal?.aborted) return;
             setCategories(tree.map(apiTreeToCategory));
         } catch (err) {
+            if (signal?.aborted) return;
             console.error("Failed to load categories", err);
         } finally {
             if (!silent) setCategoriesLoading(false);
         }
     }, []);
 
-    const loadUncategorizedImages = useCallback(async () => {
+    const loadUncategorizedImages = useCallback(async (opts?: { signal?: AbortSignal }) => {
+        const { signal } = opts ?? {};
         try {
-            const imgs = await fetchUncategorizedImages();
+            const imgs = await fetchUncategorizedImages(signal ? { signal } : undefined);
+            if (signal?.aborted) return;
             setUncategorizedImages(
                 imgs.map((img: ApiImage) => ({
                     id: img.id,
@@ -945,6 +958,7 @@ export default function App() {
             );
             uncategorizedLoaded.current = true;
         } catch (err) {
+            if (signal?.aborted) return;
             console.error("Failed to load uncategorized images", err);
             uncategorizedLoaded.current = true;
         }
@@ -1051,11 +1065,12 @@ export default function App() {
     // cache mode transparently sends If-None-Match and receives 304 when
     // nothing changed (relies on browser-level HTTP caching, not explicit
     // header management in api.ts).
-    const backgroundRefresh = useCallback(async () => {
-        await loadCategories(true);
-        await loadUncategorizedImages();
+    const backgroundRefresh = useCallback(async (signal: AbortSignal) => {
+        await loadCategories({ silent: true, signal });
+        await loadUncategorizedImages({ signal });
     }, [loadCategories, loadUncategorizedImages]);
-    useBackgroundRefresh(backgroundRefresh, currentUser != null);
+    const invalidateBackground = useBackgroundRefresh(backgroundRefresh, currentUser != null);
+    invalidateRef.current = invalidateBackground;
 
     // Once categories are loaded, restore a pending shared-link image
     useEffect(() => {
