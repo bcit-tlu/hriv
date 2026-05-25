@@ -183,6 +183,7 @@ export default function CanvasOverlay({
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [linkText, setLinkText] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
+  const [flushing, setFlushing] = useState(false)
   const annotationsRef = useRef(annotations)
   const isDrawingRef = useRef(false)
   const drawStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -985,8 +986,13 @@ export default function CanvasOverlay({
     // Flush immediately (bypass debounce) so data is persisted before exit.
     // Await the flush so the PATCH completes before edit mode state changes.
     if (onFlushAnnotations) {
-      await onFlushAnnotations()
-      console.debug(LOG_PREFIX, 'flush complete, exiting edit mode')
+      setFlushing(true)
+      try {
+        await onFlushAnnotations()
+        console.debug(LOG_PREFIX, 'flush complete, exiting edit mode')
+      } finally {
+        setFlushing(false)
+      }
     }
     onEditModeChange(false)
   }, [emitAnnotations, onEditModeChange, onFlushAnnotations])
@@ -1419,7 +1425,7 @@ export default function CanvasOverlay({
 
           {/* Done */}
           <Tooltip title="Save & Exit Edit Mode">
-            <IconButton onClick={handleDone} sx={{ color: '#66bb6a', p: 0.75 }}>
+            <IconButton onClick={handleDone} disabled={flushing} sx={{ color: '#66bb6a', p: 0.75 }}>
               <CheckIcon sx={{ fontSize: 28 }} />
             </IconButton>
           </Tooltip>

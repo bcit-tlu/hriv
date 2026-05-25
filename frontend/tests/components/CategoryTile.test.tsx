@@ -503,6 +503,7 @@ describe('CategoryTile', () => {
         />,
       )
       const card = container.querySelector('.MuiCard-root')!
+      const fakeFile = new File(['data'], 'photo.png', { type: 'image/png' })
       const event = new Event('drop', { bubbles: true })
       Object.assign(event, {
         dataTransfer: {
@@ -511,12 +512,13 @@ describe('CategoryTile', () => {
           effectAllowed: '',
           dropEffect: '',
           types: ['Files'],
+          files: [fakeFile],
         },
         preventDefault: vi.fn(),
         stopPropagation: vi.fn(),
       })
       fireEvent(card, event)
-      expect(onDropFiles).toHaveBeenCalledWith(8)
+      expect(onDropFiles).toHaveBeenCalledWith(8, [fakeFile])
     })
   })
 })

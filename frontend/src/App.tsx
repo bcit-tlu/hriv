@@ -64,6 +64,7 @@ import SearchModal from "./components/SearchModal";
 import type { TypeFilter } from "./components/SearchModal";
 import { narrowProgramIds } from "./categoryUtils";
 import UploadImageModal from "./components/UploadImageModal";
+import { isAcceptedFile } from "./fileUtils";
 import { useAuth } from "./useAuth";
 import {
     fetchCategoryTree,
@@ -222,6 +223,8 @@ export default function App() {
     const [fileDropCategoryId, setFileDropCategoryId] = useState<
         number | null
     >(null);
+    const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
+    const [manageUploadOpen, setManageUploadOpen] = useState(false);
     const [addCatOpen, setAddCatOpen] = useState(false);
     const [programsPopoverAnchor, setProgramsPopoverAnchor] =
         useState<HTMLElement | null>(null);
@@ -240,6 +243,7 @@ export default function App() {
     const [lockEngaged, setLockEngaged] = useState(false);
     const [snackOpen, setSnackOpen] = useState(false);
     const [errorSnack, setErrorSnack] = useState<string | null>(null);
+    const [warnSnack, setWarnSnack] = useState<string | null>(null);
     const pendingImageId = useRef<number | null>(null);
     const pendingViewport = useRef<ViewportState | undefined>(undefined);
     const pendingOverlays = useRef<OverlayRect[] | undefined>(undefined);
@@ -342,6 +346,8 @@ export default function App() {
         uploadId: number;
         context: "viewer" | "browse";
     } | null>(null);
+    // AbortController for the active replace-image upload
+    const replaceAbortRef = useRef<AbortController | null>(null);
 
     // Client-side progress interpolation — a simple tick counter that
     // increments every 500 ms to trigger re-renders without mutating
@@ -454,9 +460,9 @@ export default function App() {
                 const isReplaceJob = j.uploadId < 1_000_000_000;
                 if (isReplaceJob)
                     return !(imageEditOpen || browseEditImage != null);
-                return !uploadOpen;
+                return !(uploadOpen || manageUploadOpen);
             }),
-        [processingJobs, uploadOpen, imageEditOpen, browseEditImage],
+        [processingJobs, uploadOpen, manageUploadOpen, imageEditOpen, browseEditImage],
     );
 
     // User profile popover + edit modal state
@@ -2046,16 +2052,19 @@ export default function App() {
             });
 
             // Atomic replace: metadata + file in a single request (#271)
+            const abort = new AbortController();
+            replaceAbortRef.current = abort;
             apiReplaceImage(
                 selectedImage.id,
                 file,
                 (fraction) => {
                     uploadProgressRef.current.set(uploadId, fraction);
                 },
-                undefined,
+                abort.signal,
                 formData,
             )
                 .then((result) => {
+                    replaceAbortRef.current = null;
                     uploadProgressRef.current.delete(uploadId);
                     activeReplaceUploadIdRef.current = null;
                     setProcessingJobs((prev) =>
@@ -2078,9 +2087,18 @@ export default function App() {
                     loadCategories();
                     loadUncategorizedImages();
                 })
-                .catch(() => {
+                .catch((err) => {
+                    replaceAbortRef.current = null;
                     uploadProgressRef.current.delete(uploadId);
                     activeReplaceUploadIdRef.current = null;
+                    if (err instanceof DOMException && err.name === "AbortError") {
+                        setProcessingJobs((prev) =>
+                            prev.filter((j) => j.uploadId !== uploadId),
+                        );
+                        setSelectedImage((prev) => prev?.id === prevImage.id ? prevImage : prev);
+                        setImageEditOpen(false);
+                        return;
+                    }
                     setSelectedImage((prev) => prev?.id === prevImage.id ? prevImage : prev);
                     setProcessingJobs((prev) =>
                         prev.map((j) =>
@@ -2134,16 +2152,19 @@ export default function App() {
             });
 
             // Atomic replace: metadata + file in a single request (#271)
+            const abort = new AbortController();
+            replaceAbortRef.current = abort;
             apiReplaceImage(
                 browseEditImage.id,
                 file,
                 (fraction) => {
                     uploadProgressRef.current.set(uploadId, fraction);
                 },
-                undefined,
+                abort.signal,
                 formData,
             )
                 .then((result) => {
+                    replaceAbortRef.current = null;
                     uploadProgressRef.current.delete(uploadId);
                     activeReplaceUploadIdRef.current = null;
                     setProcessingJobs((prev) =>
@@ -2166,9 +2187,17 @@ export default function App() {
                     loadCategories();
                     loadUncategorizedImages();
                 })
-                .catch(() => {
+                .catch((err) => {
+                    replaceAbortRef.current = null;
                     uploadProgressRef.current.delete(uploadId);
                     activeReplaceUploadIdRef.current = null;
+                    if (err instanceof DOMException && err.name === "AbortError") {
+                        setProcessingJobs((prev) =>
+                            prev.filter((j) => j.uploadId !== uploadId),
+                        );
+                        setBrowseEditImage(null);
+                        return;
+                    }
                     setProcessingJobs((prev) =>
                         prev.map((j) =>
                             j.uploadId === uploadId
@@ -2187,6 +2216,10 @@ export default function App() {
         },
         [browseEditImage, loadCategories, loadUncategorizedImages],
     );
+
+    const handleCancelReplace = useCallback(() => {
+        replaceAbortRef.current?.abort();
+    }, []);
 
     const handleUploadStarted = useCallback(
         (uploadId: number, filename: string, fileSize: number) => {
@@ -2654,6 +2687,7 @@ export default function App() {
                             onUploadProgress={handleUploadProgress}
                             onBulkImportStarted={handleBulkImportStarted}
                             onUploadFailed={handleUploadFailed}
+                            onUploadOpenChange={setManageUploadOpen}
                             onSearchProgram={(programName) => {
                                 setSearchInitialQuery(programName);
                                 setSearchInitialTypeFilter('program');
@@ -3269,7 +3303,25 @@ export default function App() {
                                                   )
                                               ) {
                                                   e.preventDefault();
-                                                  setUploadOpen(true);
+                                                  const all = Array.from(
+                                                      e.dataTransfer.files,
+                                                  );
+                                                  const accepted =
+                                                      all.filter(
+                                                          isAcceptedFile,
+                                                      );
+                                                  const rejected =
+                                                      all.length -
+                                                      accepted.length;
+                                                  if (rejected > 0) {
+                                                      setWarnSnack(
+                                                          `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
+                                                      );
+                                                  }
+                                                  if (accepted.length > 0) {
+                                                      setDroppedFiles(accepted);
+                                                      setUploadOpen(true);
+                                                  }
                                               }
                                           }
                                         : undefined
@@ -3324,11 +3376,28 @@ export default function App() {
                                         }
                                         onDropFiles={
                                             canEditContent
-                                                ? (categoryId) => {
-                                                      setFileDropCategoryId(
-                                                          categoryId,
-                                                      );
-                                                      setUploadOpen(true);
+                                                ? (categoryId, files) => {
+                                                      const accepted =
+                                                          files.filter(
+                                                              isAcceptedFile,
+                                                          );
+                                                      const rejected =
+                                                          files.length -
+                                                          accepted.length;
+                                                      if (rejected > 0) {
+                                                          setWarnSnack(
+                                                              `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
+                                                          );
+                                                      }
+                                                      if (accepted.length > 0) {
+                                                          setFileDropCategoryId(
+                                                              categoryId,
+                                                          );
+                                                          setDroppedFiles(
+                                                              accepted,
+                                                          );
+                                                          setUploadOpen(true);
+                                                      }
                                                   }
                                                 : undefined
                                         }
@@ -3578,6 +3647,7 @@ export default function App() {
                         : undefined
                 }
                 onReplace={handleReplaceViewerImage}
+                onCancelReplace={handleCancelReplace}
                 replaceUploadProgress={viewerReplaceUploadProgress}
                 image={selectedApiImage}
                 categories={categories}
@@ -3603,6 +3673,7 @@ export default function App() {
                         : undefined
                 }
                 onReplace={handleReplaceBrowseImage}
+                onCancelReplace={handleCancelReplace}
                 replaceUploadProgress={browseReplaceUploadProgress}
                 image={browseApiImage}
                 categories={categories}
@@ -3639,7 +3710,9 @@ export default function App() {
                 onClose={() => {
                     setUploadOpen(false);
                     setFileDropCategoryId(null);
+                    setDroppedFiles([]);
                 }}
+                initialFiles={droppedFiles}
                 onUploaded={() => {
                     loadCategories();
                     loadUncategorizedImages();
@@ -3864,6 +3937,23 @@ export default function App() {
                     },
                 }}
             />
+
+            {/* Warning snackbar (e.g. unsupported file drops) */}
+            <Snackbar
+                open={warnSnack !== null}
+                autoHideDuration={6000}
+                onClose={() => setWarnSnack(null)}
+                anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+                sx={{ zIndex: 1500 }}
+            >
+                <Alert
+                    severity="warning"
+                    onClose={() => setWarnSnack(null)}
+                    variant="filled"
+                >
+                    {warnSnack}
+                </Alert>
+            </Snackbar>
 
             {/* Error snackbar */}
             <Snackbar

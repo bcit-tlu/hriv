@@ -79,6 +79,7 @@ export default function BulkEditImagesModal({
   }
 
   const handleSave = async () => {
+    setSaveError(null)
     const data: {
       category_id?: number | null
       copyright?: string
@@ -100,6 +101,7 @@ export default function BulkEditImagesModal({
   }
 
   const handleDelete = async () => {
+    setDeleteError(null)
     if (!confirmDelete) {
       setConfirmDelete(true)
       return

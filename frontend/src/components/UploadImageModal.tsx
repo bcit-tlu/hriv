@@ -14,6 +14,7 @@ import Typography from '@mui/material/Typography'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import { uploadSourceImage, bulkImportImages } from '../api'
 import type { ApiBulkImportJob } from '../api'
+import { isImageFile, isZipFile, isAcceptedFile } from '../fileUtils'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import ImageMetadataFields from './ImageMetadataFields'
 import type { ImageMetadataValues } from './ImageMetadataFields'
@@ -29,32 +30,6 @@ import type { Category, Program } from '../types'
  */
 const ACCEPTED_FILE_TYPES =
   'image/jpeg,image/png,image/tiff,image/gif,image/webp,.tif,.tiff,.svs,.zip'
-
-/** Recognised image MIME types for drag-and-drop validation. Must stay
- * in lock-step with ``backend/app/image_validation.py::IMAGE_MIME_TYPES``. */
-const IMAGE_MIME_TYPES = new Set<string>([
-  'image/jpeg', 'image/png', 'image/tiff', 'image/gif', 'image/webp',
-])
-
-/** Recognised image extensions for drag-and-drop validation. */
-const IMAGE_EXTENSIONS = new Set([
-  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.tif', '.tiff', '.svs',
-])
-
-function isImageFile(file: File): boolean {
-  if (IMAGE_MIME_TYPES.has(file.type)) return true
-  const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
-  return IMAGE_EXTENSIONS.has(ext)
-}
-
-function isZipFile(file: File): boolean {
-  if (file.type === 'application/zip' || file.type === 'application/x-zip-compressed') return true
-  return file.name.toLowerCase().endsWith('.zip')
-}
-
-function isAcceptedFile(file: File): boolean {
-  return isImageFile(file) || isZipFile(file)
-}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -87,6 +62,8 @@ interface UploadImageModalProps {
   ) => void
   /** Called when a file upload fails. */
   onUploadFailed?: (uploadId: number, error: string) => void
+  /** Pre-populate the file list (e.g. from a drag-and-drop onto the grid). */
+  initialFiles?: File[]
   categoryId?: number | null
   categories: Category[]
   programs?: Program[]
@@ -100,6 +77,7 @@ export default function UploadImageModal({
   onClose,
   onUploaded,
   onProcessingStarted,
+  initialFiles,
   categoryId: initialCategoryId,
   categories,
   programs,
@@ -133,6 +111,18 @@ export default function UploadImageModal({
       setCategoryId(initialCategoryId ?? null)
     }
   }, [open, initialCategoryId])
+
+  // Pre-populate files from external drag-and-drop
+  useEffect(() => {
+    if (open && initialFiles && initialFiles.length > 0) {
+      const accepted = initialFiles.filter(isAcceptedFile)
+      if (accepted.length === 0) return
+      setFiles(accepted)
+      if (accepted.length === 1 && isImageFile(accepted[0])) {
+        setName(accepted[0].name.replace(/\.[^.]+$/, ''))
+      }
+    }
+  }, [open, initialFiles])
 
   const handleReset = useCallback(() => {
     setFiles([])

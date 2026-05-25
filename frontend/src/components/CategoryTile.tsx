@@ -64,7 +64,7 @@ interface CategoryTileProps {
   /** Called when another category is dropped onto this category tile (reparent). */
   onDropCategory?: (draggedCategoryId: number, targetCategoryId: number) => void
   /** Called when native files are dropped onto this category tile. */
-  onDropFiles?: (categoryId: number) => void
+  onDropFiles?: (categoryId: number, files: File[]) => void
   /** Enable HTML5 drag for this tile (editors only). */
   draggable?: boolean
 }
@@ -159,7 +159,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
 
     if (e.dataTransfer.types.includes('Files') && onDropFiles) {
       e.stopPropagation()
-      onDropFiles(category.id)
+      onDropFiles(category.id, Array.from(e.dataTransfer.files))
     }
   }, [category.id, onDropImage, onDropCategory, onDropFiles])
 
