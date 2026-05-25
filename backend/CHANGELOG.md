@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.4](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.3...backend-v0.17.4) (2026-05-25)
+
+
+### Bug Fixes
+
+* **backend:** allow instructors to see people in search results ([#478](https://github.com/bcit-tlu/hriv/issues/478)) ([1c013e6](https://github.com/bcit-tlu/hriv/commit/1c013e6c12bccb944fab725399d20f6413eddc38))
+
 ## [0.17.3](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.2...backend-v0.17.3) (2026-05-25)
 
 
