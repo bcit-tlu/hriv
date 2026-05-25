@@ -187,7 +187,7 @@ RUN pip install --no-cache-dir 'pytest>=8.3.3,<9' 'pytest-asyncio>=0.24.0,<0.25'
 # in their ``backend/.env``.  The base stage pins all exporters to
 # ``none`` (see above), so the wrapper is a true no-op at startup and adds
 # no runtime overhead until the developer opts in.
-CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--proxy-headers", "--forwarded-allow-ips", "*"]
 
 # ── Stage 4: Stable ─────────────────────────────────
 FROM base AS stable
@@ -207,4 +207,10 @@ EXPOSE 8000
 # the already-initialised exporter state from the parent, which can
 # corrupt gRPC/HTTP exporter connections and produce duplicate or lost
 # telemetry.  --workers 1 avoids the problem by never forking.
-CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+#
+# --proxy-headers + --forwarded-allow-ips '*': trust X-Forwarded-For /
+# X-Forwarded-Proto from all upstream proxies.  The backend is never
+# directly exposed to the internet (HAProxy → nginx-ingress → frontend
+# nginx → here), so accepting proxy headers from any direct peer is safe
+# and ensures scope["client"] reflects the real client IP.
+CMD ["opentelemetry-instrument", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers", "--forwarded-allow-ips", "*"]

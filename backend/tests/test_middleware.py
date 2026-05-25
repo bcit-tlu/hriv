@@ -8,6 +8,7 @@ from app.middleware import (
     _is_upload_path,
     _parse_content_length,
     _parse_exclude_prefixes,
+    get_client_ip,
     get_request_id,
     request_id_ctx,
 )
@@ -99,6 +100,47 @@ def test_get_request_id_returns_set_value() -> None:
         assert get_request_id() == "test-id-123"
     finally:
         request_id_ctx.reset(token)
+
+
+# ── get_client_ip ─────────────────────────────────────────────────────────
+
+
+def test_get_client_ip_from_forwarded_for() -> None:
+    scope = _make_scope(headers={"X-Forwarded-For": "203.0.113.50, 10.0.0.1"})
+    assert get_client_ip(scope) == "203.0.113.50"
+
+
+def test_get_client_ip_from_forwarded_for_single() -> None:
+    scope = _make_scope(headers={"X-Forwarded-For": "203.0.113.50"})
+    assert get_client_ip(scope) == "203.0.113.50"
+
+
+def test_get_client_ip_from_real_ip() -> None:
+    scope = _make_scope(headers={"X-Real-IP": "198.51.100.7"})
+    assert get_client_ip(scope) == "198.51.100.7"
+
+
+def test_get_client_ip_forwarded_for_takes_precedence_over_real_ip() -> None:
+    scope = _make_scope(headers={
+        "X-Forwarded-For": "203.0.113.50",
+        "X-Real-IP": "198.51.100.7",
+    })
+    assert get_client_ip(scope) == "203.0.113.50"
+
+
+def test_get_client_ip_falls_back_to_scope_client() -> None:
+    scope = _make_scope(client=("192.168.1.1", 54321))
+    assert get_client_ip(scope) == "192.168.1.1"
+
+
+def test_get_client_ip_returns_unknown_when_no_client() -> None:
+    scope = _make_scope(client=None)
+    assert get_client_ip(scope) == "unknown"
+
+
+def test_get_client_ip_strips_whitespace() -> None:
+    scope = _make_scope(headers={"X-Forwarded-For": "  203.0.113.50 , 10.0.0.1"})
+    assert get_client_ip(scope) == "203.0.113.50"
 
 
 # ── AuditMiddleware ──────────────────────────────────────────────────────

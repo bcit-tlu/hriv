@@ -72,6 +72,22 @@ def _header_value(scope: Scope, name: bytes) -> str:
     return ""
 
 
+def get_client_ip(scope: Scope) -> str:
+    """Best-effort real client IP from an ASGI scope.
+
+    Checks ``X-Forwarded-For`` (leftmost entry) first, then ``X-Real-IP``,
+    and finally falls back to the direct connection address.
+    """
+    forwarded_for = _header_value(scope, b"x-forwarded-for")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    real_ip = _header_value(scope, b"x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    client_pair = scope.get("client")
+    return client_pair[0] if client_pair else "unknown"
+
+
 # ── Audit middleware ────────────────────────────────────
 
 class AuditMiddleware:
@@ -139,13 +155,7 @@ class AuditMiddleware:
         finally:
             duration_ms = round((time.monotonic() - start) * 1000)
 
-            # Best-effort client IP (respect reverse proxy header)
-            forwarded_for = _header_value(scope, b"x-forwarded-for")
-            if forwarded_for:
-                client_ip = forwarded_for.split(",")[0].strip()
-            else:
-                client_pair = scope.get("client")
-                client_ip = client_pair[0] if client_pair else "unknown"
+            client_ip = get_client_ip(scope)
 
             # Browser tab fingerprint (set by frontend) — validate like X-Request-ID
             raw_session_id = _header_value(scope, b"x-session-id")
