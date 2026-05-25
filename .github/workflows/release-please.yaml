@@ -70,16 +70,25 @@ jobs:
           # Keep in sync with branch-protection required status checks.
           REQUIRED_CHECKS=(backend-tests frontend-checks helm-lint lint)
 
-          mapfile -t prs < <(
-            gh pr list \
-              --repo "$GITHUB_REPOSITORY" \
-              --author 'github-actions[bot]' \
-              --json number,headRefOid,headRefName \
-              --jq '.[] | select(.headRefName | startswith("release-please--")) | "\(.number)\t\(.headRefOid)"'
-          )
+          # Retry loop: the release job may have just created/updated a PR and
+          # the GitHub API can take a few seconds to reflect it (eventual consistency).
+          for attempt in 1 2 3 4 5; do
+            mapfile -t prs < <(
+              gh pr list \
+                --repo "$GITHUB_REPOSITORY" \
+                --author 'github-actions[bot]' \
+                --json number,headRefOid,headRefName \
+                --jq '.[] | select(.headRefName | startswith("release-please--")) | "\(.number)\t\(.headRefOid)"'
+            )
+            if [[ ${#prs[@]} -gt 0 && -n "${prs[0]}" ]]; then
+              break
+            fi
+            echo "Attempt ${attempt}: no release-please PRs visible yet, retrying in 10s…"
+            sleep 10
+          done
 
           if [[ ${#prs[@]} -eq 0 || -z "${prs[0]}" ]]; then
-            echo "No open release-please PRs found; nothing to do."
+            echo "No open release-please PRs found after retries; nothing to do."
             exit 0
           fi
 
