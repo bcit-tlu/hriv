@@ -282,7 +282,12 @@ def main() -> int:
         # Surface actionable hints for the two most common deployment
         # errors so operators don't have to trace through asyncpg internals.
         msg = str(exc)
-        if "InvalidPasswordError" in type(exc).__name__ or (
+        if isinstance(exc, SchemaPrivilegeError):
+            logger.error(
+                "%s",
+                exc,
+            )
+        elif "InvalidPasswordError" in type(exc).__name__ or (
             "password authentication failed" in msg
         ):
             logger.error(
@@ -293,11 +298,6 @@ def main() -> int:
                 "the password the CNPG cluster was originally bootstrapped "
                 "with.  To reset: ALTER USER <owner> PASSWORD '<pw>' via "
                 "the superuser, or update the Vault KV secret to match."
-            )
-        elif isinstance(exc, SchemaPrivilegeError):
-            logger.error(
-                "%s",
-                exc,
             )
         elif (
             "could not translate host name" in msg or "Name or service not known" in msg
