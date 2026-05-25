@@ -1785,7 +1785,9 @@ export default function App() {
         const handleDrop = (e: DragEvent) => {
             if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
             fileDragCounter.current = 0;
-            setFileDragActive(false);
+            // Defer state reset so React's synthetic event handlers on
+            // FileDropZone can fire before the component unmounts.
+            requestAnimationFrame(() => setFileDragActive(false));
         };
         window.addEventListener("dragenter", handleDragEnter);
         window.addEventListener("dragleave", handleDragLeave);
