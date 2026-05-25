@@ -210,6 +210,10 @@ export default function ManagePage({
   // Filter row visibility
   const [showFilters, setShowFilters] = useState(false)
 
+  // Pagination state
+  const [rowsPerPage, setRowsPerPage] = useState(25)
+  const [currentPage, setCurrentPage] = useState(0)
+
   // Apply initial program filter from external navigation (e.g. search)
   useEffect(() => {
     if (initialProgramFilter) {
@@ -219,10 +223,6 @@ export default function ManagePage({
       onInitialProgramFilterConsumed?.()
     }
   }, [initialProgramFilter, onInitialProgramFilterConsumed])
-
-  // Pagination state
-  const [rowsPerPage, setRowsPerPage] = useState(25)
-  const [currentPage, setCurrentPage] = useState(0)
 
   // Action menu state
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)

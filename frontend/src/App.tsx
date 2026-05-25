@@ -420,6 +420,7 @@ export default function App() {
 
     // Initial program filter for ManagePage (set when navigating from search)
     const [manageProgramFilter, setManageProgramFilter] = useState<string | undefined>(undefined);
+    const clearManageProgramFilter = useCallback(() => setManageProgramFilter(undefined), []);
 
     // Manage menu state
     const [manageMenuAnchor, setManageMenuAnchor] =
@@ -2764,7 +2765,7 @@ export default function App() {
                                 setSearchOpen(true);
                             }}
                             initialProgramFilter={manageProgramFilter}
-                            onInitialProgramFilterConsumed={() => setManageProgramFilter(undefined)}
+                            onInitialProgramFilterConsumed={clearManageProgramFilter}
                         />
                     ) : selectedImage ? (
                         /* ---- Viewer mode ---- */
