@@ -64,6 +64,7 @@ import SearchModal from "./components/SearchModal";
 import type { TypeFilter } from "./components/SearchModal";
 import { narrowProgramIds } from "./categoryUtils";
 import UploadImageModal from "./components/UploadImageModal";
+import FileDropZone from "./components/FileDropZone";
 import { isAcceptedFile } from "./fileUtils";
 import { useAuth } from "./useAuth";
 import {
@@ -225,6 +226,8 @@ export default function App() {
         number | null
     >(null);
     const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
+    const [fileDragActive, setFileDragActive] = useState(false);
+    const fileDragCounter = useRef(0);
     const [manageUploadOpen, setManageUploadOpen] = useState(false);
     const [addCatOpen, setAddCatOpen] = useState(false);
     const [programsPopoverAnchor, setProgramsPopoverAnchor] =
@@ -1761,6 +1764,33 @@ export default function App() {
         },
         [loadCategories],
     );
+
+    // Track when native files are being dragged over the page so we can
+    // show the prominent FileDropZone at the end of the card grid.
+    useEffect(() => {
+        if (!canEditContent) return;
+        const handleDragEnter = (e: DragEvent) => {
+            if (!e.dataTransfer?.types.includes("Files")) return;
+            fileDragCounter.current += 1;
+            if (fileDragCounter.current === 1) setFileDragActive(true);
+        };
+        const handleDragLeave = () => {
+            fileDragCounter.current -= 1;
+            if (fileDragCounter.current === 0) setFileDragActive(false);
+        };
+        const handleDrop = () => {
+            fileDragCounter.current = 0;
+            setFileDragActive(false);
+        };
+        window.addEventListener("dragenter", handleDragEnter);
+        window.addEventListener("dragleave", handleDragLeave);
+        window.addEventListener("drop", handleDrop);
+        return () => {
+            window.removeEventListener("dragenter", handleDragEnter);
+            window.removeEventListener("dragleave", handleDragLeave);
+            window.removeEventListener("drop", handleDrop);
+        };
+    }, [canEditContent]);
 
     const handleSetCardImage = useCallback(
         async (categoryId: number, imageId: number | null) => {
@@ -3469,6 +3499,26 @@ export default function App() {
                                         draggable={canEditContent}
                                     />
                                 ))}
+                                {canEditContent && (
+                                    <FileDropZone
+                                        isDragActive={fileDragActive}
+                                        onDrop={(files) => {
+                                            const accepted =
+                                                files.filter(isAcceptedFile);
+                                            const rejected =
+                                                files.length - accepted.length;
+                                            if (rejected > 0) {
+                                                setWarnSnack(
+                                                    `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
+                                                );
+                                            }
+                                            if (accepted.length > 0) {
+                                                setDroppedFiles(accepted);
+                                                setUploadOpen(true);
+                                            }
+                                        }}
+                                    />
+                                )}
                             </Box>
 
                             {categoriesLoading ? (

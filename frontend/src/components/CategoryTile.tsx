@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
+import { alpha } from '@mui/material/styles'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import CardContent from '@mui/material/CardContent'
@@ -179,11 +180,48 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
           maxWidth: 300,
           position: 'relative',
           opacity: dragging ? 0.4 : 1,
-          transition: 'opacity 0.15s, box-shadow 0.15s, outline-color 0.15s',
-          outline: dragOver ? '2px solid' : '2px solid transparent',
-          outlineColor: dragOver ? 'primary.main' : 'transparent',
+          transition: 'opacity 0.15s, box-shadow 0.15s, border-color 0.2s, transform 0.15s',
+          border: dragOver ? '3px dashed' : '3px solid transparent',
+          borderColor: dragOver ? 'primary.main' : 'transparent',
+          transform: dragOver ? 'scale(1.03)' : 'scale(1)',
         }}
       >
+        {/* Drag-over overlay indicating drop target */}
+        {dragOver && (
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              bgcolor: (theme) => alpha(theme.palette.primary.main, 0.10),
+              borderRadius: 'inherit',
+              pointerEvents: 'none',
+              gap: 0.5,
+            }}
+          >
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: 'primary.main',
+                color: 'primary.contrastText',
+              }}
+            >
+              <DriveFileMoveIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Typography variant="caption" sx={{ fontWeight: 600, color: 'primary.main' }}>
+              Drop here
+            </Typography>
+          </Box>
+        )}
         <CardActionArea onClick={() => onClick(category)}>
           {cardImage ? (
             <CardMedia
