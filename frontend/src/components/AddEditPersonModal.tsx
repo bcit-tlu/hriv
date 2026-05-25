@@ -120,13 +120,14 @@ function AddEditPersonForm({
           </Select>
         </FormControl>
         <FormControl fullWidth>
-          <InputLabel>Programs</InputLabel>
+          <InputLabel shrink>Programs</InputLabel>
           <Select
             multiple
             value={programIds}
             label="Programs"
             onChange={handleProgramChange}
             displayEmpty
+            notched
             renderValue={(selected) =>
               selected.length === 0 ? (
                 <Typography color="text.secondary">All Programs</Typography>
