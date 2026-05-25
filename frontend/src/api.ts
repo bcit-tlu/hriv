@@ -136,8 +136,8 @@ export function fetchStatus(): Promise<ApiStatus> {
 
 // ── Categories ───────────────────────────────────────────
 
-export function fetchCategoryTree(): Promise<ApiCategoryTree[]> {
-  return request('/categories/tree')
+export function fetchCategoryTree(init?: RequestInit): Promise<ApiCategoryTree[]> {
+  return request('/categories/tree', init)
 }
 
 export function createCategory(body: {
@@ -192,8 +192,8 @@ export function fetchImages(categoryId?: number): Promise<ApiImage[]> {
   return request(`/images/${qs}`)
 }
 
-export function fetchUncategorizedImages(): Promise<ApiImage[]> {
-  return request('/images/?uncategorized=true')
+export function fetchUncategorizedImages(init?: RequestInit): Promise<ApiImage[]> {
+  return request('/images/?uncategorized=true', init)
 }
 
 export function updateImage(

@@ -104,6 +104,7 @@ import { MAX_DEPTH } from "./types";
 import AddCategoryDialog from "./components/AddCategoryDialog";
 import EditCategoryDialog from "./components/EditCategoryDialog";
 import { useColorMode } from "./useColorMode";
+import { useBackgroundRefresh } from "./useBackgroundRefresh";
 import { getSurfaceVariant } from "./theme";
 import {
     useNavigationHistory,
@@ -908,21 +909,34 @@ export default function App() {
             });
     }, [canManageUsers]);
 
-    const loadCategories = useCallback(async () => {
+    // Ref holds the invalidateBackground function once the hook mounts.
+    // loadCategories reads it to cancel in-flight background requests on
+    // foreground fetches without requiring every call site to change.
+    const invalidateRef = useRef<(() => void) | null>(null);
+
+    const loadCategories = useCallback(async (opts?: { silent?: boolean; signal?: AbortSignal }) => {
+        const { silent = false, signal } = opts ?? {};
+        // Foreground fetch: abort any in-flight background request to avoid
+        // a stale background response overwriting fresher foreground data.
+        if (!signal) invalidateRef.current?.();
         try {
-            setCategoriesLoading(true);
-            const tree = await fetchCategoryTree();
+            if (!silent) setCategoriesLoading(true);
+            const tree = await fetchCategoryTree(signal ? { signal } : undefined);
+            if (signal?.aborted) return;
             setCategories(tree.map(apiTreeToCategory));
         } catch (err) {
+            if (signal?.aborted) return;
             console.error("Failed to load categories", err);
         } finally {
-            setCategoriesLoading(false);
+            if (!silent) setCategoriesLoading(false);
         }
     }, []);
 
-    const loadUncategorizedImages = useCallback(async () => {
+    const loadUncategorizedImages = useCallback(async (opts?: { signal?: AbortSignal }) => {
+        const { signal } = opts ?? {};
         try {
-            const imgs = await fetchUncategorizedImages();
+            const imgs = await fetchUncategorizedImages(signal ? { signal } : undefined);
+            if (signal?.aborted) return;
             setUncategorizedImages(
                 imgs.map((img: ApiImage) => ({
                     id: img.id,
@@ -944,6 +958,7 @@ export default function App() {
             );
             uncategorizedLoaded.current = true;
         } catch (err) {
+            if (signal?.aborted) return;
             console.error("Failed to load uncategorized images", err);
             uncategorizedLoaded.current = true;
         }
@@ -1043,6 +1058,19 @@ export default function App() {
             loadPrograms();
         }
     }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms]);
+
+    // Background refresh: re-fetch categories and uncategorized images every
+    // 30 s while the tab is visible.  The category tree endpoint returns
+    // ETag + Cache-Control: private, no-cache so the browser's default fetch
+    // cache mode transparently sends If-None-Match and receives 304 when
+    // nothing changed (relies on browser-level HTTP caching, not explicit
+    // header management in api.ts).
+    const backgroundRefresh = useCallback(async (signal: AbortSignal) => {
+        await loadCategories({ silent: true, signal });
+        await loadUncategorizedImages({ signal });
+    }, [loadCategories, loadUncategorizedImages]);
+    const invalidateBackground = useBackgroundRefresh(backgroundRefresh, currentUser != null);
+    invalidateRef.current = invalidateBackground;
 
     // Once categories are loaded, restore a pending shared-link image
     useEffect(() => {
