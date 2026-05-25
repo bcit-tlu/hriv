@@ -527,7 +527,7 @@ export default function SearchModal({
         onSelectProgram(result.label)
         break
       case 'user':
-        onSelectUser(result.payload.kind === 'user' ? result.payload.userId : 0)
+        onSelectUser(result.payload.userId)
         break
     }
   }

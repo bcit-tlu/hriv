@@ -109,6 +109,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
       if (target) {
         setEditingUser(target)
         setAddEditOpen(true)
+      } else {
+        console.warn(`User ${initialEditUserId} not found in loaded users`)
       }
       onEditUserHandled?.()
     }

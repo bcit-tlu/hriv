@@ -490,4 +490,31 @@ describe("SearchModal", () => {
             .filter((el) => el.closest('[class*="MuiChip-root"]'));
         expect(programChips.length).toBe(0);
     });
+
+    it("calls onSelectUser with userId when a user result is clicked", async () => {
+        const user = userEvent.setup();
+        const onClose = vi.fn();
+        const onSelectUser = vi.fn();
+        render(
+            <SearchModal
+                {...defaultProps}
+                onClose={onClose}
+                onSelectUser={onSelectUser}
+                open={true}
+            />,
+        );
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Jane");
+
+        const resultButtons = screen
+            .getAllByRole("button")
+            .filter((btn) => btn.closest('[class*="MuiCard"]'));
+        await user.click(resultButtons[0]);
+
+        expect(onClose).toHaveBeenCalled();
+        expect(onSelectUser).toHaveBeenCalledWith(50);
+    });
 });
