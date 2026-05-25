@@ -132,7 +132,7 @@ async def bulk_update_program(
     stmt = select(User).where(User.id.in_(body.user_ids))
     result = await db.execute(stmt)
     users = result.scalars().unique().all()
-    if len(users) != len(body.user_ids):
+    if len(users) != len(set(body.user_ids)):
         raise HTTPException(status_code=404, detail="One or more users not found")
     for user in users:
         await _set_user_programs(db, user, body.program_ids)
