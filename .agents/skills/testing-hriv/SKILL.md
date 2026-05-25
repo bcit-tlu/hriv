@@ -407,6 +407,75 @@ All drag interactions are gated behind `canEditContent` — students see no drag
 | Student views any tile | `draggable="false"`, no drop handlers |
 | Drag text/URL onto category tile | No highlight, drop rejected (MIME filtering) |
 
+### Testing the FileDropZone Component
+
+The `FileDropZone` component renders a prominent drop target at the end of the card
+grid **only** when files are actively being dragged into the viewport. It is gated
+behind `canEditContent` (admin/instructor only).
+
+**Key DOM selector:** `[role="region"][aria-label="Drop files here to upload images"]`
+
+**Triggering FileDropZone visibility:**
+```javascript
+// Dispatch dragenter with Files type on window to activate fileDragActive state
+const dt = new DataTransfer();
+dt.items.add(new File(['test'], 'test.png', { type: 'image/png' }));
+window.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+
+// After ~100ms, check for the dropzone element:
+const dz = document.querySelector('[role="region"][aria-label="Drop files here to upload images"]');
+// dz should be non-null when fileDragActive=true
+```
+
+**Expected visual properties when visible:**
+- `border: 3px dashed` with `borderColor: rgb(167, 74, 74)` (primary.main in light mode)
+- `minHeight: 220px`, `maxWidth: 300px`
+- `cursor: copy`
+- Contains "Add images" heading + "Drop files here" subtext + circular badge with AddIcon
+
+**Testing drop on FileDropZone:**
+```javascript
+const dz = document.querySelector('[role="region"][aria-label="Drop files here to upload images"]');
+const dt = new DataTransfer();
+dt.items.add(new File(['data'], 'photo.jpg', { type: 'image/jpeg' }));
+dz.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+dz.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+dz.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+// After ~100ms: upload dialog (.MuiDialog-root) should open, FileDropZone should disappear
+```
+
+**Resetting drag state:** Dispatch a drop event on window with Files type to reset
+`fileDragCounter` and `fileDragActive`:
+```javascript
+const dt = new DataTransfer();
+dt.items.add(new File(['x'], 'x.png', { type: 'image/png' }));
+window.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+```
+
+### Testing CategoryTile Drag-Over State
+
+When files (or images/categories) are dragged over a CategoryTile, it shows:
+- 3px dashed outline (primary color) with `outlineOffset: -3` (no box-model shift)
+- `transform: scale(1.03)` for tactile feedback
+- "Drop here" text overlay with move icon badge and semi-transparent primary background
+
+**Verifying drag-over styling:**
+```javascript
+const card = document.querySelectorAll('.MuiCard-root')[0];
+const dt = new DataTransfer();
+dt.items.add(new File(['test'], 'test.png', { type: 'image/png' }));
+card.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+card.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+
+// After ~100ms, verify computed styles:
+const cs = window.getComputedStyle(card);
+console.log(cs.outlineStyle);   // 'dashed'
+console.log(cs.outlineColor);   // 'rgb(167, 74, 74)'
+console.log(cs.outlineWidth);   // '3px'
+console.log(cs.transform);      // 'matrix(1.03, 0, 0, 1.03, 0, 0)'
+console.log(card.textContent.includes('Drop here')); // true
+```
+
 ### Testing DnD with Synthetic Events
 
 Native HTML5 DnD requires physical mouse gestures that computer-use tools may not
@@ -448,7 +517,7 @@ asyncio.run(drag_image_to_category())
 - The full event sequence is required: `dragstart` → `dragenter` → `dragover` → `drop` → `dragend`
 - `dragover` must have `cancelable: true` and the handler must call `preventDefault()` to allow the drop
 - For file drops, use `dt.items.add(new File(['test'], 'test.jpg', { type: 'image/jpeg' }))` to populate the `Files` type
-- Visual highlight (outline color change) may not be observable via `getComputedStyle` with synthetic events because React state updates are asynchronous — verify functional behavior via `defaultPrevented` instead
+- Visual highlight (outline color change) IS observable via `getComputedStyle` with synthetic events after a short delay (~100ms) for the React re-render to complete. Use `setTimeout` or poll the DOM
 - After destructive tests (moves/reparents), restore seed data via API PATCH
 
 ### Verifying MIME Type Filtering
