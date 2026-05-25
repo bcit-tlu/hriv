@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.4...backend-v0.18.0) (2026-05-25)
+
+
+### Features
+
+* **frontend:** PeoplePage bulk management, filters, pagination, and program pills ([#482](https://github.com/bcit-tlu/hriv/issues/482)) ([20558b1](https://github.com/bcit-tlu/hriv/commit/20558b1d638e308cb25f537c070a0812a179a40c))
+
 ## [0.17.4](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.3...backend-v0.17.4) (2026-05-25)
 
 
