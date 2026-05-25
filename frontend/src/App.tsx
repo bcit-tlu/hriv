@@ -422,6 +422,10 @@ export default function App() {
     const [manageProgramFilter, setManageProgramFilter] = useState<string | undefined>(undefined);
     const clearManageProgramFilter = useCallback(() => setManageProgramFilter(undefined), []);
 
+    // Initial user to edit on PeoplePage (set when navigating from search)
+    const [editUserId, setEditUserId] = useState<number | null>(null);
+    const clearEditUserId = useCallback(() => setEditUserId(null), []);
+
     // Manage menu state
     const [manageMenuAnchor, setManageMenuAnchor] =
         useState<HTMLElement | null>(null);
@@ -2698,7 +2702,7 @@ export default function App() {
                     {page === "admin" && canManageUsers ? (
                         <AdminPage />
                     ) : page === "people" && canManageUsers ? (
-                        <PeoplePage programs={programs} />
+                        <PeoplePage programs={programs} initialEditUserId={editUserId} onEditUserHandled={clearEditUserId} />
                     ) : page === "manage" && canEditContent ? (
                         <ManagePage
                             categories={categories}
@@ -4009,8 +4013,9 @@ export default function App() {
                         pushNavState("manage");
                     }
                 }}
-                onSelectUser={() => {
+                onSelectUser={(userId) => {
                     if (canManageUsers) {
+                        setEditUserId(userId);
                         setPage("people");
                         pushNavState("people");
                     }
