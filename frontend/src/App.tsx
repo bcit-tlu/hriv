@@ -870,12 +870,12 @@ export default function App() {
 
     // Load users for search when modal opens (admin/instructor only)
     useEffect(() => {
-        if (searchOpen && canManageUsers) {
+        if (searchOpen && canEditContent) {
             fetchUsers()
                 .then(setSearchUsers)
                 .catch(() => setSearchUsers([]));
         }
-    }, [searchOpen, canManageUsers]);
+    }, [searchOpen, canEditContent]);
 
     // Load deployed component versions for the footer (admin only).
     // Backend+backup come from ``/api/admin/version`` (admin-guarded on

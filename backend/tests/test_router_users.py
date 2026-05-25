@@ -73,6 +73,20 @@ async def test_list_users() -> None:
     assert len(result) == 2
 
 
+async def test_list_users_as_instructor() -> None:
+    """Instructors should be able to list users (for search results)."""
+    users = [_make_user(id=1), _make_user(id=2, email="two@example.com")]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    instructor = _make_user(id=99, role="instructor")
+    result = await list_users(instructor, db)
+    assert len(result) == 2
+
+
 async def test_get_user_found() -> None:
     user = _make_user()
     mock_result = MagicMock()
