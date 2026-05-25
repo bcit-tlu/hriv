@@ -222,6 +222,8 @@ export default function App() {
     const [fileDropCategoryId, setFileDropCategoryId] = useState<
         number | null
     >(null);
+    const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
+    const [manageUploadOpen, setManageUploadOpen] = useState(false);
     const [addCatOpen, setAddCatOpen] = useState(false);
     const [programsPopoverAnchor, setProgramsPopoverAnchor] =
         useState<HTMLElement | null>(null);
@@ -342,6 +344,8 @@ export default function App() {
         uploadId: number;
         context: "viewer" | "browse";
     } | null>(null);
+    // AbortController for the active replace-image upload
+    const replaceAbortRef = useRef<AbortController | null>(null);
 
     // Client-side progress interpolation — a simple tick counter that
     // increments every 500 ms to trigger re-renders without mutating
@@ -454,9 +458,9 @@ export default function App() {
                 const isReplaceJob = j.uploadId < 1_000_000_000;
                 if (isReplaceJob)
                     return !(imageEditOpen || browseEditImage != null);
-                return !uploadOpen;
+                return !(uploadOpen || manageUploadOpen);
             }),
-        [processingJobs, uploadOpen, imageEditOpen, browseEditImage],
+        [processingJobs, uploadOpen, manageUploadOpen, imageEditOpen, browseEditImage],
     );
 
     // User profile popover + edit modal state
@@ -2046,16 +2050,19 @@ export default function App() {
             });
 
             // Atomic replace: metadata + file in a single request (#271)
+            const abort = new AbortController();
+            replaceAbortRef.current = abort;
             apiReplaceImage(
                 selectedImage.id,
                 file,
                 (fraction) => {
                     uploadProgressRef.current.set(uploadId, fraction);
                 },
-                undefined,
+                abort.signal,
                 formData,
             )
                 .then((result) => {
+                    replaceAbortRef.current = null;
                     uploadProgressRef.current.delete(uploadId);
                     activeReplaceUploadIdRef.current = null;
                     setProcessingJobs((prev) =>
@@ -2078,9 +2085,18 @@ export default function App() {
                     loadCategories();
                     loadUncategorizedImages();
                 })
-                .catch(() => {
+                .catch((err) => {
+                    replaceAbortRef.current = null;
                     uploadProgressRef.current.delete(uploadId);
                     activeReplaceUploadIdRef.current = null;
+                    if (err instanceof DOMException && err.name === "AbortError") {
+                        setProcessingJobs((prev) =>
+                            prev.filter((j) => j.uploadId !== uploadId),
+                        );
+                        setSelectedImage((prev) => prev?.id === prevImage.id ? prevImage : prev);
+                        setImageEditOpen(false);
+                        return;
+                    }
                     setSelectedImage((prev) => prev?.id === prevImage.id ? prevImage : prev);
                     setProcessingJobs((prev) =>
                         prev.map((j) =>
@@ -2134,16 +2150,19 @@ export default function App() {
             });
 
             // Atomic replace: metadata + file in a single request (#271)
+            const abort = new AbortController();
+            replaceAbortRef.current = abort;
             apiReplaceImage(
                 browseEditImage.id,
                 file,
                 (fraction) => {
                     uploadProgressRef.current.set(uploadId, fraction);
                 },
-                undefined,
+                abort.signal,
                 formData,
             )
                 .then((result) => {
+                    replaceAbortRef.current = null;
                     uploadProgressRef.current.delete(uploadId);
                     activeReplaceUploadIdRef.current = null;
                     setProcessingJobs((prev) =>
@@ -2166,9 +2185,17 @@ export default function App() {
                     loadCategories();
                     loadUncategorizedImages();
                 })
-                .catch(() => {
+                .catch((err) => {
+                    replaceAbortRef.current = null;
                     uploadProgressRef.current.delete(uploadId);
                     activeReplaceUploadIdRef.current = null;
+                    if (err instanceof DOMException && err.name === "AbortError") {
+                        setProcessingJobs((prev) =>
+                            prev.filter((j) => j.uploadId !== uploadId),
+                        );
+                        setBrowseEditImage(null);
+                        return;
+                    }
                     setProcessingJobs((prev) =>
                         prev.map((j) =>
                             j.uploadId === uploadId
@@ -2187,6 +2214,10 @@ export default function App() {
         },
         [browseEditImage, loadCategories, loadUncategorizedImages],
     );
+
+    const handleCancelReplace = useCallback(() => {
+        replaceAbortRef.current?.abort();
+    }, []);
 
     const handleUploadStarted = useCallback(
         (uploadId: number, filename: string, fileSize: number) => {
@@ -2654,6 +2685,7 @@ export default function App() {
                             onUploadProgress={handleUploadProgress}
                             onBulkImportStarted={handleBulkImportStarted}
                             onUploadFailed={handleUploadFailed}
+                            onUploadOpenChange={setManageUploadOpen}
                             onSearchProgram={(programName) => {
                                 setSearchInitialQuery(programName);
                                 setSearchInitialTypeFilter('program');
@@ -3269,6 +3301,11 @@ export default function App() {
                                                   )
                                               ) {
                                                   e.preventDefault();
+                                                  setDroppedFiles(
+                                                      Array.from(
+                                                          e.dataTransfer.files,
+                                                      ),
+                                                  );
                                                   setUploadOpen(true);
                                               }
                                           }
@@ -3578,6 +3615,7 @@ export default function App() {
                         : undefined
                 }
                 onReplace={handleReplaceViewerImage}
+                onCancelReplace={handleCancelReplace}
                 replaceUploadProgress={viewerReplaceUploadProgress}
                 image={selectedApiImage}
                 categories={categories}
@@ -3603,6 +3641,7 @@ export default function App() {
                         : undefined
                 }
                 onReplace={handleReplaceBrowseImage}
+                onCancelReplace={handleCancelReplace}
                 replaceUploadProgress={browseReplaceUploadProgress}
                 image={browseApiImage}
                 categories={categories}
@@ -3639,7 +3678,9 @@ export default function App() {
                 onClose={() => {
                     setUploadOpen(false);
                     setFileDropCategoryId(null);
+                    setDroppedFiles([]);
                 }}
+                initialFiles={droppedFiles}
                 onUploaded={() => {
                     loadCategories();
                     loadUncategorizedImages();

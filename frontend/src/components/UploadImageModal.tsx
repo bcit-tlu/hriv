@@ -87,6 +87,8 @@ interface UploadImageModalProps {
   ) => void
   /** Called when a file upload fails. */
   onUploadFailed?: (uploadId: number, error: string) => void
+  /** Pre-populate the file list (e.g. from a drag-and-drop onto the grid). */
+  initialFiles?: File[]
   categoryId?: number | null
   categories: Category[]
   programs?: Program[]
@@ -100,6 +102,7 @@ export default function UploadImageModal({
   onClose,
   onUploaded,
   onProcessingStarted,
+  initialFiles,
   categoryId: initialCategoryId,
   categories,
   programs,
@@ -133,6 +136,13 @@ export default function UploadImageModal({
       setCategoryId(initialCategoryId ?? null)
     }
   }, [open, initialCategoryId])
+
+  // Pre-populate files from external drag-and-drop
+  useEffect(() => {
+    if (open && initialFiles && initialFiles.length > 0) {
+      setFiles(initialFiles)
+    }
+  }, [open, initialFiles])
 
   const handleReset = useCallback(() => {
     setFiles([])

@@ -65,6 +65,7 @@ interface EditImageModalProps {
   onSave: (data: ImageFormData) => void
   onDelete?: () => Promise<void>
   onReplace?: (data: ReplaceImageData) => Promise<void>
+  onCancelReplace?: () => void
   replaceUploadProgress?: number
   image: ApiImage | null
   categories: Category[]
@@ -80,6 +81,7 @@ function EditImageForm({
   onSave,
   onDelete,
   onReplace,
+  onCancelReplace,
   replaceUploadProgress,
   image,
   categories,
@@ -492,7 +494,18 @@ function EditImageForm({
         </Box>
       )}
       <DialogActions>
-        <Button onClick={onClose} disabled={busy || deleting}>{uploadInProgress ? 'Close' : 'Cancel'}</Button>
+        <Button
+          onClick={() => {
+            if (uploadInProgress && onCancelReplace) {
+              onCancelReplace()
+            } else {
+              onClose()
+            }
+          }}
+          disabled={busy || deleting}
+        >
+          {uploadInProgress ? 'Cancel Upload' : 'Cancel'}
+        </Button>
         {replaceFile && onReplace ? (
           <Button
             onClick={handleReplace}
@@ -531,6 +544,7 @@ export default function EditImageModal({
   onSave,
   onDelete,
   onReplace,
+  onCancelReplace,
   replaceUploadProgress,
   image,
   categories,
@@ -551,6 +565,7 @@ export default function EditImageModal({
           onSave={onSave}
           onDelete={onDelete}
           onReplace={onReplace}
+          onCancelReplace={onCancelReplace}
           replaceUploadProgress={replaceUploadProgress}
           image={image}
           categories={categories}

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -143,6 +143,7 @@ interface ManagePageProps {
     uploadId: number,
   ) => void
   onUploadFailed?: (uploadId: number, error: string) => void
+  onUploadOpenChange?: (isOpen: boolean) => void
   onSearchProgram?: (programName: string) => void
 }
 
@@ -162,6 +163,7 @@ export default function ManagePage({
   onUploadProgress,
   onBulkImportStarted,
   onUploadFailed,
+  onUploadOpenChange,
   onSearchProgram,
 }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
@@ -187,6 +189,14 @@ export default function ManagePage({
 
   // Upload modal state
   const [uploadOpen, setUploadOpen] = useState(false)
+
+  // Notify parent when upload modal open state changes (#409)
+  useEffect(() => {
+    onUploadOpenChange?.(uploadOpen)
+  }, [uploadOpen, onUploadOpenChange])
+
+  // Replace-image abort controller
+  const replaceAbortRef = useRef<AbortController | null>(null)
 
   // Move modal state
   const [moveOpen, setMoveOpen] = useState(false)
@@ -950,13 +960,27 @@ export default function ManagePage({
           onCategoriesChanged?.()
         } : undefined}
         onReplace={editingImage ? async ({ file, formData }: ReplaceImageData) => {
-          const result = await replaceImage(editingImage.id, file, undefined, undefined, formData)
-          onReplaceImage?.(result.id, file.name, file.size)
-          setEditOpen(false)
-          setEditingImage(null)
-          await loadImages()
-          onCategoriesChanged?.()
+          const abort = new AbortController()
+          replaceAbortRef.current = abort
+          try {
+            const result = await replaceImage(editingImage.id, file, undefined, abort.signal, formData)
+            onReplaceImage?.(result.id, file.name, file.size)
+            setEditOpen(false)
+            setEditingImage(null)
+            await loadImages()
+            onCategoriesChanged?.()
+          } catch (err) {
+            if (err instanceof DOMException && err.name === 'AbortError') {
+              setEditOpen(false)
+              setEditingImage(null)
+              return
+            }
+            throw err
+          } finally {
+            replaceAbortRef.current = null
+          }
         } : undefined}
+        onCancelReplace={() => replaceAbortRef.current?.abort()}
         image={editingImage}
         categories={categories}
         programs={programs}
