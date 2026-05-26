@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.17.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.17.0...frontend-v0.17.1) (2026-05-26)
+
+
+### Bug Fixes
+
+* **frontend:** make image visibility icon toggle on click ([#489](https://github.com/bcit-tlu/hriv/issues/489)) ([ffba994](https://github.com/bcit-tlu/hriv/commit/ffba99481be23415cb4414dd7effa8844cb432b7))
+* **frontend:** pre-populate parent program restrictions in new category modal ([#487](https://github.com/bcit-tlu/hriv/issues/487)) ([eb67721](https://github.com/bcit-tlu/hriv/commit/eb677214f445818bfb03cb722479e466a9331a88))
+
 ## [0.17.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.16.2...frontend-v0.17.0) (2026-05-25)
 
 
