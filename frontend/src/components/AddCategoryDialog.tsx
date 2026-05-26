@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import Alert from '@mui/material/Alert'
 import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
@@ -17,6 +17,7 @@ import Typography from '@mui/material/Typography'
 import type { Program } from '../types'
 
 const filter = createFilterOptions<string>()
+const EMPTY_IDS: number[] = []
 
 interface AddCategoryDialogProps {
   open: boolean
@@ -36,7 +37,7 @@ export default function AddCategoryDialog({
   parentLabel,
   siblingNames = [],
   programs = [],
-  inheritedProgramIds = [],
+  inheritedProgramIds = EMPTY_IDS,
 }: AddCategoryDialogProps) {
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -44,6 +45,24 @@ export default function AddCategoryDialog({
   const [visibility, setVisibility] = useState<'all' | 'specific'>('all')
   const [selectedProgramIds, setSelectedProgramIds] = useState<Set<number>>(new Set())
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Pre-populate with parent restrictions when dialog opens
+  const prevOpen = useRef(false)
+  useEffect(() => {
+    if (open && !prevOpen.current) {
+      setLabel('')
+      setError(null)
+      setSaving(false)
+      if (inheritedProgramIds.length > 0) {
+        setVisibility('specific')
+        setSelectedProgramIds(new Set(inheritedProgramIds))
+      } else {
+        setVisibility('all')
+        setSelectedProgramIds(new Set())
+      }
+    }
+    prevOpen.current = open
+  }, [open, inheritedProgramIds])
 
   const exactMatch = useMemo(
     () => siblingNames.some((s) => s.toLowerCase() === label.trim().toLowerCase()),

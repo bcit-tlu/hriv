@@ -29,6 +29,9 @@ function renderDialog(props: Partial<Parameters<typeof AddCategoryDialog>[0]> = 
       onClose={onClose}
       onAdd={onAdd}
       parentLabel={props.parentLabel}
+      siblingNames={props.siblingNames}
+      programs={props.programs}
+      inheritedProgramIds={props.inheritedProgramIds}
     />,
   )
   return { ...result, onClose, onAdd }
@@ -138,6 +141,47 @@ describe('AddCategoryDialog', () => {
     expect(enterEvents).toHaveLength(0)
 
     container.remove()
+  })
+
+  // --- Pre-populate parent program restrictions ---
+
+  it('defaults to "Specific programs" with inherited programs pre-selected', async () => {
+    const programs = [
+      { id: 1, name: 'Nursing' },
+      { id: 2, name: 'Dental' },
+      { id: 3, name: 'Radiology' },
+    ]
+    renderDialog({ programs, inheritedProgramIds: [1, 3] })
+
+    expect(screen.getByLabelText('Specific programs')).toBeChecked()
+    // Inherited programs should be pre-selected (filled chips)
+    const nursingChip = screen.getByText('Nursing')
+    const radiologyChip = screen.getByText('Radiology')
+    expect(nursingChip).toBeInTheDocument()
+    expect(radiologyChip).toBeInTheDocument()
+  })
+
+  it('submits inherited program IDs when user creates without changing selection', async () => {
+    const user = userEvent.setup()
+    const programs = [
+      { id: 1, name: 'Nursing' },
+      { id: 2, name: 'Dental' },
+    ]
+    const { onAdd } = renderDialog({ programs, inheritedProgramIds: [1, 2] })
+
+    await user.type(getCategoryInput(), 'Subcategory')
+    await user.click(getCreateButton())
+
+    expect(onAdd).toHaveBeenCalledWith('Subcategory', expect.arrayContaining([1, 2]))
+  })
+
+  it('defaults to "All students" when no inherited programs', () => {
+    const programs = [
+      { id: 1, name: 'Nursing' },
+    ]
+    renderDialog({ programs, inheritedProgramIds: [] })
+
+    expect(screen.getByLabelText('All students')).toBeChecked()
   })
 
   // --- Cancel ---
