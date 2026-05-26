@@ -23,10 +23,15 @@ jobs:
       paths_released: ${{ steps.rp.outputs.paths_released }}
       outputs: ${{ toJSON(steps.rp.outputs) }}
     steps:
+      # A dedicated token (PAT or GitHub App) is required so that the
+      # PR push triggers downstream workflows (ci.yaml, pr-title-lint).
+      # GITHUB_TOKEN is deliberately NOT used here — its anti-recursion
+      # guard silently prevents other workflows from running on the PR,
+      # leaving branch-protection checks unsatisfied.
       - uses: googleapis/release-please-action@v4
         id: rp
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
 
       # `release-as` is one-shot. Once manifest catches up, remove it;
       # otherwise future semver bumps are pinned and releases stall.
@@ -53,74 +58,26 @@ jobs:
               sys.exit(1)
           PY
 
-  # Create passing CI checks on release-please PRs (code was already tested on main).
-  set-pr-checks:
+  # Enable auto-merge so release PRs land without manual intervention.
+  # Prerequisite: enable "Allow auto-merge" in repo Settings → General.
+  auto-merge:
     needs: release
+    if: needs.release.outputs.releases_created != 'true'
     runs-on: ubuntu-latest
-    permissions:
-      checks: write
-      pull-requests: read
     steps:
-      - name: Create passing CI checks on open release-please PRs
+      - name: Enable auto-merge on open release-please PRs
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
         run: |
           set -euo pipefail
+          prs=$(gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("release-please--")) | .number')
 
-          # Keep in sync with branch-protection required status checks.
-          REQUIRED_CHECKS=(backend-tests frontend-checks helm-lint lint)
-
-          # Retry loop: the release job may have just created/updated a PR and
-          # the GitHub API can take a few seconds to reflect it (eventual consistency).
-          prs=()
-          for attempt in 1 2 3 4 5; do
-            gh_stderr=$(mktemp)
-            if ! gh_output=$(gh pr list \
-                --repo "$GITHUB_REPOSITORY" \
-                --author 'github-actions[bot]' \
-                --json number,headRefOid,headRefName \
-                --jq '.[] | select(.headRefName | startswith("release-please--")) | "\(.number)\t\(.headRefOid)"' 2>"$gh_stderr"); then
-              echo "::warning::gh pr list failed (attempt ${attempt}): $(cat "$gh_stderr")"
-              rm -f "$gh_stderr"
-              sleep 10
-              continue
-            fi
-            rm -f "$gh_stderr"
-            mapfile -t prs <<< "$gh_output"
-            if [[ ${#prs[@]} -gt 0 && -n "${prs[0]}" ]]; then
-              break
-            fi
-            if [[ $attempt -lt 5 ]]; then
-              echo "Attempt ${attempt}: no release-please PRs visible yet, retrying in 10s…"
-              sleep 10
-            fi
-          done
-
-          if [[ ${#prs[@]} -eq 0 || -z "${prs[0]}" ]]; then
-            echo "No open release-please PRs found after retries; nothing to do."
-            exit 0
-          fi
-
-          for entry in "${prs[@]}"; do
-            IFS=$'\t' read -r pr_num sha <<< "$entry"
-            echo "::group::PR #${pr_num} (${sha:0:7})"
-            for check in "${REQUIRED_CHECKS[@]}"; do
-              jq -n \
-                --arg name "$check" \
-                --arg sha "$sha" \
-                '{
-                  name: $name,
-                  head_sha: $sha,
-                  status: "completed",
-                  conclusion: "success",
-                  output: {
-                    title: "Skipped for release-please PR",
-                    summary: "Release-please PRs only modify version files and changelogs. The underlying code was already tested when it landed on main."
-                  }
-                }' | gh api "repos/${GITHUB_REPOSITORY}/check-runs" --input -
-              echo "  ✓ ${check}"
-            done
-            echo "::endgroup::"
+          for pr_num in $prs; do
+            echo "Enabling auto-merge on PR #${pr_num}"
+            gh pr merge "$pr_num" --auto --squash --repo "$GITHUB_REPOSITORY" || true
           done
 
   # Dispatch helm-publish and release-retag for each released tag.

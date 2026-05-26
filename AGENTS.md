@@ -77,7 +77,7 @@
 
 - CI uses shared `bcit-tlu/.github` OCI build reusable workflow
 - `helm-lint` validates all three Helm charts on every push and PR
-- `release-please` manages versioning via conventional commits (manifest mode, separate PRs per component)
+- `release-please` manages versioning via conventional commits (manifest mode, separate PRs per component); uses `RELEASE_PLEASE_TOKEN` secret (PAT or GitHub App token) so PR pushes trigger CI — do NOT switch back to `GITHUB_TOKEN`
 - Component release types: `node` (frontend), `python` (backend, backup)
 - Version is tracked in `.release-please-manifest.json` and `charts/*/Chart.yaml` (`# x-release-please-version` annotations)
 - Images are published to `ghcr.io/bcit-tlu/hriv/hriv-{frontend,backend,backup}`
