@@ -442,7 +442,11 @@ export default function ImageViewer({
           updateClearButtonState()
           updateLockIcon()
         } else {
-          // Remove labels if the rectangle is too small (click without drag)
+          // Remove phantom overlay and labels for click-without-drag
+          viewer.removeOverlay(dragRef.current.overlayElement)
+          overlaysRef.current = overlaysRef.current.filter(
+            (el) => el !== dragRef.current!.overlayElement,
+          )
           dragRef.current.widthLabel.remove()
           dragRef.current.heightLabel.remove()
         }
@@ -495,11 +499,13 @@ export default function ImageViewer({
       lockButton.element.style.pointerEvents = disabled ? 'none' : 'auto'
       if (lockWrapper) {
         lockWrapper.style.cursor = disabled ? 'not-allowed' : 'pointer'
-        lockWrapper.title = locked
+        const titleText = locked
           ? 'Unlock selection rectangles'
           : empty
             ? 'No selection rectangles to lock'
             : 'Lock selection rectangles'
+        lockWrapper.title = titleText
+        lockButton.element.title = titleText
       }
     }
     if (canEditContentRef.current) {
