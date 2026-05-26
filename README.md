@@ -18,16 +18,16 @@ Source files in `frontend/src/` and `backend/app/` are bind-mounted into the con
 
 All seed users share the password `password`.
 
-| **User**                | **Email**            | **Password** | **Role**     |
-|-------------------------|----------------------|--------------|--------------|
-| Haruki Tanaka           | admin@example.ca        | password     | admin        |
-| Carlos Henrique Souza   | instructor@example.ca   | password     | instructor   |
-| Mira Patel              | student@example.ca      | password     | student      |
+| **User**              | **Email**             | **Password** | **Role**   |
+| --------------------- | --------------------- | ------------ | ---------- |
+| Haruki Tanaka         | admin@example.ca      | password     | admin      |
+| Carlos Henrique Souza | instructor@example.ca | password     | instructor |
+| Mira Patel            | student@example.ca    | password     | student    |
 
 ### Role Capabilities
 
 | Capability                      | Admin | Instructor | Student |
-|---------------------------------|-------|------------|---------|
+| ------------------------------- | ----- | ---------- | ------- |
 | Browse categories & view images | Yes   | Yes        | Yes     |
 | Create/update categories        | Yes   | Yes        | No      |
 | Delete categories               | Yes   | No         | No      |
@@ -66,10 +66,3 @@ Note: the Vite proxy target uses the Docker service name (`http://backend:8000`)
 ## Testing
 
 See [docs/TESTING.md](docs/TESTING.md) for the full test plan and verification procedures.
-
-## Release & deploy flow
-
-See [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md) for how
-a merged PR becomes a running pod in `latest` or `stable`: PR-title →
-release-please, image/chart artifact contract, and the `flux-fleet`
-reconciliation model for both environments.
