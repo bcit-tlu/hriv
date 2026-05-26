@@ -56,30 +56,6 @@ jobs:
               sys.exit(1)
           PY
 
-  # Enable auto-merge so release PRs land without manual intervention.
-  # Prerequisite: enable "Allow auto-merge" in repo Settings → General.
-  auto-merge:
-    needs: release
-    if: needs.release.outputs.releases_created != 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Enable auto-merge on open release-please PRs
-        env:
-          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
-        run: |
-          set -euo pipefail
-          prs=$(gh pr list \
-            --repo "$GITHUB_REPOSITORY" \
-            --json number,headRefName \
-            --jq '.[] | select(.headRefName | startswith("release-please--")) | .number')
-
-          for pr_num in $prs; do
-            echo "Enabling auto-merge on PR #${pr_num}"
-            if ! output=$(gh pr merge "$pr_num" --auto --squash --repo "$GITHUB_REPOSITORY" 2>&1); then
-              echo "::warning::auto-merge failed for PR #${pr_num}: ${output}"
-            fi
-          done
-
   # Dispatch helm-publish and release-retag for each released tag.
   dispatch-publish:
     needs: release
