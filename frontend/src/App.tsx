@@ -1842,10 +1842,15 @@ export default function App() {
                     found?.image ??
                     uncategorizedImages.find((i) => i.id === imageId);
                 if (!img) return;
-                await apiUpdateImage(
+                const updated = await apiUpdateImage(
                     imageId,
                     { active: !img.active },
                     img.version,
+                );
+                setSelectedImage((prev) =>
+                    prev && prev.id === imageId
+                        ? { ...prev, active: updated.active, version: updated.version }
+                        : prev,
                 );
                 await loadCategories();
                 loadUncategorizedImages();
@@ -2856,18 +2861,24 @@ export default function App() {
                                     }}
                                 >
                                     {canEditContent && (
-                                        <Tooltip title={selectedImage.active ? "Visible" : "Hidden"}>
-                                            {selectedImage.active ? (
-                                                <VisibilityIcon
-                                                    color="action"
-                                                    sx={{ fontSize: 28 }}
-                                                />
-                                            ) : (
-                                                <DisabledVisibleIcon
-                                                    color="disabled"
-                                                    sx={{ fontSize: 28 }}
-                                                />
-                                            )}
+                                        <Tooltip title={selectedImage.active ? "Hide from students" : "Show to students"}>
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => toggleImageVisibility(selectedImage.id)}
+                                                aria-label="Toggle visibility"
+                                            >
+                                                {selectedImage.active ? (
+                                                    <VisibilityIcon
+                                                        color="action"
+                                                        sx={{ fontSize: 28 }}
+                                                    />
+                                                ) : (
+                                                    <DisabledVisibleIcon
+                                                        color="disabled"
+                                                        sx={{ fontSize: 28 }}
+                                                    />
+                                                )}
+                                            </IconButton>
                                         </Tooltip>
                                     )}
                                     {canEditContent && (
