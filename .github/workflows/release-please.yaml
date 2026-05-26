@@ -21,15 +21,20 @@ jobs:
       paths_released: ${{ steps.rp.outputs.paths_released }}
       outputs: ${{ toJSON(steps.rp.outputs) }}
     steps:
-      # A dedicated token (PAT or GitHub App) is required so that the
-      # PR push triggers downstream workflows (ci.yaml, pr-title-lint).
-      # GITHUB_TOKEN is deliberately NOT used here — its anti-recursion
-      # guard silently prevents other workflows from running on the PR,
-      # leaving branch-protection checks unsatisfied.
+      # A GitHub App token is required so that the PR push triggers
+      # downstream workflows (ci.yaml, pr-title-lint).  GITHUB_TOKEN's
+      # anti-recursion guard silently prevents other workflows from
+      # running on the PR, leaving branch-protection checks unsatisfied.
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
       - uses: googleapis/release-please-action@v4
         id: rp
         with:
-          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
       # `release-as` is one-shot. Once manifest catches up, remove it;
       # otherwise future semver bumps are pinned and releases stall.
