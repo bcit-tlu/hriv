@@ -1,6 +1,6 @@
 # Backend (FastAPI)
 
-Backend is built with FastAPI and managed with Poetry.
+The backend is built with FastAPI and managed with Poetry.
 
 ## Testing Setup
 
