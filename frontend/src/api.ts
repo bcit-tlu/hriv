@@ -61,7 +61,7 @@ export function userMessage(err: unknown, fallback: string): string {
     }
     if (err.status >= 400 && err.status < 500 && err.detail) {
       const detail = err.detail.trim()
-      const looksLikeHtml = /^<(!doctype|html|head|body|div|p|span)\b/i.test(detail)
+      const looksLikeHtml = /^<(!doctype|html|head|body|div|p|span|h[1-6]|pre|ul|ol|table|section|article)\b/i.test(detail)
       if (!looksLikeHtml && detail.length > 0 && detail.length <= 200) {
         return detail
       }

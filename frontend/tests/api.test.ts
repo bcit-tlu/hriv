@@ -280,8 +280,10 @@ describe('userMessage', () => {
   })
 
   it('returns fallback for HTML fragment detail', () => {
-    const err = new ApiError(400, '<div>Service Unavailable</div>')
-    expect(userMessage(err, 'fallback')).toBe('fallback')
+    expect(userMessage(new ApiError(400, '<div>Service Unavailable</div>'), 'fallback')).toBe('fallback')
+    expect(userMessage(new ApiError(413, '<h1>413 Request Entity Too Large</h1>'), 'fallback')).toBe('fallback')
+    expect(userMessage(new ApiError(400, '<pre>Error details</pre>'), 'fallback')).toBe('fallback')
+    expect(userMessage(new ApiError(400, '<table><tr><td>Error</td></tr></table>'), 'fallback')).toBe('fallback')
   })
 })
 
