@@ -1008,10 +1008,18 @@ export default function CanvasOverlay({
     onEditModeChange(false)
   }, [emitAnnotations, onEditModeChange, onFlushAnnotations])
 
-  const handleCancel = useCallback(() => {
+  const handleCancel = useCallback(async () => {
     onAnnotationsChange(snapshotRef.current)
+    if (onFlushAnnotations) {
+      setFlushing(true)
+      try {
+        await onFlushAnnotations()
+      } finally {
+        setFlushing(false)
+      }
+    }
     onEditModeChange(false)
-  }, [onAnnotationsChange, onEditModeChange])
+  }, [onAnnotationsChange, onEditModeChange, onFlushAnnotations])
 
   /** Change active color and apply to any selected fabric objects */
   const handleColorChange = useCallback((color: string) => {
