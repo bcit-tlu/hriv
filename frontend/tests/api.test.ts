@@ -79,6 +79,7 @@ import {
   type ApiProgram,
   type ApiAnnouncement,
   type ApiSourceImage,
+  userMessage,
 } from '../src/api'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -220,6 +221,67 @@ describe('ApiError', () => {
     expect(err.message).toBe('API 404: Not Found')
     expect(err.name).toBe('ApiError')
     expect(err).toBeInstanceOf(Error)
+  })
+})
+
+describe('userMessage', () => {
+  it('returns conflict message for 409', () => {
+    const err = new ApiError(409, 'Conflict')
+    expect(userMessage(err, 'fallback')).toBe(
+      'This item was modified by another user. Please refresh and try again.',
+    )
+  })
+
+  it('returns detail for short 4xx errors', () => {
+    const err = new ApiError(422, 'Name already exists')
+    expect(userMessage(err, 'fallback')).toBe('Name already exists')
+  })
+
+  it('returns fallback for HTML detail', () => {
+    const err = new ApiError(413, '<!DOCTYPE html><html>error page</html>')
+    expect(userMessage(err, 'Too large')).toBe('Too large')
+  })
+
+  it('returns fallback for detail exceeding 200 chars', () => {
+    const err = new ApiError(400, 'x'.repeat(201))
+    expect(userMessage(err, 'fallback')).toBe('fallback')
+  })
+
+  it('returns fallback for empty detail', () => {
+    const err = new ApiError(400, '')
+    expect(userMessage(err, 'fallback')).toBe('fallback')
+  })
+
+  it('returns fallback for whitespace-only detail', () => {
+    const err = new ApiError(400, '   ')
+    expect(userMessage(err, 'fallback')).toBe('fallback')
+  })
+
+  it('returns fallback for 5xx errors', () => {
+    const err = new ApiError(500, 'Internal Server Error')
+    expect(userMessage(err, 'fallback')).toBe('fallback')
+  })
+
+  it('returns network message for TypeError', () => {
+    expect(userMessage(new TypeError('Failed to fetch'), 'fallback')).toBe(
+      'Network error \u2014 check your connection and try again.',
+    )
+  })
+
+  it('returns fallback for AbortError', () => {
+    const err = new DOMException('Aborted', 'AbortError')
+    expect(userMessage(err, 'fallback')).toBe('fallback')
+  })
+
+  it('returns fallback for unknown error types', () => {
+    expect(userMessage('unexpected', 'fallback')).toBe('fallback')
+    expect(userMessage(42, 'fallback')).toBe('fallback')
+    expect(userMessage(null, 'fallback')).toBe('fallback')
+  })
+
+  it('returns fallback for HTML fragment detail', () => {
+    const err = new ApiError(400, '<div>Service Unavailable</div>')
+    expect(userMessage(err, 'fallback')).toBe('fallback')
   })
 })
 

@@ -255,7 +255,7 @@ describe('Background Admin Task API', () => {
       )![1] as () => void
       errorHandler()
 
-      await expect(promise).rejects.toThrow('Upload failed: network error')
+      await expect(promise).rejects.toThrow('Network error')
     })
 
     it('calls onProgress callback', async () => {
