@@ -66,6 +66,17 @@ export function userMessage(err: unknown, fallback: string): string {
         return detail
       }
     }
+    return fallback
+  }
+  // Network failure: fetch rejects with TypeError (e.g. "Failed to fetch").
+  // XHR-based handlers in this module also reject with TypeError for
+  // consistency, so all network-level failures surface here.
+  if (err instanceof TypeError) {
+    return 'Network error — check your connection and try again.'
+  }
+  // User-initiated aborts should not surface as errors
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return fallback
   }
   return fallback
 }
@@ -501,7 +512,7 @@ export async function uploadSourceImage(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new Error('Upload failed: network error'))
+      reject(new TypeError('Network error'))
     })
 
     xhr.addEventListener('abort', () => {
@@ -586,7 +597,7 @@ export async function replaceImage(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new Error('Replace failed: network error'))
+      reject(new TypeError('Network error'))
     })
 
     xhr.addEventListener('abort', () => {
@@ -672,7 +683,7 @@ export async function bulkImportImages(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new Error('Bulk import failed: network error'))
+      reject(new TypeError('Network error'))
     })
 
     xhr.addEventListener('abort', () => {
@@ -823,7 +834,7 @@ export function uploadTaskFile(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new Error('Upload failed: network error'))
+      reject(new TypeError('Network error'))
     })
 
     xhr.addEventListener('abort', () => {
