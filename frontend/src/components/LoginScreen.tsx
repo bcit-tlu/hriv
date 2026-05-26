@@ -145,27 +145,6 @@ export default function LoginScreen({
                                 mb: 5,
                             }}
                         >
-                            {error && (
-                                <Alert
-                                    severity="error"
-                                    onClose={() => setError(null)}
-                                >
-                                    {error}
-                                </Alert>
-                            )}
-
-                            <TextField
-                                label="Username"
-                                placeholder="username@example.ca"
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                                fullWidth
-                                autoFocus
-                                autoComplete="email"
-                                variant="standard"
-                            />
                             <Typography variant="h5" sx={{ fontWeight: 400 }}>
                                 High Resolution Image Viewer (HRIV) Login
                             </Typography>
@@ -235,7 +214,7 @@ export default function LoginScreen({
 
                                 <TextField
                                     label="Username"
-                                    placeholder="username@bcit.ca"
+                                    placeholder="username@example.ca"
                                     type="email"
                                     value={email}
                                     onChange={(e) => setEmail(e.target.value)}
