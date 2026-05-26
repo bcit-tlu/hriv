@@ -66,3 +66,7 @@ Note: the Vite proxy target uses the Docker service name (`http://backend:8000`)
 ## Testing
 
 See [docs/TESTING.md](docs/TESTING.md) for the full test plan and verification procedures.
+
+### New Branch Test
+
+New test message.
