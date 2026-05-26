@@ -90,7 +90,7 @@ import {
     updateProgram,
     deleteProgram,
     reorderCategories as apiReorderCategories,
-    ApiError,
+    userMessage,
 } from "./api";
 import type {
     ApiBulkImportJob,
@@ -142,22 +142,6 @@ function findCategoryPath(
         if (found) return found;
     }
     return null;
-}
-
-function userMessage(err: unknown, fallback: string): string {
-    if (err instanceof ApiError) {
-        if (err.status === 409) {
-            return "This item was modified by another user. Please refresh and try again.";
-        }
-        if (err.status >= 400 && err.status < 500 && err.detail) {
-            const detail = err.detail.trim();
-            const looksLikeHtml = /^\s*<(!doctype|html|head|body)/i.test(detail);
-            if (!looksLikeHtml && detail.length > 0 && detail.length <= 200) {
-                return detail;
-            }
-        }
-    }
-    return fallback;
 }
 
 /** Walk the category tree following an ordered list of IDs to reconstruct a path. */

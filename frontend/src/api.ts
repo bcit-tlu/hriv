@@ -54,6 +54,22 @@ export class ApiError extends Error {
   }
 }
 
+export function userMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    if (err.status === 409) {
+      return 'This item was modified by another user. Please refresh and try again.'
+    }
+    if (err.status >= 400 && err.status < 500 && err.detail) {
+      const detail = err.detail.trim()
+      const looksLikeHtml = /^<(!doctype|html|head|body|div|p|span)\b/i.test(detail)
+      if (!looksLikeHtml && detail.length > 0 && detail.length <= 200) {
+        return detail
+      }
+    }
+  }
+  return fallback
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const { headers: initHeaders, ...restInit } = init ?? {}
   const res = await fetch(`${BASE}/api${path}`, {
@@ -67,6 +83,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       const body = JSON.parse(text)
       if (typeof body.detail === 'string') detail = body.detail
       else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+      else if (body.detail !== undefined) detail = String(body.detail)
     } catch { /* use raw text */ }
     throw new ApiError(res.status, detail)
   }
@@ -474,6 +491,7 @@ export async function uploadSourceImage(
             const body = JSON.parse(text)
             if (typeof body.detail === 'string') detail = body.detail
             else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+      else if (body.detail !== undefined) detail = String(body.detail)
           } catch { /* use raw text */ }
           reject(new ApiError(xhr.status, detail))
         }
@@ -558,6 +576,7 @@ export async function replaceImage(
             const body = JSON.parse(text)
             if (typeof body.detail === 'string') detail = body.detail
             else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+      else if (body.detail !== undefined) detail = String(body.detail)
           } catch { /* use raw text */ }
           reject(new ApiError(xhr.status, detail))
         }
@@ -643,6 +662,7 @@ export async function bulkImportImages(
             const body = JSON.parse(text)
             if (typeof body.detail === 'string') detail = body.detail
             else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+      else if (body.detail !== undefined) detail = String(body.detail)
           } catch { /* use raw text */ }
           reject(new ApiError(xhr.status, detail))
         }
@@ -722,6 +742,7 @@ export async function startDbImport(file: File): Promise<AdminTask> {
       const body = JSON.parse(text)
       if (typeof body.detail === 'string') detail = body.detail
       else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+      else if (body.detail !== undefined) detail = String(body.detail)
     } catch { /* use raw text */ }
     throw new ApiError(res.status, detail)
   }
@@ -792,6 +813,7 @@ export function uploadTaskFile(
             const body = JSON.parse(text)
             if (typeof body.detail === 'string') detail = body.detail
             else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+      else if (body.detail !== undefined) detail = String(body.detail)
           } catch { /* use raw text */ }
           reject(new ApiError(xhr.status, detail))
         }
