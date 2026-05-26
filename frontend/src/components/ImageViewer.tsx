@@ -304,8 +304,52 @@ export default function ImageViewer({
       updateMeasurementLabels(rect, wl, hl)
     }
 
-    // --- Selection rectangle toolbar button ---
+    // --- Toolbar buttons ---
     const prefix = '/openseadragon-svg-icons/'
+
+    // --- Clear overlays toolbar button ---
+    const clearButton = new OpenSeadragon.Button({
+      tooltip: 'Clear all selection rectangles',
+      srcRest: prefix + 'clear_rest.svg',
+      srcGroup: prefix + 'clear_grouphover.svg',
+      srcHover: prefix + 'clear_hover.svg',
+      srcDown: prefix + 'clear_pressed.svg',
+      onClick: () => {
+        if (overlaysLockedRef.current) return
+        for (const el of overlaysRef.current) {
+          viewer.removeOverlay(el)
+        }
+        overlaysRef.current = []
+        for (const pair of labelPairs) {
+          pair.widthLabel.remove()
+          pair.heightLabel.remove()
+        }
+        labelPairs.length = 0
+        emitOverlays()
+        updateClearButtonState()
+        onClearOverlaysRef.current?.()
+      },
+    })
+    const clearWrapper = document.createElement('div')
+    clearWrapper.style.display = 'inline-block'
+    clearButton.element.style.lineHeight = '0'
+    clearWrapper.appendChild(clearButton.element)
+
+    const updateClearButtonState = () => {
+      const locked = overlaysLockedRef.current
+      const empty = overlaysRef.current.length === 0
+      const disabled = locked || empty
+      clearButton.element.style.opacity = disabled ? '0.3' : '1'
+      clearButton.element.style.pointerEvents = disabled ? 'none' : 'auto'
+      clearWrapper.style.cursor = disabled ? 'not-allowed' : 'pointer'
+      clearWrapper.title = locked
+        ? 'Overlays are locked by the instructor'
+        : empty
+          ? 'No selection rectangles to clear'
+          : 'Clear all selection rectangles'
+    }
+
+    // --- Selection rectangle toolbar button ---
     const selectionButton = new OpenSeadragon.Button({
       tooltip: 'Draw selection rectangle',
       srcRest: prefix + 'selection_rest.svg',
@@ -323,7 +367,6 @@ export default function ImageViewer({
           : ''
       },
     })
-    // Eliminate inline-block descender gap so inset border aligns with visible button area
     selectionButton.element.style.lineHeight = '0'
     viewer.addControl(selectionButton.element, {
       anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
@@ -480,54 +523,7 @@ export default function ImageViewer({
       updateLockIcon()
     }
 
-    // --- Clear overlays toolbar button ---
-    const clearButton = new OpenSeadragon.Button({
-      tooltip: 'Clear all selection rectangles',
-      srcRest: prefix + 'clear_rest.svg',
-      srcGroup: prefix + 'clear_grouphover.svg',
-      srcHover: prefix + 'clear_hover.svg',
-      srcDown: prefix + 'clear_pressed.svg',
-      onClick: () => {
-        // Prevent clearing when lock is engaged
-        if (overlaysLockedRef.current) return
-        for (const el of overlaysRef.current) {
-          viewer.removeOverlay(el)
-        }
-        overlaysRef.current = []
-        // Also remove all measurement labels
-        for (const pair of labelPairs) {
-          pair.widthLabel.remove()
-          pair.heightLabel.remove()
-        }
-        labelPairs.length = 0
-        emitOverlays()
-        updateClearButtonState()
-        // Also remove persisted overlays from metadata
-        onClearOverlaysRef.current?.()
-      },
-    })
-    // Wrap the OSD button in an outer container so we can block OSD's
-    // MouseTracker (pointer-events:none on the button itself) while the
-    // wrapper still receives hover events for the tooltip.
-    const clearWrapper = document.createElement('div')
-    clearWrapper.style.display = 'inline-block'
-    clearButton.element.style.lineHeight = '0'
-    clearWrapper.appendChild(clearButton.element)
-
-    // Visually disable clear button when locked or no overlays exist
-    const updateClearButtonState = () => {
-      const locked = overlaysLockedRef.current
-      const empty = overlaysRef.current.length === 0
-      const disabled = locked || empty
-      clearButton.element.style.opacity = disabled ? '0.3' : '1'
-      clearButton.element.style.pointerEvents = disabled ? 'none' : 'auto'
-      clearWrapper.style.cursor = disabled ? 'not-allowed' : 'pointer'
-      clearWrapper.title = locked
-        ? 'Overlays are locked by the instructor'
-        : empty
-          ? 'No selection rectangles to clear'
-          : 'Clear all selection rectangles'
-    }
+    // Add clear button to toolbar (created above, before selection tracker)
     updateClearButtonState()
     viewer.addControl(clearWrapper, {
       anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
