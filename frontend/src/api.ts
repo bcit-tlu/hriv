@@ -45,10 +45,12 @@ function authHeaders(): Record<string, string> {
 
 export class ApiError extends Error {
   status: number
+  detail: string
   constructor(status: number, detail: string) {
     super(`API ${status}: ${detail}`)
     this.name = 'ApiError'
     this.status = status
+    this.detail = detail
   }
 }
 
@@ -537,7 +539,14 @@ export async function replaceImage(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
-          reject(new Error(`Replace failed: ${xhr.responseText || xhr.statusText}`))
+          const text = xhr.responseText || xhr.statusText
+          let detail = text
+          try {
+            const body = JSON.parse(text)
+            if (typeof body.detail === 'string') detail = body.detail
+            else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+          } catch { /* use raw text */ }
+          reject(new ApiError(xhr.status, detail))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse replace response'))

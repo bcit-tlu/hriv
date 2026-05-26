@@ -145,8 +145,13 @@ function findCategoryPath(
 }
 
 function userMessage(err: unknown, fallback: string): string {
-    if (err instanceof ApiError && err.status === 409) {
-        return "This item was modified by another user. Please refresh and try again.";
+    if (err instanceof ApiError) {
+        if (err.status === 409) {
+            return "This item was modified by another user. Please refresh and try again.";
+        }
+        if (err.status >= 400 && err.status < 500) {
+            return err.detail;
+        }
     }
     return fallback;
 }
@@ -2186,8 +2191,7 @@ export default function App() {
                                 ? {
                                       ...j,
                                       status: "failed" as const,
-                                      errorMessage:
-                                          "Failed to upload replacement image",
+                                      errorMessage: userMessage(err, "Failed to upload replacement image"),
                                       uploadId: undefined,
                                   }
                                 : j,
@@ -2284,8 +2288,7 @@ export default function App() {
                                 ? {
                                       ...j,
                                       status: "failed" as const,
-                                      errorMessage:
-                                          "Failed to upload replacement image",
+                                      errorMessage: userMessage(err, "Failed to upload replacement image"),
                                       uploadId: undefined,
                                   }
                                 : j,
