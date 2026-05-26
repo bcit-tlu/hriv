@@ -81,6 +81,17 @@ export function userMessage(err: unknown, fallback: string): string {
   return fallback
 }
 
+function parseErrorDetail(text: string): string {
+  let detail = text
+  try {
+    const body = JSON.parse(text)
+    if (typeof body.detail === 'string') detail = body.detail
+    else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+    else if (body.detail !== undefined) detail = String(body.detail)
+  } catch { /* use raw text */ }
+  return detail
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const { headers: initHeaders, ...restInit } = init ?? {}
   const res = await fetch(`${BASE}/api${path}`, {
@@ -89,14 +100,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    let detail = text
-    try {
-      const body = JSON.parse(text)
-      if (typeof body.detail === 'string') detail = body.detail
-      else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
-      else if (body.detail !== undefined) detail = String(body.detail)
-    } catch { /* use raw text */ }
-    throw new ApiError(res.status, detail)
+    throw new ApiError(res.status, parseErrorDetail(text))
   }
   if (res.status === 204) return undefined as unknown as T
   return res.json() as Promise<T>
@@ -496,15 +500,7 @@ export async function uploadSourceImage(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
-          const text = xhr.responseText || xhr.statusText
-          let detail = text
-          try {
-            const body = JSON.parse(text)
-            if (typeof body.detail === 'string') detail = body.detail
-            else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
-      else if (body.detail !== undefined) detail = String(body.detail)
-          } catch { /* use raw text */ }
-          reject(new ApiError(xhr.status, detail))
+          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
@@ -581,15 +577,7 @@ export async function replaceImage(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
-          const text = xhr.responseText || xhr.statusText
-          let detail = text
-          try {
-            const body = JSON.parse(text)
-            if (typeof body.detail === 'string') detail = body.detail
-            else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
-      else if (body.detail !== undefined) detail = String(body.detail)
-          } catch { /* use raw text */ }
-          reject(new ApiError(xhr.status, detail))
+          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse replace response'))
@@ -667,15 +655,7 @@ export async function bulkImportImages(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiBulkImportJob)
         } else {
-          const text = xhr.responseText || xhr.statusText
-          let detail = text
-          try {
-            const body = JSON.parse(text)
-            if (typeof body.detail === 'string') detail = body.detail
-            else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
-      else if (body.detail !== undefined) detail = String(body.detail)
-          } catch { /* use raw text */ }
-          reject(new ApiError(xhr.status, detail))
+          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse bulk import response'))
@@ -748,14 +728,7 @@ export async function startDbImport(file: File): Promise<AdminTask> {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    let detail = text
-    try {
-      const body = JSON.parse(text)
-      if (typeof body.detail === 'string') detail = body.detail
-      else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
-      else if (body.detail !== undefined) detail = String(body.detail)
-    } catch { /* use raw text */ }
-    throw new ApiError(res.status, detail)
+    throw new ApiError(res.status, parseErrorDetail(text))
   }
   return res.json() as Promise<AdminTask>
 }
@@ -818,15 +791,7 @@ export function uploadTaskFile(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as AdminTask)
         } else {
-          const text = xhr.responseText || xhr.statusText
-          let detail = text
-          try {
-            const body = JSON.parse(text)
-            if (typeof body.detail === 'string') detail = body.detail
-            else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
-      else if (body.detail !== undefined) detail = String(body.detail)
-          } catch { /* use raw text */ }
-          reject(new ApiError(xhr.status, detail))
+          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
