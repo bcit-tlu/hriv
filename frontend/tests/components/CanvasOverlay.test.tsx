@@ -207,6 +207,7 @@ describe('CanvasOverlay', () => {
       expect(screen.getByLabelText(/Hyperlink|Link/)).toBeInTheDocument()
       expect(screen.getByLabelText('Delete Selected')).toBeInTheDocument()
       expect(screen.getByLabelText('Clear All Annotations')).toBeInTheDocument()
+      expect(screen.getByLabelText('Cancel — discard changes')).toBeInTheDocument()
       expect(screen.getByLabelText('Save & Exit Edit Mode')).toBeInTheDocument()
       expect(screen.getByLabelText('Color')).toBeInTheDocument()
       expect(screen.getByLabelText('Line Thickness')).toBeInTheDocument()
@@ -239,6 +240,38 @@ describe('CanvasOverlay', () => {
       )
       const canvases = container.querySelectorAll('canvas')
       expect(canvases.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('cancel button restores original annotations and exits edit mode', async () => {
+      const original = [makeAnnotation({ id: 'orig-1' })]
+      const onAnnotationsChange = vi.fn()
+      const onEditModeChange = vi.fn()
+      const { rerender } = render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={original}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit={true}
+          editMode={false}
+          onEditModeChange={onEditModeChange}
+        />,
+      )
+      // Enter edit mode
+      rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={original}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={onEditModeChange}
+        />,
+      )
+      // Click cancel
+      const cancelBtn = screen.getByLabelText('Cancel — discard changes')
+      await act(async () => { cancelBtn.click() })
+      expect(onAnnotationsChange).toHaveBeenCalledWith(original)
+      expect(onEditModeChange).toHaveBeenCalledWith(false)
     })
   })
 

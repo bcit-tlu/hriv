@@ -23,6 +23,7 @@ import LinkIcon from '@mui/icons-material/Link'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep'
 import CheckIcon from '@mui/icons-material/Check'
+import CloseIcon from '@mui/icons-material/Close'
 import PaletteIcon from '@mui/icons-material/Palette'
 import LineWeightIcon from '@mui/icons-material/LineWeight'
 
@@ -189,10 +190,20 @@ export default function CanvasOverlay({
   const drawStartRef = useRef<{ x: number; y: number } | null>(null)
   const drawObjRef = useRef<fabric.FabricObject | null>(null)
   const clipboardRef = useRef<CanvasAnnotation[]>([])
+  const snapshotRef = useRef<CanvasAnnotation[]>([])
 
   useEffect(() => {
     annotationsRef.current = annotations
   }, [annotations])
+
+  // Snapshot annotations when entering edit mode so cancel can restore them
+  const prevEditModeRef = useRef(false)
+  useEffect(() => {
+    if (editMode && !prevEditModeRef.current) {
+      snapshotRef.current = annotations
+    }
+    prevEditModeRef.current = editMode
+  }, [editMode, annotations])
 
   // View mode: render annotations on a plain canvas
   const redrawViewCanvas = useCallback(() => {
@@ -997,6 +1008,11 @@ export default function CanvasOverlay({
     onEditModeChange(false)
   }, [emitAnnotations, onEditModeChange, onFlushAnnotations])
 
+  const handleCancel = useCallback(() => {
+    onAnnotationsChange(snapshotRef.current)
+    onEditModeChange(false)
+  }, [onAnnotationsChange, onEditModeChange])
+
   /** Change active color and apply to any selected fabric objects */
   const handleColorChange = useCallback((color: string) => {
     setActiveColor(color)
@@ -1422,6 +1438,13 @@ export default function CanvasOverlay({
           </Tooltip>
 
           <Divider orientation="vertical" flexItem sx={{ borderColor: 'rgba(255,255,255,0.3)' }} />
+
+          {/* Cancel */}
+          <Tooltip title="Cancel — discard changes">
+            <IconButton onClick={handleCancel} disabled={flushing} sx={{ color: '#ef5350', p: 0.75 }}>
+              <CloseIcon sx={{ fontSize: 28 }} />
+            </IconButton>
+          </Tooltip>
 
           {/* Done */}
           <Tooltip title="Save & Exit Edit Mode">

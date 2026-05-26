@@ -395,6 +395,7 @@ export default function ImageViewer({
             heightLabel: dragRef.current.heightLabel,
           })
           emitOverlays()
+          updateClearButtonState()
         } else {
           // Remove labels if the rectangle is too small (click without drag)
           dragRef.current.widthLabel.remove()
@@ -500,6 +501,7 @@ export default function ImageViewer({
         }
         labelPairs.length = 0
         emitOverlays()
+        updateClearButtonState()
         // Also remove persisted overlays from metadata
         onClearOverlaysRef.current?.()
       },
@@ -512,15 +514,19 @@ export default function ImageViewer({
     clearButton.element.style.lineHeight = '0'
     clearWrapper.appendChild(clearButton.element)
 
-    // Visually disable clear button when locked
+    // Visually disable clear button when locked or no overlays exist
     const updateClearButtonState = () => {
       const locked = overlaysLockedRef.current
-      clearButton.element.style.opacity = locked ? '0.3' : '1'
-      clearButton.element.style.pointerEvents = locked ? 'none' : 'auto'
-      clearWrapper.style.cursor = locked ? 'not-allowed' : 'pointer'
+      const empty = overlaysRef.current.length === 0
+      const disabled = locked || empty
+      clearButton.element.style.opacity = disabled ? '0.3' : '1'
+      clearButton.element.style.pointerEvents = disabled ? 'none' : 'auto'
+      clearWrapper.style.cursor = disabled ? 'not-allowed' : 'pointer'
       clearWrapper.title = locked
         ? 'Overlays are locked by the instructor'
-        : 'Clear all selection rectangles'
+        : empty
+          ? 'No selection rectangles to clear'
+          : 'Clear all selection rectangles'
     }
     updateClearButtonState()
     viewer.addControl(clearWrapper, {
@@ -629,6 +635,7 @@ export default function ImageViewer({
         for (const r of initialOverlays.slice(0, MAX_SHARE_OVERLAYS)) {
           addOverlayRect(r)
         }
+        updateClearButtonState()
       }
       updateMagnification()
     })
