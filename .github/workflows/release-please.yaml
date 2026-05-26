@@ -15,9 +15,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+      contents: read
     outputs:
       releases_created: ${{ steps.rp.outputs.releases_created }}
       paths_released: ${{ steps.rp.outputs.paths_released }}
@@ -77,7 +75,9 @@ jobs:
 
           for pr_num in $prs; do
             echo "Enabling auto-merge on PR #${pr_num}"
-            gh pr merge "$pr_num" --auto --squash --repo "$GITHUB_REPOSITORY" || true
+            if ! output=$(gh pr merge "$pr_num" --auto --squash --repo "$GITHUB_REPOSITORY" 2>&1); then
+              echo "::warning::auto-merge failed for PR #${pr_num}: ${output}"
+            fi
           done
 
   # Dispatch helm-publish and release-retag for each released tag.
