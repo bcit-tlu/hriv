@@ -149,7 +149,7 @@ function userMessage(err: unknown, fallback: string): string {
         if (err.status === 409) {
             return "This item was modified by another user. Please refresh and try again.";
         }
-        if (err.status >= 400 && err.status < 500) {
+        if (err.status >= 400 && err.status < 500 && err.detail) {
             return err.detail;
         }
     }
