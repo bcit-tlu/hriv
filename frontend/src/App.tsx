@@ -152,7 +152,7 @@ function userMessage(err: unknown, fallback: string): string {
         if (err.status >= 400 && err.status < 500 && err.detail) {
             const detail = err.detail.trim();
             const looksLikeHtml = /^\s*<(!doctype|html|head|body)/i.test(detail);
-            if (!looksLikeHtml && detail.length <= 200) {
+            if (!looksLikeHtml && detail.length > 0 && detail.length <= 200) {
                 return detail;
             }
         }

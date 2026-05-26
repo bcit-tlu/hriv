@@ -164,7 +164,7 @@ describe('Background Admin Task API', () => {
       mockFetch.mockReturnValueOnce(errorResponse(400, 'Invalid JSON'))
 
       const file = new File(['bad'], 'bad.json', { type: 'application/json' })
-      await expect(startDbImport(file)).rejects.toThrow('Import failed: Invalid JSON')
+      await expect(startDbImport(file)).rejects.toThrow('API 400: Invalid JSON')
     })
   })
 

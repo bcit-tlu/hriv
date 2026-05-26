@@ -717,7 +717,13 @@ export async function startDbImport(file: File): Promise<AdminTask> {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new Error(`Import failed: ${text}`)
+    let detail = text
+    try {
+      const body = JSON.parse(text)
+      if (typeof body.detail === 'string') detail = body.detail
+      else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+    } catch { /* use raw text */ }
+    throw new ApiError(res.status, detail)
   }
   return res.json() as Promise<AdminTask>
 }
@@ -780,7 +786,14 @@ export function uploadTaskFile(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as AdminTask)
         } else {
-          reject(new Error(`Upload failed: ${xhr.responseText || xhr.statusText}`))
+          const text = xhr.responseText || xhr.statusText
+          let detail = text
+          try {
+            const body = JSON.parse(text)
+            if (typeof body.detail === 'string') detail = body.detail
+            else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+          } catch { /* use raw text */ }
+          reject(new ApiError(xhr.status, detail))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
