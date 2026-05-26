@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.17.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.17.1...frontend-v0.17.2) (2026-05-26)
+
+
+### Bug Fixes
+
+* **frontend:** add aria-labels to canvas overlay action buttons ([#506](https://github.com/bcit-tlu/hriv/issues/506)) ([f8fdd8a](https://github.com/bcit-tlu/hriv/commit/f8fdd8a1200ab590bdca3f43aaa07d25e235bf1b))
+* **frontend:** disable clear-rectangles when empty and add canvas cancel icon ([#501](https://github.com/bcit-tlu/hriv/issues/501)) ([3890617](https://github.com/bcit-tlu/hriv/commit/3890617d893811c78124b9f8a53b5772aa329828))
+* **frontend:** disable lock icon until selection rectangles exist ([#502](https://github.com/bcit-tlu/hriv/issues/502)) ([2aef61b](https://github.com/bcit-tlu/hriv/commit/2aef61be59bfd3fd2f10debed92f8bf5d7bb9366))
+* **frontend:** surface server-side validation errors in replace-image snackbar ([#491](https://github.com/bcit-tlu/hriv/issues/491)) ([ad625a4](https://github.com/bcit-tlu/hriv/commit/ad625a481ef152d0f1e1e0d61bde6d1a1ddf9935))
+
 ## [0.17.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.17.0...frontend-v0.17.1) (2026-05-26)
 
 
