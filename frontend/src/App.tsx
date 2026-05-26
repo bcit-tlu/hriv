@@ -90,7 +90,7 @@ import {
     updateProgram,
     deleteProgram,
     reorderCategories as apiReorderCategories,
-    ApiError,
+    userMessage,
 } from "./api";
 import type {
     ApiBulkImportJob,
@@ -142,13 +142,6 @@ function findCategoryPath(
         if (found) return found;
     }
     return null;
-}
-
-function userMessage(err: unknown, fallback: string): string {
-    if (err instanceof ApiError && err.status === 409) {
-        return "This item was modified by another user. Please refresh and try again.";
-    }
-    return fallback;
 }
 
 /** Walk the category tree following an ordered list of IDs to reconstruct a path. */
@@ -1012,11 +1005,7 @@ export default function App() {
             setAnnModalOpen(false);
             loadAnnouncement();
         } catch (err) {
-            setAnnError(
-                err instanceof Error
-                    ? err.message
-                    : "Failed to update announcement",
-            );
+            setAnnError(userMessage(err, "Failed to update announcement"));
         } finally {
             setAnnSaving(false);
         }
@@ -2186,8 +2175,7 @@ export default function App() {
                                 ? {
                                       ...j,
                                       status: "failed" as const,
-                                      errorMessage:
-                                          "Failed to upload replacement image",
+                                      errorMessage: userMessage(err, "Failed to upload replacement image"),
                                       uploadId: undefined,
                                   }
                                 : j,
@@ -2284,8 +2272,7 @@ export default function App() {
                                 ? {
                                       ...j,
                                       status: "failed" as const,
-                                      errorMessage:
-                                          "Failed to upload replacement image",
+                                      errorMessage: userMessage(err, "Failed to upload replacement image"),
                                       uploadId: undefined,
                                   }
                                 : j,

@@ -164,7 +164,7 @@ describe('Background Admin Task API', () => {
       mockFetch.mockReturnValueOnce(errorResponse(400, 'Invalid JSON'))
 
       const file = new File(['bad'], 'bad.json', { type: 'application/json' })
-      await expect(startDbImport(file)).rejects.toThrow('Import failed: Invalid JSON')
+      await expect(startDbImport(file)).rejects.toThrow('API 400: Invalid JSON')
     })
   })
 
@@ -255,7 +255,7 @@ describe('Background Admin Task API', () => {
       )![1] as () => void
       errorHandler()
 
-      await expect(promise).rejects.toThrow('Upload failed: network error')
+      await expect(promise).rejects.toThrow('Network error')
     })
 
     it('calls onProgress callback', async () => {
@@ -366,7 +366,7 @@ describe('Background Admin Task API', () => {
       )![1] as () => void
       loadHandler()
 
-      await expect(promise).rejects.toThrow('Bulk import failed: Internal Server Error')
+      await expect(promise).rejects.toThrow('API 500: Internal Server Error')
     })
   })
 

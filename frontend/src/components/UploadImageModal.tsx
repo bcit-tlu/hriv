@@ -12,7 +12,7 @@ import LinearProgress from '@mui/material/LinearProgress'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
-import { uploadSourceImage, bulkImportImages } from '../api'
+import { uploadSourceImage, bulkImportImages, userMessage } from '../api'
 import type { ApiBulkImportJob } from '../api'
 import { isImageFile, isZipFile, isAcceptedFile } from '../fileUtils'
 import CategoryPickerSelect from './CategoryPickerSelect'
@@ -230,7 +230,7 @@ export default function UploadImageModal({
           onUploadFailed?.(uploadId, 'Upload cancelled')
           onClose()
         } else {
-          const msg = err instanceof Error ? err.message : 'Upload failed'
+          const msg = userMessage(err, 'Upload failed')
           setError(msg)
           onUploadFailed?.(uploadId, msg)
         }
@@ -273,7 +273,7 @@ export default function UploadImageModal({
           onUploadFailed?.(uploadId, 'Upload cancelled')
           onClose()
         } else {
-          const msg = err instanceof Error ? err.message : 'Upload failed'
+          const msg = userMessage(err, 'Upload failed')
           setError(msg)
           onUploadFailed?.(uploadId, msg)
         }

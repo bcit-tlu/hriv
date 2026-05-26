@@ -45,11 +45,51 @@ function authHeaders(): Record<string, string> {
 
 export class ApiError extends Error {
   status: number
+  detail: string
   constructor(status: number, detail: string) {
     super(`API ${status}: ${detail}`)
     this.name = 'ApiError'
     this.status = status
+    this.detail = detail
   }
+}
+
+export function userMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    if (err.status === 409) {
+      return 'This item was modified by another user. Please refresh and try again.'
+    }
+    if (err.status >= 400 && err.status < 500 && err.detail) {
+      const detail = err.detail.trim()
+      const looksLikeHtml = /^<(!doctype|html|head|body|div|p|span|h[1-6]|pre|ul|ol|table|section|article)\b/i.test(detail)
+      if (!looksLikeHtml && detail.length > 0 && detail.length <= 200) {
+        return detail
+      }
+    }
+    return fallback
+  }
+  // Network failure: fetch rejects with TypeError (e.g. "Failed to fetch").
+  // XHR-based handlers in this module also reject with TypeError for
+  // consistency, so all network-level failures surface here.
+  if (err instanceof TypeError) {
+    return 'Network error — check your connection and try again.'
+  }
+  // User-initiated aborts should not surface as errors
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return fallback
+  }
+  return fallback
+}
+
+function parseErrorDetail(text: string): string {
+  let detail = text
+  try {
+    const body = JSON.parse(text)
+    if (typeof body.detail === 'string') detail = body.detail
+    else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+    else if (body.detail !== undefined) detail = String(body.detail)
+  } catch { /* use raw text */ }
+  return detail
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -60,7 +100,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new ApiError(res.status, text)
+    throw new ApiError(res.status, parseErrorDetail(text))
   }
   if (res.status === 204) return undefined as unknown as T
   return res.json() as Promise<T>
@@ -460,7 +500,7 @@ export async function uploadSourceImage(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
-          reject(new Error(`Upload failed: ${xhr.responseText || xhr.statusText}`))
+          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
@@ -468,7 +508,7 @@ export async function uploadSourceImage(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new Error('Upload failed: network error'))
+      reject(new TypeError('Network error'))
     })
 
     xhr.addEventListener('abort', () => {
@@ -537,7 +577,7 @@ export async function replaceImage(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
-          reject(new Error(`Replace failed: ${xhr.responseText || xhr.statusText}`))
+          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse replace response'))
@@ -545,7 +585,7 @@ export async function replaceImage(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new Error('Replace failed: network error'))
+      reject(new TypeError('Network error'))
     })
 
     xhr.addEventListener('abort', () => {
@@ -615,7 +655,7 @@ export async function bulkImportImages(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiBulkImportJob)
         } else {
-          reject(new Error(`Bulk import failed: ${xhr.responseText || xhr.statusText}`))
+          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse bulk import response'))
@@ -623,7 +663,7 @@ export async function bulkImportImages(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new Error('Bulk import failed: network error'))
+      reject(new TypeError('Network error'))
     })
 
     xhr.addEventListener('abort', () => {
@@ -688,7 +728,7 @@ export async function startDbImport(file: File): Promise<AdminTask> {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new Error(`Import failed: ${text}`)
+    throw new ApiError(res.status, parseErrorDetail(text))
   }
   return res.json() as Promise<AdminTask>
 }
@@ -751,7 +791,7 @@ export function uploadTaskFile(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as AdminTask)
         } else {
-          reject(new Error(`Upload failed: ${xhr.responseText || xhr.statusText}`))
+          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
@@ -759,7 +799,7 @@ export function uploadTaskFile(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new Error('Upload failed: network error'))
+      reject(new TypeError('Network error'))
     })
 
     xhr.addEventListener('abort', () => {
