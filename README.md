@@ -1,6 +1,6 @@
 # HRIV
 
-High-resolution image viewer powered by [OpenSeaDragon](https://openseadragon.github.io/).
+High-resolution image viewer powered by [OpenSeadragon](https://openseadragon.github.io/).
 
 Built with Vite, React 19, TypeScript, Material UI, FastAPI, and PostgreSQL.
 
