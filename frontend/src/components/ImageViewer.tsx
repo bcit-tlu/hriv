@@ -327,6 +327,7 @@ export default function ImageViewer({
         labelPairs.length = 0
         emitOverlays()
         updateClearButtonState()
+        updateLockIcon()
         onClearOverlaysRef.current?.()
       },
     })
@@ -439,6 +440,7 @@ export default function ImageViewer({
           })
           emitOverlays()
           updateClearButtonState()
+          updateLockIcon()
         } else {
           // Remove labels if the rectangle is too small (click without drag)
           dragRef.current.widthLabel.remove()
@@ -472,38 +474,45 @@ export default function ImageViewer({
 
     // --- Lock overlay toolbar button (visible to admin/instructor) ---
     let lockButton: OpenSeadragon.Button | null = null
+    let lockWrapper: HTMLDivElement | null = null
     const updateLockIcon = () => {
       if (!lockButton) return
       const locked = overlaysLockedRef.current
+      const empty = overlaysRef.current.length === 0
       const state = locked ? 'lock_closed' : 'lock_open'
-      // Update all four OSD button image states (REST, HOVER, GROUP, DOWN)
       const imgs = lockButton.element.querySelectorAll('img')
-      // OSD Button appends imgs as: imgRest, imgGroup, imgHover, imgDown
       const suffixes = ['rest', 'grouphover', 'hover', 'pressed']
       imgs.forEach((img, i) => {
         if (i < suffixes.length) {
           img.src = prefix + state + '_' + suffixes[i] + '.svg'
         }
       })
-      lockButton.element.title = locked
-        ? 'Unlock overlays (re-enable clear button)'
-        : 'Lock overlays (persist to image metadata)'
       lockButton.element.style.outline = locked ? '2px solid red' : 'none'
       lockButton.element.style.outlineOffset = locked ? '-2px' : ''
+      // Disable when not locked and no rectangles exist
+      const disabled = !locked && empty
+      lockButton.element.style.opacity = disabled ? '0.3' : '1'
+      lockButton.element.style.pointerEvents = disabled ? 'none' : 'auto'
+      if (lockWrapper) {
+        lockWrapper.style.cursor = disabled ? 'not-allowed' : 'pointer'
+        lockWrapper.title = locked
+          ? 'Unlock selection rectangles'
+          : empty
+            ? 'No selection rectangles to lock'
+            : 'Lock selection rectangles'
+      }
     }
     if (canEditContentRef.current) {
       lockButton = new OpenSeadragon.Button({
-        tooltip: 'Lock overlays (persist to image metadata)',
+        tooltip: 'Lock selection rectangles',
         srcRest: prefix + 'lock_open_rest.svg',
         srcGroup: prefix + 'lock_open_grouphover.svg',
         srcHover: prefix + 'lock_open_hover.svg',
         srcDown: prefix + 'lock_open_pressed.svg',
         onClick: () => {
           if (overlaysLockedRef.current) {
-            // Unlock: re-enable clear button (does not remove metadata)
             onUnlockOverlaysRef.current?.()
           } else {
-            // Lock: persist current overlays
             const rects: OverlayRect[] = labelPairs.slice(0, MAX_SHARE_OVERLAYS).map((p) => ({
               x: p.rect.x,
               y: p.rect.y,
@@ -517,7 +526,10 @@ export default function ImageViewer({
         },
       })
       lockButton.element.style.lineHeight = '0'
-      viewer.addControl(lockButton.element, {
+      lockWrapper = document.createElement('div')
+      lockWrapper.style.display = 'inline-block'
+      lockWrapper.appendChild(lockButton.element)
+      viewer.addControl(lockWrapper, {
         anchor: OpenSeadragon.ControlAnchor.BOTTOM_LEFT,
       })
       updateLockIcon()
@@ -632,6 +644,7 @@ export default function ImageViewer({
           addOverlayRect(r)
         }
         updateClearButtonState()
+        updateLockIcon()
       }
       updateMagnification()
     })
