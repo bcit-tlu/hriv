@@ -29,6 +29,7 @@ function renderDialog(props: Partial<Parameters<typeof AddCategoryDialog>[0]> = 
       onClose={onClose}
       onAdd={onAdd}
       parentLabel={props.parentLabel}
+      siblingNames={props.siblingNames}
       programs={props.programs}
       inheritedProgramIds={props.inheritedProgramIds}
     />,
