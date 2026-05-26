@@ -1433,14 +1433,14 @@ export default function CanvasOverlay({
 
           {/* Delete selected */}
           <Tooltip title="Delete Selected">
-            <IconButton onClick={handleDeleteSelected} sx={{ color: 'white', p: 0.75 }}>
+            <IconButton onClick={handleDeleteSelected} aria-label="Delete Selected" sx={{ color: 'white', p: 0.75 }}>
               <DeleteIcon sx={{ fontSize: 28 }} />
             </IconButton>
           </Tooltip>
 
           {/* Clear all */}
           <Tooltip title="Clear All Annotations">
-            <IconButton onClick={handleClearAll} sx={{ color: '#ef5350', p: 0.75 }}>
+            <IconButton onClick={handleClearAll} aria-label="Clear All Annotations" sx={{ color: '#ef5350', p: 0.75 }}>
               <DeleteSweepIcon sx={{ fontSize: 28 }} />
             </IconButton>
           </Tooltip>
@@ -1449,14 +1449,14 @@ export default function CanvasOverlay({
 
           {/* Cancel */}
           <Tooltip title="Cancel — discard changes">
-            <IconButton onClick={handleCancel} disabled={flushing} sx={{ color: '#ef5350', p: 0.75 }}>
+            <IconButton onClick={handleCancel} disabled={flushing} aria-label="Cancel — discard changes" sx={{ color: '#ef5350', p: 0.75 }}>
               <CloseIcon sx={{ fontSize: 28 }} />
             </IconButton>
           </Tooltip>
 
           {/* Done */}
           <Tooltip title="Save & Exit Edit Mode">
-            <IconButton onClick={handleDone} disabled={flushing} sx={{ color: '#66bb6a', p: 0.75 }}>
+            <IconButton onClick={handleDone} disabled={flushing} aria-label="Save & Exit Edit Mode" sx={{ color: '#66bb6a', p: 0.75 }}>
               <CheckIcon sx={{ fontSize: 28 }} />
             </IconButton>
           </Tooltip>
