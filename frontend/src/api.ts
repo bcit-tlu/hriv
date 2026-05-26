@@ -468,7 +468,14 @@ export async function uploadSourceImage(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
-          reject(new Error(`Upload failed: ${xhr.responseText || xhr.statusText}`))
+          const text = xhr.responseText || xhr.statusText
+          let detail = text
+          try {
+            const body = JSON.parse(text)
+            if (typeof body.detail === 'string') detail = body.detail
+            else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+          } catch { /* use raw text */ }
+          reject(new ApiError(xhr.status, detail))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
@@ -630,7 +637,14 @@ export async function bulkImportImages(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiBulkImportJob)
         } else {
-          reject(new Error(`Bulk import failed: ${xhr.responseText || xhr.statusText}`))
+          const text = xhr.responseText || xhr.statusText
+          let detail = text
+          try {
+            const body = JSON.parse(text)
+            if (typeof body.detail === 'string') detail = body.detail
+            else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+          } catch { /* use raw text */ }
+          reject(new ApiError(xhr.status, detail))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse bulk import response'))

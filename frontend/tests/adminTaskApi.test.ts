@@ -366,7 +366,7 @@ describe('Background Admin Task API', () => {
       )![1] as () => void
       loadHandler()
 
-      await expect(promise).rejects.toThrow('Bulk import failed: Internal Server Error')
+      await expect(promise).rejects.toThrow('API 500: Internal Server Error')
     })
   })
 

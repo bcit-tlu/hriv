@@ -150,7 +150,11 @@ function userMessage(err: unknown, fallback: string): string {
             return "This item was modified by another user. Please refresh and try again.";
         }
         if (err.status >= 400 && err.status < 500 && err.detail) {
-            return err.detail;
+            const detail = err.detail.trim();
+            const looksLikeHtml = /^\s*<(!doctype|html|head|body)/i.test(detail);
+            if (!looksLikeHtml && detail.length <= 200) {
+                return detail;
+            }
         }
     }
     return fallback;
@@ -1017,11 +1021,7 @@ export default function App() {
             setAnnModalOpen(false);
             loadAnnouncement();
         } catch (err) {
-            setAnnError(
-                err instanceof Error
-                    ? err.message
-                    : "Failed to update announcement",
-            );
+            setAnnError(userMessage(err, "Failed to update announcement"));
         } finally {
             setAnnSaving(false);
         }
