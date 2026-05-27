@@ -106,8 +106,18 @@ export interface UseShareableImageStateDeps {
     setPath: React.Dispatch<React.SetStateAction<Category[]>>;
     setSelectedImage: React.Dispatch<React.SetStateAction<ImageItem | null>>;
     /**
-     * When false, the hook skips the URL sync effect that writes page/path/
-     * selectedImage/viewport/overlay state to `window.location`.
+     * When false, the hook skips all writes to `window.history` /
+     * `window.location`:
+     *  - the URL sync effect that mirrors page/path/selectedImage/viewport/
+     *    overlay state into the query string, and
+     *  - the URL-clearing `replaceState` call in the pending image
+     *    resolution effect (fired when a shared-link image is not found).
+     *
+     * Note: pending image and category path resolution still run regardless,
+     * because they only mutate hook STATE (selectedImage, path, viewport,
+     * overlays) — not the URL. Consumers opting out are expected to still
+     * want shared-link state restored into React state on mount.
+     *
      * Defaults to true if omitted.
      */
     enableUrlSync?: boolean;
@@ -207,14 +217,16 @@ export function useShareableImageState(
             pendingImageId.current = null;
             pendingViewport.current = undefined;
             pendingOverlays.current = undefined;
-            window.history.replaceState(
-                buildNavHistoryState("browse", [], null),
-                "",
-                window.location.pathname,
-            );
+            if (enableUrlSync) {
+                window.history.replaceState(
+                    buildNavHistoryState("browse", [], null),
+                    "",
+                    window.location.pathname,
+                );
+            }
         }
         // Otherwise keep pendingImageId so we retry on the next data update.
-    }, [categories, uncategorizedImages, categoriesLoading, uncategorizedLoaded, setSelectedImage, setPath]);
+    }, [categories, uncategorizedImages, categoriesLoading, uncategorizedLoaded, setSelectedImage, setPath, enableUrlSync]);
 
     // Resolve pending category path from URL (when no image param is present)
     useEffect(() => {
