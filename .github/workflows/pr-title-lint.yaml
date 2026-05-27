@@ -140,7 +140,7 @@ jobs:
             **To fix:** either remove the scope (e.g. `fix: ...`) so the label is neutral, or split the changes into separate PRs per component.
 
       - name: Clear scope mismatch warning
-        if: always() && steps.scope-check.outputs.mismatch != 'true'
+        if: always() && steps.scope-check.outcome == 'success' && steps.scope-check.outputs.mismatch != 'true'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: scope-mismatch
