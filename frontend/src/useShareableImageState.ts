@@ -5,6 +5,93 @@ import { buildNavHistoryState } from "./useNavigationHistory";
 import { findImageInTree, resolveCategoryPath } from "./treeUtils";
 import type { Category, ImageItem } from "./types";
 
+interface ParsedShareableUrl {
+    imageId: number | null;
+    viewport: ViewportState | undefined;
+    overlays: OverlayRect[] | undefined;
+    catIds: number[] | null;
+}
+
+/**
+ * Parse shareable-link params from the current URL.
+ * Extracted as a plain function so it can run synchronously during the
+ * first render (via useRef initialisation), eliminating any dependency
+ * on React effect execution order.
+ */
+function parseShareableUrlParams(): ParsedShareableUrl {
+    const params = new URLSearchParams(window.location.search);
+    let imageId: number | null = null;
+    let viewport: ViewportState | undefined;
+    let overlays: OverlayRect[] | undefined;
+    let catIds: number[] | null = null;
+
+    const imgId = params.get("image");
+    if (imgId) {
+        const parsedId = Number(imgId);
+        if (!Number.isNaN(parsedId)) {
+            imageId = parsedId;
+            const z = params.get("zoom");
+            const px = params.get("x");
+            const py = params.get("y");
+            if (z && px && py) {
+                const zoom = parseFloat(z);
+                const x = parseFloat(px);
+                const y = parseFloat(py);
+                if (
+                    !Number.isNaN(zoom) &&
+                    !Number.isNaN(x) &&
+                    !Number.isNaN(y)
+                ) {
+                    const rot = params.get("rotation");
+                    const rotation = rot ? parseFloat(rot) : undefined;
+                    viewport = {
+                        zoom,
+                        x,
+                        y,
+                        rotation:
+                            rotation && !Number.isNaN(rotation)
+                                ? rotation
+                                : undefined,
+                    };
+                }
+            }
+            const parsedOverlays: OverlayRect[] = [];
+            for (let i = 0; i < MAX_SHARE_OVERLAYS; i++) {
+                const ov = params.get(`ov${i}`);
+                if (!ov) continue;
+                const parts = ov.split(",").map(Number);
+                if (
+                    parts.length === 4 &&
+                    parts.every((n) => !Number.isNaN(n))
+                ) {
+                    parsedOverlays.push({
+                        x: parts[0],
+                        y: parts[1],
+                        w: parts[2],
+                        h: parts[3],
+                    });
+                }
+            }
+            if (parsedOverlays.length > 0) {
+                overlays = parsedOverlays;
+            }
+        }
+    }
+    if (!imgId) {
+        const catStr = params.get("cat");
+        if (catStr) {
+            const ids = catStr
+                .split(",")
+                .map(Number)
+                .filter((n) => !Number.isNaN(n));
+            if (ids.length > 0) {
+                catIds = ids;
+            }
+        }
+    }
+    return { imageId, viewport, overlays, catIds };
+}
+
 export interface UseShareableImageStateDeps {
     /** Currently selected image — changes trigger URL sync. */
     selectedImage: ImageItem | null;
@@ -71,81 +158,18 @@ export function useShareableImageState(
     const [lockEngaged, setLockEngaged] = useState(false);
     const [snackOpen, setSnackOpen] = useState(false);
 
-    const pendingImageId = useRef<number | null>(null);
-    const pendingViewport = useRef<ViewportState | undefined>(undefined);
-    const pendingOverlays = useRef<OverlayRect[] | undefined>(undefined);
-    const pendingCatIds = useRef<number[] | null>(null);
-
-    // On mount, parse URL search params for shareable link state
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const imgId = params.get("image");
-        if (imgId) {
-            const parsedId = Number(imgId);
-            if (!Number.isNaN(parsedId)) {
-                pendingImageId.current = parsedId;
-                const z = params.get("zoom");
-                const px = params.get("x");
-                const py = params.get("y");
-                if (z && px && py) {
-                    const zoom = parseFloat(z);
-                    const x = parseFloat(px);
-                    const y = parseFloat(py);
-                    if (
-                        !Number.isNaN(zoom) &&
-                        !Number.isNaN(x) &&
-                        !Number.isNaN(y)
-                    ) {
-                        const rot = params.get("rotation");
-                        const rotation = rot ? parseFloat(rot) : undefined;
-                        pendingViewport.current = {
-                            zoom,
-                            x,
-                            y,
-                            rotation:
-                                rotation && !Number.isNaN(rotation)
-                                    ? rotation
-                                    : undefined,
-                        };
-                    }
-                }
-                // Parse overlay rectangles (ov0..ov14) — format: x,y,w,h
-                const parsedOverlays: OverlayRect[] = [];
-                for (let i = 0; i < MAX_SHARE_OVERLAYS; i++) {
-                    const ov = params.get(`ov${i}`);
-                    if (!ov) continue;
-                    const parts = ov.split(",").map(Number);
-                    if (
-                        parts.length === 4 &&
-                        parts.every((n) => !Number.isNaN(n))
-                    ) {
-                        parsedOverlays.push({
-                            x: parts[0],
-                            y: parts[1],
-                            w: parts[2],
-                            h: parts[3],
-                        });
-                    }
-                }
-                if (parsedOverlays.length > 0) {
-                    pendingOverlays.current = parsedOverlays;
-                }
-            }
-        }
-        // Parse initial category path from URL (resolved when categories load)
-        if (!imgId) {
-            const catStr = params.get("cat");
-            if (catStr) {
-                const ids = catStr
-                    .split(",")
-                    .map(Number)
-                    .filter((n) => !Number.isNaN(n));
-                if (ids.length > 0) {
-                    pendingCatIds.current = ids;
-                }
-            }
-        }
-    }, []);
+    // Parse URL synchronously during the first render so that pending refs
+    // are populated before any effects run.  This removes the implicit
+    // dependency on effect execution order between this hook and App.tsx.
+    const initialUrl = useRef(parseShareableUrlParams());
+    const pendingImageId = useRef<number | null>(initialUrl.current.imageId);
+    const pendingViewport = useRef<ViewportState | undefined>(
+        initialUrl.current.viewport,
+    );
+    const pendingOverlays = useRef<OverlayRect[] | undefined>(
+        initialUrl.current.overlays,
+    );
+    const pendingCatIds = useRef<number[] | null>(initialUrl.current.catIds);
 
     // Once categories are loaded, restore a pending shared-link image
     useEffect(() => {
