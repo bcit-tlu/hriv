@@ -77,6 +77,7 @@ async def create_user(
     )
     db.add(user)
     await db.flush()
+    await db.refresh(user, ["programs"])
     await _set_user_programs(db, user, body.program_ids)
     await db.commit()
     await db.refresh(user, ["programs"])

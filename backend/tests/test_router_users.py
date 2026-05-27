@@ -129,6 +129,9 @@ async def test_create_user_success() -> None:
         result = await create_user(body, MagicMock(), db)
 
     db.add.assert_called_once()
+    # programs must be refreshed before _set_user_programs to avoid
+    # MissingGreenlet when assigning the collection in async context
+    assert db.refresh.await_count == 2
 
 
 async def test_update_user_success() -> None:
