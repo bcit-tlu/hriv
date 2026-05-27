@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.18.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.18.0...frontend-v0.18.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **frontend:** remove image dimensions and file size from cards ([#520](https://github.com/bcit-tlu/hriv/issues/520)) ([af17a24](https://github.com/bcit-tlu/hriv/commit/af17a243b190be5698427e20360551e791dac24c))
+* **frontend:** replace footer links with High Resolution Image Viewer link ([#518](https://github.com/bcit-tlu/hriv/issues/518)) ([6e596e2](https://github.com/bcit-tlu/hriv/commit/6e596e2c04b6cb02defd89a8662504d8603aff82))
+
 ## [0.18.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.17.2...frontend-v0.18.0) (2026-05-27)
 
 
