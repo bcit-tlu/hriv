@@ -3430,7 +3430,10 @@ export default function App() {
             <Snackbar
                 open={moveSnack !== null}
                 autoHideDuration={8000}
-                onClose={() => setMoveSnack(null)}
+                onClose={(_event, reason) => {
+                    if (reason === "clickaway") return;
+                    setMoveSnack(null);
+                }}
                 anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
                 sx={{ zIndex: 1500 }}
             >
