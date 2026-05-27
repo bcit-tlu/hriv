@@ -468,6 +468,23 @@ describe("useShareableImageState", () => {
         });
     });
 
+    describe("clearPending", () => {
+        it("clears pendingImageId so URL sync resumes", () => {
+            window.history.replaceState(null, "", "/?image=999");
+            const { result } = renderHook(() =>
+                useShareableImageState(
+                    makeDeps({ categoriesLoading: true }),
+                ),
+            );
+            // While categories are loading, pendingImageId is set from the URL
+            expect(result.current.pendingImageId.current).toBe(999);
+            act(() => {
+                result.current.clearPending();
+            });
+            expect(result.current.pendingImageId.current).toBeNull();
+        });
+    });
+
     describe("rotation parsing", () => {
         it("parses rotation from URL", () => {
             window.history.replaceState(

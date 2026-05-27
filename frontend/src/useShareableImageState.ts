@@ -13,8 +13,8 @@ export interface UseShareableImageStateDeps {
     uncategorizedLoaded: React.RefObject<boolean>;
     page: string;
     path: Category[];
-    setPath: (path: Category[]) => void;
-    setSelectedImage: (img: ImageItem | null) => void;
+    setPath: React.Dispatch<React.SetStateAction<Category[]>>;
+    setSelectedImage: React.Dispatch<React.SetStateAction<ImageItem | null>>;
 }
 
 export interface UseShareableImageStateReturn {
@@ -34,6 +34,7 @@ export interface UseShareableImageStateReturn {
     handleOverlaysChange: (newOverlays: OverlayRect[]) => void;
     copyShareLink: () => void;
     clearImage: () => void;
+    clearPending: () => void;
     pendingImageId: React.RefObject<number | null>;
 }
 
@@ -332,6 +333,13 @@ export function useShareableImageState(
         setOverlays([]);
     }, [setSelectedImage]);
 
+    const clearPending = useCallback(() => {
+        pendingImageId.current = null;
+        pendingViewport.current = undefined;
+        pendingOverlays.current = undefined;
+        pendingCatIds.current = null;
+    }, []);
+
     return {
         viewportState,
         setViewportState,
@@ -349,6 +357,7 @@ export function useShareableImageState(
         handleOverlaysChange,
         copyShareLink,
         clearImage,
+        clearPending,
         pendingImageId,
     };
 }

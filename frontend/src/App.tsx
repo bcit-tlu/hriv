@@ -293,6 +293,7 @@ export default function App() {
         handleOverlaysChange,
         copyShareLink,
         clearImage,
+        clearPending,
     } = useShareableImageState({
         selectedImage,
         categories,
@@ -459,6 +460,7 @@ export default function App() {
         setSelectedImage(null);
         setViewportState(undefined);
         setOverlays([]);
+        clearPending();
         setProfileOpen(false);
         setEditModalOpen(false);
         setImageEditOpen(false);
@@ -471,7 +473,7 @@ export default function App() {
             "",
             window.location.pathname,
         );
-    }, [currentUser, resetProcessingJobs, setViewportState, setOverlays]);
+    }, [currentUser, resetProcessingJobs, setViewportState, setOverlays, clearPending]);
 
     // Load users for search when modal opens (admin/instructor only)
     useEffect(() => {
