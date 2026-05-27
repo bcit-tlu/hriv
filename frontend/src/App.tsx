@@ -240,6 +240,10 @@ export default function App() {
     const [snackOpen, setSnackOpen] = useState(false);
     const [errorSnack, setErrorSnack] = useState<string | null>(null);
     const [warnSnack, setWarnSnack] = useState<string | null>(null);
+    const [moveSnack, setMoveSnack] = useState<{
+        message: string;
+        onUndo: () => void;
+    } | null>(null);
     const pendingImageId = useRef<number | null>(null);
     const pendingViewport = useRef<ViewportState | undefined>(undefined);
     const pendingOverlays = useRef<OverlayRect[] | undefined>(undefined);
@@ -1432,13 +1436,39 @@ export default function App() {
                     uncategorizedImages.find((i) => i.id === imageId);
                 if (!img) return;
                 if (img.categoryId === categoryId) return;
-                await apiUpdateImage(
+                const prevCategoryId = img.categoryId ?? null;
+                const updated = await apiUpdateImage(
                     imageId,
                     { category_id: categoryId },
                     img.version,
                 );
                 await loadCategories();
                 loadUncategorizedImages();
+                const targetName =
+                    findCategoryPath(categories, categoryId)?.at(-1)
+                        ?.label ?? "category";
+                setMoveSnack({
+                    message: `Moved \u201c${img.name}\u201d to \u201c${targetName}\u201d`,
+                    onUndo: async () => {
+                        try {
+                            setMoveSnack(null);
+                            await apiUpdateImage(
+                                imageId,
+                                { category_id: prevCategoryId },
+                                updated.version,
+                            );
+                            await loadCategories();
+                            loadUncategorizedImages();
+                        } catch (undoErr) {
+                            setErrorSnack(
+                                userMessage(
+                                    undoErr,
+                                    "Failed to undo move.",
+                                ),
+                            );
+                        }
+                    },
+                });
             } catch (err) {
                 console.error("Failed to move image via drag-and-drop", err);
                 setErrorSnack(
@@ -1452,10 +1482,42 @@ export default function App() {
     const handleDropCategoryOnCategory = useCallback(
         async (draggedCategoryId: number, targetCategoryId: number) => {
             try {
+                const draggedPath = findCategoryPath(
+                    categories,
+                    draggedCategoryId,
+                );
+                const prevParentId =
+                    draggedPath && draggedPath.length >= 2
+                        ? draggedPath[draggedPath.length - 2].id
+                        : null;
                 await apiUpdateCategory(draggedCategoryId, {
                     parent_id: targetCategoryId,
                 });
                 await loadCategories();
+                const draggedName =
+                    draggedPath?.at(-1)?.label ?? "category";
+                const targetName =
+                    findCategoryPath(categories, targetCategoryId)
+                        ?.at(-1)?.label ?? "category";
+                setMoveSnack({
+                    message: `Moved \u201c${draggedName}\u201d into \u201c${targetName}\u201d`,
+                    onUndo: async () => {
+                        try {
+                            setMoveSnack(null);
+                            await apiUpdateCategory(draggedCategoryId, {
+                                parent_id: prevParentId,
+                            });
+                            await loadCategories();
+                        } catch (undoErr) {
+                            setErrorSnack(
+                                userMessage(
+                                    undoErr,
+                                    "Failed to undo move.",
+                                ),
+                            );
+                        }
+                    },
+                });
             } catch (err) {
                 console.error(
                     "Failed to move category via drag-and-drop",
@@ -1466,7 +1528,7 @@ export default function App() {
                 );
             }
         },
-        [loadCategories],
+        [categories, loadCategories],
     );
 
     // Track when native files are being dragged over the page so we can
@@ -3363,6 +3425,36 @@ export default function App() {
                     },
                 }}
             />
+
+            {/* Move-undo snackbar */}
+            <Snackbar
+                open={moveSnack !== null}
+                autoHideDuration={8000}
+                onClose={(_event, reason) => {
+                    if (reason === "clickaway") return;
+                    setMoveSnack(null);
+                }}
+                anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+                sx={{ zIndex: 1500 }}
+            >
+                <Alert
+                    severity="success"
+                    onClose={() => setMoveSnack(null)}
+                    variant="filled"
+                    action={
+                        <Button
+                            color="inherit"
+                            size="small"
+                            onClick={moveSnack?.onUndo}
+                            aria-label="Undo move"
+                        >
+                            Undo
+                        </Button>
+                    }
+                >
+                    {moveSnack?.message}
+                </Alert>
+            </Snackbar>
 
             {/* Warning snackbar (e.g. unsupported file drops) */}
             <Snackbar
