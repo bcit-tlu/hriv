@@ -27,7 +27,7 @@ export interface UseShareableImageStateReturn {
     snackOpen: boolean;
     setSnackOpen: React.Dispatch<React.SetStateAction<boolean>>;
     initialViewport: ViewportState | undefined;
-    initialOverlays: OverlayRect[] | OverlayRect[];
+    initialOverlays: OverlayRect[];
     lockedOverlays: OverlayRect[] | undefined;
     hasLockedOverlays: boolean;
     handleViewportChange: (state: ViewportState) => void;
