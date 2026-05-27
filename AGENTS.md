@@ -66,6 +66,10 @@
 - `/scripts` — Utility scripts (e.g. CLI upload helper)
 - `/public` — Static assets
 
+## Documentation & Skill Files
+- **Edits to existing docs must be additive.** When updating SKILL.md, README.md, or other documentation files, append or modify specific sections — never replace the entire file contents. Read the file first, then apply targeted edits.
+- **Verify line counts after doc edits.** If the original file was N lines and you added content, the result should be ≥ N lines. A dramatic reduction (e.g., 822 → 220 lines) indicates accidental replacement.
+
 ## Development Workflow
 - Create feature branches from `main`
 - Use pull requests for code review
