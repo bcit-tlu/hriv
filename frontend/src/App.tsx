@@ -286,15 +286,28 @@ export default function App() {
     const [frontendVersion, setFrontendVersion] = useState<string | null>(null);
 
     // Image processing jobs (extracted to useProcessingJobs hook)
+    //
+    // loadCategories, loadUncategorizedImages and setImagesVersion are defined
+    // later in this component (after their own useState/useCallback calls).
+    // Stable ref-forwarding callbacks avoid both the TDZ and the per-render
+    // allocation that plain arrow wrappers would cause.
+    const loadCategoriesRef = useRef<() => Promise<void>>(() => Promise.resolve());
+    const loadUncategorizedImagesRef = useRef<() => Promise<void>>(() => Promise.resolve());
+    const setImagesVersionRef = useRef<React.Dispatch<React.SetStateAction<number>>>(() => {});
+    const stableLoadCategories = useCallback(() => loadCategoriesRef.current(), []);
+    const stableLoadUncategorizedImages = useCallback(() => loadUncategorizedImagesRef.current(), []);
+    const stableSetImagesVersion = useCallback<React.Dispatch<React.SetStateAction<number>>>(
+        (v) => setImagesVersionRef.current(v), [],
+    );
     const processingJobsHook = useProcessingJobs({
         fetchSourceImage,
         fetchBulkImportJob,
         fetchImage: apiFetchImage,
-        loadCategories,
-        loadUncategorizedImages,
+        loadCategories: stableLoadCategories,
+        loadUncategorizedImages: stableLoadUncategorizedImages,
         selectedImageRef,
         setSelectedImage,
-        setImagesVersion,
+        setImagesVersion: stableSetImagesVersion,
     });
     const {
         getDisplayProgress,
@@ -375,6 +388,7 @@ export default function App() {
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [programs, setPrograms] = useState<Program[]>([]);
     const [imagesVersion, setImagesVersion] = useState(0);
+    setImagesVersionRef.current = setImagesVersion;
 
     // Build ApiUser shape from currentUser for AddEditPersonModal
     const currentApiUser: ApiUser | null = currentUser
@@ -626,6 +640,7 @@ export default function App() {
             if (!silent) setCategoriesLoading(false);
         }
     }, []);
+    loadCategoriesRef.current = loadCategories;
 
     const loadUncategorizedImages = useCallback(async (opts?: { signal?: AbortSignal }) => {
         const { signal } = opts ?? {};
@@ -658,6 +673,7 @@ export default function App() {
             uncategorizedLoaded.current = true;
         }
     }, []);
+    loadUncategorizedImagesRef.current = loadUncategorizedImages;
 
     const loadPrograms = useCallback(async () => {
         try {
