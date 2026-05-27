@@ -453,14 +453,22 @@ export default function App() {
         loadAnnouncement();
     }, [loadAnnouncement]);
 
-    // Reset navigation state when user identity changes (login/logout/switch)
+    // Reset navigation state when user identity changes (login/logout/switch).
+    // Track previous user so we only clear pending shared-link refs on actual
+    // user switches (logout or account change), not on the initial null→user
+    // auth transition which must preserve URL-parsed pending state.
+    const prevUserRef = useRef(currentUser);
     useEffect(() => {
+        const prevUser = prevUserRef.current;
+        prevUserRef.current = currentUser;
         setPage("browse");
         setPath([]);
         setSelectedImage(null);
         setViewportState(undefined);
         setOverlays([]);
-        clearPending();
+        if (prevUser != null && prevUser !== currentUser) {
+            clearPending();
+        }
         setProfileOpen(false);
         setEditModalOpen(false);
         setImageEditOpen(false);
