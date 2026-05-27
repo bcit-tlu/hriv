@@ -2692,29 +2692,14 @@ export default function App() {
                 }}
             >
                 <Typography variant="caption" color="text.secondary">
-                    <strong>BCIT</strong>{" "}
                     <Link
-                        href="https://www.bcit.ca/learning-teaching-centre/"
+                        href="https://github.com/bcit-tlu/hriv"
                         target="_blank"
                         rel="noopener noreferrer"
                         color="text.secondary"
                         underline="hover"
                     >
-                        Teaching and Learning Unit
-                    </Link>
-                    <Box
-                        component="span"
-                        sx={{ display: "inline-block", width: "3ch" }}
-                    />
-                    <strong>Source code:</strong>{" "}
-                    <Link
-                        href="https://www.mozilla.org/en-US/MPL/2.0/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        color="text.secondary"
-                        underline="hover"
-                    >
-                        MPL-2.0
+                        High Resolution Image Viewer
                     </Link>
                     {canManageUsers &&
                         (() => {
