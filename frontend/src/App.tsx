@@ -93,13 +93,12 @@ import {
     userMessage,
 } from "./api";
 import type {
-    ApiBulkImportJob,
     ApiCategoryTree,
     ApiImage,
     ApiUser,
 } from "./api";
-import { pollProcessingJob, type PollHandle } from "./pollProcessingJob";
 import MoveCategoryDialog from "./components/MoveCategoryDialog";
+import { useProcessingJobs } from "./useProcessingJobs";
 import type { Category, ImageItem, Program } from "./types";
 import { MAX_DEPTH } from "./types";
 import AddCategoryDialog from "./components/AddCategoryDialog";
@@ -286,124 +285,51 @@ export default function App() {
     const [backupVersion, setBackupVersion] = useState<string | null>(null);
     const [frontendVersion, setFrontendVersion] = useState<string | null>(null);
 
-    // Image processing tracking state (supports up to 5 concurrent jobs)
-    const MAX_PROCESSING_JOBS = 5;
-    interface ProcessingJob {
-        id: number;
-        filename: string;
-        status:
-            | "uploading"
-            | "processing"
-            | "importing"
-            | "completed"
-            | "failed";
-        kind: "image" | "bulk-import";
-        errorMessage?: string;
-        imageId?: number;
-        bulkImportJobId?: number;
-        totalCount?: number;
-        completedCount?: number;
-        failedCount?: number;
-        errors?: Array<{ filename: string; error: string }> | null;
-        /** Server-reported progress (0–100). */
-        serverProgress: number;
-        /** File size in bytes — used for client-side progress estimation. */
-        fileSize: number;
-        /** Timestamp (ms) when the job was first added. */
-        startedAt: number;
-        /** Server-reported status message describing the current phase. */
-        statusMessage?: string;
-        /** Upload progress fraction (0–1), only for "uploading" status. */
-        uploadProgress?: number;
-        /** Temporary ID assigned during upload (before sourceImageId is known). */
-        uploadId?: number;
-    }
-    const [processingJobs, setProcessingJobs] = useState<ProcessingJob[]>([]);
-    const processingPollRefs = useRef<Map<number, PollHandle>>(new Map());
-    const bulkImportPollRefs = useRef<
-        Map<number, ReturnType<typeof setInterval>>
-    >(new Map());
-
-    // Server-reported progress stored in a ref to avoid re-triggering the
-    // polling useEffect when intermediate progress updates arrive.
-    const serverProgressRef = useRef<Map<number, number>>(new Map());
-
-    // Upload progress stored in a ref (same reason as above).
-    const uploadProgressRef = useRef<Map<number, number>>(new Map());
-
-    // Server-reported status message stored in a ref (same reason as above).
-    const serverStatusMessageRef = useRef<Map<number, string>>(new Map());
-
-    // Monotonic counter for replacement upload IDs (avoids collisions with
-    // UploadImageModal which uses Date.now()).
-    const nextReplaceUploadIdRef = useRef(2_000_000);
-    // Track the active replacement uploadId and which modal context started
-    // it so progress doesn't leak between the viewer and browse modals.
-    const activeReplaceUploadIdRef = useRef<{
-        uploadId: number;
-        context: "viewer" | "browse";
-    } | null>(null);
-    // AbortController for the active replace-image upload
-    const replaceAbortRef = useRef<AbortController | null>(null);
-
-    // Client-side progress interpolation — a simple tick counter that
-    // increments every 500 ms to trigger re-renders without mutating
-    // processingJobs (which would restart the polling useEffect).
-    const [, setProgressTick] = useState(0);
-    const interpolationTimerRef = useRef<ReturnType<typeof setInterval> | null>(
-        null,
+    // Image processing jobs (extracted to useProcessingJobs hook)
+    //
+    // loadCategories, loadUncategorizedImages and setImagesVersion are defined
+    // later in this component (after their own useState/useCallback calls).
+    // Stable ref-forwarding callbacks avoid both the TDZ and the per-render
+    // allocation that plain arrow wrappers would cause.
+    const loadCategoriesRef = useRef<() => Promise<void>>(() => Promise.resolve());
+    const loadUncategorizedImagesRef = useRef<() => Promise<void>>(() => Promise.resolve());
+    const setImagesVersionRef = useRef<React.Dispatch<React.SetStateAction<number>>>(() => {});
+    const stableLoadCategories = useCallback(() => loadCategoriesRef.current(), []);
+    const stableLoadUncategorizedImages = useCallback(() => loadUncategorizedImagesRef.current(), []);
+    const stableSetImagesVersion = useCallback<React.Dispatch<React.SetStateAction<number>>>(
+        (v) => setImagesVersionRef.current(v), [],
     );
-
-    /**
-     * Estimate total processing duration (ms) from file size.
-     * Rough heuristic: ~2 s base + ~0.5 s per MB.  Capped at 5 min.
-     */
-    const estimateDuration = useCallback((fileSize: number) => {
-        const mb = fileSize / (1024 * 1024);
-        return Math.min(2000 + mb * 500, 300_000);
-    }, []);
-
-    /**
-     * Compute the display progress for a processing job.
-     * With granular server-side progress (via pyvips eval signals), the
-     * server now reports fine-grained percentages during tile generation.
-     * We still use time-based interpolation to fill gaps between polls,
-     * but the server value is the primary source of truth.
-     */
-    const getDisplayProgress = useCallback(
-        (job: ProcessingJob): number => {
-            if (job.status === "completed") return 100;
-            if (job.status === "importing") return job.serverProgress;
-            const sp =
-                serverProgressRef.current.get(job.id) ?? job.serverProgress;
-            if (job.status === "failed") return sp;
-
-            const elapsed = Date.now() - job.startedAt;
-            const est = estimateDuration(job.fileSize);
-            // Time-based estimate: ramp from 0→90% over estimated duration
-            const timeFraction = Math.min(elapsed / est, 1);
-            const timeProgress = Math.round(timeFraction * 90);
-
-            // Always allow interpolation up to 75 % so the bar feels smooth
-            // even when only coarse milestones arrive.  Once the server
-            // reports ≥ 80 % (tiles done), raise the ceiling to 95 %.
-            const cap = sp >= 80 ? 95 : Math.max(sp + 5, 75);
-            const interpolated = Math.min(timeProgress, cap);
-
-            // Never go below what the server already reported
-            return Math.max(sp, interpolated);
-        },
-        [estimateDuration],
-    );
-
-    /** Return the current status message for a processing job. */
-    const getStatusMessage = useCallback((job: ProcessingJob): string => {
-        return (
-            serverStatusMessageRef.current.get(job.id) ??
-            job.statusMessage ??
-            ""
-        );
-    }, []);
+    const processingJobsHook = useProcessingJobs({
+        fetchSourceImage,
+        fetchBulkImportJob,
+        fetchImage: apiFetchImage,
+        loadCategories: stableLoadCategories,
+        loadUncategorizedImages: stableLoadUncategorizedImages,
+        selectedImageRef,
+        setSelectedImage,
+        setImagesVersion: stableSetImagesVersion,
+    });
+    const {
+        getDisplayProgress,
+        getStatusMessage,
+        getUploadProgress,
+        getVisibleJobs,
+        getReplaceUploadProgress,
+        addProcessingJob,
+        handleUploadStarted,
+        handleUploadProgress,
+        handleUploadFailed,
+        handleProcessingStarted,
+        handleBulkImportStarted,
+        dismissJob,
+        startReplaceUpload,
+        trackReplaceProgress,
+        transitionReplaceToProcessing,
+        failReplaceUpload,
+        removeReplaceUpload,
+        cancelReplace,
+        resetAll: resetProcessingJobs,
+    } = processingJobsHook;
 
     // Search modal state
     const [searchOpen, setSearchOpen] = useState(false);
@@ -449,26 +375,12 @@ export default function App() {
         null,
     );
 
-    // Jobs visible as snackbars — hide "uploading"/"failed" jobs only while
-    // the modal that owns them is open (that modal shows its own progress).
-    // Upload-modal jobs (uploadId from Date.now()) are hidden when uploadOpen.
-    // Replacement jobs (uploadId from nextReplaceUploadIdRef, < 1 billion)
-    // are hidden when the edit modal that started them is open.
-    const visibleJobs = useMemo(
-        () =>
-            processingJobs.filter((j) => {
-                if (
-                    !(j.status === "uploading" || j.status === "failed") ||
-                    j.uploadId == null
-                )
-                    return true;
-                const isReplaceJob = j.uploadId < 1_000_000_000;
-                if (isReplaceJob)
-                    return !(imageEditOpen || browseEditImage != null);
-                return !(uploadOpen || manageUploadOpen);
-            }),
-        [processingJobs, uploadOpen, manageUploadOpen, imageEditOpen, browseEditImage],
-    );
+    const visibleJobs = getVisibleJobs({
+        uploadOpen,
+        manageUploadOpen,
+        imageEditOpen,
+        browseEditImage,
+    });
 
     // User profile popover + edit modal state
     const avatarRef = useRef<HTMLButtonElement>(null);
@@ -476,6 +388,7 @@ export default function App() {
     const [editModalOpen, setEditModalOpen] = useState(false);
     const [programs, setPrograms] = useState<Program[]>([]);
     const [imagesVersion, setImagesVersion] = useState(0);
+    setImagesVersionRef.current = setImagesVersion;
 
     // Build ApiUser shape from currentUser for AddEditPersonModal
     const currentApiUser: ApiUser | null = currentUser
@@ -548,207 +461,6 @@ export default function App() {
     );
 
     const { pushNavState } = useNavigationHistory(handlePopState);
-
-    // Start polling for each new processing job.  The per-job state machine
-    // (fetch -> dispatch -> reschedule / cancel) lives in `pollProcessingJob`;
-    // this effect only tracks which jobs have an active handle.
-    useEffect(() => {
-        const refs = processingPollRefs.current;
-
-        for (const job of processingJobs) {
-            if (job.status !== "processing") continue; // only poll active jobs
-            if (refs.has(job.id)) continue; // already polling
-
-            const handle = pollProcessingJob(job.id, {
-                fetchStatus: fetchSourceImage,
-                onCompleted: async (imageId) => {
-                    // Refresh data FIRST so the new image is already in the
-                    // category tree when the "View image" snackbar link appears.
-                    await Promise.all([
-                        loadCategories(),
-                        loadUncategorizedImages(),
-                    ]);
-                    setImagesVersion((v) => v + 1);
-                    // If the completed job is for the currently-viewed image,
-                    // refresh it so the viewer picks up new tile URLs.
-                    const current = selectedImageRef.current;
-                    if (imageId != null && current && current.id === imageId) {
-                        try {
-                            const fresh = await apiFetchImage(imageId);
-                            setSelectedImage({
-                                id: fresh.id,
-                                name: fresh.name,
-                                thumb: fresh.thumb,
-                                tileSources: fresh.tile_sources,
-                                categoryId: fresh.category_id,
-                                copyright: fresh.copyright,
-                                note: fresh.note,
-                                active: fresh.active,
-                                version: fresh.version,
-                                createdAt: fresh.created_at,
-                                updatedAt: fresh.updated_at,
-                                metadataExtra: fresh.metadata_extra,
-                                width: fresh.width,
-                                height: fresh.height,
-                                fileSize: fresh.file_size,
-                            });
-                        } catch {
-                            // Non-critical; viewer will show stale data
-                        }
-                    }
-                    refs.delete(job.id);
-                    setProcessingJobs((prev) =>
-                        prev.map((j) =>
-                            j.id === job.id
-                                ? {
-                                      ...j,
-                                      status: "completed" as const,
-                                      serverProgress: 100,
-                                      imageId: imageId ?? undefined,
-                                  }
-                                : j,
-                        ),
-                    );
-                },
-                onFailed: (progress, errorMessage) => {
-                    refs.delete(job.id);
-                    setProcessingJobs((prev) =>
-                        prev.map((j) =>
-                            j.id === job.id
-                                ? {
-                                      ...j,
-                                      status: "failed" as const,
-                                      serverProgress: progress,
-                                      errorMessage: errorMessage || undefined,
-                                  }
-                                : j,
-                        ),
-                    );
-                },
-                onProgress: (progress, statusMessage) => {
-                    serverProgressRef.current.set(job.id, progress);
-                    if (statusMessage) {
-                        serverStatusMessageRef.current.set(
-                            job.id,
-                            statusMessage,
-                        );
-                    }
-                },
-            });
-            refs.set(job.id, handle);
-        }
-
-        // Cancel handles for jobs that were removed or transitioned away
-        // from "processing" (e.g. user dismissed a completed snackbar).
-        for (const [id, handle] of refs) {
-            if (
-                !processingJobs.some(
-                    (j) => j.id === id && j.status === "processing",
-                )
-            ) {
-                handle.cancel();
-                refs.delete(id);
-            }
-        }
-
-        // No cleanup return — the inline stale-job loop above handles
-        // removal, and the effect body is idempotent (skips already-tracked
-        // jobs).  Full teardown on unmount is handled by a separate effect.
-    }, [processingJobs]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    useEffect(() => {
-        const refs = bulkImportPollRefs.current;
-
-        for (const job of processingJobs) {
-            if (job.status !== "importing" || job.bulkImportJobId == null)
-                continue;
-            if (refs.has(job.bulkImportJobId)) continue;
-
-            const interval = setInterval(async () => {
-                try {
-                    const updated = await fetchBulkImportJob(
-                        job.bulkImportJobId!,
-                    );
-                    updateBulkImportJob(updated, job.filename, job.fileSize);
-                    if (
-                        updated.status === "completed" ||
-                        updated.status === "failed"
-                    ) {
-                        const ref = refs.get(updated.id);
-                        if (ref) {
-                            clearInterval(ref);
-                            refs.delete(updated.id);
-                        }
-                        loadCategories();
-                        loadUncategorizedImages();
-                        setImagesVersion((v) => v + 1);
-                    }
-                } catch {
-                    // ignore poll errors
-                }
-            }, 2000);
-            refs.set(job.bulkImportJobId, interval);
-        }
-
-        for (const [id, interval] of refs) {
-            if (
-                !processingJobs.some(
-                    (j) =>
-                        j.bulkImportJobId === id && j.status === "importing",
-                )
-            ) {
-                clearInterval(interval);
-                refs.delete(id);
-            }
-        }
-
-        // No cleanup return — same reasoning as the processing-poll effect
-        // above.  Without the teardown/recreate cycle, setInterval timers
-        // keep their cadence instead of resetting on every state change.
-    }, [processingJobs]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Unmount-only cleanup for both polling ref maps.  The effects above
-    // no longer return cleanup functions (to avoid the teardown/recreate
-    // churn), so this effect handles the final teardown when the component
-    // unmounts.
-    useEffect(() => {
-        const procRefs = processingPollRefs.current;
-        const bulkRefs = bulkImportPollRefs.current;
-        return () => {
-            procRefs.forEach((handle) => handle.cancel());
-            procRefs.clear();
-            bulkRefs.forEach((interval) => clearInterval(interval));
-            bulkRefs.clear();
-        };
-    }, []);
-
-    // Interpolation timer: triggers re-render every 500 ms so the progress bar
-    // advances smoothly between server polls while any job is processing.
-    // Uses a tick counter instead of mutating processingJobs to avoid
-    // re-triggering the polling useEffect.
-    useEffect(() => {
-        const hasActiveJob = processingJobs.some(
-            (j) =>
-                j.status === "processing" ||
-                j.status === "uploading" ||
-                j.status === "importing",
-        );
-        if (hasActiveJob && !interpolationTimerRef.current) {
-            interpolationTimerRef.current = setInterval(() => {
-                setProgressTick((t) => t + 1);
-            }, 500);
-        }
-        if (!hasActiveJob && interpolationTimerRef.current) {
-            clearInterval(interpolationTimerRef.current);
-            interpolationTimerRef.current = null;
-        }
-        return () => {
-            if (interpolationTimerRef.current) {
-                clearInterval(interpolationTimerRef.current);
-                interpolationTimerRef.current = null;
-            }
-        };
-    }, [processingJobs]);
 
     // Load announcement (works for both logged-in and login page)
     const loadAnnouncement = useCallback(async () => {
@@ -850,20 +562,13 @@ export default function App() {
         setBrowseEditImage(null);
         setSearchOpen(false);
         setSearchUsers([]);
-        processingPollRefs.current.forEach((handle) => handle.cancel());
-        processingPollRefs.current.clear();
-        bulkImportPollRefs.current.forEach((interval) => clearInterval(interval));
-        bulkImportPollRefs.current.clear();
-        serverProgressRef.current.clear();
-        uploadProgressRef.current.clear();
-        serverStatusMessageRef.current.clear();
-        setProcessingJobs([]);
+        resetProcessingJobs();
         window.history.replaceState(
             buildNavHistoryState("browse", [], null),
             "",
             window.location.pathname,
         );
-    }, [currentUser]);
+    }, [currentUser, resetProcessingJobs]);
 
     // Load users for search when modal opens (admin/instructor only)
     useEffect(() => {
@@ -935,6 +640,7 @@ export default function App() {
             if (!silent) setCategoriesLoading(false);
         }
     }, []);
+    loadCategoriesRef.current = loadCategories;
 
     const loadUncategorizedImages = useCallback(async (opts?: { signal?: AbortSignal }) => {
         const { signal } = opts ?? {};
@@ -967,6 +673,7 @@ export default function App() {
             uncategorizedLoaded.current = true;
         }
     }, []);
+    loadUncategorizedImagesRef.current = loadUncategorizedImages;
 
     const loadPrograms = useCallback(async () => {
         try {
@@ -1955,129 +1662,12 @@ export default function App() {
         [selectedImage, loadUncategorizedImages],
     );
 
-    const addProcessingJob = useCallback(
-        (sourceImageId: number, filename: string, fileSize: number) => {
-            setProcessingJobs((prev) => {
-                if (
-                    prev.filter(
-                        (j) =>
-                            j.status === "uploading" ||
-                            j.status === "processing" ||
-                            j.status === "importing",
-                    ).length >= MAX_PROCESSING_JOBS
-                )
-                    return prev;
-                if (prev.some((j) => j.id === sourceImageId)) return prev;
-                return [
-                    ...prev,
-                    {
-                        id: sourceImageId,
-                        filename,
-                        status: "processing" as const,
-                        kind: "image" as const,
-                        serverProgress: 0,
-                        fileSize,
-                        startedAt: Date.now(),
-                    },
-                ];
-            });
-        },
-        [],
-    );
-
-    const updateBulkImportJob = useCallback(
-        (
-            bulkJob: ApiBulkImportJob,
-            filename: string,
-            fileSize: number,
-            uploadId?: number,
-        ) => {
-            const done = bulkJob.completed_count + bulkJob.failed_count;
-            const progress =
-                bulkJob.total_count > 0
-                    ? Math.round((done / bulkJob.total_count) * 100)
-                    : 0;
-            setProcessingJobs((prev) => {
-                const existing = prev.find(
-                    (j) =>
-                        j.bulkImportJobId === bulkJob.id ||
-                        (uploadId !== undefined && j.uploadId === uploadId),
-                );
-                const status =
-                    bulkJob.status === "completed"
-                        ? "completed"
-                        : bulkJob.status === "failed"
-                          ? "failed"
-                          : "importing";
-                if (existing) {
-                    return prev.map((j) =>
-                        j.id === existing.id
-                            ? {
-                                  ...j,
-                                  kind: "bulk-import" as const,
-                                  status,
-                                  bulkImportJobId: bulkJob.id,
-                                  serverProgress:
-                                      status === "completed" ? 100 : progress,
-                                  uploadId: undefined,
-                                  uploadProgress: undefined,
-                                  totalCount: bulkJob.total_count,
-                                  completedCount: bulkJob.completed_count,
-                                  failedCount: bulkJob.failed_count,
-                                  errors: bulkJob.errors,
-                                  errorMessage:
-                                      status === "failed"
-                                          ? "Bulk import failed."
-                                          : undefined,
-                              }
-                            : j,
-                    );
-                }
-                if (
-                    prev.filter(
-                        (j) =>
-                            j.status === "uploading" ||
-                            j.status === "processing" ||
-                            j.status === "importing",
-                    ).length >= MAX_PROCESSING_JOBS
-                )
-                    return prev;
-                return [
-                    ...prev,
-                    {
-                        id: -bulkJob.id,
-                        filename,
-                        status,
-                        kind: "bulk-import" as const,
-                        bulkImportJobId: bulkJob.id,
-                        serverProgress:
-                            status === "completed" ? 100 : progress,
-                        fileSize,
-                        startedAt: Date.now(),
-                        totalCount: bulkJob.total_count,
-                        completedCount: bulkJob.completed_count,
-                        failedCount: bulkJob.failed_count,
-                        errors: bulkJob.errors,
-                        errorMessage:
-                            status === "failed"
-                                ? "Bulk import failed."
-                                : undefined,
-                    },
-                ];
-            });
-        },
-        [],
-    );
-
     const handleReplaceViewerImage = useCallback(
         async ({ file, formData }: ReplaceImageData) => {
             if (!selectedImage) return;
 
-            // Snapshot for rollback on failure
             const prevImage = selectedImage;
 
-            // Optimistically update the local image state with metadata
-            // changes so the UI reflects them immediately.
             setSelectedImage((prev) =>
                 prev
                     ? {
@@ -2091,322 +1681,70 @@ export default function App() {
                     : prev,
             );
 
-            // Create an uploading job so progress is tracked in snackbar/modal
-            const uploadId = nextReplaceUploadIdRef.current++;
-            activeReplaceUploadIdRef.current = { uploadId, context: "viewer" };
-            setProcessingJobs((prev) => {
-                if (
-                    prev.filter(
-                        (j) =>
-                            j.status === "uploading" ||
-                            j.status === "processing" ||
-                            j.status === "importing",
-                    ).length >= MAX_PROCESSING_JOBS
-                )
-                    return prev;
-                return [
-                    ...prev,
-                    {
-                        id: -uploadId,
-                        filename: file.name,
-                        status: "uploading" as const,
-                        kind: "image" as const,
-                        serverProgress: 0,
-                        fileSize: file.size,
-                        startedAt: Date.now(),
-                        uploadId,
-                        uploadProgress: 0,
-                    },
-                ];
-            });
+            const { uploadId, abort } = startReplaceUpload(file, "viewer");
 
-            // Atomic replace: metadata + file in a single request (#271)
-            const abort = new AbortController();
-            replaceAbortRef.current = abort;
             apiReplaceImage(
                 selectedImage.id,
                 file,
                 (fraction) => {
-                    uploadProgressRef.current.set(uploadId, fraction);
+                    trackReplaceProgress(uploadId, fraction);
                 },
                 abort.signal,
                 formData,
             )
                 .then((result) => {
-                    replaceAbortRef.current = null;
-                    uploadProgressRef.current.delete(uploadId);
-                    activeReplaceUploadIdRef.current = null;
-                    setProcessingJobs((prev) =>
-                        prev.map((j) =>
-                            j.uploadId === uploadId
-                                ? {
-                                      ...j,
-                                      id: result.id,
-                                      status: "processing" as const,
-                                      kind: "image" as const,
-                                      serverProgress: 0,
-                                      startedAt: Date.now(),
-                                      uploadId: undefined,
-                                      uploadProgress: undefined,
-                                  }
-                                : j,
-                        ),
-                    );
+                    transitionReplaceToProcessing(uploadId, result.id);
                     setImageEditOpen(false);
                     loadCategories();
                     loadUncategorizedImages();
                 })
                 .catch((err) => {
-                    replaceAbortRef.current = null;
-                    uploadProgressRef.current.delete(uploadId);
-                    activeReplaceUploadIdRef.current = null;
                     if (err instanceof DOMException && err.name === "AbortError") {
-                        setProcessingJobs((prev) =>
-                            prev.filter((j) => j.uploadId !== uploadId),
-                        );
+                        removeReplaceUpload(uploadId);
                         setSelectedImage((prev) => prev?.id === prevImage.id ? prevImage : prev);
                         setImageEditOpen(false);
                         return;
                     }
                     setSelectedImage((prev) => prev?.id === prevImage.id ? prevImage : prev);
-                    setProcessingJobs((prev) =>
-                        prev.map((j) =>
-                            j.uploadId === uploadId
-                                ? {
-                                      ...j,
-                                      status: "failed" as const,
-                                      errorMessage: userMessage(err, "Failed to upload replacement image"),
-                                      uploadId: undefined,
-                                  }
-                                : j,
-                        ),
-                    );
+                    failReplaceUpload(uploadId, userMessage(err, "Failed to upload replacement image"));
                     setImageEditOpen(false);
                 });
         },
-        [selectedImage, loadCategories, loadUncategorizedImages],
+        [selectedImage, loadCategories, loadUncategorizedImages, startReplaceUpload, trackReplaceProgress, transitionReplaceToProcessing, removeReplaceUpload, failReplaceUpload],
     );
 
     const handleReplaceBrowseImage = useCallback(
         async ({ file, formData }: ReplaceImageData) => {
             if (!browseEditImage) return;
 
-            const uploadId = nextReplaceUploadIdRef.current++;
-            activeReplaceUploadIdRef.current = { uploadId, context: "browse" };
-            setProcessingJobs((prev) => {
-                if (
-                    prev.filter(
-                        (j) =>
-                            j.status === "uploading" ||
-                            j.status === "processing" ||
-                            j.status === "importing",
-                    ).length >= MAX_PROCESSING_JOBS
-                )
-                    return prev;
-                return [
-                    ...prev,
-                    {
-                        id: -uploadId,
-                        filename: file.name,
-                        status: "uploading" as const,
-                        kind: "image" as const,
-                        serverProgress: 0,
-                        fileSize: file.size,
-                        startedAt: Date.now(),
-                        uploadId,
-                        uploadProgress: 0,
-                    },
-                ];
-            });
+            const { uploadId, abort } = startReplaceUpload(file, "browse");
 
-            // Atomic replace: metadata + file in a single request (#271)
-            const abort = new AbortController();
-            replaceAbortRef.current = abort;
             apiReplaceImage(
                 browseEditImage.id,
                 file,
                 (fraction) => {
-                    uploadProgressRef.current.set(uploadId, fraction);
+                    trackReplaceProgress(uploadId, fraction);
                 },
                 abort.signal,
                 formData,
             )
                 .then((result) => {
-                    replaceAbortRef.current = null;
-                    uploadProgressRef.current.delete(uploadId);
-                    activeReplaceUploadIdRef.current = null;
-                    setProcessingJobs((prev) =>
-                        prev.map((j) =>
-                            j.uploadId === uploadId
-                                ? {
-                                      ...j,
-                                      id: result.id,
-                                      status: "processing" as const,
-                                      kind: "image" as const,
-                                      serverProgress: 0,
-                                      startedAt: Date.now(),
-                                      uploadId: undefined,
-                                      uploadProgress: undefined,
-                                  }
-                                : j,
-                        ),
-                    );
+                    transitionReplaceToProcessing(uploadId, result.id);
                     setBrowseEditImage(null);
                     loadCategories();
                     loadUncategorizedImages();
                 })
                 .catch((err) => {
-                    replaceAbortRef.current = null;
-                    uploadProgressRef.current.delete(uploadId);
-                    activeReplaceUploadIdRef.current = null;
                     if (err instanceof DOMException && err.name === "AbortError") {
-                        setProcessingJobs((prev) =>
-                            prev.filter((j) => j.uploadId !== uploadId),
-                        );
+                        removeReplaceUpload(uploadId);
                         setBrowseEditImage(null);
                         return;
                     }
-                    setProcessingJobs((prev) =>
-                        prev.map((j) =>
-                            j.uploadId === uploadId
-                                ? {
-                                      ...j,
-                                      status: "failed" as const,
-                                      errorMessage: userMessage(err, "Failed to upload replacement image"),
-                                      uploadId: undefined,
-                                  }
-                                : j,
-                        ),
-                    );
+                    failReplaceUpload(uploadId, userMessage(err, "Failed to upload replacement image"));
                     setBrowseEditImage(null);
                 });
         },
-        [browseEditImage, loadCategories, loadUncategorizedImages],
-    );
-
-    const handleCancelReplace = useCallback(() => {
-        replaceAbortRef.current?.abort();
-    }, []);
-
-    const handleUploadStarted = useCallback(
-        (uploadId: number, filename: string, fileSize: number) => {
-            setProcessingJobs((prev) => {
-                if (
-                    prev.filter(
-                        (j) =>
-                            j.status === "uploading" ||
-                            j.status === "processing" ||
-                            j.status === "importing",
-                    ).length >= MAX_PROCESSING_JOBS
-                )
-                    return prev;
-                return [
-                    ...prev,
-                    {
-                        id: -uploadId,
-                        filename,
-                        status: "uploading" as const,
-                        kind: "image" as const,
-                        serverProgress: 0,
-                        fileSize,
-                        startedAt: Date.now(),
-                        uploadId,
-                        uploadProgress: 0,
-                    },
-                ];
-            });
-        },
-        [],
-    );
-
-    const handleUploadProgress = useCallback(
-        (uploadId: number, fraction: number) => {
-            uploadProgressRef.current.set(uploadId, fraction);
-        },
-        [],
-    );
-
-    const handleUploadFailed = useCallback((uploadId: number, error: string) => {
-        uploadProgressRef.current.delete(uploadId);
-        setProcessingJobs((prev) =>
-            prev.map((j) =>
-                j.uploadId === uploadId
-                    ? {
-                          ...j,
-                          status: "failed" as const,
-                          errorMessage: error,
-                      }
-                    : j,
-            ),
-        );
-    }, []);
-
-    const handleProcessingStarted = useCallback(
-        (
-            sourceImageId: number,
-            filename: string,
-            fileSize: number,
-            uploadId: number,
-        ) => {
-            setProcessingJobs((prev) => {
-                const uploadingJob = prev.find(
-                    (j) => j.status === "uploading" && j.uploadId === uploadId,
-                );
-                if (uploadingJob) {
-                    uploadProgressRef.current.delete(uploadingJob.uploadId!);
-                    return prev.map((j) =>
-                        j.id === uploadingJob.id
-                            ? {
-                                  ...j,
-                                  id: sourceImageId,
-                                  status: "processing" as const,
-                                  kind: "image" as const,
-                                  serverProgress: 0,
-                                  startedAt: Date.now(),
-                                  uploadId: undefined,
-                                  uploadProgress: undefined,
-                              }
-                            : j,
-                    );
-                }
-                if (
-                    prev.filter(
-                        (j) =>
-                            j.status === "uploading" ||
-                            j.status === "processing" ||
-                            j.status === "importing",
-                    ).length >= MAX_PROCESSING_JOBS
-                )
-                    return prev;
-                if (prev.some((j) => j.id === sourceImageId)) return prev;
-                return [
-                    ...prev,
-                    {
-                        id: sourceImageId,
-                        filename,
-                        status: "processing" as const,
-                        kind: "image" as const,
-                        serverProgress: 0,
-                        fileSize,
-                        startedAt: Date.now(),
-                    },
-                ];
-            });
-        },
-        [],
-    );
-
-    const handleBulkImportStarted = useCallback(
-        (
-            job: ApiBulkImportJob,
-            filename: string,
-            fileSize: number,
-            uploadId: number,
-        ) => {
-            uploadProgressRef.current.delete(uploadId);
-            updateBulkImportJob(job, filename, fileSize, uploadId);
-        },
-        [updateBulkImportJob],
+        [browseEditImage, loadCategories, loadUncategorizedImages, startReplaceUpload, trackReplaceProgress, transitionReplaceToProcessing, removeReplaceUpload, failReplaceUpload],
     );
 
     // Show loading spinner while users are loading
@@ -2430,17 +1768,8 @@ export default function App() {
         return <LoginScreen onLogin={login} announcement={announcement} />;
     }
 
-    // Compute per-modal replacement upload progress.
-    // Each modal only sees progress for its own replacement operation.
-    const activeReplace = activeReplaceUploadIdRef.current;
-    const viewerReplaceUploadProgress =
-        activeReplace?.context === "viewer"
-            ? uploadProgressRef.current.get(activeReplace.uploadId) ?? 0
-            : undefined;
-    const browseReplaceUploadProgress =
-        activeReplace?.context === "browse"
-            ? uploadProgressRef.current.get(activeReplace.uploadId) ?? 0
-            : undefined;
+    const viewerReplaceUploadProgress = getReplaceUploadProgress("viewer");
+    const browseReplaceUploadProgress = getReplaceUploadProgress("browse");
 
     return (
         <Box
@@ -3742,7 +3071,7 @@ export default function App() {
                         : undefined
                 }
                 onReplace={handleReplaceViewerImage}
-                onCancelReplace={handleCancelReplace}
+                onCancelReplace={cancelReplace}
                 replaceUploadProgress={viewerReplaceUploadProgress}
                 image={selectedApiImage}
                 categories={categories}
@@ -3768,7 +3097,7 @@ export default function App() {
                         : undefined
                 }
                 onReplace={handleReplaceBrowseImage}
-                onCancelReplace={handleCancelReplace}
+                onCancelReplace={cancelReplace}
                 replaceUploadProgress={browseReplaceUploadProgress}
                 image={browseApiImage}
                 categories={categories}
@@ -4072,10 +3401,9 @@ export default function App() {
             {/* Image upload + processing snackbars (one per job, stacked) */}
             {visibleJobs.map((job, index) => {
                 const uploadFraction =
-                    job.status === "uploading"
-                        ? (uploadProgressRef.current.get(job.uploadId!) ??
-                          job.uploadProgress ??
-                          0)
+                    job.status === "uploading" && job.uploadId != null
+                        ? (getUploadProgress(job.uploadId) ||
+                          (job.uploadProgress ?? 0))
                         : 0;
                 const displayProgress = getDisplayProgress(job);
                 const statusMsg = getStatusMessage(job);
@@ -4092,9 +3420,7 @@ export default function App() {
                         }
                         onClose={(_event, reason) => {
                             if (reason === "clickaway") return;
-                            setProcessingJobs((prev) =>
-                                prev.filter((j) => j.id !== job.id),
-                            );
+                            dismissJob(job.id);
                         }}
                         anchorOrigin={{
                             vertical: "bottom",
@@ -4129,11 +3455,7 @@ export default function App() {
                                     />
                                 ) : undefined
                             }
-                            onClose={() =>
-                                setProcessingJobs((prev) =>
-                                    prev.filter((j) => j.id !== job.id),
-                                )
-                            }
+                            onClose={() => dismissJob(job.id)}
                         >
                             {job.status === "uploading" && (
                                 <Box sx={{ width: "100%", minWidth: 220 }}>
@@ -4347,12 +3669,7 @@ export default function App() {
                                                     }
                                                 }
                                                 if (found) {
-                                                    setProcessingJobs((prev) =>
-                                                        prev.filter(
-                                                            (j) =>
-                                                                j.id !== job.id,
-                                                        ),
-                                                    );
+                                                    dismissJob(job.id);
                                                 }
                                             }}
                                         >
