@@ -46,6 +46,9 @@ jobs:
       - name: Check scope matches changed components
         if: success()
         id: scope-check
+        # Advisory step: failures (gh API rate limit, network error, bash error)
+        # must not block PRs. The "Surface scope-check failures" step below
+        # emits a ::warning:: annotation so persistent failures stay visible.
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -116,6 +119,11 @@ jobs:
           else
             echo "mismatch=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Surface scope-check failures
+        if: always() && steps.scope-check.outcome == 'failure'
+        run: |
+          echo "::warning::scope-check step failed (advisory, non-blocking). See step logs above — likely causes: gh API rate limit, network error, or bash error. Scope/changelog mismatch warnings may be missing for this PR."
 
       - name: Post scope mismatch warning
         if: steps.scope-check.outputs.mismatch == 'true'
