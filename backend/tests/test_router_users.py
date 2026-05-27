@@ -115,8 +115,6 @@ async def test_get_user_not_found() -> None:
 
 
 async def test_create_user_success() -> None:
-    user = _make_user()
-
     db = AsyncMock()
     db.add = MagicMock()
     db.flush = AsyncMock()
