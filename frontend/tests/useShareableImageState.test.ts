@@ -52,15 +52,21 @@ function makeDeps(overrides: Partial<UseShareableImageStateDeps> = {}): UseShare
 
 describe("useShareableImageState", () => {
     let replaceStateSpy: ReturnType<typeof vi.spyOn>;
+    let savedClipboard: Clipboard;
+    let savedExecCommand: typeof document.execCommand | undefined;
 
     beforeEach(() => {
         replaceStateSpy = vi.spyOn(window.history, "replaceState");
         // Reset URL to clean state
         window.history.replaceState(null, "", "/");
+        savedClipboard = navigator.clipboard;
+        savedExecCommand = document.execCommand;
     });
 
     afterEach(() => {
         replaceStateSpy.mockRestore();
+        Object.assign(navigator, { clipboard: savedClipboard });
+        document.execCommand = savedExecCommand!;
     });
 
     describe("initial state", () => {
