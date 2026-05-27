@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.17.2...frontend-v0.18.0) (2026-05-27)
+
+
+### Features
+
+* **frontend:** snackbar with undo action on image/category drag-and-drop move ([#516](https://github.com/bcit-tlu/hriv/issues/516)) ([73d38c8](https://github.com/bcit-tlu/hriv/commit/73d38c86f35fc97d9ca78d2696b385e355615bdb))
+
 ## [0.17.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.17.1...frontend-v0.17.2) (2026-05-26)
 
 
