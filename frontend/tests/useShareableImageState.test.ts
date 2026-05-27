@@ -411,6 +411,27 @@ describe("useShareableImageState", () => {
             // No new replaceState calls should have been made
             expect(replaceStateSpy.mock.calls.length).toBe(callsBefore);
         });
+
+        it("skips replaceState on not-found pending image when enableUrlSync is false", () => {
+            // Set URL with an image ID that won't exist in any data source
+            window.history.replaceState(null, "", "/?image=999");
+            const callsBefore = replaceStateSpy.mock.calls.length;
+            const uncategorizedLoaded = { current: true };
+            renderHook(() =>
+                useShareableImageState(
+                    makeDeps({
+                        enableUrlSync: false,
+                        categoriesLoading: false,
+                        categories: [],
+                        uncategorizedImages: [],
+                        uncategorizedLoaded:
+                            uncategorizedLoaded as React.RefObject<boolean>,
+                    }),
+                ),
+            );
+            // The not-found branch should NOT have called replaceState
+            expect(replaceStateSpy.mock.calls.length).toBe(callsBefore);
+        });
     });
 
     describe("setters are exposed", () => {
