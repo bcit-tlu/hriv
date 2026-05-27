@@ -40,12 +40,10 @@ import LinkIcon from "@mui/icons-material/Link";
 import SearchIcon from "@mui/icons-material/Search";
 import ImageViewer from "./components/ImageViewer";
 import type {
-    ViewportState,
     MeasurementConfig,
     OverlayRect,
 } from "./components/imageViewerUtils";
 import type { CanvasAnnotation } from "./components/CanvasOverlay";
-import { MAX_SHARE_OVERLAYS } from "./components/imageViewerUtils";
 import CategoryTile from "./components/CategoryTile";
 import ColorModeToggle from "./components/ColorModeToggle";
 import ImageTile from "./components/ImageTile";
@@ -63,6 +61,7 @@ import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
 import type { TypeFilter } from "./components/SearchModal";
 import { narrowProgramIds } from "./categoryUtils";
+import { findImageInTree, findCategoryPath, resolveCategoryPath } from "./treeUtils";
 import UploadImageModal from "./components/UploadImageModal";
 import FileDropZone from "./components/FileDropZone";
 import { isAcceptedFile } from "./fileUtils";
@@ -110,51 +109,8 @@ import {
     useNavigationHistory,
     buildNavHistoryState,
 } from "./useNavigationHistory";
+import { useShareableImageState } from "./useShareableImageState";
 
-/** Search the category tree for an image by ID, returning the image and its category path. */
-function findImageInTree(
-    tree: Category[],
-    imageId: number,
-    path: Category[] = [],
-): { image: ImageItem; path: Category[] } | null {
-    for (const cat of tree) {
-        for (const img of cat.images) {
-            if (img.id === imageId) return { image: img, path: [...path, cat] };
-        }
-        const found = findImageInTree(cat.children, imageId, [...path, cat]);
-        if (found) return found;
-    }
-    return null;
-}
-
-function findCategoryPath(
-    tree: Category[],
-    categoryId: number,
-    path: Category[] = [],
-): Category[] | null {
-    for (const cat of tree) {
-        if (cat.id === categoryId) return [...path, cat];
-        const found = findCategoryPath(cat.children, categoryId, [
-            ...path,
-            cat,
-        ]);
-        if (found) return found;
-    }
-    return null;
-}
-
-/** Walk the category tree following an ordered list of IDs to reconstruct a path. */
-function resolveCategoryPath(tree: Category[], ids: number[]): Category[] {
-    const result: Category[] = [];
-    let current = tree;
-    for (const id of ids) {
-        const cat = current.find((c) => c.id === id);
-        if (!cat) break;
-        result.push(cat);
-        current = cat.children;
-    }
-    return result;
-}
 function apiTreeToCategory(node: ApiCategoryTree): Category {
     const meta = node.metadata_extra as Record<string, unknown> | null;
     return {
@@ -230,25 +186,13 @@ export default function App() {
         [],
     );
 
-    // Shareable-URL state
-    const [viewportState, setViewportState] = useState<
-        ViewportState | undefined
-    >(undefined);
-    const [overlays, setOverlays] = useState<OverlayRect[]>([]);
-    // Lock-engaged: whether the clear button is disabled (separate from metadata persistence)
-    const [lockEngaged, setLockEngaged] = useState(false);
-    const [snackOpen, setSnackOpen] = useState(false);
     const [errorSnack, setErrorSnack] = useState<string | null>(null);
     const [warnSnack, setWarnSnack] = useState<string | null>(null);
     const [moveSnack, setMoveSnack] = useState<{
         message: string;
         onUndo: () => void;
     } | null>(null);
-    const pendingImageId = useRef<number | null>(null);
-    const pendingViewport = useRef<ViewportState | undefined>(undefined);
-    const pendingOverlays = useRef<OverlayRect[] | undefined>(undefined);
     const uncategorizedLoaded = useRef(false);
-    const pendingCatIds = useRef<number[] | null>(null);
     // Track the latest known image version independently from selectedImage
     // to avoid stale-version 409s when clearing overlays after locking
     // (lock intentionally does NOT update selectedImage to avoid viewer remount).
@@ -334,6 +278,33 @@ export default function App() {
         cancelReplace,
         resetAll: resetProcessingJobs,
     } = processingJobsHook;
+
+    // Shareable-URL state (extracted to useShareableImageState hook)
+    const {
+        setViewportState,
+        setOverlays,
+        lockEngaged,
+        setLockEngaged,
+        snackOpen,
+        setSnackOpen,
+        initialViewport,
+        initialOverlays,
+        handleViewportChange,
+        handleOverlaysChange,
+        copyShareLink,
+        clearImage,
+        clearPending,
+    } = useShareableImageState({
+        selectedImage,
+        categories,
+        categoriesLoading,
+        uncategorizedImages,
+        uncategorizedLoaded,
+        page,
+        path,
+        setPath,
+        setSelectedImage,
+    });
 
     // Search modal state
     const [searchOpen, setSearchOpen] = useState(false);
@@ -461,7 +432,7 @@ export default function App() {
             setViewportState(undefined);
             setOverlays([]);
         },
-        [],
+        [setViewportState, setOverlays],
     );
 
     const { pushNavState } = useNavigationHistory(handlePopState);
@@ -482,84 +453,22 @@ export default function App() {
         loadAnnouncement();
     }, [loadAnnouncement]);
 
-    // On mount, parse URL search params for shareable link state
+    // Reset navigation state when user identity changes (login/logout/switch).
+    // Track previous user so we only clear pending shared-link refs on actual
+    // user switches (logout or account change), not on the initial null→user
+    // auth transition which must preserve URL-parsed pending state.
+    const prevUserRef = useRef(currentUser);
     useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const imgId = params.get("image");
-        if (imgId) {
-            const parsedId = Number(imgId);
-            if (!Number.isNaN(parsedId)) {
-                pendingImageId.current = parsedId;
-                const z = params.get("zoom");
-                const px = params.get("x");
-                const py = params.get("y");
-                if (z && px && py) {
-                    const zoom = parseFloat(z);
-                    const x = parseFloat(px);
-                    const y = parseFloat(py);
-                    if (
-                        !Number.isNaN(zoom) &&
-                        !Number.isNaN(x) &&
-                        !Number.isNaN(y)
-                    ) {
-                        const rot = params.get("rotation");
-                        const rotation = rot ? parseFloat(rot) : undefined;
-                        pendingViewport.current = {
-                            zoom,
-                            x,
-                            y,
-                            rotation:
-                                rotation && !Number.isNaN(rotation)
-                                    ? rotation
-                                    : undefined,
-                        };
-                    }
-                }
-                // Parse overlay rectangles (ov0..ov14) — format: x,y,w,h
-                const parsedOverlays: OverlayRect[] = [];
-                for (let i = 0; i < MAX_SHARE_OVERLAYS; i++) {
-                    const ov = params.get(`ov${i}`);
-                    if (!ov) continue;
-                    const parts = ov.split(",").map(Number);
-                    if (
-                        parts.length === 4 &&
-                        parts.every((n) => !Number.isNaN(n))
-                    ) {
-                        parsedOverlays.push({
-                            x: parts[0],
-                            y: parts[1],
-                            w: parts[2],
-                            h: parts[3],
-                        });
-                    }
-                }
-                if (parsedOverlays.length > 0) {
-                    pendingOverlays.current = parsedOverlays;
-                }
-            }
-        }
-        // Parse initial category path from URL (resolved when categories load)
-        if (!imgId) {
-            const catStr = params.get("cat");
-            if (catStr) {
-                const ids = catStr
-                    .split(",")
-                    .map(Number)
-                    .filter((n) => !Number.isNaN(n));
-                if (ids.length > 0) {
-                    pendingCatIds.current = ids;
-                }
-            }
-        }
-    }, []);
-
-    // Reset navigation state when user identity changes (login/logout/switch)
-    useEffect(() => {
+        const prevUser = prevUserRef.current;
+        prevUserRef.current = currentUser;
         setPage("browse");
         setPath([]);
         setSelectedImage(null);
         setViewportState(undefined);
         setOverlays([]);
+        if (prevUser != null && prevUser !== currentUser) {
+            clearPending();
+        }
         setProfileOpen(false);
         setEditModalOpen(false);
         setImageEditOpen(false);
@@ -572,7 +481,7 @@ export default function App() {
             "",
             window.location.pathname,
         );
-    }, [currentUser, resetProcessingJobs]);
+    }, [currentUser, resetProcessingJobs, setViewportState, setOverlays, clearPending]);
 
     // Load users for search when modal opens (admin/instructor only)
     useEffect(() => {
@@ -783,160 +692,6 @@ export default function App() {
     const invalidateBackground = useBackgroundRefresh(backgroundRefresh, currentUser != null);
     invalidateRef.current = invalidateBackground;
 
-    // Once categories are loaded, restore a pending shared-link image
-    useEffect(() => {
-        if (pendingImageId.current === null || categoriesLoading) return;
-        const id = pendingImageId.current;
-
-        // Check uncategorized images first
-        const uncatImg = uncategorizedImages.find((img) => img.id === id);
-        if (uncatImg) {
-            pendingImageId.current = null;
-            setSelectedImage(uncatImg);
-            setViewportState(pendingViewport.current);
-            pendingViewport.current = undefined;
-            if (pendingOverlays.current) {
-                setOverlays(pendingOverlays.current);
-                pendingOverlays.current = undefined;
-            }
-            return;
-        }
-
-        const result = findImageInTree(categories, id);
-        if (result) {
-            pendingImageId.current = null;
-            setPath(result.path);
-            setSelectedImage(result.image);
-            setViewportState(pendingViewport.current);
-            pendingViewport.current = undefined;
-            if (pendingOverlays.current) {
-                setOverlays(pendingOverlays.current);
-                pendingOverlays.current = undefined;
-            }
-        } else if (!categoriesLoading && uncategorizedLoaded.current) {
-            // Both data sources have loaded — image doesn't exist.
-            // Clear pending state and URL so URL sync can resume normally.
-            pendingImageId.current = null;
-            pendingViewport.current = undefined;
-            pendingOverlays.current = undefined;
-            window.history.replaceState(
-                buildNavHistoryState("browse", [], null),
-                "",
-                window.location.pathname,
-            );
-        }
-        // Otherwise keep pendingImageId so we retry on the next data update.
-    }, [categories, uncategorizedImages, categoriesLoading]);
-
-    // Resolve pending category path from URL (when no image param is present)
-    useEffect(() => {
-        if (pendingCatIds.current === null || categoriesLoading) return;
-        const ids = pendingCatIds.current;
-        pendingCatIds.current = null;
-        const resolved = resolveCategoryPath(categories, ids);
-        if (resolved.length > 0) {
-            setPath(resolved);
-        }
-    }, [categories, categoriesLoading]);
-
-    // Keep URL search params in sync with the current view
-    useEffect(() => {
-        // Don't overwrite URL while a shared-link image is still pending resolution
-        if (pendingImageId.current !== null) return;
-        const params = new URLSearchParams();
-        if (page !== "browse") {
-            params.set("page", page);
-        } else {
-            if (path.length > 0) {
-                params.set(
-                    "cat",
-                    path.map((c) => c.id).join(","),
-                );
-            }
-            if (selectedImage) {
-                params.set("image", String(selectedImage.id));
-                if (viewportState) {
-                    params.set("zoom", viewportState.zoom.toFixed(4));
-                    params.set("x", viewportState.x.toFixed(6));
-                    params.set("y", viewportState.y.toFixed(6));
-                    if (viewportState.rotation) {
-                        params.set(
-                            "rotation",
-                            viewportState.rotation.toFixed(1),
-                        );
-                    }
-                }
-                // Serialize overlay rectangles (up to MAX_SHARE_OVERLAYS)
-                for (
-                    let i = 0;
-                    i < Math.min(overlays.length, MAX_SHARE_OVERLAYS);
-                    i++
-                ) {
-                    const r = overlays[i];
-                    params.set(
-                        `ov${i}`,
-                        [r.x, r.y, r.w, r.h]
-                            .map((n) => n.toPrecision(8))
-                            .join(","),
-                    );
-                }
-            }
-        }
-        const qs = params.toString();
-        const newUrl = qs
-            ? `${window.location.pathname}?${qs}`
-            : window.location.pathname;
-        window.history.replaceState(
-            buildNavHistoryState(
-                page,
-                path.map((c) => c.id),
-                selectedImage?.id ?? null,
-            ),
-            "",
-            newUrl,
-        );
-    }, [page, path, selectedImage, viewportState, overlays]);
-
-    const handleViewportChange = useCallback((state: ViewportState) => {
-        setViewportState(state);
-    }, []);
-
-    const handleOverlaysChange = useCallback((newOverlays: OverlayRect[]) => {
-        setOverlays(newOverlays);
-    }, []);
-
-    // Memoize initialViewport so it stays referentially stable per image.
-    // Keyed on image ID so metadata-only updates (e.g. measurement settings)
-    // do not reset the viewport and re-create the OSD viewer.
-    const initialViewport = useMemo(() => viewportState, [selectedImage?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Derive locked overlays from the selected image's metadata.
-    // Validates each entry has numeric x, y, w, h to guard against malformed JSONB data.
-    const lockedOverlays = useMemo((): OverlayRect[] | undefined => {
-        const meta = selectedImage?.metadataExtra;
-        if (!meta) return undefined;
-        const locked = meta.locked_overlays;
-        if (!Array.isArray(locked) || locked.length === 0) return undefined;
-        const valid = locked.filter(
-            (entry): entry is OverlayRect =>
-                entry != null &&
-                typeof entry === "object" &&
-                typeof (entry as Record<string, unknown>).x === "number" &&
-                typeof (entry as Record<string, unknown>).y === "number" &&
-                typeof (entry as Record<string, unknown>).w === "number" &&
-                typeof (entry as Record<string, unknown>).h === "number",
-        );
-        return valid.length > 0 ? valid : undefined;
-    }, [selectedImage]);
-
-    const hasLockedOverlays =
-        lockedOverlays !== undefined && lockedOverlays.length > 0;
-
-    // Auto-engage lock when image has persisted overlays
-    useEffect(() => {
-        setLockEngaged(hasLockedOverlays);
-    }, [hasLockedOverlays]);
-
     // Local override for canvas annotations so view mode reflects edits immediately
     // (selectedImage is intentionally NOT updated after saves to avoid viewer remount)
     const [localCanvasAnnotations, setLocalCanvasAnnotations] = useState<
@@ -958,19 +713,6 @@ export default function App() {
         canvasSaveInFlightRef.current = false;
         saveTargetImageIdRef.current = null;
     }, [selectedImage]);
-
-    // Memoize initialOverlays: use locked overlays on initial load if no URL overlays.
-    // Keyed on image ID so metadata-only updates do not re-create the viewer.
-    const initialOverlays = useMemo(() => {
-        if (
-            lockedOverlays &&
-            lockedOverlays.length > 0 &&
-            overlays.length === 0
-        ) {
-            return lockedOverlays;
-        }
-        return overlays;
-    }, [selectedImage?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Extract canvas annotations from the selected image's metadata
     const canvasAnnotations = useMemo((): CanvasAnnotation[] => {
@@ -1138,6 +880,7 @@ export default function App() {
             flushCanvasAnnotations,
             loadCategories,
             loadUncategorizedImages,
+            setLockEngaged,
         ],
     );
 
@@ -1145,7 +888,7 @@ export default function App() {
     // Does NOT remove persisted overlays from metadata.
     const handleUnlockOverlays = useCallback(() => {
         setLockEngaged(false);
-    }, []);
+    }, [setLockEngaged]);
 
     // Clear overlays: also remove from metadata if they were persisted.
     // Refreshes category tree; does NOT call setSelectedImage.
@@ -1178,29 +921,6 @@ export default function App() {
         loadCategories,
         loadUncategorizedImages,
     ]);
-
-    const copyShareLink = useCallback(() => {
-        const url = window.location.href;
-        const fallbackCopy = () => {
-            const input = document.createElement("input");
-            input.value = url;
-            document.body.appendChild(input);
-            input.select();
-            document.execCommand("copy");
-            document.body.removeChild(input);
-            setSnackOpen(true);
-        };
-        if (navigator.clipboard?.writeText) {
-            navigator.clipboard
-                .writeText(url)
-                .then(() => {
-                    setSnackOpen(true);
-                })
-                .catch(fallbackCopy);
-        } else {
-            fallbackCopy();
-        }
-    }, []);
 
     // Resolve the live children/images from the categories state tree
     // so newly added categories appear immediately.
@@ -1289,12 +1009,6 @@ export default function App() {
             freshProgramIds: freshChild?.programIds ?? editNameCategory.programIds,
         };
     }, [editNameCategory, path, categories, currentCategories, ancestorProgramIds, getPathRestriction]);
-
-    const clearImage = useCallback(() => {
-        setSelectedImage(null);
-        setViewportState(undefined);
-        setOverlays([]);
-    }, []);
 
     const handleImageClick = useCallback(
         (img: ImageItem) => {
