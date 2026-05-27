@@ -761,6 +761,9 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
         serverProgressRef.current.clear();
         uploadProgressRef.current.clear();
         serverStatusMessageRef.current.clear();
+        replaceAbortRef.current?.abort();
+        replaceAbortRef.current = null;
+        activeReplaceUploadIdRef.current = null;
         setProcessingJobs([]);
     }, []);
 
