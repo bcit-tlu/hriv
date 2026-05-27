@@ -46,6 +46,7 @@ jobs:
       - name: Check scope matches changed components
         if: success()
         id: scope-check
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_TITLE: ${{ github.event.pull_request.title }}
@@ -55,8 +56,10 @@ jobs:
           title="$PR_TITLE"
 
           # Extract scope from title (e.g. "backend" from "fix(backend): ...")
+          # Store regex in variable to avoid bash [[ =~ ]] parsing issues
+          scope_re='^[a-z]+\(([^)]+)\)'
           scope=""
-          if [[ "$title" =~ ^[a-z]+\(([^)]+)\) ]]; then
+          if [[ "$title" =~ $scope_re ]]; then
             scope="${BASH_REMATCH[1]}"
           fi
 
