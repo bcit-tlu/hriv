@@ -6,15 +6,24 @@ import { findImageInTree, resolveCategoryPath } from "./treeUtils";
 import type { Category, ImageItem } from "./types";
 
 export interface UseShareableImageStateDeps {
+    /** Currently selected image — changes trigger URL sync. */
     selectedImage: ImageItem | null;
     categories: Category[];
     categoriesLoading: boolean;
     uncategorizedImages: ImageItem[];
     uncategorizedLoaded: React.RefObject<boolean>;
+    /** Active page — changes trigger URL sync (non-browse pages write `?page=`). */
     page: string;
+    /** Current category path — changes trigger URL sync (`?cat=`). */
     path: Category[];
     setPath: React.Dispatch<React.SetStateAction<Category[]>>;
     setSelectedImage: React.Dispatch<React.SetStateAction<ImageItem | null>>;
+    /**
+     * When false, the hook skips the URL sync effect that writes page/path/
+     * selectedImage/viewport/overlay state to `window.location`.
+     * Defaults to true if omitted.
+     */
+    enableUrlSync?: boolean;
 }
 
 export interface UseShareableImageStateReturn {
@@ -51,6 +60,7 @@ export function useShareableImageState(
         path,
         setPath,
         setSelectedImage,
+        enableUrlSync = true,
     } = deps;
 
     // Shareable-URL state
@@ -193,8 +203,11 @@ export function useShareableImageState(
         }
     }, [categories, categoriesLoading, setPath]);
 
-    // Keep URL search params in sync with the current view
+    // Keep URL search params in sync with the current view.
+    // Skipped when enableUrlSync is false so consumers that only need the
+    // state/memos without URL side-effects can opt out.
     useEffect(() => {
+        if (!enableUrlSync) return;
         // Don't overwrite URL while a shared-link image is still pending resolution
         if (pendingImageId.current !== null) return;
         const params = new URLSearchParams();
@@ -249,7 +262,7 @@ export function useShareableImageState(
             "",
             newUrl,
         );
-    }, [page, path, selectedImage, viewportState, overlays]);
+    }, [enableUrlSync, page, path, selectedImage, viewportState, overlays]);
 
     const handleViewportChange = useCallback((state: ViewportState) => {
         setViewportState(state);

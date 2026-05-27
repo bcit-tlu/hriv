@@ -383,6 +383,28 @@ describe("useShareableImageState", () => {
             ][2] as string;
             expect(url).toContain("page=manage");
         });
+
+        it("skips URL sync when enableUrlSync is false", () => {
+            const callsBefore = replaceStateSpy.mock.calls.length;
+            const img = makeImage(42);
+            const { result } = renderHook(() =>
+                useShareableImageState(
+                    makeDeps({
+                        selectedImage: img,
+                        enableUrlSync: false,
+                    }),
+                ),
+            );
+            act(() => {
+                result.current.handleViewportChange({
+                    zoom: 5,
+                    x: 0.1,
+                    y: 0.9,
+                });
+            });
+            // No new replaceState calls should have been made
+            expect(replaceStateSpy.mock.calls.length).toBe(callsBefore);
+        });
     });
 
     describe("setters are exposed", () => {
