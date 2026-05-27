@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.18.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.18.0...backend-v0.18.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **backend:** refresh programs before assignment in create_user ([#522](https://github.com/bcit-tlu/hriv/issues/522)) ([bbd5afc](https://github.com/bcit-tlu/hriv/commit/bbd5afce3f00849af288d2736fc37481a794eb45))
+
 ## [0.18.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.4...backend-v0.18.0) (2026-05-25)
 
 
