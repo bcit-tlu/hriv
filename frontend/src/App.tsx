@@ -290,11 +290,11 @@ export default function App() {
         fetchSourceImage,
         fetchBulkImportJob,
         fetchImage: apiFetchImage,
-        loadCategories: () => loadCategories(),
-        loadUncategorizedImages: () => loadUncategorizedImages(),
+        loadCategories,
+        loadUncategorizedImages,
         selectedImageRef,
         setSelectedImage,
-        setImagesVersion: (v) => setImagesVersion(v),
+        setImagesVersion,
     });
     const {
         getDisplayProgress,
