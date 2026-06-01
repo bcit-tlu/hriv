@@ -9,6 +9,7 @@ function makeImage(id: number, name = `img-${id}`) {
         thumb: `/thumb/${id}.jpg`,
         tileSources: `/tiles/${id}`,
         active: true,
+        sortOrder: 0,
         version: 1,
     };
 }

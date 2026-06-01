@@ -55,6 +55,7 @@ export interface UseProcessingJobsDeps {
         copyright: string | null;
         note: string | null;
         active: boolean;
+        sort_order: number;
         version: number;
         created_at: string;
         updated_at: string;
