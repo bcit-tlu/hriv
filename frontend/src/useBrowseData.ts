@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import {
     fetchCategoryTree,
     fetchUncategorizedImages,
@@ -140,14 +140,6 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
         [],
     );
 
-    useEffect(() => {
-        if (currentUser) {
-            loadCategories();
-            loadUncategorizedImages();
-            loadPrograms();
-        }
-    }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms]);
-
     // Background refresh: re-fetch categories and uncategorized images every
     // 30 s while the tab is visible.  The category tree endpoint returns
     // ETag + Cache-Control: private, no-cache so the browser's default fetch
@@ -227,7 +219,6 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
         loadPrograms,
         refreshCategories,
         refreshUncategorizedImages,
-        resolvedCategories,
         currentImages,
         getPathRestriction,
         ancestorProgramIds,

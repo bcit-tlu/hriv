@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { renderHook, act } from "@testing-library/react";
 import { useBrowseData, apiTreeToCategory } from "../src/useBrowseData";
 import type { UseBrowseDataDeps } from "../src/useBrowseData";
 import type { Category, User } from "../src/types";
@@ -81,6 +81,16 @@ function makeDeps(overrides: Partial<UseBrowseDataDeps> = {}): UseBrowseDataDeps
     };
 }
 
+/** Simulates what App.tsx's initial-load effect does after the
+ *  currentUser reset effect. */
+async function triggerInitialLoad(result: { current: ReturnType<typeof useBrowseData> }) {
+    await act(async () => {
+        await result.current.loadCategories();
+        await result.current.loadUncategorizedImages();
+        await result.current.loadPrograms();
+    });
+}
+
 describe("useBrowseData", () => {
     beforeEach(() => {
         mockFetchCategoryTree.mockReset();
@@ -114,7 +124,7 @@ describe("useBrowseData", () => {
     });
 
     describe("data loading", () => {
-        it("fetches categories, images, and programs when user is logged in", async () => {
+        it("loads categories, images, and programs when called explicitly", async () => {
             const tree = [makeApiTree({ id: 1, label: "Cat A" })];
             const imgs = [makeApiImage(10)];
             const progs = [{ id: 1, name: "P1", oidc_group: null, created_at: "", updated_at: "" }];
@@ -126,10 +136,9 @@ describe("useBrowseData", () => {
             const deps = makeDeps({ currentUser: makeUser() });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categories).toHaveLength(1);
-            });
+            await triggerInitialLoad(result);
 
+            expect(result.current.categories).toHaveLength(1);
             expect(result.current.categories[0].label).toBe("Cat A");
             expect(result.current.uncategorizedImages).toHaveLength(1);
             expect(result.current.uncategorizedImages[0].id).toBe(10);
@@ -145,10 +154,11 @@ describe("useBrowseData", () => {
             const deps = makeDeps({ currentUser: makeUser() });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categoriesLoading).toBe(false);
+            await act(async () => {
+                await result.current.loadCategories();
             });
 
+            expect(result.current.categoriesLoading).toBe(false);
             expect(result.current.categories).toEqual([]);
             expect(spy).toHaveBeenCalledWith("Failed to load categories", expect.any(Error));
             spy.mockRestore();
@@ -161,8 +171,8 @@ describe("useBrowseData", () => {
             const deps = makeDeps({ currentUser: makeUser() });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.uncategorizedLoaded.current).toBe(true);
+            await act(async () => {
+                await result.current.loadUncategorizedImages();
             });
 
             expect(result.current.uncategorizedImages).toEqual([]);
@@ -175,8 +185,8 @@ describe("useBrowseData", () => {
             const deps = makeDeps({ currentUser: makeUser() });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categoriesLoading).toBe(false);
+            await act(async () => {
+                await result.current.loadPrograms();
             });
 
             expect(result.current.programs).toEqual([]);
@@ -188,9 +198,7 @@ describe("useBrowseData", () => {
             const deps = makeDeps({ currentUser: makeUser() });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categoriesLoading).toBe(false);
-            });
+            await triggerInitialLoad(result);
 
             const tree = [makeApiTree({ id: 2, label: "Silent" })];
             mockFetchCategoryTree.mockResolvedValue(tree);
@@ -210,21 +218,32 @@ describe("useBrowseData", () => {
         });
 
         it("sets loading state when silent is false (default)", async () => {
+            const deps = makeDeps({ currentUser: makeUser() });
+            const { result } = renderHook(() => useBrowseData(deps));
+
+            // Settle initial loading state
+            await triggerInitialLoad(result);
+            expect(result.current.categoriesLoading).toBe(false);
+
             // Use a deferred promise so we can observe the loading state mid-flight
             let resolveFetch!: (value: typeof api.ApiCategoryTree[]) => void;
             mockFetchCategoryTree.mockImplementation(
                 () => new Promise((resolve) => { resolveFetch = resolve as typeof resolveFetch; }),
             );
 
-            const deps = makeDeps({ currentUser: makeUser() });
-            const { result } = renderHook(() => useBrowseData(deps));
+            // Start a non-silent load (default)
+            let loadDone: Promise<void>;
+            act(() => {
+                loadDone = result.current.loadCategories();
+            });
 
-            // Initial load is in flight — categoriesLoading should be true
+            // During flight, categoriesLoading should be true
             expect(result.current.categoriesLoading).toBe(true);
 
-            // Resolve initial load
+            // Resolve the fetch
             await act(async () => {
                 resolveFetch([]);
+                await loadDone!;
             });
 
             expect(result.current.categoriesLoading).toBe(false);
@@ -234,9 +253,7 @@ describe("useBrowseData", () => {
             const deps = makeDeps({ currentUser: makeUser() });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categoriesLoading).toBe(false);
-            });
+            await triggerInitialLoad(result);
 
             const controller = new AbortController();
             controller.abort();
@@ -258,9 +275,7 @@ describe("useBrowseData", () => {
             const deps = makeDeps({ currentUser: makeUser() });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categoriesLoading).toBe(false);
-            });
+            await triggerInitialLoad(result);
 
             const controller = new AbortController();
             const tree = [makeApiTree({ id: 4, label: "WithSignal" })];
@@ -279,9 +294,7 @@ describe("useBrowseData", () => {
             const deps = makeDeps({ currentUser: makeUser() });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categoriesLoading).toBe(false);
-            });
+            await triggerInitialLoad(result);
 
             const controller = new AbortController();
             controller.abort();
@@ -303,9 +316,7 @@ describe("useBrowseData", () => {
             const deps = makeDeps({ currentUser: makeUser() });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categoriesLoading).toBe(false);
-            });
+            await triggerInitialLoad(result);
 
             const freshTree = [makeApiTree({ id: 5, label: "Fresh" })];
             mockFetchCategoryTree.mockResolvedValue(freshTree);
@@ -327,9 +338,7 @@ describe("useBrowseData", () => {
             const deps = makeDeps({ currentUser: makeUser() });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categoriesLoading).toBe(false);
-            });
+            await triggerInitialLoad(result);
 
             const freshImgs = [makeApiImage(99, { name: "new-img" })];
             mockFetchUncategorizedImages.mockResolvedValue(freshImgs);
@@ -369,9 +378,7 @@ describe("useBrowseData", () => {
 
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categories).toHaveLength(1);
-            });
+            await triggerInitialLoad(result);
 
             expect(result.current.currentCategories).toHaveLength(1);
             expect(result.current.currentCategories[0].label).toBe("Child");
@@ -402,9 +409,7 @@ describe("useBrowseData", () => {
             });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categoriesLoading).toBe(false);
-            });
+            await triggerInitialLoad(result);
 
             expect(result.current.currentCategories).toEqual([]);
             expect(result.current.currentImages).toEqual([]);
@@ -422,9 +427,7 @@ describe("useBrowseData", () => {
             });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categories).toHaveLength(2);
-            });
+            await triggerInitialLoad(result);
 
             expect(result.current.currentCategories).toHaveLength(1);
             expect(result.current.currentCategories[0].label).toBe("Visible");
@@ -442,9 +445,7 @@ describe("useBrowseData", () => {
             });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categories).toHaveLength(2);
-            });
+            await triggerInitialLoad(result);
 
             expect(result.current.currentCategories).toHaveLength(2);
         });
@@ -459,9 +460,7 @@ describe("useBrowseData", () => {
             const deps = makeDeps({ currentUser: makeUser() });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categoriesLoading).toBe(false);
-            });
+            await triggerInitialLoad(result);
 
             expect(result.current.ancestorProgramIds).toEqual([]);
         });
@@ -490,9 +489,7 @@ describe("useBrowseData", () => {
             });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categories).toHaveLength(1);
-            });
+            await triggerInitialLoad(result);
 
             // narrowProgramIds intersects: [10,20,30] ∩ [10,20] = [10,20]
             expect(result.current.ancestorProgramIds).toEqual([10, 20]);
@@ -522,9 +519,7 @@ describe("useBrowseData", () => {
             });
             const { result } = renderHook(() => useBrowseData(deps));
 
-            await waitFor(() => {
-                expect(result.current.categories).toHaveLength(1);
-            });
+            await triggerInitialLoad(result);
 
             // Only first ancestor: [10, 20, 30]
             expect(result.current.getPathRestriction(1)).toEqual([10, 20, 30]);

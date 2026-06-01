@@ -420,6 +420,18 @@ export default function App() {
         );
     }, [currentUser, resetProcessingJobs, setViewportState, setOverlays, clearPending]);
 
+    // Initial data load — placed after the reset effect above so that
+    // effect ordering is deterministic (reset fires first, then load),
+    // per REVIEW.md: "never rely on implicit effect ordering between
+    // hooks and components."
+    useEffect(() => {
+        if (currentUser) {
+            loadCategories();
+            loadUncategorizedImages();
+            loadPrograms();
+        }
+    }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms]);
+
     // Load users for search when modal opens (admin/instructor only)
     useEffect(() => {
         if (searchOpen && canEditContent) {
