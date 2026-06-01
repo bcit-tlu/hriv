@@ -44,13 +44,12 @@ export function useAnnouncementModal() {
             setAnnEnabled(updated.enabled);
             setAnnouncement(updated.enabled ? updated.message : "");
             setAnnModalOpen(false);
-            loadAnnouncement();
         } catch (err) {
             setAnnError(userMessage(err, "Failed to update announcement"));
         } finally {
             setAnnSaving(false);
         }
-    }, [annDraftMessage, annDraftEnabled, loadAnnouncement]);
+    }, [annDraftMessage, annDraftEnabled]);
 
     return {
         announcement,

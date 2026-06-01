@@ -120,11 +120,6 @@ describe("useAnnouncementModal", () => {
                 result.current.setAnnDraftEnabled(true);
             });
 
-            // After save, re-fetch returns the updated announcement
-            mockFetchAnnouncement.mockResolvedValue(
-                makeAnnouncement({ message: "New msg", enabled: true }),
-            );
-
             // Save
             await act(async () => {
                 await result.current.handleAnnSave();
@@ -135,10 +130,10 @@ describe("useAnnouncementModal", () => {
                 enabled: true,
             });
             expect(result.current.annModalOpen).toBe(false);
-            // Display state updated immediately (no stale window)
+            // Display state updated immediately from response (no re-fetch needed)
             expect(result.current.announcement).toBe("New msg");
-            // loadAnnouncement called again after save
-            expect(mockFetchAnnouncement).toHaveBeenCalledTimes(2);
+            // No redundant re-fetch after save
+            expect(mockFetchAnnouncement).toHaveBeenCalledTimes(1);
         });
 
         it("clears announcement display immediately when saving as disabled", async () => {
@@ -160,11 +155,6 @@ describe("useAnnouncementModal", () => {
             act(() => {
                 result.current.setAnnDraftEnabled(false);
             });
-
-            // After save, re-fetch returns the disabled announcement
-            mockFetchAnnouncement.mockResolvedValue(
-                makeAnnouncement({ message: "Visible", enabled: false }),
-            );
 
             await act(async () => {
                 await result.current.handleAnnSave();
