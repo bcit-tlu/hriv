@@ -420,10 +420,12 @@ export default function App() {
         );
     }, [currentUser, resetProcessingJobs, setViewportState, setOverlays, clearPending]);
 
-    // Initial data load — placed after the reset effect above so that
-    // effect ordering is deterministic (reset fires first, then load),
-    // per REVIEW.md: "never rely on implicit effect ordering between
-    // hooks and components."
+    // Initial data load — kept in this component (rather than inside
+    // useBrowseData) and declared after the reset effect above. React
+    // runs effects in declaration order within a single component, so
+    // the reset is guaranteed to fire before this load. This avoids
+    // relying on implicit effect ordering across the hook/component
+    // boundary, which would be unreliable.
     useEffect(() => {
         if (currentUser) {
             loadCategories();
