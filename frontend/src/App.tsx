@@ -644,16 +644,15 @@ export default function App() {
         [clearImage, pushNavState, loadCategories, loadUncategorizedImages],
     );
 
+    // Called only when already on browse (AppShell gates the click);
+    // reloads data and resets to root.
     const handleHomeClick = useCallback(() => {
-        if (page === "browse") {
-            loadCategories();
-            loadUncategorizedImages();
-        }
-        setPage("browse");
+        loadCategories();
+        loadUncategorizedImages();
         clearImage();
         setPath([]);
         pushNavState("browse");
-    }, [page, clearImage, pushNavState, loadCategories, loadUncategorizedImages]);
+    }, [clearImage, pushNavState, loadCategories, loadUncategorizedImages]);
 
     // Show loading spinner while users are loading
     if (usersLoading) {

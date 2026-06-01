@@ -123,11 +123,39 @@ describe("AppShell", () => {
             expect(screen.queryByRole("tab", { name: "Admin" })).not.toBeInTheDocument();
         });
 
-        it("calls onHomeClick when Home tab is clicked", () => {
-            const props = makeProps();
+        it("calls onHomeClick when Home tab is clicked while already on browse", () => {
+            const props = makeProps({ page: "browse" });
             render(<AppShell {...props} />);
             fireEvent.click(screen.getByRole("tab", { name: "Home" }));
             expect(props.onHomeClick).toHaveBeenCalled();
+        });
+
+        it("does not call onHomeClick when Home tab is clicked from another page", () => {
+            const props = makeProps({ page: "manage" });
+            render(<AppShell {...props} />);
+            fireEvent.click(screen.getByRole("tab", { name: "Home" }));
+            expect(props.onHomeClick).not.toHaveBeenCalled();
+        });
+
+        it("calls onTabChange with 'manage' when Images tab is clicked", () => {
+            const props = makeProps({ page: "browse" });
+            render(<AppShell {...props} />);
+            fireEvent.click(screen.getByRole("tab", { name: "Images" }));
+            expect(props.onTabChange).toHaveBeenCalledWith("manage");
+        });
+
+        it("calls onTabChange with 'people' when People tab is clicked", () => {
+            const props = makeProps({ page: "browse" });
+            render(<AppShell {...props} />);
+            fireEvent.click(screen.getByRole("tab", { name: "People" }));
+            expect(props.onTabChange).toHaveBeenCalledWith("people");
+        });
+
+        it("calls onTabChange with 'admin' when Admin tab is clicked", () => {
+            const props = makeProps({ page: "browse" });
+            render(<AppShell {...props} />);
+            fireEvent.click(screen.getByRole("tab", { name: "Admin" }));
+            expect(props.onTabChange).toHaveBeenCalledWith("admin");
         });
     });
 

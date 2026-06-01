@@ -18,6 +18,7 @@ import Typography from "@mui/material/Typography";
 import SearchIcon from "@mui/icons-material/Search";
 import ColorModeToggle from "./ColorModeToggle";
 import AnnouncementBanner from "./AnnouncementBanner";
+import type { Role } from "../types";
 
 export type Page = "browse" | "manage" | "people" | "admin";
 
@@ -27,7 +28,7 @@ export interface AppShellProps {
     onHomeClick: () => void;
     canEditContent: boolean;
     canManageUsers: boolean;
-    currentUser: { name: string; email: string; role: string; program_names: string[] };
+    currentUser: { name: string; email: string; role: Role; program_names: string[] };
     announcement: string;
     // Profile popover
     profileOpen: boolean;
@@ -130,7 +131,13 @@ export default function AppShell(props: AppShellProps) {
                         <Tab
                             label="Home"
                             value="browse"
-                            onClick={onHomeClick}
+                            onClick={() => {
+                                // Only fire when already on browse (refresh/reset);
+                                // otherwise Tabs onChange handles the page switch.
+                                if (page === "browse") {
+                                    onHomeClick();
+                                }
+                            }}
                         />
                         {canEditContent && (
                             <Tab label="Images" value="manage" />
