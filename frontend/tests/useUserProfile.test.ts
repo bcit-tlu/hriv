@@ -126,10 +126,12 @@ describe("useUserProfile", () => {
     describe("handleSaveProfile", () => {
         it("calls updateUser and reloads page on success", async () => {
             mockUpdateUser.mockResolvedValue({} as api.ApiUser);
+            const originalLocation = window.location;
             const reloadMock = vi.fn();
             Object.defineProperty(window, "location", {
-                value: { reload: reloadMock },
+                value: { ...originalLocation, reload: reloadMock },
                 writable: true,
+                configurable: true,
             });
 
             const deps = makeDeps();
@@ -139,13 +141,21 @@ describe("useUserProfile", () => {
                 result.current.setEditModalOpen(true);
             });
 
-            await act(async () => {
-                await result.current.handleSaveProfile({ name: "New Name" });
-            });
+            try {
+                await act(async () => {
+                    await result.current.handleSaveProfile({ name: "New Name" });
+                });
 
-            expect(mockUpdateUser).toHaveBeenCalledWith(1, { name: "New Name" });
-            expect(result.current.editModalOpen).toBe(false);
-            expect(reloadMock).toHaveBeenCalled();
+                expect(mockUpdateUser).toHaveBeenCalledWith(1, { name: "New Name" });
+                expect(result.current.editModalOpen).toBe(false);
+                expect(reloadMock).toHaveBeenCalled();
+            } finally {
+                Object.defineProperty(window, "location", {
+                    value: originalLocation,
+                    writable: true,
+                    configurable: true,
+                });
+            }
         });
 
         it("does nothing when currentUser is null", async () => {
