@@ -15,9 +15,20 @@ vi.mock("../src/api", async () => {
 const mockFetchAnnouncement = vi.mocked(api.fetchAnnouncement);
 const mockUpdateAnnouncement = vi.mocked(api.updateAnnouncement);
 
+function makeAnnouncement(overrides: Partial<api.ApiAnnouncement> = {}): api.ApiAnnouncement {
+    return {
+        id: 1,
+        message: "",
+        enabled: false,
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+        ...overrides,
+    };
+}
+
 beforeEach(() => {
     vi.clearAllMocks();
-    mockFetchAnnouncement.mockResolvedValue({ message: "", enabled: false });
+    mockFetchAnnouncement.mockResolvedValue(makeAnnouncement());
 });
 
 describe("useAnnouncementModal", () => {
@@ -35,10 +46,9 @@ describe("useAnnouncementModal", () => {
 
     describe("loadAnnouncement (auto-loads on mount)", () => {
         it("loads enabled announcement into display state", async () => {
-            mockFetchAnnouncement.mockResolvedValue({
-                message: "Hello world",
-                enabled: true,
-            });
+            mockFetchAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "Hello world", enabled: true }),
+            );
             const { result } = renderHook(() => useAnnouncementModal());
             await waitFor(() => {
                 expect(result.current.announcement).toBe("Hello world");
@@ -46,10 +56,9 @@ describe("useAnnouncementModal", () => {
         });
 
         it("sets announcement to empty string when disabled", async () => {
-            mockFetchAnnouncement.mockResolvedValue({
-                message: "Not visible",
-                enabled: false,
-            });
+            mockFetchAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "Not visible", enabled: false }),
+            );
             const { result } = renderHook(() => useAnnouncementModal());
             await waitFor(() => {
                 expect(mockFetchAnnouncement).toHaveBeenCalled();
@@ -69,10 +78,9 @@ describe("useAnnouncementModal", () => {
 
     describe("openAnnModal", () => {
         it("populates draft from current state and opens modal", async () => {
-            mockFetchAnnouncement.mockResolvedValue({
-                message: "Current msg",
-                enabled: true,
-            });
+            mockFetchAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "Current msg", enabled: true }),
+            );
             const { result } = renderHook(() => useAnnouncementModal());
             await waitFor(() => {
                 expect(result.current.announcement).toBe("Current msg");
@@ -91,14 +99,12 @@ describe("useAnnouncementModal", () => {
 
     describe("handleAnnSave", () => {
         it("saves announcement and closes modal on success", async () => {
-            mockFetchAnnouncement.mockResolvedValue({
-                message: "Old msg",
-                enabled: false,
-            });
-            mockUpdateAnnouncement.mockResolvedValue({
-                message: "New msg",
-                enabled: true,
-            });
+            mockFetchAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "Old msg", enabled: false }),
+            );
+            mockUpdateAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "New msg", enabled: true }),
+            );
 
             const { result } = renderHook(() => useAnnouncementModal());
             await waitFor(() => {
@@ -114,6 +120,11 @@ describe("useAnnouncementModal", () => {
                 result.current.setAnnDraftEnabled(true);
             });
 
+            // After save, re-fetch returns the updated announcement
+            mockFetchAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "New msg", enabled: true }),
+            );
+
             // Save
             await act(async () => {
                 await result.current.handleAnnSave();
@@ -124,15 +135,46 @@ describe("useAnnouncementModal", () => {
                 enabled: true,
             });
             expect(result.current.annModalOpen).toBe(false);
+            // Display state updated immediately (no stale window)
+            expect(result.current.announcement).toBe("New msg");
             // loadAnnouncement called again after save
             expect(mockFetchAnnouncement).toHaveBeenCalledTimes(2);
         });
 
-        it("shows error on save failure", async () => {
-            mockFetchAnnouncement.mockResolvedValue({
-                message: "",
-                enabled: false,
+        it("clears announcement display immediately when saving as disabled", async () => {
+            mockFetchAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "Visible", enabled: true }),
+            );
+            mockUpdateAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "Visible", enabled: false }),
+            );
+
+            const { result } = renderHook(() => useAnnouncementModal());
+            await waitFor(() => {
+                expect(result.current.announcement).toBe("Visible");
             });
+
+            act(() => {
+                result.current.openAnnModal();
+            });
+            act(() => {
+                result.current.setAnnDraftEnabled(false);
+            });
+
+            // After save, re-fetch returns the disabled announcement
+            mockFetchAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "Visible", enabled: false }),
+            );
+
+            await act(async () => {
+                await result.current.handleAnnSave();
+            });
+
+            expect(result.current.announcement).toBe("");
+        });
+
+        it("shows error on save failure", async () => {
+            mockFetchAnnouncement.mockResolvedValue(makeAnnouncement());
             mockUpdateAnnouncement.mockRejectedValue(new Error("Server error"));
 
             const { result } = renderHook(() => useAnnouncementModal());

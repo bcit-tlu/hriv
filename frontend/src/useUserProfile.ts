@@ -42,7 +42,7 @@ export function useUserProfile(deps: UseUserProfileDeps) {
     }, [loadPrograms]);
 
     const handleSaveProfile = useCallback(
-        async (data: { name?: string; email?: string; role?: string; program_ids?: number[] }) => {
+        async (data: { name?: string; email?: string; role?: string; password?: string; program_ids?: number[] }) => {
             if (!currentUser) return;
             try {
                 await apiUpdateUser(currentUser.id, data);

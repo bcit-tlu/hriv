@@ -125,7 +125,18 @@ describe("useUserProfile", () => {
 
     describe("handleSaveProfile", () => {
         it("calls updateUser and reloads page on success", async () => {
-            mockUpdateUser.mockResolvedValue({} as api.ApiUser);
+            mockUpdateUser.mockResolvedValue({
+                id: 1,
+                name: "New Name",
+                email: "test@example.com",
+                role: "admin",
+                program_ids: [10, 20],
+                program_names: ["Program A", "Program B"],
+                last_access: "2026-01-01T00:00:00Z",
+                metadata_extra: null,
+                created_at: "2026-01-01T00:00:00Z",
+                updated_at: "2026-01-01T00:00:00Z",
+            });
             const originalLocation = window.location;
             const reloadMock = vi.fn();
             Object.defineProperty(window, "location", {

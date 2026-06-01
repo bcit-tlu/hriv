@@ -42,6 +42,7 @@ export function useAnnouncementModal() {
             });
             setAnnMessage(updated.message);
             setAnnEnabled(updated.enabled);
+            setAnnouncement(updated.enabled ? updated.message : "");
             setAnnModalOpen(false);
             loadAnnouncement();
         } catch (err) {
