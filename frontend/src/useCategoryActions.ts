@@ -21,10 +21,10 @@ export interface UseCategoryActionsDeps {
     path: Category[];
     setPath: React.Dispatch<React.SetStateAction<Category[]>>;
     editNameCategory: Category | null;
-    setErrorSnack: (msg: string | null) => void;
-    setMoveSnack: (
-        val: { message: string; onUndo: () => void } | null,
-    ) => void;
+    setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>;
+    setMoveSnack: React.Dispatch<
+        React.SetStateAction<{ message: string; onUndo: () => void } | null>
+    >;
 }
 
 export function useCategoryActions({
