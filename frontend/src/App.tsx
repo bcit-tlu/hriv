@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import Alert from "@mui/material/Alert";
 import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
@@ -67,9 +67,6 @@ import {
     fetchBulkImportJob,
     fetchVersions,
     fetchFrontendVersion,
-    createCategory as apiCreateCategory,
-    deleteCategory as apiDeleteCategory,
-    updateCategory as apiUpdateCategory,
     fetchUsers,
     updateUser as apiUpdateUser,
     updateImage as apiUpdateImage,
@@ -79,7 +76,6 @@ import {
     createProgram,
     updateProgram,
     deleteProgram,
-    reorderCategories as apiReorderCategories,
     userMessage,
 } from "./api";
 import type {
@@ -102,6 +98,7 @@ import {
 import { useShareableImageState } from "./useShareableImageState";
 import { useCanvasAnnotations } from "./useCanvasAnnotations";
 import { useOverlayPersistence } from "./useOverlayPersistence";
+import { useCategoryActions } from "./useCategoryActions";
 
 export default function App() {
     const {
@@ -274,9 +271,6 @@ export default function App() {
     // Program management modal state (for Manage menu)
     const [programModalOpen, setProgramModalOpen] = useState(false);
 
-    // Move category dialog state
-    const [moveCatOpen, setMoveCatOpen] = useState(false);
-    const [movingCategory, setMovingCategory] = useState<Category | null>(null);
 
     // Image edit modal state (for viewer page)
     const [imageEditOpen, setImageEditOpen] = useState(false);
@@ -583,44 +577,37 @@ export default function App() {
 
     const isStudent = currentUser?.role === "student";
 
-    const editCategoryContext = useMemo(() => {
-        const fallback = {
-            siblingNames: [] as string[],
-            inheritedProgramIds: [] as number[],
-            freshLabel: editNameCategory?.label ?? "",
-            freshProgramIds: editNameCategory?.programIds ?? [],
-        };
-        if (!editNameCategory) return fallback;
-        const isBreadcrumbCategory =
-            path.length > 0 && path[path.length - 1].id === editNameCategory.id;
-        if (isBreadcrumbCategory) {
-            let parentChildren = categories;
-            for (let i = 0; i < path.length - 1; i++) {
-                const found = parentChildren.find((c) => c.id === path[i].id);
-                if (!found) break;
-                parentChildren = found.children;
-            }
-            const freshCat = parentChildren.find((c) => c.id === editNameCategory.id);
-            const siblingNames = parentChildren
-                .filter((c) => c.id !== editNameCategory.id)
-                .map((c) => c.label);
-            return {
-                siblingNames,
-                inheritedProgramIds: getPathRestriction(path.length - 1),
-                freshLabel: freshCat?.label ?? editNameCategory.label,
-                freshProgramIds: freshCat?.programIds ?? editNameCategory.programIds,
-            };
-        }
-        const freshChild = currentCategories.find((c) => c.id === editNameCategory.id);
-        return {
-            siblingNames: currentCategories
-                .filter((c) => c.id !== editNameCategory.id)
-                .map((c) => c.label),
-            inheritedProgramIds: ancestorProgramIds,
-            freshLabel: freshChild?.label ?? editNameCategory.label,
-            freshProgramIds: freshChild?.programIds ?? editNameCategory.programIds,
-        };
-    }, [editNameCategory, path, categories, currentCategories, ancestorProgramIds, getPathRestriction]);
+    // Category CRUD, reorder, move, drag-and-drop (extracted to useCategoryActions hook)
+    const {
+        moveCatOpen,
+        setMoveCatOpen,
+        movingCategory,
+        setMovingCategory,
+        editCategoryContext,
+        addCategoryInline,
+        deleteCategoryInline,
+        editCategoryInline,
+        toggleCategoryVisibility,
+        reorderCategoriesInline,
+        handleMoveCategory,
+        handleRequestMoveCategory,
+        handleDropImageOnCategory,
+        handleDropCategoryOnCategory,
+        handleSetCardImage,
+    } = useCategoryActions({
+        categories,
+        uncategorizedImages,
+        loadCategories,
+        loadUncategorizedImages,
+        currentCategories,
+        ancestorProgramIds,
+        getPathRestriction,
+        path,
+        setPath,
+        editNameCategory,
+        setErrorSnack,
+        setMoveSnack,
+    });
 
     const handleImageClick = useCallback(
         (img: ImageItem) => {
@@ -641,221 +628,6 @@ export default function App() {
     const navigateToDepth = (depth: number) => {
         setPath((prev) => prev.slice(0, depth));
     };
-
-    const addCategoryInline = useCallback(
-        async (
-            label: string,
-            parentId: number | null,
-            programIds?: number[],
-        ): Promise<number | void> => {
-            const body: Parameters<typeof apiCreateCategory>[0] = {
-                label,
-                parent_id: parentId,
-            };
-            if (programIds !== undefined) body.program_ids = programIds;
-            const created = await apiCreateCategory(body);
-            await loadCategories();
-            loadUncategorizedImages();
-            return created.id;
-        },
-        [loadCategories, loadUncategorizedImages],
-    );
-
-    const deleteCategoryInline = useCallback(
-        async (categoryId: number) => {
-            try {
-                await apiDeleteCategory(categoryId);
-                // Clear path segments that reference the deleted category
-                setPath((prev) => {
-                    const idx = prev.findIndex((seg) => seg.id === categoryId);
-                    return idx >= 0 ? prev.slice(0, idx) : prev;
-                });
-                await loadCategories();
-                loadUncategorizedImages();
-            } catch (err) {
-                console.error("Failed to delete category", err);
-                setErrorSnack(userMessage(err, "Failed to delete category."));
-            }
-        },
-        [loadCategories, loadUncategorizedImages],
-    );
-
-    const editCategoryInline = useCallback(
-        async (
-            categoryId: number,
-            newLabel: string,
-            programIds?: number[],
-        ) => {
-            const body: Parameters<typeof apiUpdateCategory>[1] = {
-                label: newLabel,
-            };
-            if (programIds !== undefined) body.program_ids = programIds;
-            await apiUpdateCategory(categoryId, body);
-            await loadCategories();
-        },
-        [loadCategories],
-    );
-
-    const toggleCategoryVisibility = useCallback(
-        async (categoryId: number) => {
-            try {
-                const catPath = findCategoryPath(categories, categoryId);
-                const current = catPath?.[catPath.length - 1];
-                await apiUpdateCategory(categoryId, {
-                    status:
-                        current?.status === "hidden" ? "active" : "hidden",
-                });
-                await loadCategories();
-            } catch (err) {
-                console.error("Failed to toggle category visibility", err);
-                setErrorSnack(userMessage(err, "Failed to toggle category visibility."));
-            }
-        },
-        [categories, loadCategories],
-    );
-
-    const reorderCategoriesInline = useCallback(
-        async (
-            items: Array<{
-                id: number;
-                parent_id: number | null;
-                sort_order: number;
-            }>,
-        ) => {
-            try {
-                await apiReorderCategories(items);
-                await loadCategories();
-            } catch (err) {
-                console.error("Failed to reorder categories", err);
-                setErrorSnack(userMessage(err, "Failed to reorder categories."));
-            }
-        },
-        [loadCategories],
-    );
-
-    const handleMoveCategory = useCallback(
-        async (categoryId: number, newParentId: number | null) => {
-            try {
-                await apiUpdateCategory(categoryId, { parent_id: newParentId });
-                setMoveCatOpen(false);
-                setMovingCategory(null);
-                await loadCategories();
-            } catch (err) {
-                console.error("Failed to move category", err);
-                setErrorSnack(userMessage(err, "Failed to move category."));
-            }
-        },
-        [loadCategories],
-    );
-
-    const handleRequestMoveCategory = useCallback((cat: Category) => {
-        setMovingCategory(cat);
-        setMoveCatOpen(true);
-    }, []);
-
-    const handleDropImageOnCategory = useCallback(
-        async (imageId: number, categoryId: number) => {
-            try {
-                const found = findImageInTree(categories, imageId);
-                const img =
-                    found?.image ??
-                    uncategorizedImages.find((i) => i.id === imageId);
-                if (!img) return;
-                if (img.categoryId === categoryId) return;
-                const prevCategoryId = img.categoryId ?? null;
-                const updated = await apiUpdateImage(
-                    imageId,
-                    { category_id: categoryId },
-                    img.version,
-                );
-                await loadCategories();
-                loadUncategorizedImages();
-                const targetName =
-                    findCategoryPath(categories, categoryId)?.at(-1)
-                        ?.label ?? "category";
-                setMoveSnack({
-                    message: `Moved \u201c${img.name}\u201d to \u201c${targetName}\u201d`,
-                    onUndo: async () => {
-                        try {
-                            setMoveSnack(null);
-                            await apiUpdateImage(
-                                imageId,
-                                { category_id: prevCategoryId },
-                                updated.version,
-                            );
-                            await loadCategories();
-                            loadUncategorizedImages();
-                        } catch (undoErr) {
-                            setErrorSnack(
-                                userMessage(
-                                    undoErr,
-                                    "Failed to undo move.",
-                                ),
-                            );
-                        }
-                    },
-                });
-            } catch (err) {
-                console.error("Failed to move image via drag-and-drop", err);
-                setErrorSnack(
-                    userMessage(err, "Failed to move image to category."),
-                );
-            }
-        },
-        [categories, uncategorizedImages, loadCategories, loadUncategorizedImages],
-    );
-
-    const handleDropCategoryOnCategory = useCallback(
-        async (draggedCategoryId: number, targetCategoryId: number) => {
-            try {
-                const draggedPath = findCategoryPath(
-                    categories,
-                    draggedCategoryId,
-                );
-                const prevParentId =
-                    draggedPath && draggedPath.length >= 2
-                        ? draggedPath[draggedPath.length - 2].id
-                        : null;
-                await apiUpdateCategory(draggedCategoryId, {
-                    parent_id: targetCategoryId,
-                });
-                await loadCategories();
-                const draggedName =
-                    draggedPath?.at(-1)?.label ?? "category";
-                const targetName =
-                    findCategoryPath(categories, targetCategoryId)
-                        ?.at(-1)?.label ?? "category";
-                setMoveSnack({
-                    message: `Moved \u201c${draggedName}\u201d into \u201c${targetName}\u201d`,
-                    onUndo: async () => {
-                        try {
-                            setMoveSnack(null);
-                            await apiUpdateCategory(draggedCategoryId, {
-                                parent_id: prevParentId,
-                            });
-                            await loadCategories();
-                        } catch (undoErr) {
-                            setErrorSnack(
-                                userMessage(
-                                    undoErr,
-                                    "Failed to undo move.",
-                                ),
-                            );
-                        }
-                    },
-                });
-            } catch (err) {
-                console.error(
-                    "Failed to move category via drag-and-drop",
-                    err,
-                );
-                setErrorSnack(
-                    userMessage(err, "Failed to move category."),
-                );
-            }
-        },
-        [categories, loadCategories],
-    );
 
     // Track when native files are being dragged over the page so we can
     // show the prominent FileDropZone at the end of the card grid.
@@ -892,31 +664,6 @@ export default function App() {
             window.removeEventListener("drop", handleDrop, true);
         };
     }, [canEditContent]);
-
-    const handleSetCardImage = useCallback(
-        async (categoryId: number, imageId: number | null) => {
-            try {
-                // Find existing metadata so we merge rather than overwrite
-                const findCat = (cats: Category[]): Category | null => {
-                    for (const c of cats) {
-                        if (c.id === categoryId) return c;
-                        const found = findCat(c.children);
-                        if (found) return found;
-                    }
-                    return null;
-                };
-                const existing = findCat(categories)?.metadataExtra ?? {};
-                await apiUpdateCategory(categoryId, {
-                    metadata_extra: { ...existing, card_image_id: imageId },
-                });
-                await loadCategories();
-            } catch (err) {
-                console.error("Failed to set card image", err);
-                setErrorSnack(userMessage(err, "Failed to set card image."));
-            }
-        },
-        [loadCategories, categories],
-    );
 
     const toggleImageVisibility = useCallback(
         async (imageId: number) => {
