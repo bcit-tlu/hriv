@@ -40,7 +40,7 @@ async def _load_tree(
     all_categories = cat_result.scalars().unique().all()
 
     # ── Query 2: all images in one shot (with eager-loaded programs) ──
-    img_stmt = select(Image).order_by(Image.name)
+    img_stmt = select(Image).order_by(Image.sort_order, Image.name)
     img_result = await db.execute(img_stmt)
     all_images = img_result.scalars().unique().all()
 

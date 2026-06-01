@@ -739,6 +739,7 @@ export default function App() {
                                     copyright: img.copyright,
                                     note: img.note,
                                     active: img.active,
+                                    sortOrder: img.sort_order,
                                     version: img.version,
                                     createdAt: img.created_at,
                                     updatedAt: img.updated_at,

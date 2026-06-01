@@ -7,6 +7,7 @@ export interface ImageItem {
   copyright?: string | null
   note?: string | null
   active: boolean
+  sortOrder: number
   version: number
   createdAt?: string | null
   updatedAt?: string | null

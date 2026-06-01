@@ -22,6 +22,7 @@ def _make_image(version: int = 1) -> SimpleNamespace:
         copyright=None,
         note=None,
         active=True,
+        sort_order=0,
         metadata_=None,
         version=version,
         width=None,

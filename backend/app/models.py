@@ -115,6 +115,7 @@ class Image(Base):
         default=dict,
         server_default=text("'{}'::jsonb"),
     )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
