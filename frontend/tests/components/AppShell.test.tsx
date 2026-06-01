@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import AppShell from "../src/components/AppShell";
-import type { AppShellProps, Page } from "../src/components/AppShell";
+import AppShell from "../../src/components/AppShell";
+import type { AppShellProps } from "../../src/components/AppShell";
 import { createRef } from "react";
 
 function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {

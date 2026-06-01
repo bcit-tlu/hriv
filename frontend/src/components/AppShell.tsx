@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type RefObject } from "react";
+import { useState, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from "react";
 import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
@@ -31,7 +31,7 @@ export interface AppShellProps {
     announcement: string;
     // Profile popover
     profileOpen: boolean;
-    setProfileOpen: (open: boolean) => void;
+    setProfileOpen: Dispatch<SetStateAction<boolean>>;
     avatarRef: RefObject<HTMLButtonElement | null>;
     openEditProfile: () => void;
     logout: () => void;
