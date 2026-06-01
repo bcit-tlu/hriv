@@ -56,7 +56,7 @@ function makeDeps(overrides: Partial<UseCategoryActionsDeps> = {}): UseCategoryA
         categories: [],
         uncategorizedImages: [],
         loadCategories: vi.fn().mockResolvedValue(undefined),
-        loadUncategorizedImages: vi.fn(),
+        loadUncategorizedImages: vi.fn().mockResolvedValue(undefined),
         currentCategories: [],
         ancestorProgramIds: [],
         getPathRestriction: vi.fn().mockReturnValue([]),
