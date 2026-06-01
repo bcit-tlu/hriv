@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useUserProfile } from "../src/useUserProfile";
 import type { UseUserProfileDeps } from "../src/useUserProfile";
@@ -37,18 +37,8 @@ function makeDeps(overrides: Partial<UseUserProfileDeps> = {}): UseUserProfileDe
     };
 }
 
-const originalLocation = window.location;
-
 beforeEach(() => {
     vi.clearAllMocks();
-});
-
-afterEach(() => {
-    Object.defineProperty(window, "location", {
-        value: originalLocation,
-        writable: true,
-        configurable: true,
-    });
 });
 
 describe("useUserProfile", () => {
@@ -134,7 +124,7 @@ describe("useUserProfile", () => {
     });
 
     describe("handleSaveProfile", () => {
-        it("calls updateUser and reloads page on success", async () => {
+        it("calls updateUser and invokes onProfileSaved on success", async () => {
             mockUpdateUser.mockResolvedValue({
                 id: 1,
                 name: "New Name",
@@ -147,14 +137,8 @@ describe("useUserProfile", () => {
                 created_at: "2026-01-01T00:00:00Z",
                 updated_at: "2026-01-01T00:00:00Z",
             });
-            const reloadMock = vi.fn();
-            Object.defineProperty(window, "location", {
-                value: { ...originalLocation, reload: reloadMock },
-                writable: true,
-                configurable: true,
-            });
-
-            const deps = makeDeps();
+            const onProfileSaved = vi.fn();
+            const deps = makeDeps({ onProfileSaved });
             const { result } = renderHook(() => useUserProfile(deps));
 
             act(() => {
@@ -167,7 +151,7 @@ describe("useUserProfile", () => {
 
             expect(mockUpdateUser).toHaveBeenCalledWith(1, { name: "New Name" });
             expect(result.current.editModalOpen).toBe(false);
-            expect(reloadMock).toHaveBeenCalled();
+            expect(onProfileSaved).toHaveBeenCalled();
         });
 
         it("does nothing when currentUser is null", async () => {

@@ -7,10 +7,12 @@ export interface UseUserProfileDeps {
     currentUser: User | null;
     setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>;
     loadPrograms: () => Promise<void>;
+    /** Called after a successful profile save. Defaults to window.location.reload(). */
+    onProfileSaved?: () => void;
 }
 
 export function useUserProfile(deps: UseUserProfileDeps) {
-    const { currentUser, setErrorSnack, loadPrograms } = deps;
+    const { currentUser, setErrorSnack, loadPrograms, onProfileSaved } = deps;
 
     const avatarRef = useRef<HTMLButtonElement>(null);
     const [profileOpen, setProfileOpen] = useState(false);
@@ -47,13 +49,17 @@ export function useUserProfile(deps: UseUserProfileDeps) {
             try {
                 await apiUpdateUser(currentUser.id, data);
                 setEditModalOpen(false);
-                window.location.reload();
+                if (onProfileSaved) {
+                    onProfileSaved();
+                } else {
+                    window.location.reload();
+                }
             } catch (err) {
                 console.error("Failed to update profile", err);
                 setErrorSnack(userMessage(err, "Failed to update profile."));
             }
         },
-        [currentUser, setErrorSnack],
+        [currentUser, setErrorSnack, onProfileSaved],
     );
 
     return {
