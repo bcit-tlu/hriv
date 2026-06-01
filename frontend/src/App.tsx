@@ -43,7 +43,6 @@ import type {
     MeasurementConfig,
     OverlayRect,
 } from "./components/imageViewerUtils";
-import type { CanvasAnnotation } from "./components/CanvasOverlay";
 import CategoryTile from "./components/CategoryTile";
 import ColorModeToggle from "./components/ColorModeToggle";
 import ImageTile from "./components/ImageTile";
@@ -110,6 +109,7 @@ import {
     buildNavHistoryState,
 } from "./useNavigationHistory";
 import { useShareableImageState } from "./useShareableImageState";
+import { useCanvasAnnotations } from "./useCanvasAnnotations";
 
 function apiTreeToCategory(node: ApiCategoryTree): Category {
     const meta = node.metadata_extra as Record<string, unknown> | null;
@@ -193,30 +193,6 @@ export default function App() {
         onUndo: () => void;
     } | null>(null);
     const uncategorizedLoaded = useRef(false);
-    // Track the latest known image version independently from selectedImage
-    // to avoid stale-version 409s when clearing overlays after locking
-    // (lock intentionally does NOT update selectedImage to avoid viewer remount).
-    const latestVersionRef = useRef<number>(0);
-    // Track the latest known metadata independently from selectedImage so that
-    // successive metadata-modifying operations (lock, canvas annotations, clear)
-    // don't clobber each other's fields.  Initialised from selectedImage and
-    // updated after every successful PATCH.
-    // undefined = not yet initialised (use selectedImage); null/object = latest known server state
-    const latestMetadataRef = useRef<
-        Record<string, unknown> | null | undefined
-    >(undefined);
-    // Debounce timer for canvas annotation saves to avoid 409 version conflicts
-    const canvasSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-        null,
-    );
-    const canvasSaveInFlightRef = useRef(false);
-    const pendingCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null);
-    /** Always-current annotations last passed to handleCanvasAnnotationsChange.
-     *  Used by flushCanvasAnnotations to avoid reading stale React state. */
-    const latestCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null);
-    // Track which image ID the current in-flight save targets so stale completions
-    // don't overwrite refs after an image change
-    const saveTargetImageIdRef = useRef<number | null>(null);
 
     // Report issue modal state
     const [reportIssueOpen, setReportIssueOpen] = useState(false);
@@ -692,143 +668,20 @@ export default function App() {
     const invalidateBackground = useBackgroundRefresh(backgroundRefresh, currentUser != null);
     invalidateRef.current = invalidateBackground;
 
-    // Local override for canvas annotations so view mode reflects edits immediately
-    // (selectedImage is intentionally NOT updated after saves to avoid viewer remount)
-    const [localCanvasAnnotations, setLocalCanvasAnnotations] = useState<
-        CanvasAnnotation[] | null
-    >(null);
-
-    // Reset version ref when a different image is selected
-    useEffect(() => {
-        latestVersionRef.current = selectedImage?.version ?? 0;
-        latestMetadataRef.current = undefined; // reset to 'uninitialised' so first read falls back to selectedImage
-        setLocalCanvasAnnotations(null); // fall back to server-derived data for new image
-        // Clear any pending canvas annotation saves for the previous image
-        if (canvasSaveTimerRef.current) {
-            clearTimeout(canvasSaveTimerRef.current);
-            canvasSaveTimerRef.current = null;
-        }
-        pendingCanvasAnnotationsRef.current = null;
-        latestCanvasAnnotationsRef.current = null;
-        canvasSaveInFlightRef.current = false;
-        saveTargetImageIdRef.current = null;
-    }, [selectedImage]);
-
-    // Extract canvas annotations from the selected image's metadata
-    const canvasAnnotations = useMemo((): CanvasAnnotation[] => {
-        const meta = selectedImage?.metadataExtra;
-        if (!meta) return [];
-        const annotations = meta.canvas_annotations;
-        if (!Array.isArray(annotations)) return [];
-        return annotations as CanvasAnnotation[];
-    }, [selectedImage]);
-
-    // Persist canvas annotations to server.  Called by the debounced handler below.
-    const saveCanvasAnnotations = useCallback(
-        async (annotations: CanvasAnnotation[]) => {
-            if (!selectedImage) return;
-            const targetImageId = selectedImage.id;
-            saveTargetImageIdRef.current = targetImageId;
-            canvasSaveInFlightRef.current = true;
-            try {
-                const mergeValue =
-                    annotations.length > 0 ? annotations : null;
-                const currentVersion =
-                    latestVersionRef.current || selectedImage.version;
-                const updated = await apiUpdateImage(
-                    selectedImage.id,
-                    {
-                        metadata_extra_merge: {
-                            canvas_annotations: mergeValue,
-                        },
-                    },
-                    currentVersion,
-                );
-                // Only update shared refs if the image hasn't changed while we were saving
-                if (saveTargetImageIdRef.current === targetImageId) {
-                    latestVersionRef.current = updated.version;
-                    latestMetadataRef.current = updated.metadata_extra ?? {};
-                }
-                await loadCategories();
-                loadUncategorizedImages();
-            } catch (err) {
-                console.error("Failed to save canvas annotations", err);
-                setErrorSnack(userMessage(err, "Failed to save annotations."));
-            } finally {
-                // Only clear in-flight flag and flush queue if still targeting the same image
-                if (saveTargetImageIdRef.current === targetImageId) {
-                    canvasSaveInFlightRef.current = false;
-                    if (pendingCanvasAnnotationsRef.current !== null) {
-                        const queued = pendingCanvasAnnotationsRef.current;
-                        pendingCanvasAnnotationsRef.current = null;
-                        void saveCanvasAnnotations(queued);
-                    }
-                }
-            }
-        },
-        [selectedImage, loadCategories, loadUncategorizedImages],
-    );
-
-    // Save canvas annotations to image metadata_extra (debounced).
-    // Rapid edits reset a 600ms timer; if a save is already in-flight the
-    // latest data is queued and flushed when the current request completes.
-    // Also eagerly updates local state so view mode reflects edits immediately.
-    const handleCanvasAnnotationsChange = useCallback(
-        (annotations: CanvasAnnotation[]) => {
-            setLocalCanvasAnnotations(annotations);
-            latestCanvasAnnotationsRef.current = annotations;
-            if (canvasSaveTimerRef.current)
-                clearTimeout(canvasSaveTimerRef.current);
-            if (canvasSaveInFlightRef.current) {
-                // A save is in-flight — queue the latest data (replaces any prior queued data)
-                pendingCanvasAnnotationsRef.current = annotations;
-                return;
-            }
-            canvasSaveTimerRef.current = setTimeout(() => {
-                canvasSaveTimerRef.current = null;
-                void saveCanvasAnnotations(annotations);
-            }, 600);
-        },
-        [saveCanvasAnnotations],
-    );
-
-    // Flush any pending canvas annotation save immediately (bypass debounce).
-    // Used by the "Done" button to ensure data is persisted before exiting edit mode,
-    // and by lock/clear operations to avoid race conditions.
-    const flushCanvasAnnotations = useCallback(async () => {
-        // Cancel any pending debounce timer
-        if (canvasSaveTimerRef.current) {
-            clearTimeout(canvasSaveTimerRef.current);
-            canvasSaveTimerRef.current = null;
-        }
-        // If there's queued data waiting behind an in-flight save, grab it
-        const pending = pendingCanvasAnnotationsRef.current;
-        pendingCanvasAnnotationsRef.current = null;
-        // If a save is already in-flight we need to wait for it, then save queued data
-        if (canvasSaveInFlightRef.current) {
-            // Re-queue so the in-flight finally block picks it up
-            if (pending) pendingCanvasAnnotationsRef.current = pending;
-            // Spin-wait (max ~3s) for the in-flight save to finish
-            for (let i = 0; i < 30 && canvasSaveInFlightRef.current; i++) {
-                await new Promise((r) => setTimeout(r, 100));
-            }
-            // After waiting, save any data the in-flight handler didn't pick up
-            const stillPending = pendingCanvasAnnotationsRef.current;
-            if (stillPending && !canvasSaveInFlightRef.current) {
-                pendingCanvasAnnotationsRef.current = null;
-                await saveCanvasAnnotations(stillPending);
-            }
-            return;
-        }
-        // Use the ref (always current) instead of localCanvasAnnotations state
-        // which may be stale due to React's async state batching.
-        const latest = latestCanvasAnnotationsRef.current;
-        if (pending) {
-            await saveCanvasAnnotations(pending);
-        } else if (latest) {
-            await saveCanvasAnnotations(latest);
-        }
-    }, [saveCanvasAnnotations]);
+    // Canvas annotations (extracted to useCanvasAnnotations hook)
+    const {
+        localCanvasAnnotations,
+        canvasAnnotations,
+        handleCanvasAnnotationsChange,
+        flushCanvasAnnotations,
+        latestVersionRef,
+        latestMetadataRef,
+    } = useCanvasAnnotations({
+        selectedImage,
+        loadCategories,
+        loadUncategorizedImages,
+        setErrorSnack,
+    });
 
     // Build measurement config from the selected image's metadata
     const selectedImageMeasurement = useMemo(():
@@ -878,6 +731,8 @@ export default function App() {
         [
             selectedImage,
             flushCanvasAnnotations,
+            latestVersionRef,
+            latestMetadataRef,
             loadCategories,
             loadUncategorizedImages,
             setLockEngaged,
@@ -918,6 +773,8 @@ export default function App() {
     }, [
         selectedImage,
         flushCanvasAnnotations,
+        latestVersionRef,
+        latestMetadataRef,
         loadCategories,
         loadUncategorizedImages,
     ]);
