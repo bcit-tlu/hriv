@@ -1,14 +1,13 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { CanvasAnnotation } from "./components/CanvasOverlay";
-import { updateImage } from "./api";
-import { userMessage } from "./api";
+import { updateImage, userMessage } from "./api";
 import type { ImageItem } from "./types";
 
 /** Dependencies injected by the host component. */
 export interface UseCanvasAnnotationsDeps {
     selectedImage: ImageItem | null;
     loadCategories: () => Promise<void>;
-    loadUncategorizedImages: () => void;
+    loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => void;
     setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>;
 }
 

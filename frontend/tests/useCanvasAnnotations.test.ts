@@ -43,22 +43,26 @@ function makeDeps(
     };
 }
 
+let annotationCounter = 0;
 function makeAnnotation(overrides: Partial<CanvasAnnotation> = {}): CanvasAnnotation {
+    annotationCounter += 1;
     return {
+        id: `test-${annotationCounter}`,
         type: "rect",
-        x: 0,
-        y: 0,
-        width: 100,
-        height: 100,
+        vpX: 0,
+        vpY: 0,
+        vpWidth: 0.1,
+        vpHeight: 0.1,
         color: "#ff0000",
         ...overrides,
-    } as CanvasAnnotation;
+    };
 }
 
 describe("useCanvasAnnotations", () => {
     beforeEach(() => {
         vi.useFakeTimers();
         mockUpdateImage.mockReset();
+        annotationCounter = 0;
     });
     afterEach(() => {
         vi.useRealTimers();
@@ -180,8 +184,8 @@ describe("useCanvasAnnotations", () => {
             });
             const deps = makeDeps({ selectedImage: image });
             const { result } = renderHook(() => useCanvasAnnotations(deps));
-            const first = [makeAnnotation({ x: 10 })];
-            const second = [makeAnnotation({ x: 20 })];
+            const first = [makeAnnotation({ vpX: 0.1 })];
+            const second = [makeAnnotation({ vpX: 0.2 })];
 
             act(() => {
                 result.current.handleCanvasAnnotationsChange(first);
@@ -233,8 +237,8 @@ describe("useCanvasAnnotations", () => {
                 });
             const deps = makeDeps({ selectedImage: image });
             const { result } = renderHook(() => useCanvasAnnotations(deps));
-            const first = [makeAnnotation({ x: 10 })];
-            const second = [makeAnnotation({ x: 20 })];
+            const first = [makeAnnotation({ vpX: 0.1 })];
+            const second = [makeAnnotation({ vpX: 0.2 })];
 
             // Trigger first save
             act(() => {
@@ -322,7 +326,7 @@ describe("useCanvasAnnotations", () => {
 
             // Set local annotations
             act(() => {
-                result.current.handleCanvasAnnotationsChange([makeAnnotation({ x: 50 })]);
+                result.current.handleCanvasAnnotationsChange([makeAnnotation({ vpX: 0.05 })]);
             });
             expect(result.current.localCanvasAnnotations).not.toBeNull();
 
