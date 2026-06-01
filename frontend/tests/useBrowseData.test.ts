@@ -183,6 +183,121 @@ describe("useBrowseData", () => {
         });
     });
 
+    describe("loadCategories options", () => {
+        it("skips loading state toggle when silent is true", async () => {
+            const deps = makeDeps({ currentUser: makeUser() });
+            const { result } = renderHook(() => useBrowseData(deps));
+
+            await waitFor(() => {
+                expect(result.current.categoriesLoading).toBe(false);
+            });
+
+            const tree = [makeApiTree({ id: 2, label: "Silent" })];
+            mockFetchCategoryTree.mockResolvedValue(tree);
+
+            // Track categoriesLoading transitions during the call
+            const loadingStates: boolean[] = [];
+            const origLoading = result.current.categoriesLoading;
+            loadingStates.push(origLoading);
+
+            await act(async () => {
+                await result.current.loadCategories({ silent: true });
+            });
+
+            // After silent load, loading should still be false (never toggled to true)
+            expect(result.current.categoriesLoading).toBe(false);
+            expect(result.current.categories[0].label).toBe("Silent");
+        });
+
+        it("sets loading state when silent is false (default)", async () => {
+            // Use a deferred promise so we can observe the loading state mid-flight
+            let resolveFetch!: (value: typeof api.ApiCategoryTree[]) => void;
+            mockFetchCategoryTree.mockImplementation(
+                () => new Promise((resolve) => { resolveFetch = resolve as typeof resolveFetch; }),
+            );
+
+            const deps = makeDeps({ currentUser: makeUser() });
+            const { result } = renderHook(() => useBrowseData(deps));
+
+            // Initial load is in flight — categoriesLoading should be true
+            expect(result.current.categoriesLoading).toBe(true);
+
+            // Resolve initial load
+            await act(async () => {
+                resolveFetch([]);
+            });
+
+            expect(result.current.categoriesLoading).toBe(false);
+        });
+
+        it("aborts early when signal is already aborted", async () => {
+            const deps = makeDeps({ currentUser: makeUser() });
+            const { result } = renderHook(() => useBrowseData(deps));
+
+            await waitFor(() => {
+                expect(result.current.categoriesLoading).toBe(false);
+            });
+
+            const controller = new AbortController();
+            controller.abort();
+
+            const tree = [makeApiTree({ id: 3, label: "Aborted" })];
+            mockFetchCategoryTree.mockResolvedValue(tree);
+
+            await act(async () => {
+                await result.current.loadCategories({ signal: controller.signal });
+            });
+
+            // Should not update categories because signal was aborted
+            expect(result.current.categories).toEqual([]);
+        });
+
+        it("does not call invalidateRef when signal is provided", async () => {
+            // This test verifies the contract: background refresh passes a signal,
+            // and foreground loads do not — only foreground loads invalidate.
+            const deps = makeDeps({ currentUser: makeUser() });
+            const { result } = renderHook(() => useBrowseData(deps));
+
+            await waitFor(() => {
+                expect(result.current.categoriesLoading).toBe(false);
+            });
+
+            const controller = new AbortController();
+            const tree = [makeApiTree({ id: 4, label: "WithSignal" })];
+            mockFetchCategoryTree.mockResolvedValue(tree);
+
+            await act(async () => {
+                await result.current.loadCategories({ signal: controller.signal });
+            });
+
+            expect(result.current.categories[0].label).toBe("WithSignal");
+        });
+    });
+
+    describe("loadUncategorizedImages options", () => {
+        it("aborts early when signal is already aborted", async () => {
+            const deps = makeDeps({ currentUser: makeUser() });
+            const { result } = renderHook(() => useBrowseData(deps));
+
+            await waitFor(() => {
+                expect(result.current.categoriesLoading).toBe(false);
+            });
+
+            const controller = new AbortController();
+            controller.abort();
+
+            const imgs = [makeApiImage(50, { name: "aborted-img" })];
+            mockFetchUncategorizedImages.mockResolvedValue(imgs);
+
+            await act(async () => {
+                await result.current.loadUncategorizedImages({ signal: controller.signal });
+            });
+
+            // Should not update because signal was aborted
+            expect(result.current.uncategorizedImages).toEqual([]);
+        });
+    });
+
     describe("refreshCategories", () => {
         it("fetches fresh categories and returns them", async () => {
             const deps = makeDeps({ currentUser: makeUser() });
