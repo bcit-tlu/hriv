@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useUserProfile } from "../src/useUserProfile";
 import type { UseUserProfileDeps } from "../src/useUserProfile";
@@ -37,8 +37,18 @@ function makeDeps(overrides: Partial<UseUserProfileDeps> = {}): UseUserProfileDe
     };
 }
 
+const originalLocation = window.location;
+
 beforeEach(() => {
     vi.clearAllMocks();
+});
+
+afterEach(() => {
+    Object.defineProperty(window, "location", {
+        value: originalLocation,
+        writable: true,
+        configurable: true,
+    });
 });
 
 describe("useUserProfile", () => {
@@ -137,7 +147,6 @@ describe("useUserProfile", () => {
                 created_at: "2026-01-01T00:00:00Z",
                 updated_at: "2026-01-01T00:00:00Z",
             });
-            const originalLocation = window.location;
             const reloadMock = vi.fn();
             Object.defineProperty(window, "location", {
                 value: { ...originalLocation, reload: reloadMock },
@@ -152,21 +161,13 @@ describe("useUserProfile", () => {
                 result.current.setEditModalOpen(true);
             });
 
-            try {
-                await act(async () => {
-                    await result.current.handleSaveProfile({ name: "New Name" });
-                });
+            await act(async () => {
+                await result.current.handleSaveProfile({ name: "New Name" });
+            });
 
-                expect(mockUpdateUser).toHaveBeenCalledWith(1, { name: "New Name" });
-                expect(result.current.editModalOpen).toBe(false);
-                expect(reloadMock).toHaveBeenCalled();
-            } finally {
-                Object.defineProperty(window, "location", {
-                    value: originalLocation,
-                    writable: true,
-                    configurable: true,
-                });
-            }
+            expect(mockUpdateUser).toHaveBeenCalledWith(1, { name: "New Name" });
+            expect(result.current.editModalOpen).toBe(false);
+            expect(reloadMock).toHaveBeenCalled();
         });
 
         it("does nothing when currentUser is null", async () => {
