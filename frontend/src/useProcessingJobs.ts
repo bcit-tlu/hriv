@@ -244,6 +244,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
                                 copyright: fresh.copyright,
                                 note: fresh.note,
                                 active: fresh.active,
+                                sortOrder: fresh.sort_order,
                                 version: fresh.version,
                                 createdAt: fresh.created_at,
                                 updatedAt: fresh.updated_at,
