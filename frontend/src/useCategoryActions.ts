@@ -14,7 +14,7 @@ export interface UseCategoryActionsDeps {
     categories: Category[];
     uncategorizedImages: ImageItem[];
     loadCategories: () => Promise<void>;
-    loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => void;
+    loadUncategorizedImages: (opts?: { signal?: AbortSignal }) => Promise<void>;
     currentCategories: Category[];
     ancestorProgramIds: number[];
     getPathRestriction: (depth?: number) => number[];
