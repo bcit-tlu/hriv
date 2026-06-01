@@ -9,7 +9,7 @@ export interface UseCanvasAnnotationsDeps {
     selectedImage: ImageItem | null;
     loadCategories: () => Promise<void>;
     loadUncategorizedImages: () => void;
-    setErrorSnack: (msg: string | null) => void;
+    setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 /**
