@@ -50,7 +50,6 @@ import ManagePage from "./components/ManagePage";
 import PeoplePage from "./components/PeoplePage";
 import LoginScreen from "./components/LoginScreen";
 import EditImageModal from "./components/EditImageModal";
-import type { ImageFormData, ReplaceImageData } from "./components/EditImageModal";
 import ProgramManagementModal from "./components/ProgramManagementModal";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
@@ -69,9 +68,6 @@ import {
     fetchFrontendVersion,
     fetchUsers,
     updateUser as apiUpdateUser,
-    updateImage as apiUpdateImage,
-    deleteImage as apiDeleteImage,
-    replaceImage as apiReplaceImage,
     updateAnnouncement,
     createProgram,
     updateProgram,
@@ -79,7 +75,6 @@ import {
     userMessage,
 } from "./api";
 import type {
-    ApiImage,
     ApiUser,
 } from "./api";
 import MoveCategoryDialog from "./components/MoveCategoryDialog";
@@ -99,6 +94,7 @@ import { useShareableImageState } from "./useShareableImageState";
 import { useCanvasAnnotations } from "./useCanvasAnnotations";
 import { useOverlayPersistence } from "./useOverlayPersistence";
 import { useCategoryActions } from "./useCategoryActions";
+import { useImageActions } from "./useImageActions";
 
 export default function App() {
     const {
@@ -272,22 +268,8 @@ export default function App() {
     const [programModalOpen, setProgramModalOpen] = useState(false);
 
 
-    // Image edit modal state (for viewer page)
-    const [imageEditOpen, setImageEditOpen] = useState(false);
     // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
     const [canvasEditActive, setCanvasEditActive] = useState(false);
-
-    // Image edit modal state (for browse-view ellipsis icon)
-    const [browseEditImage, setBrowseEditImage] = useState<ImageItem | null>(
-        null,
-    );
-
-    const visibleJobs = getVisibleJobs({
-        uploadOpen,
-        manageUploadOpen,
-        imageEditOpen,
-        browseEditImage,
-    });
 
     // User profile popover + edit modal state
     const avatarRef = useRef<HTMLButtonElement>(null);
@@ -384,6 +366,39 @@ export default function App() {
         loadAnnouncement();
     }, [loadAnnouncement]);
 
+    // Image edit/save/replace/delete/visibility callbacks (extracted to useImageActions hook)
+    const {
+        imageEditOpen,
+        setImageEditOpen,
+        browseEditImage,
+        setBrowseEditImage,
+        selectedApiImage,
+        browseApiImage,
+        toggleImageVisibility,
+        handleSaveBrowseImage,
+        handleSaveViewerImage,
+        handleReplaceViewerImage,
+        handleReplaceBrowseImage,
+        handleDeleteViewerImage,
+        handleDeleteBrowseImage,
+    } = useImageActions({
+        categories,
+        uncategorizedImages,
+        selectedImage,
+        setSelectedImage,
+        setPath,
+        loadCategories,
+        loadUncategorizedImages,
+        refreshCategories,
+        setErrorSnack,
+        clearImage,
+        startReplaceUpload,
+        trackReplaceProgress,
+        transitionReplaceToProcessing,
+        removeReplaceUpload,
+        failReplaceUpload,
+    });
+
     // Reset navigation state when user identity changes (login/logout/switch).
     // Track previous user so we only clear pending shared-link refs on actual
     // user switches (logout or account change), not on the initial null→user
@@ -412,7 +427,7 @@ export default function App() {
             "",
             window.location.pathname,
         );
-    }, [currentUser, resetProcessingJobs, setViewportState, setOverlays, clearPending]);
+    }, [currentUser, resetProcessingJobs, setViewportState, setOverlays, clearPending, setImageEditOpen, setBrowseEditImage]);
 
     // Initial data load — kept in this component (rather than inside
     // useBrowseData) and declared after the reset effect above. React
@@ -609,6 +624,13 @@ export default function App() {
         setMoveSnack,
     });
 
+    const visibleJobs = getVisibleJobs({
+        uploadOpen,
+        manageUploadOpen,
+        imageEditOpen,
+        browseEditImage,
+    });
+
     const handleImageClick = useCallback(
         (img: ImageItem) => {
             setSelectedImage(img);
@@ -664,220 +686,6 @@ export default function App() {
             window.removeEventListener("drop", handleDrop, true);
         };
     }, [canEditContent]);
-
-    const toggleImageVisibility = useCallback(
-        async (imageId: number) => {
-            try {
-                const found = findImageInTree(categories, imageId);
-                const img =
-                    found?.image ??
-                    uncategorizedImages.find((i) => i.id === imageId);
-                if (!img) return;
-                const updated = await apiUpdateImage(
-                    imageId,
-                    { active: !img.active },
-                    img.version,
-                );
-                setSelectedImage((prev) =>
-                    prev && prev.id === imageId
-                        ? { ...prev, active: updated.active, version: updated.version }
-                        : prev,
-                );
-                await loadCategories();
-                loadUncategorizedImages();
-            } catch (err) {
-                console.error("Failed to toggle image visibility", err);
-                setErrorSnack(userMessage(err, "Failed to toggle image visibility."));
-            }
-        },
-        [categories, uncategorizedImages, loadCategories, loadUncategorizedImages],
-    );
-
-    // Build ApiImage shape from selectedImage for EditImageModal on viewer page
-    const selectedApiImage: ApiImage | null = selectedImage
-        ? {
-              id: selectedImage.id,
-              name: selectedImage.name,
-              thumb: selectedImage.thumb,
-              tile_sources: selectedImage.tileSources,
-              category_id: selectedImage.categoryId ?? null,
-              copyright: selectedImage.copyright ?? null,
-              note: selectedImage.note ?? null,
-              active: selectedImage.active,
-              version: selectedImage.version,
-              metadata_extra: selectedImage.metadataExtra ?? null,
-              width: selectedImage.width ?? null,
-              height: selectedImage.height ?? null,
-              file_size: selectedImage.fileSize ?? null,
-              created_at: selectedImage.createdAt ?? "",
-              updated_at: selectedImage.updatedAt ?? "",
-          }
-        : null;
-
-    // Build ApiImage shape from browseEditImage for EditImageModal on browse page
-    const browseApiImage: ApiImage | null = browseEditImage
-        ? {
-              id: browseEditImage.id,
-              name: browseEditImage.name,
-              thumb: browseEditImage.thumb,
-              tile_sources: browseEditImage.tileSources,
-              category_id: browseEditImage.categoryId ?? null,
-              copyright: browseEditImage.copyright ?? null,
-              note: browseEditImage.note ?? null,
-              active: browseEditImage.active,
-              version: browseEditImage.version,
-              metadata_extra: browseEditImage.metadataExtra ?? null,
-              width: browseEditImage.width ?? null,
-              height: browseEditImage.height ?? null,
-              file_size: browseEditImage.fileSize ?? null,
-              created_at: browseEditImage.createdAt ?? "",
-              updated_at: browseEditImage.updatedAt ?? "",
-          }
-        : null;
-
-    const handleSaveBrowseImage = useCallback(
-        async (data: ImageFormData) => {
-            if (!browseEditImage) return;
-            try {
-                await apiUpdateImage(browseEditImage.id, data);
-                setBrowseEditImage(null);
-                await loadCategories();
-                loadUncategorizedImages();
-            } catch (err) {
-                console.error("Failed to update image", err);
-                setErrorSnack(userMessage(err, "Failed to update image."));
-            }
-        },
-        [browseEditImage, loadCategories, loadUncategorizedImages],
-    );
-
-    const handleSaveViewerImage = useCallback(
-        async (data: ImageFormData) => {
-            if (!selectedImage) return;
-            try {
-                const updated = await apiUpdateImage(selectedImage.id, data);
-                setSelectedImage({
-                    id: updated.id,
-                    name: updated.name,
-                    thumb: updated.thumb,
-                    tileSources: updated.tile_sources,
-                    categoryId: updated.category_id,
-                    copyright: updated.copyright,
-                    note: updated.note,
-                    active: updated.active,
-                    version: updated.version,
-                    createdAt: updated.created_at,
-                    updatedAt: updated.updated_at,
-                    metadataExtra: updated.metadata_extra,
-                    width: updated.width,
-                    height: updated.height,
-                    fileSize: updated.file_size,
-                });
-                setImageEditOpen(false);
-                // Refresh categories and update breadcrumb path from the fresh tree
-                const freshTree = await refreshCategories();
-                if (updated.category_id != null) {
-                    const newPath = findCategoryPath(
-                        freshTree,
-                        updated.category_id,
-                    );
-                    setPath(newPath ?? []);
-                } else {
-                    setPath([]);
-                }
-                loadUncategorizedImages();
-            } catch (err) {
-                console.error("Failed to update image", err);
-                setErrorSnack(userMessage(err, "Failed to update image."));
-            }
-        },
-        [selectedImage, refreshCategories, loadUncategorizedImages],
-    );
-
-    const handleReplaceViewerImage = useCallback(
-        async ({ file, formData }: ReplaceImageData) => {
-            if (!selectedImage) return;
-
-            const prevImage = selectedImage;
-
-            setSelectedImage((prev) =>
-                prev
-                    ? {
-                          ...prev,
-                          name: formData.name ?? prev.name,
-                          categoryId: formData.category_id !== undefined ? formData.category_id : prev.categoryId,
-                          copyright: formData.copyright !== undefined ? formData.copyright : prev.copyright,
-                          note: formData.note !== undefined ? formData.note : prev.note,
-                          active: formData.active !== undefined ? formData.active : prev.active,
-                      }
-                    : prev,
-            );
-
-            const { uploadId, abort } = startReplaceUpload(file, "viewer");
-
-            apiReplaceImage(
-                selectedImage.id,
-                file,
-                (fraction) => {
-                    trackReplaceProgress(uploadId, fraction);
-                },
-                abort.signal,
-                formData,
-            )
-                .then((result) => {
-                    transitionReplaceToProcessing(uploadId, result.id);
-                    setImageEditOpen(false);
-                    loadCategories();
-                    loadUncategorizedImages();
-                })
-                .catch((err) => {
-                    if (err instanceof DOMException && err.name === "AbortError") {
-                        removeReplaceUpload(uploadId);
-                        setSelectedImage((prev) => prev?.id === prevImage.id ? prevImage : prev);
-                        setImageEditOpen(false);
-                        return;
-                    }
-                    setSelectedImage((prev) => prev?.id === prevImage.id ? prevImage : prev);
-                    failReplaceUpload(uploadId, userMessage(err, "Failed to upload replacement image"));
-                    setImageEditOpen(false);
-                });
-        },
-        [selectedImage, loadCategories, loadUncategorizedImages, startReplaceUpload, trackReplaceProgress, transitionReplaceToProcessing, removeReplaceUpload, failReplaceUpload],
-    );
-
-    const handleReplaceBrowseImage = useCallback(
-        async ({ file, formData }: ReplaceImageData) => {
-            if (!browseEditImage) return;
-
-            const { uploadId, abort } = startReplaceUpload(file, "browse");
-
-            apiReplaceImage(
-                browseEditImage.id,
-                file,
-                (fraction) => {
-                    trackReplaceProgress(uploadId, fraction);
-                },
-                abort.signal,
-                formData,
-            )
-                .then((result) => {
-                    transitionReplaceToProcessing(uploadId, result.id);
-                    setBrowseEditImage(null);
-                    loadCategories();
-                    loadUncategorizedImages();
-                })
-                .catch((err) => {
-                    if (err instanceof DOMException && err.name === "AbortError") {
-                        removeReplaceUpload(uploadId);
-                        setBrowseEditImage(null);
-                        return;
-                    }
-                    failReplaceUpload(uploadId, userMessage(err, "Failed to upload replacement image"));
-                    setBrowseEditImage(null);
-                });
-        },
-        [browseEditImage, loadCategories, loadUncategorizedImages, startReplaceUpload, trackReplaceProgress, transitionReplaceToProcessing, removeReplaceUpload, failReplaceUpload],
-    );
 
     // Show loading spinner while users are loading
     if (usersLoading) {
@@ -2176,17 +1984,7 @@ export default function App() {
                 open={imageEditOpen}
                 onClose={() => setImageEditOpen(false)}
                 onSave={handleSaveViewerImage}
-                onDelete={
-                    selectedImage
-                        ? async () => {
-                              await apiDeleteImage(selectedImage.id);
-                              setImageEditOpen(false);
-                              clearImage();
-                              await loadCategories();
-                              loadUncategorizedImages();
-                          }
-                        : undefined
-                }
+                onDelete={selectedImage ? handleDeleteViewerImage : undefined}
                 onReplace={handleReplaceViewerImage}
                 onCancelReplace={cancelReplace}
                 replaceUploadProgress={viewerReplaceUploadProgress}
@@ -2203,16 +2001,7 @@ export default function App() {
                 open={browseEditImage != null}
                 onClose={() => setBrowseEditImage(null)}
                 onSave={handleSaveBrowseImage}
-                onDelete={
-                    browseEditImage
-                        ? async () => {
-                              await apiDeleteImage(browseEditImage.id);
-                              setBrowseEditImage(null);
-                              await loadCategories();
-                              loadUncategorizedImages();
-                          }
-                        : undefined
-                }
+                onDelete={browseEditImage ? handleDeleteBrowseImage : undefined}
                 onReplace={handleReplaceBrowseImage}
                 onCancelReplace={cancelReplace}
                 replaceUploadProgress={browseReplaceUploadProgress}
