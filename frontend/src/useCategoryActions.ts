@@ -203,6 +203,9 @@ export function useCategoryActions({
                 if (!img) return;
                 if (img.categoryId === categoryId) return;
                 const prevCategoryId = img.categoryId ?? null;
+                const targetName =
+                    findCategoryPath(categories, categoryId)?.at(-1)
+                        ?.label ?? "category";
                 const updated = await apiUpdateImage(
                     imageId,
                     { category_id: categoryId },
@@ -210,9 +213,6 @@ export function useCategoryActions({
                 );
                 await loadCategories();
                 loadUncategorizedImages();
-                const targetName =
-                    findCategoryPath(categories, categoryId)?.at(-1)
-                        ?.label ?? "category";
                 setMoveSnack({
                     message: `Moved \u201c${img.name}\u201d to \u201c${targetName}\u201d`,
                     onUndo: async () => {
@@ -256,15 +256,15 @@ export function useCategoryActions({
                     draggedPath && draggedPath.length >= 2
                         ? draggedPath[draggedPath.length - 2].id
                         : null;
-                await apiUpdateCategory(draggedCategoryId, {
-                    parent_id: targetCategoryId,
-                });
-                await loadCategories();
                 const draggedName =
                     draggedPath?.at(-1)?.label ?? "category";
                 const targetName =
                     findCategoryPath(categories, targetCategoryId)
                         ?.at(-1)?.label ?? "category";
+                await apiUpdateCategory(draggedCategoryId, {
+                    parent_id: targetCategoryId,
+                });
+                await loadCategories();
                 setMoveSnack({
                     message: `Moved \u201c${draggedName}\u201d into \u201c${targetName}\u201d`,
                     onUndo: async () => {

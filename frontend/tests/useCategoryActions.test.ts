@@ -462,6 +462,110 @@ describe("useCategoryActions", () => {
             expect(mockUpdateImage).toHaveBeenCalledWith(200, { category_id: 2 }, 1);
         });
 
+        it("onUndo reverts image to previous category", async () => {
+            const img = makeImage({ id: 100, categoryId: 1, name: "Photo", version: 3 });
+            const catA = makeCategory({ id: 1, label: "Source", images: [img] });
+            const catB = makeCategory({ id: 2, label: "Target" });
+            const deps = makeDeps({ categories: [catA, catB] });
+            mockUpdateImage.mockResolvedValue({
+                id: 100,
+                name: "Photo",
+                thumb: "/thumb/100.jpg",
+                tile_sources: "/tiles/100",
+                category_id: 2,
+                copyright: null,
+                note: null,
+                active: true,
+                version: 4,
+                width: null,
+                height: null,
+                file_size: null,
+                metadata_extra: null,
+                created_at: "",
+                updated_at: "",
+            });
+            const { result } = renderHook(() => useCategoryActions(deps));
+
+            await act(async () => {
+                await result.current.handleDropImageOnCategory(100, 2);
+            });
+
+            const snackCall = vi.mocked(deps.setMoveSnack).mock.calls[0][0];
+            expect(snackCall).not.toBeNull();
+            const onUndo = (snackCall as { message: string; onUndo: () => Promise<void> }).onUndo;
+
+            mockUpdateImage.mockReset();
+            mockUpdateImage.mockResolvedValue({
+                id: 100,
+                name: "Photo",
+                thumb: "/thumb/100.jpg",
+                tile_sources: "/tiles/100",
+                category_id: 1,
+                copyright: null,
+                note: null,
+                active: true,
+                version: 5,
+                width: null,
+                height: null,
+                file_size: null,
+                metadata_extra: null,
+                created_at: "",
+                updated_at: "",
+            });
+
+            await act(async () => {
+                await onUndo();
+            });
+
+            expect(deps.setMoveSnack).toHaveBeenCalledWith(null);
+            expect(mockUpdateImage).toHaveBeenCalledWith(100, { category_id: 1 }, 4);
+            expect(deps.loadCategories).toHaveBeenCalledTimes(2);
+            expect(deps.loadUncategorizedImages).toHaveBeenCalledTimes(2);
+        });
+
+        it("onUndo shows error snack when revert fails", async () => {
+            const img = makeImage({ id: 100, categoryId: 1, name: "Photo", version: 3 });
+            const catA = makeCategory({ id: 1, label: "Source", images: [img] });
+            const catB = makeCategory({ id: 2, label: "Target" });
+            const deps = makeDeps({ categories: [catA, catB] });
+            mockUpdateImage.mockResolvedValue({
+                id: 100,
+                name: "Photo",
+                thumb: "/thumb/100.jpg",
+                tile_sources: "/tiles/100",
+                category_id: 2,
+                copyright: null,
+                note: null,
+                active: true,
+                version: 4,
+                width: null,
+                height: null,
+                file_size: null,
+                metadata_extra: null,
+                created_at: "",
+                updated_at: "",
+            });
+            const { result } = renderHook(() => useCategoryActions(deps));
+
+            await act(async () => {
+                await result.current.handleDropImageOnCategory(100, 2);
+            });
+
+            const snackCall = vi.mocked(deps.setMoveSnack).mock.calls[0][0];
+            const onUndo = (snackCall as { message: string; onUndo: () => Promise<void> }).onUndo;
+
+            mockUpdateImage.mockReset();
+            mockUpdateImage.mockRejectedValue(new Error("conflict"));
+
+            await act(async () => {
+                await onUndo();
+            });
+
+            expect(deps.setErrorSnack).toHaveBeenCalledWith(
+                expect.stringContaining("Failed to undo move"),
+            );
+        });
+
         it("shows error snack on failure", async () => {
             const img = makeImage({ id: 100, categoryId: 1 });
             const cat = makeCategory({ id: 1, images: [img] });
@@ -505,6 +609,88 @@ describe("useCategoryActions", () => {
                 expect.objectContaining({
                     message: expect.stringContaining("Child"),
                 }),
+            );
+        });
+
+        it("onUndo reverts category to previous parent", async () => {
+            const child = makeCategory({ id: 3, label: "Child" });
+            const catA = makeCategory({ id: 1, label: "Parent", children: [child] });
+            const catB = makeCategory({ id: 2, label: "New Parent" });
+            const deps = makeDeps({ categories: [catA, catB] });
+            mockUpdateCategory.mockResolvedValue({
+                id: 3,
+                label: "Child",
+                parent_id: 2,
+                program_ids: [],
+                status: null,
+                metadata_extra: null,
+                created_at: "",
+                updated_at: "",
+            });
+            const { result } = renderHook(() => useCategoryActions(deps));
+
+            await act(async () => {
+                await result.current.handleDropCategoryOnCategory(3, 2);
+            });
+
+            const snackCall = vi.mocked(deps.setMoveSnack).mock.calls[0][0];
+            expect(snackCall).not.toBeNull();
+            const onUndo = (snackCall as { message: string; onUndo: () => Promise<void> }).onUndo;
+
+            mockUpdateCategory.mockReset();
+            mockUpdateCategory.mockResolvedValue({
+                id: 3,
+                label: "Child",
+                parent_id: 1,
+                program_ids: [],
+                status: null,
+                metadata_extra: null,
+                created_at: "",
+                updated_at: "",
+            });
+
+            await act(async () => {
+                await onUndo();
+            });
+
+            expect(deps.setMoveSnack).toHaveBeenCalledWith(null);
+            expect(mockUpdateCategory).toHaveBeenCalledWith(3, { parent_id: 1 });
+            expect(deps.loadCategories).toHaveBeenCalledTimes(2);
+        });
+
+        it("onUndo shows error snack when revert fails", async () => {
+            const child = makeCategory({ id: 3, label: "Child" });
+            const catA = makeCategory({ id: 1, label: "Parent", children: [child] });
+            const catB = makeCategory({ id: 2, label: "New Parent" });
+            const deps = makeDeps({ categories: [catA, catB] });
+            mockUpdateCategory.mockResolvedValue({
+                id: 3,
+                label: "Child",
+                parent_id: 2,
+                program_ids: [],
+                status: null,
+                metadata_extra: null,
+                created_at: "",
+                updated_at: "",
+            });
+            const { result } = renderHook(() => useCategoryActions(deps));
+
+            await act(async () => {
+                await result.current.handleDropCategoryOnCategory(3, 2);
+            });
+
+            const snackCall = vi.mocked(deps.setMoveSnack).mock.calls[0][0];
+            const onUndo = (snackCall as { message: string; onUndo: () => Promise<void> }).onUndo;
+
+            mockUpdateCategory.mockReset();
+            mockUpdateCategory.mockRejectedValue(new Error("network error"));
+
+            await act(async () => {
+                await onUndo();
+            });
+
+            expect(deps.setErrorSnack).toHaveBeenCalledWith(
+                expect.stringContaining("Failed to undo move"),
             );
         });
 
