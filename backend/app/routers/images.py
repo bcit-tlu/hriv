@@ -391,13 +391,15 @@ async def reorder_images(
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
 ):
-    for item in body.items:
-        img = await db.get(Image, item.id)
-        if img is None:
-            raise HTTPException(status_code=404, detail=f"Image {item.id} not found")
-        img.sort_order = item.sort_order
-    await db.commit()
-    return {"status": "ok"}
+    with tracer.start_as_current_span("image.reorder") as span:
+        span.set_attribute("image.count", len(body.items))
+        for item in body.items:
+            img = await db.get(Image, item.id)
+            if img is None:
+                raise HTTPException(status_code=404, detail=f"Image {item.id} not found")
+            img.sort_order = item.sort_order
+        await db.commit()
+        return {"status": "ok"}
 
 
 @router.delete("/{image_id}", status_code=204)

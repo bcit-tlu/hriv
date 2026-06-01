@@ -3,6 +3,7 @@ import json as _json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from opentelemetry import trace
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +12,8 @@ from ..database import get_db
 from ..models import Category, Image, Program, User
 from ..schemas import CategoryCreate, CategoryUpdate, CategoryOut, CategoryTree, CategoryReorderRequest, ImageOut
 from ..visibility import compute_excluded_category_ids, get_student_excluded_category_ids, is_category_visible_to_student
+
+tracer = trace.get_tracer(__name__)
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
@@ -279,39 +282,41 @@ async def reorder_categories(
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
 ):
-    # Build proposed parent graph and validate for cycles
-    parent_map: dict[int, int | None] = {item.id: item.parent_id for item in body.items}
-    for item in body.items:
-        if item.parent_id == item.id:
-            raise HTTPException(
-                status_code=400, detail="A category cannot be its own parent"
-            )
-    # Walk ancestor chains in the proposed graph to detect cycles
-    for item_id in parent_map:
-        visited: set[int] = set()
-        current: int | None = item_id
-        while current is not None:
-            if current in visited:
+    with tracer.start_as_current_span("category.reorder") as span:
+        span.set_attribute("category.count", len(body.items))
+        # Build proposed parent graph and validate for cycles
+        parent_map: dict[int, int | None] = {item.id: item.parent_id for item in body.items}
+        for item in body.items:
+            if item.parent_id == item.id:
                 raise HTTPException(
-                    status_code=400,
-                    detail="Reorder would create a circular parent reference",
+                    status_code=400, detail="A category cannot be its own parent"
                 )
-            visited.add(current)
-            if current in parent_map:
-                current = parent_map[current]
-            else:
-                # Not in the request — look up its existing parent in the DB
-                ancestor = await db.get(Category, current)
-                current = ancestor.parent_id if ancestor else None
+        # Walk ancestor chains in the proposed graph to detect cycles
+        for item_id in parent_map:
+            visited: set[int] = set()
+            current: int | None = item_id
+            while current is not None:
+                if current in visited:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Reorder would create a circular parent reference",
+                    )
+                visited.add(current)
+                if current in parent_map:
+                    current = parent_map[current]
+                else:
+                    # Not in the request — look up its existing parent in the DB
+                    ancestor = await db.get(Category, current)
+                    current = ancestor.parent_id if ancestor else None
 
-    for item in body.items:
-        cat = await db.get(Category, item.id)
-        if cat is None:
-            raise HTTPException(status_code=404, detail=f"Category {item.id} not found")
-        cat.parent_id = item.parent_id
-        cat.sort_order = item.sort_order
-    await db.commit()
-    return {"status": "ok"}
+        for item in body.items:
+            cat = await db.get(Category, item.id)
+            if cat is None:
+                raise HTTPException(status_code=404, detail=f"Category {item.id} not found")
+            cat.parent_id = item.parent_id
+            cat.sort_order = item.sort_order
+        await db.commit()
+        return {"status": "ok"}
 
 
 @router.delete("/{category_id}", status_code=204)
