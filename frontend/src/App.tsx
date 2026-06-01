@@ -60,15 +60,13 @@ import FileDropZone from "./components/FileDropZone";
 import { isAcceptedFile } from "./fileUtils";
 import { useAuth } from "./useAuth";
 import {
-    fetchAnnouncement,
     fetchImage as apiFetchImage,
     fetchSourceImage,
     fetchBulkImportJob,
     fetchVersions,
     fetchFrontendVersion,
     fetchUsers,
-    updateUser as apiUpdateUser,
-    updateAnnouncement,
+
     createProgram,
     updateProgram,
     deleteProgram,
@@ -95,6 +93,8 @@ import { useCanvasAnnotations } from "./useCanvasAnnotations";
 import { useOverlayPersistence } from "./useOverlayPersistence";
 import { useCategoryActions } from "./useCategoryActions";
 import { useImageActions } from "./useImageActions";
+import { useAnnouncementModal } from "./useAnnouncementModal";
+import { useUserProfile } from "./useUserProfile";
 
 export default function App() {
     const {
@@ -132,7 +132,6 @@ export default function App() {
     const [programsPopoverAnchor, setProgramsPopoverAnchor] =
         useState<HTMLElement | null>(null);
     const [editNameCategory, setEditNameCategory] = useState<Category | null>(null);
-    const [announcement, setAnnouncement] = useState("");
 
     const [errorSnack, setErrorSnack] = useState<string | null>(null);
     const [warnSnack, setWarnSnack] = useState<string | null>(null);
@@ -255,44 +254,13 @@ export default function App() {
     const [manageMenuAnchor, setManageMenuAnchor] =
         useState<HTMLElement | null>(null);
 
-    // Announcement modal state (for Manage menu)
-    const [annModalOpen, setAnnModalOpen] = useState(false);
-    const [annMessage, setAnnMessage] = useState("");
-    const [annEnabled, setAnnEnabled] = useState(false);
-    const [annDraftMessage, setAnnDraftMessage] = useState("");
-    const [annDraftEnabled, setAnnDraftEnabled] = useState(false);
-    const [annSaving, setAnnSaving] = useState(false);
-    const [annError, setAnnError] = useState<string | null>(null);
-
     // Program management modal state (for Manage menu)
     const [programModalOpen, setProgramModalOpen] = useState(false);
 
-
     // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
     const [canvasEditActive, setCanvasEditActive] = useState(false);
-
-    // User profile popover + edit modal state
-    const avatarRef = useRef<HTMLButtonElement>(null);
-    const [profileOpen, setProfileOpen] = useState(false);
-    const [editModalOpen, setEditModalOpen] = useState(false);
     const [imagesVersion, setImagesVersion] = useState(0);
     setImagesVersionRef.current = setImagesVersion;
-
-    // Build ApiUser shape from currentUser for AddEditPersonModal
-    const currentApiUser: ApiUser | null = currentUser
-        ? {
-              id: currentUser.id,
-              name: currentUser.name,
-              email: currentUser.email,
-              role: currentUser.role,
-              program_ids: currentUser.program_ids ?? [],
-              program_names: currentUser.program_names ?? [],
-              last_access: currentUser.lastAccess ?? null,
-              metadata_extra: null,
-              created_at: "",
-              updated_at: "",
-          }
-        : null;
 
     // Refs for the popstate handler (always reflect latest state)
     const categoriesRef = useRef(categories);
@@ -350,21 +318,37 @@ export default function App() {
 
     const { pushNavState } = useNavigationHistory(handlePopState);
 
-    // Load announcement (works for both logged-in and login page)
-    const loadAnnouncement = useCallback(async () => {
-        try {
-            const ann = await fetchAnnouncement();
-            setAnnouncement(ann.enabled ? ann.message : "");
-            setAnnMessage(ann.message);
-            setAnnEnabled(ann.enabled);
-        } catch {
-            // Silently ignore — announcement is non-critical
-        }
-    }, []);
+    // Announcement modal state (load, draft, save) — extracted to useAnnouncementModal hook
+    const {
+        announcement,
+        annModalOpen,
+        setAnnModalOpen,
+        annDraftMessage,
+        setAnnDraftMessage,
+        annDraftEnabled,
+        setAnnDraftEnabled,
+        annSaving,
+        annError,
+        setAnnError,
+        openAnnModal,
+        handleAnnSave,
+    } = useAnnouncementModal();
 
-    useEffect(() => {
-        loadAnnouncement();
-    }, [loadAnnouncement]);
+    // User profile popover + edit modal state — extracted to useUserProfile hook
+    const {
+        avatarRef,
+        profileOpen,
+        setProfileOpen,
+        editModalOpen,
+        setEditModalOpen,
+        currentApiUser,
+        openEditProfile,
+        handleSaveProfile,
+    } = useUserProfile({
+        currentUser,
+        setErrorSnack,
+        loadPrograms,
+    });
 
     // Image edit/save/replace/delete/visibility callbacks (extracted to useImageActions hook)
     const {
@@ -427,7 +411,7 @@ export default function App() {
             "",
             window.location.pathname,
         );
-    }, [currentUser, resetProcessingJobs, setViewportState, setOverlays, clearPending, setImageEditOpen, setBrowseEditImage]);
+    }, [currentUser, resetProcessingJobs, setViewportState, setOverlays, clearPending, setImageEditOpen, setBrowseEditImage, setEditModalOpen, setProfileOpen]);
 
     // Initial data load — kept in this component (rather than inside
     // useBrowseData) and declared after the reset effect above. React
@@ -490,32 +474,6 @@ export default function App() {
                 setFrontendVersion(null);
             });
     }, [canManageUsers]);
-
-    // Announcement modal handlers (for Manage menu)
-    const openAnnModal = useCallback(() => {
-        setAnnDraftMessage(annMessage);
-        setAnnDraftEnabled(annEnabled);
-        setAnnError(null);
-        setAnnModalOpen(true);
-    }, [annMessage, annEnabled]);
-
-    const handleAnnSave = useCallback(async () => {
-        setAnnSaving(true);
-        try {
-            const updated = await updateAnnouncement({
-                message: annDraftMessage,
-                enabled: annDraftEnabled,
-            });
-            setAnnMessage(updated.message);
-            setAnnEnabled(updated.enabled);
-            setAnnModalOpen(false);
-            loadAnnouncement();
-        } catch (err) {
-            setAnnError(userMessage(err, "Failed to update announcement"));
-        } finally {
-            setAnnSaving(false);
-        }
-    }, [annDraftMessage, annDraftEnabled, loadAnnouncement]);
 
     // Program management handlers (for Manage menu)
     const handleAddProgram = useCallback(
@@ -914,9 +872,7 @@ export default function App() {
                                                 component="button"
                                                 variant="body2"
                                                 onClick={() => {
-                                                    setProfileOpen(false);
-                                                    loadPrograms();
-                                                    setEditModalOpen(true);
+                                                    openEditProfile();
                                                 }}
                                             >
                                                 Update
@@ -2111,18 +2067,7 @@ export default function App() {
             <AddEditPersonModal
                 open={editModalOpen}
                 onClose={() => setEditModalOpen(false)}
-                onSave={async (data) => {
-                    if (!currentUser) return;
-                    try {
-                        await apiUpdateUser(currentUser.id, data);
-                        setEditModalOpen(false);
-                        // Refresh current user data by re-validating the token
-                        window.location.reload();
-                    } catch (err) {
-                        console.error("Failed to update profile", err);
-                        setErrorSnack(userMessage(err, "Failed to update profile."));
-                    }
-                }}
+                onSave={handleSaveProfile}
                 programs={programs}
                 user={currentApiUser}
             />
