@@ -39,10 +39,6 @@ import HomeIcon from "@mui/icons-material/Home";
 import LinkIcon from "@mui/icons-material/Link";
 import SearchIcon from "@mui/icons-material/Search";
 import ImageViewer from "./components/ImageViewer";
-import type {
-    MeasurementConfig,
-    OverlayRect,
-} from "./components/imageViewerUtils";
 import CategoryTile from "./components/CategoryTile";
 import ColorModeToggle from "./components/ColorModeToggle";
 import ImageTile from "./components/ImageTile";
@@ -110,6 +106,7 @@ import {
 } from "./useNavigationHistory";
 import { useShareableImageState } from "./useShareableImageState";
 import { useCanvasAnnotations } from "./useCanvasAnnotations";
+import { useOverlayPersistence } from "./useOverlayPersistence";
 
 function apiTreeToCategory(node: ApiCategoryTree): Category {
     const meta = node.metadata_extra as Record<string, unknown> | null;
@@ -684,100 +681,22 @@ export default function App() {
     });
 
     // Build measurement config from the selected image's metadata
-    const selectedImageMeasurement = useMemo(():
-        | MeasurementConfig
-        | undefined => {
-        const meta = selectedImage?.metadataExtra;
-        if (!meta) return undefined;
-        const scale =
-            typeof meta.measurement_scale === "number"
-                ? meta.measurement_scale
-                : undefined;
-        const unit =
-            typeof meta.measurement_unit === "string"
-                ? meta.measurement_unit
-                : undefined;
-        if (!scale && !unit) return undefined;
-        return { scale, unit };
-    }, [selectedImage]);
-
-    // Lock overlays: persist to image metadata_extra and engage lock.
-    // Refreshes category tree so re-navigation reflects the update;
-    // does NOT call setSelectedImage to avoid triggering a viewer remount.
-    // Flushes any pending canvas annotation save first to prevent race conditions.
-    const handleLockOverlays = useCallback(
-        async (rects: OverlayRect[]) => {
-            if (!selectedImage) return;
-            // Flush any pending canvas annotation save to avoid version conflict
-            await flushCanvasAnnotations();
-            try {
-                const currentVersion =
-                    latestVersionRef.current || selectedImage.version;
-                const updated = await apiUpdateImage(
-                    selectedImage.id,
-                    { metadata_extra_merge: { locked_overlays: rects } },
-                    currentVersion,
-                );
-                latestVersionRef.current = updated.version;
-                latestMetadataRef.current = updated.metadata_extra ?? {};
-                setLockEngaged(true);
-                await loadCategories();
-                loadUncategorizedImages();
-            } catch (err) {
-                console.error("Failed to lock overlays", err);
-                setErrorSnack(userMessage(err, "Failed to lock overlays."));
-            }
-        },
-        [
-            selectedImage,
-            flushCanvasAnnotations,
-            latestVersionRef,
-            latestMetadataRef,
-            loadCategories,
-            loadUncategorizedImages,
-            setLockEngaged,
-        ],
-    );
-
-    // Unlock: only disengage the lock UI (re-enable clear button).
-    // Does NOT remove persisted overlays from metadata.
-    const handleUnlockOverlays = useCallback(() => {
-        setLockEngaged(false);
-    }, [setLockEngaged]);
-
-    // Clear overlays: also remove from metadata if they were persisted.
-    // Refreshes category tree; does NOT call setSelectedImage.
-    // No hasLockedOverlays guard — selectedImage may be stale after a lock
-    // in the same session (we intentionally skip setSelectedImage on lock).
-    // Flushes any pending canvas annotation save first to prevent race conditions.
-    const handleClearOverlays = useCallback(async () => {
-        if (!selectedImage) return;
-        // Flush any pending canvas annotation save to avoid version conflict
-        await flushCanvasAnnotations();
-        try {
-            const currentVersion =
-                latestVersionRef.current || selectedImage.version;
-            const updated = await apiUpdateImage(
-                selectedImage.id,
-                { metadata_extra_merge: { locked_overlays: null } },
-                currentVersion,
-            );
-            latestVersionRef.current = updated.version;
-            latestMetadataRef.current = updated.metadata_extra ?? {};
-            await loadCategories();
-            loadUncategorizedImages();
-        } catch (err) {
-            console.error("Failed to clear locked overlays", err);
-            setErrorSnack(userMessage(err, "Failed to clear locked overlays."));
-        }
-    }, [
+    // Overlay persistence (extracted to useOverlayPersistence hook)
+    const {
+        selectedImageMeasurement,
+        handleLockOverlays,
+        handleUnlockOverlays,
+        handleClearOverlays,
+    } = useOverlayPersistence({
         selectedImage,
         flushCanvasAnnotations,
         latestVersionRef,
         latestMetadataRef,
         loadCategories,
         loadUncategorizedImages,
-    ]);
+        setLockEngaged,
+        setErrorSnack,
+    });
 
     // Resolve the live children/images from the categories state tree
     // so newly added categories appear immediately.
