@@ -4,21 +4,18 @@ import Typography from "@mui/material/Typography";
 import { alpha } from "@mui/material/styles";
 import DriveFileMoveIcon from "@mui/icons-material/DriveFileMove";
 import {
-    DndContext,
+    DragDropProvider,
     DragOverlay,
-    PointerSensor,
     useDroppable,
-    useSensor,
-    useSensors,
-} from "@dnd-kit/core";
-import type { DragStartEvent, DragEndEvent } from "@dnd-kit/core";
-import {
-    SortableContext,
-    useSortable,
-    rectSortingStrategy,
-    arrayMove,
-} from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
+    PointerSensor,
+    KeyboardSensor,
+} from "@dnd-kit/react";
+import { useSortable } from "@dnd-kit/react/sortable";
+import { arrayMove } from "@dnd-kit/helpers";
+import { directionBiased, pointerIntersection } from "@dnd-kit/collision";
+import { CollisionPriority } from "@dnd-kit/abstract";
+import type { Draggable } from "@dnd-kit/dom";
+import { PointerActivationConstraints } from "@dnd-kit/dom";
 import type { Category, ImageItem, Program } from "../types";
 import CategoryTile from "./CategoryTile";
 import ImageTile from "./ImageTile";
@@ -28,45 +25,42 @@ import {
     buildTileItems,
     tileId,
     DROP_PREFIX,
-    createMoveOrReorder,
+    collectDescendantIds,
+    findCategory,
 } from "./sortableTileGridUtils";
 import type { TileItem } from "./sortableTileGridUtils";
 
 // ── Sortable wrapper ────────────────────────────────────────
+// Per-droppable collision: directionBiased prevents jitter by
+// only detecting collisions in the drag direction.
 
 interface SortableItemProps {
     id: string;
+    index: number;
     disabled: boolean;
     children: React.ReactNode;
 }
 
-function SortableItem({ id, disabled, children }: SortableItemProps) {
-    const {
-        attributes,
-        listeners,
-        setNodeRef,
-        transform,
-        transition,
-        isDragging,
-    } = useSortable({ id, disabled });
-
-    const style: React.CSSProperties = {
-        transform: CSS.Transform.toString(transform),
-        transition: transition ?? undefined,
-        opacity: isDragging ? 0.5 : 1,
-        position: "relative",
-        width: "100%",
-        maxWidth: 300,
-        cursor: disabled ? undefined : "grab",
-    };
+function SortableItem({ id, index, disabled, children }: SortableItemProps) {
+    const { ref, isDragSource } = useSortable({
+        id,
+        index,
+        disabled,
+        type: "tile",
+        collisionDetector: directionBiased,
+    });
 
     return (
         <div
-            ref={setNodeRef}
-            style={style}
+            ref={ref}
+            style={{
+                opacity: isDragSource ? 0.5 : 1,
+                position: "relative",
+                width: "100%",
+                maxWidth: 300,
+                cursor: disabled ? undefined : isDragSource ? "grabbing" : "grab",
+            }}
             onDragStart={(e) => e.preventDefault()}
-            {...listeners}
-            {...attributes}
         >
             {children}
         </div>
@@ -74,40 +68,60 @@ function SortableItem({ id, disabled, children }: SortableItemProps) {
 }
 
 // ── Droppable category zone (for move-into-category) ─────────
+// Per-droppable collision: pointerIntersection activates only
+// when the pointer is inside the rect — precise move detection.
+// CollisionPriority.High ensures move wins over sortable reorder
+// when the pointer is inside a category tile.
 
 interface DroppableCategoryZoneProps {
     categoryId: number;
     disabled: boolean;
+    /** Set of category IDs that must be rejected as drop sources (ancestor-cycle prevention). */
+    blockedSourceIds: Set<number>;
     children: React.ReactNode;
 }
 
 function DroppableCategoryZone({
     categoryId,
     disabled,
+    blockedSourceIds,
     children,
 }: DroppableCategoryZoneProps) {
-    const { isOver, setNodeRef } = useDroppable({
+    const acceptFilter = useCallback(
+        (source: Draggable) => {
+            const sourceId = String(source.id);
+            if (!sourceId.startsWith("cat-")) return true;
+            const catId = Number(sourceId.slice(4));
+            return !blockedSourceIds.has(catId);
+        },
+        [blockedSourceIds],
+    );
+
+    const { ref, isDropTarget } = useDroppable({
         id: `${DROP_PREFIX}${categoryId}`,
         disabled,
+        collisionDetector: pointerIntersection,
+        collisionPriority: CollisionPriority.High,
+        accept: acceptFilter,
     });
 
     return (
         <Box
-            ref={setNodeRef}
+            ref={ref}
             role="region"
             aria-label="Move into category"
             sx={{
                 position: "relative",
                 outline: "3px dashed",
-                outlineColor: isOver ? "primary.main" : "transparent",
+                outlineColor: isDropTarget ? "primary.main" : "transparent",
                 outlineOffset: 3,
-                transform: isOver ? "scale(1.03)" : "scale(1)",
+                transform: isDropTarget ? "scale(1.03)" : "scale(1)",
                 transition: "outline-color 0.2s, transform 0.15s",
                 borderRadius: "inherit",
             }}
         >
             {children}
-            {isOver && (
+            {isDropTarget && (
                 <Box
                     sx={{
                         position: "absolute",
@@ -250,51 +264,58 @@ export default function SortableTileGrid({
         }
     }
 
-    const ids = useMemo(() => items.map(tileId), [items]);
+    // Pre-compute blocked drop target IDs for each category (self + descendants).
+    // Used by DroppableCategoryZone accept filters for ancestor-cycle prevention.
+    const blockedIdsMap = useMemo(() => {
+        const map = new Map<number, Set<number>>();
+        for (const cat of currentCategories) {
+            const fullCat = findCategory(allCategories, cat.id);
+            const blocked = fullCat
+                ? collectDescendantIds(fullCat)
+                : new Set<number>();
+            blocked.add(cat.id);
+            map.set(cat.id, blocked);
+        }
+        return map;
+    }, [allCategories, currentCategories]);
+
+    // Union of all blocked IDs — passed to each DroppableCategoryZone so
+    // that any category being dragged is blocked from dropping onto itself
+    // or any of its own descendants.
+    const allBlockedSourceIds = useMemo(() => {
+        const union = new Set<number>();
+        for (const s of blockedIdsMap.values()) {
+            for (const id of s) union.add(id);
+        }
+        return union;
+    }, [blockedIdsMap]);
 
     const [activeItem, setActiveItem] = useState<TileItem | null>(null);
 
-    const collisionDetection = useMemo(
-        () => createMoveOrReorder(allCategories),
-        [allCategories],
-    );
-
-    const sensors = useSensors(
-        useSensor(PointerSensor, {
-            activationConstraint: { distance: 5 },
-        }),
-    );
-
-    const handleDragStart = useCallback(
-        (event: DragStartEvent) => {
-            const active = items.find(
-                (item) => tileId(item) === event.active.id,
-            );
-            setActiveItem(active ?? null);
-        },
-        [items],
-    );
-
     const handleDragEnd = useCallback(
-        async (event: DragEndEvent) => {
+        async (event: { operation: { source: { id: string | number } | null; target: { id: string | number } | null; canceled: boolean } }) => {
             setActiveItem(null);
-            const { active, over } = event;
-            if (!over || active.id === over.id) return;
+            const { operation } = event;
+            if (operation.canceled) return;
+
+            const source = operation.source;
+            const target = operation.target;
+            if (!source || !target || source.id === target.id) return;
 
             // Reject concurrent drags — wait for the in-flight reorder to settle
             if (reorderInFlightRef.current) return;
 
-            const overId = String(over.id);
+            const targetId = String(target.id);
+            const sourceId = String(source.id);
 
             // ── Move into category (drop on a droppable zone) ──
-            if (overId.startsWith(DROP_PREFIX)) {
-                const targetCatId = Number(overId.slice(DROP_PREFIX.length));
-                const activeId = String(active.id);
-                if (activeId.startsWith("img-")) {
-                    const imgId = Number(activeId.slice(4));
+            if (targetId.startsWith(DROP_PREFIX)) {
+                const targetCatId = Number(targetId.slice(DROP_PREFIX.length));
+                if (sourceId.startsWith("img-")) {
+                    const imgId = Number(sourceId.slice(4));
                     onDropImageOnCategory?.(imgId, targetCatId);
-                } else if (activeId.startsWith("cat-")) {
-                    const catId = Number(activeId.slice(4));
+                } else if (sourceId.startsWith("cat-")) {
+                    const catId = Number(sourceId.slice(4));
                     onDropCategoryOnCategory?.(catId, targetCatId);
                 }
                 return;
@@ -302,10 +323,10 @@ export default function SortableTileGrid({
 
             // ── Reorder (drop between items) ──
             const oldIndex = items.findIndex(
-                (item) => tileId(item) === active.id,
+                (item) => tileId(item) === sourceId,
             );
             const newIndex = items.findIndex(
-                (item) => tileId(item) === over.id,
+                (item) => tileId(item) === targetId,
             );
             if (oldIndex === -1 || newIndex === -1) return;
 
@@ -386,10 +407,6 @@ export default function SortableTileGrid({
         ],
     );
 
-    const handleDragCancel = useCallback(() => {
-        setActiveItem(null);
-    }, []);
-
     const renderCategoryTile = (cat: Category, wrapDroppable = false) => {
         const tile = (
             <CategoryTile
@@ -410,6 +427,7 @@ export default function SortableTileGrid({
             <DroppableCategoryZone
                 categoryId={cat.id}
                 disabled={!canEditContent}
+                blockedSourceIds={allBlockedSourceIds}
             >
                 {tile}
             </DroppableCategoryZone>
@@ -427,73 +445,90 @@ export default function SortableTileGrid({
         />
     );
 
-    // Render the overlay (ghost) for the currently dragged item
-    const renderDragOverlay = () => {
-        if (!activeItem) return null;
-        if (activeItem.type === "category") {
-            return (
-                <Box sx={{ opacity: 0.85, width: 300, pointerEvents: "none" }}>
-                    {renderCategoryTile(activeItem.data)}
-                </Box>
-            );
-        }
-        return (
-            <Box sx={{ opacity: 0.85, width: 300, pointerEvents: "none" }}>
-                {renderImageTile(activeItem.data)}
-            </Box>
-        );
-    };
-
     return (
-        <DndContext
-            sensors={sensors}
-            collisionDetection={collisionDetection}
-            onDragStart={handleDragStart}
+        <DragDropProvider
+            sensors={[
+                PointerSensor.configure({
+                    activationConstraints: [
+                        new PointerActivationConstraints.Distance({ value: 5 }),
+                    ],
+                }),
+                KeyboardSensor,
+            ]}
+            onDragStart={(event) => {
+                const sourceId = String(event.operation.source?.id);
+                const item = items.find((i) => tileId(i) === sourceId);
+                setActiveItem(item ?? null);
+            }}
             onDragEnd={handleDragEnd}
-            onDragCancel={handleDragCancel}
         >
-            <SortableContext items={ids} strategy={rectSortingStrategy}>
-                <Box
-                    role="region"
-                    aria-label="Sortable tile grid"
-                    sx={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: 2,
-                    }}
-                    onDragOver={onGridDragOver}
-                    onDrop={onGridDrop}
-                >
-                    {items.map((item) => {
-                        const id = tileId(item);
-                        return (
-                            <SortableItem
-                                key={id}
-                                id={id}
-                                disabled={!canEditContent}
-                            >
-                                {item.type === "category"
-                                    ? renderCategoryTile(
-                                          item.data,
-                                          true,
-                                      )
-                                    : renderImageTile(
-                                          item.data as ImageItem,
-                                      )}
-                            </SortableItem>
-                        );
-                    })}
-                    {canEditContent && (
-                        <FileDropZone
-                            isDragActive={fileDragActive}
-                            onDrop={onFilesDrop}
-                        />
-                    )}
-                </Box>
-            </SortableContext>
+            <Box
+                role="region"
+                aria-label="Sortable tile grid"
+                sx={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 2,
+                }}
+                onDragOver={onGridDragOver}
+                onDrop={onGridDrop}
+            >
+                {items.map((item, index) => {
+                    const id = tileId(item);
+                    return (
+                        <SortableItem
+                            key={id}
+                            id={id}
+                            index={index}
+                            disabled={!canEditContent}
+                        >
+                            {item.type === "category"
+                                ? renderCategoryTile(
+                                      item.data,
+                                      true,
+                                  )
+                                : renderImageTile(
+                                      item.data as ImageItem,
+                                  )}
+                        </SortableItem>
+                    );
+                })}
+                {canEditContent && (
+                    <FileDropZone
+                        isDragActive={fileDragActive}
+                        onDrop={onFilesDrop}
+                    />
+                )}
+            </Box>
             <DragOverlay dropAnimation={null}>
-                {renderDragOverlay()}
+                {activeItem
+                    ? activeItem.type === "category"
+                        ? (
+                              <Box
+                                  sx={{
+                                      opacity: 0.85,
+                                      width: 300,
+                                      pointerEvents: "none",
+                                      cursor: "grabbing",
+                                  }}
+                              >
+                                  {renderCategoryTile(activeItem.data)}
+                              </Box>
+                          )
+                        : (
+                              <Box
+                                  sx={{
+                                      opacity: 0.85,
+                                      width: 300,
+                                      pointerEvents: "none",
+                                      cursor: "grabbing",
+                                  }}
+                              >
+                                  {renderImageTile(activeItem.data)}
+                              </Box>
+                          )
+                    : null}
             </DragOverlay>
-        </DndContext>
+        </DragDropProvider>
     );
 }

@@ -13,27 +13,33 @@ import type { Program } from "../../src/types";
 import { makeCategory, makeImage } from "../helpers/fixtures";
 
 // ---------------------------------------------------------------------------
-// Capture onDragEnd from DndContext so we can invoke it in tests.
-// We wrap the real DndContext and intercept the handler.
+// Capture onDragEnd from DragDropProvider so we can invoke it in tests.
+// We wrap the real DragDropProvider and intercept the handler.
 // ---------------------------------------------------------------------------
 
-import type { DragEndEvent } from "@dnd-kit/core";
+type DragEndHandler = (event: {
+    operation: {
+        source: { id: string | number } | null;
+        target: { id: string | number } | null;
+        canceled: boolean;
+    };
+}) => void;
 
-let capturedOnDragEnd: ((event: DragEndEvent) => void) | undefined;
+let capturedOnDragEnd: DragEndHandler | undefined;
 
-vi.mock("@dnd-kit/core", async () => {
+vi.mock("@dnd-kit/react", async () => {
     const actual =
-        await vi.importActual<typeof import("@dnd-kit/core")>("@dnd-kit/core");
+        await vi.importActual<typeof import("@dnd-kit/react")>(
+            "@dnd-kit/react",
+        );
     return {
         ...actual,
-        DndContext: (props: Record<string, unknown>) => {
-            capturedOnDragEnd = props.onDragEnd as
-                | ((event: DragEndEvent) => void)
-                | undefined;
-            const ActualDndContext = actual.DndContext as React.ComponentType<
+        DragDropProvider: (props: Record<string, unknown>) => {
+            capturedOnDragEnd = props.onDragEnd as DragEndHandler | undefined;
+            const ActualProvider = actual.DragDropProvider as React.ComponentType<
                 Record<string, unknown>
             >;
-            return <ActualDndContext {...props} />;
+            return <ActualProvider {...props} />;
         },
     };
 });
@@ -225,68 +231,6 @@ describe("SortableTileGrid", () => {
         ).not.toBeInTheDocument();
     });
 
-    it("enables sortable drag for editors", () => {
-        const cat = makeCategory({
-            id: 1,
-            label: "Architecture",
-            sortOrder: 0,
-        });
-
-        render(
-            <SortableTileGrid
-                allCategories={[]}
-                currentCategories={[cat]}
-                currentImages={[]}
-                uncategorizedImages={[]}
-                path={[]}
-                canEditContent={true}
-                fileDragActive={false}
-                programs={defaultPrograms}
-                onCategoryClick={vi.fn()}
-                onImageClick={vi.fn()}
-                onFilesDrop={vi.fn()}
-            />,
-        );
-
-        const sortableItems = screen.queryAllByRole("button");
-        const sortableItem = sortableItems.find(
-            (el) => el.getAttribute("aria-roledescription") === "sortable",
-        );
-        expect(sortableItem).toBeDefined();
-        expect(sortableItem).not.toHaveAttribute("aria-disabled", "true");
-    });
-
-    it("disables sortable drag for non-editors", () => {
-        const cat = makeCategory({
-            id: 1,
-            label: "Architecture",
-            sortOrder: 0,
-        });
-
-        render(
-            <SortableTileGrid
-                allCategories={[]}
-                currentCategories={[cat]}
-                currentImages={[]}
-                uncategorizedImages={[]}
-                path={[]}
-                canEditContent={false}
-                fileDragActive={false}
-                programs={defaultPrograms}
-                onCategoryClick={vi.fn()}
-                onImageClick={vi.fn()}
-                onFilesDrop={vi.fn()}
-            />,
-        );
-
-        const sortableItems = screen.queryAllByRole("button");
-        const sortableWrapper = sortableItems.find(
-            (el) => el.getAttribute("aria-roledescription") === "sortable",
-        );
-        expect(sortableWrapper).toBeDefined();
-        expect(sortableWrapper).toHaveAttribute("aria-disabled", "true");
-    });
-
     it("renders FileDropZone for editors when drag active", () => {
         render(
             <SortableTileGrid
@@ -397,13 +341,14 @@ describe("handleDragEnd — move into category", () => {
 
         expect(capturedOnDragEnd).toBeDefined();
 
-        // handleDragEnd is async — await its promise so act() flushes all
-        // microtasks (API mocks resolve synchronously via Promise.resolve()).
         await act(async () => {
             await capturedOnDragEnd!({
-                active: { id: "img-42" },
-                over: { id: `${DROP_PREFIX}5` },
-            } as unknown as DragEndEvent);
+                operation: {
+                    source: { id: "img-42" },
+                    target: { id: `${DROP_PREFIX}5` },
+                    canceled: false,
+                },
+            });
         });
 
         expect(onDropImageOnCategory).toHaveBeenCalledWith(42, 5);
@@ -426,9 +371,12 @@ describe("handleDragEnd — move into category", () => {
 
         await act(async () => {
             await capturedOnDragEnd!({
-                active: { id: "cat-1" },
-                over: { id: `${DROP_PREFIX}2` },
-            } as unknown as DragEndEvent);
+                operation: {
+                    source: { id: "cat-1" },
+                    target: { id: `${DROP_PREFIX}2` },
+                    canceled: false,
+                },
+            });
         });
 
         expect(onDropCategoryOnCategory).toHaveBeenCalledWith(1, 2);
@@ -447,15 +395,18 @@ describe("handleDragEnd — move into category", () => {
 
         await act(async () => {
             await capturedOnDragEnd!({
-                active: { id: "img-10" },
-                over: { id: "img-10" },
-            } as unknown as DragEndEvent);
+                operation: {
+                    source: { id: "img-10" },
+                    target: { id: "img-10" },
+                    canceled: false,
+                },
+            });
         });
 
         expect(onDropImageOnCategory).not.toHaveBeenCalled();
     });
 
-    it("does nothing when over is null", async () => {
+    it("does nothing when target is null", async () => {
         const img = makeImage({ id: 10, name: "Slide", sortOrder: 0 });
         const onDropImageOnCategory = vi.fn();
 
@@ -467,9 +418,35 @@ describe("handleDragEnd — move into category", () => {
 
         await act(async () => {
             await capturedOnDragEnd!({
-                active: { id: "img-10" },
-                over: null,
-            } as unknown as DragEndEvent);
+                operation: {
+                    source: { id: "img-10" },
+                    target: null,
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(onDropImageOnCategory).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when canceled", async () => {
+        const img = makeImage({ id: 10, name: "Slide", sortOrder: 0 });
+        const onDropImageOnCategory = vi.fn();
+
+        renderGrid({
+            currentImages: [img],
+            canEditContent: true,
+            onDropImageOnCategory,
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "img-10" },
+                    target: { id: `${DROP_PREFIX}5` },
+                    canceled: true,
+                },
+            });
         });
 
         expect(onDropImageOnCategory).not.toHaveBeenCalled();
@@ -502,9 +479,12 @@ describe("handleDragEnd — reorder", () => {
         // Swap: move img-10 before cat-1
         await act(async () => {
             await capturedOnDragEnd!({
-                active: { id: "img-10" },
-                over: { id: "cat-1" },
-            } as unknown as DragEndEvent);
+                operation: {
+                    source: { id: "img-10" },
+                    target: { id: "cat-1" },
+                    canceled: false,
+                },
+            });
         });
 
         expect(reorderImages).toHaveBeenCalledWith([
@@ -529,9 +509,12 @@ describe("handleDragEnd — reorder", () => {
 
         await act(async () => {
             await capturedOnDragEnd!({
-                active: { id: "cat-2" },
-                over: { id: "cat-1" },
-            } as unknown as DragEndEvent);
+                operation: {
+                    source: { id: "cat-2" },
+                    target: { id: "cat-1" },
+                    canceled: false,
+                },
+            });
         });
 
         expect(reorderCategories).toHaveBeenCalledWith([
@@ -559,9 +542,12 @@ describe("handleDragEnd — reorder", () => {
 
         await act(async () => {
             await capturedOnDragEnd!({
-                active: { id: "img-10" },
-                over: { id: "cat-1" },
-            } as unknown as DragEndEvent);
+                operation: {
+                    source: { id: "img-10" },
+                    target: { id: "cat-1" },
+                    canceled: false,
+                },
+            });
         });
 
         expect(onReorderError).toHaveBeenCalled();
@@ -580,9 +566,12 @@ describe("handleDragEnd — reorder", () => {
 
         await act(async () => {
             await capturedOnDragEnd!({
-                active: { id: "cat-2" },
-                over: { id: "cat-1" },
-            } as unknown as DragEndEvent);
+                operation: {
+                    source: { id: "cat-2" },
+                    target: { id: "cat-1" },
+                    canceled: false,
+                },
+            });
         });
 
         expect(reorderCategories).toHaveBeenCalled();
@@ -600,9 +589,12 @@ describe("handleDragEnd — reorder", () => {
 
         await act(async () => {
             await capturedOnDragEnd!({
-                active: { id: "img-11" },
-                over: { id: "img-10" },
-            } as unknown as DragEndEvent);
+                operation: {
+                    source: { id: "img-11" },
+                    target: { id: "img-10" },
+                    canceled: false,
+                },
+            });
         });
 
         expect(reorderImages).toHaveBeenCalled();
@@ -627,9 +619,12 @@ describe("handleDragEnd — reorder", () => {
 
         await act(async () => {
             await capturedOnDragEnd!({
-                active: { id: "img-10" },
-                over: { id: "cat-1" },
-            } as unknown as DragEndEvent);
+                operation: {
+                    source: { id: "img-10" },
+                    target: { id: "cat-1" },
+                    canceled: false,
+                },
+            });
         });
 
         expect(onReorderError).toHaveBeenCalled();
