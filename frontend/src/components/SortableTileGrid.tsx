@@ -12,7 +12,7 @@ import {
 } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { arrayMove } from "@dnd-kit/helpers";
-import { pointerIntersection } from "@dnd-kit/collision";
+import { closestCenter, pointerIntersection } from "@dnd-kit/collision";
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { PointerActivationConstraints } from "@dnd-kit/dom";
 import type { Draggable } from "@dnd-kit/abstract";
@@ -45,8 +45,7 @@ function SortableItem({ id, index, disabled, children }: SortableItemProps) {
         index,
         disabled,
         type: "tile",
-        collisionDetector: pointerIntersection,
-        collisionPriority: CollisionPriority.Low,
+        collisionDetector: closestCenter,
     });
 
     return (
