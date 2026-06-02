@@ -549,6 +549,7 @@ export default function App() {
         handleMoveCategory,
         handleRequestMoveCategory,
         handleDropImageOnCategory,
+        handleDropCategoryOnCategory,
         handleSetCardImage,
     } = useCategoryActions({
         categories,
@@ -1437,6 +1438,7 @@ export default function App() {
 
                             {/* Tile grid */}
                             <SortableTileGrid
+                                allCategories={categories}
                                 currentCategories={currentCategories}
                                 currentImages={currentImages}
                                 uncategorizedImages={uncategorizedImages}
@@ -1453,6 +1455,9 @@ export default function App() {
                                 onEditCategoryName={setEditNameCategory}
                                 onDropImageOnCategory={
                                     handleDropImageOnCategory
+                                }
+                                onDropCategoryOnCategory={
+                                    handleDropCategoryOnCategory
                                 }
                                 onDropFilesOnCategory={
                                     handleFilesDropOnCategory

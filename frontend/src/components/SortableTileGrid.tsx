@@ -28,7 +28,7 @@ import {
     buildTileItems,
     tileId,
     DROP_PREFIX,
-    moveOrReorder,
+    createMoveOrReorder,
 } from "./sortableTileGridUtils";
 import type { TileItem } from "./sortableTileGridUtils";
 
@@ -53,7 +53,7 @@ function SortableItem({ id, disabled, children }: SortableItemProps) {
     const style: React.CSSProperties = {
         transform: CSS.Transform.toString(transform),
         transition: transition ?? undefined,
-        opacity: isDragging ? 0.3 : 1,
+        opacity: isDragging ? 0.5 : 1,
         position: "relative",
         width: "100%",
         maxWidth: 300,
@@ -95,7 +95,7 @@ function DroppableCategoryZone({
         <Box
             ref={setNodeRef}
             role="region"
-            aria-label="Drop into category"
+            aria-label="Move into category"
             sx={{
                 position: "relative",
                 outline: "3px dashed",
@@ -112,7 +112,7 @@ function DroppableCategoryZone({
                     sx={{
                         position: "absolute",
                         inset: 0,
-                        zIndex: 2,
+                        zIndex: 1100,
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
@@ -145,7 +145,7 @@ function DroppableCategoryZone({
                             color: "primary.main",
                         }}
                     >
-                        Drop here
+                        Move here
                     </Typography>
                 </Box>
             )}
@@ -156,6 +156,8 @@ function DroppableCategoryZone({
 // ── Main component ──────────────────────────────────────────
 
 export interface SortableTileGridProps {
+    /** Full category tree — used for ancestor-cycle prevention during drag. */
+    allCategories: Category[];
     currentCategories: Category[];
     currentImages: ImageItem[];
     uncategorizedImages: ImageItem[];
@@ -172,6 +174,7 @@ export interface SortableTileGridProps {
     onToggleCategoryVisibility?: (categoryId: number) => Promise<void>;
     onEditCategoryName?: (cat: Category) => void;
     onDropImageOnCategory?: (imageId: number, categoryId: number) => void;
+    onDropCategoryOnCategory?: (categoryId: number, targetCategoryId: number) => void;
     onDropFilesOnCategory?: (categoryId: number, files: File[]) => void;
 
     // ImageTile callbacks
@@ -194,6 +197,7 @@ export interface SortableTileGridProps {
 }
 
 export default function SortableTileGrid({
+    allCategories,
     currentCategories,
     currentImages,
     uncategorizedImages,
@@ -207,6 +211,7 @@ export default function SortableTileGrid({
     onToggleCategoryVisibility,
     onEditCategoryName,
     onDropImageOnCategory,
+    onDropCategoryOnCategory,
     onDropFilesOnCategory,
     onImageClick,
     onEditImageDetails,
@@ -249,6 +254,11 @@ export default function SortableTileGrid({
 
     const [activeItem, setActiveItem] = useState<TileItem | null>(null);
 
+    const collisionDetection = useMemo(
+        () => createMoveOrReorder(allCategories),
+        [allCategories],
+    );
+
     const sensors = useSensors(
         useSensor(PointerSensor, {
             activationConstraint: { distance: 5 },
@@ -283,6 +293,9 @@ export default function SortableTileGrid({
                 if (activeId.startsWith("img-")) {
                     const imgId = Number(activeId.slice(4));
                     onDropImageOnCategory?.(imgId, targetCatId);
+                } else if (activeId.startsWith("cat-")) {
+                    const catId = Number(activeId.slice(4));
+                    onDropCategoryOnCategory?.(catId, targetCatId);
                 }
                 return;
             }
@@ -369,6 +382,7 @@ export default function SortableTileGrid({
             onReorderComplete,
             onReorderError,
             onDropImageOnCategory,
+            onDropCategoryOnCategory,
         ],
     );
 
@@ -433,7 +447,7 @@ export default function SortableTileGrid({
     return (
         <DndContext
             sensors={sensors}
-            collisionDetection={moveOrReorder}
+            collisionDetection={collisionDetection}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}

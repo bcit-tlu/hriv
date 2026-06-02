@@ -62,6 +62,7 @@ const defaultPrograms: Program[] = [];
 
 function renderGrid(overrides: Partial<SortableTileGridProps> = {}) {
     const defaults: SortableTileGridProps = {
+        allCategories: [],
         currentCategories: [],
         currentImages: [],
         uncategorizedImages: [],
@@ -151,6 +152,7 @@ describe("SortableTileGrid", () => {
 
         render(
             <SortableTileGrid
+                allCategories={[]}
                 currentCategories={[cat]}
                 currentImages={[img]}
                 uncategorizedImages={[]}
@@ -177,6 +179,7 @@ describe("SortableTileGrid", () => {
 
         render(
             <SortableTileGrid
+                allCategories={[]}
                 currentCategories={[]}
                 currentImages={[]}
                 uncategorizedImages={[uncat]}
@@ -203,6 +206,7 @@ describe("SortableTileGrid", () => {
 
         render(
             <SortableTileGrid
+                allCategories={[]}
                 currentCategories={[]}
                 currentImages={[]}
                 uncategorizedImages={[uncat]}
@@ -230,6 +234,7 @@ describe("SortableTileGrid", () => {
 
         render(
             <SortableTileGrid
+                allCategories={[]}
                 currentCategories={[cat]}
                 currentImages={[]}
                 uncategorizedImages={[]}
@@ -260,6 +265,7 @@ describe("SortableTileGrid", () => {
 
         render(
             <SortableTileGrid
+                allCategories={[]}
                 currentCategories={[cat]}
                 currentImages={[]}
                 uncategorizedImages={[]}
@@ -284,6 +290,7 @@ describe("SortableTileGrid", () => {
     it("renders FileDropZone for editors when drag active", () => {
         render(
             <SortableTileGrid
+                allCategories={[]}
                 currentCategories={[]}
                 currentImages={[]}
                 uncategorizedImages={[]}
@@ -318,12 +325,12 @@ describe("DroppableCategoryZone (via SortableTileGrid)", () => {
         renderGrid({ currentCategories: [cat], canEditContent: true });
 
         const dropRegions = screen.getAllByRole("region", {
-            name: "Drop into category",
+            name: "Move into category",
         });
         expect(dropRegions.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("does not show drop overlay text when not hovering", () => {
+    it("does not show move overlay text when not hovering", () => {
         const cat = makeCategory({
             id: 5,
             label: "Histology",
@@ -332,7 +339,7 @@ describe("DroppableCategoryZone (via SortableTileGrid)", () => {
 
         renderGrid({ currentCategories: [cat], canEditContent: true });
 
-        expect(screen.queryByText("Drop here")).not.toBeInTheDocument();
+        expect(screen.queryByText("Move here")).not.toBeInTheDocument();
     });
 
     it("wraps each category tile in a droppable zone for editors", () => {
@@ -344,7 +351,7 @@ describe("DroppableCategoryZone (via SortableTileGrid)", () => {
         renderGrid({ currentCategories: cats, canEditContent: true });
 
         const dropRegions = screen.getAllByRole("region", {
-            name: "Drop into category",
+            name: "Move into category",
         });
         expect(dropRegions).toHaveLength(2);
     });
@@ -359,7 +366,7 @@ describe("DroppableCategoryZone (via SortableTileGrid)", () => {
         renderGrid({ currentCategories: [cat], canEditContent: false });
 
         const dropRegions = screen.getAllByRole("region", {
-            name: "Drop into category",
+            name: "Move into category",
         });
         expect(dropRegions).toHaveLength(1);
     });
@@ -402,15 +409,17 @@ describe("handleDragEnd — move into category", () => {
         expect(onDropImageOnCategory).toHaveBeenCalledWith(42, 5);
     });
 
-    it("does not call onDropImageOnCategory when category is dropped on a droppable zone", async () => {
+    it("calls onDropCategoryOnCategory when category is dropped on a droppable zone", async () => {
         const cat1 = makeCategory({ id: 1, label: "Cat A", sortOrder: 0 });
         const cat2 = makeCategory({ id: 2, label: "Cat B", sortOrder: 1 });
         const onDropImageOnCategory = vi.fn();
+        const onDropCategoryOnCategory = vi.fn();
 
         renderGrid({
             currentCategories: [cat1, cat2],
             canEditContent: true,
             onDropImageOnCategory,
+            onDropCategoryOnCategory,
         });
 
         expect(capturedOnDragEnd).toBeDefined();
@@ -422,6 +431,7 @@ describe("handleDragEnd — move into category", () => {
             } as unknown as DragEndEvent);
         });
 
+        expect(onDropCategoryOnCategory).toHaveBeenCalledWith(1, 2);
         expect(onDropImageOnCategory).not.toHaveBeenCalled();
     });
 

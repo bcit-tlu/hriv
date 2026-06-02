@@ -4,10 +4,9 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { CollisionDescriptor } from "@dnd-kit/core";
+import type { CollisionDescriptor, UniqueIdentifier } from "@dnd-kit/core";
 
 // Mock @dnd-kit/core collision algorithms before importing the module under test
-const mockPointerWithin = vi.fn<[], CollisionDescriptor[]>(() => []);
 const mockClosestCenter = vi.fn<[], CollisionDescriptor[]>(() => []);
 
 vi.mock("@dnd-kit/core", async () => {
@@ -15,13 +14,13 @@ vi.mock("@dnd-kit/core", async () => {
         await vi.importActual<typeof import("@dnd-kit/core")>("@dnd-kit/core");
     return {
         ...actual,
-        pointerWithin: (...a: unknown[]) => mockPointerWithin(...(a as [])),
         closestCenter: (...a: unknown[]) => mockClosestCenter(...(a as [])),
     };
 });
 
 import {
     moveOrReorder,
+    createMoveOrReorder,
     DROP_PREFIX,
     tileId,
     buildTileItems,
@@ -32,15 +31,43 @@ import { makeCategory, makeImage } from "../helpers/fixtures";
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Minimal collision args — moveOrReorder only reads `args.active.id`. */
-function makeArgs(activeId: string) {
+/** Create a droppable container stub with a bounding rect. */
+function makeDroppable(
+    id: UniqueIdentifier,
+    rect: { left: number; top: number; width: number; height: number },
+) {
+    return {
+        id,
+        key: String(id),
+        disabled: false,
+        node: { current: null },
+        data: { current: undefined },
+        rect: {
+            current: {
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height,
+                right: rect.left + rect.width,
+                bottom: rect.top + rect.height,
+            },
+        },
+    };
+}
+
+/** Build collision args with pointer position and droppable containers. */
+function makeArgs(
+    activeId: string,
+    pointer: { x: number; y: number } | null = null,
+    droppables: ReturnType<typeof makeDroppable>[] = [],
+) {
     return {
         active: { id: activeId },
         collisionRect: {} as never,
         droppableRects: new Map() as never,
-        droppableContainers: [] as never,
-        pointerCoordinates: null,
-    } as Parameters<typeof moveOrReorder>[0];
+        droppableContainers: droppables as never,
+        pointerCoordinates: pointer,
+    } as Parameters<ReturnType<typeof createMoveOrReorder>>[0];
 }
 
 function collision(id: string): CollisionDescriptor {
@@ -81,120 +108,175 @@ describe("tileId", () => {
 
 describe("moveOrReorder", () => {
     beforeEach(() => {
-        mockPointerWithin.mockReset();
         mockClosestCenter.mockReset();
     });
 
-    // ── Image active scenarios ──────────────────────────────
+    // A 100×100 droppable zone at (0,0). Center 70% spans (15,15)–(85,85).
+    const catZone = makeDroppable("drop-cat-5", { left: 0, top: 0, width: 100, height: 100 });
 
-    it("returns droppable zone hit when image pointer is within one", () => {
-        const dropHit = collision("drop-cat-5");
-        mockPointerWithin.mockReturnValue([
-            collision("cat-3"),
-            dropHit,
-            collision("img-2"),
-        ]);
+    // ── Center 70% hit (image → move into category) ─────────
 
-        const result = moveOrReorder(makeArgs("img-10"));
-
-        expect(result).toEqual([dropHit]);
-        // closestCenter should NOT be called when a droppable hit is found
+    it("returns droppable zone when image pointer is in center 70%", () => {
+        const result = moveOrReorder(
+            makeArgs("img-10", { x: 50, y: 50 }, [catZone]),
+        );
+        expect(result).toEqual([{ id: "drop-cat-5" }]);
         expect(mockClosestCenter).not.toHaveBeenCalled();
     });
 
-    it("returns first droppable hit when multiple zones overlap", () => {
-        const hit1 = collision("drop-cat-5");
-        const hit2 = collision("drop-cat-8");
-        mockPointerWithin.mockReturnValue([hit1, hit2]);
+    // ── Center 70% hit (category → move into category) ──────
 
-        const result = moveOrReorder(makeArgs("img-1"));
-
-        expect(result).toEqual([hit1]);
+    it("returns droppable zone when category pointer is in center 70%", () => {
+        const result = moveOrReorder(
+            makeArgs("cat-9", { x: 50, y: 50 }, [catZone]),
+        );
+        expect(result).toEqual([{ id: "drop-cat-5" }]);
+        expect(mockClosestCenter).not.toHaveBeenCalled();
     });
 
-    it("falls back to closestCenter when image has no droppable hit", () => {
-        mockPointerWithin.mockReturnValue([
-            collision("cat-3"),
-            collision("img-2"),
-        ]);
-        const sortableHit = collision("cat-1");
-        mockClosestCenter.mockReturnValue([sortableHit]);
+    // ── Self-drop prevention ────────────────────────────────
 
-        const result = moveOrReorder(makeArgs("img-10"));
-
-        expect(result).toEqual([sortableHit]);
-    });
-
-    it("falls back to closestCenter when pointerWithin returns empty", () => {
-        mockPointerWithin.mockReturnValue([]);
-        const sortableHit = collision("img-5");
-        mockClosestCenter.mockReturnValue([sortableHit]);
-
-        const result = moveOrReorder(makeArgs("img-1"));
-
-        expect(result).toEqual([sortableHit]);
-    });
-
-    // ── Category active scenarios ───────────────────────────
-
-    it("skips droppable zones entirely when dragging a category", () => {
+    it("does not allow dropping a category onto itself", () => {
         const sortableHit = collision("cat-2");
         mockClosestCenter.mockReturnValue([sortableHit]);
 
-        const result = moveOrReorder(makeArgs("cat-3"));
-
+        const result = moveOrReorder(
+            makeArgs("cat-5", { x: 50, y: 50 }, [catZone]),
+        );
         expect(result).toEqual([sortableHit]);
-        // pointerWithin should NOT be called for categories
-        expect(mockPointerWithin).not.toHaveBeenCalled();
     });
 
-    it("filters drop-cat-* IDs from closestCenter for category drags", () => {
-        mockClosestCenter.mockReturnValue([
-            collision("drop-cat-5"),
-            collision("cat-2"),
-            collision("drop-cat-8"),
-            collision("img-1"),
-        ]);
+    // ── Edge zone → reorder ─────────────────────────────────
 
-        const result = moveOrReorder(makeArgs("cat-3"));
+    it("falls back to closestCenter when pointer is in edge zone", () => {
+        const sortableHit = collision("cat-1");
+        mockClosestCenter.mockReturnValue([sortableHit]);
 
-        expect(result).toEqual([collision("cat-2"), collision("img-1")]);
+        // x=5 is within the left 15% edge zone
+        const result = moveOrReorder(
+            makeArgs("img-10", { x: 5, y: 50 }, [catZone]),
+        );
+        expect(result).toEqual([sortableHit]);
     });
 
-    // ── Fallback filtering ──────────────────────────────────
+    it("falls back to closestCenter when pointer is in bottom edge zone", () => {
+        const sortableHit = collision("img-2");
+        mockClosestCenter.mockReturnValue([sortableHit]);
 
-    it("filters drop-cat-* IDs from closestCenter fallback for images", () => {
-        mockPointerWithin.mockReturnValue([]); // no droppable hit
+        // y=92 is within the bottom 15% edge zone
+        const result = moveOrReorder(
+            makeArgs("img-1", { x: 50, y: 92 }, [catZone]),
+        );
+        expect(result).toEqual([sortableHit]);
+    });
+
+    // ── No pointer coordinates → reorder ────────────────────
+
+    it("falls back to closestCenter when no pointer coordinates", () => {
+        const sortableHit = collision("img-5");
+        mockClosestCenter.mockReturnValue([sortableHit]);
+
+        const result = moveOrReorder(makeArgs("img-1", null, [catZone]));
+        expect(result).toEqual([sortableHit]);
+    });
+
+    // ── closestCenter filtering ─────────────────────────────
+
+    it("filters drop-cat-* IDs from closestCenter fallback", () => {
         mockClosestCenter.mockReturnValue([
             collision("drop-cat-10"),
             collision("cat-1"),
             collision("drop-cat-20"),
         ]);
 
-        const result = moveOrReorder(makeArgs("img-5"));
-
+        const result = moveOrReorder(makeArgs("img-5", { x: 5, y: 5 }, [catZone]));
         expect(result).toEqual([collision("cat-1")]);
     });
 
     it("returns empty array when closestCenter only has drop-cat-* IDs", () => {
-        mockPointerWithin.mockReturnValue([]);
         mockClosestCenter.mockReturnValue([
             collision("drop-cat-1"),
             collision("drop-cat-2"),
         ]);
 
         const result = moveOrReorder(makeArgs("img-1"));
-
         expect(result).toEqual([]);
     });
 
     it("returns empty array when closestCenter is empty", () => {
-        mockPointerWithin.mockReturnValue([]);
         mockClosestCenter.mockReturnValue([]);
 
         const result = moveOrReorder(makeArgs("img-1"));
-
         expect(result).toEqual([]);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// createMoveOrReorder — ancestor-cycle prevention
+// ---------------------------------------------------------------------------
+
+describe("createMoveOrReorder ancestor-cycle prevention", () => {
+    beforeEach(() => {
+        mockClosestCenter.mockReset();
+    });
+
+    // Tree: cat-1 → cat-2 → cat-3
+    const tree = [
+        makeCategory({
+            id: 1,
+            children: [
+                makeCategory({
+                    id: 2,
+                    children: [makeCategory({ id: 3 })],
+                }),
+            ],
+        }),
+        makeCategory({ id: 4 }),
+    ];
+
+    const detector = createMoveOrReorder(tree);
+    const catZone2 = makeDroppable("drop-cat-2", { left: 0, top: 0, width: 100, height: 100 });
+    const catZone3 = makeDroppable("drop-cat-3", { left: 0, top: 0, width: 100, height: 100 });
+    const catZone4 = makeDroppable("drop-cat-4", { left: 200, top: 0, width: 100, height: 100 });
+
+    it("blocks dropping a parent onto its child", () => {
+        const sortableHit = collision("cat-99");
+        mockClosestCenter.mockReturnValue([sortableHit]);
+
+        // cat-1 dragged onto drop-cat-2 (its child) → blocked, falls back to closestCenter
+        const result = detector(
+            makeArgs("cat-1", { x: 50, y: 50 }, [catZone2]),
+        );
+        expect(result).toEqual([sortableHit]);
+    });
+
+    it("blocks dropping a grandparent onto its grandchild", () => {
+        const sortableHit = collision("cat-99");
+        mockClosestCenter.mockReturnValue([sortableHit]);
+
+        // cat-1 dragged onto drop-cat-3 (its grandchild) → blocked
+        const result = detector(
+            makeArgs("cat-1", { x: 50, y: 50 }, [catZone3]),
+        );
+        expect(result).toEqual([sortableHit]);
+    });
+
+    it("allows dropping onto a non-descendant category", () => {
+        // cat-1 dragged onto drop-cat-4 (sibling, not descendant) → allowed
+        const result = detector(
+            makeArgs("cat-1", { x: 250, y: 50 }, [catZone4]),
+        );
+        expect(result).toEqual([{ id: "drop-cat-4" }]);
+        expect(mockClosestCenter).not.toHaveBeenCalled();
+    });
+
+    it("allows images to drop onto any category regardless of tree", () => {
+        // img-10 dragged onto drop-cat-2 → allowed (ancestor-cycle only applies to categories)
+        const result = detector(
+            makeArgs("img-10", { x: 50, y: 50 }, [catZone2]),
+        );
+        expect(result).toEqual([{ id: "drop-cat-2" }]);
+        expect(mockClosestCenter).not.toHaveBeenCalled();
     });
 });
 
