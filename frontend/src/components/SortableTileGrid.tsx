@@ -155,7 +155,7 @@ function DroppableCategoryZone({
 
 // ── Main component ──────────────────────────────────────────
 
-interface SortableTileGridProps {
+export interface SortableTileGridProps {
     currentCategories: Category[];
     currentImages: ImageItem[];
     uncategorizedImages: ImageItem[];

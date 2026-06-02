@@ -8,6 +8,7 @@ import { render, screen, act } from "@testing-library/react";
 import { buildTileItems } from "../../src/components/sortableTileGridUtils";
 import { DROP_PREFIX } from "../../src/components/sortableTileGridUtils";
 import SortableTileGrid from "../../src/components/SortableTileGrid";
+import type { SortableTileGridProps } from "../../src/components/SortableTileGrid";
 import type { Category, ImageItem, Program } from "../../src/types";
 
 // ---------------------------------------------------------------------------
@@ -78,12 +79,12 @@ function makeImage(overrides: Partial<ImageItem> = {}): ImageItem {
 
 const defaultPrograms: Program[] = [];
 
-function renderGrid(overrides: Record<string, unknown> = {}) {
-    const defaults = {
-        currentCategories: [] as Category[],
-        currentImages: [] as ImageItem[],
-        uncategorizedImages: [] as ImageItem[],
-        path: [] as Category[],
+function renderGrid(overrides: Partial<SortableTileGridProps> = {}) {
+    const defaults: SortableTileGridProps = {
+        currentCategories: [],
+        currentImages: [],
+        uncategorizedImages: [],
+        path: [],
         canEditContent: true,
         fileDragActive: false,
         programs: defaultPrograms,
