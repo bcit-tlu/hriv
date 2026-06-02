@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useCanvasAnnotations } from "../src/useCanvasAnnotations";
 import type { UseCanvasAnnotationsDeps } from "../src/useCanvasAnnotations";
-import type { ImageItem } from "../src/types";
 import type { CanvasAnnotation } from "../src/components/CanvasOverlay";
 import * as api from "../src/api";
+import { makeImage } from "./helpers/fixtures";
 
 vi.mock("../src/api", async () => {
     const actual = await vi.importActual<typeof api>("../src/api");
@@ -15,22 +15,6 @@ vi.mock("../src/api", async () => {
 });
 
 const mockUpdateImage = vi.mocked(api.updateImage);
-
-function makeImage(
-    id: number,
-    overrides: Partial<ImageItem> = {},
-): ImageItem {
-    return {
-        id,
-        name: `img-${id}`,
-        thumb: `/thumb/${id}.jpg`,
-        tileSources: `/tiles/${id}`,
-        active: true,
-        sortOrder: 0,
-        version: 1,
-        ...overrides,
-    };
-}
 
 function makeDeps(
     overrides: Partial<UseCanvasAnnotationsDeps> = {},
@@ -81,7 +65,7 @@ describe("useCanvasAnnotations", () => {
 
         it("extracts canvas annotations from selectedImage metadata", () => {
             const annotations = [makeAnnotation()];
-            const image = makeImage(1, {
+            const image = makeImage({ id: 1,
                 metadataExtra: { canvas_annotations: annotations },
             });
             const deps = makeDeps({ selectedImage: image });
@@ -91,7 +75,7 @@ describe("useCanvasAnnotations", () => {
         });
 
         it("returns empty array when metadata has no canvas_annotations", () => {
-            const image = makeImage(1, { metadataExtra: { some_other: "data" } });
+            const image = makeImage({ id: 1, metadataExtra: { some_other: "data" } });
             const deps = makeDeps({ selectedImage: image });
             const { result } = renderHook(() => useCanvasAnnotations(deps));
 
@@ -99,7 +83,7 @@ describe("useCanvasAnnotations", () => {
         });
 
         it("returns empty array when metadataExtra is null", () => {
-            const image = makeImage(1, { metadataExtra: null });
+            const image = makeImage({ id: 1, metadataExtra: null });
             const deps = makeDeps({ selectedImage: image });
             const { result } = renderHook(() => useCanvasAnnotations(deps));
 
@@ -109,7 +93,7 @@ describe("useCanvasAnnotations", () => {
 
     describe("handleCanvasAnnotationsChange", () => {
         it("updates localCanvasAnnotations immediately", () => {
-            const image = makeImage(1);
+            const image = makeImage({ id: 1 });
             const deps = makeDeps({ selectedImage: image });
             const { result } = renderHook(() => useCanvasAnnotations(deps));
             const annotations = [makeAnnotation()];
@@ -122,7 +106,7 @@ describe("useCanvasAnnotations", () => {
         });
 
         it("debounces the save by 600ms", async () => {
-            const image = makeImage(1);
+            const image = makeImage({ id: 1 });
             mockUpdateImage.mockResolvedValue({
                 id: 1,
                 name: "img-1",
@@ -166,7 +150,7 @@ describe("useCanvasAnnotations", () => {
         });
 
         it("resets debounce timer on rapid edits", async () => {
-            const image = makeImage(1);
+            const image = makeImage({ id: 1 });
             mockUpdateImage.mockResolvedValue({
                 id: 1,
                 name: "img-1",
@@ -226,7 +210,7 @@ describe("useCanvasAnnotations", () => {
         });
 
         it("queues data when a save is in-flight", async () => {
-            const image = makeImage(1);
+            const image = makeImage({ id: 1 });
             let resolveFirst!: (value: unknown) => void;
             const firstPromise = new Promise((r) => { resolveFirst = r; });
             mockUpdateImage
@@ -276,7 +260,7 @@ describe("useCanvasAnnotations", () => {
 
     describe("flushCanvasAnnotations", () => {
         it("bypasses debounce timer and saves immediately", async () => {
-            const image = makeImage(1);
+            const image = makeImage({ id: 1 });
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
                 category_id: null, copyright: null, note: null, active: true, sort_order: 0,
@@ -304,7 +288,7 @@ describe("useCanvasAnnotations", () => {
         });
 
         it("is a no-op when no pending changes exist", async () => {
-            const image = makeImage(1);
+            const image = makeImage({ id: 1 });
             const deps = makeDeps({ selectedImage: image });
             const { result } = renderHook(() => useCanvasAnnotations(deps));
 
@@ -318,7 +302,7 @@ describe("useCanvasAnnotations", () => {
 
     describe("image change reset", () => {
         it("clears local annotations when selectedImage changes", () => {
-            const image1 = makeImage(1, {
+            const image1 = makeImage({ id: 1,
                 metadataExtra: { canvas_annotations: [makeAnnotation()] },
             });
             const deps = makeDeps({ selectedImage: image1 });
@@ -334,7 +318,7 @@ describe("useCanvasAnnotations", () => {
             expect(result.current.localCanvasAnnotations).not.toBeNull();
 
             // Change image
-            const image2 = makeImage(2);
+            const image2 = makeImage({ id: 2 });
             rerender({ ...deps, selectedImage: image2 });
 
             expect(result.current.localCanvasAnnotations).toBeNull();
@@ -343,7 +327,7 @@ describe("useCanvasAnnotations", () => {
 
     describe("version tracking", () => {
         it("exposes latestVersionRef that updates after saves", async () => {
-            const image = makeImage(1, { version: 5 });
+            const image = makeImage({ id: 1, version: 5 });
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
                 category_id: null, copyright: null, note: null, active: true, sort_order: 0,
@@ -367,7 +351,7 @@ describe("useCanvasAnnotations", () => {
         });
 
         it("exposes latestMetadataRef that updates after saves", async () => {
-            const image = makeImage(1);
+            const image = makeImage({ id: 1 });
             const newMeta = { canvas_annotations: [makeAnnotation()], custom: "data" };
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
@@ -390,7 +374,7 @@ describe("useCanvasAnnotations", () => {
         });
 
         it("resets version ref when image changes", () => {
-            const image1 = makeImage(1, { version: 5 });
+            const image1 = makeImage({ id: 1, version: 5 });
             const deps = makeDeps({ selectedImage: image1 });
             const { result, rerender } = renderHook(
                 (props: UseCanvasAnnotationsDeps) => useCanvasAnnotations(props),
@@ -399,7 +383,7 @@ describe("useCanvasAnnotations", () => {
 
             expect(result.current.latestVersionRef.current).toBe(5);
 
-            const image2 = makeImage(2, { version: 10 });
+            const image2 = makeImage({ id: 2, version: 10 });
             rerender({ ...deps, selectedImage: image2 });
 
             expect(result.current.latestVersionRef.current).toBe(10);
@@ -408,7 +392,7 @@ describe("useCanvasAnnotations", () => {
 
     describe("error handling", () => {
         it("calls setErrorSnack on save failure", async () => {
-            const image = makeImage(1);
+            const image = makeImage({ id: 1 });
             mockUpdateImage.mockRejectedValue(new Error("Network error"));
             const setErrorSnack = vi.fn();
             const deps = makeDeps({ selectedImage: image, setErrorSnack });
@@ -427,7 +411,7 @@ describe("useCanvasAnnotations", () => {
 
     describe("save sends null for empty annotations", () => {
         it("sends null when annotations array is empty", async () => {
-            const image = makeImage(1);
+            const image = makeImage({ id: 1 });
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
                 category_id: null, copyright: null, note: null, active: true, sort_order: 0,
@@ -455,7 +439,7 @@ describe("useCanvasAnnotations", () => {
 
     describe("category refresh after save", () => {
         it("calls loadCategories and loadUncategorizedImages after save", async () => {
-            const image = makeImage(1);
+            const image = makeImage({ id: 1 });
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
                 category_id: null, copyright: null, note: null, active: true, sort_order: 0,

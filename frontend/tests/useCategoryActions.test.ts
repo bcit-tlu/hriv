@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useCategoryActions } from "../src/useCategoryActions";
 import type { UseCategoryActionsDeps } from "../src/useCategoryActions";
-import type { Category, ImageItem } from "../src/types";
 import * as api from "../src/api";
+import { makeCategory, makeImage } from "./helpers/fixtures";
 
 vi.mock("../src/api", async () => {
     const actual = await vi.importActual<typeof api>("../src/api");
@@ -22,36 +22,6 @@ const mockDeleteCategory = vi.mocked(api.deleteCategory);
 const mockUpdateCategory = vi.mocked(api.updateCategory);
 const mockReorderCategories = vi.mocked(api.reorderCategories);
 const mockUpdateImage = vi.mocked(api.updateImage);
-
-function makeCategory(overrides: Partial<Category> = {}): Category {
-    return {
-        id: 1,
-        label: "Cat A",
-        parentId: null,
-        children: [],
-        images: [],
-        programIds: [],
-        status: "active",
-        sortOrder: 0,
-        cardImageId: null,
-        metadataExtra: null,
-        ...overrides,
-    };
-}
-
-function makeImage(overrides: Partial<ImageItem> = {}): ImageItem {
-    return {
-        id: 100,
-        name: "Test Image",
-        thumb: "/thumb/100.jpg",
-        tileSources: "/tiles/100",
-        categoryId: null,
-        active: true,
-        sortOrder: 0,
-        version: 1,
-        ...overrides,
-    };
-}
 
 function makeDeps(overrides: Partial<UseCategoryActionsDeps> = {}): UseCategoryActionsDeps {
     return {

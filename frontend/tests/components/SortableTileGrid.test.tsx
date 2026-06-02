@@ -38,11 +38,19 @@ vi.mock("@dnd-kit/core", async () => {
     };
 });
 
-// Mock the reorder API calls
-vi.mock("../../src/api", () => ({
-    reorderCategories: vi.fn(() => Promise.resolve()),
-    reorderImages: vi.fn(() => Promise.resolve()),
-}));
+// Mock only the reorder API calls; passthrough all other exports so future
+// api.ts additions don't require updating this mock.
+import * as apiModule from "../../src/api";
+
+vi.mock("../../src/api", async () => {
+    const actual =
+        await vi.importActual<typeof apiModule>("../../src/api");
+    return {
+        ...actual,
+        reorderCategories: vi.fn(() => Promise.resolve()),
+        reorderImages: vi.fn(() => Promise.resolve()),
+    };
+});
 
 import { reorderCategories, reorderImages } from "../../src/api";
 

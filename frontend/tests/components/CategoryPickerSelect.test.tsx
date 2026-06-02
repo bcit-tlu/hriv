@@ -11,26 +11,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CategoryPickerSelect from '../../src/components/CategoryPickerSelect'
-import type { Category } from '../../src/types'
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeCategory(overrides: Partial<Category> = {}): Category {
-  return {
-    id: 1,
-    label: 'Test Category',
-    parentId: null,
-    children: [],
-    images: [],
-    programIds: [],
-    status: null,
-    sortOrder: 0,
-    cardImageId: null,
-    ...overrides,
-  }
-}
+import { makeCategory } from '../helpers/fixtures'
 
 // ---------------------------------------------------------------------------
 // Tests

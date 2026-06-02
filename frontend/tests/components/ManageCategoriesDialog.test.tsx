@@ -12,26 +12,12 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ManageCategoriesDialog from '../../src/components/ManageCategoriesDialog'
-import type { Category, Program } from '../../src/types'
+import type { Program } from '../../src/types'
+import { makeCategory } from '../helpers/fixtures'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function makeCategory(overrides: Partial<Category> = {}): Category {
-  return {
-    id: 1,
-    label: 'Test Category',
-    parentId: null,
-    children: [],
-    images: [],
-    programIds: [],
-    status: null,
-    sortOrder: 0,
-    cardImageId: null,
-    ...overrides,
-  }
-}
 
 const programs: Program[] = [
   { id: 10, name: 'Pathology', oidc_group: null, created_at: '', updated_at: '' },
