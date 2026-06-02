@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.19.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.18.1...frontend-v0.19.0) (2026-06-02)
+
+
+### Features
+
+* add sort_order to images for ordering/placement support ([#531](https://github.com/bcit-tlu/hriv/issues/531)) ([453e291](https://github.com/bcit-tlu/hriv/commit/453e291f55b654603d66191484426f3a078d51a8))
+* add tile grid drag-to-reorder UI with [@dnd-kit](https://github.com/dnd-kit) ([#536](https://github.com/bcit-tlu/hriv/issues/536)) ([cfb2427](https://github.com/bcit-tlu/hriv/commit/cfb24278f106e9bfa01876a8ce7e9cab47d84f9f))
+* migrate drag-to-category from native HTML5 DnD to [@dnd-kit](https://github.com/dnd-kit) ([#541](https://github.com/bcit-tlu/hriv/issues/541)) ([c64e368](https://github.com/bcit-tlu/hriv/commit/c64e368b96194791145fad5ee1bd55124a034973))
+
+
+### Bug Fixes
+
+* resolve ManageCategoriesDialog sort_order namespace collision with images ([#543](https://github.com/bcit-tlu/hriv/issues/543)) ([061a328](https://github.com/bcit-tlu/hriv/commit/061a32886bd2f604ae3cee92c7ebeced9e31a0f8))
+
 ## [0.18.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.18.0...frontend-v0.18.1) (2026-05-27)
 
 
