@@ -13,6 +13,7 @@ vi.mock("../src/api", async () => {
         deleteCategory: vi.fn(),
         updateCategory: vi.fn(),
         reorderCategories: vi.fn(),
+        reorderImages: vi.fn(),
         updateImage: vi.fn(),
     };
 });
@@ -21,6 +22,7 @@ const mockCreateCategory = vi.mocked(api.createCategory);
 const mockDeleteCategory = vi.mocked(api.deleteCategory);
 const mockUpdateCategory = vi.mocked(api.updateCategory);
 const mockReorderCategories = vi.mocked(api.reorderCategories);
+const mockReorderImages = vi.mocked(api.reorderImages);
 const mockUpdateImage = vi.mocked(api.updateImage);
 
 function makeDeps(overrides: Partial<UseCategoryActionsDeps> = {}): UseCategoryActionsDeps {
@@ -47,6 +49,7 @@ describe("useCategoryActions", () => {
         mockDeleteCategory.mockReset();
         mockUpdateCategory.mockReset();
         mockReorderCategories.mockReset();
+        mockReorderImages.mockReset();
         mockUpdateImage.mockReset();
     });
 
@@ -264,7 +267,7 @@ describe("useCategoryActions", () => {
     });
 
     describe("reorderCategoriesInline", () => {
-        it("calls reorder API and reloads", async () => {
+        it("calls reorder API without reloading (caller handles reload)", async () => {
             const deps = makeDeps();
             mockReorderCategories.mockResolvedValue(undefined);
             const items = [{ id: 1, parent_id: null, sort_order: 0 }];
@@ -275,16 +278,49 @@ describe("useCategoryActions", () => {
             });
 
             expect(mockReorderCategories).toHaveBeenCalledWith(items);
-            expect(deps.loadCategories).toHaveBeenCalled();
+            expect(deps.loadCategories).not.toHaveBeenCalled();
         });
 
-        it("shows error snack on failure", async () => {
+        it("shows error snack and re-throws on failure", async () => {
             const deps = makeDeps();
             mockReorderCategories.mockRejectedValue(new Error("fail"));
             const { result } = renderHook(() => useCategoryActions(deps));
 
             await act(async () => {
-                await result.current.reorderCategoriesInline([]);
+                await expect(
+                    result.current.reorderCategoriesInline([]),
+                ).rejects.toThrow("fail");
+            });
+
+            expect(deps.setErrorSnack).toHaveBeenCalled();
+        });
+    });
+
+    describe("reorderImagesInline", () => {
+        it("calls reorder API without reloading (caller handles reload)", async () => {
+            const deps = makeDeps();
+            mockReorderImages.mockResolvedValue(undefined);
+            const items = [{ id: 10, sort_order: 0 }, { id: 11, sort_order: 1 }];
+            const { result } = renderHook(() => useCategoryActions(deps));
+
+            await act(async () => {
+                await result.current.reorderImagesInline(items);
+            });
+
+            expect(mockReorderImages).toHaveBeenCalledWith(items);
+            expect(deps.loadCategories).not.toHaveBeenCalled();
+            expect(deps.loadUncategorizedImages).not.toHaveBeenCalled();
+        });
+
+        it("shows error snack and re-throws on failure", async () => {
+            const deps = makeDeps();
+            mockReorderImages.mockRejectedValue(new Error("reorder failed"));
+            const { result } = renderHook(() => useCategoryActions(deps));
+
+            await act(async () => {
+                await expect(
+                    result.current.reorderImagesInline([]),
+                ).rejects.toThrow("reorder failed");
             });
 
             expect(deps.setErrorSnack).toHaveBeenCalled();

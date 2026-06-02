@@ -4,6 +4,7 @@ import {
     deleteCategory as apiDeleteCategory,
     updateCategory as apiUpdateCategory,
     reorderCategories as apiReorderCategories,
+    reorderImages as apiReorderImages,
     updateImage as apiUpdateImage,
     userMessage,
 } from "./api";
@@ -164,13 +165,26 @@ export function useCategoryActions({
         ) => {
             try {
                 await apiReorderCategories(items);
-                await loadCategories();
             } catch (err) {
                 console.error("Failed to reorder categories", err);
                 setErrorSnack(userMessage(err, "Failed to reorder categories."));
+                throw err;
             }
         },
-        [loadCategories, setErrorSnack],
+        [setErrorSnack],
+    );
+
+    const reorderImagesInline = useCallback(
+        async (items: Array<{ id: number; sort_order: number }>) => {
+            try {
+                await apiReorderImages(items);
+            } catch (err) {
+                console.error("Failed to reorder images", err);
+                setErrorSnack(userMessage(err, "Failed to reorder images."));
+                throw err;
+            }
+        },
+        [setErrorSnack],
     );
 
     const handleMoveCategory = useCallback(
@@ -332,6 +346,7 @@ export function useCategoryActions({
         editCategoryInline,
         toggleCategoryVisibility,
         reorderCategoriesInline,
+        reorderImagesInline,
         handleMoveCategory,
         handleRequestMoveCategory,
         handleDropImageOnCategory,

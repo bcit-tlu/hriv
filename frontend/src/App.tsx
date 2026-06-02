@@ -545,6 +545,7 @@ export default function App() {
         editCategoryInline,
         toggleCategoryVisibility,
         reorderCategoriesInline,
+        reorderImagesInline,
         handleMoveCategory,
         handleRequestMoveCategory,
         handleDropImageOnCategory,
@@ -1534,11 +1535,14 @@ export default function App() {
                 open={dialogOpen}
                 onClose={() => setDialogOpen(false)}
                 categories={categories}
+                uncategorizedImages={uncategorizedImages}
                 onAddCategory={addCategoryInline}
                 onDeleteCategory={deleteCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
                 onReorderCategories={reorderCategoriesInline}
+                onReorderImages={reorderImagesInline}
+                onReorderComplete={handleReorderComplete}
                 programs={programs}
             />
 
