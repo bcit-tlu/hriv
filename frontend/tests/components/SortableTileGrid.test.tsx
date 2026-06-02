@@ -152,6 +152,7 @@ describe("SortableTileGrid", () => {
 
         render(
             <SortableTileGrid
+                allCategories={[]}
                 currentCategories={[cat]}
                 currentImages={[img]}
                 uncategorizedImages={[]}
@@ -178,6 +179,7 @@ describe("SortableTileGrid", () => {
 
         render(
             <SortableTileGrid
+                allCategories={[]}
                 currentCategories={[]}
                 currentImages={[]}
                 uncategorizedImages={[uncat]}
@@ -204,6 +206,7 @@ describe("SortableTileGrid", () => {
 
         render(
             <SortableTileGrid
+                allCategories={[]}
                 currentCategories={[]}
                 currentImages={[]}
                 uncategorizedImages={[uncat]}
@@ -231,6 +234,7 @@ describe("SortableTileGrid", () => {
 
         render(
             <SortableTileGrid
+                allCategories={[]}
                 currentCategories={[cat]}
                 currentImages={[]}
                 uncategorizedImages={[]}
@@ -261,6 +265,7 @@ describe("SortableTileGrid", () => {
 
         render(
             <SortableTileGrid
+                allCategories={[]}
                 currentCategories={[cat]}
                 currentImages={[]}
                 uncategorizedImages={[]}
@@ -285,6 +290,7 @@ describe("SortableTileGrid", () => {
     it("renders FileDropZone for editors when drag active", () => {
         render(
             <SortableTileGrid
+                allCategories={[]}
                 currentCategories={[]}
                 currentImages={[]}
                 uncategorizedImages={[]}
