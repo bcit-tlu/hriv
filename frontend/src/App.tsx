@@ -1542,6 +1542,7 @@ export default function App() {
                 onToggleVisibility={toggleCategoryVisibility}
                 onReorderCategories={reorderCategoriesInline}
                 onReorderImages={reorderImagesInline}
+                onReorderComplete={handleReorderComplete}
                 programs={programs}
             />
 

@@ -267,7 +267,7 @@ describe("useCategoryActions", () => {
     });
 
     describe("reorderCategoriesInline", () => {
-        it("calls reorder API and reloads", async () => {
+        it("calls reorder API without reloading (caller handles reload)", async () => {
             const deps = makeDeps();
             mockReorderCategories.mockResolvedValue(undefined);
             const items = [{ id: 1, parent_id: null, sort_order: 0 }];
@@ -278,7 +278,7 @@ describe("useCategoryActions", () => {
             });
 
             expect(mockReorderCategories).toHaveBeenCalledWith(items);
-            expect(deps.loadCategories).toHaveBeenCalled();
+            expect(deps.loadCategories).not.toHaveBeenCalled();
         });
 
         it("shows error snack and re-throws on failure", async () => {
@@ -297,7 +297,7 @@ describe("useCategoryActions", () => {
     });
 
     describe("reorderImagesInline", () => {
-        it("calls reorder API, reloads categories and uncategorized images", async () => {
+        it("calls reorder API without reloading (caller handles reload)", async () => {
             const deps = makeDeps();
             mockReorderImages.mockResolvedValue(undefined);
             const items = [{ id: 10, sort_order: 0 }, { id: 11, sort_order: 1 }];
@@ -308,8 +308,8 @@ describe("useCategoryActions", () => {
             });
 
             expect(mockReorderImages).toHaveBeenCalledWith(items);
-            expect(deps.loadCategories).toHaveBeenCalled();
-            expect(deps.loadUncategorizedImages).toHaveBeenCalled();
+            expect(deps.loadCategories).not.toHaveBeenCalled();
+            expect(deps.loadUncategorizedImages).not.toHaveBeenCalled();
         });
 
         it("shows error snack and re-throws on failure", async () => {

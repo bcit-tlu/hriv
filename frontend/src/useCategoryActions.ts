@@ -165,29 +165,26 @@ export function useCategoryActions({
         ) => {
             try {
                 await apiReorderCategories(items);
-                await loadCategories();
             } catch (err) {
                 console.error("Failed to reorder categories", err);
                 setErrorSnack(userMessage(err, "Failed to reorder categories."));
                 throw err;
             }
         },
-        [loadCategories, setErrorSnack],
+        [setErrorSnack],
     );
 
     const reorderImagesInline = useCallback(
         async (items: Array<{ id: number; sort_order: number }>) => {
             try {
                 await apiReorderImages(items);
-                await loadCategories();
-                loadUncategorizedImages();
             } catch (err) {
                 console.error("Failed to reorder images", err);
                 setErrorSnack(userMessage(err, "Failed to reorder images."));
                 throw err;
             }
         },
-        [loadCategories, loadUncategorizedImages, setErrorSnack],
+        [setErrorSnack],
     );
 
     const handleMoveCategory = useCallback(
