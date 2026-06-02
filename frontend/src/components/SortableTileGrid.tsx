@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
-import { alpha } from "@mui/material/styles";
 import DriveFileMoveIcon from "@mui/icons-material/DriveFileMove";
 import {
     DragDropProvider,
@@ -143,8 +142,7 @@ function DroppableCategoryZone({
                         flexDirection: "column",
                         alignItems: "center",
                         justifyContent: "center",
-                        bgcolor: (theme) =>
-                            alpha(theme.palette.background.paper, 0.82),
+                        bgcolor: "background.paper",
                         borderRadius: "inherit",
                         pointerEvents: "none",
                         gap: 0.5,

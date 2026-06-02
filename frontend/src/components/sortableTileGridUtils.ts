@@ -60,11 +60,15 @@ export function createGapOnlyClosestCenter(
         const { x, y } = input.dragOperation.position.current;
         for (const el of dropZoneElements) {
             const rect = el.getBoundingClientRect();
+            // Inset the hit-test rect by ~5% on each side so the outer
+            // 5% fringe of a category card belongs to the reorder zone.
+            const insetX = rect.width * 0.05;
+            const insetY = rect.height * 0.05;
             if (
-                x >= rect.left &&
-                x <= rect.right &&
-                y >= rect.top &&
-                y <= rect.bottom
+                x >= rect.left + insetX &&
+                x <= rect.right - insetX &&
+                y >= rect.top + insetY &&
+                y <= rect.bottom - insetY
             ) {
                 return null;
             }
