@@ -46,6 +46,7 @@ function SortableItem({ id, index, disabled, children }: SortableItemProps) {
         disabled,
         type: "tile",
         collisionDetector: pointerIntersection,
+        collisionPriority: CollisionPriority.Low,
     });
 
     return (
