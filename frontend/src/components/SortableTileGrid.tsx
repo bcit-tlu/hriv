@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
+import { alpha } from "@mui/material/styles";
 import DriveFileMoveIcon from "@mui/icons-material/DriveFileMove";
 import {
     DndContext,
@@ -96,6 +97,8 @@ function DroppableCategoryZone({
     return (
         <Box
             ref={setNodeRef}
+            role="region"
+            aria-label="Drop into category"
             sx={{
                 position: "relative",
                 outline: "3px dashed",
@@ -117,7 +120,8 @@ function DroppableCategoryZone({
                         flexDirection: "column",
                         alignItems: "center",
                         justifyContent: "center",
-                        bgcolor: "rgba(255, 255, 255, 0.82)",
+                        bgcolor: (theme) =>
+                            alpha(theme.palette.background.paper, 0.82),
                         borderRadius: "inherit",
                         pointerEvents: "none",
                         gap: 0.5,
