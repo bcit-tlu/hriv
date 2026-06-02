@@ -237,7 +237,6 @@ export default function SortableTileGrid({
     onToggleCategoryVisibility,
     onEditCategoryName,
     onDropImageOnCategory,
-    onDropCategoryOnCategory,
     onDropFilesOnCategory,
     onImageClick,
     onEditImageDetails,
