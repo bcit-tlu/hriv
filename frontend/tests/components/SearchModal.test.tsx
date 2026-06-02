@@ -57,6 +57,7 @@ const testCategory: Category = {
     ],
     programIds: [1],
     status: null,
+    sortOrder: 0,
     cardImageId: null,
     metadataExtra: null,
 };

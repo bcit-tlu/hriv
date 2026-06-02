@@ -40,6 +40,7 @@ export function apiTreeToCategory(node: ApiCategoryTree): Category {
         images: node.images.map(apiImageToItem),
         programIds: node.program_ids ?? [],
         status: node.status,
+        sortOrder: node.sort_order,
         cardImageId:
             typeof meta?.card_image_id === "number" ? meta.card_image_id : null,
         metadataExtra: meta ?? null,

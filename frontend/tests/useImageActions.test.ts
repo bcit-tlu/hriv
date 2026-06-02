@@ -42,6 +42,7 @@ function makeCategory(overrides: Partial<Category> = {}): Category {
         images: [],
         programIds: [],
         status: "active",
+        sortOrder: 0,
         cardImageId: null,
         metadataExtra: null,
         ...overrides,

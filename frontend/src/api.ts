@@ -114,6 +114,7 @@ export interface ApiCategory {
   parent_id: number | null
   program_ids: number[]
   status: string | null
+  sort_order: number
   metadata_extra: Record<string, unknown> | null
   created_at: string
   updated_at: string
