@@ -11,6 +11,7 @@ import {
 } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { arrayMove } from "@dnd-kit/helpers";
+import { pointerIntersection } from "@dnd-kit/collision";
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { PointerActivationConstraints } from "@dnd-kit/dom";
 import type { Draggable } from "@dnd-kit/abstract";
@@ -23,15 +24,11 @@ import {
     buildTileItems,
     tileId,
     DROP_PREFIX,
-    DROP_ZONE_INSET,
     collectDescendantIds,
     findCategory,
     createGapOnlyClosestCenter,
-    createInsetPointerIntersection,
 } from "./sortableTileGridUtils";
 import type { TileItem } from "./sortableTileGridUtils";
-
-const dropZoneCollision = createInsetPointerIntersection(DROP_ZONE_INSET);
 
 // ── Sortable wrapper ────────────────────────────────────────
 
@@ -70,11 +67,11 @@ function SortableItem({ id, index, disabled, collisionDetector, children }: Sort
 }
 
 // ── Droppable category zone (for move-into-category) ─────────
-// Per-droppable collision: inset pointerIntersection activates
-// only within the inner rect (shrunk by DROP_ZONE_INSET on each
-// side). The outer fringe belongs to the reorder zone.
+// Per-droppable collision: pointerIntersection activates when the
+// pointer is inside the full category tile rect.
 // CollisionPriority.High ensures move wins over sortable reorder
-// when the pointer is inside the inset rect of a category tile.
+// whenever the pointer is inside a category tile. Reorder only
+// triggers in the gap between tiles (where no drop zone fires).
 
 interface DroppableCategoryZoneProps {
     categoryId: number;
@@ -107,7 +104,7 @@ function DroppableCategoryZone({
     const { ref: droppableRef, isDropTarget } = useDroppable({
         id: `${DROP_PREFIX}${categoryId}`,
         disabled,
-        collisionDetector: dropZoneCollision,
+        collisionDetector: pointerIntersection,
         collisionPriority: CollisionPriority.High,
         accept: acceptFilter,
     });
