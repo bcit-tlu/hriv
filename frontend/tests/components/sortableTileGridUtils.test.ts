@@ -212,6 +212,69 @@ describe("moveOrReorder", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Reorder edge band (Phase 2) — delayed reorder activation
+// ---------------------------------------------------------------------------
+
+describe("reorder edge band (Phase 2)", () => {
+    beforeEach(() => {
+        mockClosestCenter.mockReset();
+    });
+
+    // A 100×100 sortable tile at (200,0). Edge bands: 0-25% and 75-100%.
+    const sortableTile = makeDroppable("img-20", { left: 200, top: 0, width: 100, height: 100 });
+
+    it("triggers reorder when pointer is in outer 25% edge of sortable tile", () => {
+        // x=210 → 10% from left edge → in the left edge band (0-25%)
+        const result = moveOrReorder(
+            makeArgs("img-10", { x: 210, y: 50 }, [sortableTile]),
+        );
+        expect(result).toEqual([{ id: "img-20" }]);
+        expect(mockClosestCenter).not.toHaveBeenCalled();
+    });
+
+    it("triggers reorder when pointer is in right edge band", () => {
+        // x=290 → 90% from left → in the right edge band (75-100%)
+        const result = moveOrReorder(
+            makeArgs("img-10", { x: 290, y: 50 }, [sortableTile]),
+        );
+        expect(result).toEqual([{ id: "img-20" }]);
+        expect(mockClosestCenter).not.toHaveBeenCalled();
+    });
+
+    it("returns empty when pointer is in center dead zone of sortable tile", () => {
+        // x=250, y=50 → center of tile → inner 50% dead zone
+        const result = moveOrReorder(
+            makeArgs("img-10", { x: 250, y: 50 }, [sortableTile]),
+        );
+        expect(result).toEqual([]);
+        expect(mockClosestCenter).not.toHaveBeenCalled();
+    });
+
+    it("falls back to closestCenter when pointer is in gap (not over any tile)", () => {
+        const sortableHit = collision("img-20");
+        mockClosestCenter.mockReturnValue([sortableHit]);
+
+        // x=190 → between tiles, not over sortableTile (starts at 200)
+        const result = moveOrReorder(
+            makeArgs("img-10", { x: 190, y: 50 }, [sortableTile]),
+        );
+        expect(result).toEqual([sortableHit]);
+    });
+
+    it("move zone (Phase 1) takes priority over reorder edge band (Phase 2)", () => {
+        const catZone = makeDroppable("drop-cat-5", { left: 200, top: 0, width: 100, height: 100 });
+
+        // x=250, y=50 → center of both the drop zone and sortable tile
+        // Phase 1 wins (move into category)
+        const result = moveOrReorder(
+            makeArgs("img-10", { x: 250, y: 50 }, [catZone, sortableTile]),
+        );
+        expect(result).toEqual([{ id: "drop-cat-5" }]);
+        expect(mockClosestCenter).not.toHaveBeenCalled();
+    });
+});
+
+// ---------------------------------------------------------------------------
 // createMoveOrReorder — ancestor-cycle prevention
 // ---------------------------------------------------------------------------
 
