@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.18.1...backend-v0.19.0) (2026-06-02)
+
+
+### Features
+
+* add sort_order to images for ordering/placement support ([#531](https://github.com/bcit-tlu/hriv/issues/531)) ([453e291](https://github.com/bcit-tlu/hriv/commit/453e291f55b654603d66191484426f3a078d51a8))
+
 ## [0.18.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.18.0...backend-v0.18.1) (2026-05-27)
 
 
