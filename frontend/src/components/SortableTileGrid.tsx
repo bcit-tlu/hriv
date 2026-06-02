@@ -435,16 +435,21 @@ export default function SortableTileGrid({
         />
     );
 
+    const sensors = useMemo(
+        () => [
+            PointerSensor.configure({
+                activationConstraints: [
+                    new PointerActivationConstraints.Distance({ value: 5 }),
+                ],
+            }),
+            KeyboardSensor,
+        ],
+        [],
+    );
+
     return (
         <DragDropProvider
-            sensors={[
-                PointerSensor.configure({
-                    activationConstraints: [
-                        new PointerActivationConstraints.Distance({ value: 5 }),
-                    ],
-                }),
-                KeyboardSensor,
-            ]}
+            sensors={sensors}
             onDragStart={(event) => {
                 const sourceId = String(event.operation.source?.id);
                 const item = items.find((i) => tileId(i) === sourceId);
