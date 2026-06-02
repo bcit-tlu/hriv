@@ -12,7 +12,7 @@ import {
 } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { arrayMove } from "@dnd-kit/helpers";
-import { directionBiased, pointerIntersection } from "@dnd-kit/collision";
+import { pointerIntersection } from "@dnd-kit/collision";
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { PointerActivationConstraints } from "@dnd-kit/dom";
 import type { Draggable } from "@dnd-kit/abstract";
@@ -31,8 +31,6 @@ import {
 import type { TileItem } from "./sortableTileGridUtils";
 
 // ── Sortable wrapper ────────────────────────────────────────
-// Per-droppable collision: directionBiased prevents jitter by
-// only detecting collisions in the drag direction.
 
 interface SortableItemProps {
     id: string;
@@ -47,7 +45,7 @@ function SortableItem({ id, index, disabled, children }: SortableItemProps) {
         index,
         disabled,
         type: "tile",
-        collisionDetector: directionBiased,
+        collisionDetector: pointerIntersection,
     });
 
     return (
