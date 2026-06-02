@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useOverlayPersistence } from "../src/useOverlayPersistence";
 import type { UseOverlayPersistenceDeps } from "../src/useOverlayPersistence";
-import type { ImageItem } from "../src/types";
 import type { OverlayRect } from "../src/components/imageViewerUtils";
 import * as api from "../src/api";
+import { makeImage } from "./helpers/fixtures";
 
 vi.mock("../src/api", async () => {
     const actual = await vi.importActual<typeof api>("../src/api");
@@ -15,22 +15,6 @@ vi.mock("../src/api", async () => {
 });
 
 const mockUpdateImage = vi.mocked(api.updateImage);
-
-function makeImage(
-    id: number,
-    overrides: Partial<ImageItem> = {},
-): ImageItem {
-    return {
-        id,
-        name: `img-${id}`,
-        thumb: `/thumb/${id}.jpg`,
-        tileSources: `/tiles/${id}`,
-        active: true,
-        sortOrder: 0,
-        version: 1,
-        ...overrides,
-    };
-}
 
 function makeDeps(
     overrides: Partial<UseOverlayPersistenceDeps> = {},
@@ -68,21 +52,21 @@ describe("useOverlayPersistence", () => {
         });
 
         it("returns undefined when metadataExtra is null", () => {
-            const image = makeImage(1, { metadataExtra: null });
+            const image = makeImage({ id: 1, metadataExtra: null });
             const deps = makeDeps({ selectedImage: image });
             const { result } = renderHook(() => useOverlayPersistence(deps));
             expect(result.current.selectedImageMeasurement).toBeUndefined();
         });
 
         it("returns undefined when no measurement fields present", () => {
-            const image = makeImage(1, { metadataExtra: { other: "data" } });
+            const image = makeImage({ id: 1, metadataExtra: { other: "data" } });
             const deps = makeDeps({ selectedImage: image });
             const { result } = renderHook(() => useOverlayPersistence(deps));
             expect(result.current.selectedImageMeasurement).toBeUndefined();
         });
 
         it("extracts scale and unit from metadata", () => {
-            const image = makeImage(1, {
+            const image = makeImage({ id: 1,
                 metadataExtra: { measurement_scale: 2.5, measurement_unit: "mm" },
             });
             const deps = makeDeps({ selectedImage: image });
@@ -94,7 +78,7 @@ describe("useOverlayPersistence", () => {
         });
 
         it("extracts scale only when unit is missing", () => {
-            const image = makeImage(1, {
+            const image = makeImage({ id: 1,
                 metadataExtra: { measurement_scale: 10 },
             });
             const deps = makeDeps({ selectedImage: image });
@@ -106,7 +90,7 @@ describe("useOverlayPersistence", () => {
         });
 
         it("extracts unit only when scale is missing", () => {
-            const image = makeImage(1, {
+            const image = makeImage({ id: 1,
                 metadataExtra: { measurement_unit: "um" },
             });
             const deps = makeDeps({ selectedImage: image });
@@ -120,7 +104,7 @@ describe("useOverlayPersistence", () => {
 
     describe("handleLockOverlays", () => {
         it("flushes canvas annotations before persisting", async () => {
-            const image = makeImage(1, { version: 3 });
+            const image = makeImage({ id: 1, version: 3 });
             const flushCanvasAnnotations = vi.fn().mockResolvedValue(undefined);
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
@@ -150,7 +134,7 @@ describe("useOverlayPersistence", () => {
         });
 
         it("persists overlays and engages lock", async () => {
-            const image = makeImage(1, { version: 5 });
+            const image = makeImage({ id: 1, version: 5 });
             const rects = [makeRect({ x: 0.5 })];
             const latestVersionRef = { current: 5 };
             const latestMetadataRef: { current: Record<string, unknown> | null | undefined } = { current: undefined };
@@ -202,7 +186,7 @@ describe("useOverlayPersistence", () => {
         });
 
         it("calls setErrorSnack on failure", async () => {
-            const image = makeImage(1);
+            const image = makeImage({ id: 1 });
             mockUpdateImage.mockRejectedValue(new Error("Network error"));
             const setErrorSnack = vi.fn();
             const deps = makeDeps({ selectedImage: image, setErrorSnack });
@@ -233,7 +217,7 @@ describe("useOverlayPersistence", () => {
 
     describe("handleClearOverlays", () => {
         it("flushes canvas annotations and clears overlays from metadata", async () => {
-            const image = makeImage(1, { version: 7 });
+            const image = makeImage({ id: 1, version: 7 });
             const flushCanvasAnnotations = vi.fn().mockResolvedValue(undefined);
             const latestVersionRef = { current: 7 };
             const latestMetadataRef: { current: Record<string, unknown> | null | undefined } = { current: undefined };
@@ -284,7 +268,7 @@ describe("useOverlayPersistence", () => {
         });
 
         it("calls setErrorSnack on failure", async () => {
-            const image = makeImage(1);
+            const image = makeImage({ id: 1 });
             mockUpdateImage.mockRejectedValue(new Error("Server error"));
             const setErrorSnack = vi.fn();
             const deps = makeDeps({ selectedImage: image, setErrorSnack });
@@ -300,7 +284,7 @@ describe("useOverlayPersistence", () => {
 
     describe("version tracking across operations", () => {
         it("uses latestVersionRef for lock after a prior save updated it", async () => {
-            const image = makeImage(1, { version: 1 });
+            const image = makeImage({ id: 1, version: 1 });
             const latestVersionRef = { current: 5 };
             const latestMetadataRef: { current: Record<string, unknown> | null | undefined } = { current: {} };
             mockUpdateImage.mockResolvedValue({
@@ -329,7 +313,7 @@ describe("useOverlayPersistence", () => {
         });
 
         it("falls back to selectedImage.version when latestVersionRef is 0", async () => {
-            const image = makeImage(1, { version: 3 });
+            const image = makeImage({ id: 1, version: 3 });
             const latestVersionRef = { current: 0 };
             const latestMetadataRef: { current: Record<string, unknown> | null | undefined } = { current: undefined };
             mockUpdateImage.mockResolvedValue({

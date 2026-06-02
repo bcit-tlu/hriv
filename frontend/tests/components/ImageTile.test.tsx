@@ -14,25 +14,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ImageTile from "../../src/components/ImageTile";
-import type { ImageItem } from "../../src/types";
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeImage(overrides: Partial<ImageItem> = {}): ImageItem {
-    return {
-        id: 1,
-        name: "Test Image",
-        thumb: "/thumbs/test.jpg",
-        tileSources: "/tiles/test.dzi",
-        programIds: [],
-        active: true,
-        sortOrder: 0,
-        version: 1,
-        ...overrides,
-    };
-}
+import { makeImage } from "../helpers/fixtures";
 
 // ---------------------------------------------------------------------------
 // Tests

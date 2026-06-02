@@ -2,40 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useShareableImageState } from "../src/useShareableImageState";
 import type { UseShareableImageStateDeps } from "../src/useShareableImageState";
-import type { Category, ImageItem } from "../src/types";
-
-function makeImage(
-    id: number,
-    overrides: Partial<ImageItem> = {},
-): ImageItem {
-    return {
-        id,
-        name: `img-${id}`,
-        thumb: `/thumb/${id}.jpg`,
-        tileSources: `/tiles/${id}`,
-        active: true,
-        sortOrder: 0,
-        version: 1,
-        ...overrides,
-    };
-}
-
-function makeCategory(
-    id: number,
-    label: string,
-    children: Category[] = [],
-    images: ImageItem[] = [],
-): Category {
-    return {
-        id,
-        label,
-        parentId: null,
-        children,
-        images,
-        programIds: [],
-        sortOrder: 0,
-    };
-}
+import { makeCategory, makeImage } from "./helpers/fixtures";
 
 function makeDeps(overrides: Partial<UseShareableImageStateDeps> = {}): UseShareableImageStateDeps {
     return {
@@ -187,7 +154,8 @@ describe("useShareableImageState", () => {
         });
 
         it("derives locked overlays from selectedImage metadata", () => {
-            const img = makeImage(1, {
+            const img = makeImage({
+                id: 1,
                 metadataExtra: {
                     locked_overlays: [
                         { x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
@@ -204,7 +172,8 @@ describe("useShareableImageState", () => {
         });
 
         it("filters out malformed overlay entries", () => {
-            const img = makeImage(1, {
+            const img = makeImage({
+                id: 1,
                 metadataExtra: {
                     locked_overlays: [
                         { x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
@@ -220,7 +189,8 @@ describe("useShareableImageState", () => {
         });
 
         it("returns undefined when locked_overlays is empty", () => {
-            const img = makeImage(1, {
+            const img = makeImage({
+                id: 1,
                 metadataExtra: { locked_overlays: [] },
             });
             const { result } = renderHook(() =>
@@ -232,7 +202,8 @@ describe("useShareableImageState", () => {
 
     describe("lock auto-engage", () => {
         it("engages lock when image has locked overlays", () => {
-            const img = makeImage(1, {
+            const img = makeImage({
+                id: 1,
                 metadataExtra: {
                     locked_overlays: [{ x: 0, y: 0, w: 1, h: 1 }],
                 },
@@ -244,7 +215,7 @@ describe("useShareableImageState", () => {
         });
 
         it("disengages lock when image has no locked overlays", () => {
-            const img = makeImage(1, { metadataExtra: {} });
+            const img = makeImage({ id: 1, metadataExtra: {} });
             const { result } = renderHook(() =>
                 useShareableImageState(makeDeps({ selectedImage: img })),
             );
@@ -260,8 +231,8 @@ describe("useShareableImageState", () => {
                 "/?image=42&zoom=2.5&x=0.3&y=0.7",
             );
             const setSelectedImage = vi.fn();
-            const img = makeImage(42);
-            const cat = makeCategory(1, "Root", [], [img]);
+            const img = makeImage({ id: 42 });
+            const cat = makeCategory({ id: 1, label: "Root", images: [img] });
             const { result } = renderHook(() =>
                 useShareableImageState(
                     makeDeps({
@@ -282,8 +253,8 @@ describe("useShareableImageState", () => {
                 "/?image=42&ov0=0.1,0.2,0.3,0.4",
             );
             const setSelectedImage = vi.fn();
-            const img = makeImage(42);
-            const cat = makeCategory(1, "Root", [], [img]);
+            const img = makeImage({ id: 42 });
+            const cat = makeCategory({ id: 1, label: "Root", images: [img] });
             const { result } = renderHook(() =>
                 useShareableImageState(
                     makeDeps({
@@ -301,8 +272,8 @@ describe("useShareableImageState", () => {
         it("parses category path from URL when no image param", () => {
             window.history.replaceState(null, "", "/?cat=1,2");
             const setPath = vi.fn();
-            const child = makeCategory(2, "Child");
-            const root = makeCategory(1, "Root", [child]);
+            const child = makeCategory({ id: 2, label: "Child" });
+            const root = makeCategory({ id: 1, label: "Root", children: [child] });
             renderHook(() =>
                 useShareableImageState(
                     makeDeps({
@@ -320,7 +291,7 @@ describe("useShareableImageState", () => {
         it("resolves image from uncategorized when categories load", () => {
             window.history.replaceState(null, "", "/?image=5");
             const setSelectedImage = vi.fn();
-            const img = makeImage(5);
+            const img = makeImage({ id: 5 });
             renderHook(() =>
                 useShareableImageState(
                     makeDeps({
@@ -341,7 +312,7 @@ describe("useShareableImageState", () => {
                 useShareableImageState(
                     makeDeps({
                         setSelectedImage,
-                        categories: [makeCategory(1, "Root")],
+                        categories: [makeCategory({ id: 1, label: "Root" })],
                         uncategorizedLoaded: { current: true },
                         categoriesLoading: false,
                     }),
@@ -354,8 +325,8 @@ describe("useShareableImageState", () => {
 
     describe("URL sync effect", () => {
         it("syncs image and viewport to URL params", () => {
-            const img = makeImage(42);
-            const cat = makeCategory(1, "Root", [], [img]);
+            const img = makeImage({ id: 42 });
+            const cat = makeCategory({ id: 1, label: "Root", images: [img] });
             const { result } = renderHook(() =>
                 useShareableImageState(
                     makeDeps({
@@ -394,7 +365,7 @@ describe("useShareableImageState", () => {
 
         it("skips URL sync when enableUrlSync is false", () => {
             const callsBefore = replaceStateSpy.mock.calls.length;
-            const img = makeImage(42);
+            const img = makeImage({ id: 42 });
             const { result } = renderHook(() =>
                 useShareableImageState(
                     makeDeps({
@@ -484,7 +455,7 @@ describe("useShareableImageState", () => {
 
     describe("initialViewport", () => {
         it("is stable across re-renders for the same image", () => {
-            const img = makeImage(1);
+            const img = makeImage({ id: 1 });
             const { result, rerender } = renderHook(
                 (props: UseShareableImageStateDeps) =>
                     useShareableImageState(props),
@@ -505,7 +476,8 @@ describe("useShareableImageState", () => {
 
     describe("initialOverlays", () => {
         it("uses locked overlays when no URL overlays present", () => {
-            const img = makeImage(1, {
+            const img = makeImage({
+                id: 1,
                 metadataExtra: {
                     locked_overlays: [{ x: 0, y: 0, w: 0.5, h: 0.5 }],
                 },
@@ -544,8 +516,8 @@ describe("useShareableImageState", () => {
                 "/?image=42&zoom=1&x=0.5&y=0.5&rotation=90.0",
             );
             const setSelectedImage = vi.fn();
-            const img = makeImage(42);
-            const cat = makeCategory(1, "Root", [], [img]);
+            const img = makeImage({ id: 42 });
+            const cat = makeCategory({ id: 1, label: "Root", images: [img] });
             renderHook(() =>
                 useShareableImageState(
                     makeDeps({
