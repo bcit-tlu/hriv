@@ -53,7 +53,13 @@ function SortableItem({ id, disabled, children }: SortableItemProps) {
     };
 
     return (
-        <div ref={setNodeRef} style={style} {...listeners} {...attributes}>
+        <div
+            ref={setNodeRef}
+            style={style}
+            onDragStart={(e) => e.preventDefault()}
+            {...listeners}
+            {...attributes}
+        >
             {children}
         </div>
     );
