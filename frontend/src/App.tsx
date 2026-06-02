@@ -1454,9 +1454,6 @@ export default function App() {
                                 onDropImageOnCategory={
                                     handleDropImageOnCategory
                                 }
-                                onDropCategoryOnCategory={
-                                    handleDropCategoryOnCategory
-                                }
                                 onDropFilesOnCategory={
                                     handleFilesDropOnCategory
                                 }

@@ -176,7 +176,11 @@ const moveOrReorder: CollisionDetection = (args) => {
         if (droppableHit) return [droppableHit];
     }
 
-    return closestCenter(args);
+    // Filter droppable zone IDs from closestCenter so they can't
+    // accidentally win the fallback (their rects overlap sortable items).
+    return closestCenter(args).filter(
+        (c) => !String(c.id).startsWith(DROP_PREFIX),
+    );
 };
 
 // ── Main component ──────────────────────────────────────────
@@ -198,10 +202,6 @@ interface SortableTileGridProps {
     onToggleCategoryVisibility?: (categoryId: number) => Promise<void>;
     onEditCategoryName?: (cat: Category) => void;
     onDropImageOnCategory?: (imageId: number, categoryId: number) => void;
-    onDropCategoryOnCategory?: (
-        draggedId: number,
-        targetId: number,
-    ) => void;
     onDropFilesOnCategory?: (categoryId: number, files: File[]) => void;
 
     // ImageTile callbacks
