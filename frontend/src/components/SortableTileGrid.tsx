@@ -226,9 +226,6 @@ export default function SortableTileGrid({
 
             const reordered = arrayMove(items, oldIndex, newIndex);
 
-            // Capture the current key so we can detect navigation during await
-            const keyAtDragStart = prevKeyRef.current;
-
             // Optimistically update local state
             setItems(reordered);
 
