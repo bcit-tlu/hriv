@@ -21,11 +21,9 @@ interface ImageTileProps {
   onToggleVisibility?: (imageId: number) => Promise<void>
   /** Enable HTML5 drag for this tile (editors only). */
   draggable?: boolean
-  /** Optional drag handle element for @dnd-kit sortable reorder. */
-  dragHandleSlot?: React.ReactNode
 }
 
-export default function ImageTile({ image, onClick, onEditDetails, onToggleVisibility, draggable = false, dragHandleSlot }: ImageTileProps) {
+export default function ImageTile({ image, onClick, onEditDetails, onToggleVisibility, draggable = false }: ImageTileProps) {
   const [dragging, setDragging] = useState(false)
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
@@ -56,21 +54,6 @@ export default function ImageTile({ image, onClick, onEditDetails, onToggleVisib
           gap: 0.5,
         }}
       >
-        {dragHandleSlot && (
-          <Box
-            sx={{
-              bgcolor: 'rgba(0,0,0,0.25)',
-              borderRadius: '50%',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: 'white',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {dragHandleSlot}
-          </Box>
-        )}
         {onToggleVisibility && (
           <Tooltip title={image.active ? 'Hide from students' : 'Show to students'}>
             <IconButton

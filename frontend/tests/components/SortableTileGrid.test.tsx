@@ -183,7 +183,7 @@ describe("SortableTileGrid", () => {
         ).not.toBeInTheDocument();
     });
 
-    it("renders drag handles for editors", () => {
+    it("enables sortable drag for editors", () => {
         const cat = makeCategory({
             id: 1,
             label: "Architecture",
@@ -205,12 +205,15 @@ describe("SortableTileGrid", () => {
             />,
         );
 
-        expect(
-            screen.getByLabelText("Drag to reorder"),
-        ).toBeInTheDocument();
+        const sortableItems = screen.queryAllByRole("button");
+        const sortableItem = sortableItems.find(
+            (el) => el.getAttribute("aria-roledescription") === "sortable",
+        );
+        expect(sortableItem).toBeDefined();
+        expect(sortableItem).not.toHaveAttribute("aria-disabled", "true");
     });
 
-    it("does not render drag handles for non-editors", () => {
+    it("disables sortable drag for non-editors", () => {
         const cat = makeCategory({
             id: 1,
             label: "Architecture",
@@ -232,9 +235,12 @@ describe("SortableTileGrid", () => {
             />,
         );
 
-        expect(
-            screen.queryByLabelText("Drag to reorder"),
-        ).not.toBeInTheDocument();
+        const sortableItems = screen.queryAllByRole("button");
+        const sortableWrapper = sortableItems.find(
+            (el) => el.getAttribute("aria-roledescription") === "sortable",
+        );
+        expect(sortableWrapper).toBeDefined();
+        expect(sortableWrapper).toHaveAttribute("aria-disabled", "true");
     });
 
     it("renders FileDropZone for editors when drag active", () => {

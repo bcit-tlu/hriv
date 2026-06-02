@@ -8,12 +8,7 @@ import {
     useSensor,
     useSensors,
 } from "@dnd-kit/core";
-import type {
-    DragStartEvent,
-    DragEndEvent,
-    DraggableAttributes,
-    DraggableSyntheticListeners,
-} from "@dnd-kit/core";
+import type { DragStartEvent, DragEndEvent } from "@dnd-kit/core";
 import {
     SortableContext,
     useSortable,
@@ -21,9 +16,6 @@ import {
     arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
-import IconButton from "@mui/material/IconButton";
-import Tooltip from "@mui/material/Tooltip";
 import type { Category, ImageItem, Program } from "../types";
 import CategoryTile from "./CategoryTile";
 import ImageTile from "./ImageTile";
@@ -37,10 +29,7 @@ import type { TileItem } from "./sortableTileGridUtils";
 interface SortableItemProps {
     id: string;
     disabled: boolean;
-    children: (dragHandleProps: {
-        listeners: DraggableSyntheticListeners;
-        attributes: DraggableAttributes;
-    }) => React.ReactNode;
+    children: React.ReactNode;
 }
 
 function SortableItem({ id, disabled, children }: SortableItemProps) {
@@ -60,40 +49,13 @@ function SortableItem({ id, disabled, children }: SortableItemProps) {
         position: "relative",
         width: "100%",
         maxWidth: 300,
+        cursor: disabled ? undefined : "grab",
     };
 
     return (
-        <div ref={setNodeRef} style={style}>
-            {children({ listeners, attributes })}
+        <div ref={setNodeRef} style={style} {...listeners} {...attributes}>
+            {children}
         </div>
-    );
-}
-
-// ── Drag handle ─────────────────────────────────────────────
-
-interface DragHandleProps {
-    listeners: DraggableSyntheticListeners;
-    attributes: DraggableAttributes;
-}
-
-export function DragHandle({ listeners, attributes }: DragHandleProps) {
-    return (
-        <Tooltip title="Drag to reorder">
-            <IconButton
-                size="small"
-                aria-label="Drag to reorder"
-                sx={{
-                    cursor: "grab",
-                    color: "text.secondary",
-                    "&:hover": { color: "text.primary" },
-                    "&:active": { cursor: "grabbing" },
-                }}
-                {...listeners}
-                {...attributes}
-            >
-                <DragIndicatorIcon fontSize="small" />
-            </IconButton>
-        </Tooltip>
     );
 }
 
@@ -177,17 +139,21 @@ export default function SortableTileGrid({
     );
 
     const [items, setItems] = useState<TileItem[]>([]);
-    const itemsKey = useMemo(() => {
-        const catIds = currentCategories.map((c) => `${c.id}:${c.sortOrder}`).join(",");
-        const imgIds = visibleImages.map((i) => `${i.id}:${i.sortOrder}`).join(",");
-        return `${catIds}|${imgIds}`;
-    }, [currentCategories, visibleImages]);
+    const reorderInFlightRef = useRef(false);
+    const prevCatsRef = useRef<Category[] | null>(null);
+    const prevImgsRef = useRef<ImageItem[] | null>(null);
 
-    // Rebuild the sorted item list whenever the source data changes.
-    const prevKeyRef = useRef("");
-    if (prevKeyRef.current !== itemsKey) {
-        prevKeyRef.current = itemsKey;
-        setItems(buildTileItems(currentCategories, visibleImages));
+    // Rebuild the sorted item list whenever source data changes by reference,
+    // unless an optimistic reorder is in-flight (to avoid reverting the drag).
+    if (
+        prevCatsRef.current !== currentCategories ||
+        prevImgsRef.current !== visibleImages
+    ) {
+        prevCatsRef.current = currentCategories;
+        prevImgsRef.current = visibleImages;
+        if (!reorderInFlightRef.current) {
+            setItems(buildTileItems(currentCategories, visibleImages));
+        }
     }
 
     const ids = useMemo(() => items.map(tileId), [items]);
@@ -226,7 +192,8 @@ export default function SortableTileGrid({
 
             const reordered = arrayMove(items, oldIndex, newIndex);
 
-            // Optimistically update local state
+            // Optimistically update local state; guard rebuilds until API settles
+            reorderInFlightRef.current = true;
             setItems(reordered);
 
             // Compute new sort_order values (sequential from 0)
@@ -263,30 +230,28 @@ export default function SortableTileGrid({
                     promises.push(reorderImages(imgUpdates));
                 }
                 await Promise.all(promises);
+                reorderInFlightRef.current = false;
                 onReorderComplete?.();
             } catch (err) {
                 console.error("Failed to persist reorder", err);
-                setItems(items);
+                reorderInFlightRef.current = false;
+                // Revert only if no subsequent drag has changed items
+                setItems((current) =>
+                    current === reordered ? items : current,
+                );
                 onReorderError?.(err);
                 // Refresh from server to reconcile any partial persistence
                 onReorderComplete?.();
             }
         },
-        [
-            items,
-            path,
-            currentCategories,
-            visibleImages,
-            onReorderComplete,
-            onReorderError,
-        ],
+        [items, path, onReorderComplete, onReorderError],
     );
 
     const handleDragCancel = useCallback(() => {
         setActiveItem(null);
     }, []);
 
-    const renderCategoryTile = (cat: Category, dragHandleProps?: DragHandleProps) => (
+    const renderCategoryTile = (cat: Category) => (
         <CategoryTile
             category={cat}
             onClick={onCategoryClick}
@@ -303,15 +268,10 @@ export default function SortableTileGrid({
             }
             onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
             draggable={canEditContent}
-            dragHandleSlot={
-                canEditContent && dragHandleProps ? (
-                    <DragHandle {...dragHandleProps} />
-                ) : undefined
-            }
         />
     );
 
-    const renderImageTile = (img: ImageItem, dragHandleProps?: DragHandleProps) => (
+    const renderImageTile = (img: ImageItem) => (
         <ImageTile
             image={img}
             onClick={onImageClick}
@@ -320,11 +280,6 @@ export default function SortableTileGrid({
                 canEditContent ? onToggleImageVisibility : undefined
             }
             draggable={canEditContent}
-            dragHandleSlot={
-                canEditContent && dragHandleProps ? (
-                    <DragHandle {...dragHandleProps} />
-                ) : undefined
-            }
         />
     );
 
@@ -373,17 +328,11 @@ export default function SortableTileGrid({
                                 id={id}
                                 disabled={!canEditContent}
                             >
-                                {(dragHandleProps) =>
-                                    item.type === "category"
-                                        ? renderCategoryTile(
-                                              item.data,
-                                              dragHandleProps,
-                                          )
-                                        : renderImageTile(
-                                              item.data as ImageItem,
-                                              dragHandleProps,
-                                          )
-                                }
+                                {item.type === "category"
+                                    ? renderCategoryTile(item.data)
+                                    : renderImageTile(
+                                          item.data as ImageItem,
+                                      )}
                             </SortableItem>
                         );
                     })}
