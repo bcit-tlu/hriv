@@ -172,6 +172,8 @@ vi.mock("@dnd-kit/collision", () => ({
     pointerIntersection: vi.fn(() => ({ id: "mock-pointer", value: 1, type: 1, priority: 3 })),
 }));
 
+type DetectorInput = Parameters<ReturnType<typeof createGapOnlyClosestCenter>>[0];
+
 function makeCollisionInput(x: number, y: number, droppableRect?: { left: number; right: number; top: number; bottom: number; width: number; height: number }) {
     return {
         droppable: {
@@ -181,8 +183,7 @@ function makeCollisionInput(x: number, y: number, droppableRect?: { left: number
         dragOperation: {
             position: { current: { x, y } },
         },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any;
+    } as unknown as DetectorInput;
 }
 
 function makeDomElement(rect: { left: number; right: number; top: number; bottom: number; width: number; height: number }): Element {
