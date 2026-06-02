@@ -76,15 +76,15 @@ function SortableItem({ id, index, disabled, children }: SortableItemProps) {
 interface DroppableCategoryZoneProps {
     categoryId: number;
     disabled: boolean;
-    /** Set of category IDs that must be rejected as drop sources (ancestor-cycle prevention). */
-    blockedSourceIds: Set<number>;
+    /** Map from category ID → set of IDs blocked as drop targets for that source (self + descendants). */
+    blockedIdsMap: Map<number, Set<number>>;
     children: React.ReactNode;
 }
 
 function DroppableCategoryZone({
     categoryId,
     disabled,
-    blockedSourceIds,
+    blockedIdsMap,
     children,
 }: DroppableCategoryZoneProps) {
     const acceptFilter = useCallback(
@@ -92,9 +92,10 @@ function DroppableCategoryZone({
             const sourceId = String(source.id);
             if (!sourceId.startsWith("cat-")) return true;
             const catId = Number(sourceId.slice(4));
-            return !blockedSourceIds.has(catId);
+            const blockedTargets = blockedIdsMap.get(catId);
+            return !blockedTargets?.has(categoryId);
         },
-        [blockedSourceIds],
+        [blockedIdsMap, categoryId],
     );
 
     const { ref, isDropTarget } = useDroppable({
@@ -279,17 +280,6 @@ export default function SortableTileGrid({
         return map;
     }, [allCategories, currentCategories]);
 
-    // Union of all blocked IDs — passed to each DroppableCategoryZone so
-    // that any category being dragged is blocked from dropping onto itself
-    // or any of its own descendants.
-    const allBlockedSourceIds = useMemo(() => {
-        const union = new Set<number>();
-        for (const s of blockedIdsMap.values()) {
-            for (const id of s) union.add(id);
-        }
-        return union;
-    }, [blockedIdsMap]);
-
     const [activeItem, setActiveItem] = useState<TileItem | null>(null);
 
     const handleDragEnd = useCallback(
@@ -427,7 +417,7 @@ export default function SortableTileGrid({
             <DroppableCategoryZone
                 categoryId={cat.id}
                 disabled={!canEditContent}
-                blockedSourceIds={allBlockedSourceIds}
+                blockedIdsMap={blockedIdsMap}
             >
                 {tile}
             </DroppableCategoryZone>
