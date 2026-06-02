@@ -1,4 +1,4 @@
-import { closestCenter } from "@dnd-kit/collision";
+import { pointerDistance } from "@dnd-kit/collision";
 import type { CollisionDetector } from "@dnd-kit/abstract";
 import type { Category, ImageItem } from "../types";
 
@@ -48,10 +48,13 @@ export function findCategory(
 
 /**
  * Create a collision detector for sortable items that delegates to
- * `closestCenter` but suppresses collisions when the pointer is
+ * `pointerDistance` but suppresses collisions when the pointer is
  * currently inside any registered category drop zone element.
- * This prevents the OptimisticSortingPlugin from visually reordering
- * tiles while the user is hovering over a "Move here" drop target.
+ *
+ * Uses `pointerDistance` (pointer-to-center distance) instead of
+ * `closestCenter` (dragged-shape-center-to-center distance) so that
+ * reorder is purely pointer-based — consistent with the move detector
+ * (`pointerIntersection`) and independent of where the user grabs the tile.
  */
 export function createGapOnlyClosestCenter(
     dropZoneElements: Set<Element>,
@@ -69,7 +72,7 @@ export function createGapOnlyClosestCenter(
                 return null;
             }
         }
-        return closestCenter(input);
+        return pointerDistance(input);
     };
 }
 

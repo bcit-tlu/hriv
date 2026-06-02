@@ -166,7 +166,7 @@ describe("buildTileItems tiebreaker", () => {
 // ---------------------------------------------------------------------------
 
 vi.mock("@dnd-kit/collision", () => ({
-    closestCenter: vi.fn(() => ({ id: "mock-closest", value: 1, type: 0, priority: 0 })),
+    pointerDistance: vi.fn(() => ({ id: "mock-closest", value: 1, type: 0, priority: 0 })),
 }));
 
 type DetectorInput = Parameters<ReturnType<typeof createGapOnlyClosestCenter>>[0];
@@ -186,43 +186,43 @@ function makeDomElement(rect: { left: number; right: number; top: number; bottom
 }
 
 describe("createGapOnlyClosestCenter", () => {
-    it("suppresses closestCenter when pointer is inside a drop zone", async () => {
-        const { closestCenter } = await import("@dnd-kit/collision");
-        vi.mocked(closestCenter).mockClear();
+    it("suppresses reorder when pointer is inside a drop zone", async () => {
+        const { pointerDistance } = await import("@dnd-kit/collision");
+        vi.mocked(pointerDistance).mockClear();
         const el = makeDomElement({ left: 0, right: 200, top: 0, bottom: 100 });
         const detector = createGapOnlyClosestCenter(new Set([el]));
         const result = detector(makeCollisionInput(100, 50));
         expect(result).toBeNull();
-        expect(closestCenter).not.toHaveBeenCalled();
+        expect(pointerDistance).not.toHaveBeenCalled();
     });
 
-    it("suppresses closestCenter even at the very edge of a drop zone", async () => {
-        const { closestCenter } = await import("@dnd-kit/collision");
-        vi.mocked(closestCenter).mockClear();
+    it("suppresses reorder even at the very edge of a drop zone", async () => {
+        const { pointerDistance } = await import("@dnd-kit/collision");
+        vi.mocked(pointerDistance).mockClear();
         const el = makeDomElement({ left: 0, right: 200, top: 0, bottom: 100 });
         const detector = createGapOnlyClosestCenter(new Set([el]));
         // Pointer at (1, 1) — inside full rect at the edge
         const result = detector(makeCollisionInput(1, 1));
         expect(result).toBeNull();
-        expect(closestCenter).not.toHaveBeenCalled();
+        expect(pointerDistance).not.toHaveBeenCalled();
     });
 
-    it("delegates to closestCenter when pointer is outside all drop zones", async () => {
-        const { closestCenter } = await import("@dnd-kit/collision");
-        vi.mocked(closestCenter).mockClear();
+    it("delegates to pointerDistance when pointer is outside all drop zones", async () => {
+        const { pointerDistance } = await import("@dnd-kit/collision");
+        vi.mocked(pointerDistance).mockClear();
         const el = makeDomElement({ left: 0, right: 200, top: 0, bottom: 100 });
         const detector = createGapOnlyClosestCenter(new Set([el]));
         const result = detector(makeCollisionInput(300, 50));
         expect(result).not.toBeNull();
-        expect(closestCenter).toHaveBeenCalled();
+        expect(pointerDistance).toHaveBeenCalled();
     });
 
-    it("delegates to closestCenter when there are no registered drop zones", async () => {
-        const { closestCenter } = await import("@dnd-kit/collision");
-        vi.mocked(closestCenter).mockClear();
+    it("delegates to pointerDistance when there are no registered drop zones", async () => {
+        const { pointerDistance } = await import("@dnd-kit/collision");
+        vi.mocked(pointerDistance).mockClear();
         const detector = createGapOnlyClosestCenter(new Set<Element>());
         const result = detector(makeCollisionInput(100, 50));
         expect(result).not.toBeNull();
-        expect(closestCenter).toHaveBeenCalled();
+        expect(pointerDistance).toHaveBeenCalled();
     });
 });
