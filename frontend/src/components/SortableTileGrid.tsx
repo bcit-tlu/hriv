@@ -441,6 +441,14 @@ export default function SortableTileGrid({
                 activationConstraints: [
                     new PointerActivationConstraints.Distance({ value: 5 }),
                 ],
+                preventActivation: (event: PointerEvent) => {
+                    const target = event.target;
+                    if (!(target instanceof Element)) return false;
+                    // Block drag from small overlay icon buttons (edit, visibility, move)
+                    // but allow drag from CardActionArea (the main tile body, also a <button>).
+                    // The Distance(5) constraint handles click-vs-drag distinction.
+                    return Boolean(target.closest(".MuiIconButton-root"));
+                },
             }),
             KeyboardSensor,
         ],
