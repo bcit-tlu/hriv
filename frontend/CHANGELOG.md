@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.19.0...frontend-v0.19.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* tune collision zones for move vs reorder differentiation ([#544](https://github.com/bcit-tlu/hriv/issues/544)) ([cee4c0c](https://github.com/bcit-tlu/hriv/commit/cee4c0c151904c1598800f6819e0638406b5f952))
+
 ## [0.19.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.18.1...frontend-v0.19.0) (2026-06-02)
 
 
