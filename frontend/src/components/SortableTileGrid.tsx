@@ -8,7 +8,12 @@ import {
     useSensor,
     useSensors,
 } from "@dnd-kit/core";
-import type { DragStartEvent, DragEndEvent } from "@dnd-kit/core";
+import type {
+    DragStartEvent,
+    DragEndEvent,
+    DraggableAttributes,
+    DraggableSyntheticListeners,
+} from "@dnd-kit/core";
 import {
     SortableContext,
     useSortable,
@@ -33,8 +38,8 @@ interface SortableItemProps {
     id: string;
     disabled: boolean;
     children: (dragHandleProps: {
-        listeners: Record<string, unknown>;
-        attributes: Record<string, unknown>;
+        listeners: DraggableSyntheticListeners;
+        attributes: DraggableAttributes;
     }) => React.ReactNode;
 }
 
@@ -59,10 +64,7 @@ function SortableItem({ id, disabled, children }: SortableItemProps) {
 
     return (
         <div ref={setNodeRef} style={style}>
-            {children({
-                listeners: listeners ?? {},
-                attributes: attributes ?? {},
-            })}
+            {children({ listeners, attributes })}
         </div>
     );
 }
@@ -70,8 +72,8 @@ function SortableItem({ id, disabled, children }: SortableItemProps) {
 // ── Drag handle ─────────────────────────────────────────────
 
 interface DragHandleProps {
-    listeners: Record<string, unknown>;
-    attributes: Record<string, unknown>;
+    listeners: DraggableSyntheticListeners;
+    attributes: DraggableAttributes;
 }
 
 export function DragHandle({ listeners, attributes }: DragHandleProps) {
