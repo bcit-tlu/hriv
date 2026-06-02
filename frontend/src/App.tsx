@@ -635,8 +635,8 @@ export default function App() {
     );
 
     const handleReorderComplete = useCallback(() => {
-        refreshCategories();
-        refreshUncategorizedImages();
+        refreshCategories().catch(() => {});
+        refreshUncategorizedImages().catch(() => {});
     }, [refreshCategories, refreshUncategorizedImages]);
 
     const navigateToDepth = (depth: number) => {
