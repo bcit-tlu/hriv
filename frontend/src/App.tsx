@@ -548,7 +548,6 @@ export default function App() {
         handleMoveCategory,
         handleRequestMoveCategory,
         handleDropImageOnCategory,
-        handleDropCategoryOnCategory,
         handleSetCardImage,
     } = useCategoryActions({
         categories,
