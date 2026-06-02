@@ -226,6 +226,9 @@ export default function SortableTileGrid({
 
             const reordered = arrayMove(items, oldIndex, newIndex);
 
+            // Capture the current key so we can detect navigation during await
+            const keyAtDragStart = prevKeyRef.current;
+
             // Optimistically update local state
             setItems(reordered);
 
@@ -266,8 +269,10 @@ export default function SortableTileGrid({
                 onReorderComplete?.();
             } catch (err) {
                 console.error("Failed to persist reorder", err);
-                // Revert to original order
-                setItems(buildTileItems(currentCategories, visibleImages));
+                // Only revert if the user hasn't navigated away
+                if (prevKeyRef.current === keyAtDragStart) {
+                    setItems(buildTileItems(currentCategories, visibleImages));
+                }
                 onReorderError?.(err);
             }
         },
