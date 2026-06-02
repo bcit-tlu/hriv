@@ -19,22 +19,13 @@ import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
 import EditIcon from '@mui/icons-material/Edit'
 import LockIcon from '@mui/icons-material/Lock'
 import VisibilityIcon from '@mui/icons-material/Visibility'
-import type { Category, Program } from '../types'
+import type { Category, ImageItem, Program } from '../types'
 import { narrowProgramIds } from '../categoryUtils'
 import { MAX_DEPTH } from '../types'
 import AddCategoryDialog from './AddCategoryDialog'
 import EditCategoryDialog from './EditCategoryDialog'
-
-interface FlatOption {
-  id: number
-  label: string
-  depth: number
-  childCount: number
-  status: string | null
-  parentId: number | null
-  programIds: number[]
-  inheritedRestriction: boolean
-}
+import { collectImagesByParent, interleavedSortOrders } from './manageCategoriesDialogUtils'
+import type { FlatOption } from './manageCategoriesDialogUtils'
 
 function countDescendants(node: Category): number {
   let count = node.children.length
@@ -154,23 +145,27 @@ interface ManageCategoriesDialogProps {
   open: boolean
   onClose: () => void
   categories: Category[]
+  uncategorizedImages?: ImageItem[]
   onAddCategory: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   onDeleteCategory: (categoryId: number) => Promise<void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   programs?: Program[]
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onReorderCategories?: (items: Array<{ id: number; parent_id: number | null; sort_order: number }>) => Promise<void>
+  onReorderImages?: (items: Array<{ id: number; sort_order: number }>) => Promise<void>
 }
 
 export default function ManageCategoriesDialog({
   open,
   onClose,
   categories,
+  uncategorizedImages = [],
   onAddCategory,
   onDeleteCategory,
   onEditCategory,
   onToggleVisibility,
   onReorderCategories,
+  onReorderImages,
   programs = [],
 }: ManageCategoriesDialogProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
@@ -346,25 +341,17 @@ export default function ManageCategoriesDialog({
       ...remaining.slice(insertIdx),
     ]
 
-    const reorderItems: Array<{ id: number; parent_id: number | null; sort_order: number }> = []
-    const sortCounters = new Map<string, number>()
-
-    for (const item of newList) {
-      const key = String(item.parentId)
-      const counter = sortCounters.get(key) ?? 0
-      reorderItems.push({
-        id: item.id,
-        parent_id: item.parentId,
-        sort_order: counter,
-      })
-      sortCounters.set(key, counter + 1)
-    }
+    const imagesByParent = collectImagesByParent(categories, uncategorizedImages)
+    const { catItems, imgItems } = interleavedSortOrders(newList, options, imagesByParent)
 
     setDragId(null)
     setDropTarget(null)
 
-    await onReorderCategories(reorderItems)
-  }, [dragId, dropTarget, options, onReorderCategories])
+    await onReorderCategories(catItems)
+    if (imgItems.length > 0 && onReorderImages) {
+      await onReorderImages(imgItems)
+    }
+  }, [dragId, dropTarget, options, categories, uncategorizedImages, onReorderCategories, onReorderImages])
 
   // Compute the Y position and indentation for the drop indicator line
   const dropIndicatorStyle = useMemo(() => {
