@@ -7,17 +7,11 @@ import {
     DndContext,
     DragOverlay,
     PointerSensor,
-    closestCenter,
-    pointerWithin,
     useDroppable,
     useSensor,
     useSensors,
 } from "@dnd-kit/core";
-import type {
-    CollisionDetection,
-    DragStartEvent,
-    DragEndEvent,
-} from "@dnd-kit/core";
+import type { DragStartEvent, DragEndEvent } from "@dnd-kit/core";
 import {
     SortableContext,
     useSortable,
@@ -30,7 +24,12 @@ import CategoryTile from "./CategoryTile";
 import ImageTile from "./ImageTile";
 import FileDropZone from "./FileDropZone";
 import { reorderImages, reorderCategories } from "../api";
-import { buildTileItems, tileId } from "./sortableTileGridUtils";
+import {
+    buildTileItems,
+    tileId,
+    DROP_PREFIX,
+    moveOrReorder,
+} from "./sortableTileGridUtils";
 import type { TileItem } from "./sortableTileGridUtils";
 
 // ── Sortable wrapper ────────────────────────────────────────
@@ -75,8 +74,6 @@ function SortableItem({ id, disabled, children }: SortableItemProps) {
 }
 
 // ── Droppable category zone (for move-into-category) ─────────
-
-const DROP_PREFIX = "drop-cat-";
 
 interface DroppableCategoryZoneProps {
     categoryId: number;
@@ -155,33 +152,6 @@ function DroppableCategoryZone({
         </Box>
     );
 }
-
-// ── Custom collision detection ──────────────────────────────
-// Prefer droppable category zones (move-into) when the pointer is within
-// one; otherwise fall back to closestCenter for sortable reordering.
-
-const moveOrReorder: CollisionDetection = (args) => {
-    const activeId = String(args.active.id);
-
-    // Categories always reorder — they use the Move button for reparenting.
-    // Only images activate droppable category zones.
-    if (!activeId.startsWith("cat-")) {
-        const pointerCollisions = pointerWithin(args);
-
-        const droppableHit = pointerCollisions.find((c) => {
-            const id = String(c.id);
-            return id.startsWith(DROP_PREFIX);
-        });
-
-        if (droppableHit) return [droppableHit];
-    }
-
-    // Filter droppable zone IDs from closestCenter so they can't
-    // accidentally win the fallback (their rects overlap sortable items).
-    return closestCenter(args).filter(
-        (c) => !String(c.id).startsWith(DROP_PREFIX),
-    );
-};
 
 // ── Main component ──────────────────────────────────────────
 

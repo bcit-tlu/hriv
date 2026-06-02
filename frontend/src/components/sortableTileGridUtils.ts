@@ -1,3 +1,8 @@
+import {
+    closestCenter,
+    pointerWithin,
+} from "@dnd-kit/core";
+import type { CollisionDetection } from "@dnd-kit/core";
 import type { Category, ImageItem } from "../types";
 
 // ── Tile item union type ────────────────────────────────────
@@ -11,6 +16,37 @@ export function tileId(item: TileItem): string {
         ? `cat-${item.data.id}`
         : `img-${item.data.id}`;
 }
+
+// ── Droppable category zone ID prefix ────────────────────────
+
+export const DROP_PREFIX = "drop-cat-";
+
+// ── Custom collision detection ──────────────────────────────
+// Prefer droppable category zones (move-into) when the pointer is within
+// one; otherwise fall back to closestCenter for sortable reordering.
+
+export const moveOrReorder: CollisionDetection = (args) => {
+    const activeId = String(args.active.id);
+
+    // Categories always reorder — they use the Move button for reparenting.
+    // Only images activate droppable category zones.
+    if (!activeId.startsWith("cat-")) {
+        const pointerCollisions = pointerWithin(args);
+
+        const droppableHit = pointerCollisions.find((c) => {
+            const id = String(c.id);
+            return id.startsWith(DROP_PREFIX);
+        });
+
+        if (droppableHit) return [droppableHit];
+    }
+
+    // Filter droppable zone IDs from closestCenter so they can't
+    // accidentally win the fallback (their rects overlap sortable items).
+    return closestCenter(args).filter(
+        (c) => !String(c.id).startsWith(DROP_PREFIX),
+    );
+};
 
 /** Build an interleaved, sorted list of categories and images. */
 export function buildTileItems(
