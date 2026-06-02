@@ -272,6 +272,20 @@ describe("reorder edge band (Phase 2)", () => {
         expect(result).toEqual([{ id: "drop-cat-5" }]);
         expect(mockClosestCenter).not.toHaveBeenCalled();
     });
+
+    it("Phase 2 edge band wins when pointer is in 0-15% zone with both drop zone and sortable tile", () => {
+        // Same rect for both: drop zone center 70% is (15,15)-(85,85),
+        // sortable edge band is 0-25% and 75-100%.
+        // Pointer at x=210 (10% into the tile) misses Phase 1 move zone
+        // but hits Phase 2 edge band on the sortable tile.
+        const catZone = makeDroppable("drop-cat-5", { left: 200, top: 0, width: 100, height: 100 });
+
+        const result = moveOrReorder(
+            makeArgs("img-10", { x: 210, y: 50 }, [catZone, sortableTile]),
+        );
+        expect(result).toEqual([{ id: "img-20" }]);
+        expect(mockClosestCenter).not.toHaveBeenCalled();
+    });
 });
 
 // ---------------------------------------------------------------------------
