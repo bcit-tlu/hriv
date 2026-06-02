@@ -1,14 +1,22 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import Box from "@mui/material/Box";
+import Typography from "@mui/material/Typography";
+import DriveFileMoveIcon from "@mui/icons-material/DriveFileMove";
 import {
     DndContext,
     DragOverlay,
-    closestCenter,
     PointerSensor,
+    closestCenter,
+    pointerWithin,
+    useDroppable,
     useSensor,
     useSensors,
 } from "@dnd-kit/core";
-import type { DragStartEvent, DragEndEvent } from "@dnd-kit/core";
+import type {
+    CollisionDetection,
+    DragStartEvent,
+    DragEndEvent,
+} from "@dnd-kit/core";
 import {
     SortableContext,
     useSortable,
@@ -64,6 +72,111 @@ function SortableItem({ id, disabled, children }: SortableItemProps) {
         </div>
     );
 }
+
+// ── Droppable category zone (for move-into-category) ─────────
+
+const DROP_PREFIX = "drop-cat-";
+
+interface DroppableCategoryZoneProps {
+    categoryId: number;
+    disabled: boolean;
+    children: React.ReactNode;
+}
+
+function DroppableCategoryZone({
+    categoryId,
+    disabled,
+    children,
+}: DroppableCategoryZoneProps) {
+    const { isOver, setNodeRef } = useDroppable({
+        id: `${DROP_PREFIX}${categoryId}`,
+        disabled,
+    });
+
+    return (
+        <Box
+            ref={setNodeRef}
+            sx={{
+                position: "relative",
+                outline: "3px dashed",
+                outlineColor: isOver ? "primary.main" : "transparent",
+                outlineOffset: 3,
+                transform: isOver ? "scale(1.03)" : "scale(1)",
+                transition: "outline-color 0.2s, transform 0.15s",
+                borderRadius: "inherit",
+            }}
+        >
+            {children}
+            {isOver && (
+                <Box
+                    sx={{
+                        position: "absolute",
+                        inset: 0,
+                        zIndex: 2,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        bgcolor: "rgba(255, 255, 255, 0.82)",
+                        borderRadius: "inherit",
+                        pointerEvents: "none",
+                        gap: 0.5,
+                    }}
+                >
+                    <Box
+                        sx={{
+                            width: 40,
+                            height: 40,
+                            borderRadius: "50%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            bgcolor: "primary.main",
+                            color: "primary.contrastText",
+                        }}
+                    >
+                        <DriveFileMoveIcon sx={{ fontSize: 22 }} />
+                    </Box>
+                    <Typography
+                        variant="caption"
+                        sx={{
+                            fontWeight: 600,
+                            color: "primary.main",
+                        }}
+                    >
+                        Drop here
+                    </Typography>
+                </Box>
+            )}
+        </Box>
+    );
+}
+
+// ── Custom collision detection ──────────────────────────────
+// Prefer droppable category zones (move-into) when the pointer is within
+// one; otherwise fall back to closestCenter for sortable reordering.
+
+const moveOrReorder: CollisionDetection = (args) => {
+    const pointerCollisions = pointerWithin(args);
+    const activeId = String(args.active.id);
+    const activeCatSuffix = activeId.startsWith("cat-")
+        ? activeId.slice(4)
+        : null;
+
+    const droppableHit = pointerCollisions.find((c) => {
+        const id = String(c.id);
+        if (!id.startsWith(DROP_PREFIX)) return false;
+        // Don't activate move-to-self
+        if (activeCatSuffix && id === `${DROP_PREFIX}${activeCatSuffix}`)
+            return false;
+        return true;
+    });
+
+    if (droppableHit) return [droppableHit];
+
+    // Fall back to sortable reordering
+    return closestCenter(args);
+};
 
 // ── Main component ──────────────────────────────────────────
 
@@ -191,6 +304,25 @@ export default function SortableTileGrid({
             // Reject concurrent drags — wait for the in-flight reorder to settle
             if (reorderInFlightRef.current) return;
 
+            const overId = String(over.id);
+
+            // ── Move into category (drop on a droppable zone) ──
+            if (overId.startsWith(DROP_PREFIX)) {
+                const targetCatId = Number(overId.slice(DROP_PREFIX.length));
+                const activeId = String(active.id);
+                if (activeId.startsWith("img-")) {
+                    const imgId = Number(activeId.slice(4));
+                    onDropImageOnCategory?.(imgId, targetCatId);
+                } else if (activeId.startsWith("cat-")) {
+                    const catId = Number(activeId.slice(4));
+                    if (catId !== targetCatId) {
+                        onDropCategoryOnCategory?.(catId, targetCatId);
+                    }
+                }
+                return;
+            }
+
+            // ── Reorder (drop between items) ──
             const oldIndex = items.findIndex(
                 (item) => tileId(item) === active.id,
             );
@@ -266,32 +398,45 @@ export default function SortableTileGrid({
                 onReorderComplete?.();
             }
         },
-        [items, path, onReorderComplete, onReorderError],
+        [
+            items,
+            path,
+            onReorderComplete,
+            onReorderError,
+            onDropImageOnCategory,
+            onDropCategoryOnCategory,
+        ],
     );
 
     const handleDragCancel = useCallback(() => {
         setActiveItem(null);
     }, []);
 
-    const renderCategoryTile = (cat: Category) => (
-        <CategoryTile
-            category={cat}
-            onClick={onCategoryClick}
-            onMove={canEditContent ? onMoveCategory : undefined}
-            onSetCardImage={canEditContent ? onSetCardImage : undefined}
-            onToggleVisibility={
-                canEditContent ? onToggleCategoryVisibility : undefined
-            }
-            onEditName={canEditContent ? onEditCategoryName : undefined}
-            programs={programs}
-            onDropImage={canEditContent ? onDropImageOnCategory : undefined}
-            onDropCategory={
-                canEditContent ? onDropCategoryOnCategory : undefined
-            }
-            onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
-            draggable={canEditContent}
-        />
-    );
+    const renderCategoryTile = (cat: Category, wrapDroppable = false) => {
+        const tile = (
+            <CategoryTile
+                category={cat}
+                onClick={onCategoryClick}
+                onMove={canEditContent ? onMoveCategory : undefined}
+                onSetCardImage={canEditContent ? onSetCardImage : undefined}
+                onToggleVisibility={
+                    canEditContent ? onToggleCategoryVisibility : undefined
+                }
+                onEditName={canEditContent ? onEditCategoryName : undefined}
+                programs={programs}
+                onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
+            />
+        );
+        if (!wrapDroppable) return tile;
+        return (
+            <DroppableCategoryZone
+                categoryId={cat.id}
+                disabled={!canEditContent}
+            >
+                {tile}
+            </DroppableCategoryZone>
+        );
+    };
 
     const renderImageTile = (img: ImageItem) => (
         <ImageTile
@@ -301,7 +446,6 @@ export default function SortableTileGrid({
             onToggleVisibility={
                 canEditContent ? onToggleImageVisibility : undefined
             }
-            draggable={canEditContent}
         />
     );
 
@@ -325,7 +469,7 @@ export default function SortableTileGrid({
     return (
         <DndContext
             sensors={sensors}
-            collisionDetection={closestCenter}
+            collisionDetection={moveOrReorder}
             onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
             onDragCancel={handleDragCancel}
@@ -351,7 +495,10 @@ export default function SortableTileGrid({
                                 disabled={!canEditContent}
                             >
                                 {item.type === "category"
-                                    ? renderCategoryTile(item.data)
+                                    ? renderCategoryTile(
+                                          item.data,
+                                          true,
+                                      )
                                     : renderImageTile(
                                           item.data as ImageItem,
                                       )}

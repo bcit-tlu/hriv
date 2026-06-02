@@ -17,10 +17,7 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import ImageIcon from '@mui/icons-material/Image'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { Category, ImageItem, Program } from '../types'
-import { MIME_HRIV_IMAGE } from './ImageTile'
 import CardImagePickerModal from './CardImagePickerModal'
-
-export const MIME_HRIV_CATEGORY = 'application/x-hriv-category'
 
 function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
   for (const img of cat.images) {
@@ -60,20 +57,13 @@ interface CategoryTileProps {
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onEditName?: (category: Category) => void
   programs: Program[]
-  /** Called when an image is dropped onto this category tile. */
-  onDropImage?: (imageId: number, categoryId: number) => void
-  /** Called when another category is dropped onto this category tile (reparent). */
-  onDropCategory?: (draggedCategoryId: number, targetCategoryId: number) => void
   /** Called when native files are dropped onto this category tile. */
   onDropFiles?: (categoryId: number, files: File[]) => void
-  /** Enable HTML5 drag for this tile (editors only). */
-  draggable?: boolean
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, onDropImage, onDropCategory, onDropFiles, draggable = false }: CategoryTileProps) {
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, onDropFiles }: CategoryTileProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
-  const [dragging, setDragging] = useState(false)
   const dragCounter = useRef(0)
 
   const subCategoryCount = useMemo(() => countAllSubcategories(category), [category])
@@ -97,22 +87,11 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
     ? findImageInCategory(category, category.cardImageId)
     : null
 
-  const isDropTarget = onDropImage != null || onDropCategory != null || onDropFiles != null
-
-  const handleDragStart = useCallback((e: React.DragEvent) => {
-    e.dataTransfer.setData(MIME_HRIV_CATEGORY, JSON.stringify({ id: category.id }))
-    e.dataTransfer.effectAllowed = 'move'
-    setDragging(true)
-  }, [category.id])
-
-  const handleDragEnd = useCallback(() => {
-    setDragging(false)
-  }, [])
+  const isDropTarget = onDropFiles != null
 
   const isAcceptedDrag = useCallback((e: React.DragEvent) => {
-    const types = e.dataTransfer.types
-    return types.includes(MIME_HRIV_IMAGE) || types.includes(MIME_HRIV_CATEGORY) || (onDropFiles != null && types.includes('Files'))
-  }, [onDropFiles])
+    return e.dataTransfer.types.includes('Files')
+  }, [])
 
   const handleDragEnter = useCallback((e: React.DragEvent) => {
     if (!isAcceptedDrag(e)) return
@@ -130,7 +109,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
   const handleDragOver = useCallback((e: React.DragEvent) => {
     if (!isAcceptedDrag(e)) return
     e.preventDefault()
-    e.dataTransfer.dropEffect = e.dataTransfer.types.includes('Files') ? 'copy' : 'move'
+    e.dataTransfer.dropEffect = 'copy'
   }, [isAcceptedDrag])
 
   const handleDrop = useCallback((e: React.DragEvent) => {
@@ -138,39 +117,16 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
     dragCounter.current = 0
     setDragOver(false)
 
-    const imageData = e.dataTransfer.getData(MIME_HRIV_IMAGE)
-    if (imageData && onDropImage) {
-      try {
-        const { id } = JSON.parse(imageData) as { id: number }
-        onDropImage(id, category.id)
-      } catch { /* ignore malformed data */ }
-      return
-    }
-
-    const categoryData = e.dataTransfer.getData(MIME_HRIV_CATEGORY)
-    if (categoryData && onDropCategory) {
-      try {
-        const { id } = JSON.parse(categoryData) as { id: number }
-        if (id !== category.id) {
-          onDropCategory(id, category.id)
-        }
-      } catch { /* ignore malformed data */ }
-      return
-    }
-
     if (e.dataTransfer.types.includes('Files') && onDropFiles) {
       e.stopPropagation()
       onDropFiles(category.id, Array.from(e.dataTransfer.files))
     }
-  }, [category.id, onDropImage, onDropCategory, onDropFiles])
+  }, [category.id, onDropFiles])
 
   return (
     <>
       <Card
         elevation={dragOver ? 8 : 2}
-        draggable={draggable}
-        onDragStart={draggable ? handleDragStart : undefined}
-        onDragEnd={draggable ? handleDragEnd : undefined}
         onDragEnter={isDropTarget ? handleDragEnter : undefined}
         onDragLeave={isDropTarget ? handleDragLeave : undefined}
         onDragOver={isDropTarget ? handleDragOver : undefined}
@@ -179,8 +135,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
           width: '100%',
           maxWidth: 300,
           position: 'relative',
-          opacity: dragging ? 0.4 : 1,
-          transition: 'opacity 0.15s, box-shadow 0.15s, outline-color 0.2s, transform 0.15s',
+          transition: 'box-shadow 0.15s, outline-color 0.2s, transform 0.15s',
           outline: '3px dashed',
           outlineColor: dragOver ? 'primary.main' : 'transparent',
           outlineOffset: 3,
