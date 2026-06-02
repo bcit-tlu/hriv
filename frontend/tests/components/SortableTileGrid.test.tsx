@@ -402,15 +402,17 @@ describe("handleDragEnd — move into category", () => {
         expect(onDropImageOnCategory).toHaveBeenCalledWith(42, 5);
     });
 
-    it("does not call onDropImageOnCategory when category is dropped on a droppable zone", async () => {
+    it("calls onDropCategoryOnCategory when category is dropped on a droppable zone", async () => {
         const cat1 = makeCategory({ id: 1, label: "Cat A", sortOrder: 0 });
         const cat2 = makeCategory({ id: 2, label: "Cat B", sortOrder: 1 });
         const onDropImageOnCategory = vi.fn();
+        const onDropCategoryOnCategory = vi.fn();
 
         renderGrid({
             currentCategories: [cat1, cat2],
             canEditContent: true,
             onDropImageOnCategory,
+            onDropCategoryOnCategory,
         });
 
         expect(capturedOnDragEnd).toBeDefined();
@@ -422,6 +424,7 @@ describe("handleDragEnd — move into category", () => {
             } as unknown as DragEndEvent);
         });
 
+        expect(onDropCategoryOnCategory).toHaveBeenCalledWith(1, 2);
         expect(onDropImageOnCategory).not.toHaveBeenCalled();
     });
 

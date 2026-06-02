@@ -1,7 +1,4 @@
-import {
-    closestCenter,
-    pointerWithin,
-} from "@dnd-kit/core";
+import { closestCenter } from "@dnd-kit/core";
 import type { CollisionDetection } from "@dnd-kit/core";
 import type { Category, ImageItem } from "../types";
 
@@ -22,25 +19,43 @@ export function tileId(item: TileItem): string {
 export const DROP_PREFIX = "drop-cat-";
 
 // ── Custom collision detection ──────────────────────────────
-// Prefer droppable category zones (move-into) when the pointer is within
-// one; otherwise fall back to closestCenter for sortable reordering.
+// When the pointer is within the center 70% of a droppable category zone,
+// treat the gesture as a "move into category" (for both image and category
+// drags). When the pointer is near tile edges or in the gap between tiles,
+// fall back to closestCenter for sortable reordering.
 
 export const moveOrReorder: CollisionDetection = (args) => {
     const activeId = String(args.active.id);
+    const pointer = args.pointerCoordinates;
 
-    // Categories always reorder — they use the Move button for reparenting.
-    // Only images activate droppable category zones.
-    if (!activeId.startsWith("cat-")) {
-        const pointerCollisions = pointerWithin(args);
+    if (pointer) {
+        for (const container of args.droppableContainers) {
+            const id = String(container.id);
+            if (!id.startsWith(DROP_PREFIX)) continue;
 
-        const droppableHit = pointerCollisions.find((c) => {
-            const id = String(c.id);
-            return id.startsWith(DROP_PREFIX);
-        });
+            // Don't allow dropping a category onto itself
+            const targetCatId = id.slice(DROP_PREFIX.length);
+            if (activeId === `cat-${targetCatId}`) continue;
 
-        if (droppableHit) return [droppableHit];
+            const rect = container.rect.current;
+            if (!rect) continue;
+
+            // Shrink rect by 15% on each side → center 70%
+            const insetX = rect.width * 0.15;
+            const insetY = rect.height * 0.15;
+
+            if (
+                pointer.x >= rect.left + insetX &&
+                pointer.x <= rect.left + rect.width - insetX &&
+                pointer.y >= rect.top + insetY &&
+                pointer.y <= rect.top + rect.height - insetY
+            ) {
+                return [{ id: container.id }];
+            }
+        }
     }
 
+    // Pointer is near tile edges or in the gap — reorder.
     // Filter droppable zone IDs from closestCenter so they can't
     // accidentally win the fallback (their rects overlap sortable items).
     return closestCenter(args).filter(

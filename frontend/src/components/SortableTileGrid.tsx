@@ -172,6 +172,7 @@ export interface SortableTileGridProps {
     onToggleCategoryVisibility?: (categoryId: number) => Promise<void>;
     onEditCategoryName?: (cat: Category) => void;
     onDropImageOnCategory?: (imageId: number, categoryId: number) => void;
+    onDropCategoryOnCategory?: (categoryId: number, targetCategoryId: number) => void;
     onDropFilesOnCategory?: (categoryId: number, files: File[]) => void;
 
     // ImageTile callbacks
@@ -207,6 +208,7 @@ export default function SortableTileGrid({
     onToggleCategoryVisibility,
     onEditCategoryName,
     onDropImageOnCategory,
+    onDropCategoryOnCategory,
     onDropFilesOnCategory,
     onImageClick,
     onEditImageDetails,
@@ -283,6 +285,9 @@ export default function SortableTileGrid({
                 if (activeId.startsWith("img-")) {
                     const imgId = Number(activeId.slice(4));
                     onDropImageOnCategory?.(imgId, targetCatId);
+                } else if (activeId.startsWith("cat-")) {
+                    const catId = Number(activeId.slice(4));
+                    onDropCategoryOnCategory?.(catId, targetCatId);
                 }
                 return;
             }
@@ -369,6 +374,7 @@ export default function SortableTileGrid({
             onReorderComplete,
             onReorderError,
             onDropImageOnCategory,
+            onDropCategoryOnCategory,
         ],
     );
 

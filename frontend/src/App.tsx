@@ -549,6 +549,7 @@ export default function App() {
         handleMoveCategory,
         handleRequestMoveCategory,
         handleDropImageOnCategory,
+        handleDropCategoryOnCategory,
         handleSetCardImage,
     } = useCategoryActions({
         categories,
@@ -1453,6 +1454,9 @@ export default function App() {
                                 onEditCategoryName={setEditNameCategory}
                                 onDropImageOnCategory={
                                     handleDropImageOnCategory
+                                }
+                                onDropCategoryOnCategory={
+                                    handleDropCategoryOnCategory
                                 }
                                 onDropFilesOnCategory={
                                     handleFilesDropOnCategory
