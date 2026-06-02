@@ -269,11 +269,9 @@ export default function SortableTileGrid({
                 onReorderComplete?.();
             } catch (err) {
                 console.error("Failed to persist reorder", err);
-                // Only revert if the user hasn't navigated away
-                if (prevKeyRef.current === keyAtDragStart) {
-                    setItems(buildTileItems(currentCategories, visibleImages));
-                }
                 onReorderError?.(err);
+                // Refresh from server to reconcile any partial persistence
+                onReorderComplete?.();
             }
         },
         [
@@ -359,6 +357,8 @@ export default function SortableTileGrid({
         >
             <SortableContext items={ids} strategy={rectSortingStrategy}>
                 <Box
+                    role="region"
+                    aria-label="Sortable tile grid"
                     sx={{
                         display: "flex",
                         flexWrap: "wrap",
