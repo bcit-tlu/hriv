@@ -9,7 +9,8 @@ import { buildTileItems } from "../../src/components/sortableTileGridUtils";
 import { DROP_PREFIX } from "../../src/components/sortableTileGridUtils";
 import SortableTileGrid from "../../src/components/SortableTileGrid";
 import type { SortableTileGridProps } from "../../src/components/SortableTileGrid";
-import type { Category, ImageItem, Program } from "../../src/types";
+import type { Program } from "../../src/types";
+import { makeCategory, makeImage } from "../helpers/fixtures";
 
 // ---------------------------------------------------------------------------
 // Capture onDragEnd from DndContext so we can invoke it in tests.
@@ -49,34 +50,6 @@ import { reorderCategories, reorderImages } from "../../src/api";
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeCategory(overrides: Partial<Category> = {}): Category {
-    return {
-        id: 1,
-        label: "Cat A",
-        parentId: null,
-        children: [],
-        images: [],
-        programIds: [],
-        status: null,
-        sortOrder: 0,
-        cardImageId: null,
-        ...overrides,
-    };
-}
-
-function makeImage(overrides: Partial<ImageItem> = {}): ImageItem {
-    return {
-        id: 100,
-        name: "Test Image",
-        thumb: "/thumbs/test.jpg",
-        tileSources: "/tiles/test.dzi",
-        active: true,
-        sortOrder: 0,
-        version: 1,
-        ...overrides,
-    };
-}
-
 const defaultPrograms: Program[] = [];
 
 function renderGrid(overrides: Partial<SortableTileGridProps> = {}) {
@@ -98,12 +71,6 @@ function renderGrid(overrides: Partial<SortableTileGridProps> = {}) {
     const props = { ...defaults, ...overrides };
     return { ...render(<SortableTileGrid {...props} />), props };
 }
-
-beforeEach(() => {
-    capturedOnDragEnd = undefined;
-    vi.mocked(reorderCategories).mockReset().mockResolvedValue();
-    vi.mocked(reorderImages).mockReset().mockResolvedValue();
-});
 
 // ---------------------------------------------------------------------------
 // buildTileItems
@@ -395,6 +362,12 @@ describe("DroppableCategoryZone (via SortableTileGrid)", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleDragEnd — move into category", () => {
+    beforeEach(() => {
+        capturedOnDragEnd = undefined;
+        vi.mocked(reorderCategories).mockReset().mockResolvedValue();
+        vi.mocked(reorderImages).mockReset().mockResolvedValue();
+    });
+
     it("calls onDropImageOnCategory when image is dropped on a droppable zone", async () => {
         const cat = makeCategory({ id: 5, label: "Target", sortOrder: 0 });
         const img = makeImage({ id: 42, name: "Slide A", sortOrder: 1 });
@@ -409,8 +382,10 @@ describe("handleDragEnd — move into category", () => {
 
         expect(capturedOnDragEnd).toBeDefined();
 
+        // handleDragEnd is async — await its promise so act() flushes all
+        // microtasks (API mocks resolve synchronously via Promise.resolve()).
         await act(async () => {
-            capturedOnDragEnd!({
+            await capturedOnDragEnd!({
                 active: { id: "img-42" },
                 over: { id: `${DROP_PREFIX}5` },
             } as unknown as DragEndEvent);
@@ -433,7 +408,7 @@ describe("handleDragEnd — move into category", () => {
         expect(capturedOnDragEnd).toBeDefined();
 
         await act(async () => {
-            capturedOnDragEnd!({
+            await capturedOnDragEnd!({
                 active: { id: "cat-1" },
                 over: { id: `${DROP_PREFIX}2` },
             } as unknown as DragEndEvent);
@@ -453,7 +428,7 @@ describe("handleDragEnd — move into category", () => {
         });
 
         await act(async () => {
-            capturedOnDragEnd!({
+            await capturedOnDragEnd!({
                 active: { id: "img-10" },
                 over: { id: "img-10" },
             } as unknown as DragEndEvent);
@@ -473,7 +448,7 @@ describe("handleDragEnd — move into category", () => {
         });
 
         await act(async () => {
-            capturedOnDragEnd!({
+            await capturedOnDragEnd!({
                 active: { id: "img-10" },
                 over: null,
             } as unknown as DragEndEvent);
@@ -488,6 +463,12 @@ describe("handleDragEnd — move into category", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleDragEnd — reorder", () => {
+    beforeEach(() => {
+        capturedOnDragEnd = undefined;
+        vi.mocked(reorderCategories).mockReset().mockResolvedValue();
+        vi.mocked(reorderImages).mockReset().mockResolvedValue();
+    });
+
     it("calls reorderCategories and reorderImages when items are reordered", async () => {
         const cat = makeCategory({ id: 1, label: "Cat A", sortOrder: 0 });
         const img = makeImage({ id: 10, name: "Slide", sortOrder: 1 });
@@ -502,7 +483,7 @@ describe("handleDragEnd — reorder", () => {
 
         // Swap: move img-10 before cat-1
         await act(async () => {
-            capturedOnDragEnd!({
+            await capturedOnDragEnd!({
                 active: { id: "img-10" },
                 over: { id: "cat-1" },
             } as unknown as DragEndEvent);
@@ -529,7 +510,7 @@ describe("handleDragEnd — reorder", () => {
         });
 
         await act(async () => {
-            capturedOnDragEnd!({
+            await capturedOnDragEnd!({
                 active: { id: "cat-2" },
                 over: { id: "cat-1" },
             } as unknown as DragEndEvent);
@@ -559,7 +540,7 @@ describe("handleDragEnd — reorder", () => {
         });
 
         await act(async () => {
-            capturedOnDragEnd!({
+            await capturedOnDragEnd!({
                 active: { id: "img-10" },
                 over: { id: "cat-1" },
             } as unknown as DragEndEvent);
@@ -580,7 +561,7 @@ describe("handleDragEnd — reorder", () => {
         });
 
         await act(async () => {
-            capturedOnDragEnd!({
+            await capturedOnDragEnd!({
                 active: { id: "cat-2" },
                 over: { id: "cat-1" },
             } as unknown as DragEndEvent);
@@ -600,7 +581,7 @@ describe("handleDragEnd — reorder", () => {
         });
 
         await act(async () => {
-            capturedOnDragEnd!({
+            await capturedOnDragEnd!({
                 active: { id: "img-11" },
                 over: { id: "img-10" },
             } as unknown as DragEndEvent);
@@ -627,7 +608,7 @@ describe("handleDragEnd — reorder", () => {
         });
 
         await act(async () => {
-            capturedOnDragEnd!({
+            await capturedOnDragEnd!({
                 active: { id: "img-10" },
                 over: { id: "cat-1" },
             } as unknown as DragEndEvent);

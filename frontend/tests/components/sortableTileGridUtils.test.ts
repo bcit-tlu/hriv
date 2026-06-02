@@ -26,39 +26,11 @@ import {
     tileId,
     buildTileItems,
 } from "../../src/components/sortableTileGridUtils";
-import type { Category, ImageItem } from "../../src/types";
+import { makeCategory, makeImage } from "../helpers/fixtures";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function makeCategory(overrides: Partial<Category> = {}): Category {
-    return {
-        id: 1,
-        label: "Cat A",
-        parentId: null,
-        children: [],
-        images: [],
-        programIds: [],
-        status: null,
-        sortOrder: 0,
-        cardImageId: null,
-        ...overrides,
-    };
-}
-
-function makeImage(overrides: Partial<ImageItem> = {}): ImageItem {
-    return {
-        id: 100,
-        name: "Test Image",
-        thumb: "/thumbs/test.jpg",
-        tileSources: "/tiles/test.dzi",
-        active: true,
-        sortOrder: 0,
-        version: 1,
-        ...overrides,
-    };
-}
 
 /** Minimal collision args — moveOrReorder only reads `args.active.id`. */
 function makeArgs(activeId: string) {
