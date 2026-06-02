@@ -1,4 +1,4 @@
-import { closestCenter } from "@dnd-kit/collision";
+import { closestCenter, pointerIntersection } from "@dnd-kit/collision";
 import type { CollisionDetector } from "@dnd-kit/abstract";
 import type { Category, ImageItem } from "../types";
 
@@ -17,6 +17,9 @@ export function tileId(item: TileItem): string {
 // ── Droppable category zone ID prefix ────────────────────────
 
 export const DROP_PREFIX = "drop-cat-";
+
+/** Shared inset fraction: the outer 5% fringe of a category card is reorder territory. */
+export const DROP_ZONE_INSET = 0.05;
 
 // ── Descendant / tree helpers ───────────────────────────────
 
@@ -60,10 +63,8 @@ export function createGapOnlyClosestCenter(
         const { x, y } = input.dragOperation.position.current;
         for (const el of dropZoneElements) {
             const rect = el.getBoundingClientRect();
-            // Inset the hit-test rect by ~5% on each side so the outer
-            // 5% fringe of a category card belongs to the reorder zone.
-            const insetX = rect.width * 0.05;
-            const insetY = rect.height * 0.05;
+            const insetX = rect.width * DROP_ZONE_INSET;
+            const insetY = rect.height * DROP_ZONE_INSET;
             if (
                 x >= rect.left + insetX &&
                 x <= rect.right - insetX &&
@@ -74,6 +75,34 @@ export function createGapOnlyClosestCenter(
             }
         }
         return closestCenter(input);
+    };
+}
+
+/**
+ * Create a collision detector for droppable category zones that
+ * delegates to `pointerIntersection` but only when the pointer is
+ * inside the inset (inner) rect of the droppable's shape.
+ * The outer fringe belongs to the reorder zone, matching the
+ * suppression rect used by `createGapOnlyClosestCenter`.
+ */
+export function createInsetPointerIntersection(
+    insetFraction: number,
+): CollisionDetector {
+    return (input) => {
+        const rect = input.droppable.shape?.boundingRectangle;
+        if (!rect) return null;
+        const { x, y } = input.dragOperation.position.current;
+        const insetX = rect.width * insetFraction;
+        const insetY = rect.height * insetFraction;
+        if (
+            x >= rect.left + insetX &&
+            x <= rect.right - insetX &&
+            y >= rect.top + insetY &&
+            y <= rect.bottom - insetY
+        ) {
+            return pointerIntersection(input);
+        }
+        return null;
     };
 }
 

@@ -1,16 +1,20 @@
 /**
  * Unit tests for sortableTileGridUtils: tileId, DROP_PREFIX,
- * collectDescendantIds, findCategory, and buildTileItems.
+ * collectDescendantIds, findCategory, buildTileItems,
+ * createGapOnlyClosestCenter, and createInsetPointerIntersection.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 import {
     DROP_PREFIX,
+    DROP_ZONE_INSET,
     tileId,
     collectDescendantIds,
     findCategory,
     buildTileItems,
+    createGapOnlyClosestCenter,
+    createInsetPointerIntersection,
 } from "../../src/components/sortableTileGridUtils";
 import { makeCategory, makeImage } from "../helpers/fixtures";
 
@@ -156,5 +160,131 @@ describe("buildTileItems tiebreaker", () => {
         const result = buildTileItems(cats, []);
         expect(result[0].data.id).toBe(2);
         expect(result[1].data.id).toBe(5);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// createGapOnlyClosestCenter
+// ---------------------------------------------------------------------------
+
+vi.mock("@dnd-kit/collision", () => ({
+    closestCenter: vi.fn(() => ({ id: "mock-closest", value: 1, type: 0, priority: 0 })),
+    pointerIntersection: vi.fn(() => ({ id: "mock-pointer", value: 1, type: 1, priority: 3 })),
+}));
+
+function makeCollisionInput(x: number, y: number, droppableRect?: { left: number; right: number; top: number; bottom: number; width: number; height: number }) {
+    return {
+        droppable: {
+            id: "drop-1",
+            shape: droppableRect ? { boundingRectangle: droppableRect } : undefined,
+        },
+        dragOperation: {
+            position: { current: { x, y } },
+        },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any;
+}
+
+function makeDomElement(rect: { left: number; right: number; top: number; bottom: number; width: number; height: number }): Element {
+    return {
+        getBoundingClientRect: () => rect,
+    } as unknown as Element;
+}
+
+describe("createGapOnlyClosestCenter", () => {
+    it("suppresses closestCenter when pointer is inside the inset rect of a drop zone", async () => {
+        const { closestCenter } = await import("@dnd-kit/collision");
+        const el = makeDomElement({ left: 0, right: 200, top: 0, bottom: 100, width: 200, height: 100 });
+        const elements = new Set([el]);
+        const detector = createGapOnlyClosestCenter(elements);
+        // Pointer at center (100, 50) — inside inset rect
+        const result = detector(makeCollisionInput(100, 50));
+        expect(result).toBeNull();
+        expect(closestCenter).not.toHaveBeenCalled();
+    });
+
+    it("delegates to closestCenter when pointer is in the fringe of a drop zone", async () => {
+        const { closestCenter } = await import("@dnd-kit/collision");
+        vi.mocked(closestCenter).mockClear();
+        const el = makeDomElement({ left: 0, right: 200, top: 0, bottom: 100, width: 200, height: 100 });
+        const elements = new Set([el]);
+        const detector = createGapOnlyClosestCenter(elements);
+        // Pointer at (2, 50) — inside full rect but outside the inset rect (5% of 200 = 10)
+        const result = detector(makeCollisionInput(2, 50));
+        expect(result).not.toBeNull();
+        expect(closestCenter).toHaveBeenCalled();
+    });
+
+    it("delegates to closestCenter when pointer is outside all drop zones", async () => {
+        const { closestCenter } = await import("@dnd-kit/collision");
+        vi.mocked(closestCenter).mockClear();
+        const el = makeDomElement({ left: 0, right: 200, top: 0, bottom: 100, width: 200, height: 100 });
+        const elements = new Set([el]);
+        const detector = createGapOnlyClosestCenter(elements);
+        // Pointer at (300, 50) — completely outside
+        const result = detector(makeCollisionInput(300, 50));
+        expect(result).not.toBeNull();
+        expect(closestCenter).toHaveBeenCalled();
+    });
+
+    it("delegates to closestCenter when there are no registered drop zones", async () => {
+        const { closestCenter } = await import("@dnd-kit/collision");
+        vi.mocked(closestCenter).mockClear();
+        const elements = new Set<Element>();
+        const detector = createGapOnlyClosestCenter(elements);
+        const result = detector(makeCollisionInput(100, 50));
+        expect(result).not.toBeNull();
+        expect(closestCenter).toHaveBeenCalled();
+    });
+
+    it("exports DROP_ZONE_INSET as 0.05", () => {
+        expect(DROP_ZONE_INSET).toBe(0.05);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// createInsetPointerIntersection
+// ---------------------------------------------------------------------------
+
+describe("createInsetPointerIntersection", () => {
+    it("delegates to pointerIntersection when pointer is inside the inset rect", async () => {
+        const { pointerIntersection } = await import("@dnd-kit/collision");
+        vi.mocked(pointerIntersection).mockClear();
+        const detector = createInsetPointerIntersection(0.05);
+        const rect = { left: 0, right: 200, top: 0, bottom: 100, width: 200, height: 100 };
+        // Pointer at center (100, 50) — inside inset rect
+        const result = detector(makeCollisionInput(100, 50, rect));
+        expect(result).not.toBeNull();
+        expect(pointerIntersection).toHaveBeenCalled();
+    });
+
+    it("returns null when pointer is in the fringe of the droppable", async () => {
+        const { pointerIntersection } = await import("@dnd-kit/collision");
+        vi.mocked(pointerIntersection).mockClear();
+        const detector = createInsetPointerIntersection(0.05);
+        const rect = { left: 0, right: 200, top: 0, bottom: 100, width: 200, height: 100 };
+        // Pointer at (2, 50) — inside full rect but in the fringe (5% of 200 = 10)
+        const result = detector(makeCollisionInput(2, 50, rect));
+        expect(result).toBeNull();
+        expect(pointerIntersection).not.toHaveBeenCalled();
+    });
+
+    it("returns null when droppable has no shape", async () => {
+        const { pointerIntersection } = await import("@dnd-kit/collision");
+        vi.mocked(pointerIntersection).mockClear();
+        const detector = createInsetPointerIntersection(0.05);
+        const result = detector(makeCollisionInput(100, 50));
+        expect(result).toBeNull();
+        expect(pointerIntersection).not.toHaveBeenCalled();
+    });
+
+    it("returns null when pointer is completely outside the droppable", async () => {
+        const { pointerIntersection } = await import("@dnd-kit/collision");
+        vi.mocked(pointerIntersection).mockClear();
+        const detector = createInsetPointerIntersection(0.05);
+        const rect = { left: 0, right: 200, top: 0, bottom: 100, width: 200, height: 100 };
+        const result = detector(makeCollisionInput(300, 50, rect));
+        expect(result).toBeNull();
+        expect(pointerIntersection).not.toHaveBeenCalled();
     });
 });
