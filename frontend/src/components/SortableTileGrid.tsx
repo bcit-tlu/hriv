@@ -112,7 +112,7 @@ function DroppableCategoryZone({
                     sx={{
                         position: "absolute",
                         inset: 0,
-                        zIndex: 1300,
+                        zIndex: 1100,
                         display: "flex",
                         flexDirection: "column",
                         alignItems: "center",
