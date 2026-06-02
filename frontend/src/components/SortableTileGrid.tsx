@@ -136,6 +136,9 @@ interface SortableTileGridProps {
 
     // Called after a successful reorder so parent can refresh data
     onReorderComplete?: () => void;
+
+    // Called when a reorder API call fails so the parent can show feedback
+    onReorderError?: (err: unknown) => void;
 }
 
 export default function SortableTileGrid({
@@ -161,6 +164,7 @@ export default function SortableTileGrid({
     onGridDragOver,
     onGridDrop,
     onReorderComplete,
+    onReorderError,
 }: SortableTileGridProps) {
     // Merge categories + images at this level into an interleaved sorted list.
     // At root (path.length === 0), uncategorized images join the grid.
@@ -174,8 +178,8 @@ export default function SortableTileGrid({
 
     const [items, setItems] = useState<TileItem[]>([]);
     const itemsKey = useMemo(() => {
-        const catIds = currentCategories.map((c) => c.id).join(",");
-        const imgIds = visibleImages.map((i) => i.id).join(",");
+        const catIds = currentCategories.map((c) => `${c.id}:${c.sortOrder}`).join(",");
+        const imgIds = visibleImages.map((i) => `${i.id}:${i.sortOrder}`).join(",");
         return `${catIds}|${imgIds}`;
     }, [currentCategories, visibleImages]);
 
@@ -264,6 +268,7 @@ export default function SortableTileGrid({
                 console.error("Failed to persist reorder", err);
                 // Revert to original order
                 setItems(buildTileItems(currentCategories, visibleImages));
+                onReorderError?.(err);
             }
         },
         [
@@ -272,6 +277,7 @@ export default function SortableTileGrid({
             currentCategories,
             visibleImages,
             onReorderComplete,
+            onReorderError,
         ],
     );
 

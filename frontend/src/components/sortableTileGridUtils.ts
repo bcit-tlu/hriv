@@ -33,6 +33,12 @@ export function buildTileItems(
             }),
         ),
     ];
-    items.sort((a, b) => a.sortOrder - b.sortOrder);
+    items.sort((a, b) => {
+        const d = a.sortOrder - b.sortOrder;
+        if (d !== 0) return d;
+        // Stable tiebreaker: categories before images at the same sortOrder
+        if (a.type !== b.type) return a.type === "category" ? -1 : 1;
+        return a.data.id - b.data.id;
+    });
     return items;
 }

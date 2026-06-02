@@ -639,6 +639,13 @@ export default function App() {
         refreshUncategorizedImages().catch(() => {});
     }, [refreshCategories, refreshUncategorizedImages]);
 
+    const handleReorderError = useCallback(
+        (err: unknown) => {
+            setErrorSnack(userMessage(err, "Failed to reorder tiles."));
+        },
+        [],
+    );
+
     const navigateToDepth = (depth: number) => {
         setPath((prev) => prev.slice(0, depth));
     };
@@ -1488,6 +1495,7 @@ export default function App() {
                                         : undefined
                                 }
                                 onReorderComplete={handleReorderComplete}
+                                onReorderError={handleReorderError}
                             />
 
                             {categoriesLoading ? (
