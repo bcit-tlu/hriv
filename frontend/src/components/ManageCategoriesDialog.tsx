@@ -347,9 +347,15 @@ export default function ManageCategoriesDialog({
     setDragId(null)
     setDropTarget(null)
 
-    await onReorderCategories(catItems)
+    try {
+      await onReorderCategories(catItems)
+    } catch {
+      return
+    }
     if (imgItems.length > 0 && onReorderImages) {
-      await onReorderImages(imgItems)
+      try {
+        await onReorderImages(imgItems)
+      } catch { /* error already surfaced by the wrapper */ }
     }
   }, [dragId, dropTarget, options, categories, uncategorizedImages, onReorderCategories, onReorderImages])
 
