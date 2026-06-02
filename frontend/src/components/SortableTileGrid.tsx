@@ -266,6 +266,7 @@ export default function SortableTileGrid({
                 onReorderComplete?.();
             } catch (err) {
                 console.error("Failed to persist reorder", err);
+                setItems(items);
                 onReorderError?.(err);
                 // Refresh from server to reconcile any partial persistence
                 onReorderComplete?.();
