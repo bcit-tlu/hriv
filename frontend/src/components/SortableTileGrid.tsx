@@ -161,24 +161,21 @@ function DroppableCategoryZone({
 // one; otherwise fall back to closestCenter for sortable reordering.
 
 const moveOrReorder: CollisionDetection = (args) => {
-    const pointerCollisions = pointerWithin(args);
     const activeId = String(args.active.id);
-    const activeCatSuffix = activeId.startsWith("cat-")
-        ? activeId.slice(4)
-        : null;
 
-    const droppableHit = pointerCollisions.find((c) => {
-        const id = String(c.id);
-        if (!id.startsWith(DROP_PREFIX)) return false;
-        // Don't activate move-to-self
-        if (activeCatSuffix && id === `${DROP_PREFIX}${activeCatSuffix}`)
-            return false;
-        return true;
-    });
+    // Categories always reorder — they use the Move button for reparenting.
+    // Only images activate droppable category zones.
+    if (!activeId.startsWith("cat-")) {
+        const pointerCollisions = pointerWithin(args);
 
-    if (droppableHit) return [droppableHit];
+        const droppableHit = pointerCollisions.find((c) => {
+            const id = String(c.id);
+            return id.startsWith(DROP_PREFIX);
+        });
 
-    // Fall back to sortable reordering
+        if (droppableHit) return [droppableHit];
+    }
+
     return closestCenter(args);
 };
 
@@ -317,11 +314,6 @@ export default function SortableTileGrid({
                 if (activeId.startsWith("img-")) {
                     const imgId = Number(activeId.slice(4));
                     onDropImageOnCategory?.(imgId, targetCatId);
-                } else if (activeId.startsWith("cat-")) {
-                    const catId = Number(activeId.slice(4));
-                    if (catId !== targetCatId) {
-                        onDropCategoryOnCategory?.(catId, targetCatId);
-                    }
                 }
                 return;
             }
@@ -408,7 +400,6 @@ export default function SortableTileGrid({
             onReorderComplete,
             onReorderError,
             onDropImageOnCategory,
-            onDropCategoryOnCategory,
         ],
     );
 
