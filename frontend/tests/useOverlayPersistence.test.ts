@@ -26,6 +26,7 @@ function makeImage(
         thumb: `/thumb/${id}.jpg`,
         tileSources: `/tiles/${id}`,
         active: true,
+        sortOrder: 0,
         version: 1,
         ...overrides,
     };
@@ -123,7 +124,7 @@ describe("useOverlayPersistence", () => {
             const flushCanvasAnnotations = vi.fn().mockResolvedValue(undefined);
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
-                category_id: null, copyright: null, note: null, active: true,
+                category_id: null, copyright: null, note: null, active: true, sort_order: 0,
                 version: 4, metadata_extra: { locked_overlays: [makeRect()] },
                 created_at: "2024-01-01", updated_at: "2024-01-01",
                 width: null, height: null, file_size: null,
@@ -158,7 +159,7 @@ describe("useOverlayPersistence", () => {
             const loadUncategorizedImages = vi.fn();
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
-                category_id: null, copyright: null, note: null, active: true,
+                category_id: null, copyright: null, note: null, active: true, sort_order: 0,
                 version: 6, metadata_extra: { locked_overlays: rects },
                 created_at: "2024-01-01", updated_at: "2024-01-01",
                 width: null, height: null, file_size: null,
@@ -240,7 +241,7 @@ describe("useOverlayPersistence", () => {
             const loadUncategorizedImages = vi.fn();
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
-                category_id: null, copyright: null, note: null, active: true,
+                category_id: null, copyright: null, note: null, active: true, sort_order: 0,
                 version: 8, metadata_extra: {},
                 created_at: "2024-01-01", updated_at: "2024-01-01",
                 width: null, height: null, file_size: null,
@@ -304,7 +305,7 @@ describe("useOverlayPersistence", () => {
             const latestMetadataRef: { current: Record<string, unknown> | null | undefined } = { current: {} };
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
-                category_id: null, copyright: null, note: null, active: true,
+                category_id: null, copyright: null, note: null, active: true, sort_order: 0,
                 version: 6, metadata_extra: {},
                 created_at: "2024-01-01", updated_at: "2024-01-01",
                 width: null, height: null, file_size: null,
@@ -333,7 +334,7 @@ describe("useOverlayPersistence", () => {
             const latestMetadataRef: { current: Record<string, unknown> | null | undefined } = { current: undefined };
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
-                category_id: null, copyright: null, note: null, active: true,
+                category_id: null, copyright: null, note: null, active: true, sort_order: 0,
                 version: 4, metadata_extra: {},
                 created_at: "2024-01-01", updated_at: "2024-01-01",
                 width: null, height: null, file_size: null,

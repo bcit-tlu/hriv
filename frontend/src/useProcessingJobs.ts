@@ -55,6 +55,7 @@ export interface UseProcessingJobsDeps {
         copyright: string | null;
         note: string | null;
         active: boolean;
+        sort_order: number;
         version: number;
         created_at: string;
         updated_at: string;
@@ -244,6 +245,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
                                 copyright: fresh.copyright,
                                 note: fresh.note,
                                 active: fresh.active,
+                                sortOrder: fresh.sort_order,
                                 version: fresh.version,
                                 createdAt: fresh.created_at,
                                 updatedAt: fresh.updated_at,

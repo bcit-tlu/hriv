@@ -50,6 +50,7 @@ def _make_image(
     name: str,
     category_id: int | None,
     active: bool = True,
+    sort_order: int = 0,
 ) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
@@ -61,6 +62,7 @@ def _make_image(
         copyright=None,
         note=None,
         active=active,
+        sort_order=sort_order,
         metadata_=None,
         version=1,
         width=None,

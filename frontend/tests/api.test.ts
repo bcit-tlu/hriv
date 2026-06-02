@@ -42,6 +42,7 @@ import {
   deleteImage,
   bulkUpdateImages,
   bulkDeleteImages,
+  reorderImages,
   fetchOidcEnabled,
   getOidcLoginUrl,
   fetchUsers,
@@ -141,6 +142,7 @@ const IMAGE_FIXTURE: ApiImage = {
   note: null,
   program_ids: [],
   active: true,
+  sort_order: 0,
   metadata_extra: null,
   version: 1,
   width: 100,
@@ -493,6 +495,17 @@ describe('Image API', () => {
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/images/bulk')
     expect(init.method).toBe('DELETE')
+  })
+
+  it('reorderImages sends PUT with items array', async () => {
+    mockFetch.mockReturnValueOnce(noContentResponse())
+    await reorderImages([{ id: 1, sort_order: 0 }, { id: 2, sort_order: 1 }])
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/images/reorder')
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body)).toEqual({
+      items: [{ id: 1, sort_order: 0 }, { id: 2, sort_order: 1 }],
+    })
   })
 })
 

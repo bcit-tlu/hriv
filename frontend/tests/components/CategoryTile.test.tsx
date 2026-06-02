@@ -198,9 +198,9 @@ describe('CategoryTile', () => {
         <CategoryTile
           category={makeCategory({
             images: [
-              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
-              { id: 2, name: 'Img2', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
-              { id: 3, name: 'Img3', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
+              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
+              { id: 2, name: 'Img2', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
+              { id: 3, name: 'Img3', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
             ],
           })}
           onClick={vi.fn()}
@@ -215,7 +215,7 @@ describe('CategoryTile', () => {
         <CategoryTile
           category={makeCategory({
             images: [
-              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
+              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
             ],
           })}
           onClick={vi.fn()}
@@ -230,15 +230,15 @@ describe('CategoryTile', () => {
         <CategoryTile
           category={makeCategory({
             images: [
-              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
+              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
             ],
             children: [
               makeCategory({
                 id: 2,
                 label: 'Child',
                 images: [
-                  { id: 2, name: 'Img2', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
-                  { id: 3, name: 'Img3', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
+                  { id: 2, name: 'Img2', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
+                  { id: 3, name: 'Img3', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
                 ],
               }),
             ],
@@ -299,7 +299,7 @@ describe('CategoryTile', () => {
           category={makeCategory({
             cardImageId: 5,
             images: [
-              { id: 5, name: 'Card Img', thumb: '/thumbs/card.jpg', tileSources: '', programIds: [], active: true, version: 1 },
+              { id: 5, name: 'Card Img', thumb: '/thumbs/card.jpg', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
             ],
           })}
           onClick={vi.fn()}

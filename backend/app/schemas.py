@@ -169,6 +169,7 @@ class ImageBase(BaseModel):
     copyright: str | None = None
     note: str | None = None
     active: bool = True
+    sort_order: int = 0
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
     width: int | None = None
     height: int | None = None
@@ -187,6 +188,7 @@ class ImageUpdate(BaseModel):
     copyright: str | None = None
     note: str | None = None
     active: bool | None = None
+    sort_order: int | None = None
     metadata_extra: dict | None = None
     metadata_extra_merge: dict | None = None
 
@@ -203,6 +205,15 @@ class ImageUpdate(BaseModel):
             if raw is not None:
                 _validate_locked_overlays(self.metadata_extra_merge)
         return self
+
+
+class ImageReorderItem(BaseModel):
+    id: int
+    sort_order: int
+
+
+class ImageReorderRequest(BaseModel):
+    items: list[ImageReorderItem]
 
 
 class ImageOut(ImageBase):

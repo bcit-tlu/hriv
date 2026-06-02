@@ -39,6 +39,7 @@ const testCategory: Category = {
             copyright: "2026 BCIT",
             note: "Sample liver tissue",
             active: true,
+            sortOrder: 0,
             version: 1,
         },
         {
@@ -50,6 +51,7 @@ const testCategory: Category = {
             copyright: "Kidney Foundation 2026",
             note: "Cross-section of kidney cortex",
             active: true,
+            sortOrder: 0,
             version: 1,
         },
     ],

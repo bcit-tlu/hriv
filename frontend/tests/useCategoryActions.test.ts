@@ -46,6 +46,7 @@ function makeImage(overrides: Partial<ImageItem> = {}): ImageItem {
         tileSources: "/tiles/100",
         categoryId: null,
         active: true,
+        sortOrder: 0,
         version: 1,
         ...overrides,
     };

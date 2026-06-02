@@ -29,6 +29,7 @@ function makeImage(overrides: Partial<ImageItem> = {}): ImageItem {
         tileSources: "/tiles/test.dzi",
         programIds: [],
         active: true,
+        sortOrder: 0,
         version: 1,
         ...overrides,
     };

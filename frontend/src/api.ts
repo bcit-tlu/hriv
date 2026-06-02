@@ -133,6 +133,7 @@ export interface ApiImage {
   copyright: string | null
   note: string | null
   active: boolean
+  sort_order: number
   metadata_extra: Record<string, unknown> | null
   version: number
   width: number | null
@@ -222,6 +223,15 @@ export function reorderCategories(
 }
 
 // ── Images ───────────────────────────────────────────────
+
+export function reorderImages(
+  items: Array<{ id: number; sort_order: number }>,
+): Promise<void> {
+  return request('/images/reorder', {
+    method: 'PUT',
+    body: JSON.stringify({ items }),
+  })
+}
 
 export function fetchImage(imageId: number): Promise<ApiImage> {
   return request(`/images/${imageId}`)

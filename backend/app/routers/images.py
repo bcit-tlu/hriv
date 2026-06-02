@@ -16,7 +16,7 @@ from ..auth import get_current_user, require_role
 from ..database import get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import Category, Image, SourceImage, User
-from ..schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageOut, SourceImageOut
+from ..schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageReorderRequest, ImageOut, SourceImageOut
 from ..visibility import get_student_excluded_category_ids, is_category_visible_to_student
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ async def list_images(
             stmt = stmt.where(
                 (Image.category_id.is_(None)) | (~Image.category_id.in_(excluded))
             )
-    stmt = stmt.order_by(Image.name)
+    stmt = stmt.order_by(Image.sort_order, Image.name)
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -84,6 +84,7 @@ async def create_image(
                 copyright=body.copyright,
                 note=body.note,
                 active=body.active,
+                sort_order=body.sort_order,
                 metadata_=body.metadata_extra or {},
                 width=body.width,
                 height=body.height,
@@ -123,7 +124,7 @@ async def bulk_update_images(
                 img.version = img.version + 1
             await db.commit()
             # Reload updated images
-            stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.name)
+            stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.sort_order, Image.name)
             result = await db.execute(stmt)
             return result.scalars().all()
         except Exception as exc:
@@ -378,6 +379,28 @@ async def bulk_delete_images(
             for img in images:
                 await db.delete(img)
             await db.commit()
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
+            raise
+
+
+@router.put("/reorder", status_code=200)
+async def reorder_images(
+    body: ImageReorderRequest,
+    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    db: AsyncSession = Depends(get_db),
+):
+    with tracer.start_as_current_span("image.reorder") as span:
+        try:
+            span.set_attribute("image.count", len(body.items))
+            for item in body.items:
+                img = await db.get(Image, item.id)
+                if img is None:
+                    raise HTTPException(status_code=404, detail=f"Image {item.id} not found")
+                img.sort_order = item.sort_order
+            await db.commit()
+            return {"status": "ok"}
         except Exception as exc:
             span.record_exception(exc)
             span.set_status(StatusCode.ERROR, str(exc))

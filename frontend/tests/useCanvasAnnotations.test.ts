@@ -26,6 +26,7 @@ function makeImage(
         thumb: `/thumb/${id}.jpg`,
         tileSources: `/tiles/${id}`,
         active: true,
+        sortOrder: 0,
         version: 1,
         ...overrides,
     };
@@ -131,6 +132,7 @@ describe("useCanvasAnnotations", () => {
                 copyright: null,
                 note: null,
                 active: true,
+                sort_order: 0,
                 version: 2,
                 metadata_extra: { canvas_annotations: [makeAnnotation()] },
                 created_at: "2024-01-01",
@@ -174,6 +176,7 @@ describe("useCanvasAnnotations", () => {
                 copyright: null,
                 note: null,
                 active: true,
+                sort_order: 0,
                 version: 2,
                 metadata_extra: null,
                 created_at: "2024-01-01",
@@ -230,7 +233,7 @@ describe("useCanvasAnnotations", () => {
                 .mockReturnValueOnce(firstPromise as never)
                 .mockResolvedValueOnce({
                     id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
-                    category_id: null, copyright: null, note: null, active: true,
+                    category_id: null, copyright: null, note: null, active: true, sort_order: 0,
                     version: 3, metadata_extra: null,
                     created_at: "2024-01-01", updated_at: "2024-01-01",
                     width: null, height: null, file_size: null,
@@ -259,7 +262,7 @@ describe("useCanvasAnnotations", () => {
             await act(async () => {
                 resolveFirst({
                     id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
-                    category_id: null, copyright: null, note: null, active: true,
+                    category_id: null, copyright: null, note: null, active: true, sort_order: 0,
                     version: 2, metadata_extra: null,
                     created_at: "2024-01-01", updated_at: "2024-01-01",
                     width: null, height: null, file_size: null,
@@ -276,7 +279,7 @@ describe("useCanvasAnnotations", () => {
             const image = makeImage(1);
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
-                category_id: null, copyright: null, note: null, active: true,
+                category_id: null, copyright: null, note: null, active: true, sort_order: 0,
                 version: 2, metadata_extra: null,
                 created_at: "2024-01-01", updated_at: "2024-01-01",
                 width: null, height: null, file_size: null,
@@ -343,7 +346,7 @@ describe("useCanvasAnnotations", () => {
             const image = makeImage(1, { version: 5 });
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
-                category_id: null, copyright: null, note: null, active: true,
+                category_id: null, copyright: null, note: null, active: true, sort_order: 0,
                 version: 6, metadata_extra: { canvas_annotations: [makeAnnotation()] },
                 created_at: "2024-01-01", updated_at: "2024-01-01",
                 width: null, height: null, file_size: null,
@@ -368,7 +371,7 @@ describe("useCanvasAnnotations", () => {
             const newMeta = { canvas_annotations: [makeAnnotation()], custom: "data" };
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
-                category_id: null, copyright: null, note: null, active: true,
+                category_id: null, copyright: null, note: null, active: true, sort_order: 0,
                 version: 2, metadata_extra: newMeta,
                 created_at: "2024-01-01", updated_at: "2024-01-01",
                 width: null, height: null, file_size: null,
@@ -427,7 +430,7 @@ describe("useCanvasAnnotations", () => {
             const image = makeImage(1);
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
-                category_id: null, copyright: null, note: null, active: true,
+                category_id: null, copyright: null, note: null, active: true, sort_order: 0,
                 version: 2, metadata_extra: null,
                 created_at: "2024-01-01", updated_at: "2024-01-01",
                 width: null, height: null, file_size: null,
@@ -455,7 +458,7 @@ describe("useCanvasAnnotations", () => {
             const image = makeImage(1);
             mockUpdateImage.mockResolvedValue({
                 id: 1, name: "img-1", thumb: "/t", tile_sources: "/s",
-                category_id: null, copyright: null, note: null, active: true,
+                category_id: null, copyright: null, note: null, active: true, sort_order: 0,
                 version: 2, metadata_extra: null,
                 created_at: "2024-01-01", updated_at: "2024-01-01",
                 width: null, height: null, file_size: null,

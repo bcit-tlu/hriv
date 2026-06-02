@@ -14,6 +14,7 @@ const baseImage: ApiImage = {
   note: null,
   program_ids: [],
   active: true,
+  sort_order: 0,
   metadata_extra: null,
   version: 1,
   width: 100,
