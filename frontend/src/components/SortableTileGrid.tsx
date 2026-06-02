@@ -12,7 +12,7 @@ import {
 } from "@dnd-kit/react";
 import { useSortable } from "@dnd-kit/react/sortable";
 import { arrayMove } from "@dnd-kit/helpers";
-import { closestCenter, pointerIntersection } from "@dnd-kit/collision";
+import { pointerIntersection } from "@dnd-kit/collision";
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { PointerActivationConstraints } from "@dnd-kit/dom";
 import type { Draggable } from "@dnd-kit/abstract";
@@ -27,6 +27,7 @@ import {
     DROP_PREFIX,
     collectDescendantIds,
     findCategory,
+    createGapOnlyClosestCenter,
 } from "./sortableTileGridUtils";
 import type { TileItem } from "./sortableTileGridUtils";
 
@@ -36,16 +37,17 @@ interface SortableItemProps {
     id: string;
     index: number;
     disabled: boolean;
+    collisionDetector: import("@dnd-kit/abstract").CollisionDetector;
     children: React.ReactNode;
 }
 
-function SortableItem({ id, index, disabled, children }: SortableItemProps) {
+function SortableItem({ id, index, disabled, collisionDetector, children }: SortableItemProps) {
     const { ref, isDragSource } = useSortable({
         id,
         index,
         disabled,
         type: "tile",
-        collisionDetector: closestCenter,
+        collisionDetector,
     });
 
     return (
@@ -76,6 +78,8 @@ interface DroppableCategoryZoneProps {
     disabled: boolean;
     /** Map from category ID → set of IDs blocked as drop targets for that source (self + descendants). */
     blockedIdsMap: Map<number, Set<number>>;
+    /** Callback to register/unregister this zone's DOM element for collision suppression. */
+    onRegister: (categoryId: number, el: Element | null) => void;
     children: React.ReactNode;
 }
 
@@ -83,6 +87,7 @@ function DroppableCategoryZone({
     categoryId,
     disabled,
     blockedIdsMap,
+    onRegister,
     children,
 }: DroppableCategoryZoneProps) {
     const acceptFilter = useCallback(
@@ -96,13 +101,21 @@ function DroppableCategoryZone({
         [blockedIdsMap, categoryId],
     );
 
-    const { ref, isDropTarget } = useDroppable({
+    const { ref: droppableRef, isDropTarget } = useDroppable({
         id: `${DROP_PREFIX}${categoryId}`,
         disabled,
         collisionDetector: pointerIntersection,
         collisionPriority: CollisionPriority.High,
         accept: acceptFilter,
     });
+
+    const ref = useCallback(
+        (el: Element | null) => {
+            droppableRef(el);
+            onRegister(categoryId, el);
+        },
+        [droppableRef, onRegister, categoryId],
+    );
 
     return (
         <Box
@@ -249,6 +262,26 @@ export default function SortableTileGrid({
     const reorderInFlightRef = useRef(false);
     const prevCatsRef = useRef<Category[] | null>(null);
     const prevImgsRef = useRef<ImageItem[] | null>(null);
+
+    // Track category drop zone DOM elements so the sortable collision
+    // detector can suppress reorder when the pointer is over a drop zone.
+    const dropZoneElementsRef = useRef(new Set<Element>());
+    const prevDropZoneRef = useRef(new Map<number, Element>());
+    const registerDropZone = useCallback((categoryId: number, el: Element | null) => {
+        const prev = prevDropZoneRef.current.get(categoryId);
+        if (prev) {
+            dropZoneElementsRef.current.delete(prev);
+            prevDropZoneRef.current.delete(categoryId);
+        }
+        if (el) {
+            dropZoneElementsRef.current.add(el);
+            prevDropZoneRef.current.set(categoryId, el);
+        }
+    }, []);
+    const sortableCollision = useMemo(
+        () => createGapOnlyClosestCenter(dropZoneElementsRef.current),
+        [],
+    );
 
     // Rebuild the sorted item list whenever source data changes by reference,
     // unless an optimistic reorder is in-flight (to avoid reverting the drag).
@@ -416,6 +449,7 @@ export default function SortableTileGrid({
                 categoryId={cat.id}
                 disabled={!canEditContent}
                 blockedIdsMap={blockedIdsMap}
+                onRegister={registerDropZone}
             >
                 {tile}
             </DroppableCategoryZone>
@@ -494,6 +528,7 @@ export default function SortableTileGrid({
                             id={id}
                             index={index}
                             disabled={!canEditContent}
+                            collisionDetector={sortableCollision}
                         >
                             {item.type === "category"
                                 ? renderCategoryTile(

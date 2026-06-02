@@ -1,3 +1,5 @@
+import { closestCenter } from "@dnd-kit/collision";
+import type { CollisionDetector } from "@dnd-kit/abstract";
 import type { Category, ImageItem } from "../types";
 
 // ── Tile item union type ────────────────────────────────────
@@ -42,6 +44,33 @@ export function findCategory(
         if (found) return found;
     }
     return undefined;
+}
+
+/**
+ * Create a collision detector for sortable items that delegates to
+ * `closestCenter` but suppresses collisions when the pointer is
+ * currently inside any registered category drop zone element.
+ * This prevents the OptimisticSortingPlugin from visually reordering
+ * tiles while the user is hovering over a "Move here" drop target.
+ */
+export function createGapOnlyClosestCenter(
+    dropZoneElements: Set<Element>,
+): CollisionDetector {
+    return (input) => {
+        const { x, y } = input.dragOperation.position.current;
+        for (const el of dropZoneElements) {
+            const rect = el.getBoundingClientRect();
+            if (
+                x >= rect.left &&
+                x <= rect.right &&
+                y >= rect.top &&
+                y <= rect.bottom
+            ) {
+                return null;
+            }
+        }
+        return closestCenter(input);
+    };
 }
 
 /** Build an interleaved, sorted list of categories and images. */
