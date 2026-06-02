@@ -68,9 +68,11 @@ interface CategoryTileProps {
   onDropFiles?: (categoryId: number, files: File[]) => void
   /** Enable HTML5 drag for this tile (editors only). */
   draggable?: boolean
+  /** Optional drag handle element for @dnd-kit sortable reorder. */
+  dragHandleSlot?: React.ReactNode
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, onDropImage, onDropCategory, onDropFiles, draggable = false }: CategoryTileProps) {
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, onDropImage, onDropCategory, onDropFiles, draggable = false, dragHandleSlot }: CategoryTileProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -288,6 +290,21 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             gap: 0.5,
           }}
         >
+          {dragHandleSlot && (
+            <Box
+              sx={{
+                bgcolor: 'rgba(0,0,0,0.25)',
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {dragHandleSlot}
+            </Box>
+          )}
           {onToggleVisibility && (
             <Tooltip title={category.status === 'hidden' ? 'Show to students' : 'Hide from students'}>
               <IconButton

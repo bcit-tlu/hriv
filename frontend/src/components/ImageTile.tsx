@@ -21,9 +21,11 @@ interface ImageTileProps {
   onToggleVisibility?: (imageId: number) => Promise<void>
   /** Enable HTML5 drag for this tile (editors only). */
   draggable?: boolean
+  /** Optional drag handle element for @dnd-kit sortable reorder. */
+  dragHandleSlot?: React.ReactNode
 }
 
-export default function ImageTile({ image, onClick, onEditDetails, onToggleVisibility, draggable = false }: ImageTileProps) {
+export default function ImageTile({ image, onClick, onEditDetails, onToggleVisibility, draggable = false, dragHandleSlot }: ImageTileProps) {
   const [dragging, setDragging] = useState(false)
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
@@ -44,17 +46,32 @@ export default function ImageTile({ image, onClick, onEditDetails, onToggleVisib
       onDragEnd={draggable ? handleDragEnd : undefined}
       sx={{ width: '100%', maxWidth: 300, position: 'relative', opacity: dragging ? 0.4 : 1, transition: 'opacity 0.15s' }}
     >
-      {onToggleVisibility && (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 4,
-            right: 4,
-            zIndex: 1,
-            display: 'flex',
-            gap: 0.5,
-          }}
-        >
+      <Box
+        sx={{
+          position: 'absolute',
+          top: 4,
+          right: 4,
+          zIndex: 1,
+          display: 'flex',
+          gap: 0.5,
+        }}
+      >
+        {dragHandleSlot && (
+          <Box
+            sx={{
+              bgcolor: 'rgba(0,0,0,0.25)',
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'white',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {dragHandleSlot}
+          </Box>
+        )}
+        {onToggleVisibility && (
           <Tooltip title={image.active ? 'Hide from students' : 'Show to students'}>
             <IconButton
               size="small"
@@ -76,8 +93,8 @@ export default function ImageTile({ image, onClick, onEditDetails, onToggleVisib
               )}
             </IconButton>
           </Tooltip>
-        </Box>
-      )}
+        )}
+      </Box>
       <CardActionArea onClick={() => onClick(image)} sx={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'stretch' }}>
         <CardMedia
           component="img"

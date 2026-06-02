@@ -25,6 +25,7 @@ export interface Category {
   images: ImageItem[]
   programIds: number[]
   status?: string | null
+  sortOrder: number
   cardImageId?: number | null
   metadataExtra?: Record<string, unknown> | null
 }

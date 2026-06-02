@@ -29,8 +29,7 @@ import EditIcon from "@mui/icons-material/Edit";
 import HomeIcon from "@mui/icons-material/Home";
 import LinkIcon from "@mui/icons-material/Link";
 import ImageViewer from "./components/ImageViewer";
-import CategoryTile from "./components/CategoryTile";
-import ImageTile from "./components/ImageTile";
+import SortableTileGrid from "./components/SortableTileGrid";
 import ManageCategoriesDialog from "./components/ManageCategoriesDialog";
 import AdminPage from "./components/AdminPage";
 import AppShell from "./components/AppShell";
@@ -46,7 +45,6 @@ import SearchModal from "./components/SearchModal";
 import type { TypeFilter } from "./components/SearchModal";
 import { findImageInTree, findCategoryPath, resolveCategoryPath } from "./treeUtils";
 import UploadImageModal from "./components/UploadImageModal";
-import FileDropZone from "./components/FileDropZone";
 import { isAcceptedFile } from "./fileUtils";
 import { useAuth } from "./useAuth";
 import {
@@ -589,6 +587,57 @@ export default function App() {
     const navigateToCategory = (cat: Category) => {
         setPath((prev) => [...prev, cat]);
     };
+
+    const handleCategoryTileClick = useCallback(
+        (cat: Category) => {
+            navigateToCategory(cat);
+            pushNavState(
+                "browse",
+                [...path.map((c) => c.id), cat.id],
+            );
+        },
+        [path, pushNavState],
+    );
+
+    const handleFilesDropOnGrid = useCallback(
+        (files: File[]) => {
+            const accepted = files.filter(isAcceptedFile);
+            const rejected = files.length - accepted.length;
+            if (rejected > 0) {
+                setWarnSnack(
+                    `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
+                );
+            }
+            if (accepted.length > 0) {
+                setDroppedFiles(accepted);
+                setUploadOpen(true);
+            }
+        },
+        [],
+    );
+
+    const handleFilesDropOnCategory = useCallback(
+        (categoryId: number, files: File[]) => {
+            const accepted = files.filter(isAcceptedFile);
+            const rejected = files.length - accepted.length;
+            if (rejected > 0) {
+                setWarnSnack(
+                    `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
+                );
+            }
+            if (accepted.length > 0) {
+                setFileDropCategoryId(categoryId);
+                setDroppedFiles(accepted);
+                setUploadOpen(true);
+            }
+        },
+        [],
+    );
+
+    const handleReorderComplete = useCallback(() => {
+        refreshCategories();
+        refreshUncategorizedImages();
+    }, [refreshCategories, refreshUncategorizedImages]);
 
     const navigateToDepth = (depth: number) => {
         setPath((prev) => prev.slice(0, depth));
@@ -1376,13 +1425,37 @@ export default function App() {
                             </Box>
 
                             {/* Tile grid */}
-                            <Box
-                                sx={{
-                                    display: "flex",
-                                    flexWrap: "wrap",
-                                    gap: 2,
-                                }}
-                                onDragOver={
+                            <SortableTileGrid
+                                currentCategories={currentCategories}
+                                currentImages={currentImages}
+                                uncategorizedImages={uncategorizedImages}
+                                path={path}
+                                canEditContent={canEditContent}
+                                fileDragActive={fileDragActive}
+                                programs={programs}
+                                onCategoryClick={handleCategoryTileClick}
+                                onMoveCategory={handleRequestMoveCategory}
+                                onSetCardImage={handleSetCardImage}
+                                onToggleCategoryVisibility={
+                                    toggleCategoryVisibility
+                                }
+                                onEditCategoryName={setEditNameCategory}
+                                onDropImageOnCategory={
+                                    handleDropImageOnCategory
+                                }
+                                onDropCategoryOnCategory={
+                                    handleDropCategoryOnCategory
+                                }
+                                onDropFilesOnCategory={
+                                    handleFilesDropOnCategory
+                                }
+                                onImageClick={handleImageClick}
+                                onEditImageDetails={setBrowseEditImage}
+                                onToggleImageVisibility={
+                                    toggleImageVisibility
+                                }
+                                onFilesDrop={handleFilesDropOnGrid}
+                                onGridDragOver={
                                     canEditContent
                                         ? (e) => {
                                               if (
@@ -1397,7 +1470,7 @@ export default function App() {
                                           }
                                         : undefined
                                 }
-                                onDrop={
+                                onGridDrop={
                                     canEditContent
                                         ? (e) => {
                                               if (
@@ -1409,162 +1482,13 @@ export default function App() {
                                                   const all = Array.from(
                                                       e.dataTransfer.files,
                                                   );
-                                                  const accepted =
-                                                      all.filter(
-                                                          isAcceptedFile,
-                                                      );
-                                                  const rejected =
-                                                      all.length -
-                                                      accepted.length;
-                                                  if (rejected > 0) {
-                                                      setWarnSnack(
-                                                          `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
-                                                      );
-                                                  }
-                                                  if (accepted.length > 0) {
-                                                      setDroppedFiles(accepted);
-                                                      setUploadOpen(true);
-                                                  }
+                                                  handleFilesDropOnGrid(all);
                                               }
                                           }
                                         : undefined
                                 }
-                            >
-                                {currentCategories.map((cat) => (
-                                    <CategoryTile
-                                        key={cat.id}
-                                        category={cat}
-                                        onClick={(cat) => {
-                                            navigateToCategory(cat);
-                                            pushNavState(
-                                                "browse",
-                                                [
-                                                    ...path.map(
-                                                        (c) => c.id,
-                                                    ),
-                                                    cat.id,
-                                                ],
-                                            );
-                                        }}
-                                        onMove={
-                                            canEditContent
-                                                ? handleRequestMoveCategory
-                                                : undefined
-                                        }
-                                        onSetCardImage={
-                                            canEditContent
-                                                ? handleSetCardImage
-                                                : undefined
-                                        }
-                                        onToggleVisibility={
-                                            canEditContent
-                                                ? toggleCategoryVisibility
-                                                : undefined
-                                        }
-                                        onEditName={
-                                            canEditContent
-                                                ? setEditNameCategory
-                                                : undefined
-                                        }
-                                        programs={programs}
-                                        onDropImage={
-                                            canEditContent
-                                                ? handleDropImageOnCategory
-                                                : undefined
-                                        }
-                                        onDropCategory={
-                                            canEditContent
-                                                ? handleDropCategoryOnCategory
-                                                : undefined
-                                        }
-                                        onDropFiles={
-                                            canEditContent
-                                                ? (categoryId, files) => {
-                                                      const accepted =
-                                                          files.filter(
-                                                              isAcceptedFile,
-                                                          );
-                                                      const rejected =
-                                                          files.length -
-                                                          accepted.length;
-                                                      if (rejected > 0) {
-                                                          setWarnSnack(
-                                                              `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
-                                                          );
-                                                      }
-                                                      if (accepted.length > 0) {
-                                                          setFileDropCategoryId(
-                                                              categoryId,
-                                                          );
-                                                          setDroppedFiles(
-                                                              accepted,
-                                                          );
-                                                          setUploadOpen(true);
-                                                      }
-                                                  }
-                                                : undefined
-                                        }
-                                        draggable={canEditContent}
-                                    />
-                                ))}
-                                {path.length === 0 &&
-                                    uncategorizedImages.map((img) => (
-                                        <ImageTile
-                                            key={img.id}
-                                            image={img}
-                                            onClick={handleImageClick}
-                                            onEditDetails={
-                                                canEditContent
-                                                    ? setBrowseEditImage
-                                                    : undefined
-                                            }
-                                            onToggleVisibility={
-                                                canEditContent
-                                                    ? toggleImageVisibility
-                                                    : undefined
-                                            }
-                                            draggable={canEditContent}
-                                        />
-                                    ))}
-                                {currentImages.map((img) => (
-                                    <ImageTile
-                                        key={img.id}
-                                        image={img}
-                                        onClick={handleImageClick}
-                                        onEditDetails={
-                                            canEditContent
-                                                ? setBrowseEditImage
-                                                : undefined
-                                        }
-                                        onToggleVisibility={
-                                            canEditContent
-                                                ? toggleImageVisibility
-                                                : undefined
-                                        }
-                                        draggable={canEditContent}
-                                    />
-                                ))}
-                                {canEditContent && (
-                                    <FileDropZone
-                                        isDragActive={fileDragActive}
-                                        onDrop={(files) => {
-                                            const accepted =
-                                                files.filter(isAcceptedFile);
-                                            const rejected =
-                                                files.length - accepted.length;
-                                            if (rejected > 0) {
-                                                setWarnSnack(
-                                                    `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
-                                                );
-                                            }
-                                            if (accepted.length > 0) {
-                                                setDroppedFiles(accepted);
-                                                setUploadOpen(true);
-                                            }
-                                        }}
-                                    />
-                                )}
-                            </Box>
+                                onReorderComplete={handleReorderComplete}
+                            />
 
                             {categoriesLoading ? (
                                 <Box

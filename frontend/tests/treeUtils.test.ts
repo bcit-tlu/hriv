@@ -27,6 +27,7 @@ function makeCategory(
         children,
         images,
         programIds: [],
+        sortOrder: 0,
     };
 }
 
