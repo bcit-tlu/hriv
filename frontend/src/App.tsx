@@ -1438,6 +1438,7 @@ export default function App() {
 
                             {/* Tile grid */}
                             <SortableTileGrid
+                                allCategories={categories}
                                 currentCategories={currentCategories}
                                 currentImages={currentImages}
                                 uncategorizedImages={uncategorizedImages}

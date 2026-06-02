@@ -62,6 +62,7 @@ const defaultPrograms: Program[] = [];
 
 function renderGrid(overrides: Partial<SortableTileGridProps> = {}) {
     const defaults: SortableTileGridProps = {
+        allCategories: [],
         currentCategories: [],
         currentImages: [],
         uncategorizedImages: [],
@@ -318,12 +319,12 @@ describe("DroppableCategoryZone (via SortableTileGrid)", () => {
         renderGrid({ currentCategories: [cat], canEditContent: true });
 
         const dropRegions = screen.getAllByRole("region", {
-            name: "Drop into category",
+            name: "Move into category",
         });
         expect(dropRegions.length).toBeGreaterThanOrEqual(1);
     });
 
-    it("does not show drop overlay text when not hovering", () => {
+    it("does not show move overlay text when not hovering", () => {
         const cat = makeCategory({
             id: 5,
             label: "Histology",
@@ -332,7 +333,7 @@ describe("DroppableCategoryZone (via SortableTileGrid)", () => {
 
         renderGrid({ currentCategories: [cat], canEditContent: true });
 
-        expect(screen.queryByText("Drop here")).not.toBeInTheDocument();
+        expect(screen.queryByText("Move here")).not.toBeInTheDocument();
     });
 
     it("wraps each category tile in a droppable zone for editors", () => {
@@ -344,7 +345,7 @@ describe("DroppableCategoryZone (via SortableTileGrid)", () => {
         renderGrid({ currentCategories: cats, canEditContent: true });
 
         const dropRegions = screen.getAllByRole("region", {
-            name: "Drop into category",
+            name: "Move into category",
         });
         expect(dropRegions).toHaveLength(2);
     });
@@ -359,7 +360,7 @@ describe("DroppableCategoryZone (via SortableTileGrid)", () => {
         renderGrid({ currentCategories: [cat], canEditContent: false });
 
         const dropRegions = screen.getAllByRole("region", {
-            name: "Drop into category",
+            name: "Move into category",
         });
         expect(dropRegions).toHaveLength(1);
     });

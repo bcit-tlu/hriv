@@ -20,6 +20,7 @@ vi.mock("@dnd-kit/core", async () => {
 
 import {
     moveOrReorder,
+    createMoveOrReorder,
     DROP_PREFIX,
     tileId,
     buildTileItems,
@@ -66,7 +67,7 @@ function makeArgs(
         droppableRects: new Map() as never,
         droppableContainers: droppables as never,
         pointerCoordinates: pointer,
-    } as Parameters<typeof moveOrReorder>[0];
+    } as Parameters<ReturnType<typeof createMoveOrReorder>>[0];
 }
 
 function collision(id: string): CollisionDescriptor {
@@ -207,6 +208,75 @@ describe("moveOrReorder", () => {
 
         const result = moveOrReorder(makeArgs("img-1"));
         expect(result).toEqual([]);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// createMoveOrReorder — ancestor-cycle prevention
+// ---------------------------------------------------------------------------
+
+describe("createMoveOrReorder ancestor-cycle prevention", () => {
+    beforeEach(() => {
+        mockClosestCenter.mockReset();
+    });
+
+    // Tree: cat-1 → cat-2 → cat-3
+    const tree = [
+        makeCategory({
+            id: 1,
+            children: [
+                makeCategory({
+                    id: 2,
+                    children: [makeCategory({ id: 3 })],
+                }),
+            ],
+        }),
+        makeCategory({ id: 4 }),
+    ];
+
+    const detector = createMoveOrReorder(tree);
+    const catZone2 = makeDroppable("drop-cat-2", { left: 0, top: 0, width: 100, height: 100 });
+    const catZone3 = makeDroppable("drop-cat-3", { left: 0, top: 0, width: 100, height: 100 });
+    const catZone4 = makeDroppable("drop-cat-4", { left: 200, top: 0, width: 100, height: 100 });
+
+    it("blocks dropping a parent onto its child", () => {
+        const sortableHit = collision("cat-99");
+        mockClosestCenter.mockReturnValue([sortableHit]);
+
+        // cat-1 dragged onto drop-cat-2 (its child) → blocked, falls back to closestCenter
+        const result = detector(
+            makeArgs("cat-1", { x: 50, y: 50 }, [catZone2]),
+        );
+        expect(result).toEqual([sortableHit]);
+    });
+
+    it("blocks dropping a grandparent onto its grandchild", () => {
+        const sortableHit = collision("cat-99");
+        mockClosestCenter.mockReturnValue([sortableHit]);
+
+        // cat-1 dragged onto drop-cat-3 (its grandchild) → blocked
+        const result = detector(
+            makeArgs("cat-1", { x: 50, y: 50 }, [catZone3]),
+        );
+        expect(result).toEqual([sortableHit]);
+    });
+
+    it("allows dropping onto a non-descendant category", () => {
+        // cat-1 dragged onto drop-cat-4 (sibling, not descendant) → allowed
+        const result = detector(
+            makeArgs("cat-1", { x: 250, y: 50 }, [catZone4]),
+        );
+        expect(result).toEqual([{ id: "drop-cat-4" }]);
+        expect(mockClosestCenter).not.toHaveBeenCalled();
+    });
+
+    it("allows images to drop onto any category regardless of tree", () => {
+        // img-10 dragged onto drop-cat-2 → allowed (ancestor-cycle only applies to categories)
+        const result = detector(
+            makeArgs("img-10", { x: 50, y: 50 }, [catZone2]),
+        );
+        expect(result).toEqual([{ id: "drop-cat-2" }]);
+        expect(mockClosestCenter).not.toHaveBeenCalled();
     });
 });
 
