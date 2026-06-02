@@ -188,6 +188,9 @@ export default function SortableTileGrid({
             const { active, over } = event;
             if (!over || active.id === over.id) return;
 
+            // Reject concurrent drags — wait for the in-flight reorder to settle
+            if (reorderInFlightRef.current) return;
+
             const oldIndex = items.findIndex(
                 (item) => tileId(item) === active.id,
             );
@@ -235,18 +238,31 @@ export default function SortableTileGrid({
                 if (imgUpdates.length > 0) {
                     promises.push(reorderImages(imgUpdates));
                 }
-                await Promise.all(promises);
+                const results = await Promise.allSettled(promises);
+                const failed = results.filter(
+                    (r) => r.status === "rejected",
+                );
                 reorderInFlightRef.current = false;
+                if (failed.length > 0) {
+                    const err =
+                        (failed[0] as PromiseRejectedResult).reason ??
+                        new Error("Reorder partially failed");
+                    console.error("Reorder partially failed", failed);
+                    // Revert only if no subsequent drag has changed items
+                    setItems((current) =>
+                        current === reordered ? items : current,
+                    );
+                    onReorderError?.(err);
+                }
+                // Always refresh from server to reconcile state
                 onReorderComplete?.();
             } catch (err) {
                 console.error("Failed to persist reorder", err);
                 reorderInFlightRef.current = false;
-                // Revert only if no subsequent drag has changed items
                 setItems((current) =>
                     current === reordered ? items : current,
                 );
                 onReorderError?.(err);
-                // Refresh from server to reconcile any partial persistence
                 onReorderComplete?.();
             }
         },

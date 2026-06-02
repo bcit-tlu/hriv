@@ -584,9 +584,9 @@ export default function App() {
         [pushNavState],
     );
 
-    const navigateToCategory = (cat: Category) => {
+    const navigateToCategory = useCallback((cat: Category) => {
         setPath((prev) => [...prev, cat]);
-    };
+    }, []);
 
     const handleCategoryTileClick = useCallback(
         (cat: Category) => {
@@ -596,7 +596,7 @@ export default function App() {
                 [...path.map((c) => c.id), cat.id],
             );
         },
-        [path, pushNavState],
+        [navigateToCategory, path, pushNavState],
     );
 
     const handleFilesDropOnGrid = useCallback(
@@ -635,8 +635,12 @@ export default function App() {
     );
 
     const handleReorderComplete = useCallback(() => {
-        refreshCategories().catch(() => {});
-        refreshUncategorizedImages().catch(() => {});
+        refreshCategories().catch(() => {
+            setWarnSnack("Could not refresh categories after reorder.");
+        });
+        refreshUncategorizedImages().catch(() => {
+            setWarnSnack("Could not refresh images after reorder.");
+        });
     }, [refreshCategories, refreshUncategorizedImages]);
 
     const handleReorderError = useCallback(
