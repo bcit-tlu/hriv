@@ -62,6 +62,7 @@ function makeApiImage(id: number, overrides: Partial<api.ApiImage> = {}): api.Ap
         copyright: null,
         note: null,
         active: true,
+        sort_order: 0,
         metadata_extra: null,
         version: 1,
         width: null,

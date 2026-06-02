@@ -29,6 +29,7 @@ function makeDeps(overrides: Partial<UseProcessingJobsDeps> = {}): UseProcessing
             copyright: null,
             note: null,
             active: true,
+            sort_order: 0,
             version: 1,
             created_at: '2024-01-01',
             updated_at: '2024-01-01',
