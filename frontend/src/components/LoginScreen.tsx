@@ -17,6 +17,7 @@ import AnnouncementBanner from "./AnnouncementBanner";
 import ColorModeToggle from "./ColorModeToggle";
 import { fetchOidcEnabled, getOidcLoginUrl } from "../api";
 import { useAuth } from "../useAuth";
+import FooterBar from "./FooterBar";
 
 interface LoginScreenProps {
     onLogin: (email: string, password: string) => Promise<void>;
@@ -94,259 +95,273 @@ export default function LoginScreen({
     const showOidcDefault = oidcEnabled && !showLocalForm;
 
     return (
-        <Box
-            sx={{
-                minHeight: "100vh",
-                display: "flex",
-                bgcolor: "background.paper",
-                position: "relative",
-            }}
-        >
-            {/* Theme toggle (Light / Dark / Auto) */}
+        <>
             <Box
                 sx={{
-                    position: "absolute",
-                    top: 16,
-                    right: 16,
-                    zIndex: 1,
-                }}
-            >
-                <ColorModeToggle
-                    iconButtonSx={{ color: "text.secondary" }}
-                />
-            </Box>
-
-            {/* Left side — form */}
-            <Box
-                sx={{
-                    flex: "0 0 50%",
+                    minHeight: "100vh",
                     display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    px: { xs: 3, sm: 6, md: 8 },
+                    bgcolor: "background.paper",
+                    position: "relative",
                 }}
             >
-                <Box sx={{ width: "100%", maxWidth: 400 }}>
-                    {announcement && (
-                        <AnnouncementBanner
-                            message={announcement}
-                            variant="login"
-                        />
-                    )}
+                {/* Theme toggle (Light / Dark / Auto) */}
+                <Box
+                    sx={{
+                        position: "absolute",
+                        top: 16,
+                        right: 16,
+                        zIndex: 1,
+                    }}
+                >
+                    <ColorModeToggle
+                        iconButtonSx={{ color: "text.secondary" }}
+                    />
+                </Box>
 
-                    {/* BCIT logo + Login heading */}
-                    <Box
-                        sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 1.5,
-                            mb: 5,
-                        }}
-                    >
-                        <Box
-                            component="img"
-                            src="/bcit-logo.svg"
-                            alt="BCIT"
-                            sx={{ height: 48 }}
-                        />
-                        <Typography variant="h5" sx={{ fontWeight: 400 }}>
-                            High Resolution Image Viewer (HRIV) Login
-                        </Typography>
-                    </Box>
+                {/* Left side — form */}
+                <Box
+                    sx={{
+                        flex: { sm: "1 1 100%", md: "0 0 50%" },
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        px: { xs: 3, sm: 6, md: 8 },
+                    }}
+                >
+                    <Box sx={{ width: "100%", maxWidth: 400 }}>
+                        {announcement && (
+                            <AnnouncementBanner
+                                message={announcement}
+                                variant="login"
+                            />
+                        )}
 
-                    {oidcErrorMessage && (
-                        <Alert
-                            severity="error"
-                            onClose={clearOidcError}
-                            sx={{ mb: 2 }}
-                        >
-                            {oidcErrorMessage}
-                        </Alert>
-                    )}
-
-                    {showOidcDefault ? (
-                        /* ── OIDC-primary view ─────────────────── */
+                        {/* BCIT logo + Login heading */}
                         <Box
                             sx={{
                                 display: "flex",
-                                flexDirection: "column",
                                 alignItems: "center",
-                                gap: 2,
+                                gap: 1.5,
+                                mb: 5,
                             }}
                         >
-                            <Button
-                                variant="contained"
-                                fullWidth
-                                onClick={handleOidcLogin}
-                                sx={{
-                                    textTransform: "none",
-                                    fontWeight: 600,
-                                    py: 1.25,
-                                    fontSize: "0.95rem",
-                                }}
-                            >
-                                Sign in with BCIT
-                            </Button>
-                            <Link
-                                component="button"
-                                variant="body2"
-                                underline="hover"
-                                onClick={() => setShowLocalForm(true)}
-                            >
-                                Use a local user
-                            </Link>
+                            <Typography variant="h5" sx={{ fontWeight: 400 }}>
+                                High Resolution Image Viewer (HRIV) Login
+                            </Typography>
                         </Box>
-                    ) : (
-                        /* ── Local-credentials view ────────────── */
-                        <Box
-                            component="form"
-                            onSubmit={handleSubmit}
-                            sx={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 3,
-                            }}
-                        >
-                            {error && (
-                                <Alert
-                                    severity="error"
-                                    onClose={() => setError(null)}
-                                >
-                                    {error}
-                                </Alert>
-                            )}
 
-                            <TextField
-                                label="Username"
-                                placeholder="username@example.ca"
-                                type="email"
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                required
-                                fullWidth
-                                autoFocus
-                                autoComplete="email"
-                                variant="standard"
-                            />
+                        {oidcErrorMessage && (
+                            <Alert
+                                severity="error"
+                                onClose={clearOidcError}
+                                sx={{ mb: 2 }}
+                            >
+                                {oidcErrorMessage}
+                            </Alert>
+                        )}
 
-                            <TextField
-                                label="Password"
-                                placeholder="Password"
-                                type={showPassword ? "text" : "password"}
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                required
-                                fullWidth
-                                autoComplete="current-password"
-                                variant="standard"
-                                slotProps={{
-                                    input: {
-                                        endAdornment: (
-                                            <InputAdornment position="end">
-                                                <IconButton
-                                                    aria-label="toggle password visibility"
-                                                    onClick={() =>
-                                                        setShowPassword(
-                                                            (prev) => !prev,
-                                                        )
-                                                    }
-                                                    edge="end"
-                                                    size="small"
-                                                >
-                                                    {showPassword ? (
-                                                        <VisibilityOff />
-                                                    ) : (
-                                                        <Visibility />
-                                                    )}
-                                                </IconButton>
-                                            </InputAdornment>
-                                        ),
-                                    },
-                                }}
-                            />
-
+                        {showOidcDefault ? (
+                            /* ── OIDC-primary view ─────────────────── */
                             <Box
                                 sx={{
                                     display: "flex",
-                                    justifyContent: "space-between",
+                                    flexDirection: "column",
                                     alignItems: "center",
+                                    gap: 2,
                                 }}
                             >
                                 <Button
-                                    type="button"
-                                    variant="text"
-                                    onClick={() => setForgotPasswordOpen(true)}
+                                    variant="contained"
+                                    fullWidth
+                                    onClick={handleOidcLogin}
                                     sx={{
-                                        px: 0,
+                                        textTransform: "none",
                                         fontWeight: 600,
-                                        letterSpacing: 1,
-                                        color: "text.disabled",
+                                        py: 1.25,
+                                        fontSize: "0.95rem",
                                     }}
                                 >
-                                    Forgot Password?
+                                    Sign in with BCIT
                                 </Button>
-                                <Button
-                                    type="submit"
-                                    variant="text"
-                                    disabled={loading || !email || !password}
-                                    startIcon={
-                                        loading ? (
-                                            <CircularProgress
-                                                size={18}
-                                                color="inherit"
-                                            />
-                                        ) : undefined
-                                    }
-                                    sx={{ fontWeight: 600, letterSpacing: 1 }}
+                                <Link
+                                    component="button"
+                                    variant="body2"
+                                    underline="hover"
+                                    onClick={() => setShowLocalForm(true)}
                                 >
-                                    {loading ? "Signing in..." : "LOGIN"}
-                                </Button>
+                                    Use a local user
+                                </Link>
                             </Box>
-
-                            {oidcEnabled && (
-                                <Box sx={{ textAlign: "center", mt: 1 }}>
-                                    <Link
-                                        component="button"
-                                        type="button"
-                                        variant="body2"
-                                        underline="hover"
-                                        onClick={() => setShowLocalForm(false)}
+                        ) : (
+                            /* ── Local-credentials view ────────────── */
+                            <Box
+                                component="form"
+                                onSubmit={handleSubmit}
+                                sx={{
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: 3,
+                                }}
+                            >
+                                {error && (
+                                    <Alert
+                                        severity="error"
+                                        onClose={() => setError(null)}
                                     >
-                                        Sign in with BCIT
-                                    </Link>
+                                        {error}
+                                    </Alert>
+                                )}
+
+                                <TextField
+                                    label="Username"
+                                    placeholder="username@example.ca"
+                                    type="email"
+                                    value={email}
+                                    onChange={(e) => setEmail(e.target.value)}
+                                    required
+                                    fullWidth
+                                    autoFocus
+                                    autoComplete="email"
+                                    variant="standard"
+                                />
+
+                                <TextField
+                                    label="Password"
+                                    placeholder="Password"
+                                    type={showPassword ? "text" : "password"}
+                                    value={password}
+                                    onChange={(e) =>
+                                        setPassword(e.target.value)
+                                    }
+                                    required
+                                    fullWidth
+                                    autoComplete="current-password"
+                                    variant="standard"
+                                    slotProps={{
+                                        input: {
+                                            endAdornment: (
+                                                <InputAdornment position="end">
+                                                    <IconButton
+                                                        aria-label="toggle password visibility"
+                                                        onClick={() =>
+                                                            setShowPassword(
+                                                                (prev) => !prev,
+                                                            )
+                                                        }
+                                                        edge="end"
+                                                        size="small"
+                                                    >
+                                                        {showPassword ? (
+                                                            <VisibilityOff />
+                                                        ) : (
+                                                            <Visibility />
+                                                        )}
+                                                    </IconButton>
+                                                </InputAdornment>
+                                            ),
+                                        },
+                                    }}
+                                />
+
+                                <Box
+                                    sx={{
+                                        display: "flex",
+                                        justifyContent: "space-between",
+                                        alignItems: "center",
+                                    }}
+                                >
+                                    <Button
+                                        type="button"
+                                        variant="text"
+                                        onClick={() =>
+                                            setForgotPasswordOpen(true)
+                                        }
+                                        sx={{
+                                            px: 0,
+                                            fontWeight: 600,
+                                            letterSpacing: 1,
+                                            color: "text.disabled",
+                                        }}
+                                    >
+                                        Forgot Password?
+                                    </Button>
+                                    <Button
+                                        type="submit"
+                                        variant="text"
+                                        disabled={
+                                            loading || !email || !password
+                                        }
+                                        startIcon={
+                                            loading ? (
+                                                <CircularProgress
+                                                    size={18}
+                                                    color="inherit"
+                                                />
+                                            ) : undefined
+                                        }
+                                        sx={{
+                                            fontWeight: 600,
+                                            letterSpacing: 1,
+                                        }}
+                                    >
+                                        {loading ? "Signing in..." : "LOGIN"}
+                                    </Button>
                                 </Box>
-                            )}
-                        </Box>
-                    )}
+
+                                {oidcEnabled && (
+                                    <Box sx={{ textAlign: "center", mt: 1 }}>
+                                        <Link
+                                            component="button"
+                                            type="button"
+                                            variant="body2"
+                                            underline="hover"
+                                            onClick={() =>
+                                                setShowLocalForm(false)
+                                            }
+                                        >
+                                            Sign in with BCIT
+                                        </Link>
+                                    </Box>
+                                )}
+                            </Box>
+                        )}
+                    </Box>
                 </Box>
+
+                <Dialog
+                    open={forgotPasswordOpen}
+                    onClose={() => setForgotPasswordOpen(false)}
+                    aria-labelledby="forgot-password-dialog-title"
+                >
+                    <DialogTitle id="forgot-password-dialog-title">
+                        Forgot Password
+                    </DialogTitle>
+                    <DialogContent>
+                        <Typography>
+                            Please contact the TLU Lab via Teams to reset your
+                            password.
+                        </Typography>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Right side — splash image */}
+                <Box
+                    sx={{
+                        flex: "0 0 50%",
+                        backgroundImage: "url(/hriv-splash2.jpg)",
+                        backgroundSize: "cover",
+                        backgroundPosition: "center",
+                        display: { xs: "none", md: "block" },
+                    }}
+                />
             </Box>
-
-            <Dialog
-                open={forgotPasswordOpen}
-                onClose={() => setForgotPasswordOpen(false)}
-                aria-labelledby="forgot-password-dialog-title"
-            >
-                <DialogTitle id="forgot-password-dialog-title">
-                    Forgot Password
-                </DialogTitle>
-                <DialogContent>
-                    <Typography>
-                        Please contact the TLU Lab via Teams to reset your
-                        password.
-                    </Typography>
-                </DialogContent>
-            </Dialog>
-
-            {/* Right side — splash image */}
-            <Box
-                sx={{
-                    flex: "0 0 50%",
-                    backgroundImage: "url(/hriv-splash2.jpg)",
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                    display: { xs: "none", md: "block" },
-                }}
+            <FooterBar
+                canManageUsers={false}
+                frontendVersion={undefined}
+                backendVersion={undefined}
+                backupVersion={undefined}
+                setReportIssueOpen={() => {}}
             />
-        </Box>
+        </>
     );
 }
