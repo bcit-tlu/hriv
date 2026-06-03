@@ -1,5 +1,3 @@
-import { closestCenter } from "@dnd-kit/collision";
-import type { CollisionDetector } from "@dnd-kit/abstract";
 import type { Category, ImageItem } from "../types";
 
 // ── Tile item union type ────────────────────────────────────
@@ -14,9 +12,39 @@ export function tileId(item: TileItem): string {
         : `img-${item.data.id}`;
 }
 
-// ── Droppable category zone ID prefix ────────────────────────
-
+// Category tile drop target: move into category.
 export const DROP_PREFIX = "drop-cat-";
+
+// Gap drop target: reorder before this index.
+export const REORDER_PREFIX = "reorder-before-";
+export const REORDER_END_ID = "reorder-end";
+
+export function isReorderTargetId(id: string): boolean {
+    return id.startsWith(REORDER_PREFIX) || id === REORDER_END_ID;
+}
+
+export function reorderIndexFromTargetId(
+    targetId: string,
+    items: TileItem[],
+): number | null {
+    if (targetId === REORDER_END_ID) return items.length;
+    if (!targetId.startsWith(REORDER_PREFIX)) return null;
+
+    const beforeId = targetId.slice(REORDER_PREFIX.length);
+    const index = items.findIndex((item) => tileId(item) === beforeId);
+    return index === -1 ? null : index;
+}
+
+export function insertionIndexForMove(
+    oldIndex: number,
+    targetIndex: number,
+    itemCount: number,
+): number {
+    const clampedTarget = Math.max(0, Math.min(targetIndex, itemCount));
+    const adjusted =
+        clampedTarget > oldIndex ? clampedTarget - 1 : clampedTarget;
+    return Math.max(0, Math.min(adjusted, itemCount - 1));
+}
 
 // ── Descendant / tree helpers ───────────────────────────────
 
@@ -46,33 +74,6 @@ export function findCategory(
     return undefined;
 }
 
-/**
- * Create a collision detector for sortable items that delegates to
- * `closestCenter` but suppresses collisions when the pointer is
- * currently inside any registered category drop zone element.
- * This prevents the OptimisticSortingPlugin from visually reordering
- * tiles while the user is hovering over a "Move here" drop target.
- */
-export function createGapOnlyClosestCenter(
-    dropZoneElements: Set<Element>,
-): CollisionDetector {
-    return (input) => {
-        const { x, y } = input.dragOperation.position.current;
-        for (const el of dropZoneElements) {
-            const rect = el.getBoundingClientRect();
-            if (
-                x >= rect.left &&
-                x <= rect.right &&
-                y >= rect.top &&
-                y <= rect.bottom
-            ) {
-                return null;
-            }
-        }
-        return closestCenter(input);
-    };
-}
-
 /** Build an interleaved, sorted list of categories and images. */
 export function buildTileItems(
     categories: Category[],
@@ -94,12 +95,13 @@ export function buildTileItems(
             }),
         ),
     ];
+
     items.sort((a, b) => {
         const d = a.sortOrder - b.sortOrder;
         if (d !== 0) return d;
-        // Stable tiebreaker: categories before images at the same sortOrder
         if (a.type !== b.type) return a.type === "category" ? -1 : 1;
         return a.data.id - b.data.id;
     });
+
     return items;
 }

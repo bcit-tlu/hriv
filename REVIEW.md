@@ -48,6 +48,7 @@ Code review guide for the HRIV project. Applies to both human and AI reviewers.
 
 ### Drag-and-Drop
 
+- **Tile move vs. reorder is a locked contract — see `docs/drag-and-drop.md`.** The Browse grid (`SortableTileGrid.tsx`) uses `@dnd-kit/react` v2. Move-into-category owns the full category-tile rect (`pointerIntersection`, `CollisionPriority.High`); reorder is **gap-only** via explicit seam zones (`reorder-before-*` / `reorder-end`, `Normal`). A drop on a bare tile id must be a no-op. Changing collision detection, zones, priority, or activation requires updating that doc in the same PR and a human feel-test before merge (scripted/recorded drags cannot prove feel).
 - **Event handler symmetry.** If `dragenter` filters on a condition (e.g., `e.dataTransfer.types.includes("Files")`), `dragleave` must apply the same filter. Asymmetric filtering causes counters to drift permanently negative, breaking subsequent drag operations.
 - **Always `preventDefault` on both `dragover` and `drop` at window level.** Without this, dropping files outside a target navigates the browser to the file and the user loses all application state.
 - **Use capture phase for window-level reset handlers.** Child components that call `e.stopPropagation()` in their `onDrop` prevent the event from reaching window-level bubble-phase listeners. Register cleanup handlers (counter reset, state reset) with `addEventListener('drop', handler, true)` so they fire before React's synthetic event system.

@@ -390,6 +390,14 @@ Then open that image in the browser to verify graceful handling.
 The Browse page supports HTML5 native drag-and-drop for images, categories, and files.
 All drag interactions are gated behind `canEditContent` — students see no drag affordances.
 
+> **Tile move vs. reorder runs on `@dnd-kit/react` v2 (pointer sensors), not HTML5 native DnD.**
+> The native MIME-type flows below cover file drops and the CategoryTile file-drop overlay.
+> The move-into-category / reorder-between-tiles contract lives in `docs/drag-and-drop.md`.
+> **Feel cannot be proven by a scripted/recorded drag** — discrete idealized pointer steps don't
+> reproduce the acceleration/jitter where feel bugs live. Any change to collision detection, drop
+> zones, collision priority, or activation constraints must be **feel-tested by a human** before
+> merge; a green recording is only a mechanics smoke-test, not feel validation.
+
 ### Custom MIME Types
 - `application/x-hriv-image` — image tile drag payload (`{"id": <imageId>}`)
 - `application/x-hriv-category` — category tile drag payload (`{"id": <categoryId>}`)

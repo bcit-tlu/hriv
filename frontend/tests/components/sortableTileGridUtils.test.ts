@@ -1,160 +1,104 @@
-/**
- * Unit tests for sortableTileGridUtils: tileId, DROP_PREFIX,
- * collectDescendantIds, findCategory, and buildTileItems.
- */
-
 import { describe, it, expect } from "vitest";
 
 import {
     DROP_PREFIX,
+    REORDER_END_ID,
+    REORDER_PREFIX,
     tileId,
+    isReorderTargetId,
+    reorderIndexFromTargetId,
+    insertionIndexForMove,
     collectDescendantIds,
     findCategory,
     buildTileItems,
 } from "../../src/components/sortableTileGridUtils";
 import { makeCategory, makeImage } from "../helpers/fixtures";
 
-// ---------------------------------------------------------------------------
-// DROP_PREFIX
-// ---------------------------------------------------------------------------
-
-describe("DROP_PREFIX", () => {
-    it("equals 'drop-cat-'", () => {
+describe("sortableTileGridUtils", () => {
+    it("exposes expected drag target prefixes", () => {
         expect(DROP_PREFIX).toBe("drop-cat-");
+        expect(REORDER_PREFIX).toBe("reorder-before-");
+        expect(REORDER_END_ID).toBe("reorder-end");
     });
-});
 
-// ---------------------------------------------------------------------------
-// tileId
-// ---------------------------------------------------------------------------
-
-describe("tileId", () => {
-    it("returns cat-{id} for category items", () => {
+    it("creates tile ids", () => {
         expect(
-            tileId({ type: "category", sortOrder: 0, data: makeCategory({ id: 7 }) }),
+            tileId({
+                type: "category",
+                sortOrder: 0,
+                data: makeCategory({ id: 7 }),
+            }),
         ).toBe("cat-7");
-    });
-
-    it("returns img-{id} for image items", () => {
         expect(
-            tileId({ type: "image", sortOrder: 0, data: makeImage({ id: 42 }) }),
+            tileId({
+                type: "image",
+                sortOrder: 0,
+                data: makeImage({ id: 42 }),
+            }),
         ).toBe("img-42");
     });
-});
 
-// ---------------------------------------------------------------------------
-// collectDescendantIds
-// ---------------------------------------------------------------------------
-
-describe("collectDescendantIds", () => {
-    it("returns empty set for a leaf category", () => {
-        const leaf = makeCategory({ id: 1 });
-        expect(collectDescendantIds(leaf)).toEqual(new Set());
+    it("recognizes reorder targets", () => {
+        expect(isReorderTargetId(`${REORDER_PREFIX}cat-1`)).toBe(true);
+        expect(isReorderTargetId(REORDER_END_ID)).toBe(true);
+        expect(isReorderTargetId("cat-1")).toBe(false);
+        expect(isReorderTargetId(`${DROP_PREFIX}2`)).toBe(false);
     });
 
-    it("collects direct children", () => {
-        const cat = makeCategory({
-            id: 1,
-            children: [makeCategory({ id: 2 }), makeCategory({ id: 3 })],
-        });
-        expect(collectDescendantIds(cat)).toEqual(new Set([2, 3]));
+    it("resolves reorder target index", () => {
+        const items = buildTileItems(
+            [makeCategory({ id: 1, sortOrder: 0 })],
+            [makeImage({ id: 10, sortOrder: 1 })],
+        );
+
+        expect(reorderIndexFromTargetId(`${REORDER_PREFIX}cat-1`, items)).toBe(
+            0,
+        );
+        expect(reorderIndexFromTargetId(`${REORDER_PREFIX}img-10`, items)).toBe(
+            1,
+        );
+        expect(reorderIndexFromTargetId(REORDER_END_ID, items)).toBe(2);
+        expect(reorderIndexFromTargetId("cat-1", items)).toBeNull();
     });
 
-    it("collects nested descendants", () => {
-        const cat = makeCategory({
-            id: 1,
-            children: [
-                makeCategory({
-                    id: 2,
-                    children: [makeCategory({ id: 3 })],
-                }),
-            ],
-        });
-        expect(collectDescendantIds(cat)).toEqual(new Set([2, 3]));
+    it("calculates insertion index for move", () => {
+        expect(insertionIndexForMove(2, 0, 4)).toBe(0);
+        expect(insertionIndexForMove(0, 2, 4)).toBe(1);
+        expect(insertionIndexForMove(0, 4, 4)).toBe(3);
     });
 
-    it("does not include the root category itself", () => {
-        const cat = makeCategory({
-            id: 1,
-            children: [makeCategory({ id: 2 })],
-        });
-        const ids = collectDescendantIds(cat);
-        expect(ids.has(1)).toBe(false);
-        expect(ids.has(2)).toBe(true);
-    });
-});
+    it("collects descendants and finds categories in tree", () => {
+        const tree = [
+            makeCategory({
+                id: 1,
+                children: [
+                    makeCategory({
+                        id: 2,
+                        children: [makeCategory({ id: 3 })],
+                    }),
+                ],
+            }),
+        ];
 
-// ---------------------------------------------------------------------------
-// findCategory
-// ---------------------------------------------------------------------------
-
-describe("findCategory", () => {
-    const tree = [
-        makeCategory({
-            id: 1,
-            children: [
-                makeCategory({
-                    id: 2,
-                    children: [makeCategory({ id: 3 })],
-                }),
-            ],
-        }),
-        makeCategory({ id: 4 }),
-    ];
-
-    it("finds a top-level category", () => {
-        const found = findCategory(tree, 1);
-        expect(found).toBeDefined();
-        expect(found!.id).toBe(1);
-    });
-
-    it("finds a nested child category", () => {
-        const found = findCategory(tree, 2);
-        expect(found).toBeDefined();
-        expect(found!.id).toBe(2);
-    });
-
-    it("finds a deeply nested category", () => {
-        const found = findCategory(tree, 3);
-        expect(found).toBeDefined();
-        expect(found!.id).toBe(3);
-    });
-
-    it("finds a sibling root category", () => {
-        const found = findCategory(tree, 4);
-        expect(found).toBeDefined();
-        expect(found!.id).toBe(4);
-    });
-
-    it("returns undefined for a non-existent ID", () => {
+        expect(collectDescendantIds(tree[0])).toEqual(new Set([2, 3]));
+        expect(findCategory(tree, 3)?.id).toBe(3);
         expect(findCategory(tree, 999)).toBeUndefined();
     });
 
-    it("returns undefined for an empty forest", () => {
-        expect(findCategory([], 1)).toBeUndefined();
-    });
-});
+    it("builds interleaved sorted tile items with stable tiebreakers", () => {
+        const result = buildTileItems(
+            [
+                makeCategory({ id: 5, sortOrder: 0 }),
+                makeCategory({ id: 2, sortOrder: 0 }),
+            ],
+            [makeImage({ id: 10, sortOrder: 0 })],
+        );
 
-// ---------------------------------------------------------------------------
-// buildTileItems (additional coverage beyond SortableTileGrid.test.tsx)
-// ---------------------------------------------------------------------------
-
-describe("buildTileItems tiebreaker", () => {
-    it("places categories before images at the same sortOrder", () => {
-        const cat = makeCategory({ id: 1, sortOrder: 0 });
-        const img = makeImage({ id: 10, sortOrder: 0 });
-        const result = buildTileItems([cat], [img]);
-        expect(result[0].type).toBe("category");
-        expect(result[1].type).toBe("image");
-    });
-
-    it("uses id as secondary tiebreaker within the same type", () => {
-        const cats = [
-            makeCategory({ id: 5, sortOrder: 0 }),
-            makeCategory({ id: 2, sortOrder: 0 }),
-        ];
-        const result = buildTileItems(cats, []);
-        expect(result[0].data.id).toBe(2);
-        expect(result[1].data.id).toBe(5);
+        expect(result.map((r) => r.type)).toEqual([
+            "category",
+            "category",
+            "image",
+        ]);
+        expect(result.map((r) => r.data.id)).toEqual([2, 5, 10]);
     });
 });

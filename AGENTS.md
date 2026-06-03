@@ -32,6 +32,7 @@
 - Use ESLint and Prettier configurations
 - Follow conventional commit format for PR titles
 - License: MPL-2.0
+- **Drag-and-drop tiles use `@dnd-kit/react` v2 (NOT v1 `@dnd-kit/core`).** Before changing collision detection, drop zones, collision priority, or activation constraints in `SortableTileGrid.tsx`, read `docs/drag-and-drop.md` — it is the locked move-vs-reorder contract, and such changes require a human feel-test before merge.
 
 ### Backend
 - Follow PEP 8 and existing code conventions
