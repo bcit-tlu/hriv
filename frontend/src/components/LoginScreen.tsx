@@ -361,13 +361,7 @@ export default function LoginScreen({
                     }}
                 />
             </Box>
-            <FooterBar
-                canManageUsers={false}
-                frontendVersion={undefined}
-                backendVersion={undefined}
-                backupVersion={undefined}
-                setReportIssueOpen={() => {}}
-            />
+            <FooterBar canManageUsers={false} />
         </Box>
     );
 }

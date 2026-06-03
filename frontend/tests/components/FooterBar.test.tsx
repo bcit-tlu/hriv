@@ -8,6 +8,7 @@
  * 4. Version links point to releases when a real version is provided
  * 5. Version links point to the repo when version is "dev" or missing
  * 6. Non-admin users do not see version info
+ * 7. "Report issue" link is hidden when setReportIssueOpen is omitted
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -152,5 +153,13 @@ describe("FooterBar", () => {
 
         const ellipsisLinks = screen.getAllByRole("link", { name: "…" });
         expect(ellipsisLinks).toHaveLength(2);
+    });
+
+    it("hides 'Report issue' when setReportIssueOpen is omitted", () => {
+        render(<FooterBar canManageUsers={false} />);
+
+        expect(
+            screen.queryByRole("button", { name: "Report issue" }),
+        ).not.toBeInTheDocument();
     });
 });
