@@ -3,11 +3,7 @@ import { render, screen, act } from "@testing-library/react";
 import SortableTileGrid from "../../src/components/SortableTileGrid";
 import type { SortableTileGridProps } from "../../src/components/SortableTileGrid";
 import type { Program } from "../../src/types";
-import {
-    DROP_PREFIX,
-    REORDER_END_ID,
-    REORDER_PREFIX,
-} from "../../src/components/sortableTileGridUtils";
+import { DROP_PREFIX } from "../../src/components/sortableTileGridUtils";
 import { makeCategory, makeImage } from "../helpers/fixtures";
 
 // Capture onDragEnd from DragDropProvider for direct invocation.
@@ -97,7 +93,7 @@ describe("SortableTileGrid", () => {
         expect(screen.getByText("Liver Section")).toBeInTheDocument();
     });
 
-    it("renders category move zones and reorder gaps", () => {
+    it("renders a move zone per category tile", () => {
         renderGrid({
             currentCategories: [
                 makeCategory({ id: 1, label: "Cat A", sortOrder: 0 }),
@@ -135,7 +131,7 @@ describe("SortableTileGrid", () => {
         expect(onDropImageOnCategory).toHaveBeenCalledWith(42, 5);
     });
 
-    it("does nothing when dropped on image tile body id", async () => {
+    it("reorders when dropped on a sibling image tile (A2 optimistic reflow)", async () => {
         renderGrid({
             currentImages: [
                 makeImage({ id: 10, name: "A", sortOrder: 0 }),
@@ -143,6 +139,7 @@ describe("SortableTileGrid", () => {
             ],
         });
 
+        // A2: dropping onto a sibling tile commits the reflowed order.
         await act(async () => {
             await capturedOnDragEnd!({
                 operation: {
@@ -153,11 +150,14 @@ describe("SortableTileGrid", () => {
             });
         });
 
-        expect(reorderImages).not.toHaveBeenCalled();
+        expect(reorderImages).toHaveBeenCalledWith([
+            { id: 11, sort_order: 0 },
+            { id: 10, sort_order: 1 },
+        ]);
         expect(reorderCategories).not.toHaveBeenCalled();
     });
 
-    it("reorders using explicit gap target ids", async () => {
+    it("reorders an interleaved category + image when dropped on a tile", async () => {
         renderGrid({
             currentCategories: [
                 makeCategory({ id: 1, label: "Cat", sortOrder: 0 }),
@@ -165,11 +165,13 @@ describe("SortableTileGrid", () => {
             currentImages: [makeImage({ id: 10, name: "Img", sortOrder: 1 })],
         });
 
+        // Drag the image onto the category tile's sortable slot → reorder so
+        // the image leads. Move-into-category would require a drop-cat-* target.
         await act(async () => {
             await capturedOnDragEnd!({
                 operation: {
                     source: { id: "img-10" },
-                    target: { id: `${REORDER_PREFIX}cat-1` },
+                    target: { id: "cat-1" },
                     canceled: false,
                 },
             });
@@ -181,30 +183,6 @@ describe("SortableTileGrid", () => {
         ]);
     });
 
-    it("reorders to end using reorder-end target", async () => {
-        renderGrid({
-            currentImages: [
-                makeImage({ id: 10, name: "A", sortOrder: 0 }),
-                makeImage({ id: 11, name: "B", sortOrder: 1 }),
-            ],
-        });
-
-        await act(async () => {
-            await capturedOnDragEnd!({
-                operation: {
-                    source: { id: "img-10" },
-                    target: { id: REORDER_END_ID },
-                    canceled: false,
-                },
-            });
-        });
-
-        expect(reorderImages).toHaveBeenCalledWith([
-            { id: 11, sort_order: 0 },
-            { id: 10, sort_order: 1 },
-        ]);
-    });
-
     it("calls onReorderError when a reorder API call fails", async () => {
         vi.mocked(reorderImages).mockRejectedValueOnce(
             new Error("Network error"),
@@ -212,16 +190,18 @@ describe("SortableTileGrid", () => {
         const onReorderError = vi.fn();
 
         renderGrid({
-            currentCategories: [makeCategory({ id: 1, sortOrder: 0 })],
-            currentImages: [makeImage({ id: 10, sortOrder: 1 })],
+            currentImages: [
+                makeImage({ id: 10, sortOrder: 0 }),
+                makeImage({ id: 11, sortOrder: 1 }),
+            ],
             onReorderError,
         });
 
         await act(async () => {
             await capturedOnDragEnd!({
                 operation: {
-                    source: { id: "img-10" },
-                    target: { id: `${REORDER_PREFIX}cat-1` },
+                    source: { id: "img-11" },
+                    target: { id: "img-10" },
                     canceled: false,
                 },
             });
@@ -423,7 +403,7 @@ describe("handleDragEnd — reorder branches", () => {
             await capturedOnDragEnd!({
                 operation: {
                     source: { id: "cat-2" },
-                    target: { id: `${REORDER_PREFIX}cat-1` },
+                    target: { id: "cat-1" },
                     canceled: false,
                 },
             });
@@ -448,7 +428,7 @@ describe("handleDragEnd — reorder branches", () => {
             await capturedOnDragEnd!({
                 operation: {
                     source: { id: "img-11" },
-                    target: { id: `${REORDER_PREFIX}img-10` },
+                    target: { id: "img-10" },
                     canceled: false,
                 },
             });
@@ -474,7 +454,7 @@ describe("handleDragEnd — reorder branches", () => {
             await capturedOnDragEnd!({
                 operation: {
                     source: { id: "img-10" },
-                    target: { id: `${REORDER_PREFIX}cat-1` },
+                    target: { id: "cat-1" },
                     canceled: false,
                 },
             });
@@ -501,7 +481,7 @@ describe("handleDragEnd — reorder branches", () => {
             await capturedOnDragEnd!({
                 operation: {
                     source: { id: "img-10" },
-                    target: { id: `${REORDER_PREFIX}cat-1` },
+                    target: { id: "cat-1" },
                     canceled: false,
                 },
             });
@@ -547,9 +527,8 @@ describe("drag-and-drop spec contract (docs/drag-and-drop.md)", () => {
         expect(reorderCategories).not.toHaveBeenCalled();
     });
 
-    it("reorder is gap-only: a bare tile id target never reorders or moves", async () => {
+    it("a drop-cat-* target only moves; it never reorders (move wins over the sortable)", async () => {
         const onDropImageOnCategory = vi.fn();
-        const onDropCategoryOnCategory = vi.fn();
         renderGrid({
             currentCategories: [makeCategory({ id: 1, sortOrder: 0 })],
             currentImages: [
@@ -557,29 +536,24 @@ describe("drag-and-drop spec contract (docs/drag-and-drop.md)", () => {
                 makeImage({ id: 11, sortOrder: 2 }),
             ],
             onDropImageOnCategory,
-            onDropCategoryOnCategory,
         });
 
-        // Bare tile ids (cat-1, img-10) are not reorder targets.
-        for (const targetId of ["img-10", "cat-1"]) {
-            await act(async () => {
-                await capturedOnDragEnd!({
-                    operation: {
-                        source: { id: "img-11" },
-                        target: { id: targetId },
-                        canceled: false,
-                    },
-                });
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "img-11" },
+                    target: { id: `${DROP_PREFIX}1` },
+                    canceled: false,
+                },
             });
-        }
+        });
 
+        expect(onDropImageOnCategory).toHaveBeenCalledWith(11, 1);
         expect(reorderImages).not.toHaveBeenCalled();
         expect(reorderCategories).not.toHaveBeenCalled();
-        expect(onDropImageOnCategory).not.toHaveBeenCalled();
-        expect(onDropCategoryOnCategory).not.toHaveBeenCalled();
     });
 
-    it("reorder fires on gap ids (reorder-before-* and reorder-end)", async () => {
+    it("A2: reorder fires on a sibling tile target (optimistic reflow)", async () => {
         renderGrid({
             currentImages: [
                 makeImage({ id: 10, sortOrder: 0 }),
@@ -591,7 +565,7 @@ describe("drag-and-drop spec contract (docs/drag-and-drop.md)", () => {
             await capturedOnDragEnd!({
                 operation: {
                     source: { id: "img-10" },
-                    target: { id: REORDER_END_ID },
+                    target: { id: "img-11" },
                     canceled: false,
                 },
             });

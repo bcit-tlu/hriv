@@ -95,6 +95,37 @@ the new order during the drag) is approved **only if** it satisfies all of:
 
 If any of these cannot be met, stay on A1.
 
+### 2026-06 — A2 implemented (optimistic `useSortable` reflow), pending feel-test
+
+**What shipped.** Tiles now render through `useSortable` (`@dnd-kit/react/sortable`)
+instead of `useDraggable`, so the grid reflows continuously during a drag and the
+committed order matches the on-screen preview (`handleDragEnd` commits via the
+`move()` helper, which reads the source's reflowed sortable index). The
+`ReorderDropZone` seams and the gap-id machinery are gone.
+
+**Guard satisfied (move still wins).** `DroppableCategoryZone` is unchanged: a
+non-sortable `useDroppable` at `CollisionPriority.High` over the full tile rect.
+Because dnd-kit's optimistic sorting only reflows **between two sortables**, the
+moment the pointer is over a category tile the High-priority move zone wins the
+collision and reflow is automatically suppressed — no manual `previewIndex`
+plumbing. Invariants 1 (move only on `drop-cat-*`) and 4 (self/null/cancel
+no-ops) still hold and are still unit-tested.
+
+**Deliberate deviation from the guard wording.** The pre-approval above said
+reflow must happen "only inside the seam zones" and that invariant 3 (reorder is
+**gap-only**; a bare tile id is a no-op) must hold. The implemented A2 **relaxes
+invariant 3**: reorder now triggers when the pointer settles over a sibling
+**tile** (the sortable), not a 16px seam. This is the source of the "convenience"
+A1 lacked — you no longer have to aim for a thin gap. The original gap-only rule
+was an A1 safety mechanism against move-vs-reorder overlap; with move kept as a
+clean High-priority non-sortable zone, that overlap does not return, so trading
+gap-only for tile-target reorder is safe. Unit test
+`a drop-cat-* target only moves; it never reorders` pins the move-wins guard.
+
+This deviation is **pending the human feel-test** the Process gate requires. If
+the reflow feels wrong, the fallback is the locked A1 baseline (still on the
+`devin/1780419298-reorder-zone-tuning` branch / PR #550).
+
 ## Process gate (feel cannot be proven by a recording)
 
 Any change to collision detection, drop zones, collision priority, or activation

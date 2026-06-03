@@ -8,14 +8,15 @@ import {
     DragOverlay,
     KeyboardSensor,
     PointerSensor,
-    useDraggable,
     useDroppable,
 } from "@dnd-kit/react";
-import { arrayMove } from "@dnd-kit/helpers";
+import { useSortable } from "@dnd-kit/react/sortable";
+import { move } from "@dnd-kit/helpers";
 import { pointerIntersection } from "@dnd-kit/collision";
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { PointerActivationConstraints } from "@dnd-kit/dom";
 import type { Draggable } from "@dnd-kit/abstract";
+import type { DragEndEvent } from "@dnd-kit/react";
 
 import type { Category, ImageItem, Program } from "../types";
 import CategoryTile from "./CategoryTile";
@@ -27,24 +28,27 @@ import {
     collectDescendantIds,
     DROP_PREFIX,
     findCategory,
-    insertionIndexForMove,
-    isReorderTargetId,
-    REORDER_END_ID,
-    REORDER_PREFIX,
-    reorderIndexFromTargetId,
     tileId,
 } from "./sortableTileGridUtils";
 import type { TileItem } from "./sortableTileGridUtils";
 
-interface DraggableTileProps {
+interface SortableTileProps {
     id: string;
+    index: number;
     disabled: boolean;
     children: React.ReactNode;
 }
 
-function DraggableTile({ id, disabled, children }: DraggableTileProps) {
-    const { ref, isDragSource } = useDraggable({
+// A2 (optimistic reflow): each tile is a sortable, so the grid reflows
+// continuously during a drag to preview the resulting order. The dragged
+// source dims and the OptimisticSortingPlugin slides neighbours into place.
+// Reflow is automatically suppressed whenever the pointer is over a category
+// tile, because the High-priority `DroppableCategoryZone` wins the collision
+// there and the OptimisticSortingPlugin only reflows between two sortables.
+function SortableTile({ id, index, disabled, children }: SortableTileProps) {
+    const { ref, isDragSource } = useSortable({
         id,
+        index,
         disabled,
         type: "tile",
     });
@@ -53,7 +57,7 @@ function DraggableTile({ id, disabled, children }: DraggableTileProps) {
         <Box
             ref={ref}
             sx={{
-                opacity: isDragSource ? 0.5 : 1,
+                opacity: isDragSource ? 0.4 : 1,
                 position: "relative",
                 width: 300,
                 maxWidth: "100%",
@@ -66,70 +70,6 @@ function DraggableTile({ id, disabled, children }: DraggableTileProps) {
             onDragStart={(e) => e.preventDefault()}
         >
             {children}
-        </Box>
-    );
-}
-
-interface ReorderDropZoneProps {
-    id: string;
-    disabled: boolean;
-}
-
-// Width the reorder seam opens to while it is the active drop target. The
-// gap widens and a crisp insertion bar appears so neighbouring tiles slide
-// over, giving a live preview of where the dragged tile will land.
-const REORDER_SLOT_OPEN_PX = 64;
-
-function ReorderDropZone({ id, disabled }: ReorderDropZoneProps) {
-    const { ref, isDropTarget } = useDroppable({
-        id,
-        disabled,
-        collisionDetector: pointerIntersection,
-        collisionPriority: CollisionPriority.Normal,
-    });
-
-    return (
-        <Box
-            ref={ref}
-            aria-hidden="true"
-            sx={{
-                alignSelf: "stretch",
-                flex: isDropTarget
-                    ? `0 0 ${REORDER_SLOT_OPEN_PX}px`
-                    : "0 0 16px",
-                minHeight: 180,
-                display: "flex",
-                alignItems: "stretch",
-                justifyContent: "center",
-                py: 1,
-                transition: "flex-basis 0.15s ease",
-            }}
-        >
-            <Box
-                sx={{
-                    width: isDropTarget ? "100%" : 0,
-                    borderRadius: 1,
-                    border: "2px dashed",
-                    borderColor: isDropTarget ? "primary.main" : "transparent",
-                    bgcolor: isDropTarget ? "action.hover" : "transparent",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    transition:
-                        "background-color 0.12s ease, border-color 0.12s ease",
-                }}
-            >
-                <Box
-                    sx={{
-                        width: 3,
-                        alignSelf: "stretch",
-                        my: 1,
-                        borderRadius: 2,
-                        bgcolor: isDropTarget ? "primary.main" : "transparent",
-                        transition: "background-color 0.12s ease",
-                    }}
-                />
-            </Box>
         </Box>
     );
 }
@@ -323,13 +263,7 @@ export default function SortableTileGrid({
     }, [allCategories, currentCategories]);
 
     const handleDragEnd = useCallback(
-        async (event: {
-            operation: {
-                source: { id: string | number } | null;
-                target: { id: string | number } | null;
-                canceled: boolean;
-            };
-        }) => {
+        async (event: DragEndEvent) => {
             setActiveItem(null);
 
             const { operation } = event;
@@ -359,22 +293,26 @@ export default function SortableTileGrid({
                 return;
             }
 
-            if (!isReorderTargetId(targetId)) return;
-
-            const oldIndex = items.findIndex(
-                (item) => tileId(item) === sourceId,
+            // ── Reorder (A2 optimistic sortable reflow) ──
+            // The target is the sortable tile the pointer settled on. `move`
+            // derives the new order from the source's reflowed sortable index,
+            // so the committed order matches the on-screen preview exactly.
+            const ids = items.map(tileId);
+            const reorderedIds = move(ids, event);
+            if (
+                reorderedIds.length === ids.length &&
+                reorderedIds.every((id, i) => id === ids[i])
+            ) {
+                return;
+            }
+            const itemById = new Map(
+                items.map((item) => [tileId(item), item] as const),
             );
-            const targetIndex = reorderIndexFromTargetId(targetId, items);
-            if (oldIndex === -1 || targetIndex === null) return;
+            const reordered = reorderedIds
+                .map((id) => itemById.get(id))
+                .filter((item): item is TileItem => item !== undefined);
+            if (reordered.length !== items.length) return;
 
-            const newIndex = insertionIndexForMove(
-                oldIndex,
-                targetIndex,
-                items.length,
-            );
-            if (oldIndex === newIndex) return;
-
-            const reordered = arrayMove(items, oldIndex, newIndex);
             reorderInFlightRef.current = true;
             setItems(reordered);
 
@@ -526,37 +464,25 @@ export default function SortableTileGrid({
             <Box
                 role="region"
                 aria-label="Sortable tile grid"
-                sx={{ display: "flex", flexWrap: "wrap", gap: 0, rowGap: 2 }}
+                sx={{ display: "flex", flexWrap: "wrap", gap: 2 }}
                 onDragOver={onGridDragOver}
                 onDrop={onGridDrop}
             >
-                {items.map((item) => {
+                {items.map((item, index) => {
                     const id = tileId(item);
                     return (
-                        <Box
+                        <SortableTile
                             key={id}
-                            sx={{ display: "flex", alignItems: "stretch" }}
+                            id={id}
+                            index={index}
+                            disabled={!canEditContent}
                         >
-                            {items.length > 1 && (
-                                <ReorderDropZone
-                                    id={`${REORDER_PREFIX}${id}`}
-                                    disabled={!canEditContent}
-                                />
-                            )}
-                            <DraggableTile id={id} disabled={!canEditContent}>
-                                {item.type === "category"
-                                    ? renderCategoryTile(item.data, true)
-                                    : renderImageTile(item.data as ImageItem)}
-                            </DraggableTile>
-                        </Box>
+                            {item.type === "category"
+                                ? renderCategoryTile(item.data, true)
+                                : renderImageTile(item.data as ImageItem)}
+                        </SortableTile>
                     );
                 })}
-                {items.length > 1 && (
-                    <ReorderDropZone
-                        id={REORDER_END_ID}
-                        disabled={!canEditContent}
-                    />
-                )}
                 {canEditContent && (
                     <FileDropZone
                         isDragActive={fileDragActive}
