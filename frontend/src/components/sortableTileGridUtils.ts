@@ -1,6 +1,7 @@
 import type { Category, ImageItem } from "../types";
 
 // ── Tile item union type ────────────────────────────────────
+
 export type TileItem =
     | { type: "category"; sortOrder: number; data: Category }
     | { type: "image"; sortOrder: number; data: ImageItem };
@@ -46,6 +47,7 @@ export function insertionIndexForMove(
 }
 
 // ── Descendant / tree helpers ───────────────────────────────
+
 /** Collect all descendant category IDs (not including the root itself). */
 export function collectDescendantIds(cat: Category): Set<number> {
     const ids = new Set<number>();

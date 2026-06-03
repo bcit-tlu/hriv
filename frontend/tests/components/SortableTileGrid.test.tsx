@@ -22,14 +22,18 @@ type DragEndHandler = (event: {
 let capturedOnDragEnd: DragEndHandler | undefined;
 
 vi.mock("@dnd-kit/react", async () => {
-    const actual = await vi.importActual<typeof import("@dnd-kit/react")>("@dnd-kit/react");
+    const actual =
+        await vi.importActual<typeof import("@dnd-kit/react")>(
+            "@dnd-kit/react",
+        );
     return {
         ...actual,
         DragDropProvider: (props: Record<string, unknown>) => {
             capturedOnDragEnd = props.onDragEnd as DragEndHandler | undefined;
-            const ActualProvider = actual.DragDropProvider as React.ComponentType<
-                Record<string, unknown>
-            >;
+            const ActualProvider =
+                actual.DragDropProvider as React.ComponentType<
+                    Record<string, unknown>
+                >;
             return <ActualProvider {...props} />;
         },
     };
@@ -80,8 +84,12 @@ describe("SortableTileGrid", () => {
 
     it("renders category and image tiles", () => {
         renderGrid({
-            currentCategories: [makeCategory({ id: 1, label: "Architecture", sortOrder: 0 })],
-            currentImages: [makeImage({ id: 10, name: "Liver Section", sortOrder: 1 })],
+            currentCategories: [
+                makeCategory({ id: 1, label: "Architecture", sortOrder: 0 }),
+            ],
+            currentImages: [
+                makeImage({ id: 10, name: "Liver Section", sortOrder: 1 }),
+            ],
             canEditContent: false,
         });
 
@@ -97,14 +105,20 @@ describe("SortableTileGrid", () => {
             ],
         });
 
-        expect(screen.getAllByRole("region", { name: "Move into category" })).toHaveLength(2);
+        expect(
+            screen.getAllByRole("region", { name: "Move into category" }),
+        ).toHaveLength(2);
     });
 
     it("moves image into category when dropped on category body target", async () => {
         const onDropImageOnCategory = vi.fn();
         renderGrid({
-            currentCategories: [makeCategory({ id: 5, label: "Target", sortOrder: 0 })],
-            currentImages: [makeImage({ id: 42, name: "Slide A", sortOrder: 1 })],
+            currentCategories: [
+                makeCategory({ id: 5, label: "Target", sortOrder: 0 }),
+            ],
+            currentImages: [
+                makeImage({ id: 42, name: "Slide A", sortOrder: 1 }),
+            ],
             onDropImageOnCategory,
         });
 
@@ -145,7 +159,9 @@ describe("SortableTileGrid", () => {
 
     it("reorders using explicit gap target ids", async () => {
         renderGrid({
-            currentCategories: [makeCategory({ id: 1, label: "Cat", sortOrder: 0 })],
+            currentCategories: [
+                makeCategory({ id: 1, label: "Cat", sortOrder: 0 }),
+            ],
             currentImages: [makeImage({ id: 10, name: "Img", sortOrder: 1 })],
         });
 
@@ -190,7 +206,9 @@ describe("SortableTileGrid", () => {
     });
 
     it("calls onReorderError when a reorder API call fails", async () => {
-        vi.mocked(reorderImages).mockRejectedValueOnce(new Error("Network error"));
+        vi.mocked(reorderImages).mockRejectedValueOnce(
+            new Error("Network error"),
+        );
         const onReorderError = vi.fn();
 
         renderGrid({

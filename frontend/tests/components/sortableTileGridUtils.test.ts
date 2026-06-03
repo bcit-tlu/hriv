@@ -23,10 +23,18 @@ describe("sortableTileGridUtils", () => {
 
     it("creates tile ids", () => {
         expect(
-            tileId({ type: "category", sortOrder: 0, data: makeCategory({ id: 7 }) }),
+            tileId({
+                type: "category",
+                sortOrder: 0,
+                data: makeCategory({ id: 7 }),
+            }),
         ).toBe("cat-7");
         expect(
-            tileId({ type: "image", sortOrder: 0, data: makeImage({ id: 42 }) }),
+            tileId({
+                type: "image",
+                sortOrder: 0,
+                data: makeImage({ id: 42 }),
+            }),
         ).toBe("img-42");
     });
 
@@ -43,8 +51,12 @@ describe("sortableTileGridUtils", () => {
             [makeImage({ id: 10, sortOrder: 1 })],
         );
 
-        expect(reorderIndexFromTargetId(`${REORDER_PREFIX}cat-1`, items)).toBe(0);
-        expect(reorderIndexFromTargetId(`${REORDER_PREFIX}img-10`, items)).toBe(1);
+        expect(reorderIndexFromTargetId(`${REORDER_PREFIX}cat-1`, items)).toBe(
+            0,
+        );
+        expect(reorderIndexFromTargetId(`${REORDER_PREFIX}img-10`, items)).toBe(
+            1,
+        );
         expect(reorderIndexFromTargetId(REORDER_END_ID, items)).toBe(2);
         expect(reorderIndexFromTargetId("cat-1", items)).toBeNull();
     });
@@ -82,7 +94,11 @@ describe("sortableTileGridUtils", () => {
             [makeImage({ id: 10, sortOrder: 0 })],
         );
 
-        expect(result.map((r) => r.type)).toEqual(["category", "category", "image"]);
+        expect(result.map((r) => r.type)).toEqual([
+            "category",
+            "category",
+            "image",
+        ]);
         expect(result.map((r) => r.data.id)).toEqual([2, 5, 10]);
     });
 });
