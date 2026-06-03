@@ -553,6 +553,33 @@ describe("drag-and-drop spec contract (docs/drag-and-drop.md)", () => {
         expect(reorderCategories).not.toHaveBeenCalled();
     });
 
+    it("A2: a rejected move zone falls through to reorder, not a no-op", async () => {
+        // When a category is dragged onto a zone its accept-filter rejects
+        // (e.g. its own descendant), the sortable tile underneath is the
+        // fallback target, so the drop reorders siblings instead of moving.
+        const onDropCategoryOnCategory = vi.fn();
+        renderGrid({
+            currentCategories: [
+                makeCategory({ id: 1, label: "Parent", sortOrder: 0 }),
+                makeCategory({ id: 2, label: "Child", sortOrder: 1 }),
+            ],
+            onDropCategoryOnCategory,
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "cat-1" },
+                    target: { id: "cat-2" },
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(reorderCategories).toHaveBeenCalled();
+        expect(onDropCategoryOnCategory).not.toHaveBeenCalled();
+    });
+
     it("A2: reorder fires on a sibling tile target (optimistic reflow)", async () => {
         renderGrid({
             currentImages: [

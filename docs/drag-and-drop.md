@@ -8,20 +8,28 @@ code. The behaviour below thrashed across ~8 PRs because there was no written
 contract; treat the rules here as the contract, and change the doc in the same
 PR if you intentionally change the behaviour.
 
-> **Library:** This grid uses **`@dnd-kit/react` v2** (`useDraggable`,
-> `useDroppable`, `DragDropProvider`) — **not** v1 `@dnd-kit/core`
-> (`useSortable`/`SortableContext`). APIs differ; do not mix v1 examples into
-> this component.
+> **Library:** This grid uses **`@dnd-kit/react` v2** (`useSortable`,
+> `useDroppable`, `DragDropProvider`, and `move()` from `@dnd-kit/helpers`) —
+> **not** v1 `@dnd-kit/core` (`SortableContext`). APIs differ; do not mix v1
+> examples into this component.
+
+> **Current behaviour: A2.** Tiles are sortables and reflow optimistically during
+> a drag (see the 2026-06 A2 Decision Record below). The "two gestures" table and
+> invariants below describe the **move-vs-reorder dispatch contract**, which A2
+> preserves; the A1 "gap seam" trigger details are kept for historical context and
+> the revert path. Where the table says reorder triggers in a _seam_, A2 triggers
+> it on a sibling **tile** target instead — the dispatch result (`reorderImages` /
+> `reorderCategories`) is unchanged.
 
 ## The two gestures
 
 There is exactly one source being dragged (a `tile`) and two kinds of drop
 target. They must never both act on the same pointer position.
 
-| Gesture | Trigger zone | Droppable | Collision detector | Priority | Result |
-|---|---|---|---|---|---|
-| **Move into category** | Pointer anywhere over a category tile's full rect | `DroppableCategoryZone`, id `drop-cat-<categoryId>` | `pointerIntersection` | `CollisionPriority.High` | `onDropImageOnCategory` / `onDropCategoryOnCategory` |
-| **Reorder** | Pointer in the 16px seam **between** tiles (and the trailing seam) | `ReorderDropZone`, id `reorder-before-<tileId>` / `reorder-end` | `pointerIntersection` | `CollisionPriority.Normal` | `reorderImages` / `reorderCategories` |
+| Gesture                | Trigger zone                                                       | Droppable                                                       | Collision detector    | Priority                   | Result                                               |
+| ---------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------- | --------------------- | -------------------------- | ---------------------------------------------------- |
+| **Move into category** | Pointer anywhere over a category tile's full rect                  | `DroppableCategoryZone`, id `drop-cat-<categoryId>`             | `pointerIntersection` | `CollisionPriority.High`   | `onDropImageOnCategory` / `onDropCategoryOnCategory` |
+| **Reorder**            | Pointer in the 16px seam **between** tiles (and the trailing seam) | `ReorderDropZone`, id `reorder-before-<tileId>` / `reorder-end` | `pointerIntersection` | `CollisionPriority.Normal` | `reorderImages` / `reorderCategories`                |
 
 Because move has higher collision priority and covers the entire tile, **move
 always wins whenever the pointer is over a category tile**. Reorder can only win
@@ -31,15 +39,21 @@ mechanism that keeps the two gestures from fighting.
 ### Invariants (enforced by unit tests — see `tests/components/SortableTileGrid.test.tsx`)
 
 1. `handleDragEnd` performs a **move** only when the target id starts with
-   `drop-cat-` (`DROP_PREFIX`).
-2. `handleDragEnd` performs a **reorder** only when the target id is a gap id
-   (`reorder-before-*` or `reorder-end`, via `isReorderTargetId`).
-3. A drop whose target is a **bare tile id** (e.g. `img-10`, `cat-1`) is a
-   **no-op** — bare tiles are not reorder targets. Reorder is gap-only.
+   `drop-cat-` (`DROP_PREFIX`). (Unchanged across A1 and A2.)
+2. **A2:** any other (non-`drop-cat-`) target is treated as a **reorder**,
+   committed via `move(ids, event)`. (**A1, historical:** reorder fired only on
+   a gap id `reorder-before-*` / `reorder-end`.)
+3. **A2:** a drop on a sibling **tile** id (e.g. `img-10`, `cat-1`) **reorders**
+   — this is the optimistic-reflow convenience. (**A1, historical:** a bare tile
+   id was a no-op; reorder was gap-only.)
 4. Self-drop (`source.id === target.id`), null target, and canceled drags are
-   no-ops.
+   no-ops. (Unchanged across A1 and A2.)
 
-## Live preview (A1 — current baseline)
+## Live preview (A1 — historical; superseded by A2 reflow)
+
+> The current behaviour is A2's optimistic `useSortable` reflow (see Decision
+> Record). The seam-based preview below describes the A1 baseline retained on
+> #550 as the revert path; it is not active in the A2 implementation.
 
 While a `ReorderDropZone` is the active drop target (`isDropTarget`), it opens
 from `16px` to `REORDER_SLOT_OPEN_PX` (64px) and renders a dashed slot plus a
