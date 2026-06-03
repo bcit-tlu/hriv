@@ -81,7 +81,11 @@ export const farHalfReorderCollision: CollisionDetector = ({
     return {
         id: droppable.id,
         value: 1 / (distance || 1),
-        type: CollisionType.Collision,
+        // Both detectors are pointer-inside-tile checks, so both report
+        // PointerIntersection — keeps them consistent if a future dnd-kit
+        // version starts filtering collisions by type. Resolution today sorts
+        // by priority then value and ignores type.
+        type: CollisionType.PointerIntersection,
         priority: CollisionPriority.Normal,
     };
 };
