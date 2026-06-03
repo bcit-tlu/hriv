@@ -15,39 +15,10 @@ export function tileId(item: TileItem): string {
         : `img-${item.data.id}`;
 }
 
-// Category tile drop target: move into category.
+// Category tile drop target: move into category. Reorder has no id-based
+// target — it is committed via the `move()` helper from the sortable's
+// reflowed index (see SortableTileGrid handleDragEnd).
 export const DROP_PREFIX = "drop-cat-";
-
-// Gap drop target: reorder before this index.
-export const REORDER_PREFIX = "reorder-before-";
-export const REORDER_END_ID = "reorder-end";
-
-export function isReorderTargetId(id: string): boolean {
-    return id.startsWith(REORDER_PREFIX) || id === REORDER_END_ID;
-}
-
-export function reorderIndexFromTargetId(
-    targetId: string,
-    items: TileItem[],
-): number | null {
-    if (targetId === REORDER_END_ID) return items.length;
-    if (!targetId.startsWith(REORDER_PREFIX)) return null;
-
-    const beforeId = targetId.slice(REORDER_PREFIX.length);
-    const index = items.findIndex((item) => tileId(item) === beforeId);
-    return index === -1 ? null : index;
-}
-
-export function insertionIndexForMove(
-    oldIndex: number,
-    targetIndex: number,
-    itemCount: number,
-): number {
-    const clampedTarget = Math.max(0, Math.min(targetIndex, itemCount));
-    const adjusted =
-        clampedTarget > oldIndex ? clampedTarget - 1 : clampedTarget;
-    return Math.max(0, Math.min(adjusted, itemCount - 1));
-}
 
 // ── Directional "far-half" collision rule (move-wins guard) ──
 //

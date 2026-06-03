@@ -40,13 +40,13 @@ interface SortableTileProps {
     children: React.ReactNode;
 }
 
-// A2 (optimistic reflow): each tile is a sortable, so the grid reflows
-// continuously during a drag to preview the resulting order. The dragged
-// source dims and the optimistic-sorting plugin slides neighbours into place.
-// Reflow only fires once the pointer crosses a tile's centre on the far side
-// (`farHalfReorderCollision`); on the near half the detector returns no
-// collision, so move wins there ("Move here" over a category tile) and the
-// drag sits still over an image tile. See docs/drag-and-drop.md.
+// Optimistic reflow: each tile is a sortable, so the grid reflows continuously
+// during a drag to preview the resulting order. The dragged source dims and the
+// optimistic-sorting plugin slides neighbours into place. Reflow only fires once
+// the pointer crosses a tile's centre on the far side (`farHalfReorderCollision`);
+// on the near half the detector returns no collision, so move wins there ("Move
+// here" over a category tile) and the drag sits still over an image tile.
+// See docs/drag-and-drop.md.
 function SortableTile({ id, index, disabled, children }: SortableTileProps) {
     const { ref, isDragSource } = useSortable({
         id,
@@ -296,7 +296,7 @@ export default function SortableTileGrid({
                 return;
             }
 
-            // ── Reorder (A2 optimistic sortable reflow) ──
+            // ── Reorder (optimistic sortable reflow) ──
             // The target is the sortable tile the pointer settled on. `move`
             // derives the new order from the source's reflowed sortable index,
             // so the committed order matches the on-screen preview exactly.

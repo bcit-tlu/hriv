@@ -2,12 +2,7 @@ import { describe, it, expect } from "vitest";
 
 import {
     DROP_PREFIX,
-    REORDER_END_ID,
-    REORDER_PREFIX,
     tileId,
-    isReorderTargetId,
-    reorderIndexFromTargetId,
-    insertionIndexForMove,
     collectDescendantIds,
     findCategory,
     buildTileItems,
@@ -42,10 +37,8 @@ function collisionInput(
 }
 
 describe("sortableTileGridUtils", () => {
-    it("exposes expected drag target prefixes", () => {
+    it("exposes the category move drop prefix", () => {
         expect(DROP_PREFIX).toBe("drop-cat-");
-        expect(REORDER_PREFIX).toBe("reorder-before-");
-        expect(REORDER_END_ID).toBe("reorder-end");
     });
 
     it("creates tile ids", () => {
@@ -63,35 +56,6 @@ describe("sortableTileGridUtils", () => {
                 data: makeImage({ id: 42 }),
             }),
         ).toBe("img-42");
-    });
-
-    it("recognizes reorder targets", () => {
-        expect(isReorderTargetId(`${REORDER_PREFIX}cat-1`)).toBe(true);
-        expect(isReorderTargetId(REORDER_END_ID)).toBe(true);
-        expect(isReorderTargetId("cat-1")).toBe(false);
-        expect(isReorderTargetId(`${DROP_PREFIX}2`)).toBe(false);
-    });
-
-    it("resolves reorder target index", () => {
-        const items = buildTileItems(
-            [makeCategory({ id: 1, sortOrder: 0 })],
-            [makeImage({ id: 10, sortOrder: 1 })],
-        );
-
-        expect(reorderIndexFromTargetId(`${REORDER_PREFIX}cat-1`, items)).toBe(
-            0,
-        );
-        expect(reorderIndexFromTargetId(`${REORDER_PREFIX}img-10`, items)).toBe(
-            1,
-        );
-        expect(reorderIndexFromTargetId(REORDER_END_ID, items)).toBe(2);
-        expect(reorderIndexFromTargetId("cat-1", items)).toBeNull();
-    });
-
-    it("calculates insertion index for move", () => {
-        expect(insertionIndexForMove(2, 0, 4)).toBe(0);
-        expect(insertionIndexForMove(0, 2, 4)).toBe(1);
-        expect(insertionIndexForMove(0, 4, 4)).toBe(3);
     });
 
     it("collects descendants and finds categories in tree", () => {
