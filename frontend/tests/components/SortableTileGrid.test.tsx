@@ -511,3 +511,92 @@ describe("handleDragEnd — reorder branches", () => {
         expect(onReorderComplete).toHaveBeenCalled();
     });
 });
+
+// ---------------------------------------------------------------------------
+// Locked move-vs-reorder contract — see docs/drag-and-drop.md.
+// These assertions exist so a regression in the dispatch rules fails CI.
+// ---------------------------------------------------------------------------
+
+describe("drag-and-drop spec contract (docs/drag-and-drop.md)", () => {
+    beforeEach(() => {
+        capturedOnDragEnd = undefined;
+        vi.mocked(reorderCategories).mockReset().mockResolvedValue();
+        vi.mocked(reorderImages).mockReset().mockResolvedValue();
+    });
+
+    it("move fires only on a drop-cat-* target (never the reorder APIs)", async () => {
+        const onDropImageOnCategory = vi.fn();
+        renderGrid({
+            currentCategories: [makeCategory({ id: 5, sortOrder: 0 })],
+            currentImages: [makeImage({ id: 42, sortOrder: 1 })],
+            onDropImageOnCategory,
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "img-42" },
+                    target: { id: `${DROP_PREFIX}5` },
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(onDropImageOnCategory).toHaveBeenCalledWith(42, 5);
+        expect(reorderImages).not.toHaveBeenCalled();
+        expect(reorderCategories).not.toHaveBeenCalled();
+    });
+
+    it("reorder is gap-only: a bare tile id target never reorders or moves", async () => {
+        const onDropImageOnCategory = vi.fn();
+        const onDropCategoryOnCategory = vi.fn();
+        renderGrid({
+            currentCategories: [makeCategory({ id: 1, sortOrder: 0 })],
+            currentImages: [
+                makeImage({ id: 10, sortOrder: 1 }),
+                makeImage({ id: 11, sortOrder: 2 }),
+            ],
+            onDropImageOnCategory,
+            onDropCategoryOnCategory,
+        });
+
+        // Bare tile ids (cat-1, img-10) are not reorder targets.
+        for (const targetId of ["img-10", "cat-1"]) {
+            await act(async () => {
+                await capturedOnDragEnd!({
+                    operation: {
+                        source: { id: "img-11" },
+                        target: { id: targetId },
+                        canceled: false,
+                    },
+                });
+            });
+        }
+
+        expect(reorderImages).not.toHaveBeenCalled();
+        expect(reorderCategories).not.toHaveBeenCalled();
+        expect(onDropImageOnCategory).not.toHaveBeenCalled();
+        expect(onDropCategoryOnCategory).not.toHaveBeenCalled();
+    });
+
+    it("reorder fires on gap ids (reorder-before-* and reorder-end)", async () => {
+        renderGrid({
+            currentImages: [
+                makeImage({ id: 10, sortOrder: 0 }),
+                makeImage({ id: 11, sortOrder: 1 }),
+            ],
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "img-10" },
+                    target: { id: REORDER_END_ID },
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(reorderImages).toHaveBeenCalled();
+    });
+});
