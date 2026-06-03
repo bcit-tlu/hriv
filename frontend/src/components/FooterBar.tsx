@@ -12,7 +12,7 @@ function FooterBar({
     frontendVersion?: string;
     backendVersion?: string;
     backupVersion?: string;
-    setReportIssueOpen: (open: boolean) => void;
+    setReportIssueOpen?: (open: boolean) => void;
 }) {
     const { mode } = useColorMode();
     return (
@@ -127,16 +127,18 @@ function FooterBar({
                         );
                     })()}
             </Typography>
-            <Link
-                component="button"
-                variant="caption"
-                color="text.secondary"
-                underline="hover"
-                onClick={() => setReportIssueOpen(true)}
-                sx={{ cursor: "pointer" }}
-            >
-                Report issue
-            </Link>
+            {setReportIssueOpen && (
+                <Link
+                    component="button"
+                    variant="caption"
+                    color="text.secondary"
+                    underline="hover"
+                    onClick={() => setReportIssueOpen(true)}
+                    sx={{ cursor: "pointer" }}
+                >
+                    Report issue
+                </Link>
+            )}
         </Box>
     );
 }

@@ -95,12 +95,18 @@ export default function LoginScreen({
     const showOidcDefault = oidcEnabled && !showLocalForm;
 
     return (
-        <>
+        <Box
+            sx={{
+                display: "flex",
+                flexDirection: "column",
+                minHeight: "100vh",
+                bgcolor: "background.paper",
+            }}
+        >
             <Box
                 sx={{
-                    minHeight: "100vh",
+                    flex: 1,
                     display: "flex",
-                    bgcolor: "background.paper",
                     position: "relative",
                 }}
             >
@@ -355,13 +361,7 @@ export default function LoginScreen({
                     }}
                 />
             </Box>
-            <FooterBar
-                canManageUsers={false}
-                frontendVersion={undefined}
-                backendVersion={undefined}
-                backupVersion={undefined}
-                setReportIssueOpen={() => {}}
-            />
-        </>
+            <FooterBar canManageUsers={false} />
+        </Box>
     );
 }
