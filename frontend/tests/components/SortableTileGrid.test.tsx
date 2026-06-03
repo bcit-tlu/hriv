@@ -553,10 +553,13 @@ describe("drag-and-drop spec contract (docs/drag-and-drop.md)", () => {
         expect(reorderCategories).not.toHaveBeenCalled();
     });
 
-    it("A2: a rejected move zone falls through to reorder, not a no-op", async () => {
-        // When a category is dragged onto a zone its accept-filter rejects
-        // (e.g. its own descendant), the sortable tile underneath is the
-        // fallback target, so the drop reorders siblings instead of moving.
+    it("handleDragEnd dispatches reorder for a bare tile target (pure dispatch; move-wins suppression is enforced upstream)", async () => {
+        // `handleDragEnd` is pure dispatch: a non-`drop-cat-*` target reorders.
+        // The move-wins guard does NOT live here — it lives in the sortable
+        // collision detector (`createGapOnlyClosestCenter`), which returns no
+        // collision while the pointer is over a category tile so a category
+        // tile can never become a reorder target at runtime. That suppression
+        // is unit-tested directly in `sortableTileGridUtils.test.ts`.
         const onDropCategoryOnCategory = vi.fn();
         renderGrid({
             currentCategories: [

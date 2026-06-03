@@ -125,6 +125,14 @@ collision and reflow is automatically suppressed — no manual `previewIndex`
 plumbing. Invariants 1 (move only on `drop-cat-*`) and 4 (self/null/cancel
 no-ops) still hold and are still unit-tested.
 
+> **Correction (superseded by the 2026-06 suppression fix below).** The claim
+> above that reflow is "automatically suppressed" was **wrong**. The A2
+> migration made _every_ tile a sortable, including category tiles, so the
+> optimistic-sorting plugin happily reflowed over a category tile's body. The
+> High move zone only determined the drop _target_; it did not stop the plugin
+> from reflowing as the pointer pushed toward the tile centre. A human
+> feel-test caught reorder "winning" over category tiles. See the fix below.
+
 **Deliberate deviation from the guard wording.** The pre-approval above said
 reflow must happen "only inside the seam zones" and that invariant 3 (reorder is
 **gap-only**; a bare tile id is a no-op) must hold. The implemented A2 **relaxes
@@ -139,6 +147,53 @@ gap-only for tile-target reorder is safe. Unit test
 This deviation is **pending the human feel-test** the Process gate requires. If
 the reflow feels wrong, the fallback is the locked A1 baseline (still on the
 `devin/1780419298-reorder-zone-tuning` branch / PR #550).
+
+### 2026-06 — A2 move-wins guard fixed in code (inset move zone + collision suppression)
+
+**Problem.** The feel-test found the guard failing: dragging an image across the
+gap into an adjacent category tile briefly showed "Move here", then the
+optimistic reorder reflowed the category as the pointer pushed toward the tile
+centre — reorder "winning" over a category tile, exactly what the spec forbids.
+Root cause: category tiles were sortables, so the optimistic-sorting plugin
+reflowed over them; collision priority chose the move zone as the _target_ but
+never suppressed the plugin's reflow.
+
+**Fix (implemented).** Reflow is now suppressed in code via a dedicated sortable
+collision detector, `createGapOnlyClosestCenter(moveZoneElements)`
+(`sortableTileGridUtils.ts`): it delegates to `closestCenter` **except** when the
+pointer is inside a registered category move-zone rect, where it returns `null`
+so the optimistic-sorting plugin has nothing to reflow against — move wins, edge
+to centre, inside that rect.
+
+**Inset move zone (keeps category-to-category reorder practical).** Suppressing
+reflow over the _full_ category-tile rect would leave only the 16px inter-tile
+gap as a reorder target, making it practically impossible to reorder between
+category tiles (the original churn problem). So the move zone is now a **centered
+inset region** of the tile (`MOVE_ZONE_INSET_PX`, currently 32px): the
+`DroppableCategoryZone`'s droppable element and the registered suppression rect
+are the **same inset element**, so the move collision boundary and the reflow
+suppression boundary are identical (the live preview always matches what
+commits). Behaviour:
+
+- **Pointer in the inset centre of a category tile → move** ("Move here"; reflow
+  suppressed).
+- **Pointer in the margin around a category tile, in the inter-tile gap, or over
+  an image tile → reorder** (optimistic reflow active). The reorder lane between
+  two adjacent category tiles is now ≈ `2 × inset + gap` (~80px) instead of 16px.
+
+`MOVE_ZONE_INSET_PX` is a single tunable feel knob — increase it to widen the
+reorder lane (smaller move target), decrease it to make move dominate more of
+the tile.
+
+**Guard now enforced by tests.** `createGapOnlyClosestCenter` is unit-tested
+directly (suppress inside a zone; delegate to `closestCenter` outside; handle
+multiple zones; no-zone passthrough) in `sortableTileGridUtils.test.ts`. The
+`handleDragEnd` dispatch tests still pin invariants 1 & 4; note that `handleDragEnd`
+is pure dispatch — the move-wins guard lives in the collision detector, not in
+dispatch, so a category tile can never become a reorder target at runtime.
+
+Still **pending the human feel-test** per the Process gate (notably the inset
+size). Fallback remains the locked A1 baseline on PR #550.
 
 ## Process gate (feel cannot be proven by a recording)
 

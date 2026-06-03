@@ -1,3 +1,6 @@
+import { closestCenter } from "@dnd-kit/collision";
+import type { CollisionDetector } from "@dnd-kit/abstract";
+
 import type { Category, ImageItem } from "../types";
 
 // ── Tile item union type ────────────────────────────────────
@@ -44,6 +47,37 @@ export function insertionIndexForMove(
     const adjusted =
         clampedTarget > oldIndex ? clampedTarget - 1 : clampedTarget;
     return Math.max(0, Math.min(adjusted, itemCount - 1));
+}
+
+/**
+ * Collision detector for sortable tiles that delegates to `closestCenter`
+ * but returns `null` (no collision) whenever the pointer is inside any
+ * registered category move-zone element. Because the optimistic-sorting
+ * plugin only reflows when a sortable is the colliding target, returning
+ * `null` here suppresses reorder/reflow while the pointer is inside a move
+ * zone, so move always wins there (per the locked spec's guard). The
+ * registered element is the *inset* centre of a category tile, so reflow
+ * stays active over image tiles, over the inset margin around a category
+ * tile, and in the inter-tile gaps — keeping category reorder practical.
+ */
+export function createGapOnlyClosestCenter(
+    moveZoneElements: Set<Element>,
+): CollisionDetector {
+    return (input) => {
+        const { x, y } = input.dragOperation.position.current;
+        for (const el of moveZoneElements) {
+            const rect = el.getBoundingClientRect();
+            if (
+                x >= rect.left &&
+                x <= rect.right &&
+                y >= rect.top &&
+                y <= rect.bottom
+            ) {
+                return null;
+            }
+        }
+        return closestCenter(input);
+    };
 }
 
 // ── Descendant / tree helpers ───────────────────────────────

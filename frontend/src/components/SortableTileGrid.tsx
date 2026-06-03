@@ -15,7 +15,7 @@ import { move } from "@dnd-kit/helpers";
 import { pointerIntersection } from "@dnd-kit/collision";
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { PointerActivationConstraints } from "@dnd-kit/dom";
-import type { Draggable } from "@dnd-kit/abstract";
+import type { CollisionDetector, Draggable } from "@dnd-kit/abstract";
 import type { DragEndEvent } from "@dnd-kit/react";
 
 import type { Category, ImageItem, Program } from "../types";
@@ -26,31 +26,48 @@ import { reorderCategories, reorderImages } from "../api";
 import {
     buildTileItems,
     collectDescendantIds,
+    createGapOnlyClosestCenter,
     DROP_PREFIX,
     findCategory,
     tileId,
 } from "./sortableTileGridUtils";
 import type { TileItem } from "./sortableTileGridUtils";
 
+// Move-into-category triggers only inside a centered inset region of the tile.
+// The surrounding margin (this many px on every side) plus the inter-tile gap
+// stay reorder-active, so categories can still be reordered around one another
+// without having to aim at the thin gap. Both the move collision zone and the
+// reflow-suppression rect use this same inset, so the live preview always
+// matches what commits. Tunable feel knob — see docs/drag-and-drop.md.
+const MOVE_ZONE_INSET_PX = 32;
+
 interface SortableTileProps {
     id: string;
     index: number;
     disabled: boolean;
+    collisionDetector: CollisionDetector;
     children: React.ReactNode;
 }
 
 // A2 (optimistic reflow): each tile is a sortable, so the grid reflows
 // continuously during a drag to preview the resulting order. The dragged
-// source dims and the OptimisticSortingPlugin slides neighbours into place.
-// Reflow is automatically suppressed whenever the pointer is over a category
-// tile, because the High-priority `DroppableCategoryZone` wins the collision
-// there and the OptimisticSortingPlugin only reflows between two sortables.
-function SortableTile({ id, index, disabled, children }: SortableTileProps) {
+// source dims and the optimistic-sorting plugin slides neighbours into place.
+// Reflow is suppressed whenever the pointer is over a category tile via the
+// `collisionDetector` (`createGapOnlyClosestCenter`), which returns no
+// collision inside a registered move-zone rect so move always wins there.
+function SortableTile({
+    id,
+    index,
+    disabled,
+    collisionDetector,
+    children,
+}: SortableTileProps) {
     const { ref, isDragSource } = useSortable({
         id,
         index,
         disabled,
         type: "tile",
+        collisionDetector,
     });
 
     return (
@@ -78,6 +95,8 @@ interface DroppableCategoryZoneProps {
     categoryId: number;
     disabled: boolean;
     blockedIdsMap: Map<number, Set<number>>;
+    /** Register/unregister this zone's element for reflow suppression. */
+    onRegister: (categoryId: number, el: Element | null) => void;
     children: React.ReactNode;
 }
 
@@ -85,6 +104,7 @@ function DroppableCategoryZone({
     categoryId,
     disabled,
     blockedIdsMap,
+    onRegister,
     children,
 }: DroppableCategoryZoneProps) {
     const acceptFilter = useCallback(
@@ -99,7 +119,7 @@ function DroppableCategoryZone({
         [blockedIdsMap, categoryId],
     );
 
-    const { ref, isDropTarget } = useDroppable({
+    const { ref: droppableRef, isDropTarget } = useDroppable({
         id: `${DROP_PREFIX}${categoryId}`,
         disabled,
         collisionDetector: pointerIntersection,
@@ -107,60 +127,73 @@ function DroppableCategoryZone({
         accept: acceptFilter,
     });
 
+    const ref = useCallback(
+        (el: Element | null) => {
+            droppableRef(el);
+            onRegister(categoryId, el);
+        },
+        [droppableRef, onRegister, categoryId],
+    );
+
     return (
         <Box
-            ref={ref}
             role="region"
             aria-label="Move into category"
-            sx={{
-                position: "relative",
-                outline: "3px dashed",
-                outlineColor: isDropTarget ? "primary.main" : "transparent",
-                outlineOffset: 3,
-                transform: isDropTarget ? "scale(1.03)" : "scale(1)",
-                transition: "outline-color 0.2s, transform 0.15s",
-                borderRadius: "inherit",
-            }}
+            sx={{ position: "relative", borderRadius: "inherit" }}
         >
             {children}
-            {isDropTarget && (
-                <Box
-                    sx={{
-                        position: "absolute",
-                        inset: 0,
-                        zIndex: 1100,
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        bgcolor: "background.paper",
-                        borderRadius: "inherit",
-                        pointerEvents: "none",
-                        gap: 0.5,
-                    }}
-                >
-                    <Box
-                        sx={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: "50%",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            bgcolor: "primary.main",
-                            color: "primary.contrastText",
-                        }}
-                    >
-                        <DriveFileMoveIcon sx={{ fontSize: 22 }} />
-                    </Box>
-                    <Typography
-                        variant="caption"
-                        sx={{ fontWeight: 600, color: "primary.main" }}
-                    >
-                        Move here
-                    </Typography>
-                </Box>
-            )}
+            {/* Centered inset move zone. Move (nest-into-category) triggers
+                only here; the surrounding margin + the inter-tile gap remain
+                reorder-active so categories can be reordered around one
+                another. The droppable ref is registered for reflow
+                suppression so the move collision and the suppression boundary
+                are identical (preview always matches commit). */}
+            <Box
+                ref={ref}
+                sx={{
+                    position: "absolute",
+                    inset: `${MOVE_ZONE_INSET_PX}px`,
+                    zIndex: 1100,
+                    pointerEvents: "none",
+                    borderRadius: "inherit",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 0.5,
+                    outline: "3px dashed",
+                    outlineColor: isDropTarget ? "primary.main" : "transparent",
+                    outlineOffset: 3,
+                    transform: isDropTarget ? "scale(1.02)" : "scale(1)",
+                    transition: "outline-color 0.2s, transform 0.15s",
+                    bgcolor: isDropTarget ? "background.paper" : "transparent",
+                }}
+            >
+                {isDropTarget && (
+                    <>
+                        <Box
+                            sx={{
+                                width: 40,
+                                height: 40,
+                                borderRadius: "50%",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                bgcolor: "primary.main",
+                                color: "primary.contrastText",
+                            }}
+                        >
+                            <DriveFileMoveIcon sx={{ fontSize: 22 }} />
+                        </Box>
+                        <Typography
+                            variant="caption"
+                            sx={{ fontWeight: 600, color: "primary.main" }}
+                        >
+                            Move here
+                        </Typography>
+                    </>
+                )}
+            </Box>
         </Box>
     );
 }
@@ -237,6 +270,29 @@ export default function SortableTileGrid({
     const reorderInFlightRef = useRef(false);
     const prevCatsRef = useRef<Category[] | null>(null);
     const prevImgsRef = useRef<ImageItem[] | null>(null);
+
+    // Track category move-zone DOM elements so the sortable collision detector
+    // can suppress reorder/reflow while the pointer is over a category tile.
+    const moveZoneElementsRef = useRef(new Set<Element>());
+    const prevMoveZoneRef = useRef(new Map<number, Element>());
+    const registerMoveZone = useCallback(
+        (categoryId: number, el: Element | null) => {
+            const prev = prevMoveZoneRef.current.get(categoryId);
+            if (prev) {
+                moveZoneElementsRef.current.delete(prev);
+                prevMoveZoneRef.current.delete(categoryId);
+            }
+            if (el) {
+                moveZoneElementsRef.current.add(el);
+                prevMoveZoneRef.current.set(categoryId, el);
+            }
+        },
+        [],
+    );
+    const sortableCollision = useMemo(
+        () => createGapOnlyClosestCenter(moveZoneElementsRef.current),
+        [],
+    );
 
     if (
         prevCatsRef.current !== currentCategories ||
@@ -405,6 +461,7 @@ export default function SortableTileGrid({
                 categoryId={cat.id}
                 disabled={!canEditContent}
                 blockedIdsMap={blockedIdsMap}
+                onRegister={registerMoveZone}
             >
                 {tile}
             </DroppableCategoryZone>
@@ -476,6 +533,7 @@ export default function SortableTileGrid({
                             id={id}
                             index={index}
                             disabled={!canEditContent}
+                            collisionDetector={sortableCollision}
                         >
                             {item.type === "category"
                                 ? renderCategoryTile(item.data, true)
