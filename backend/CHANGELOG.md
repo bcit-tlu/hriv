@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.19.0...backend-v0.19.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* resolve OIDC roles by priority instead of token order ([#562](https://github.com/bcit-tlu/hriv/issues/562)) ([9593898](https://github.com/bcit-tlu/hriv/commit/959389852588d49b0d55d570bf3ef118b12ca637))
+
 ## [0.19.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.18.1...backend-v0.19.0) (2026-06-02)
 
 
