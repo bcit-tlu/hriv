@@ -230,3 +230,284 @@ describe("SortableTileGrid", () => {
         expect(onReorderError).toHaveBeenCalled();
     });
 });
+
+describe("DroppableCategoryZone (rendering + accept)", () => {
+    beforeEach(() => {
+        capturedOnDragEnd = undefined;
+        vi.mocked(reorderCategories).mockReset().mockResolvedValue();
+        vi.mocked(reorderImages).mockReset().mockResolvedValue();
+    });
+
+    it("does not show move overlay text when not hovering", () => {
+        renderGrid({
+            currentCategories: [
+                makeCategory({ id: 5, label: "Histology", sortOrder: 0 }),
+            ],
+        });
+
+        expect(screen.queryByText("Move here")).not.toBeInTheDocument();
+    });
+
+    it("renders droppable zones even for non-editors (disabled state)", () => {
+        renderGrid({
+            currentCategories: [
+                makeCategory({ id: 1, label: "Cat A", sortOrder: 0 }),
+            ],
+            canEditContent: false,
+        });
+
+        expect(
+            screen.getAllByRole("region", { name: "Move into category" }),
+        ).toHaveLength(1);
+    });
+
+    it("allows sibling category drops (per-source blocking, not global union)", async () => {
+        const catA = makeCategory({ id: 1, label: "Cat A", sortOrder: 0 });
+        const catB = makeCategory({ id: 2, label: "Cat B", sortOrder: 1 });
+        const onDropCategoryOnCategory = vi.fn();
+
+        renderGrid({
+            allCategories: [catA, catB],
+            currentCategories: [catA, catB],
+            onDropCategoryOnCategory,
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "cat-1" },
+                    target: { id: `${DROP_PREFIX}2` },
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(onDropCategoryOnCategory).toHaveBeenCalledWith(1, 2);
+    });
+
+    it("renders a move zone for both parent and child (ancestor-cycle map)", () => {
+        const childB = makeCategory({ id: 2, label: "Child B", sortOrder: 0 });
+        const parentA = makeCategory({
+            id: 1,
+            label: "Parent A",
+            sortOrder: 0,
+            children: [childB],
+        });
+
+        renderGrid({
+            allCategories: [parentA],
+            currentCategories: [parentA, childB],
+        });
+
+        expect(
+            screen.getAllByRole("region", { name: "Move into category" }),
+        ).toHaveLength(2);
+    });
+});
+
+describe("handleDragEnd — move guards", () => {
+    beforeEach(() => {
+        capturedOnDragEnd = undefined;
+        vi.mocked(reorderCategories).mockReset().mockResolvedValue();
+        vi.mocked(reorderImages).mockReset().mockResolvedValue();
+    });
+
+    it("calls onDropCategoryOnCategory (not image) when category dropped on zone", async () => {
+        const onDropImageOnCategory = vi.fn();
+        const onDropCategoryOnCategory = vi.fn();
+        renderGrid({
+            currentCategories: [
+                makeCategory({ id: 1, label: "Cat A", sortOrder: 0 }),
+                makeCategory({ id: 2, label: "Cat B", sortOrder: 1 }),
+            ],
+            onDropImageOnCategory,
+            onDropCategoryOnCategory,
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "cat-1" },
+                    target: { id: `${DROP_PREFIX}2` },
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(onDropCategoryOnCategory).toHaveBeenCalledWith(1, 2);
+        expect(onDropImageOnCategory).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when source and target are the same tile", async () => {
+        const onDropImageOnCategory = vi.fn();
+        renderGrid({
+            currentImages: [makeImage({ id: 10, name: "Slide", sortOrder: 0 })],
+            onDropImageOnCategory,
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "img-10" },
+                    target: { id: "img-10" },
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(onDropImageOnCategory).not.toHaveBeenCalled();
+        expect(reorderImages).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when target is null", async () => {
+        const onDropImageOnCategory = vi.fn();
+        renderGrid({
+            currentImages: [makeImage({ id: 10, name: "Slide", sortOrder: 0 })],
+            onDropImageOnCategory,
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "img-10" },
+                    target: null,
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(onDropImageOnCategory).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when the drag is canceled", async () => {
+        const onDropImageOnCategory = vi.fn();
+        renderGrid({
+            currentCategories: [makeCategory({ id: 5, sortOrder: 0 })],
+            currentImages: [makeImage({ id: 10, name: "Slide", sortOrder: 1 })],
+            onDropImageOnCategory,
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "img-10" },
+                    target: { id: `${DROP_PREFIX}5` },
+                    canceled: true,
+                },
+            });
+        });
+
+        expect(onDropImageOnCategory).not.toHaveBeenCalled();
+    });
+});
+
+describe("handleDragEnd — reorder branches", () => {
+    beforeEach(() => {
+        capturedOnDragEnd = undefined;
+        vi.mocked(reorderCategories).mockReset().mockResolvedValue();
+        vi.mocked(reorderImages).mockReset().mockResolvedValue();
+    });
+
+    it("uses parent_id from path for nested category reorder", async () => {
+        const parent = makeCategory({ id: 99, label: "Parent", sortOrder: 0 });
+
+        renderGrid({
+            currentCategories: [
+                makeCategory({ id: 1, label: "Child A", sortOrder: 0 }),
+                makeCategory({ id: 2, label: "Child B", sortOrder: 1 }),
+            ],
+            path: [parent],
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "cat-2" },
+                    target: { id: `${REORDER_PREFIX}cat-1` },
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(reorderCategories).toHaveBeenCalledWith([
+            { id: 2, parent_id: 99, sort_order: 0 },
+            { id: 1, parent_id: 99, sort_order: 1 },
+        ]);
+        expect(reorderImages).not.toHaveBeenCalled();
+    });
+
+    it("calls only reorderImages when no categories are present", async () => {
+        renderGrid({
+            currentImages: [
+                makeImage({ id: 10, name: "A", sortOrder: 0 }),
+                makeImage({ id: 11, name: "B", sortOrder: 1 }),
+            ],
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "img-11" },
+                    target: { id: `${REORDER_PREFIX}img-10` },
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(reorderImages).toHaveBeenCalled();
+        expect(reorderCategories).not.toHaveBeenCalled();
+    });
+
+    it("reports partial failure when one API call rejects (Promise.allSettled)", async () => {
+        vi.mocked(reorderCategories).mockRejectedValueOnce(
+            new Error("Cat reorder failed"),
+        );
+        const onReorderError = vi.fn();
+
+        renderGrid({
+            currentCategories: [makeCategory({ id: 1, sortOrder: 0 })],
+            currentImages: [makeImage({ id: 10, sortOrder: 1 })],
+            onReorderError,
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "img-10" },
+                    target: { id: `${REORDER_PREFIX}cat-1` },
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(onReorderError).toHaveBeenCalled();
+    });
+
+    it("still calls onReorderComplete (server refresh) on reorder failure", async () => {
+        vi.mocked(reorderImages).mockRejectedValueOnce(
+            new Error("Network error"),
+        );
+        const onReorderComplete = vi.fn();
+        const onReorderError = vi.fn();
+
+        renderGrid({
+            currentCategories: [makeCategory({ id: 1, sortOrder: 0 })],
+            currentImages: [makeImage({ id: 10, sortOrder: 1 })],
+            onReorderComplete,
+            onReorderError,
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: { id: "img-10" },
+                    target: { id: `${REORDER_PREFIX}cat-1` },
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(onReorderError).toHaveBeenCalled();
+        expect(onReorderComplete).toHaveBeenCalled();
+    });
+});

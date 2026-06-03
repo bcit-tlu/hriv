@@ -75,6 +75,11 @@ interface ReorderDropZoneProps {
     disabled: boolean;
 }
 
+// Width the reorder seam opens to while it is the active drop target. The
+// gap widens and a crisp insertion bar appears so neighbouring tiles slide
+// over, giving a live preview of where the dragged tile will land.
+const REORDER_SLOT_OPEN_PX = 64;
+
 function ReorderDropZone({ id, disabled }: ReorderDropZoneProps) {
     const { ref, isDropTarget } = useDroppable({
         id,
@@ -89,15 +94,43 @@ function ReorderDropZone({ id, disabled }: ReorderDropZoneProps) {
             aria-hidden="true"
             sx={{
                 alignSelf: "stretch",
-                flex: "0 0 16px",
+                flex: isDropTarget
+                    ? `0 0 ${REORDER_SLOT_OPEN_PX}px`
+                    : "0 0 16px",
                 minHeight: 180,
-                borderRadius: 1,
-                outline: isDropTarget ? "2px solid" : "2px solid transparent",
-                outlineColor: isDropTarget ? "primary.main" : "transparent",
-                bgcolor: isDropTarget ? "action.hover" : "transparent",
-                transition: "background-color 0.12s, outline-color 0.12s",
+                display: "flex",
+                alignItems: "stretch",
+                justifyContent: "center",
+                py: 1,
+                transition: "flex-basis 0.15s ease",
             }}
-        />
+        >
+            <Box
+                sx={{
+                    width: isDropTarget ? "100%" : 0,
+                    borderRadius: 1,
+                    border: "2px dashed",
+                    borderColor: isDropTarget ? "primary.main" : "transparent",
+                    bgcolor: isDropTarget ? "action.hover" : "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    transition:
+                        "background-color 0.12s ease, border-color 0.12s ease",
+                }}
+            >
+                <Box
+                    sx={{
+                        width: 3,
+                        alignSelf: "stretch",
+                        my: 1,
+                        borderRadius: 2,
+                        bgcolor: isDropTarget ? "primary.main" : "transparent",
+                        transition: "background-color 0.12s ease",
+                    }}
+                />
+            </Box>
+        </Box>
     );
 }
 
@@ -465,11 +498,7 @@ export default function SortableTileGrid({
                     }
                     return [
                         new PointerActivationConstraints.Distance({
-                            value: 10,
-                        }),
-                        new PointerActivationConstraints.Delay({
-                            value: 200,
-                            tolerance: 5,
+                            value: 8,
                         }),
                     ];
                 },
@@ -508,10 +537,12 @@ export default function SortableTileGrid({
                             key={id}
                             sx={{ display: "flex", alignItems: "stretch" }}
                         >
-                            <ReorderDropZone
-                                id={`${REORDER_PREFIX}${id}`}
-                                disabled={!canEditContent}
-                            />
+                            {items.length > 1 && (
+                                <ReorderDropZone
+                                    id={`${REORDER_PREFIX}${id}`}
+                                    disabled={!canEditContent}
+                                />
+                            )}
                             <DraggableTile id={id} disabled={!canEditContent}>
                                 {item.type === "category"
                                     ? renderCategoryTile(item.data, true)
@@ -520,7 +551,7 @@ export default function SortableTileGrid({
                         </Box>
                     );
                 })}
-                {items.length > 0 && (
+                {items.length > 1 && (
                     <ReorderDropZone
                         id={REORDER_END_ID}
                         disabled={!canEditContent}
