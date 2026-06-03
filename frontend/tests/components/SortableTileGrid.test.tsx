@@ -555,11 +555,12 @@ describe("drag-and-drop spec contract (docs/drag-and-drop.md)", () => {
 
     it("handleDragEnd dispatches reorder for a bare tile target (pure dispatch; move-wins suppression is enforced upstream)", async () => {
         // `handleDragEnd` is pure dispatch: a non-`drop-cat-*` target reorders.
-        // The move-wins guard does NOT live here — it lives in the sortable
-        // collision detector (`createGapOnlyClosestCenter`), which returns no
-        // collision while the pointer is over a category tile so a category
-        // tile can never become a reorder target at runtime. That suppression
-        // is unit-tested directly in `sortableTileGridUtils.test.ts`.
+        // The move-wins guard does NOT live here — it lives in the directional
+        // collision detectors (`farHalfReorderCollision` /
+        // `nearHalfMoveCollision`): a category tile only becomes a reorder
+        // target once the pointer crosses its centre on the far side, and the
+        // High-priority move zone wins on the near half. That split is
+        // unit-tested directly in `sortableTileGridUtils.test.ts`.
         const onDropCategoryOnCategory = vi.fn();
         renderGrid({
             currentCategories: [

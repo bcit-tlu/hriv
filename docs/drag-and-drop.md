@@ -13,8 +13,11 @@ PR if you intentionally change the behaviour.
 > **not** v1 `@dnd-kit/core` (`SortableContext`). APIs differ; do not mix v1
 > examples into this component.
 
-> **Current behaviour: A2.** Tiles are sortables and reflow optimistically during
-> a drag (see the 2026-06 A2 Decision Record below). The "two gestures" table and
+> **Current behaviour: A2 with a directional far-half guard.** Tiles are
+> sortables and reflow optimistically during a drag, but reorder only fires once
+> the pointer crosses a tile's centre on the far side; the near half is a
+> dead-zone where move wins (see the latest 2026-06 A2 Decision Record below).
+> The "two gestures" table and
 > invariants below describe the **move-vs-reorder dispatch contract**, which A2
 > preserves; the A1 "gap seam" trigger details are kept for historical context and
 > the revert path. Where the table says reorder triggers in a _seam_, A2 triggers
@@ -150,6 +153,13 @@ the reflow feels wrong, the fallback is the locked A1 baseline (still on the
 
 ### 2026-06 — A2 move-wins guard fixed in code (inset move zone + collision suppression)
 
+> **Superseded by the directional far-half record below.** The inset move zone
+> broke "Move here" entirely in local testing: the move-zone droppable's
+> measured shape was the *inset* box, so `pointerIntersection` only fired deep
+> inside the tile and the surrounding reorder lane swallowed the whole gesture.
+> `createGapOnlyClosestCenter`, `MOVE_ZONE_INSET_PX`, and the move-zone element
+> registry described here no longer exist. Kept for history.
+
 **Problem.** The feel-test found the guard failing: dragging an image across the
 gap into an adjacent category tile briefly showed "Move here", then the
 optimistic reorder reflowed the category as the pointer pushed toward the tile
@@ -194,6 +204,67 @@ dispatch, so a category tile can never become a reorder target at runtime.
 
 Still **pending the human feel-test** per the Process gate (notably the inset
 size). Fallback remains the locked A1 baseline on PR #550.
+
+### 2026-06 — A2 move-wins guard, directional far-half threshold (current)
+
+**Problem with the inset approach.** Making the move zone a centered *inset*
+element meant its measured collision shape (`droppable.shape`) was the inset
+box, not the full tile. `pointerIntersection` only reports a collision while the
+pointer is inside that shape, so "Move here" never appeared as the pointer
+crossed the tile's outer reorder lane — only optimistic reordering showed. The
+inset both shrank the move target and (because the shape shrank with it) broke
+move detection.
+
+**Fix (current).** Drop the spatial move-zone-vs-reorder-region split and the
+element registry. The guard is now a single **directional threshold** shared by
+two complementary collision detectors in `sortableTileGridUtils.ts`, both keyed
+on `isPastTileCenterAlongDrag(pointer, center, delta)`:
+
+- `farHalfReorderCollision` (passed to every tile's `useSortable`): returns a
+  `Normal` collision only when the pointer is **inside** a tile **and** has
+  crossed its centre on the side **opposite the entry edge** (the far half). On
+  the near half it returns `null`, so the optimistic-sorting plugin has nothing
+  to reflow against and the drag sits still.
+- `nearHalfMoveCollision` (passed to `DroppableCategoryZone`'s full-rect
+  `useDroppable`, `High` priority): the exact complement — collides only on the
+  **near half**, so "Move here" owns the entry side of a category tile.
+
+`DroppableCategoryZone` is back to wrapping the **full tile rect** (no inset),
+so the move-zone shape is the whole tile and "Move here" detection works again.
+
+**Direction source.** The drag direction comes from the **cumulative** drag
+delta (`position.delta` = current − start), not `position.direction`. dnd-kit's
+`direction` is recomputed frame-to-frame and flips on the tiniest jitter;
+cumulative delta is stable. The dominant axis of the delta selects the axis to
+test, so the same rule covers horizontal neighbours and the vertical neighbours
+of a wrapped grid. Before any travel (`delta` ≈ 0) nothing is past centre, so a
+category tile reads as all near-half (move is the default).
+
+**Resulting behaviour (every tile type):**
+
+- **Near half (entry side)** → reorder suppressed. For a category tile, the
+  High-priority move zone wins → "Move here"; for an image tile, the drag sits
+  still (calm dead-zone).
+- **Far half (past centre in the drag direction)** → reorder / optimistic
+  reflow. Category↔category reorder stays possible: push past the neighbour's
+  centre. Nesting an image into a category now requires settling on the
+  category's near half (pushing to the far half reorders instead).
+- **Inter-tile gap** → no tile contains the pointer → dead-zone (reorder only
+  ever fires *inside* a tile's far half).
+
+**Edge cases to watch in feel-test:** corner entries (axis chosen by the
+dominant delta component) and wrapped-grid vertical neighbours when a drag has a
+large horizontal cumulative delta.
+
+**Guard enforced by tests.** `isPastTileCenterAlongDrag`,
+`farHalfReorderCollision`, and `nearHalfMoveCollision` are unit-tested directly
+in `sortableTileGridUtils.test.ts`, including a complementarity check that
+exactly one of the two detectors fires for any pointer inside a tile. The
+`handleDragEnd` dispatch tests still pin invariants 1 & 4.
+
+Still **pending the human feel-test** per the Process gate (notably the
+between-category-tile reorder feel). Fallback remains the locked A1 baseline on
+PR #550.
 
 ## Process gate (feel cannot be proven by a recording)
 

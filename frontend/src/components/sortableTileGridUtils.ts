@@ -1,4 +1,4 @@
-import { closestCenter } from "@dnd-kit/collision";
+import { CollisionPriority, CollisionType } from "@dnd-kit/abstract";
 import type { CollisionDetector } from "@dnd-kit/abstract";
 
 import type { Category, ImageItem } from "../types";
@@ -49,36 +49,101 @@ export function insertionIndexForMove(
     return Math.max(0, Math.min(adjusted, itemCount - 1));
 }
 
+// ── Directional "far-half" collision rule (move-wins guard) ──
+//
+// The move-vs-reorder guard is expressed geometrically as a single threshold
+// shared by two complementary detectors: reorder only fires once the pointer
+// crosses a tile's centre on the side *opposite* the edge it entered from (the
+// far half); the near half is a calm dead-zone where, for a category tile, the
+// High-priority move zone wins ("Move here"). This restates the locked spec's
+// "move always wins over a category tile" as "reorder never fires on the near
+// half of any tile", which keeps category↔category reorder possible (push past
+// the far half) without an aim-for-the-gap target.
+
 /**
- * Collision detector for sortable tiles that delegates to `closestCenter`
- * but returns `null` (no collision) whenever the pointer is inside any
- * registered category move-zone element. Because the optimistic-sorting
- * plugin only reflows when a sortable is the colliding target, returning
- * `null` here suppresses reorder/reflow while the pointer is inside a move
- * zone, so move always wins there (per the locked spec's guard). The
- * registered element is the *inset* centre of a category tile, so reflow
- * stays active over image tiles, over the inset margin around a category
- * tile, and in the inter-tile gaps — keeping category reorder practical.
+ * True when `pointer` has crossed `center` on the far side relative to the
+ * drag's travel direction. Direction is taken from the cumulative drag delta
+ * (current − start), which is stable frame-to-frame — unlike
+ * `position.direction`, which flips on the tiniest jitter. The dominant axis
+ * of the delta selects the axis to test, so the same rule covers horizontal
+ * neighbours and the vertical neighbours of a wrapped grid. Before any travel
+ * (`delta` ≈ 0) nothing is "past centre", so the whole tile reads as near half.
  */
-export function createGapOnlyClosestCenter(
-    moveZoneElements: Set<Element>,
-): CollisionDetector {
-    return (input) => {
-        const { x, y } = input.dragOperation.position.current;
-        for (const el of moveZoneElements) {
-            const rect = el.getBoundingClientRect();
-            if (
-                x >= rect.left &&
-                x <= rect.right &&
-                y >= rect.top &&
-                y <= rect.bottom
-            ) {
-                return null;
-            }
-        }
-        return closestCenter(input);
-    };
+export function isPastTileCenterAlongDrag(
+    pointer: { x: number; y: number },
+    center: { x: number; y: number },
+    delta: { x: number; y: number },
+): boolean {
+    const horizontal = Math.abs(delta.x) >= Math.abs(delta.y);
+    if (horizontal) {
+        if (delta.x === 0) return false;
+        return delta.x > 0 ? pointer.x >= center.x : pointer.x <= center.x;
+    }
+    if (delta.y === 0) return false;
+    return delta.y > 0 ? pointer.y >= center.y : pointer.y <= center.y;
 }
+
+/**
+ * Sortable (reorder) collision detector implementing the far-half rule: a tile
+ * only becomes a reorder/reflow target once the pointer is inside it AND has
+ * crossed its centre on the far side. On the near half this returns `null`, so
+ * the optimistic-sorting plugin has nothing to reflow against and the drag
+ * sits still. Applies to every tile type.
+ */
+export const farHalfReorderCollision: CollisionDetector = ({
+    dragOperation,
+    droppable,
+}) => {
+    const pointer = dragOperation.position.current;
+    if (!pointer || !droppable.shape) return null;
+    if (!droppable.shape.containsPoint(pointer)) return null;
+    const { center } = droppable.shape;
+    if (
+        !isPastTileCenterAlongDrag(
+            pointer,
+            center,
+            dragOperation.position.delta,
+        )
+    )
+        return null;
+    const distance = Math.hypot(center.x - pointer.x, center.y - pointer.y);
+    return {
+        id: droppable.id,
+        value: 1 / (distance || 1),
+        type: CollisionType.Collision,
+        priority: CollisionPriority.Normal,
+    };
+};
+
+/**
+ * Move-zone collision detector implementing the complementary near-half rule:
+ * a category move zone only collides while the pointer is inside it and has NOT
+ * crossed the tile centre in the drag direction. This is the exact complement
+ * of `farHalfReorderCollision`, so a category tile splits cleanly into "Move
+ * here" on the entry side and reorder on the far side — they never overlap.
+ * Kept at High priority so move wins over any reorder collision on the near
+ * half.
+ */
+export const nearHalfMoveCollision: CollisionDetector = ({
+    dragOperation,
+    droppable,
+}) => {
+    const pointer = dragOperation.position.current;
+    if (!pointer || !droppable.shape) return null;
+    if (!droppable.shape.containsPoint(pointer)) return null;
+    const { center } = droppable.shape;
+    if (
+        isPastTileCenterAlongDrag(pointer, center, dragOperation.position.delta)
+    )
+        return null;
+    const distance = Math.hypot(center.x - pointer.x, center.y - pointer.y);
+    return {
+        id: droppable.id,
+        value: 1 / (distance || 1),
+        type: CollisionType.PointerIntersection,
+        priority: CollisionPriority.High,
+    };
+};
 
 // ── Descendant / tree helpers ───────────────────────────────
 
