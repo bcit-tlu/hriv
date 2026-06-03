@@ -6,7 +6,7 @@ import type { Program } from '../../src/types'
 import type { ApiUser } from '../../src/api'
 
 const programs: Program[] = [
-  { id: 1, name: 'Medical Lab', created_at: '', updated_at: '' },
+  { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
 ]
 
 const existingUser: ApiUser = {
@@ -132,6 +132,63 @@ describe('AddEditPersonModal', () => {
     )
     // Password should not be in the data when left blank
     expect(onSave.mock.calls[0][0].password).toBeUndefined()
+  })
+
+  it('shows student restriction helper text when role is student', () => {
+    render(
+      <AddEditPersonModal
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        programs={programs}
+      />,
+    )
+    expect(
+      screen.getByText('Select one or more programs to restrict access'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows non-restrictive helper text when role is instructor', async () => {
+    const user = userEvent.setup()
+    render(
+      <AddEditPersonModal
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        programs={programs}
+      />,
+    )
+
+    // Change role to instructor via MUI Select
+    // The first combobox is the Role select, the second is Programs
+    const selects = screen.getAllByRole('combobox')
+    await user.click(selects[0])
+    await user.click(screen.getByRole('option', { name: 'Instructor' }))
+
+    expect(
+      screen.getByText(/Instructors and admins can see all content regardless of program assignment/),
+    ).toBeInTheDocument()
+  })
+
+  it('shows non-restrictive helper text when role is admin', async () => {
+    const user = userEvent.setup()
+    render(
+      <AddEditPersonModal
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        programs={programs}
+      />,
+    )
+
+    // Change role to admin via MUI Select
+    const selects = screen.getAllByRole('combobox')
+    await user.click(selects[0])
+    await user.click(screen.getByRole('option', { name: 'Admin' }))
+
+    expect(
+      screen.getByText(/Instructors and admins can see all content regardless of program assignment/),
+    ).toBeInTheDocument()
   })
 
   it('cancel button calls onClose', async () => {

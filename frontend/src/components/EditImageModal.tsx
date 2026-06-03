@@ -2,7 +2,6 @@ import { useState, useCallback, useRef } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
@@ -25,7 +24,6 @@ export interface ImageFormData {
   category_id?: number | null
   copyright?: string
   note?: string
-  program_ids?: number[]
   active?: boolean
   metadata_extra?: Record<string, unknown>
 }
@@ -67,13 +65,14 @@ interface EditImageModalProps {
   onSave: (data: ImageFormData) => void
   onDelete?: () => Promise<void>
   onReplace?: (data: ReplaceImageData) => Promise<void>
+  onCancelReplace?: () => void
   replaceUploadProgress?: number
   image: ApiImage | null
   categories: Category[]
   programs: Program[]
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
-  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  onToggleVisibility?: (categoryId: number) => Promise<void>
   onViewImage?: () => void
 }
 
@@ -82,6 +81,7 @@ function EditImageForm({
   onSave,
   onDelete,
   onReplace,
+  onCancelReplace,
   replaceUploadProgress,
   image,
   categories,
@@ -97,7 +97,6 @@ function EditImageForm({
   const [categoryId, setCategoryId] = useState<number | null>(image?.category_id ?? null)
   const [copyright, setCopyright] = useState(image?.copyright ?? '')
   const [note, setNote] = useState(image?.note ?? '')
-  const [programIds, setProgramIds] = useState<number[]>(image?.program_ids ?? [])
   const [active, setActive] = useState(image?.active ?? true)
   const meta = image?.metadata_extra as Record<string, unknown> | null
   const [measurementScale, setMeasurementScale] = useState<string>(
@@ -124,7 +123,6 @@ function EditImageForm({
     categoryId !== (image?.category_id ?? null) ||
     copyright !== (image?.copyright ?? '') ||
     note !== (image?.note ?? '') ||
-    JSON.stringify(programIds) !== JSON.stringify(image?.program_ids ?? []) ||
     active !== (image?.active ?? true) ||
     measurementScale !== (meta?.measurement_scale != null ? String(meta.measurement_scale) : '') ||
     measurementUnit !== (typeof meta?.measurement_unit === 'string' ? meta.measurement_unit : '')
@@ -144,15 +142,6 @@ function EditImageForm({
     }
   }
 
-  const toggleProgram = useCallback(
-    (id: number) => {
-      setProgramIds((prev) =>
-        prev.includes(id) ? prev.filter((pid) => pid !== id) : [...prev, id],
-      )
-    },
-    [],
-  )
-
   const buildFormData = (): ImageFormData | null => {
     const trimmedName = name.trim()
     if (!trimmedName) return null
@@ -169,7 +158,6 @@ function EditImageForm({
       category_id: categoryId,
       copyright: copyright.trim() || undefined,
       note: note.trim() || undefined,
-      program_ids: programIds,
       active,
     }
 
@@ -393,6 +381,7 @@ function EditImageForm({
             onAddCategory={onAddCategory}
             onEditCategory={onEditCategory}
             onToggleVisibility={onToggleVisibility}
+            programs={programs}
           />
         </Box>
         <TextField
@@ -409,23 +398,6 @@ function EditImageForm({
           value={note}
           onChange={(e) => setNote(e.target.value)}
         />
-        <Box>
-          <Typography variant="subtitle2" gutterBottom>
-            Program
-          </Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-            {programs.map((p) => (
-              <Chip
-                key={p.id}
-                label={p.name}
-                size="small"
-                color={programIds.includes(p.id) ? 'primary' : 'default'}
-                variant={programIds.includes(p.id) ? 'filled' : 'outlined'}
-                onClick={() => toggleProgram(p.id)}
-              />
-            ))}
-          </Box>
-        </Box>
         <FormControlLabel
           control={
             <Switch
@@ -522,7 +494,18 @@ function EditImageForm({
         </Box>
       )}
       <DialogActions>
-        <Button onClick={onClose} disabled={busy || deleting}>{uploadInProgress ? 'Close' : 'Cancel'}</Button>
+        <Button
+          onClick={() => {
+            if (uploadInProgress && onCancelReplace) {
+              onCancelReplace()
+            } else {
+              onClose()
+            }
+          }}
+          disabled={busy || deleting}
+        >
+          {uploadInProgress ? 'Cancel Upload' : 'Cancel'}
+        </Button>
         {replaceFile && onReplace ? (
           <Button
             onClick={handleReplace}
@@ -561,6 +544,7 @@ export default function EditImageModal({
   onSave,
   onDelete,
   onReplace,
+  onCancelReplace,
   replaceUploadProgress,
   image,
   categories,
@@ -581,6 +565,7 @@ export default function EditImageModal({
           onSave={onSave}
           onDelete={onDelete}
           onReplace={onReplace}
+          onCancelReplace={onCancelReplace}
           replaceUploadProgress={replaceUploadProgress}
           image={image}
           categories={categories}

@@ -22,6 +22,11 @@ async def _noop_advisory_lock():
     yield AsyncMock(name="FakeConn")
 
 
+async def _noop_check_schema_privilege(_conn):
+    """Stand-in that always passes the schema privilege check."""
+    return None
+
+
 def test_run_upgrade_dispatches_to_alembic_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -65,6 +70,7 @@ def test_bootstrap_runs_upgrade_under_advisory_lock(
     monkeypatch.setattr(migrations_bootstrap, "_run_upgrade", _tracking_upgrade)
     monkeypatch.setattr(migrations_bootstrap, "_advisory_lock", _tracking_lock)
     monkeypatch.setattr(migrations_bootstrap, "_should_stamp_legacy", _no_stamp)
+    monkeypatch.setattr(migrations_bootstrap, "_check_schema_privilege", _noop_check_schema_privilege)
 
     migrations_bootstrap.bootstrap()
 
@@ -92,6 +98,7 @@ def test_bootstrap_runs_upgrade_in_worker_thread(
     monkeypatch.setattr(migrations_bootstrap, "_run_upgrade", upgrade)
     monkeypatch.setattr(migrations_bootstrap, "_advisory_lock", _noop_advisory_lock)
     monkeypatch.setattr(migrations_bootstrap, "_should_stamp_legacy", _no_stamp)
+    monkeypatch.setattr(migrations_bootstrap, "_check_schema_privilege", _noop_check_schema_privilege)
     monkeypatch.setattr(migrations_bootstrap.asyncio, "to_thread", _fake_to_thread)
 
     migrations_bootstrap.bootstrap()
@@ -290,6 +297,7 @@ def test_bootstrap_stamps_then_upgrades_legacy_db(
     monkeypatch.setattr(migrations_bootstrap, "_run_upgrade", _tracking_upgrade)
     monkeypatch.setattr(migrations_bootstrap, "_advisory_lock", _tracking_lock)
     monkeypatch.setattr(migrations_bootstrap, "_should_stamp_legacy", _yes_stamp)
+    monkeypatch.setattr(migrations_bootstrap, "_check_schema_privilege", _noop_check_schema_privilege)
 
     migrations_bootstrap.bootstrap()
 
@@ -352,6 +360,83 @@ def test_main_logs_host_hint_on_dns_error(
 
     assert rc == 1
     assert "Database host unreachable" in caplog.text
+
+
+async def test_check_schema_privilege_passes_when_granted() -> None:
+    """``_check_schema_privilege`` must succeed silently when the current
+    role has CREATE on the ``public`` schema."""
+    conn = AsyncMock(name="AsyncConnection")
+    conn.execute = AsyncMock(
+        return_value=MagicMock(scalar_one=MagicMock(return_value=True)),
+    )
+
+    # Should not raise
+    await migrations_bootstrap._check_schema_privilege(conn)
+
+    conn.execute.assert_awaited_once()
+
+
+async def test_check_schema_privilege_raises_when_missing() -> None:
+    """``_check_schema_privilege`` must raise ``SchemaPrivilegeError`` with
+    an actionable message when the current role lacks CREATE on ``public``."""
+    conn = AsyncMock(name="AsyncConnection")
+    # 1st call: has_schema_privilege → False
+    # 2nd call: current_user → 'v-kubernet-hriv-db-abc123'
+    conn.execute = AsyncMock(side_effect=[
+        MagicMock(scalar_one=MagicMock(return_value=False)),
+        MagicMock(scalar_one=MagicMock(return_value="v-kubernet-hriv-db-abc123")),
+    ])
+
+    with pytest.raises(
+        migrations_bootstrap.SchemaPrivilegeError,
+        match="lacks CREATE privilege on schema",
+    ):
+        await migrations_bootstrap._check_schema_privilege(conn)
+
+    assert conn.execute.await_count == 2
+
+
+async def test_check_schema_privilege_error_includes_vault_hint() -> None:
+    """The error message must include a Vault-specific remediation hint
+    since dynamic credentials are the most common cause of missing
+    schema-level grants."""
+    conn = AsyncMock(name="AsyncConnection")
+    conn.execute = AsyncMock(side_effect=[
+        MagicMock(scalar_one=MagicMock(return_value=False)),
+        MagicMock(scalar_one=MagicMock(return_value="v-kubernet-hriv-db-abc123")),
+    ])
+
+    with pytest.raises(
+        migrations_bootstrap.SchemaPrivilegeError,
+        match="creation_statements",
+    ) as exc_info:
+        await migrations_bootstrap._check_schema_privilege(conn)
+
+    msg = str(exc_info.value)
+    assert "GRANT CREATE ON SCHEMA public" in msg or "GRANT ALL ON SCHEMA public" in msg
+    assert "v-kubernet-hriv-db-abc123" in msg
+
+
+def test_main_logs_schema_privilege_hint(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """When the bootstrap fails with a SchemaPrivilegeError, ``main()``
+    must log the actionable message without a raw traceback."""
+
+    def _boom() -> None:
+        raise migrations_bootstrap.SchemaPrivilegeError(
+            "Role 'v-test' lacks CREATE privilege on schema 'public'."
+        )
+
+    monkeypatch.setattr(migrations_bootstrap, "bootstrap", _boom)
+
+    with caplog.at_level("ERROR"):
+        rc = migrations_bootstrap.main()
+
+    assert rc == 1
+    assert "lacks CREATE privilege" in caplog.text
+    # Must NOT produce a traceback for this expected error
+    assert "Traceback" not in caplog.text
 
 
 def test_redacted_url_masks_password() -> None:

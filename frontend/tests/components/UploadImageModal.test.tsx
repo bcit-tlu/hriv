@@ -32,7 +32,7 @@ const categories: Category[] = [
 ]
 
 const programs: Program[] = [
-  { id: 1, name: 'Medical Lab', created_at: '', updated_at: '' },
+  { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
 ]
 
 describe('UploadImageModal', () => {
@@ -76,6 +76,24 @@ describe('UploadImageModal', () => {
       />,
     )
     expect(screen.getByTestId('category-picker')).toBeInTheDocument()
+  })
+
+  it('renders combined helper text', () => {
+    render(
+      <UploadImageModal
+        open
+        onClose={vi.fn()}
+        onUploaded={vi.fn()}
+        categories={categories}
+        programs={programs}
+      />,
+    )
+    expect(
+      screen.getByText(/Uploaded images are processed into zoomable views/),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/ZIP uploads are automatically extracted/),
+    ).toBeInTheDocument()
   })
 
   it('renders nothing when closed', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -29,6 +29,7 @@ import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
+import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
@@ -42,6 +43,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility'
 import { fetchImages, updateImage, deleteImage, replaceImage, bulkUpdateImages, bulkDeleteImages } from '../api'
 import type { ApiBulkImportJob, ApiImage } from '../api'
 import type { Category, Program } from '../types'
+import { splitDirectAncestorProgramIds } from '../categoryUtils'
 import BulkEditImagesModal from './BulkEditImagesModal'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
@@ -118,12 +120,13 @@ type SortDirection = 'asc' | 'desc'
 interface ManagePageProps {
   categories: Category[]
   programs: Program[]
+  imagesVersion?: number
   onViewImage?: (image: ApiImage) => void
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
-  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  onToggleVisibility?: (categoryId: number) => Promise<void>
   onReplaceImage?: (sourceImageId: number, filename: string, fileSize: number) => void
   onProcessingStarted?: (
     sourceImageId: number,
@@ -140,11 +143,16 @@ interface ManagePageProps {
     uploadId: number,
   ) => void
   onUploadFailed?: (uploadId: number, error: string) => void
+  onUploadOpenChange?: (isOpen: boolean) => void
+  onSearchProgram?: (programName: string) => void
+  initialProgramFilter?: string
+  onInitialProgramFilterConsumed?: () => void
 }
 
 export default function ManagePage({
   categories,
   programs,
+  imagesVersion,
   onViewImage,
   onNavigateCategory,
   onCategoriesChanged,
@@ -157,6 +165,10 @@ export default function ManagePage({
   onUploadProgress,
   onBulkImportStarted,
   onUploadFailed,
+  onUploadOpenChange,
+  onSearchProgram,
+  initialProgramFilter,
+  onInitialProgramFilterConsumed,
 }: ManagePageProps) {
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
@@ -182,6 +194,15 @@ export default function ManagePage({
   // Upload modal state
   const [uploadOpen, setUploadOpen] = useState(false)
 
+  // Notify parent when upload modal open state changes (#409)
+  useEffect(() => {
+    onUploadOpenChange?.(uploadOpen)
+  }, [uploadOpen, onUploadOpenChange])
+
+  // Replace-image abort controller and progress
+  const replaceAbortRef = useRef<AbortController | null>(null)
+  const [replaceProgress, setReplaceProgress] = useState<number | undefined>(undefined)
+
   // Move modal state
   const [moveOpen, setMoveOpen] = useState(false)
   const [movingImage, setMovingImage] = useState<ApiImage | null>(null)
@@ -192,6 +213,16 @@ export default function ManagePage({
   // Pagination state
   const [rowsPerPage, setRowsPerPage] = useState(25)
   const [currentPage, setCurrentPage] = useState(0)
+
+  // Apply initial program filter from external navigation (e.g. search)
+  useEffect(() => {
+    if (initialProgramFilter) {
+      setFilters((prev) => ({ ...prev, program: initialProgramFilter }))
+      setShowFilters(true)
+      setCurrentPage(0)
+      onInitialProgramFilterConsumed?.()
+    }
+  }, [initialProgramFilter, onInitialProgramFilterConsumed])
 
   // Action menu state
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
@@ -216,7 +247,7 @@ export default function ManagePage({
 
   useEffect(() => {
     loadImages()
-  }, [loadImages])
+  }, [loadImages, imagesVersion])
 
   // Sort handler
   const handleSort = (column: SortableColumn) => {
@@ -237,12 +268,23 @@ export default function ManagePage({
     return fullPath.map((c) => c.label).join(' : ')
   }, [categoryPaths])
 
-  // Helper to get program names for sorting
+  // Collect effective program restrictions from the category tree using narrowing
+  // semantics: each category with own programIds narrows (intersects) the set.
+  // "direct" = programs from the image's own category, "ancestor" = remaining inherited.
+  const getInheritedProgramIds = useCallback((img: ApiImage): { direct: number[]; ancestor: number[] } => {
+    if (img.category_id == null) return { direct: [], ancestor: [] }
+    const seg = categoryPaths.get(img.category_id)
+    if (!seg) return { direct: [], ancestor: [] }
+    return splitDirectAncestorProgramIds([...seg.ancestors, seg.category])
+  }, [categoryPaths])
+
+  // Helper to get program names for sorting/filtering
   const getProgramNames = useCallback((img: ApiImage): string => {
-    return img.program_ids
+    const { direct, ancestor } = getInheritedProgramIds(img)
+    return [...direct, ...ancestor]
       .map((pid) => programs.find((p) => p.id === pid)?.name ?? '')
       .join(', ')
-  }, [programs])
+  }, [programs, getInheritedProgramIds])
 
   // Filtered and sorted images
   const filteredImages = useMemo(() => {
@@ -354,7 +396,6 @@ export default function ManagePage({
     category_id?: number | null
     copyright?: string
     note?: string
-    program_ids?: number[]
     active?: boolean
   }) => {
     try {
@@ -752,7 +793,15 @@ export default function ManagePage({
                       }
                     />
                   </TableCell>
-                  <TableCell sx={{ p: 0.5 }}>
+                  <TableCell
+                    sx={{ p: 0.5 }}
+                    onClick={(e) => {
+                      if (onViewImage) {
+                        e.stopPropagation()
+                        onViewImage(img)
+                      }
+                    }}
+                  >
                     <Box
                       component="img"
                       src={img.thumb}
@@ -763,6 +812,7 @@ export default function ManagePage({
                         objectFit: 'cover',
                         borderRadius: 0.5,
                         display: 'block',
+                        cursor: onViewImage ? 'pointer' : 'default',
                       }}
                     />
                   </TableCell>
@@ -777,12 +827,49 @@ export default function ManagePage({
                   </TableCell>
                   <TableCell>{img.copyright ?? '—'}</TableCell>
                   <TableCell>{img.note ?? '—'}</TableCell>
-                  <TableCell>
-                    {img.program_ids.length > 0
-                      ? img.program_ids
-                          .map((pid) => programs.find((p) => p.id === pid)?.name ?? pid)
-                          .join(', ')
-                      : '—'}
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    {(() => {
+                      const { direct, ancestor } = getInheritedProgramIds(img)
+                      if (direct.length === 0 && ancestor.length === 0) return 'All programs'
+                      const chipClick = (name: string) => {
+                        if (onSearchProgram) {
+                          onSearchProgram(name)
+                        } else {
+                          setShowFilters(true)
+                          handleFilterChange('program', name)
+                        }
+                      }
+                      return (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {direct
+                            .map((pid) => programs.find((p) => p.id === pid))
+                            .filter((p): p is Program => p != null)
+                            .map((p) => (
+                              <Chip
+                                key={p.id}
+                                label={p.name}
+                                size="small"
+                                color="primary"
+                                onClick={() => chipClick(p.name)}
+                                sx={{ cursor: 'pointer' }}
+                              />
+                            ))}
+                          {ancestor
+                            .map((pid) => programs.find((p) => p.id === pid))
+                            .filter((p): p is Program => p != null)
+                            .map((p) => (
+                              <Chip
+                                key={p.id}
+                                label={p.name}
+                                size="small"
+                                color="primary"
+                                onClick={() => chipClick(p.name)}
+                                sx={{ cursor: 'pointer', opacity: 0.5 }}
+                              />
+                            ))}
+                        </Box>
+                      )
+                    })()}
                   </TableCell>
                   <TableCell
                     onClick={(e) => e.stopPropagation()}
@@ -883,14 +970,36 @@ export default function ManagePage({
           onCategoriesChanged?.()
         } : undefined}
         onReplace={editingImage ? async ({ file, formData }: ReplaceImageData) => {
-          await updateImage(editingImage.id, formData)
-          const result = await replaceImage(editingImage.id, file)
-          onReplaceImage?.(result.id, file.name, file.size)
-          setEditOpen(false)
-          setEditingImage(null)
-          await loadImages()
-          onCategoriesChanged?.()
+          const abort = new AbortController()
+          replaceAbortRef.current = abort
+          setReplaceProgress(0)
+          try {
+            const result = await replaceImage(
+              editingImage.id,
+              file,
+              (fraction) => { setReplaceProgress(fraction) },
+              abort.signal,
+              formData,
+            )
+            onReplaceImage?.(result.id, file.name, file.size)
+            setEditOpen(false)
+            setEditingImage(null)
+            await loadImages()
+            onCategoriesChanged?.()
+          } catch (err) {
+            if (err instanceof DOMException && err.name === 'AbortError') {
+              setEditOpen(false)
+              setEditingImage(null)
+              return
+            }
+            throw err
+          } finally {
+            replaceAbortRef.current = null
+            setReplaceProgress(undefined)
+          }
         } : undefined}
+        onCancelReplace={() => replaceAbortRef.current?.abort()}
+        replaceUploadProgress={replaceProgress}
         image={editingImage}
         categories={categories}
         programs={programs}
@@ -932,8 +1041,8 @@ export default function ManagePage({
         onSave={handleBulkSave}
         onDelete={handleBulkDelete}
         categories={categories}
-        programs={programs}
         selectedCount={selected.size}
+        programs={programs}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
@@ -993,6 +1102,7 @@ export default function ManagePage({
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
+        programs={programs}
       />
     </Box>
   )

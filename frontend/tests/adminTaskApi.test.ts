@@ -164,7 +164,7 @@ describe('Background Admin Task API', () => {
       mockFetch.mockReturnValueOnce(errorResponse(400, 'Invalid JSON'))
 
       const file = new File(['bad'], 'bad.json', { type: 'application/json' })
-      await expect(startDbImport(file)).rejects.toThrow('Import failed: Invalid JSON')
+      await expect(startDbImport(file)).rejects.toThrow('API 400: Invalid JSON')
     })
   })
 
@@ -255,7 +255,7 @@ describe('Background Admin Task API', () => {
       )![1] as () => void
       errorHandler()
 
-      await expect(promise).rejects.toThrow('Upload failed: network error')
+      await expect(promise).rejects.toThrow('Network error')
     })
 
     it('calls onProgress callback', async () => {
@@ -329,7 +329,6 @@ describe('Background Admin Task API', () => {
         2,
         'Public Domain',
         'Note',
-        [1, 3],
         true,
         onProgress,
       )
@@ -353,7 +352,6 @@ describe('Background Admin Task API', () => {
       const form = xhrInstance.send.mock.calls[0][0] as FormData
       expect(form.get('files')).toBe(zip)
       expect(form.get('category_id')).toBe('2')
-      expect(form.getAll('program_ids')).toEqual(['1', '3'])
       expect(result).toEqual(BULK_IMPORT_FIXTURE)
     })
 
@@ -368,7 +366,7 @@ describe('Background Admin Task API', () => {
       )![1] as () => void
       loadHandler()
 
-      await expect(promise).rejects.toThrow('Bulk import failed: Internal Server Error')
+      await expect(promise).rejects.toThrow('API 500: Internal Server Error')
     })
   })
 

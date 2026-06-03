@@ -1,14 +1,15 @@
 ---
 name: testing-hriv
-description: End-to-end testing guide for the HRIV app including local stack setup, seed data, auth, UI navigation, metadata operations, admin export/import, image upload, image replacement, and tile sidecar routing.
+description: End-to-end testing guide for the HRIV app including local stack setup, seed data, auth, UI navigation, metadata operations, admin export/import, image upload, image replacement, drag-and-drop, tile sidecar routing, and bulk import with ManagePage auto-refresh.
 ---
 
 # Testing HRIV
 
 End-to-end testing guide for the HRIV app: local stack bring-up, seed data, auth,
-UI navigation, metadata operations, admin export/import, and image upload. For
-domain-specific flows see the sibling skills `testing-image-processing`
-(tile pipeline / pyvips) and `testing-backup-service` (disaster recovery).
+UI navigation, metadata operations, admin export/import, drag-and-drop, image upload,
+and bulk import. For domain-specific flows see the sibling skills
+`testing-image-processing` (tile pipeline / pyvips) and `testing-backup-service`
+(disaster recovery).
 
 ## Local Setup
 
@@ -66,11 +67,11 @@ All use password: `password`
 ## Seed Data
 
 ### Categories (hierarchical)
-- Architecture
-  - American
-  - Italian
-    - Gothic
-- Panoramas
+- Architecture (id=1)
+  - American (id=4)
+  - Italian (id=3)
+    - Gothic (id=5)
+- Panoramas (id=2)
 
 ### Programs
 | ID | Name |
@@ -384,6 +385,210 @@ docker exec hriv-db-1 psql -U hriv -d hriv -c \
 ```
 Then open that image in the browser to verify graceful handling.
 
+## Testing Drag-and-Drop (Browse Page)
+
+The Browse page supports HTML5 native drag-and-drop for images, categories, and files.
+All drag interactions are gated behind `canEditContent` — students see no drag affordances.
+
+> **Tile move vs. reorder runs on `@dnd-kit/react` v2 (pointer sensors), not HTML5 native DnD.**
+> The native MIME-type flows below cover file drops and the CategoryTile file-drop overlay.
+> The move-into-category / reorder-between-tiles contract lives in `docs/drag-and-drop.md`.
+> **Feel cannot be proven by a scripted/recorded drag** — discrete idealized pointer steps don't
+> reproduce the acceleration/jitter where feel bugs live. Any change to collision detection, drop
+> zones, collision priority, or activation constraints must be **feel-tested by a human** before
+> merge; a green recording is only a mechanics smoke-test, not feel validation.
+
+### Custom MIME Types
+- `application/x-hriv-image` — image tile drag payload (`{"id": <imageId>}`)
+- `application/x-hriv-category` — category tile drag payload (`{"id": <categoryId>}`)
+- `Files` — native file drag from OS
+
+### DnD Interactions to Test
+
+| Action | Expected Result |
+|---|---|
+| Drag image tile onto category tile | Image moves to target category |
+| Drag category tile onto another category | Category reparented under target |
+| Drag category onto itself | No-op (self-drop guard) |
+| Drop files on category tile | Upload dialog opens with that category pre-selected |
+| Drop files on grid (not on a tile) | Upload dialog opens with current path category |
+| Student views any tile | `draggable="false"`, no drop handlers |
+| Drag text/URL onto category tile | No highlight, drop rejected (MIME filtering) |
+
+### Testing the FileDropZone Component
+
+The `FileDropZone` component renders a prominent drop target at the end of the card
+grid **only** when files are actively being dragged into the viewport. It is gated
+behind `canEditContent` (admin/instructor only).
+
+**Key DOM selector:** `[role="region"][aria-label="Drop files here to upload images"]`
+
+**Triggering FileDropZone visibility:**
+```javascript
+// Dispatch dragenter with Files type on window to activate fileDragActive state
+const dt = new DataTransfer();
+dt.items.add(new File(['test'], 'test.png', { type: 'image/png' }));
+window.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+
+// After ~100ms, check for the dropzone element:
+const dz = document.querySelector('[role="region"][aria-label="Drop files here to upload images"]');
+// dz should be non-null when fileDragActive=true
+```
+
+**Expected visual properties when visible:**
+- `border: 3px dashed` with `borderColor: rgb(167, 74, 74)` (primary.main in light mode)
+- `minHeight: 220px`, `maxWidth: 300px`
+- `cursor: copy`
+- Contains "Add images" heading + "Drop files here" subtext + circular badge with AddIcon
+
+**Testing drop on FileDropZone:**
+```javascript
+const dz = document.querySelector('[role="region"][aria-label="Drop files here to upload images"]');
+const dt = new DataTransfer();
+dt.items.add(new File(['data'], 'photo.jpg', { type: 'image/jpeg' }));
+dz.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+dz.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+dz.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+// After ~100ms: upload dialog (.MuiDialog-root) should open, FileDropZone should disappear
+```
+
+**Resetting drag state:** Dispatch a drop event on window with Files type to reset
+`fileDragCounter` and `fileDragActive`:
+```javascript
+const dt = new DataTransfer();
+dt.items.add(new File(['x'], 'x.png', { type: 'image/png' }));
+window.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+```
+
+### Testing CategoryTile Drag-Over State
+
+When files (or images/categories) are dragged over a CategoryTile, it shows:
+- 3px dashed outline (primary color) with `outlineOffset: -3` (no box-model shift)
+- `transform: scale(1.03)` for tactile feedback
+- "Drop here" text overlay with move icon badge and semi-transparent primary background
+
+**Verifying drag-over styling:**
+```javascript
+const card = document.querySelectorAll('.MuiCard-root')[0];
+const dt = new DataTransfer();
+dt.items.add(new File(['test'], 'test.png', { type: 'image/png' }));
+card.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+card.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+
+// After ~100ms, verify computed styles:
+const cs = window.getComputedStyle(card);
+console.log(cs.outlineStyle);   // 'dashed'
+console.log(cs.outlineColor);   // 'rgb(167, 74, 74)'
+console.log(cs.outlineWidth);   // '3px'
+console.log(cs.transform);      // 'matrix(1.03, 0, 0, 1.03, 0, 0)'
+console.log(card.textContent.includes('Drop here')); // true
+```
+
+### Testing DnD with Synthetic Events
+
+Native HTML5 DnD requires physical mouse gestures that computer-use tools may not
+reliably trigger. Use Playwright CDP with synthetic `DragEvent` dispatch instead:
+
+```python
+import asyncio
+from playwright.async_api import async_playwright
+
+async def drag_image_to_category():
+    async with async_playwright() as p:
+        browser = await p.chromium.connect_over_cdp("http://localhost:9222")
+        page = browser.contexts[0].pages[0]
+
+        result = await page.evaluate("""
+            () => {
+                const cards = document.querySelectorAll('.MuiCard-root');
+                const sourceCard = cards[1]; // image tile
+                const targetCard = cards[0]; // category tile
+
+                const dt = new DataTransfer();
+                dt.setData('application/x-hriv-image', JSON.stringify({ id: 1 }));
+
+                sourceCard.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: dt }));
+                targetCard.dispatchEvent(new DragEvent('dragenter', { bubbles: true, dataTransfer: dt }));
+                targetCard.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+                targetCard.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+                sourceCard.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: dt }));
+
+                return 'DnD dispatched';
+            }
+        """)
+        print(result)
+
+asyncio.run(drag_image_to_category())
+```
+
+**Important notes for synthetic DnD:**
+- The full event sequence is required: `dragstart` → `dragenter` → `dragover` → `drop` → `dragend`
+- `dragover` must have `cancelable: true` and the handler must call `preventDefault()` to allow the drop
+- For file drops, use `dt.items.add(new File(['test'], 'test.jpg', { type: 'image/jpeg' }))` to populate the `Files` type
+- Visual highlight (outline color change) IS observable via `getComputedStyle` with synthetic events after a short delay (~100ms) for the React re-render to complete. Use `setTimeout` or poll the DOM
+- After destructive tests (moves/reparents), restore seed data via API PATCH
+
+### Verifying MIME Type Filtering
+
+The `isAcceptedDrag` callback checks `e.dataTransfer.types` before allowing drops.
+Verify filtering by checking `defaultPrevented` on `dragover` events:
+
+```javascript
+// In browser console or Playwright evaluate:
+const card = document.querySelectorAll('.MuiCard-root')[0];
+
+// text/plain should be REJECTED (defaultPrevented = false)
+const dtText = new DataTransfer();
+dtText.setData('text/plain', 'test');
+const textOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dtText });
+card.dispatchEvent(textOver);
+console.log('text/plain prevented:', textOver.defaultPrevented); // false
+
+// HRIV MIME should be ACCEPTED (defaultPrevented = true)
+const dtCat = new DataTransfer();
+dtCat.setData('application/x-hriv-category', '{"id":2}');
+const catOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dtCat });
+card.dispatchEvent(catOver);
+console.log('x-hriv-category prevented:', catOver.defaultPrevented); // true
+```
+
+### Verifying File Drop Category Pre-Selection
+
+When files are dropped on a category tile, the upload dialog should open with that
+category pre-selected. After the dialog opens, verify:
+
+```javascript
+const dialog = document.querySelector('.MuiDialog-root');
+const dialogText = dialog.textContent;
+// Should contain "CategoryArchitecture(0)" (or whichever category was dropped on)
+// NOT just "Category" with no selection
+```
+
+After closing and reopening the dialog normally (via ADD IMAGES button), the category
+field should be empty (no stale pre-selection from the previous file drop).
+
+### Data Restoration After DnD Tests
+
+```bash
+# Restore image back to original category
+VERSION=$(curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1 \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
+curl -s -X PATCH http://localhost:8000/api/images/1 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -H "If-Match: $VERSION" -d '{"category_id": 3}'  # Italian
+
+# Restore category parent
+curl -s -X PATCH http://localhost:8000/api/categories/2 \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"parent_id": null}'  # Panoramas back to root
+```
+
+### Chrome CDP Port
+
+When launching Chrome manually (e.g. because the CDP proxy on :29229 is not running),
+use `--remote-debugging-port=9222` and connect Playwright to `http://localhost:9222`
+instead of `:29229`.
+
 ## Testing Admin Export/Import
 
 ### Filesystem Export UI Flow
@@ -450,6 +655,99 @@ docker exec hriv-backend-1 tar -tzf /data/admin_tasks/<filename>.tar.gz | grep a
 The snackbar auto-dismisses after 6 s — use Playwright `wait_for` to catch the link
 deterministically. For deeper image-processing tests (progress flush timing,
 synthetic large images, pyvips eval signals) see `testing-image-processing`.
+
+## Testing Bulk Import + ManagePage Auto-Refresh
+
+Bulk imports happen when the user uploads a ZIP file or multiple images at once.
+The backend creates a `BulkImportJob` and processes images asynchronously via arq.
+App.tsx polls for job status every 2 seconds and bumps an `imagesVersion` counter
+when the job completes, which triggers ManagePage's `loadImages()` useEffect.
+
+### Creating Test Images for Bulk Import
+
+Use ImageMagick to create small test images and ZIP them:
+```bash
+# Create test JPEGs (PIL may not be installed)
+for i in 1 2 3; do
+  convert -size 200x200 "xc:rgb($((50*i)),100,150)" /tmp/test_bulk_${i}.jpg
+done
+
+# Create ZIP archive
+python3 -c "
+import zipfile
+with zipfile.ZipFile('/tmp/test_bulk_import.zip', 'w') as zf:
+    for i in range(1, 4):
+        zf.write(f'/tmp/test_bulk_{i}.jpg', f'test_bulk_{i}.jpg')
+"
+```
+
+### Bulk Import from ManagePage (Images Tab)
+
+1. Navigate to **Images** tab (ManagePage) — note the current row count.
+2. Click **ADD IMAGES** to open the upload modal.
+3. Inject the ZIP file via Playwright (the native file picker won't work with computer-use):
+   ```python
+   import asyncio
+   from playwright.async_api import async_playwright
+
+   async def inject_zip():
+       async with async_playwright() as p:
+           browser = await p.chromium.connect_over_cdp('http://localhost:29229')
+           context = browser.contexts[0]
+           page = [pg for pg in context.pages if 'localhost:5173' in pg.url][0]
+           file_input = page.locator('input[type="file"]')
+           await file_input.set_input_files('/tmp/test_bulk_import.zip')
+
+   asyncio.run(inject_zip())
+   ```
+4. Select a target category from the dropdown.
+5. Click **IMPORT 1 FILE** (the button shows file count, not image count).
+6. The upload modal closes, a snackbar shows import progress.
+7. **Without navigating away**, wait for the import to complete (~5-10 seconds for small images).
+8. Verify the image table auto-refreshes with the new rows.
+
+**Key behavior:** The table should update automatically when the bulk import
+completes. The `imagesVersion` counter in App.tsx increments on both:
+- Bulk import job completion (polling path at `App.tsx:592-594`)
+- Single-image processing completion (processing job path at `App.tsx:477-481`)
+
+ManagePage watches `imagesVersion` in its useEffect dependency array (`ManagePage.tsx:223-225`).
+
+### Verifying No Polling Churn
+
+The old bug (#292) caused useEffect teardown/recreate on every state update, leading
+to rapid burst polling. To verify this is fixed:
+
+1. Instrument `window.fetch` before starting a bulk import:
+   ```python
+   # Via Playwright evaluate:
+   await page.evaluate('''
+       window._pollLog = [];
+       const origFetch = window.fetch;
+       window.fetch = function(...args) {
+           const url = typeof args[0] === "string" ? args[0] : (args[0]?.url || "");
+           if (url.includes("bulk-import")) {
+               window._pollLog.push({ time: Date.now(), url });
+           }
+           return origFetch.apply(this, args);
+       };
+   ''')
+   ```
+2. Start a bulk import.
+3. After completion, check the logged intervals:
+   ```python
+   result = await page.evaluate('''
+       const log = window._pollLog;
+       const intervals = [];
+       for (let i = 1; i < log.length; i++)
+           intervals.push(log[i].time - log[i-1].time);
+       return { total: log.length, intervals };
+   ''')
+   ```
+4. **Pass criteria:** Intervals are ~2000ms apart (the `setInterval(2000)` period). No rapid bursts.
+5. **Note:** Very small test images may process within a single poll interval, so
+   you may see only 1-2 requests total. That's expected — the absence of rapid
+   bursts is what confirms no churn.
 
 ## Testing Image Replacement
 
@@ -594,3 +892,8 @@ docker-compose testing (Vite dev proxy has no body limit).
   on first load usually mean the CDN is still warming — wait a few seconds.
 - **Small vs large test images:** a 1024×1024 solid-color JPEG processes in
   milliseconds; anything beyond ~200 MB is needed to observe tile-processing progress.
+- **Chrome CDP proxy may not be running:** If `curl -s http://localhost:29229/json/version`
+  returns empty, launch Chrome manually with `--remote-debugging-port=9222` and
+  connect Playwright to `http://localhost:9222`.
+- **Playwright may not be pre-installed.** Install with `pip install playwright && python3 -m playwright install chromium`.
+  Use ImageMagick `convert` instead of PIL for generating test images (it's available by default).

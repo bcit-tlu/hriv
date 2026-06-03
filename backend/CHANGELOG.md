@@ -1,5 +1,83 @@
 # Changelog
 
+## [0.19.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.18.1...backend-v0.19.0) (2026-06-02)
+
+
+### Features
+
+* add sort_order to images for ordering/placement support ([#531](https://github.com/bcit-tlu/hriv/issues/531)) ([453e291](https://github.com/bcit-tlu/hriv/commit/453e291f55b654603d66191484426f3a078d51a8))
+
+## [0.18.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.18.0...backend-v0.18.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **backend:** refresh programs before assignment in create_user ([#522](https://github.com/bcit-tlu/hriv/issues/522)) ([bbd5afc](https://github.com/bcit-tlu/hriv/commit/bbd5afce3f00849af288d2736fc37481a794eb45))
+
+## [0.18.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.4...backend-v0.18.0) (2026-05-25)
+
+
+### Features
+
+* **frontend:** PeoplePage bulk management, filters, pagination, and program pills ([#482](https://github.com/bcit-tlu/hriv/issues/482)) ([20558b1](https://github.com/bcit-tlu/hriv/commit/20558b1d638e308cb25f537c070a0812a179a40c))
+
+## [0.17.4](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.3...backend-v0.17.4) (2026-05-25)
+
+
+### Bug Fixes
+
+* **backend:** allow instructors to see people in search results ([#478](https://github.com/bcit-tlu/hriv/issues/478)) ([1c013e6](https://github.com/bcit-tlu/hriv/commit/1c013e6c12bccb944fab725399d20f6413eddc38))
+
+## [0.17.3](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.2...backend-v0.17.3) (2026-05-25)
+
+
+### Bug Fixes
+
+* **backend:** remove PII from GitHub issue reports ([#474](https://github.com/bcit-tlu/hriv/issues/474)) ([31609ae](https://github.com/bcit-tlu/hriv/commit/31609aef657e76b104b195341dfddec4c0f2205f))
+
+## [0.17.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.1...backend-v0.17.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* **backend:** prioritize isinstance check in exception handler + add migration role tests ([#467](https://github.com/bcit-tlu/hriv/issues/467)) ([5dd5bc5](https://github.com/bcit-tlu/hriv/commit/5dd5bc538ac2edfa80414a3c9c861b2cb9a6092d))
+
+## [0.17.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.17.0...backend-v0.17.1) (2026-05-25)
+
+
+### Bug Fixes
+
+* **backend:** extract shared get_client_ip and configure proxy headers ([#461](https://github.com/bcit-tlu/hriv/issues/461)) ([04bff47](https://github.com/bcit-tlu/hriv/commit/04bff476436d9c41c66d0832980e1bfbac80c3ea))
+
+## [0.17.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.16.0...backend-v0.17.0) (2026-05-20)
+
+
+### Features
+
+* enforce program-scoped student visibility filtering in API ([#431](https://github.com/bcit-tlu/hriv/issues/431)) ([7a4228a](https://github.com/bcit-tlu/hriv/commit/7a4228ad8a261b9d276147ef5966d0da1cf76f81))
+* OIDC group-to-program mapping for automated user provisioning ([#432](https://github.com/bcit-tlu/hriv/issues/432)) ([d602c35](https://github.com/bcit-tlu/hriv/commit/d602c3584e42144a260b9a9fcb020a97feb3586b))
+* remove image-level program associations ([#386](https://github.com/bcit-tlu/hriv/issues/386), [#387](https://github.com/bcit-tlu/hriv/issues/387), [#396](https://github.com/bcit-tlu/hriv/issues/396)) ([#422](https://github.com/bcit-tlu/hriv/issues/422)) ([29918ab](https://github.com/bcit-tlu/hriv/commit/29918abb1e471ca985fbf56e55a2963cf95d533f))
+
+## [0.16.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.15.0...backend-v0.16.0) (2026-05-19)
+
+
+### Features
+
+* cancel orphaned tasks on upload failure + atomic replace-image ([#418](https://github.com/bcit-tlu/hriv/issues/418)) ([e8be0f3](https://github.com/bcit-tlu/hriv/commit/e8be0f3448f6ef6507c9d245655cfd2a3830c8ac))
+
+## [0.15.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.14.1...backend-v0.15.0) (2026-05-18)
+
+
+### Features
+
+* add OpenTelemetry tracing to image and bulk import operations ([#366](https://github.com/bcit-tlu/hriv/issues/366)) ([345b85a](https://github.com/bcit-tlu/hriv/commit/345b85ac819bccfe63edc370e2baa04c158e8d55))
+
+
+### Bug Fixes
+
+* add pre-flight schema privilege check to Alembic bootstrap ([#380](https://github.com/bcit-tlu/hriv/issues/380)) ([19f22df](https://github.com/bcit-tlu/hriv/commit/19f22df621a23afddc899bdb7f45909be498b10f))
+* preserve OpenTelemetry LoggingHandler during logging setup ([#378](https://github.com/bcit-tlu/hriv/issues/378)) ([393349d](https://github.com/bcit-tlu/hriv/commit/393349d7da846f29fdfcfe9886c61f2d8e722d19))
+
 ## [0.14.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.14.0...backend-v0.14.1) (2026-05-12)
 
 

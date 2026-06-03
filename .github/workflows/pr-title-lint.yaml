@@ -1,43 +1,22 @@
 name: pr-title-lint
 
-# Gate non-conventional PR titles at the merge boundary so unparseable
-# squash-merge commits (e.g. "New release2 (#185)") can't land on main and
-# silently starve release-please of the feat:/fix:/BREAKING signals it uses
-# to open release PRs. release-please itself skips unparseable commits with
-# a log warning and produces no chore release PR, which is easy to miss
-# since the workflow still exits 0. This check fails loud instead.
+# Enforce Conventional Commit PR titles so release-please can parse changes.
 
 on:
   pull_request_target:
     types: [opened, edited, reopened, synchronize]
     branches: [main]
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   contents: read
-  # Elevated from ``read`` to ``write`` so the failure-handler step
-  # below can post / update a sticky comment on the PR explaining the
-  # failing reason to the author. ``pull_request_target`` runs in the
-  # base-ref context so this write token cannot be exfiltrated by an
-  # adversarial PR branch (the workflow file used is ``main``'s copy,
-  # not the PR branch's).
   pull-requests: write
 
 jobs:
   lint:
     runs-on: ubuntu-latest
-    # Skip for bot-authored PRs. ``pull_request_target`` is the only
-    # event that fires on release-please's own PRs (GitHub's default
-    # ``GITHUB_TOKEN``-doesn't-trigger-workflows rule gates plain
-    # ``pull_request``), so without this guard every release-please PR
-    # gets held under "1 workflow awaiting approval" until a maintainer
-    # clicks Approve — release-please's own titles are always
-    # well-formed ``chore(main): release <component> <ver>`` so there's
-    # nothing for the lint to guard anyway, and the repo's
-    # Actions → General "Require approval for first-time contributors"
-    # setting is what turns the otherwise-invisible bot-author check
-    # into a blocking gate. Human-authored PRs (User type) still run
-    # the lint from the base-ref copy of this workflow, preserving the
-    # malicious-edit-proof property of ``pull_request_target``.
     if: github.event.pull_request.user.type != 'Bot'
     steps:
       - id: lint
@@ -45,11 +24,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          # Mirror release-please's default conventional-commits parser
-          # (conventional-changelog-conventionalcommits). Keep this list in
-          # sync with any custom `changelog-sections` override in
-          # release-please-config.json so the lint gate accepts exactly the
-          # commit types release-please recognizes.
           types: |
             feat
             fix
@@ -69,40 +43,137 @@ jobs:
             lowercase letter (imperative mood, no trailing period). See
             CONTRIBUTING.md for examples.
 
-      # When the lint fails, post (or update) a sticky comment on the
-      # PR with a tl;dr of the rules. The sticky-comment action
-      # deduplicates by ``header`` so re-running on a title edit
-      # updates the same comment rather than spamming new ones; the
-      # ``delete: true`` branch in the success step below tidies up
-      # once the title is fixed.
+      - name: Check scope matches changed components
+        if: success()
+        id: scope-check
+        # Advisory step: failures (gh API rate limit, network error, bash error)
+        # must not block PRs. The "Surface scope-check failures" step below
+        # emits a ::warning:: annotation so persistent failures stay visible.
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+
+          title="$PR_TITLE"
+
+          # Extract scope from title (e.g. "backend" from "fix(backend): ...")
+          # Store regex in variable to avoid bash [[ =~ ]] parsing issues
+          scope_re='^[a-z]+\(([^)]+)\)'
+          scope=""
+          if [[ "$title" =~ $scope_re ]]; then
+            scope="${BASH_REMATCH[1]}"
+          fi
+
+          # If no scope, nothing to validate
+          if [[ -z "$scope" ]]; then
+            echo "No scope in title — skipping cross-component check"
+            echo "mismatch=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Component directories (from release-please-config.json)
+          components=("frontend" "backend" "backup")
+
+          # Get changed files via GitHub API
+          files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --paginate --jq '.[].filename')
+
+          # Determine which components have changed files
+          declare -A touched
+          for f in $files; do
+            for comp in "${components[@]}"; do
+              if [[ "$f" == "${comp}/"* ]]; then
+                touched["$comp"]=1
+              fi
+            done
+          done
+
+          touched_count=${#touched[@]}
+          touched_names="${!touched[*]}"
+          echo "Scope: $scope"
+          echo "Components touched ($touched_count): ${touched_names:-none}"
+
+          # If scope names a single component but files span multiple, warn
+          is_component_scope=false
+          for comp in "${components[@]}"; do
+            if [[ "$scope" == "$comp" ]]; then
+              is_component_scope=true
+              break
+            fi
+          done
+
+          if [[ "$is_component_scope" == "true" ]]; then
+            if [[ -z "${touched[$scope]+x}" ]]; then
+              echo "::warning::PR scope is '$scope' but no files in $scope/ were changed (touched: ${touched_names:-none}). The changelog entry will have a misleading label."
+              echo "mismatch=true" >> "$GITHUB_OUTPUT"
+              echo "reason=Scope **$scope** but no files in \`$scope/\` were changed (touched: **${touched_names:-root/other}**)." >> "$GITHUB_OUTPUT"
+            elif [[ $touched_count -gt 1 ]]; then
+              echo "::warning::PR scope is '$scope' but files touch multiple components: $touched_names. Use an unscoped title or split into separate PRs to keep changelogs accurate."
+              echo "mismatch=true" >> "$GITHUB_OUTPUT"
+              echo "reason=Scope **$scope** but files touch multiple components: **$touched_names**." >> "$GITHUB_OUTPUT"
+            else
+              echo "mismatch=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "mismatch=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Surface scope-check failures
+        if: always() && steps.scope-check.outcome == 'failure'
+        run: |
+          echo "::warning::scope-check step failed (advisory, non-blocking). See step logs above — likely causes: gh API rate limit, network error, or bash error. Scope/changelog mismatch warnings may be missing for this PR."
+
+      - name: Post scope mismatch warning
+        if: steps.scope-check.outputs.mismatch == 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: scope-mismatch
+          message: |
+            ## Scope vs. changed files mismatch
+
+            ${{ steps.scope-check.outputs.reason }}
+
+            release-please routes commits to changelogs by **file path**, not by scope — so changelog entries will have a misleading scope label.
+
+            **To fix:** either remove the scope (e.g. `fix: ...`) so the label is neutral, or split the changes into separate PRs per component.
+
+      - name: Clear scope mismatch warning
+        if: always() && steps.scope-check.outcome == 'success' && steps.scope-check.outputs.mismatch != 'true'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: scope-mismatch
+          delete: true
+
       - name: Post failure explainer comment
         if: failure() && steps.lint.outcome == 'failure'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: pr-title-lint
           message: |
-            ## PR title does not match Conventional Commits
+            ## PR title must follow Conventional Commits
 
-            **Why this matters (tl;dr)** — release-please reads PR titles on `main` to decide whether to cut a release, what version bump to apply, and how to group CHANGELOG entries. A title that doesn't parse is silently dropped; no release PR opens, no error, workflow still exits 0. This has bitten us before (`New release2 (#185)`). The lint exists so that can't happen again.
-
-            **Required structure**
+            release-please uses PR titles on `main` to determine version bumps and changelog entries.
 
             ```
             <type>[optional scope][!]: <subject>
             ```
 
-            - `<type>` — `feat` / `fix` / `docs` / `style` / `refactor` / `perf` / `test` / `build` / `ci` / `chore` / `revert`
-            - `<subject>` — lowercase first letter, imperative mood, no trailing period
-            - add `!` (or `BREAKING CHANGE:` in the body) for breaking changes
+            - `type`: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+            - `subject`: start lowercase, imperative mood, no trailing period
+            - breaking change: add `!` (or `BREAKING CHANGE:` in body)
 
-            **Good** — `feat(frontend): add bulk-edit dialog`, `fix(backend): prevent OIDC login loop`, `ci: tighten workflow permissions`
+            Examples:
+            - ✅ `feat: add search page`
+            - ✅ `fix: correct broken nav link`
+            - ❌ `Add search page`
+            - ❌ `feat: Add search page`
 
-            **Bad** — `Add bulk edit` (no type), `feat: Add bulk edit` (uppercase subject), `New release2` (no type)
-
-            Edit the PR title in the GitHub UI — the check re-runs automatically within seconds, no push needed. Full rules: [.github/CONTRIBUTING.md](./.github/CONTRIBUTING.md#pr-titles-must-be-conventional-commits).
+            Edit the PR title in GitHub; this check reruns automatically.
 
       - name: Clear failure explainer on success
-        if: success() && steps.lint.outcome == 'success'
+        if: always() && steps.lint.outcome == 'success'
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           header: pr-title-lint

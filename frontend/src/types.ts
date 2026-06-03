@@ -6,8 +6,8 @@ export interface ImageItem {
   categoryId?: number | null
   copyright?: string | null
   note?: string | null
-  programIds: number[]
   active: boolean
+  sortOrder: number
   version: number
   createdAt?: string | null
   updatedAt?: string | null
@@ -25,6 +25,7 @@ export interface Category {
   images: ImageItem[]
   programIds: number[]
   status?: string | null
+  sortOrder: number
   cardImageId?: number | null
   metadataExtra?: Record<string, unknown> | null
 }
@@ -46,6 +47,7 @@ export interface User {
 export interface Program {
   id: number
   name: string
+  oidc_group: string | null
   created_at: string
   updated_at: string
 }

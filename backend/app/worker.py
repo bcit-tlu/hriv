@@ -141,7 +141,6 @@ async def enqueue_bulk_import(
     file_entries: list[tuple[str, str]],
     copyright: str | None = None,
     note: str | None = None,
-    program_ids: list[int] | None = None,
     active: bool = True,
 ) -> bool:
     """Enqueue a bulk-import processing job via arq.
@@ -161,7 +160,6 @@ async def enqueue_bulk_import(
             file_entries,
             copyright,
             note,
-            program_ids,
             active,
             carrier,
         )
@@ -284,7 +282,6 @@ async def bulk_import_task(
     file_entries: list[tuple[str, str]],
     copyright: str | None,
     note: str | None,
-    program_ids: list[int] | None,
     active: bool,
     trace_headers: dict[str, str] | None = None,
 ) -> None:
@@ -312,7 +309,6 @@ async def bulk_import_task(
                     file_entries,
                     copyright=copyright,
                     note=note,
-                    program_ids=program_ids,
                     active=active,
                 )
             except Exception as exc:

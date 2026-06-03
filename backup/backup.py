@@ -125,7 +125,7 @@ def _sha256(path: Path) -> str:
 
 
 def run_backup() -> Path | None:
-    """Create a snapshot archive and upload it to S3.
+    """Create a snapshot archive and upload it to Azure Blob Storage.
 
     Returns the local path to the archive, or *None* on failure.
     """

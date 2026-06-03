@@ -1,7 +1,6 @@
 name: "[CI] Test, build & publish"
 
-# Readable run titles in the Actions UI: PR runs show the PR number and
-# title; main pushes show the head commit subject.
+# PR runs show PR title; main runs show head commit subject.
 run-name: >-
   ${{ github.event_name == 'pull_request'
       && format('PR #{0} — {1}', github.event.pull_request.number, github.event.pull_request.title)
@@ -10,27 +9,18 @@ run-name: >-
 on:
   push:
     branches: [main]
-  # Scope PR runs to PRs targeting `main` only; bare `pull_request:` fires
-  # for PRs against any base branch, which isn't what this workflow is
-  # meant to gate.
   pull_request:
     branches: [main]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
-# Least-privilege default: only read access at the workflow level.
-# Jobs that need more elevate locally.
+# Default to least privilege; jobs elevate only when needed.
 permissions:
   contents: read
 
 jobs:
-  # ── Quality gates ─────────────────────────────────────────
-  #
-  # Tests, lint, and coverage run on every push + PR in parallel.
-  # Each component's build job gates on its own quality-gate job;
-  # helm-lint runs independently (its failure breaks the workflow
-  # status but does not block individual image builds).
+  # Quality gates
 
   backend-tests:
     runs-on: ubuntu-latest
@@ -59,7 +49,7 @@ jobs:
       - name: Install dependencies
         run: poetry install --with dev
 
-      # Coverage gate (≥ 80 %) is enforced via `addopts` in pyproject.toml.
+      # Coverage gate (≥ 80 %) enforced via addopts in pyproject.toml.
       - name: Run pytest with coverage
         run: poetry run pytest
 
@@ -84,15 +74,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Advisory until pre-existing lint errors are resolved; promote to
-      # blocking by removing `continue-on-error` once clean.
+      # Advisory until pre-existing lint errors are resolved.
       - name: Lint (ESLint)
         continue-on-error: true
         run: npm run lint
 
-      # Coverage thresholds are enforced via `test.coverage.thresholds`
-      # in frontend/vite.config.ts — vitest exits non-zero if any
-      # threshold is breached.
+      # Coverage thresholds enforced via vite.config.ts.
       - name: Test with coverage (Vitest)
         run: npm run test:coverage
 
@@ -122,22 +109,7 @@ jobs:
             echo "::endgroup::"
           done
 
-  # ── Container images ──────────────────────────────────────
-  #
-  # Each component gets its own build job gated on the relevant
-  # quality-gate job.  This gives every component an independent
-  # GitHub status check that can be individually required in
-  # branch protection — a backend regression no longer blocks
-  # PRs that only touch frontend code (and vice versa).
-  #
-  # The shared reusable workflow handles checkout, change
-  # detection, Docker build/push, Cosign signing, and Trivy
-  # scanning.
-  #
-  # `helm-lint` is intentionally NOT in `needs` — it runs as an
-  # independent parallel job whose failure surfaces via branch
-  # protection (required status check) rather than delaying or
-  # blocking image builds.
+  # Container image builds (reusable workflow)
 
   build-frontend:
     needs: [frontend-checks]
@@ -192,13 +164,7 @@ jobs:
       trivyignore: .trivyignore
     secrets: inherit
 
-  # ── Helm charts → OCI registry (main push) ─────────────────
-  #
-  # Publishes each component's chart with the same RC version that
-  # the corresponding image received, so chart and app tags stay
-  # in lockstep.  Only runs on main pushes; skips components with
-  # no changes.  Release-time chart publishing is handled by
-  # helm-publish.yaml.
+  # Helm chart publish (main push only; release publish in helm-publish.yaml)
 
   helm-publish:
     needs: [helm-lint, build-frontend, build-backend, build-backup]
@@ -207,7 +173,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write          # Cosign keyless (Sigstore OIDC)
+      id-token: write
     env:
       REGISTRY: ghcr.io
     steps:
@@ -218,17 +184,25 @@ jobs:
       - uses: sigstore/cosign-installer@v3
 
       - name: Cosign login (OCI)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY: ${{ env.REGISTRY }}
+          ACTOR: ${{ github.actor }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            cosign login "${{ env.REGISTRY }}" \
-            -u "${{ github.actor }}" \
+          echo "${GITHUB_TOKEN}" | \
+            cosign login "${REGISTRY}" \
+            -u "${ACTOR}" \
             --password-stdin
 
       - name: Helm login (OCI)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY: ${{ env.REGISTRY }}
+          ACTOR: ${{ github.actor }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            helm registry login "${{ env.REGISTRY }}" \
-            -u "${{ github.actor }}" \
+          echo "${GITHUB_TOKEN}" | \
+            helm registry login "${REGISTRY}" \
+            -u "${ACTOR}" \
             --password-stdin
 
       - name: Package, push & sign charts
@@ -237,11 +211,10 @@ jobs:
           FRONTEND_VERSION: ${{ needs.build-frontend.outputs.rc_version }}
           BACKEND_VERSION: ${{ needs.build-backend.outputs.rc_version }}
           BACKUP_VERSION: ${{ needs.build-backup.outputs.rc_version }}
+          OCI_BASE: oci://${{ env.REGISTRY }}/${{ github.repository }}/charts
+          IMAGE_BASE: ${{ env.REGISTRY }}/${{ github.repository }}/charts
         run: |
           set -euo pipefail
-
-          OCI_BASE="oci://${{ env.REGISTRY }}/${{ github.repository }}/charts"
-          IMAGE_BASE="${{ env.REGISTRY }}/${{ github.repository }}/charts"
 
           declare -A VERSIONS=(
             [frontend]="${FRONTEND_VERSION}"
@@ -257,7 +230,7 @@ jobs:
             fi
 
             CHART_DIR="charts/${component}"
-            CHART_NAME=$(awk '/^name:/{print $2; exit}' "${CHART_DIR}/Chart.yaml")
+            CHART_NAME=$(yq '.name' "${CHART_DIR}/Chart.yaml")
             DEST_DIR="/tmp/charts"
             mkdir -p "${DEST_DIR}"
 
@@ -272,14 +245,18 @@ jobs:
 
             PUSH_OUT=$(helm push \
               "${DEST_DIR}/${CHART_NAME}-${VERSION}.tgz" \
-              "${OCI_BASE}" 2>&1) || true
+              "${OCI_BASE}" 2>&1) || { echo "${PUSH_OUT}"; exit 1; }
             echo "${PUSH_OUT}"
-            printf '%s\n' "${PUSH_OUT}" | grep -q '^Digest:' || { echo "::error::helm push failed for ${CHART_NAME}"; exit 1; }
 
-            DIGEST=$(printf '%s\n' "${PUSH_OUT}" | awk '/^Digest:/{print $2}')
-            if [[ -n "${DIGEST}" ]]; then
-              cosign sign --yes "${IMAGE_BASE}/${CHART_NAME}@${DIGEST}"
+            # Tolerant digest parse: case-insensitive, allows leading whitespace.
+            DIGEST=$(printf '%s\n' "${PUSH_OUT}" \
+              | awk 'tolower($1)=="digest:"{print $2; exit}')
+            if [[ -z "${DIGEST}" ]]; then
+              echo "::error::helm push for ${CHART_NAME} succeeded but no digest found in output"
+              exit 1
             fi
+
+            cosign sign --yes "${IMAGE_BASE}/${CHART_NAME}@${DIGEST}"
 
             echo "::endgroup::"
           done

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import Box from '@mui/material/Box'
 import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
@@ -12,9 +12,11 @@ import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import EditIcon from '@mui/icons-material/Edit'
+import LockIcon from '@mui/icons-material/Lock'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { SelectChangeEvent } from '@mui/material/Select'
-import type { Category } from '../types'
+import type { Category, Program } from '../types'
+import { narrowProgramIds } from '../categoryUtils'
 import { MAX_DEPTH } from '../types'
 import AddCategoryDialog from './AddCategoryDialog'
 import EditCategoryDialog from './EditCategoryDialog'
@@ -26,6 +28,8 @@ interface FlatOption {
   status: string | null
   parentId: number | null
   imageCount: number
+  programIds: number[]
+  inheritedRestriction: boolean
 }
 
 function flattenTree(
@@ -33,12 +37,14 @@ function flattenTree(
   depth: number = 0,
   excludeIds?: Set<number>,
   parentId: number | null = null,
+  ancestorRestricted: boolean = false,
 ): FlatOption[] {
   const result: FlatOption[] = []
   for (const node of nodes) {
     if (excludeIds?.has(node.id)) continue
-    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId, imageCount: node.images.length })
-    result.push(...flattenTree(node.children, depth + 1, excludeIds, node.id))
+    const hasOwnRestriction = node.programIds.length > 0
+    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId, imageCount: node.images.length, programIds: node.programIds, inheritedRestriction: !hasOwnRestriction && ancestorRestricted })
+    result.push(...flattenTree(node.children, depth + 1, excludeIds, node.id, ancestorRestricted || hasOwnRestriction))
   }
   return result
 }
@@ -76,7 +82,9 @@ interface CategoryPickerSelectProps {
   /** When provided, a pencil button appears on each menu item to rename that category. */
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   /** When provided, a visibility toggle appears on each menu item. */
-  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  onToggleVisibility?: (categoryId: number) => Promise<void>
+  /** Available programs for the add/edit category dialogs. */
+  programs?: Program[]
 }
 
 export default function CategoryPickerSelect({
@@ -90,13 +98,14 @@ export default function CategoryPickerSelect({
   onDeleteCategory,
   onEditCategory,
   onToggleVisibility,
+  programs,
 }: CategoryPickerSelectProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addParentId, setAddParentId] = useState<number | null>(null)
-  const [addParentDepth, setAddParentDepth] = useState(0)
+  const [addParentLabel, setAddParentLabel] = useState<string | undefined>(undefined)
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
-  const [editingOpt, setEditingOpt] = useState<FlatOption | null>(null)
+  const [editingOptId, setEditingOptId] = useState<number | null>(null)
 
   const options = useMemo(() => {
     let excludeIds: Set<number> | undefined
@@ -114,6 +123,12 @@ export default function CategoryPickerSelect({
     [options, addParentId],
   )
 
+  // Derive editingOpt from ID + options so it stays fresh without an extra render
+  const editingOpt = useMemo(
+    () => editingOptId != null ? options.find((o) => o.id === editingOptId) ?? null : null,
+    [editingOptId, options],
+  )
+
   const editSiblingNames = useMemo(
     () =>
       editingOpt
@@ -124,6 +139,40 @@ export default function CategoryPickerSelect({
     [options, editingOpt],
   )
 
+  const addInheritedProgramIds = useMemo(() => {
+    if (addParentId == null) return []
+    const ancestors: FlatOption[] = []
+    let curId: number | null = addParentId
+    while (curId != null) {
+      const anc: FlatOption | undefined = options.find((o) => o.id === curId)
+      if (!anc) break
+      ancestors.push(anc)
+      curId = anc.parentId
+    }
+    ancestors.reverse()
+    return narrowProgramIds(ancestors)
+  }, [addParentId, options])
+
+  const inheritedProgramIds = useMemo(() => {
+    if (!editingOpt) return []
+    const ancestors: FlatOption[] = []
+    let curParentId: number | null = editingOpt.parentId
+    while (curParentId != null) {
+      const ancestor: FlatOption | undefined = options.find((o) => o.id === curParentId)
+      if (!ancestor) break
+      ancestors.push(ancestor)
+      curParentId = ancestor.parentId
+    }
+    ancestors.reverse()
+    return narrowProgramIds(ancestors)
+  }, [editingOpt, options])
+
+  const currentProgramIds = useMemo(
+    () => editingOpt?.programIds ?? [],
+    [editingOpt?.programIds],
+  )
+
+
   const handleChange = (e: SelectChangeEvent<string>) => {
     const val = e.target.value
     onChange(val === '' ? null : Number(val))
@@ -132,12 +181,12 @@ export default function CategoryPickerSelect({
   const handleAddClick = (
     e: React.MouseEvent,
     parentId: number | null,
-    depth: number,
+    parentLabel?: string,
   ) => {
     e.stopPropagation()
     e.preventDefault()
     setAddParentId(parentId)
-    setAddParentDepth(depth)
+    setAddParentLabel(parentLabel)
     setAddDialogOpen(true)
   }
 
@@ -156,7 +205,7 @@ export default function CategoryPickerSelect({
   ) => {
     e.stopPropagation()
     e.preventDefault()
-    setEditingOpt(opt)
+    setEditingOptId(opt.id)
     setEditDialogOpen(true)
   }
 
@@ -192,7 +241,8 @@ export default function CategoryPickerSelect({
                   <Tooltip title="Add child category">
                     <IconButton
                       size="small"
-                      onClick={(e) => handleAddClick(e, null, 0)}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => handleAddClick(e, null)}
                       sx={{ ml: 1, p: 0.5 }}
                     >
                       <AddIcon fontSize="small" />
@@ -217,15 +267,27 @@ export default function CategoryPickerSelect({
                   <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
                     ({opt.imageCount})
                   </Typography>
+                  {(opt.programIds.length > 0 || opt.inheritedRestriction) && (
+                    <Tooltip title={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}>
+                      <span
+                        role="img"
+                        aria-label={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}
+                        style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: 4 }}
+                      >
+                        <LockIcon sx={{ fontSize: 14, color: 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
+                      </span>
+                    </Tooltip>
+                  )}
                 </ListItemText>
                 {onToggleVisibility && (
                   <Tooltip title={opt.status === 'hidden' ? 'Show to students' : 'Hide from students'}>
                     <IconButton
                       size="small"
+                      onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
                         e.preventDefault()
-                        onToggleVisibility(opt.id, opt.status !== 'hidden')
+                        onToggleVisibility(opt.id)
                       }}
                       sx={{ p: 0.5 }}
                     >
@@ -238,9 +300,10 @@ export default function CategoryPickerSelect({
                   </Tooltip>
                 )}
                 {onEditCategory && (
-                  <Tooltip title="Rename category">
+                  <Tooltip title="Edit category">
                     <IconButton
                       size="small"
+                      onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => handleEditClick(e, opt)}
                       sx={{ p: 0.5 }}
                     >
@@ -252,7 +315,8 @@ export default function CategoryPickerSelect({
                   <Tooltip title="Add child category">
                     <IconButton
                       size="small"
-                      onClick={(e) => handleAddClick(e, opt.id, opt.depth + 1)}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => handleAddClick(e, opt.id, opt.label)}
                       sx={{ ml: 1, p: 0.5 }}
                     >
                       <AddIcon fontSize="small" />
@@ -263,6 +327,7 @@ export default function CategoryPickerSelect({
                   <Tooltip title="Delete category">
                     <IconButton
                       size="small"
+                      onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
                         e.preventDefault()
@@ -285,21 +350,26 @@ export default function CategoryPickerSelect({
           open={addDialogOpen}
           onClose={() => setAddDialogOpen(false)}
           onAdd={handleAddCategory}
-          currentDepth={addParentDepth}
+          parentLabel={addParentLabel}
           siblingNames={addSiblingNames}
+          programs={programs}
+          inheritedProgramIds={addInheritedProgramIds}
         />
       )}
 
       {onEditCategory && (
         <EditCategoryDialog
-          open={editDialogOpen}
+          open={editDialogOpen && editingOpt != null}
           onClose={() => {
             setEditDialogOpen(false)
-            setEditingOpt(null)
+            setEditingOptId(null)
           }}
           onSave={handleEditSave}
           currentLabel={editingOpt?.label ?? ''}
           siblingNames={editSiblingNames}
+          programs={programs}
+          currentProgramIds={currentProgramIds}
+          inheritedProgramIds={inheritedProgramIds}
         />
       )}
     </>

@@ -23,6 +23,7 @@ import LinkIcon from '@mui/icons-material/Link'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep'
 import CheckIcon from '@mui/icons-material/Check'
+import CloseIcon from '@mui/icons-material/Close'
 import PaletteIcon from '@mui/icons-material/Palette'
 import LineWeightIcon from '@mui/icons-material/LineWeight'
 
@@ -183,15 +184,26 @@ export default function CanvasOverlay({
   const [linkDialogOpen, setLinkDialogOpen] = useState(false)
   const [linkText, setLinkText] = useState('')
   const [linkUrl, setLinkUrl] = useState('')
+  const [flushing, setFlushing] = useState(false)
   const annotationsRef = useRef(annotations)
   const isDrawingRef = useRef(false)
   const drawStartRef = useRef<{ x: number; y: number } | null>(null)
   const drawObjRef = useRef<fabric.FabricObject | null>(null)
   const clipboardRef = useRef<CanvasAnnotation[]>([])
+  const snapshotRef = useRef<CanvasAnnotation[]>([])
 
   useEffect(() => {
     annotationsRef.current = annotations
   }, [annotations])
+
+  // Snapshot annotations when entering edit mode so cancel can restore them
+  const prevEditModeRef = useRef(false)
+  useEffect(() => {
+    if (editMode && !prevEditModeRef.current) {
+      snapshotRef.current = annotations
+    }
+    prevEditModeRef.current = editMode
+  }, [editMode, annotations])
 
   // View mode: render annotations on a plain canvas
   const redrawViewCanvas = useCallback(() => {
@@ -985,11 +997,29 @@ export default function CanvasOverlay({
     // Flush immediately (bypass debounce) so data is persisted before exit.
     // Await the flush so the PATCH completes before edit mode state changes.
     if (onFlushAnnotations) {
-      await onFlushAnnotations()
-      console.debug(LOG_PREFIX, 'flush complete, exiting edit mode')
+      setFlushing(true)
+      try {
+        await onFlushAnnotations()
+        console.debug(LOG_PREFIX, 'flush complete, exiting edit mode')
+      } finally {
+        setFlushing(false)
+      }
     }
     onEditModeChange(false)
   }, [emitAnnotations, onEditModeChange, onFlushAnnotations])
+
+  const handleCancel = useCallback(async () => {
+    onAnnotationsChange(snapshotRef.current)
+    if (onFlushAnnotations) {
+      setFlushing(true)
+      try {
+        await onFlushAnnotations()
+      } finally {
+        setFlushing(false)
+      }
+    }
+    onEditModeChange(false)
+  }, [onAnnotationsChange, onEditModeChange, onFlushAnnotations])
 
   /** Change active color and apply to any selected fabric objects */
   const handleColorChange = useCallback((color: string) => {
@@ -1403,23 +1433,30 @@ export default function CanvasOverlay({
 
           {/* Delete selected */}
           <Tooltip title="Delete Selected">
-            <IconButton onClick={handleDeleteSelected} sx={{ color: 'white', p: 0.75 }}>
+            <IconButton onClick={handleDeleteSelected} aria-label="Delete Selected" sx={{ color: 'white', p: 0.75 }}>
               <DeleteIcon sx={{ fontSize: 28 }} />
             </IconButton>
           </Tooltip>
 
           {/* Clear all */}
           <Tooltip title="Clear All Annotations">
-            <IconButton onClick={handleClearAll} sx={{ color: '#ef5350', p: 0.75 }}>
+            <IconButton onClick={handleClearAll} aria-label="Clear All Annotations" sx={{ color: '#ef5350', p: 0.75 }}>
               <DeleteSweepIcon sx={{ fontSize: 28 }} />
             </IconButton>
           </Tooltip>
 
           <Divider orientation="vertical" flexItem sx={{ borderColor: 'rgba(255,255,255,0.3)' }} />
 
+          {/* Cancel */}
+          <Tooltip title="Cancel — discard changes">
+            <IconButton onClick={handleCancel} disabled={flushing} aria-label="Cancel — discard changes" sx={{ color: '#ef5350', p: 0.75 }}>
+              <CloseIcon sx={{ fontSize: 28 }} />
+            </IconButton>
+          </Tooltip>
+
           {/* Done */}
           <Tooltip title="Save & Exit Edit Mode">
-            <IconButton onClick={handleDone} sx={{ color: '#66bb6a', p: 0.75 }}>
+            <IconButton onClick={handleDone} disabled={flushing} aria-label="Save & Exit Edit Mode" sx={{ color: '#66bb6a', p: 0.75 }}>
               <CheckIcon sx={{ fontSize: 28 }} />
             </IconButton>
           </Tooltip>

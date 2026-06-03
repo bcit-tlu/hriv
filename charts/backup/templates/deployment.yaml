@@ -1,3 +1,9 @@
+{{- if not .Values.postgresSecretName }}
+{{- fail "postgresSecretName is required — set it to the name of the K8s Secret containing the database URI (key: uri)" }}
+{{- end }}
+{{- if not .Values.azureSecretName }}
+{{- fail "azureSecretName is required — set it to the name of the K8s Secret containing AZURE_STORAGE_CONNECTION_STRING" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -47,7 +53,7 @@ spec:
             - name: AZURE_STORAGE_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "hriv-backup.fullname" . }}-azure
+                  name: {{ .Values.azureSecretName }}
                   key: AZURE_STORAGE_CONNECTION_STRING
             - name: AZURE_STORAGE_CONTAINER
               value: {{ .Values.env.AZURE_STORAGE_CONTAINER | quote }}

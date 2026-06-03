@@ -2,7 +2,7 @@
  * Unit tests for the AddCategoryDialog component.
  *
  * Covers:
- * 1. Renders dialog title with correct level
+ * 1. Renders dialog title with parent label or default
  * 2. Clicking "Create" calls onAdd and onClose with trimmed label
  * 3. Pressing Enter calls onAdd and onClose with trimmed label
  * 4. Pressing Enter does not propagate the keydown event
@@ -28,7 +28,10 @@ function renderDialog(props: Partial<Parameters<typeof AddCategoryDialog>[0]> = 
       open={true}
       onClose={onClose}
       onAdd={onAdd}
-      currentDepth={props.currentDepth ?? 0}
+      parentLabel={props.parentLabel}
+      siblingNames={props.siblingNames}
+      programs={props.programs}
+      inheritedProgramIds={props.inheritedProgramIds}
     />,
   )
   return { ...result, onClose, onAdd }
@@ -57,9 +60,14 @@ describe('AddCategoryDialog', () => {
 
   // --- Rendering ---
 
-  it('renders the dialog title with the correct level', () => {
-    renderDialog({ currentDepth: 2 })
-    expect(screen.getByText('New Category (Level 3)')).toBeInTheDocument()
+  it('renders the dialog title with parent label', () => {
+    renderDialog({ parentLabel: 'Panoramas' })
+    expect(screen.getByText('New Category in Panoramas')).toBeInTheDocument()
+  })
+
+  it('renders default title when no parent label', () => {
+    renderDialog()
+    expect(screen.getByText('New Category')).toBeInTheDocument()
   })
 
   // --- Create button ---
@@ -116,7 +124,7 @@ describe('AddCategoryDialog', () => {
           open={true}
           onClose={onClose}
           onAdd={onAdd}
-          currentDepth={0}
+          parentLabel={undefined}
         />
       </div>,
     )
@@ -133,6 +141,47 @@ describe('AddCategoryDialog', () => {
     expect(enterEvents).toHaveLength(0)
 
     container.remove()
+  })
+
+  // --- Pre-populate parent program restrictions ---
+
+  it('defaults to "Specific programs" with inherited programs pre-selected', async () => {
+    const programs = [
+      { id: 1, name: 'Nursing' },
+      { id: 2, name: 'Dental' },
+      { id: 3, name: 'Radiology' },
+    ]
+    renderDialog({ programs, inheritedProgramIds: [1, 3] })
+
+    expect(screen.getByLabelText('Specific programs')).toBeChecked()
+    // Inherited programs should be pre-selected (filled chips)
+    const nursingChip = screen.getByText('Nursing')
+    const radiologyChip = screen.getByText('Radiology')
+    expect(nursingChip).toBeInTheDocument()
+    expect(radiologyChip).toBeInTheDocument()
+  })
+
+  it('submits inherited program IDs when user creates without changing selection', async () => {
+    const user = userEvent.setup()
+    const programs = [
+      { id: 1, name: 'Nursing' },
+      { id: 2, name: 'Dental' },
+    ]
+    const { onAdd } = renderDialog({ programs, inheritedProgramIds: [1, 2] })
+
+    await user.type(getCategoryInput(), 'Subcategory')
+    await user.click(getCreateButton())
+
+    expect(onAdd).toHaveBeenCalledWith('Subcategory', expect.arrayContaining([1, 2]))
+  })
+
+  it('defaults to "All students" when no inherited programs', () => {
+    const programs = [
+      { id: 1, name: 'Nursing' },
+    ]
+    renderDialog({ programs, inheritedProgramIds: [] })
+
+    expect(screen.getByLabelText('All students')).toBeChecked()
   })
 
   // --- Cancel ---

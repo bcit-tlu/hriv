@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import Alert from '@mui/material/Alert'
 import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
@@ -17,23 +17,27 @@ import Typography from '@mui/material/Typography'
 import type { Program } from '../types'
 
 const filter = createFilterOptions<string>()
+const EMPTY_IDS: number[] = []
 
 interface AddCategoryDialogProps {
   open: boolean
   onClose: () => void
   onAdd: (label: string, programIds: number[]) => void | Promise<void>
-  currentDepth: number
+  parentLabel?: string
   siblingNames?: string[]
   programs?: Program[]
+  /** Effective inherited program IDs from ancestors (narrowing semantics). */
+  inheritedProgramIds?: number[]
 }
 
 export default function AddCategoryDialog({
   open,
   onClose,
   onAdd,
-  currentDepth,
+  parentLabel,
   siblingNames = [],
   programs = [],
+  inheritedProgramIds = EMPTY_IDS,
 }: AddCategoryDialogProps) {
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -41,6 +45,24 @@ export default function AddCategoryDialog({
   const [visibility, setVisibility] = useState<'all' | 'specific'>('all')
   const [selectedProgramIds, setSelectedProgramIds] = useState<Set<number>>(new Set())
   const inputRef = useRef<HTMLInputElement>(null)
+
+  // Pre-populate with parent restrictions when dialog opens
+  const prevOpen = useRef(false)
+  useEffect(() => {
+    if (open && !prevOpen.current) {
+      setLabel('')
+      setError(null)
+      setSaving(false)
+      if (inheritedProgramIds.length > 0) {
+        setVisibility('specific')
+        setSelectedProgramIds(new Set(inheritedProgramIds))
+      } else {
+        setVisibility('all')
+        setSelectedProgramIds(new Set())
+      }
+    }
+    prevOpen.current = open
+  }, [open, inheritedProgramIds])
 
   const exactMatch = useMemo(
     () => siblingNames.some((s) => s.toLowerCase() === label.trim().toLowerCase()),
@@ -96,7 +118,7 @@ export default function AddCategoryDialog({
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth TransitionProps={{ onEntered: handleEntered }}>
-      <DialogTitle>New Category (Level {currentDepth + 1})</DialogTitle>
+      <DialogTitle>{parentLabel ? `New Category in ${parentLabel}` : 'New Category'}</DialogTitle>
       <DialogContent>
         <Autocomplete
           freeSolo
@@ -145,16 +167,22 @@ export default function AddCategoryDialog({
             </RadioGroup>
             {visibility === 'specific' && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-                {programs.map((p) => (
-                  <Chip
-                    key={p.id}
-                    label={p.name}
-                    size="small"
-                    color={selectedProgramIds.has(p.id) ? 'primary' : 'default'}
-                    variant={selectedProgramIds.has(p.id) ? 'filled' : 'outlined'}
-                    onClick={() => toggleProgram(p.id)}
-                  />
-                ))}
+                {programs.map((p) => {
+                  const disabled = inheritedProgramIds.length > 0 && !inheritedProgramIds.includes(p.id)
+                  const isInheritedOnly = inheritedProgramIds.includes(p.id) && !selectedProgramIds.has(p.id)
+                  return (
+                    <Chip
+                      key={p.id}
+                      label={p.name}
+                      size="small"
+                      color={selectedProgramIds.has(p.id) || isInheritedOnly ? 'primary' : 'default'}
+                      variant={selectedProgramIds.has(p.id) || isInheritedOnly ? 'filled' : 'outlined'}
+                      onClick={disabled ? undefined : () => toggleProgram(p.id)}
+                      disabled={disabled}
+                      sx={isInheritedOnly ? { opacity: 0.5 } : undefined}
+                    />
+                  )
+                })}
               </Box>
             )}
           </Box>

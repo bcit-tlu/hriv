@@ -12,8 +12,9 @@ import LinearProgress from '@mui/material/LinearProgress'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
-import { uploadSourceImage, bulkImportImages } from '../api'
+import { uploadSourceImage, bulkImportImages, userMessage } from '../api'
 import type { ApiBulkImportJob } from '../api'
+import { isImageFile, isZipFile, isAcceptedFile } from '../fileUtils'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import ImageMetadataFields from './ImageMetadataFields'
 import type { ImageMetadataValues } from './ImageMetadataFields'
@@ -29,32 +30,6 @@ import type { Category, Program } from '../types'
  */
 const ACCEPTED_FILE_TYPES =
   'image/jpeg,image/png,image/tiff,image/gif,image/webp,.tif,.tiff,.svs,.zip'
-
-/** Recognised image MIME types for drag-and-drop validation. Must stay
- * in lock-step with ``backend/app/image_validation.py::IMAGE_MIME_TYPES``. */
-const IMAGE_MIME_TYPES = new Set<string>([
-  'image/jpeg', 'image/png', 'image/tiff', 'image/gif', 'image/webp',
-])
-
-/** Recognised image extensions for drag-and-drop validation. */
-const IMAGE_EXTENSIONS = new Set([
-  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.tif', '.tiff', '.svs',
-])
-
-function isImageFile(file: File): boolean {
-  if (IMAGE_MIME_TYPES.has(file.type)) return true
-  const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase()
-  return IMAGE_EXTENSIONS.has(ext)
-}
-
-function isZipFile(file: File): boolean {
-  if (file.type === 'application/zip' || file.type === 'application/x-zip-compressed') return true
-  return file.name.toLowerCase().endsWith('.zip')
-}
-
-function isAcceptedFile(file: File): boolean {
-  return isImageFile(file) || isZipFile(file)
-}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -87,12 +62,14 @@ interface UploadImageModalProps {
   ) => void
   /** Called when a file upload fails. */
   onUploadFailed?: (uploadId: number, error: string) => void
+  /** Pre-populate the file list (e.g. from a drag-and-drop onto the grid). */
+  initialFiles?: File[]
   categoryId?: number | null
   categories: Category[]
-  programs: Program[]
+  programs?: Program[]
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
-  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  onToggleVisibility?: (categoryId: number) => Promise<void>
 }
 
 export default function UploadImageModal({
@@ -100,6 +77,7 @@ export default function UploadImageModal({
   onClose,
   onUploaded,
   onProcessingStarted,
+  initialFiles,
   categoryId: initialCategoryId,
   categories,
   programs,
@@ -118,21 +96,12 @@ export default function UploadImageModal({
   const [metadata, setMetadata] = useState<ImageMetadataValues>({
     copyright: '',
     note: '',
-    programIds: [],
     active: true,
   })
   const [dragOver, setDragOver] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
-
-  // Stable ref for onUploaded so polling/reset callbacks don't depend
-  // on the (potentially unstable) inline closure from the parent.
-  const onUploadedRef = useRef(onUploaded)
-  onUploadedRef.current = onUploaded
-
-  const hadBulkJobRef = useRef(false)
-  const bulkRefreshDoneRef = useRef(false)
 
   const bulk = isBulkMode(files)
 
@@ -143,19 +112,23 @@ export default function UploadImageModal({
     }
   }, [open, initialCategoryId])
 
-  const handleReset = useCallback(() => {
-    // If a bulk job was started but onUploaded hasn't fired yet
-    // (e.g. user closed the dialog while import was still running),
-    // notify the parent so it can refresh data.
-    if (hadBulkJobRef.current && !bulkRefreshDoneRef.current) {
-      onUploadedRef.current()
+  // Pre-populate files from external drag-and-drop
+  useEffect(() => {
+    if (open && initialFiles && initialFiles.length > 0) {
+      const accepted = initialFiles.filter(isAcceptedFile)
+      if (accepted.length === 0) return
+      setFiles(accepted)
+      if (accepted.length === 1 && isImageFile(accepted[0])) {
+        setName(accepted[0].name.replace(/\.[^.]+$/, ''))
+      }
     }
-    hadBulkJobRef.current = false
-    bulkRefreshDoneRef.current = false
+  }, [open, initialFiles])
+
+  const handleReset = useCallback(() => {
     setFiles([])
     setName('')
     setCategoryId(initialCategoryId ?? null)
-    setMetadata({ copyright: '', note: '', programIds: [], active: true })
+    setMetadata({ copyright: '', note: '', active: true })
     setDragOver(false)
     setUploading(false)
     setUploadProgress(null)
@@ -243,15 +216,13 @@ export default function UploadImageModal({
           categoryId,
           metadata.copyright || undefined,
           metadata.note || undefined,
-          metadata.programIds.length > 0 ? metadata.programIds : undefined,
           metadata.active,
-          (fraction) => {
+          (fraction: number) => {
             setUploadProgress(fraction)
             onUploadProgress?.(uploadId, fraction)
           },
           abort.signal,
         )
-        hadBulkJobRef.current = true
         onBulkImportStarted?.(result, uploadFilename, uploadFileSize, uploadId)
         onClose()
       } catch (err) {
@@ -259,7 +230,7 @@ export default function UploadImageModal({
           onUploadFailed?.(uploadId, 'Upload cancelled')
           onClose()
         } else {
-          const msg = err instanceof Error ? err.message : 'Upload failed'
+          const msg = userMessage(err, 'Upload failed')
           setError(msg)
           onUploadFailed?.(uploadId, msg)
         }
@@ -287,9 +258,8 @@ export default function UploadImageModal({
           categoryId ?? undefined,
           metadata.copyright || undefined,
           metadata.note || undefined,
-          metadata.programIds.length > 0 ? metadata.programIds : undefined,
           metadata.active,
-          (fraction) => {
+          (fraction: number) => {
             setUploadProgress(fraction)
             onUploadProgress?.(uploadId, fraction)
           },
@@ -303,7 +273,7 @@ export default function UploadImageModal({
           onUploadFailed?.(uploadId, 'Upload cancelled')
           onClose()
         } else {
-          const msg = err instanceof Error ? err.message : 'Upload failed'
+          const msg = userMessage(err, 'Upload failed')
           setError(msg)
           onUploadFailed?.(uploadId, msg)
         }
@@ -439,12 +409,12 @@ export default function UploadImageModal({
                 onAddCategory={onAddCategory}
                 onEditCategory={onEditCategory}
                 onToggleVisibility={onToggleVisibility}
+                programs={programs}
               />
             </Box>
             <ImageMetadataFields
               values={metadata}
               onChange={setMetadata}
-              programs={programs}
               idPrefix="upload"
             />
             {uploading && uploadProgress !== null && (
@@ -461,13 +431,7 @@ export default function UploadImageModal({
               </Box>
             )}
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-              Images are processed after upload to generate a zoomable view, with the name set to their filename.
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: -1 }}>
-              ---
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: -1 }}>
-              Zip files will be extracted and all image files inside will be imported. You can bulk-edit metadata later from the <strong>Images</strong> page.
+              Uploaded images are processed into zoomable views and named from their filenames. ZIP uploads are automatically extracted and imported, and metadata can be bulk-edited later from the <strong>Images</strong> page.
             </Typography>
         {error && (
           <Alert severity="error" sx={{ mt: 1 }} onClose={() => setError(null)}>

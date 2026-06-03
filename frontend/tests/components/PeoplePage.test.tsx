@@ -11,18 +11,22 @@ vi.mock('../../src/api', async (importOriginal) => {
     updateUser: vi.fn(),
     deleteUser: vi.fn(),
     bulkUpdateUserProgram: vi.fn(),
+    bulkUpdateUserRole: vi.fn(),
+    bulkDeleteUsers: vi.fn(),
   }
 })
 
 import {
   fetchUsers,
   deleteUser,
+  bulkUpdateUserRole,
+  bulkDeleteUsers,
 } from '../../src/api'
 import type { Program } from '../../src/types'
 import PeoplePage from '../../src/components/PeoplePage'
 
 const programs: Program[] = [
-  { id: 1, name: 'Medical Lab', created_at: '', updated_at: '' },
+  { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
 ]
 
 const USERS = [
@@ -33,7 +37,7 @@ const USERS = [
     role: 'admin',
     program_ids: [],
     program_names: [],
-    last_access: null,
+    last_access: '2026-02-15T10:00:00Z',
     metadata_extra: null,
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
@@ -60,7 +64,6 @@ describe('PeoplePage', () => {
 
   it('shows loading spinner then renders user table', async () => {
     render(<PeoplePage programs={programs} />)
-    // Should show spinner initially
     expect(screen.getByRole('progressbar')).toBeInTheDocument()
 
     await waitFor(() => {
@@ -97,7 +100,6 @@ describe('PeoplePage', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /add person/i }))
-    // Modal title is a heading
     expect(screen.getByRole('heading', { name: 'Add Person' })).toBeInTheDocument()
   })
 
@@ -131,7 +133,7 @@ describe('PeoplePage', () => {
     })
   })
 
-  it('shows Bulk Edit button when users are selected', async () => {
+  it('shows bulk action buttons when users are selected', async () => {
     const user = userEvent.setup()
     render(<PeoplePage programs={programs} />)
 
@@ -139,12 +141,144 @@ describe('PeoplePage', () => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
 
-    // Select the first checkbox (not the header "select all")
     const checkboxes = screen.getAllByRole('checkbox')
-    // checkboxes[0] is the "select all" header checkbox
-    // checkboxes[1] is the first user row checkbox
     await user.click(checkboxes[1])
 
-    expect(screen.getByText(/Bulk Edit.*1 selected/)).toBeInTheDocument()
+    expect(screen.getByText('Bulk Programs (1)')).toBeInTheDocument()
+    expect(screen.getByText('Bulk Role (1)')).toBeInTheDocument()
+    expect(screen.getByText('Delete (1)')).toBeInTheDocument()
+  })
+
+  it('displays program names as chips', async () => {
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Medical Lab')).toBeInTheDocument()
+    })
+
+    // Program name rendered as a MUI Chip
+    const chip = screen.getByText('Medical Lab').closest('.MuiChip-root')
+    expect(chip).toBeInTheDocument()
+  })
+
+  it('displays last accessed date when available', async () => {
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    // Admin user has last_access set
+    expect(screen.getByText('2/15/2026')).toBeInTheDocument()
+  })
+
+  it('renders sortable column headers', async () => {
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    expect(screen.getByText('Name')).toBeInTheDocument()
+    expect(screen.getByText('Email')).toBeInTheDocument()
+    expect(screen.getByText('Role')).toBeInTheDocument()
+    expect(screen.getByText('Program')).toBeInTheDocument()
+    expect(screen.getByText('Last Accessed')).toBeInTheDocument()
+    expect(screen.getByText('Created')).toBeInTheDocument()
+  })
+
+  it('opens bulk role dialog and calls API', async () => {
+    const user = userEvent.setup()
+    vi.mocked(bulkUpdateUserRole).mockResolvedValue(USERS)
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    // Select first user
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    // Open bulk role dialog
+    await user.click(screen.getByText('Bulk Role (1)'))
+    expect(screen.getByText('Bulk Update Role')).toBeInTheDocument()
+
+    // Submit with default role (student)
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    await waitFor(() => {
+      expect(bulkUpdateUserRole).toHaveBeenCalledWith({
+        user_ids: [1],
+        role: 'student',
+      })
+    })
+  })
+
+  it('opens bulk delete confirmation and calls API', async () => {
+    const user = userEvent.setup()
+    vi.mocked(bulkDeleteUsers).mockResolvedValue()
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    // Select first user
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    // Open bulk delete dialog
+    await user.click(screen.getByText('Delete (1)'))
+    expect(screen.getByText('Delete Users')).toBeInTheDocument()
+
+    // Confirm delete
+    await user.click(screen.getByRole('button', { name: /delete 1 user/i }))
+
+    await waitFor(() => {
+      expect(bulkDeleteUsers).toHaveBeenCalledWith({
+        user_ids: [1],
+      })
+    })
+  })
+
+  it('renders pagination controls', async () => {
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    // MUI TablePagination renders rows per page text
+    expect(screen.getByText('Rows per page:')).toBeInTheDocument()
+  })
+
+  it('opens edit modal automatically when initialEditUserId is provided', async () => {
+    const handleEditHandled = vi.fn()
+    render(
+      <PeoplePage
+        programs={programs}
+        initialEditUserId={2}
+        onEditUserHandled={handleEditHandled}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Edit Person')).toBeInTheDocument()
+    })
+    expect(screen.getByDisplayValue('Test Student')).toBeInTheDocument()
+    expect(handleEditHandled).toHaveBeenCalled()
+  })
+
+  it('does not open edit modal when initialEditUserId is null', async () => {
+    render(
+      <PeoplePage programs={programs} initialEditUserId={null} />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText('Edit Person')).not.toBeInTheDocument()
   })
 })

@@ -32,6 +32,7 @@ import {
   fetchAdminTasks,
   cancelAdminTask,
   downloadAdminTaskResult,
+  userMessage,
 } from '../api'
 import type { AdminTask } from '../api'
 import ConfirmImportDialog, {
@@ -198,7 +199,7 @@ export default function AdminPage() {
         setActiveTasks((prev) => [...prev, task])
         pollTask(task.id)
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Operation failed')
+        setError(userMessage(err, 'Operation failed'))
       } finally {
         setStarting(null)
       }
@@ -282,9 +283,10 @@ export default function AdminPage() {
             next.delete(task!.id)
             return next
           })
-          setError(err instanceof Error ? err.message : 'Operation failed')
+          cancelAdminTask(task.id).catch(() => {})
+          setError(userMessage(err, 'Operation failed'))
         } else {
-          setError(err instanceof Error ? err.message : 'Operation failed')
+          setError(userMessage(err, 'Operation failed'))
         }
         setStarting(null)
       } finally {

@@ -8,6 +8,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.routers.users import (
+    VALID_ROLES,
     _user_to_out,
     _set_user_programs,
     list_users,
@@ -15,9 +16,11 @@ from app.routers.users import (
     create_user,
     update_user,
     bulk_update_program,
+    bulk_update_role,
+    bulk_delete_users,
     delete_user,
 )
-from app.schemas import UserCreate, UserUpdate, UserBulkUpdate
+from app.schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete
 
 
 def _make_program(id: int = 1, name: str = "Biology") -> SimpleNamespace:
@@ -73,6 +76,20 @@ async def test_list_users() -> None:
     assert len(result) == 2
 
 
+async def test_list_users_as_instructor() -> None:
+    """Instructors should be able to list users (for search results)."""
+    users = [_make_user(id=1), _make_user(id=2, email="two@example.com")]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    instructor = _make_user(id=99, role="instructor")
+    result = await list_users(instructor, db)
+    assert len(result) == 2
+
+
 async def test_get_user_found() -> None:
     user = _make_user()
     mock_result = MagicMock()
@@ -98,8 +115,6 @@ async def test_get_user_not_found() -> None:
 
 
 async def test_create_user_success() -> None:
-    user = _make_user()
-
     db = AsyncMock()
     db.add = MagicMock()
     db.flush = AsyncMock()
@@ -112,6 +127,9 @@ async def test_create_user_success() -> None:
         result = await create_user(body, MagicMock(), db)
 
     db.add.assert_called_once()
+    # programs must be refreshed before _set_user_programs to avoid
+    # MissingGreenlet when assigning the collection in async context
+    assert db.refresh.await_count == 2
 
 
 async def test_update_user_success() -> None:
@@ -262,3 +280,102 @@ async def test_set_user_programs_invalid_ids() -> None:
         await _set_user_programs(db, user, [1, 999])
     assert exc.value.status_code == 422
     assert "999" in str(exc.value.detail)
+
+
+# ── Bulk Role Update ─────────────────────────────────────
+
+
+async def test_bulk_update_role_success() -> None:
+    users = [_make_user(id=1, role="student"), _make_user(id=2, email="two@example.com", role="student")]
+
+    call_count = 0
+
+    async def mock_execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        mock_result = MagicMock()
+        mock_result.scalars.return_value.unique.return_value.all.return_value = users
+        return mock_result
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=mock_execute)
+    db.commit = AsyncMock()
+
+    body = UserBulkRoleUpdate(user_ids=[1, 2], role="instructor")
+    result = await bulk_update_role(body, MagicMock(), db)
+
+    assert len(result) == 2
+    assert users[0].role == "instructor"
+    assert users[1].role == "instructor"
+
+
+async def test_bulk_update_role_invalid_role() -> None:
+    db = AsyncMock()
+
+    body = UserBulkRoleUpdate(user_ids=[1], role="superuser")
+    with pytest.raises(HTTPException) as exc:
+        await bulk_update_role(body, MagicMock(), db)
+    assert exc.value.status_code == 422
+    assert "Invalid role" in exc.value.detail
+
+
+async def test_bulk_update_role_not_found() -> None:
+    users = [_make_user(id=1)]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    body = UserBulkRoleUpdate(user_ids=[1, 2, 3], role="admin")
+    with pytest.raises(HTTPException) as exc:
+        await bulk_update_role(body, MagicMock(), db)
+    assert exc.value.status_code == 404
+
+
+# ── Bulk Delete ──────────────────────────────────────────
+
+
+async def test_bulk_delete_users_success() -> None:
+    users = [_make_user(id=1), _make_user(id=2, email="two@example.com")]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+
+    admin = _make_user(id=99, role="admin")
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    body = UserBulkDelete(user_ids=[1, 2])
+    await bulk_delete_users(body, admin, db)
+
+    assert db.delete.await_count == 2
+
+
+async def test_bulk_delete_users_self() -> None:
+    admin = _make_user(id=1, role="admin")
+    db = AsyncMock()
+
+    body = UserBulkDelete(user_ids=[1, 2])
+    with pytest.raises(HTTPException) as exc:
+        await bulk_delete_users(body, admin, db)
+    assert exc.value.status_code == 400
+    assert "own account" in exc.value.detail
+
+
+async def test_bulk_delete_users_not_found() -> None:
+    users = [_make_user(id=1)]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+
+    admin = _make_user(id=99, role="admin")
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    body = UserBulkDelete(user_ids=[1, 2, 3])
+    with pytest.raises(HTTPException) as exc:
+        await bulk_delete_users(body, admin, db)
+    assert exc.value.status_code == 404

@@ -392,7 +392,7 @@ async def test_run_db_export_success(tmp_path) -> None:
         result_filename=None, result_path=None, input_path=None, error_message=None,
     )
 
-    programs = [SimpleNamespace(id=1, name="CS", created_at=now, updated_at=now)]
+    programs = [SimpleNamespace(id=1, name="CS", oidc_group=None, created_at=now, updated_at=now)]
     categories = []
     images = []
     users = [SimpleNamespace(
@@ -742,54 +742,6 @@ async def test_run_db_import_cancelled_midway(tmp_path) -> None:
     assert task.status == "cancelled"
     mock_session.rollback.assert_awaited()
     assert "rolled back" in (task.log or "")
-
-
-async def test_run_db_import_image_program_lookup(tmp_path) -> None:
-    """Images with `program_ids` trigger a Program lookup + relationship set."""
-    dump = {
-        "programs": [{"id": 1, "name": "P1"}],
-        "users": [{"id": 1, "name": "U", "email": "u@e.com"}],
-        "categories": [{"id": 1, "label": "root", "parent_id": None}],
-        "images": [
-            {
-                "id": 1,
-                "name": "img",
-                "thumb": "/t",
-                "tile_sources": "/ts",
-                "category_id": 1,
-                "program_ids": [1],
-            }
-        ],
-    }
-    input_file = tmp_path / "imgprog.json"
-    input_file.write_text(json.dumps(dump))
-    task = _make_import_task(str(input_file))
-
-    mock_session, factory = _make_import_session(task)
-
-    # Return a fake Program row when the importer does
-    #   select(Program).where(Program.id.in_([1]))
-    fake_program = SimpleNamespace(id=1, name="P1")
-    program_result = MagicMock()
-    program_result.scalars.return_value.all.return_value = [fake_program]
-
-    default_result = MagicMock()
-    default_result.scalars.return_value.all.return_value = []
-
-    def execute_side_effect(stmt, *args, **kwargs):
-        compiled = str(stmt).upper() if not hasattr(stmt, "text") else ""
-        # The only SELECT the importer emits is the Program lookup; other
-        # execute() calls are DELETE/UPDATE/SELECT setval text() statements.
-        if "SELECT" in compiled and "PROGRAM" in compiled:
-            return program_result
-        return default_result
-
-    mock_session.execute.side_effect = execute_side_effect
-
-    with patch("app.admin_ops.get_async_session", return_value=factory):
-        await run_db_import(1)
-
-    assert task.status == "completed"
 
 
 async def test_run_db_import_data_session_failure(tmp_path) -> None:

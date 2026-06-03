@@ -22,6 +22,7 @@ def _make_image(version: int = 1) -> SimpleNamespace:
         copyright=None,
         note=None,
         active=True,
+        sort_order=0,
         metadata_=None,
         version=version,
         width=None,
@@ -29,7 +30,6 @@ def _make_image(version: int = 1) -> SimpleNamespace:
         file_size=None,
         created_at=now,
         updated_at=now,
-        programs=[],
     )
 
 
@@ -182,7 +182,6 @@ def test_image_out_defaults_version_to_one() -> None:
         category_id=None,
         copyright=None,
         note=None,
-        program_ids=[],
         active=True,
         metadata_extra=None,
         created_at=datetime.now(timezone.utc),

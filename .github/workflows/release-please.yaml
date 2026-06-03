@@ -4,47 +4,40 @@ on:
   push:
     branches: [main]
 
-# Least-privilege default: only `checkout` needs read access.
-# Each job elevates permissions to just what that job requires.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+# Default to least privilege; jobs elevate only when needed.
 permissions:
   contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    # release-please creates/updates release PRs, tags, GitHub releases
-    # and comments on associated issues.
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+      contents: read
     outputs:
       releases_created: ${{ steps.rp.outputs.releases_created }}
       paths_released: ${{ steps.rp.outputs.paths_released }}
       outputs: ${{ toJSON(steps.rp.outputs) }}
     steps:
-      # Manifest mode is inferred from the presence of
-      # `release-please-config.json` + `.release-please-manifest.json`;
-      # the top-level `release-type` input only accepts the leaf values
-      # (ruby|python|node|terraform-module) and must be omitted here so
-      # each component's `release-type` from the config drives the
-      # per-package strategy.
+      # A GitHub App token is required so that the PR push triggers
+      # downstream workflows (ci.yaml, pr-title-lint).  GITHUB_TOKEN's
+      # anti-recursion guard silently prevents other workflows from
+      # running on the PR, leaving branch-protection checks unsatisfied.
+      - uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+
       - uses: googleapis/release-please-action@v4
         id: rp
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ steps.app-token.outputs.token }}
 
-      # `release-as` per-package is a one-shot: once the release PR it
-      # triggered has merged and the manifest has caught up, the override
-      # must be removed, otherwise every subsequent release-please run
-      # keeps pinning the same version and blocks normal semver bumps
-      # from feat:/fix: commits. This guard runs *after* release-please
-      # and is skipped whenever `releases_created=true`, so the
-      # tag/release finalization that happens on the merge-of-chore-PR
-      # push (where manifest has just caught up to release-as) isn't
-      # blocked. On any subsequent push where the state is still stale
-      # and there's nothing to release, the workflow fails loudly to
-      # force the cleanup PR.
+      # `release-as` is one-shot. Once manifest catches up, remove it;
+      # otherwise future semver bumps are pinned and releases stall.
       - uses: actions/checkout@v6
         if: steps.rp.outputs.releases_created != 'true'
       - name: Guard against stale `release-as` entries
@@ -68,9 +61,7 @@ jobs:
               sys.exit(1)
           PY
 
-  # Releases created via GITHUB_TOKEN do NOT trigger workflows that listen
-  # on `release: published` or `push: tags:`. Dispatch helm-publish and
-  # release-retag explicitly for each released tag.
+  # Dispatch helm-publish and release-retag for each released tag.
   dispatch-publish:
     needs: release
     if: needs.release.outputs.releases_created == 'true'

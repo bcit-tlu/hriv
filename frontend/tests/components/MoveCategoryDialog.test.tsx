@@ -20,8 +20,8 @@ vi.mock('../../src/components/CategoryPickerSelect', () => ({
 }))
 
 const categories: Category[] = [
-  { id: 1, label: 'Architecture', parentId: null, children: [], images: [] },
-  { id: 10, label: 'Italian', parentId: 1, children: [], images: [] },
+  { id: 1, label: 'Architecture', parentId: null, children: [], images: [], sortOrder: 0 },
+  { id: 10, label: 'Italian', parentId: 1, children: [], images: [], sortOrder: 0 },
 ]
 
 const category: Category = {
@@ -30,6 +30,7 @@ const category: Category = {
   parentId: null,
   children: [],
   images: [],
+  sortOrder: 0,
 }
 
 describe('MoveCategoryDialog', () => {

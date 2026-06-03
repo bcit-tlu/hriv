@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import create_access_token
 from ..database import get_db, settings as _settings
-from ..models import User
+from ..models import Program, User
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -57,20 +57,56 @@ def _parse_role_mapping() -> dict[str, str]:
     return {}
 
 
+_ROLE_PRIORITY: dict[str, int] = {"admin": 0, "instructor": 1, "student": 2}
+
+
 def _resolve_role(groups: list[str]) -> str | None:
     """Map IdP groups/claims to a HRIV role.
 
-    The first matching group in the mapping wins.  Returns ``None`` when
-    no group matched any mapping entry so callers can distinguish
-    "no mapping available" from an explicit role assignment.
+    When a user belongs to multiple mapped groups the highest-privilege
+    role wins (admin > instructor > student).  This is essential for
+    IdPs like Azure AD where users are members of several groups
+    simultaneously (e.g. both ``Current_Employee`` and
+    ``HRIV_Admins``).  Returns ``None`` when no group matched any
+    mapping entry.
     """
     mapping = _parse_role_mapping()
+    best: str | None = None
     for group in groups:
         if group in mapping:
             role = mapping[group]
-            if role in ("admin", "instructor", "student"):
-                return role
-    return None
+            if role in _ROLE_PRIORITY:
+                if best is None or _ROLE_PRIORITY[role] < _ROLE_PRIORITY[best]:
+                    best = role
+    return best
+
+
+async def _resolve_programs(
+    db: AsyncSession, groups: list[str],
+) -> list[Program]:
+    """Return programs whose ``oidc_group`` matches one of *groups*."""
+    if not groups:
+        return []
+    result = await db.execute(
+        select(Program).where(Program.oidc_group.in_(groups))
+    )
+    return list(result.scalars().all())
+
+
+def _sync_programs(
+    user: User,
+    oidc_programs: list[Program],
+) -> list[Program]:
+    """Compute the merged program list for *user*.
+
+    Returns the union of *oidc_programs* (derived from the token's groups)
+    and any manually-assigned programs (those with ``oidc_group IS NULL``).
+    This is additive: admin-assigned programs are never removed by an OIDC
+    login.
+    """
+    oidc_ids = {p.id for p in oidc_programs}
+    manual = [p for p in user.programs if p.oidc_group is None and p.id not in oidc_ids]
+    return oidc_programs + manual
 
 
 def _ensure_oidc_enabled() -> None:
@@ -364,6 +400,9 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         extra={"event": "oidc.email_not_verified", "email": email, "sub": sub},
                     )
 
+            # Resolve programs from IdP groups
+            oidc_programs = await _resolve_programs(db, groups)
+
             if user is None:
                 is_new_user = True
                 # Brand-new user — create account (default to student if no mapping matched)
@@ -377,6 +416,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 db.add(user)
                 await db.flush()
                 await db.refresh(user, ["programs"])
+                user.programs = list(oidc_programs)
                 logger.info(
                     "OIDC: created new user",
                     extra={
@@ -384,6 +424,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         "user_id": user.id,
                         "email": email,
                         "role": resolved_role or "student",
+                        "program_ids": [p.id for p in user.programs],
                     },
                 )
             else:
@@ -409,6 +450,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 if resolved_role is not None:
                     user.role = resolved_role
                 user.last_access = datetime.now(timezone.utc)
+                user.programs = _sync_programs(user, oidc_programs)
                 logger.info(
                     "OIDC: logged in existing user",
                     extra={
@@ -416,6 +458,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         "user_id": user.id,
                         "email": email,
                         "role": resolved_role,
+                        "program_ids": [p.id for p in user.programs],
                     },
                 )
 

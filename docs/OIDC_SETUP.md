@@ -50,7 +50,8 @@ HRIV maps IdP group memberships to its three roles: `admin`,
 default to `student`.
 
 Configure `OIDC_ROLE_MAPPING` as a JSON object where keys are IdP group
-names and values are HRIV roles:
+names (or Object IDs — see [Azure AD / Entra ID](#azure-ad--entra-id)
+below) and values are HRIV roles:
 
 ```json
 {
@@ -60,8 +61,11 @@ names and values are HRIV roles:
 }
 ```
 
-The first matching group wins, so order does not matter as long as each
-group maps to exactly one role.
+When a user belongs to **multiple** mapped groups, the highest-privilege
+role wins: `admin` > `instructor` > `student`.  This is important for
+IdPs like Azure AD where users are typically members of several groups
+simultaneously (e.g. both `Current_Employee` → student and
+`HRIV_Admins` → admin).
 
 > **Tip:** If the IdP does not emit a `groups` claim in the ID token,
 > existing users keep their current role and new users default to
@@ -74,7 +78,7 @@ group maps to exactly one role.
 
 ## How It Works
 
-1. User clicks **"Sign in with BCIT"** on the login page.
+1. User clicks **"Sign in with ..."** on the login page.
 2. The browser navigates to `GET /api/auth/oidc/login`, which redirects
    to the IdP authorization endpoint.
 3. After the user authenticates, the IdP redirects back to
@@ -120,28 +124,70 @@ configuration.
 
 ---
 
-## Organization-specific example: HashiCorp Vault (BCIT)
+## Azure AD / Entra ID
+
+When connecting HRIV directly to Microsoft Entra ID (without Vault as
+a proxy), the groups claim contains **Object IDs** (GUIDs), not
+display names.  Map the Object IDs in `OIDC_ROLE_MAPPING`:
+
+```json
+{
+  "326e8c08-3c6d-476e-8822-d32807a4f50c": "admin",
+  "751cf57b-b100-4964-a905-c5e09f383f1b": "instructor",
+  "3a855564-3401-464c-b752-ba0697682ac6": "student"
+}
+```
+
+| Setting | Value |
+|---|---|
+| `OIDC_ISSUER` | `https://login.microsoftonline.com/{tenant-id}/v2.0` |
+| `OIDC_CLIENT_ID` | The Application (client) ID from the Entra app registration |
+| `OIDC_SCOPES` | `openid email profile` |
+| `OIDC_TRUST_EMAIL` | `true` (corporate Entra ID — all emails are managed) |
+
+### Prerequisites
+
+1. **App registration** in Entra ID with a redirect URI matching
+   `OIDC_REDIRECT_URI`.
+2. **Client secret** generated for the app registration.
+3. **Groups claim** enabled in Token Configuration → Add groups claim →
+   Security groups.  The token will contain the Object IDs of all
+   security groups the user belongs to.
+4. **Role groups** created and assigned to the app registration so they
+   appear in the token's `groups` claim.
+
+### Multiple group membership
+
+Users in a corporate directory typically belong to several groups at
+once (e.g. `Current_Employee` *and* `HRIV_Admins`).  Because HRIV
+resolves the **highest-privilege** role across all matched groups,
+an admin who is also an employee correctly receives the `admin` role
+even if `Current_Employee` → `student` appears first in the token.
+
+---
+
+## Organization-specific example: HashiCorp Vault
 
 One deployment of HRIV uses HashiCorp Vault's [OIDC identity
 provider](https://developer.hashicorp.com/vault/docs/secrets/identity/oidc-provider)
-for SSO. This section documents that BCIT-specific setup as an example
+for SSO. This section documents that org-specific setup as an example
 for teams using Vault as their IdP.
 
 ### Vault OIDC provider details
 
 | Field | Value |
 |---|---|
-| Issuer | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider` |
-| Discovery URL | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/openid-configuration` |
-| Authorization endpoint | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/authorize` |
-| Token endpoint | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/token` |
-| JWKS URI | `https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/keys` |
+| Issuer | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider` |
+| Discovery URL | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/openid-configuration` |
+| Authorization endpoint | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/authorize` |
+| Token endpoint | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/token` |
+| JWKS URI | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/keys` |
 | Client ID (HRIV) | `hkPdYUJqqEYWxiVwIrgrAjiS8fLja2ip` |
 
 > **Important:** `OIDC_ISSUER` must be the **full provider path**
 > including port 8200 and `/v1/identity/oidc/provider/vault-provider`.
 > The backend appends `/.well-known/openid-configuration` automatically.
-> Using a short URL like `https://vault.ltc.bcit.ca` will fail because
+> Using a short URL like `https://vault.example.ca` will fail because
 > the discovery document will not be found at that path.
 
 ### Quick start (local Docker)
@@ -162,7 +208,7 @@ docker compose up --build
 open http://localhost:5173
 ```
 
-Click **"Sign in with BCIT"** on the login page. The browser will
+Click **"Sign in with ..."** on the login page. The browser will
 redirect to the Vault authorization endpoint.  After authenticating,
 Vault redirects back to
 `http://localhost:8000/api/auth/oidc/callback`, which exchanges the
@@ -217,7 +263,7 @@ curl -s http://localhost:8000/api/auth/oidc/enabled | python3 -m json.tool
 # 2. Verify Vault discovery is reachable from the backend container
 docker compose exec backend python3 -c "
 import urllib.request, json
-url = 'https://vault.ltc.bcit.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/openid-configuration'
+url = 'https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/openid-configuration'
 data = json.loads(urllib.request.urlopen(url).read())
 print(json.dumps(data, indent=2))
 "

@@ -42,6 +42,7 @@ import {
   deleteImage,
   bulkUpdateImages,
   bulkDeleteImages,
+  reorderImages,
   fetchOidcEnabled,
   getOidcLoginUrl,
   fetchUsers,
@@ -79,6 +80,7 @@ import {
   type ApiProgram,
   type ApiAnnouncement,
   type ApiSourceImage,
+  userMessage,
 } from '../src/api'
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -119,6 +121,7 @@ const CATEGORY_FIXTURE: ApiCategory = {
   parent_id: null,
   program_ids: [],
   status: null,
+  sort_order: 0,
   metadata_extra: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
@@ -140,6 +143,7 @@ const IMAGE_FIXTURE: ApiImage = {
   note: null,
   program_ids: [],
   active: true,
+  sort_order: 0,
   metadata_extra: null,
   version: 1,
   width: 100,
@@ -165,6 +169,7 @@ const USER_FIXTURE: ApiUser = {
 const PROGRAM_FIXTURE: ApiProgram = {
   id: 1,
   name: 'Medical Lab',
+  oidc_group: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
 }
@@ -219,6 +224,69 @@ describe('ApiError', () => {
     expect(err.message).toBe('API 404: Not Found')
     expect(err.name).toBe('ApiError')
     expect(err).toBeInstanceOf(Error)
+  })
+})
+
+describe('userMessage', () => {
+  it('returns conflict message for 409', () => {
+    const err = new ApiError(409, 'Conflict')
+    expect(userMessage(err, 'fallback')).toBe(
+      'This item was modified by another user. Please refresh and try again.',
+    )
+  })
+
+  it('returns detail for short 4xx errors', () => {
+    const err = new ApiError(422, 'Name already exists')
+    expect(userMessage(err, 'fallback')).toBe('Name already exists')
+  })
+
+  it('returns fallback for HTML detail', () => {
+    const err = new ApiError(413, '<!DOCTYPE html><html>error page</html>')
+    expect(userMessage(err, 'Too large')).toBe('Too large')
+  })
+
+  it('returns fallback for detail exceeding 200 chars', () => {
+    const err = new ApiError(400, 'x'.repeat(201))
+    expect(userMessage(err, 'fallback')).toBe('fallback')
+  })
+
+  it('returns fallback for empty detail', () => {
+    const err = new ApiError(400, '')
+    expect(userMessage(err, 'fallback')).toBe('fallback')
+  })
+
+  it('returns fallback for whitespace-only detail', () => {
+    const err = new ApiError(400, '   ')
+    expect(userMessage(err, 'fallback')).toBe('fallback')
+  })
+
+  it('returns fallback for 5xx errors', () => {
+    const err = new ApiError(500, 'Internal Server Error')
+    expect(userMessage(err, 'fallback')).toBe('fallback')
+  })
+
+  it('returns network message for TypeError', () => {
+    expect(userMessage(new TypeError('Failed to fetch'), 'fallback')).toBe(
+      'Network error \u2014 check your connection and try again.',
+    )
+  })
+
+  it('returns fallback for AbortError', () => {
+    const err = new DOMException('Aborted', 'AbortError')
+    expect(userMessage(err, 'fallback')).toBe('fallback')
+  })
+
+  it('returns fallback for unknown error types', () => {
+    expect(userMessage('unexpected', 'fallback')).toBe('fallback')
+    expect(userMessage(42, 'fallback')).toBe('fallback')
+    expect(userMessage(null, 'fallback')).toBe('fallback')
+  })
+
+  it('returns fallback for HTML fragment detail', () => {
+    expect(userMessage(new ApiError(400, '<div>Service Unavailable</div>'), 'fallback')).toBe('fallback')
+    expect(userMessage(new ApiError(413, '<h1>413 Request Entity Too Large</h1>'), 'fallback')).toBe('fallback')
+    expect(userMessage(new ApiError(400, '<pre>Error details</pre>'), 'fallback')).toBe('fallback')
+    expect(userMessage(new ApiError(400, '<table><tr><td>Error</td></tr></table>'), 'fallback')).toBe('fallback')
   })
 })
 
@@ -428,6 +496,17 @@ describe('Image API', () => {
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/images/bulk')
     expect(init.method).toBe('DELETE')
+  })
+
+  it('reorderImages sends PUT with items array', async () => {
+    mockFetch.mockReturnValueOnce(noContentResponse())
+    await reorderImages([{ id: 1, sort_order: 0 }, { id: 2, sort_order: 1 }])
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/images/reorder')
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body)).toEqual({
+      items: [{ id: 1, sort_order: 0 }, { id: 2, sort_order: 1 }],
+    })
   })
 })
 
@@ -823,7 +902,7 @@ describe('XHR upload abort support', () => {
   it('uploadSourceImage rejects with AbortError when signal is aborted', async () => {
     const ac = new AbortController()
     const file = new File(['test'], 'test.png', { type: 'image/png' })
-    const promise = uploadSourceImage(file, undefined, undefined, undefined, undefined, undefined, undefined, undefined, ac.signal)
+    const promise = uploadSourceImage(file, undefined, undefined, undefined, undefined, undefined, undefined, ac.signal)
     ac.abort()
     await expect(promise).rejects.toThrow('Upload aborted')
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
@@ -841,7 +920,7 @@ describe('XHR upload abort support', () => {
   it('bulkImportImages rejects with AbortError when signal is aborted', async () => {
     const ac = new AbortController()
     const file = new File(['test'], 'test.zip')
-    const promise = bulkImportImages([file], 1, undefined, undefined, undefined, undefined, undefined, ac.signal)
+    const promise = bulkImportImages([file], 1, undefined, undefined, undefined, undefined, ac.signal)
     ac.abort()
     await expect(promise).rejects.toThrow('Upload aborted')
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
@@ -859,7 +938,7 @@ describe('XHR upload abort support', () => {
   it('uploadSourceImage calls xhr.abort() when signal fires', async () => {
     const ac = new AbortController()
     const file = new File(['test'], 'test.png', { type: 'image/png' })
-    const promise = uploadSourceImage(file, undefined, undefined, undefined, undefined, undefined, undefined, undefined, ac.signal)
+    const promise = uploadSourceImage(file, undefined, undefined, undefined, undefined, undefined, undefined, ac.signal)
     expect(xhrInstances).toHaveLength(1)
     ac.abort()
     expect(xhrInstances[0].abort).toHaveBeenCalled()
@@ -877,7 +956,7 @@ describe('XHR upload abort support', () => {
     const ac = new AbortController()
     ac.abort()
     const file = new File(['test'], 'test.png', { type: 'image/png' })
-    const promise = uploadSourceImage(file, undefined, undefined, undefined, undefined, undefined, undefined, undefined, ac.signal)
+    const promise = uploadSourceImage(file, undefined, undefined, undefined, undefined, undefined, undefined, ac.signal)
     await expect(promise).rejects.toThrow('Upload aborted')
     // Rejects directly without calling xhr.abort() (abort before send
     // doesn't fire the abort event per XHR spec).

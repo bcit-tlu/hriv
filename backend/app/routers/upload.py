@@ -2,7 +2,6 @@
 
 import contextlib
 import errno
-import json
 import logging
 import os
 import uuid
@@ -37,7 +36,6 @@ async def upload_source_image(
     category_id: Annotated[int | None, Form()] = None,
     copyright: Annotated[str | None, Form()] = None,
     note: Annotated[str | None, Form()] = None,
-    program_ids: Annotated[list[int], Form()] = [],
     active: Annotated[bool, Form()] = True,
     db: AsyncSession = Depends(get_db),
 ) -> SourceImage:
@@ -97,7 +95,6 @@ async def upload_source_image(
                 copyright=copyright,
                 note=note,
                 active=active,
-                program=json.dumps(program_ids) if program_ids else None,
                 file_size=file_size,
             )
             db.add(src)

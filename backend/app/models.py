@@ -5,13 +5,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from .database import Base
 
 
-image_programs = Table(
-    "image_programs",
-    Base.metadata,
-    Column("image_id", Integer, ForeignKey("images.id", ondelete="CASCADE"), primary_key=True),
-    Column("program_id", Integer, ForeignKey("programs.id", ondelete="CASCADE"), primary_key=True),
-)
-
 user_programs = Table(
     "user_programs",
     Base.metadata,
@@ -32,6 +25,9 @@ class Program(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    oidc_group: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, unique=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -119,6 +115,7 @@ class Image(Base):
         default=dict,
         server_default=text("'{}'::jsonb"),
     )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -131,9 +128,6 @@ class Image(Base):
     )
 
     category: Mapped["Category | None"] = relationship("Category", back_populates="images")
-    programs: Mapped[list["Program"]] = relationship(
-        "Program", secondary=image_programs, lazy="selectin"
-    )
 
 
 class SourceImage(Base):
@@ -164,7 +158,6 @@ class SourceImage(Base):
     copyright: Mapped[str | None] = mapped_column(String(500), nullable=True)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
-    program: Mapped[str | None] = mapped_column(String(255), nullable=True)
     image_id: Mapped[int | None] = mapped_column(
         ForeignKey("images.id", ondelete="SET NULL"), nullable=True
     )

@@ -50,7 +50,16 @@ async def create_program(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Program name already exists")
 
-    program = Program(name=body.name)
+    if body.oidc_group is not None:
+        dup = await db.execute(
+            select(Program).where(Program.oidc_group == body.oidc_group)
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(
+                status_code=409, detail="OIDC group already mapped to another program",
+            )
+
+    program = Program(name=body.name, oidc_group=body.oidc_group)
     db.add(program)
     await db.commit()
     await db.refresh(program)
@@ -78,6 +87,17 @@ async def update_program(
         )
         if existing.scalar_one_or_none():
             raise HTTPException(status_code=409, detail="Program name already exists")
+    if "oidc_group" in update_data and update_data["oidc_group"] is not None:
+        dup = await db.execute(
+            select(Program).where(
+                Program.oidc_group == update_data["oidc_group"],
+                Program.id != program_id,
+            )
+        )
+        if dup.scalar_one_or_none():
+            raise HTTPException(
+                status_code=409, detail="OIDC group already mapped to another program",
+            )
     for key, value in update_data.items():
         setattr(program, key, value)
     await db.commit()

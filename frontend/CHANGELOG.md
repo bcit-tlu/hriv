@@ -1,5 +1,172 @@
 # Changelog
 
+## [0.20.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.19.1...frontend-v0.20.0) (2026-06-03)
+
+
+### Features
+
+* **dnd:** implement guarded A2 optimistic sortable reflow ([#551](https://github.com/bcit-tlu/hriv/issues/551)) ([ca0cd3a](https://github.com/bcit-tlu/hriv/commit/ca0cd3a5aea693c5650eb5af3308f3b6d1c3a397))
+* migrate drag-and-drop from @dnd-kit/core v1 to @dnd-kit/react v2 ([#547](https://github.com/bcit-tlu/hriv/issues/547)) ([a49550f](https://github.com/bcit-tlu/hriv/commit/a49550f6a634a1707e87914c80c16d92da12a19f))
+* prioritize move + live reorder preview for tile drag-and-drop ([#550](https://github.com/bcit-tlu/hriv/issues/550)) ([92d7220](https://github.com/bcit-tlu/hriv/commit/92d722085ce3a9b2c28202acc93150888b2dda26))
+
+## [0.19.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.19.0...frontend-v0.19.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* tune collision zones for move vs reorder differentiation ([#544](https://github.com/bcit-tlu/hriv/issues/544)) ([cee4c0c](https://github.com/bcit-tlu/hriv/commit/cee4c0c151904c1598800f6819e0638406b5f952))
+
+## [0.19.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.18.1...frontend-v0.19.0) (2026-06-02)
+
+
+### Features
+
+* add sort_order to images for ordering/placement support ([#531](https://github.com/bcit-tlu/hriv/issues/531)) ([453e291](https://github.com/bcit-tlu/hriv/commit/453e291f55b654603d66191484426f3a078d51a8))
+* add tile grid drag-to-reorder UI with [@dnd-kit](https://github.com/dnd-kit) ([#536](https://github.com/bcit-tlu/hriv/issues/536)) ([cfb2427](https://github.com/bcit-tlu/hriv/commit/cfb24278f106e9bfa01876a8ce7e9cab47d84f9f))
+* migrate drag-to-category from native HTML5 DnD to [@dnd-kit](https://github.com/dnd-kit) ([#541](https://github.com/bcit-tlu/hriv/issues/541)) ([c64e368](https://github.com/bcit-tlu/hriv/commit/c64e368b96194791145fad5ee1bd55124a034973))
+
+
+### Bug Fixes
+
+* resolve ManageCategoriesDialog sort_order namespace collision with images ([#543](https://github.com/bcit-tlu/hriv/issues/543)) ([061a328](https://github.com/bcit-tlu/hriv/commit/061a32886bd2f604ae3cee92c7ebeced9e31a0f8))
+
+## [0.18.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.18.0...frontend-v0.18.1) (2026-05-27)
+
+
+### Bug Fixes
+
+* **frontend:** remove image dimensions and file size from cards ([#520](https://github.com/bcit-tlu/hriv/issues/520)) ([af17a24](https://github.com/bcit-tlu/hriv/commit/af17a243b190be5698427e20360551e791dac24c))
+* **frontend:** replace footer links with High Resolution Image Viewer link ([#518](https://github.com/bcit-tlu/hriv/issues/518)) ([6e596e2](https://github.com/bcit-tlu/hriv/commit/6e596e2c04b6cb02defd89a8662504d8603aff82))
+
+## [0.18.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.17.2...frontend-v0.18.0) (2026-05-27)
+
+
+### Features
+
+* **frontend:** snackbar with undo action on image/category drag-and-drop move ([#516](https://github.com/bcit-tlu/hriv/issues/516)) ([73d38c8](https://github.com/bcit-tlu/hriv/commit/73d38c86f35fc97d9ca78d2696b385e355615bdb))
+
+## [0.17.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.17.1...frontend-v0.17.2) (2026-05-26)
+
+
+### Bug Fixes
+
+* **frontend:** add aria-labels to canvas overlay action buttons ([#506](https://github.com/bcit-tlu/hriv/issues/506)) ([f8fdd8a](https://github.com/bcit-tlu/hriv/commit/f8fdd8a1200ab590bdca3f43aaa07d25e235bf1b))
+* **frontend:** disable clear-rectangles when empty and add canvas cancel icon ([#501](https://github.com/bcit-tlu/hriv/issues/501)) ([3890617](https://github.com/bcit-tlu/hriv/commit/3890617d893811c78124b9f8a53b5772aa329828))
+* **frontend:** disable lock icon until selection rectangles exist ([#502](https://github.com/bcit-tlu/hriv/issues/502)) ([2aef61b](https://github.com/bcit-tlu/hriv/commit/2aef61be59bfd3fd2f10debed92f8bf5d7bb9366))
+* **frontend:** surface server-side validation errors in replace-image snackbar ([#491](https://github.com/bcit-tlu/hriv/issues/491)) ([ad625a4](https://github.com/bcit-tlu/hriv/commit/ad625a481ef152d0f1e1e0d61bde6d1a1ddf9935))
+
+## [0.17.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.17.0...frontend-v0.17.1) (2026-05-26)
+
+
+### Bug Fixes
+
+* **frontend:** make image visibility icon toggle on click ([#489](https://github.com/bcit-tlu/hriv/issues/489)) ([ffba994](https://github.com/bcit-tlu/hriv/commit/ffba99481be23415cb4414dd7effa8844cb432b7))
+* **frontend:** pre-populate parent program restrictions in new category modal ([#487](https://github.com/bcit-tlu/hriv/issues/487)) ([eb67721](https://github.com/bcit-tlu/hriv/commit/eb677214f445818bfb03cb722479e466a9331a88))
+
+## [0.17.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.16.2...frontend-v0.17.0) (2026-05-25)
+
+
+### Features
+
+* **frontend:** PeoplePage bulk management, filters, pagination, and program pills ([#482](https://github.com/bcit-tlu/hriv/issues/482)) ([20558b1](https://github.com/bcit-tlu/hriv/commit/20558b1d638e308cb25f537c070a0812a179a40c))
+
+
+### Bug Fixes
+
+* **backend:** allow instructors to see people in search results ([#478](https://github.com/bcit-tlu/hriv/issues/478)) ([1c013e6](https://github.com/bcit-tlu/hriv/commit/1c013e6c12bccb944fab725399d20f6413eddc38))
+* **frontend:** Programs label overlap + search-to-edit-modal linking ([#484](https://github.com/bcit-tlu/hriv/issues/484)) ([f61c59d](https://github.com/bcit-tlu/hriv/commit/f61c59d9945736d5b21ee7cd450b333b8fdfb42c))
+
+## [0.16.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.16.1...frontend-v0.16.2) (2026-05-25)
+
+
+### Bug Fixes
+
+* **frontend:** improve CategoryTile drag-over visibility ([#472](https://github.com/bcit-tlu/hriv/issues/472)) ([7a14d7d](https://github.com/bcit-tlu/hriv/commit/7a14d7db1984a2686dbffebed96407970e7ab2da))
+* **frontend:** search UX improvements, helper text, and deduplication ([#470](https://github.com/bcit-tlu/hriv/issues/470)) ([5846bd3](https://github.com/bcit-tlu/hriv/commit/5846bd3495eabfa9afe7db74b319415064a49b91))
+
+## [0.16.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.16.0...frontend-v0.16.1) (2026-05-25)
+
+
+### Bug Fixes
+
+* **frontend:** defer fileDragActive reset so FileDropZone onDrop fires ([#466](https://github.com/bcit-tlu/hriv/issues/466)) ([ae6bad8](https://github.com/bcit-tlu/hriv/commit/ae6bad845bf0c7dfa2220450ee707270626d08de))
+
+## [0.16.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.15.0...frontend-v0.16.0) (2026-05-25)
+
+
+### Features
+
+* expand search to include all metadata fields ([#447](https://github.com/bcit-tlu/hriv/issues/447)) ([9eb2425](https://github.com/bcit-tlu/hriv/commit/9eb24257154c5c70a558ffce80fade7896163503))
+* **frontend:** add browser back/forward navigation via History API pushState ([#449](https://github.com/bcit-tlu/hriv/issues/449)) ([6c72ca0](https://github.com/bcit-tlu/hriv/commit/6c72ca09ed94b0c6f82a977cf5e78470bbbfb29f))
+* **frontend:** background refresh for image/category status propagation ([#460](https://github.com/bcit-tlu/hriv/issues/460)) ([019ac85](https://github.com/bcit-tlu/hriv/commit/019ac850422d35ebc1d1fb9eade3246d5fa92a19))
+* **frontend:** prominent file dropzone + enhanced card drag-over UX ([#462](https://github.com/bcit-tlu/hriv/issues/462)) ([ca88315](https://github.com/bcit-tlu/hriv/commit/ca88315ee47d1114b677fa8e7bcae3eabd74a9bd))
+
+
+### Bug Fixes
+
+* eliminate bulk import polling churn, remove dead refs, refresh ManagePage ([#292](https://github.com/bcit-tlu/hriv/issues/292), [#293](https://github.com/bcit-tlu/hriv/issues/293)) ([#448](https://github.com/bcit-tlu/hriv/issues/448)) ([baf9780](https://github.com/bcit-tlu/hriv/commit/baf97804eccaa3d4e0b86a9a62912bbb5c753a09))
+* **frontend:** UX polish batch — error toasts, replace-image abort, file drop ([#458](https://github.com/bcit-tlu/hriv/issues/458)) ([1b35a45](https://github.com/bcit-tlu/hriv/commit/1b35a45b03fbbae8d128e9503944059c9d942991))
+
+
+### Performance Improvements
+
+* **frontend:** stabilize array refs + restriction splitting tests ([#459](https://github.com/bcit-tlu/hriv/issues/459)) ([c656cf9](https://github.com/bcit-tlu/hriv/commit/c656cf969d6b11ed17aaa2752fcb54c85631bbe7))
+
+## [0.15.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.14.0...frontend-v0.15.0) (2026-05-20)
+
+
+### Features
+
+* add edit pencil icon to breadcrumb for current category ([#442](https://github.com/bcit-tlu/hriv/issues/442)) ([d570b80](https://github.com/bcit-tlu/hriv/commit/d570b8004c15b064184d0a0c88eca6e61fdaebc2))
+* overflow handling for breadcrumb program pills ([#441](https://github.com/bcit-tlu/hriv/issues/441)) ([ab8fbc7](https://github.com/bcit-tlu/hriv/commit/ab8fbc7bf9eda3e82262101550ba55f5d6ad76d8))
+
+
+### Bug Fixes
+
+* show program pills only on categories with own restrictions ([#439](https://github.com/bcit-tlu/hriv/issues/439)) ([d39e089](https://github.com/bcit-tlu/hriv/commit/d39e08954c338eaf390969f93c9b0d9c1d108ee8))
+
+## [0.14.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.13.0...frontend-v0.14.0) (2026-05-20)
+
+
+### Features
+
+* OIDC group-to-program mapping for automated user provisioning ([#432](https://github.com/bcit-tlu/hriv/issues/432)) ([d602c35](https://github.com/bcit-tlu/hriv/commit/d602c3584e42144a260b9a9fcb020a97feb3586b))
+* program restriction design overhaul ([#438](https://github.com/bcit-tlu/hriv/issues/438)) ([ea65a45](https://github.com/bcit-tlu/hriv/commit/ea65a45fb1aa37781da547a0167a459ca03ca9ff))
+* remove image-level program associations ([#386](https://github.com/bcit-tlu/hriv/issues/386), [#387](https://github.com/bcit-tlu/hriv/issues/387), [#396](https://github.com/bcit-tlu/hriv/issues/396)) ([#422](https://github.com/bcit-tlu/hriv/issues/422)) ([29918ab](https://github.com/bcit-tlu/hriv/commit/29918abb1e471ca985fbf56e55a2963cf95d533f))
+
+
+### Bug Fixes
+
+* add LockIcon guard and keyboard accessibility ([#395](https://github.com/bcit-tlu/hriv/issues/395), [#393](https://github.com/bcit-tlu/hriv/issues/393)) ([#433](https://github.com/bcit-tlu/hriv/issues/433)) ([484cbf8](https://github.com/bcit-tlu/hriv/commit/484cbf8adbc541a42038f947499a8cbbff288ab0))
+
+## [0.13.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.12.1...frontend-v0.13.0) (2026-05-19)
+
+
+### Features
+
+* cancel orphaned tasks on upload failure + atomic replace-image ([#418](https://github.com/bcit-tlu/hriv/issues/418)) ([e8be0f3](https://github.com/bcit-tlu/hriv/commit/e8be0f3448f6ef6507c9d245655cfd2a3830c8ac))
+
+## [0.12.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.12.0...frontend-v0.12.1) (2026-05-18)
+
+
+### Bug Fixes
+
+* **frontend:** add dependency array to useEffect in EditCategoryDialog ([#404](https://github.com/bcit-tlu/hriv/issues/404)) ([db9ab44](https://github.com/bcit-tlu/hriv/commit/db9ab44e4714d99c3d862f2affe0cd35fa98dfd8))
+
+## [0.12.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.11.1...frontend-v0.12.0) (2026-05-18)
+
+
+### Features
+
+* add restricted category indicators and deprecate image-level programs ([#385](https://github.com/bcit-tlu/hriv/issues/385)) ([a8bc55b](https://github.com/bcit-tlu/hriv/commit/a8bc55bb2304e6746597020420e6a6c3434f3d6c))
+* card icon tweaks, add category button, role-based UX fixes ([#372](https://github.com/bcit-tlu/hriv/issues/372)) ([4241001](https://github.com/bcit-tlu/hriv/commit/4241001fb7ae95a54f37929a65ad43af8cc1af37))
+* **frontend:** add drag-and-drop for images and categories ([#398](https://github.com/bcit-tlu/hriv/issues/398)) ([8ecb5d2](https://github.com/bcit-tlu/hriv/commit/8ecb5d2bcf4e9e1d86d21f27c5a8f34d4ee15d67))
+
+
+### Bug Fixes
+
+* **frontend:** resolve category modal overlap, dropdown action icons, and image preview navigation ([#397](https://github.com/bcit-tlu/hriv/issues/397)) ([5c74b1c](https://github.com/bcit-tlu/hriv/commit/5c74b1c4c4ad666717a0d0cf977af2c0471336f1))
+
 ## [0.11.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.11.0...frontend-v0.11.1) (2026-05-12)
 
 

@@ -3,7 +3,7 @@
 pkgs.mkShell {
   buildInputs = with pkgs; [
     # Frontend
-    nodejs_22
+    nodejs_24
 
     # Backend
     python3

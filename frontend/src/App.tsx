@@ -1,10 +1,7 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import Alert from "@mui/material/Alert";
-import AppBar from "@mui/material/AppBar";
-import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
-import Card from "@mui/material/Card";
-import CardContent from "@mui/material/CardContent";
+import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import LinearProgress from "@mui/material/LinearProgress";
 import Container from "@mui/material/Container";
@@ -16,40 +13,27 @@ import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
 import Paper from "@mui/material/Paper";
 import Popover from "@mui/material/Popover";
-import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
 import Button from "@mui/material/Button";
 import MuiBreadcrumbs from "@mui/material/Breadcrumbs";
 import Link from "@mui/material/Link";
-import Menu from "@mui/material/Menu";
-import MenuItem from "@mui/material/MenuItem";
-import Tab from "@mui/material/Tab";
-import Tabs from "@mui/material/Tabs";
 import Snackbar from "@mui/material/Snackbar";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import AddPhotoAlternateIcon from "@mui/icons-material/AddPhotoAlternate";
+import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
 import DisabledVisibleIcon from "@mui/icons-material/DisabledVisible";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import EditIcon from "@mui/icons-material/Edit";
 import HomeIcon from "@mui/icons-material/Home";
 import LinkIcon from "@mui/icons-material/Link";
-import SearchIcon from "@mui/icons-material/Search";
 import ImageViewer from "./components/ImageViewer";
-import type {
-    ViewportState,
-    MeasurementConfig,
-    OverlayRect,
-} from "./components/imageViewerUtils";
-import type { CanvasAnnotation } from "./components/CanvasOverlay";
-import { MAX_SHARE_OVERLAYS } from "./components/imageViewerUtils";
-import CategoryTile from "./components/CategoryTile";
-import ColorModeToggle from "./components/ColorModeToggle";
-import ImageTile from "./components/ImageTile";
+import SortableTileGrid from "./components/SortableTileGrid";
 import ManageCategoriesDialog from "./components/ManageCategoriesDialog";
 import AdminPage from "./components/AdminPage";
-import AnnouncementBanner from "./components/AnnouncementBanner";
+import AppShell from "./components/AppShell";
+import type { Page } from "./components/AppShell";
 import AddEditPersonModal from "./components/AddEditPersonModal";
 import ManagePage from "./components/ManagePage";
 import PeoplePage from "./components/PeoplePage";
@@ -63,108 +47,47 @@ import type {
 import ProgramManagementModal from "./components/ProgramManagementModal";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
+import type { TypeFilter } from "./components/SearchModal";
+import { findImageInTree, findCategoryPath, resolveCategoryPath } from "./treeUtils";
 import UploadImageModal from "./components/UploadImageModal";
+import { isAcceptedFile } from "./fileUtils";
 import { useAuth } from "./useAuth";
 import {
-    fetchCategoryTree,
-    fetchAnnouncement,
     fetchImage as apiFetchImage,
-    fetchUncategorizedImages,
     fetchSourceImage,
     fetchBulkImportJob,
     fetchVersions,
     fetchFrontendVersion,
-    createCategory as apiCreateCategory,
-    deleteCategory as apiDeleteCategory,
-    updateCategory as apiUpdateCategory,
     fetchUsers,
-    updateUser as apiUpdateUser,
-    fetchPrograms as apiFetchPrograms,
-    updateImage as apiUpdateImage,
-    deleteImage as apiDeleteImage,
-    replaceImage as apiReplaceImage,
-    updateAnnouncement,
+
     createProgram,
     updateProgram,
     deleteProgram,
-    reorderCategories as apiReorderCategories,
+    userMessage,
 } from "./api";
 import type {
-    ApiBulkImportJob,
-    ApiCategoryTree,
-    ApiImage,
     ApiUser,
 } from "./api";
-import { pollProcessingJob, type PollHandle } from "./pollProcessingJob";
 import MoveCategoryDialog from "./components/MoveCategoryDialog";
+import { useProcessingJobs } from "./useProcessingJobs";
 import type { Category, ImageItem, Program } from "./types";
+import { MAX_DEPTH } from "./types";
+import AddCategoryDialog from "./components/AddCategoryDialog";
+import EditCategoryDialog from "./components/EditCategoryDialog";
 import { useColorMode } from "./useColorMode";
+import { useBrowseData } from "./useBrowseData";
 import { getSurfaceVariant } from "./theme";
-
-/** Search the category tree for an image by ID, returning the image and its category path. */
-function findImageInTree(
-    tree: Category[],
-    imageId: number,
-    path: Category[] = [],
-): { image: ImageItem; path: Category[] } | null {
-    for (const cat of tree) {
-        for (const img of cat.images) {
-            if (img.id === imageId) return { image: img, path: [...path, cat] };
-        }
-        const found = findImageInTree(cat.children, imageId, [...path, cat]);
-        if (found) return found;
-    }
-    return null;
-}
-
-function findCategoryPath(
-    tree: Category[],
-    categoryId: number,
-    path: Category[] = [],
-): Category[] | null {
-    for (const cat of tree) {
-        if (cat.id === categoryId) return [...path, cat];
-        const found = findCategoryPath(cat.children, categoryId, [
-            ...path,
-            cat,
-        ]);
-        if (found) return found;
-    }
-    return null;
-}
-
-function apiTreeToCategory(node: ApiCategoryTree): Category {
-    const meta = node.metadata_extra as Record<string, unknown> | null;
-    return {
-        id: node.id,
-        label: node.label,
-        parentId: node.parent_id,
-        children: node.children.map(apiTreeToCategory),
-        images: node.images.map((img) => ({
-            id: img.id,
-            name: img.name,
-            thumb: img.thumb,
-            tileSources: img.tile_sources,
-            categoryId: img.category_id,
-            copyright: img.copyright,
-            note: img.note,
-            programIds: img.program_ids,
-            active: img.active,
-            version: img.version,
-            createdAt: img.created_at,
-            updatedAt: img.updated_at,
-            metadataExtra: img.metadata_extra,
-            width: img.width,
-            height: img.height,
-            fileSize: img.file_size,
-        })),
-        programIds: node.program_ids ?? [],
-        status: node.status,
-        cardImageId:
-            typeof meta?.card_image_id === "number" ? meta.card_image_id : null,
-        metadataExtra: meta ?? null,
-    };
-}
+import {
+    useNavigationHistory,
+    buildNavHistoryState,
+} from "./useNavigationHistory";
+import { useShareableImageState } from "./useShareableImageState";
+import { useCanvasAnnotations } from "./useCanvasAnnotations";
+import { useOverlayPersistence } from "./useOverlayPersistence";
+import { useCategoryActions } from "./useCategoryActions";
+import { useImageActions } from "./useImageActions";
+import { useAnnouncementModal } from "./useAnnouncementModal";
+import { useUserProfile } from "./useUserProfile";
 
 export default function App() {
     const {
@@ -177,58 +100,37 @@ export default function App() {
     } = useAuth();
     const { mode } = useColorMode();
 
-    type Page = "browse" | "manage" | "people" | "admin";
-    const [page, setPage] = useState<Page>("browse");
-    const [categories, setCategories] = useState<Category[]>([]);
-    const [categoriesLoading, setCategoriesLoading] = useState(true);
+    const [page, setPage] = useState<Page>(() => {
+        const p = new URLSearchParams(window.location.search).get("page");
+        if (p === "manage" || p === "people" || p === "admin") return p;
+        return "browse";
+    });
     const [path, setPath] = useState<Category[]>([]);
+    const pathRef = useRef(path);
+    pathRef.current = path;
     const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
     const selectedImageRef = useRef<ImageItem | null>(null);
     selectedImageRef.current = selectedImage;
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
-    const [announcement, setAnnouncement] = useState("");
-    const [uncategorizedImages, setUncategorizedImages] = useState<ImageItem[]>(
-        [],
-    );
+    const [fileDropCategoryId, setFileDropCategoryId] = useState<
+        number | null
+    >(null);
+    const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
+    const [fileDragActive, setFileDragActive] = useState(false);
+    const fileDragCounter = useRef(0);
+    const [manageUploadOpen, setManageUploadOpen] = useState(false);
+    const [addCatOpen, setAddCatOpen] = useState(false);
+    const [programsPopoverAnchor, setProgramsPopoverAnchor] =
+        useState<HTMLElement | null>(null);
+    const [editNameCategory, setEditNameCategory] = useState<Category | null>(null);
 
-    // Shareable-URL state
-    const [viewportState, setViewportState] = useState<
-        ViewportState | undefined
-    >(undefined);
-    const [overlays, setOverlays] = useState<OverlayRect[]>([]);
-    // Lock-engaged: whether the clear button is disabled (separate from metadata persistence)
-    const [lockEngaged, setLockEngaged] = useState(false);
-    const [snackOpen, setSnackOpen] = useState(false);
-    const pendingImageId = useRef<number | null>(null);
-    const pendingViewport = useRef<ViewportState | undefined>(undefined);
-    const pendingOverlays = useRef<OverlayRect[] | undefined>(undefined);
-    const uncategorizedLoaded = useRef(false);
-    // Track the latest known image version independently from selectedImage
-    // to avoid stale-version 409s when clearing overlays after locking
-    // (lock intentionally does NOT update selectedImage to avoid viewer remount).
-    const latestVersionRef = useRef<number>(0);
-    // Track the latest known metadata independently from selectedImage so that
-    // successive metadata-modifying operations (lock, canvas annotations, clear)
-    // don't clobber each other's fields.  Initialised from selectedImage and
-    // updated after every successful PATCH.
-    // undefined = not yet initialised (use selectedImage); null/object = latest known server state
-    const latestMetadataRef = useRef<
-        Record<string, unknown> | null | undefined
-    >(undefined);
-    // Debounce timer for canvas annotation saves to avoid 409 version conflicts
-    const canvasSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-        null,
-    );
-    const canvasSaveInFlightRef = useRef(false);
-    const pendingCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null);
-    /** Always-current annotations last passed to handleCanvasAnnotationsChange.
-     *  Used by flushCanvasAnnotations to avoid reading stale React state. */
-    const latestCanvasAnnotationsRef = useRef<CanvasAnnotation[] | null>(null);
-    // Track which image ID the current in-flight save targets so stale completions
-    // don't overwrite refs after an image change
-    const saveTargetImageIdRef = useRef<number | null>(null);
-
+    const [errorSnack, setErrorSnack] = useState<string | null>(null);
+    const [warnSnack, setWarnSnack] = useState<string | null>(null);
+    const [moveSnack, setMoveSnack] = useState<{
+        message: string;
+        onUndo: () => void;
+    } | null>(null);
     // Report issue modal state
     const [reportIssueOpen, setReportIssueOpen] = useState(false);
 
@@ -244,338 +146,154 @@ export default function App() {
     const [backupVersion, setBackupVersion] = useState<string | null>(null);
     const [frontendVersion, setFrontendVersion] = useState<string | null>(null);
 
-    // Image processing tracking state (supports up to 5 concurrent jobs)
-    const MAX_PROCESSING_JOBS = 5;
-    interface ProcessingJob {
-        id: number;
-        filename: string;
-        status:
-            | "uploading"
-            | "processing"
-            | "importing"
-            | "completed"
-            | "failed";
-        kind: "image" | "bulk-import";
-        errorMessage?: string;
-        imageId?: number;
-        bulkImportJobId?: number;
-        totalCount?: number;
-        completedCount?: number;
-        failedCount?: number;
-        errors?: Array<{ filename: string; error: string }> | null;
-        /** Server-reported progress (0–100). */
-        serverProgress: number;
-        /** File size in bytes — used for client-side progress estimation. */
-        fileSize: number;
-        /** Timestamp (ms) when the job was first added. */
-        startedAt: number;
-        /** Server-reported status message describing the current phase. */
-        statusMessage?: string;
-        /** Upload progress fraction (0–1), only for "uploading" status. */
-        uploadProgress?: number;
-        /** Temporary ID assigned during upload (before sourceImageId is known). */
-        uploadId?: number;
-    }
-    const [processingJobs, setProcessingJobs] = useState<ProcessingJob[]>([]);
-    const processingPollRefs = useRef<Map<number, PollHandle>>(new Map());
-    const bulkImportPollRefs = useRef<
-        Map<number, ReturnType<typeof setInterval>>
-    >(new Map());
+    // Browse data (categories, images, programs, background refresh)
+    const {
+        categories,
+        categoriesLoading,
+        uncategorizedImages,
+        uncategorizedLoaded,
+        programs,
+        loadCategories,
+        loadUncategorizedImages,
+        loadPrograms,
+        refreshCategories,
+        refreshUncategorizedImages,
+        currentImages,
+        getPathRestriction,
+        ancestorProgramIds,
+        currentCategories,
+    } = useBrowseData({ path, currentUser });
 
-    // Server-reported progress stored in a ref to avoid re-triggering the
-    // polling useEffect when intermediate progress updates arrive.
-    const serverProgressRef = useRef<Map<number, number>>(new Map());
-
-    // Upload progress stored in a ref (same reason as above).
-    const uploadProgressRef = useRef<Map<number, number>>(new Map());
-
-    // Server-reported status message stored in a ref (same reason as above).
-    const serverStatusMessageRef = useRef<Map<number, string>>(new Map());
-
-    // Monotonic counter for replacement upload IDs (avoids collisions with
-    // UploadImageModal which uses Date.now()).
-    const nextReplaceUploadIdRef = useRef(2_000_000);
-    // Track the active replacement uploadId and which modal context started
-    // it so progress doesn't leak between the viewer and browse modals.
-    const activeReplaceUploadIdRef = useRef<{
-        uploadId: number;
-        context: "viewer" | "browse";
-    } | null>(null);
-
-    // Client-side progress interpolation — a simple tick counter that
-    // increments every 500 ms to trigger re-renders without mutating
-    // processingJobs (which would restart the polling useEffect).
-    const [, setProgressTick] = useState(0);
-    const interpolationTimerRef = useRef<ReturnType<typeof setInterval> | null>(
-        null,
+    // Image processing jobs (extracted to useProcessingJobs hook)
+    const setImagesVersionRef = useRef<React.Dispatch<React.SetStateAction<number>>>(() => {});
+    const stableSetImagesVersion = useCallback<React.Dispatch<React.SetStateAction<number>>>(
+        (v) => setImagesVersionRef.current(v), [],
     );
+    const processingJobsHook = useProcessingJobs({
+        fetchSourceImage,
+        fetchBulkImportJob,
+        fetchImage: apiFetchImage,
+        loadCategories,
+        loadUncategorizedImages,
+        selectedImageRef,
+        setSelectedImage,
+        setImagesVersion: stableSetImagesVersion,
+    });
+    const {
+        getDisplayProgress,
+        getStatusMessage,
+        getUploadProgress,
+        getVisibleJobs,
+        getReplaceUploadProgress,
+        addProcessingJob,
+        handleUploadStarted,
+        handleUploadProgress,
+        handleUploadFailed,
+        handleProcessingStarted,
+        handleBulkImportStarted,
+        dismissJob,
+        startReplaceUpload,
+        trackReplaceProgress,
+        transitionReplaceToProcessing,
+        failReplaceUpload,
+        removeReplaceUpload,
+        cancelReplace,
+        resetAll: resetProcessingJobs,
+    } = processingJobsHook;
 
-    /**
-     * Estimate total processing duration (ms) from file size.
-     * Rough heuristic: ~2 s base + ~0.5 s per MB.  Capped at 5 min.
-     */
-    const estimateDuration = useCallback((fileSize: number) => {
-        const mb = fileSize / (1024 * 1024);
-        return Math.min(2000 + mb * 500, 300_000);
-    }, []);
-
-    /**
-     * Compute the display progress for a processing job.
-     * With granular server-side progress (via pyvips eval signals), the
-     * server now reports fine-grained percentages during tile generation.
-     * We still use time-based interpolation to fill gaps between polls,
-     * but the server value is the primary source of truth.
-     */
-    const getDisplayProgress = useCallback(
-        (job: ProcessingJob): number => {
-            if (job.status === "completed") return 100;
-            if (job.status === "importing") return job.serverProgress;
-            const sp =
-                serverProgressRef.current.get(job.id) ?? job.serverProgress;
-            if (job.status === "failed") return sp;
-
-            const elapsed = Date.now() - job.startedAt;
-            const est = estimateDuration(job.fileSize);
-            // Time-based estimate: ramp from 0→90% over estimated duration
-            const timeFraction = Math.min(elapsed / est, 1);
-            const timeProgress = Math.round(timeFraction * 90);
-
-            // Always allow interpolation up to 75 % so the bar feels smooth
-            // even when only coarse milestones arrive.  Once the server
-            // reports ≥ 80 % (tiles done), raise the ceiling to 95 %.
-            const cap = sp >= 80 ? 95 : Math.max(sp + 5, 75);
-            const interpolated = Math.min(timeProgress, cap);
-
-            // Never go below what the server already reported
-            return Math.max(sp, interpolated);
-        },
-        [estimateDuration],
-    );
-
-    /** Return the current status message for a processing job. */
-    const getStatusMessage = useCallback((job: ProcessingJob): string => {
-        return (
-            serverStatusMessageRef.current.get(job.id) ??
-            job.statusMessage ??
-            ""
-        );
-    }, []);
+    // Shareable-URL state (extracted to useShareableImageState hook)
+    const {
+        setViewportState,
+        setOverlays,
+        lockEngaged,
+        setLockEngaged,
+        snackOpen,
+        setSnackOpen,
+        initialViewport,
+        initialOverlays,
+        handleViewportChange,
+        handleOverlaysChange,
+        copyShareLink,
+        clearImage,
+        clearPending,
+    } = useShareableImageState({
+        selectedImage,
+        categories,
+        categoriesLoading,
+        uncategorizedImages,
+        uncategorizedLoaded,
+        page,
+        path,
+        setPath,
+        setSelectedImage,
+    });
 
     // Search modal state
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchUsers, setSearchUsers] = useState<ApiUser[]>([]);
+    const [searchInitialQuery, setSearchInitialQuery] = useState<string | undefined>(undefined);
+    const [searchInitialTypeFilter, setSearchInitialTypeFilter] = useState<string | undefined>(undefined);
 
-    // Manage menu state
-    const [manageMenuAnchor, setManageMenuAnchor] =
-        useState<HTMLElement | null>(null);
+    // Initial program filter for ManagePage (set when navigating from search)
+    const [manageProgramFilter, setManageProgramFilter] = useState<string | undefined>(undefined);
+    const clearManageProgramFilter = useCallback(() => setManageProgramFilter(undefined), []);
 
-    // Announcement modal state (for Manage menu)
-    const [annModalOpen, setAnnModalOpen] = useState(false);
-    const [annMessage, setAnnMessage] = useState("");
-    const [annEnabled, setAnnEnabled] = useState(false);
-    const [annDraftMessage, setAnnDraftMessage] = useState("");
-    const [annDraftEnabled, setAnnDraftEnabled] = useState(false);
-    const [annSaving, setAnnSaving] = useState(false);
-    const [annError, setAnnError] = useState<string | null>(null);
+    // Initial user to edit on PeoplePage (set when navigating from search)
+    const [editUserId, setEditUserId] = useState<number | null>(null);
+    const clearEditUserId = useCallback(() => setEditUserId(null), []);
 
     // Program management modal state (for Manage menu)
     const [programModalOpen, setProgramModalOpen] = useState(false);
 
-    // Move category dialog state
-    const [moveCatOpen, setMoveCatOpen] = useState(false);
-    const [movingCategory, setMovingCategory] = useState<Category | null>(null);
-
-    // Image edit modal state (for viewer page)
-    const [imageEditOpen, setImageEditOpen] = useState(false);
     // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
     const [canvasEditActive, setCanvasEditActive] = useState(false);
+    const [imagesVersion, setImagesVersion] = useState(0);
+    setImagesVersionRef.current = setImagesVersion;
 
-    // Image edit modal state (for browse-view ellipsis icon)
-    const [browseEditImage, setBrowseEditImage] = useState<ImageItem | null>(
-        null,
-    );
+    // Refs for the popstate handler (always reflect latest state)
+    const categoriesRef = useRef(categories);
+    categoriesRef.current = categories;
+    const uncategorizedImagesRef = useRef(uncategorizedImages);
+    uncategorizedImagesRef.current = uncategorizedImages;
 
-    // Jobs visible as snackbars — hide "uploading"/"failed" jobs only while
-    // the modal that owns them is open (that modal shows its own progress).
-    // Upload-modal jobs (uploadId from Date.now()) are hidden when uploadOpen.
-    // Replacement jobs (uploadId from nextReplaceUploadIdRef, < 1 billion)
-    // are hidden when the edit modal that started them is open.
-    const visibleJobs = useMemo(
-        () =>
-            processingJobs.filter((j) => {
-                if (
-                    !(j.status === "uploading" || j.status === "failed") ||
-                    j.uploadId == null
-                )
-                    return true;
-                const isReplaceJob = j.uploadId < 1_000_000_000;
-                if (isReplaceJob)
-                    return !(imageEditOpen || browseEditImage != null);
-                return !uploadOpen;
-            }),
-        [processingJobs, uploadOpen, imageEditOpen, browseEditImage],
-    );
+    // Browser history integration for back/forward navigation
+    const handlePopState = useCallback(
+        (popPage: string, catIds: number[], imageId: number | null) => {
+            const validPage = (
+                ["browse", "manage", "people", "admin"].includes(popPage)
+                    ? popPage
+                    : "browse"
+            ) as Page;
+            setPage(validPage);
 
-    // User profile popover + edit modal state
-    const avatarRef = useRef<HTMLButtonElement>(null);
-    const [profileOpen, setProfileOpen] = useState(false);
-    const [editModalOpen, setEditModalOpen] = useState(false);
-    const [programs, setPrograms] = useState<Program[]>([]);
-
-    // Build ApiUser shape from currentUser for AddEditPersonModal
-    const currentApiUser: ApiUser | null = currentUser
-        ? {
-              id: currentUser.id,
-              name: currentUser.name,
-              email: currentUser.email,
-              role: currentUser.role,
-              program_ids: currentUser.program_ids ?? [],
-              program_names: currentUser.program_names ?? [],
-              last_access: currentUser.lastAccess ?? null,
-              metadata_extra: null,
-              created_at: "",
-              updated_at: "",
-          }
-        : null;
-
-    // Start polling for each new processing job.  The per-job state machine
-    // (fetch -> dispatch -> reschedule / cancel) lives in `pollProcessingJob`;
-    // this effect only tracks which jobs have an active handle.
-    useEffect(() => {
-        const refs = processingPollRefs.current;
-
-        for (const job of processingJobs) {
-            if (job.status !== "processing") continue; // only poll active jobs
-            if (refs.has(job.id)) continue; // already polling
-
-            const handle = pollProcessingJob(job.id, {
-                fetchStatus: fetchSourceImage,
-                onCompleted: async (imageId) => {
-                    // Refresh data FIRST so the new image is already in the
-                    // category tree when the "View image" snackbar link appears.
-                    await Promise.all([
-                        loadCategories(),
-                        loadUncategorizedImages(),
-                    ]);
-                    // If the completed job is for the currently-viewed image,
-                    // refresh it so the viewer picks up new tile URLs.
-                    const current = selectedImageRef.current;
-                    if (imageId != null && current && current.id === imageId) {
-                        try {
-                            const fresh = await apiFetchImage(imageId);
-                            setSelectedImage({
-                                id: fresh.id,
-                                name: fresh.name,
-                                thumb: fresh.thumb,
-                                tileSources: fresh.tile_sources,
-                                categoryId: fresh.category_id,
-                                copyright: fresh.copyright,
-                                note: fresh.note,
-                                programIds: fresh.program_ids,
-                                active: fresh.active,
-                                version: fresh.version,
-                                createdAt: fresh.created_at,
-                                updatedAt: fresh.updated_at,
-                                metadataExtra: fresh.metadata_extra,
-                                width: fresh.width,
-                                height: fresh.height,
-                                fileSize: fresh.file_size,
-                            });
-                        } catch {
-                            // Non-critical; viewer will show stale data
-                        }
-                    }
-                    refs.delete(job.id);
-                    setProcessingJobs((prev) =>
-                        prev.map((j) =>
-                            j.id === job.id
-                                ? {
-                                      ...j,
-                                      status: "completed" as const,
-                                      serverProgress: 100,
-                                      imageId: imageId ?? undefined,
-                                  }
-                                : j,
-                        ),
-                    );
-                },
-                onFailed: (progress, errorMessage) => {
-                    refs.delete(job.id);
-                    setProcessingJobs((prev) =>
-                        prev.map((j) =>
-                            j.id === job.id
-                                ? {
-                                      ...j,
-                                      status: "failed" as const,
-                                      serverProgress: progress,
-                                      errorMessage: errorMessage || undefined,
-                                  }
-                                : j,
-                        ),
-                    );
-                },
-                onProgress: (progress, statusMessage) => {
-                    serverProgressRef.current.set(job.id, progress);
-                    if (statusMessage) {
-                        serverStatusMessageRef.current.set(
-                            job.id,
-                            statusMessage,
-                        );
-                    }
-                },
-            });
-            refs.set(job.id, handle);
-        }
-
-        // Cancel handles for jobs that were removed or transitioned away
-        // from "processing" (e.g. user dismissed a completed snackbar).
-        for (const [id, handle] of refs) {
-            if (
-                !processingJobs.some(
-                    (j) => j.id === id && j.status === "processing",
-                )
-            ) {
-                handle.cancel();
-                refs.delete(id);
+            if (validPage !== "browse") {
+                setPath([]);
+                setSelectedImage(null);
+                setViewportState(undefined);
+                setOverlays([]);
+                return;
             }
-        }
 
-        return () => {
-            for (const [, handle] of refs) {
-                handle.cancel();
-            }
-            refs.clear();
-        };
-    }, [processingJobs]); // eslint-disable-line react-hooks/exhaustive-deps
+            const catPath = resolveCategoryPath(
+                categoriesRef.current,
+                catIds,
+            );
+            setPath(catPath);
 
-    useEffect(() => {
-        const refs = bulkImportPollRefs.current;
-
-        for (const job of processingJobs) {
-            if (job.status !== "importing" || job.bulkImportJobId == null)
-                continue;
-            if (refs.has(job.bulkImportJobId)) continue;
-
-            const interval = setInterval(async () => {
-                try {
-                    const updated = await fetchBulkImportJob(
-                        job.bulkImportJobId!,
+            if (imageId != null) {
+                const result = findImageInTree(
+                    categoriesRef.current,
+                    imageId,
+                );
+                if (result) {
+                    setSelectedImage(result.image);
+                    setPath(result.path);
+                } else {
+                    const uncatImg = uncategorizedImagesRef.current.find(
+                        (img) => img.id === imageId,
                     );
-                    updateBulkImportJob(updated, job.filename, job.fileSize);
-                    if (
-                        updated.status === "completed" ||
-                        updated.status === "failed"
-                    ) {
-                        const ref = refs.get(updated.id);
-                        if (ref) {
-                            clearInterval(ref);
-                            refs.delete(updated.id);
-                        }
-                        loadCategories();
-                        loadUncategorizedImages();
-                    }
-                } catch {
-                    // ignore poll errors
+                    setSelectedImage(uncatImg ?? null);
+                    if (uncatImg) setPath([]);
                 }
             }, 2000);
             refs.set(job.bulkImportJobId, interval);
@@ -596,119 +314,95 @@ export default function App() {
             for (const [, interval] of refs) {
                 clearInterval(interval);
             }
-            refs.clear();
-        };
-    }, [processingJobs]); // eslint-disable-line react-hooks/exhaustive-deps
+            setViewportState(undefined);
+            setOverlays([]);
+        },
+        [setViewportState, setOverlays],
+    );
 
-    // Interpolation timer: triggers re-render every 500 ms so the progress bar
-    // advances smoothly between server polls while any job is processing.
-    // Uses a tick counter instead of mutating processingJobs to avoid
-    // re-triggering the polling useEffect.
+    const { pushNavState } = useNavigationHistory(handlePopState);
+
+    // Announcement modal state (load, draft, save) — extracted to useAnnouncementModal hook
+    const {
+        announcement,
+        annModalOpen,
+        setAnnModalOpen,
+        annDraftMessage,
+        setAnnDraftMessage,
+        annDraftEnabled,
+        setAnnDraftEnabled,
+        annSaving,
+        annError,
+        setAnnError,
+        openAnnModal,
+        handleAnnSave,
+    } = useAnnouncementModal();
+
+    // User profile popover + edit modal state — extracted to useUserProfile hook
+    const {
+        avatarRef,
+        profileOpen,
+        setProfileOpen,
+        editModalOpen,
+        setEditModalOpen,
+        currentApiUser,
+        openEditProfile,
+        handleSaveProfile,
+    } = useUserProfile({
+        currentUser,
+        setErrorSnack,
+        loadPrograms,
+    });
+
+    // Image edit/save/replace/delete/visibility callbacks (extracted to useImageActions hook)
+    const {
+        imageEditOpen,
+        setImageEditOpen,
+        browseEditImage,
+        setBrowseEditImage,
+        selectedApiImage,
+        browseApiImage,
+        toggleImageVisibility,
+        handleSaveBrowseImage,
+        handleSaveViewerImage,
+        handleReplaceViewerImage,
+        handleReplaceBrowseImage,
+        handleDeleteViewerImage,
+        handleDeleteBrowseImage,
+    } = useImageActions({
+        categories,
+        uncategorizedImages,
+        selectedImage,
+        setSelectedImage,
+        setPath,
+        loadCategories,
+        loadUncategorizedImages,
+        refreshCategories,
+        setErrorSnack,
+        clearImage,
+        startReplaceUpload,
+        trackReplaceProgress,
+        transitionReplaceToProcessing,
+        removeReplaceUpload,
+        failReplaceUpload,
+    });
+
+    // Reset navigation state when user identity changes (login/logout/switch).
+    // Track previous user so we only clear pending shared-link refs on actual
+    // user switches (logout or account change), not on the initial null→user
+    // auth transition which must preserve URL-parsed pending state.
+    const prevUserRef = useRef(currentUser);
     useEffect(() => {
-        const hasActiveJob = processingJobs.some(
-            (j) =>
-                j.status === "processing" ||
-                j.status === "uploading" ||
-                j.status === "importing",
-        );
-        if (hasActiveJob && !interpolationTimerRef.current) {
-            interpolationTimerRef.current = setInterval(() => {
-                setProgressTick((t) => t + 1);
-            }, 500);
-        }
-        if (!hasActiveJob && interpolationTimerRef.current) {
-            clearInterval(interpolationTimerRef.current);
-            interpolationTimerRef.current = null;
-        }
-        return () => {
-            if (interpolationTimerRef.current) {
-                clearInterval(interpolationTimerRef.current);
-                interpolationTimerRef.current = null;
-            }
-        };
-    }, [processingJobs]);
-
-    // Load announcement (works for both logged-in and login page)
-    const loadAnnouncement = useCallback(async () => {
-        try {
-            const ann = await fetchAnnouncement();
-            setAnnouncement(ann.enabled ? ann.message : "");
-            setAnnMessage(ann.message);
-            setAnnEnabled(ann.enabled);
-        } catch {
-            // Silently ignore — announcement is non-critical
-        }
-    }, []);
-
-    useEffect(() => {
-        loadAnnouncement();
-    }, [loadAnnouncement]);
-
-    // On mount, parse URL search params for shareable link state
-    useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const imgId = params.get("image");
-        if (imgId) {
-            const parsedId = Number(imgId);
-            if (!Number.isNaN(parsedId)) {
-                pendingImageId.current = parsedId;
-                const z = params.get("zoom");
-                const px = params.get("x");
-                const py = params.get("y");
-                if (z && px && py) {
-                    const zoom = parseFloat(z);
-                    const x = parseFloat(px);
-                    const y = parseFloat(py);
-                    if (
-                        !Number.isNaN(zoom) &&
-                        !Number.isNaN(x) &&
-                        !Number.isNaN(y)
-                    ) {
-                        const rot = params.get("rotation");
-                        const rotation = rot ? parseFloat(rot) : undefined;
-                        pendingViewport.current = {
-                            zoom,
-                            x,
-                            y,
-                            rotation:
-                                rotation && !Number.isNaN(rotation)
-                                    ? rotation
-                                    : undefined,
-                        };
-                    }
-                }
-                // Parse overlay rectangles (ov0..ov14) — format: x,y,w,h
-                const parsedOverlays: OverlayRect[] = [];
-                for (let i = 0; i < MAX_SHARE_OVERLAYS; i++) {
-                    const ov = params.get(`ov${i}`);
-                    if (!ov) continue;
-                    const parts = ov.split(",").map(Number);
-                    if (
-                        parts.length === 4 &&
-                        parts.every((n) => !Number.isNaN(n))
-                    ) {
-                        parsedOverlays.push({
-                            x: parts[0],
-                            y: parts[1],
-                            w: parts[2],
-                            h: parts[3],
-                        });
-                    }
-                }
-                if (parsedOverlays.length > 0) {
-                    pendingOverlays.current = parsedOverlays;
-                }
-            }
-        }
-    }, []);
-
-    // Reset navigation state when user identity changes (login/logout/switch)
-    useEffect(() => {
+        const prevUser = prevUserRef.current;
+        prevUserRef.current = currentUser;
         setPage("browse");
         setPath([]);
         setSelectedImage(null);
         setViewportState(undefined);
         setOverlays([]);
+        if (prevUser != null && prevUser !== currentUser) {
+            clearPending();
+        }
         setProfileOpen(false);
         setEditModalOpen(false);
         setImageEditOpen(false);
@@ -729,12 +423,12 @@ export default function App() {
 
     // Load users for search when modal opens (admin/instructor only)
     useEffect(() => {
-        if (searchOpen && canManageUsers) {
+        if (searchOpen && canEditContent) {
             fetchUsers()
                 .then(setSearchUsers)
                 .catch(() => setSearchUsers([]));
         }
-    }, [searchOpen, canManageUsers]);
+    }, [searchOpen, canEditContent]);
 
     // Load deployed component versions for the footer (admin only).
     // Backend+backup come from ``/api/admin/version`` (admin-guarded on
@@ -775,114 +469,28 @@ export default function App() {
             });
     }, [canManageUsers]);
 
-    const loadCategories = useCallback(async () => {
-        try {
-            setCategoriesLoading(true);
-            const tree = await fetchCategoryTree();
-            setCategories(tree.map(apiTreeToCategory));
-        } catch (err) {
-            console.error("Failed to load categories", err);
-        } finally {
-            setCategoriesLoading(false);
-        }
-    }, []);
-
-    const loadUncategorizedImages = useCallback(async () => {
-        try {
-            const imgs = await fetchUncategorizedImages();
-            setUncategorizedImages(
-                imgs.map((img: ApiImage) => ({
-                    id: img.id,
-                    name: img.name,
-                    thumb: img.thumb,
-                    tileSources: img.tile_sources,
-                    categoryId: img.category_id,
-                    copyright: img.copyright,
-                    note: img.note,
-                    programIds: img.program_ids,
-                    active: img.active,
-                    version: img.version,
-                    createdAt: img.created_at,
-                    updatedAt: img.updated_at,
-                    metadataExtra: img.metadata_extra,
-                    width: img.width,
-                    height: img.height,
-                    fileSize: img.file_size,
-                })),
-            );
-            uncategorizedLoaded.current = true;
-        } catch (err) {
-            console.error("Failed to load uncategorized images", err);
-            uncategorizedLoaded.current = true;
-        }
-    }, []);
-
-    const loadPrograms = useCallback(async () => {
-        try {
-            const p = await apiFetchPrograms();
-            setPrograms(
-                p.map((pg) => ({
-                    id: pg.id,
-                    name: pg.name,
-                    created_at: pg.created_at,
-                    updated_at: pg.updated_at,
-                })),
-            );
-        } catch {
-            // Silently ignore — programs are non-critical for initial load
-        }
-    }, []);
-
-    // Announcement modal handlers (for Manage menu)
-    const openAnnModal = useCallback(() => {
-        setAnnDraftMessage(annMessage);
-        setAnnDraftEnabled(annEnabled);
-        setAnnError(null);
-        setAnnModalOpen(true);
-    }, [annMessage, annEnabled]);
-
-    const handleAnnSave = useCallback(async () => {
-        setAnnSaving(true);
-        try {
-            const updated = await updateAnnouncement({
-                message: annDraftMessage,
-                enabled: annDraftEnabled,
-            });
-            setAnnMessage(updated.message);
-            setAnnEnabled(updated.enabled);
-            setAnnModalOpen(false);
-            loadAnnouncement();
-        } catch (err) {
-            setAnnError(
-                err instanceof Error
-                    ? err.message
-                    : "Failed to update announcement",
-            );
-        } finally {
-            setAnnSaving(false);
-        }
-    }, [annDraftMessage, annDraftEnabled, loadAnnouncement]);
-
     // Program management handlers (for Manage menu)
     const handleAddProgram = useCallback(
-        async (name: string) => {
+        async (name: string, oidcGroup: string | null) => {
             try {
-                await createProgram({ name });
+                await createProgram({ name, oidc_group: oidcGroup });
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to add program", err);
+                setErrorSnack(userMessage(err, "Failed to add program."));
             }
         },
         [loadPrograms],
     );
 
     const handleEditProgram = useCallback(
-        async (id: number, name: string) => {
+        async (id: number, name: string, oidcGroup: string | null) => {
             try {
-                await updateProgram(id, { name });
+                await updateProgram(id, { name, oidc_group: oidcGroup });
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to edit program", err);
+                setErrorSnack(userMessage(err, "Failed to edit program."));
             }
         },
         [loadPrograms],
@@ -895,6 +503,7 @@ export default function App() {
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to delete program", err);
+                setErrorSnack(userMessage(err, "Failed to delete program."));
             }
         },
         [loadPrograms],
@@ -1174,434 +783,116 @@ export default function App() {
     }, [saveCanvasAnnotations]);
 
     // Build measurement config from the selected image's metadata
-    const selectedImageMeasurement = useMemo(():
-        | MeasurementConfig
-        | undefined => {
-        const meta = selectedImage?.metadataExtra;
-        if (!meta) return undefined;
-        const scale =
-            typeof meta.measurement_scale === "number"
-                ? meta.measurement_scale
-                : undefined;
-        const unit =
-            typeof meta.measurement_unit === "string"
-                ? meta.measurement_unit
-                : undefined;
-        if (!scale && !unit) return undefined;
-        return { scale, unit };
-    }, [selectedImage]);
-
-    // Lock overlays: persist to image metadata_extra and engage lock.
-    // Refreshes category tree so re-navigation reflects the update;
-    // does NOT call setSelectedImage to avoid triggering a viewer remount.
-    // Flushes any pending canvas annotation save first to prevent race conditions.
-    const handleLockOverlays = useCallback(
-        async (rects: OverlayRect[]) => {
-            if (!selectedImage) return;
-            // Flush any pending canvas annotation save to avoid version conflict
-            await flushCanvasAnnotations();
-            try {
-                const currentVersion =
-                    latestVersionRef.current || selectedImage.version;
-                const updated = await apiUpdateImage(
-                    selectedImage.id,
-                    { metadata_extra_merge: { locked_overlays: rects } },
-                    currentVersion,
-                );
-                latestVersionRef.current = updated.version;
-                latestMetadataRef.current = updated.metadata_extra ?? {};
-                setLockEngaged(true);
-                await loadCategories();
-                loadUncategorizedImages();
-            } catch (err) {
-                console.error("Failed to lock overlays", err);
-            }
-        },
-        [
-            selectedImage,
-            flushCanvasAnnotations,
-            loadCategories,
-            loadUncategorizedImages,
-        ],
-    );
-
-    // Unlock: only disengage the lock UI (re-enable clear button).
-    // Does NOT remove persisted overlays from metadata.
-    const handleUnlockOverlays = useCallback(() => {
-        setLockEngaged(false);
-    }, []);
-
-    // Clear overlays: also remove from metadata if they were persisted.
-    // Refreshes category tree; does NOT call setSelectedImage.
-    // No hasLockedOverlays guard — selectedImage may be stale after a lock
-    // in the same session (we intentionally skip setSelectedImage on lock).
-    // Flushes any pending canvas annotation save first to prevent race conditions.
-    const handleClearOverlays = useCallback(async () => {
-        if (!selectedImage) return;
-        // Flush any pending canvas annotation save to avoid version conflict
-        await flushCanvasAnnotations();
-        try {
-            const currentVersion =
-                latestVersionRef.current || selectedImage.version;
-            const updated = await apiUpdateImage(
-                selectedImage.id,
-                { metadata_extra_merge: { locked_overlays: null } },
-                currentVersion,
-            );
-            latestVersionRef.current = updated.version;
-            latestMetadataRef.current = updated.metadata_extra ?? {};
-            await loadCategories();
-            loadUncategorizedImages();
-        } catch (err) {
-            console.error("Failed to clear locked overlays", err);
-        }
-    }, [
+    // Overlay persistence (extracted to useOverlayPersistence hook)
+    const {
+        selectedImageMeasurement,
+        handleLockOverlays,
+        handleUnlockOverlays,
+        handleClearOverlays,
+    } = useOverlayPersistence({
         selectedImage,
         flushCanvasAnnotations,
+        latestVersionRef,
+        latestMetadataRef,
         loadCategories,
         loadUncategorizedImages,
-    ]);
+        setLockEngaged,
+        setErrorSnack,
+    });
 
-    const copyShareLink = useCallback(() => {
-        const url = window.location.href;
-        const fallbackCopy = () => {
-            const input = document.createElement("input");
-            input.value = url;
-            document.body.appendChild(input);
-            input.select();
-            document.execCommand("copy");
-            document.body.removeChild(input);
-            setSnackOpen(true);
-        };
-        if (navigator.clipboard?.writeText) {
-            navigator.clipboard
-                .writeText(url)
-                .then(() => {
-                    setSnackOpen(true);
-                })
-                .catch(fallbackCopy);
-        } else {
-            fallbackCopy();
-        }
-    }, []);
-
-    // Resolve the live children/images from the categories state tree
-    // so newly added categories appear immediately.
-    const resolve = useCallback((): { cats: Category[]; imgs: ImageItem[] } => {
-        let node = categories;
-        for (const segment of path) {
-            const found = node.find((c) => c.id === segment.id);
-            if (!found) return { cats: [], imgs: [] };
-            node = found.children;
-            if (segment === path[path.length - 1]) {
-                return { cats: found.children, imgs: found.images };
-            }
-        }
-        return { cats: node, imgs: [] };
-    }, [categories, path]);
-
-    const { cats: resolvedCategories, imgs: currentImages } = resolve();
-
-    // Filter out hidden categories for students in browse mode
     const isStudent = currentUser?.role === "student";
-    const currentCategories = isStudent
-        ? resolvedCategories.filter((c) => c.status !== "hidden")
-        : resolvedCategories;
 
-    const clearImage = useCallback(() => {
-        setSelectedImage(null);
-        setViewportState(undefined);
-        setOverlays([]);
-    }, []);
+    // Category CRUD, reorder, move, drag-and-drop (extracted to useCategoryActions hook)
+    const {
+        moveCatOpen,
+        setMoveCatOpen,
+        movingCategory,
+        setMovingCategory,
+        editCategoryContext,
+        addCategoryInline,
+        deleteCategoryInline,
+        editCategoryInline,
+        toggleCategoryVisibility,
+        reorderCategoriesInline,
+        reorderImagesInline,
+        handleMoveCategory,
+        handleRequestMoveCategory,
+        handleDropImageOnCategory,
+        handleDropCategoryOnCategory,
+        handleSetCardImage,
+    } = useCategoryActions({
+        categories,
+        uncategorizedImages,
+        loadCategories,
+        loadUncategorizedImages,
+        currentCategories,
+        ancestorProgramIds,
+        getPathRestriction,
+        path,
+        setPath,
+        editNameCategory,
+        setErrorSnack,
+        setMoveSnack,
+    });
 
-    const navigateToCategory = (cat: Category) => {
+    const visibleJobs = getVisibleJobs({
+        uploadOpen,
+        manageUploadOpen,
+        imageEditOpen,
+        browseEditImage,
+    });
+
+    const handleImageClick = useCallback(
+        (img: ImageItem) => {
+            setSelectedImage(img);
+            pushNavState(
+                "browse",
+                pathRef.current.map((c) => c.id),
+                img.id,
+            );
+        },
+        [pushNavState],
+    );
+
+    const navigateToCategory = useCallback((cat: Category) => {
         setPath((prev) => [...prev, cat]);
-    };
-
-    const navigateToDepth = (depth: number) => {
-        setPath((prev) => prev.slice(0, depth));
-    };
-
-    const addCategoryInline = useCallback(
-        async (
-            label: string,
-            parentId: number | null,
-            programIds?: number[],
-        ): Promise<number | void> => {
-            const body: Parameters<typeof apiCreateCategory>[0] = {
-                label,
-                parent_id: parentId,
-            };
-            if (programIds !== undefined) body.program_ids = programIds;
-            const created = await apiCreateCategory(body);
-            await loadCategories();
-            loadUncategorizedImages();
-            return created.id;
-        },
-        [loadCategories, loadUncategorizedImages],
-    );
-
-    const deleteCategoryInline = useCallback(
-        async (categoryId: number) => {
-            try {
-                await apiDeleteCategory(categoryId);
-                // Clear path segments that reference the deleted category
-                setPath((prev) => {
-                    const idx = prev.findIndex((seg) => seg.id === categoryId);
-                    return idx >= 0 ? prev.slice(0, idx) : prev;
-                });
-                await loadCategories();
-                loadUncategorizedImages();
-            } catch (err) {
-                console.error("Failed to delete category", err);
-            }
-        },
-        [loadCategories, loadUncategorizedImages],
-    );
-
-    const editCategoryInline = useCallback(
-        async (
-            categoryId: number,
-            newLabel: string,
-            programIds?: number[],
-        ) => {
-            const body: Parameters<typeof apiUpdateCategory>[1] = {
-                label: newLabel,
-            };
-            if (programIds !== undefined) body.program_ids = programIds;
-            await apiUpdateCategory(categoryId, body);
-            await loadCategories();
-        },
-        [loadCategories],
-    );
-
-    const toggleCategoryVisibility = useCallback(
-        async (categoryId: number, hidden: boolean) => {
-            try {
-                await apiUpdateCategory(categoryId, {
-                    status: hidden ? "hidden" : "active",
-                });
-                await loadCategories();
-            } catch (err) {
-                console.error("Failed to toggle category visibility", err);
-            }
-        },
-        [loadCategories],
-    );
-
-    const reorderCategoriesInline = useCallback(
-        async (
-            items: Array<{
-                id: number;
-                parent_id: number | null;
-                sort_order: number;
-            }>,
-        ) => {
-            try {
-                await apiReorderCategories(items);
-                await loadCategories();
-            } catch (err) {
-                console.error("Failed to reorder categories", err);
-            }
-        },
-        [loadCategories],
-    );
-
-    const handleMoveCategory = useCallback(
-        async (categoryId: number, newParentId: number | null) => {
-            try {
-                await apiUpdateCategory(categoryId, { parent_id: newParentId });
-                setMoveCatOpen(false);
-                setMovingCategory(null);
-                await loadCategories();
-            } catch (err) {
-                console.error("Failed to move category", err);
-            }
-        },
-        [loadCategories],
-    );
-
-    const handleRequestMoveCategory = useCallback((cat: Category) => {
-        setMovingCategory(cat);
-        setMoveCatOpen(true);
     }, []);
 
-    const handleSetCardImage = useCallback(
-        async (categoryId: number, imageId: number | null) => {
-            try {
-                // Find existing metadata so we merge rather than overwrite
-                const findCat = (cats: Category[]): Category | null => {
-                    for (const c of cats) {
-                        if (c.id === categoryId) return c;
-                        const found = findCat(c.children);
-                        if (found) return found;
-                    }
-                    return null;
-                };
-                const existing = findCat(categories)?.metadataExtra ?? {};
-                await apiUpdateCategory(categoryId, {
-                    metadata_extra: { ...existing, card_image_id: imageId },
-                });
-                await loadCategories();
-            } catch (err) {
-                console.error("Failed to set card image", err);
-            }
+    const handleCategoryTileClick = useCallback(
+        (cat: Category) => {
+            navigateToCategory(cat);
+            pushNavState(
+                "browse",
+                [...path.map((c) => c.id), cat.id],
+            );
         },
-        [loadCategories, categories],
+        [navigateToCategory, path, pushNavState],
     );
 
-    // Build ApiImage shape from selectedImage for EditImageModal on viewer page
-    const selectedApiImage: ApiImage | null = selectedImage
-        ? {
-              id: selectedImage.id,
-              name: selectedImage.name,
-              thumb: selectedImage.thumb,
-              tile_sources: selectedImage.tileSources,
-              category_id: selectedImage.categoryId ?? null,
-              copyright: selectedImage.copyright ?? null,
-              note: selectedImage.note ?? null,
-              program_ids: selectedImage.programIds,
-              active: selectedImage.active,
-              version: selectedImage.version,
-              metadata_extra: selectedImage.metadataExtra ?? null,
-              width: selectedImage.width ?? null,
-              height: selectedImage.height ?? null,
-              file_size: selectedImage.fileSize ?? null,
-              created_at: selectedImage.createdAt ?? "",
-              updated_at: selectedImage.updatedAt ?? "",
-          }
-        : null;
-
-    // Build ApiImage shape from browseEditImage for EditImageModal on browse page
-    const browseApiImage: ApiImage | null = browseEditImage
-        ? {
-              id: browseEditImage.id,
-              name: browseEditImage.name,
-              thumb: browseEditImage.thumb,
-              tile_sources: browseEditImage.tileSources,
-              category_id: browseEditImage.categoryId ?? null,
-              copyright: browseEditImage.copyright ?? null,
-              note: browseEditImage.note ?? null,
-              program_ids: browseEditImage.programIds,
-              active: browseEditImage.active,
-              version: browseEditImage.version,
-              metadata_extra: browseEditImage.metadataExtra ?? null,
-              width: browseEditImage.width ?? null,
-              height: browseEditImage.height ?? null,
-              file_size: browseEditImage.fileSize ?? null,
-              created_at: browseEditImage.createdAt ?? "",
-              updated_at: browseEditImage.updatedAt ?? "",
-          }
-        : null;
-
-    const handleSaveBrowseImage = useCallback(
-        async (data: ImageFormData) => {
-            if (!browseEditImage) return;
-            try {
-                await apiUpdateImage(browseEditImage.id, data);
-                setBrowseEditImage(null);
-                await loadCategories();
-                loadUncategorizedImages();
-            } catch (err) {
-                console.error("Failed to update image", err);
-            }
-        },
-        [browseEditImage, loadCategories, loadUncategorizedImages],
-    );
-
-    const handleSaveViewerImage = useCallback(
-        async (data: ImageFormData) => {
-            if (!selectedImage) return;
-            try {
-                const updated = await apiUpdateImage(selectedImage.id, data);
-                setSelectedImage({
-                    id: updated.id,
-                    name: updated.name,
-                    thumb: updated.thumb,
-                    tileSources: updated.tile_sources,
-                    categoryId: updated.category_id,
-                    copyright: updated.copyright,
-                    note: updated.note,
-                    programIds: updated.program_ids,
-                    active: updated.active,
-                    version: updated.version,
-                    createdAt: updated.created_at,
-                    updatedAt: updated.updated_at,
-                    metadataExtra: updated.metadata_extra,
-                    width: updated.width,
-                    height: updated.height,
-                    fileSize: updated.file_size,
-                });
-                setImageEditOpen(false);
-                // Refresh categories and update breadcrumb path from the fresh tree
-                const freshTree = (await fetchCategoryTree()).map(
-                    apiTreeToCategory,
+    const handleFilesDropOnGrid = useCallback(
+        (files: File[]) => {
+            const accepted = files.filter(isAcceptedFile);
+            const rejected = files.length - accepted.length;
+            if (rejected > 0) {
+                setWarnSnack(
+                    `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
                 );
-                setCategories(freshTree);
-                if (updated.category_id != null) {
-                    const newPath = findCategoryPath(
-                        freshTree,
-                        updated.category_id,
-                    );
-                    setPath(newPath ?? []);
-                } else {
-                    setPath([]);
-                }
-                loadUncategorizedImages();
-            } catch (err) {
-                console.error("Failed to update image", err);
             }
-        },
-        [selectedImage, loadUncategorizedImages],
-    );
-
-    const addProcessingJob = useCallback(
-        (sourceImageId: number, filename: string, fileSize: number) => {
-            setProcessingJobs((prev) => {
-                if (
-                    prev.filter(
-                        (j) =>
-                            j.status === "uploading" ||
-                            j.status === "processing" ||
-                            j.status === "importing",
-                    ).length >= MAX_PROCESSING_JOBS
-                )
-                    return prev;
-                if (prev.some((j) => j.id === sourceImageId)) return prev;
-                return [
-                    ...prev,
-                    {
-                        id: sourceImageId,
-                        filename,
-                        status: "processing" as const,
-                        kind: "image" as const,
-                        serverProgress: 0,
-                        fileSize,
-                        startedAt: Date.now(),
-                    },
-                ];
-            });
+            if (accepted.length > 0) {
+                setDroppedFiles(accepted);
+                setUploadOpen(true);
+            }
         },
         [],
     );
 
-    const updateBulkImportJob = useCallback(
-        (
-            bulkJob: ApiBulkImportJob,
-            filename: string,
-            fileSize: number,
-            uploadId?: number,
-        ) => {
-            const done = bulkJob.completed_count + bulkJob.failed_count;
-            const progress =
-                bulkJob.total_count > 0
-                    ? Math.round((done / bulkJob.total_count) * 100)
-                    : 0;
-            setProcessingJobs((prev) => {
-                const existing = prev.find(
-                    (j) =>
-                        j.bulkImportJobId === bulkJob.id ||
-                        (uploadId !== undefined && j.uploadId === uploadId),
+    const handleFilesDropOnCategory = useCallback(
+        (categoryId: number, files: File[]) => {
+            const accepted = files.filter(isAcceptedFile);
+            const rejected = files.length - accepted.length;
+            if (rejected > 0) {
+                setWarnSnack(
+                    `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
                 );
                 const status =
                     bulkJob.status === "completed"
@@ -1907,73 +1198,85 @@ export default function App() {
         [],
     );
 
-    const handleProcessingStarted = useCallback(
-        (
-            sourceImageId: number,
-            filename: string,
-            fileSize: number,
-            uploadId: number,
-        ) => {
-            setProcessingJobs((prev) => {
-                const uploadingJob = prev.find(
-                    (j) => j.status === "uploading" && j.uploadId === uploadId,
-                );
-                if (uploadingJob) {
-                    uploadProgressRef.current.delete(uploadingJob.uploadId!);
-                    return prev.map((j) =>
-                        j.id === uploadingJob.id
-                            ? {
-                                  ...j,
-                                  id: sourceImageId,
-                                  status: "processing" as const,
-                                  kind: "image" as const,
-                                  serverProgress: 0,
-                                  startedAt: Date.now(),
-                                  uploadId: undefined,
-                                  uploadProgress: undefined,
-                              }
-                            : j,
-                    );
-                }
-                if (
-                    prev.filter(
-                        (j) =>
-                            j.status === "uploading" ||
-                            j.status === "processing" ||
-                            j.status === "importing",
-                    ).length >= MAX_PROCESSING_JOBS
-                )
-                    return prev;
-                if (prev.some((j) => j.id === sourceImageId)) return prev;
-                return [
-                    ...prev,
-                    {
-                        id: sourceImageId,
-                        filename,
-                        status: "processing" as const,
-                        kind: "image" as const,
-                        serverProgress: 0,
-                        fileSize,
-                        startedAt: Date.now(),
-                    },
-                ];
-            });
+    const handleReorderComplete = useCallback(() => {
+        refreshCategories().catch(() => {
+            setWarnSnack("Could not refresh categories after reorder.");
+        });
+        refreshUncategorizedImages().catch(() => {
+            setWarnSnack("Could not refresh images after reorder.");
+        });
+    }, [refreshCategories, refreshUncategorizedImages]);
+
+    const handleReorderError = useCallback(
+        (err: unknown) => {
+            setErrorSnack(userMessage(err, "Failed to reorder tiles."));
         },
         [],
     );
 
-    const handleBulkImportStarted = useCallback(
-        (
-            job: ApiBulkImportJob,
-            filename: string,
-            fileSize: number,
-            uploadId: number,
-        ) => {
-            uploadProgressRef.current.delete(uploadId);
-            updateBulkImportJob(job, filename, fileSize, uploadId);
+    const navigateToDepth = (depth: number) => {
+        setPath((prev) => prev.slice(0, depth));
+    };
+
+    // Track when native files are being dragged over the page so we can
+    // show the prominent FileDropZone at the end of the card grid.
+    useEffect(() => {
+        if (!canEditContent) return;
+        const handleDragEnter = (e: DragEvent) => {
+            if (!e.dataTransfer?.types.includes("Files")) return;
+            fileDragCounter.current += 1;
+            if (fileDragCounter.current === 1) setFileDragActive(true);
+        };
+        const handleDragLeave = (e: DragEvent) => {
+            if (!e.dataTransfer?.types.includes("Files")) return;
+            fileDragCounter.current -= 1;
+            if (fileDragCounter.current === 0) setFileDragActive(false);
+        };
+        const handleDragOver = (e: DragEvent) => {
+            if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+        };
+        const handleDrop = (e: DragEvent) => {
+            if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
+            fileDragCounter.current = 0;
+            // Defer state reset so React's synthetic event handlers on
+            // FileDropZone can fire before the component unmounts.
+            requestAnimationFrame(() => setFileDragActive(false));
+        };
+        window.addEventListener("dragenter", handleDragEnter);
+        window.addEventListener("dragleave", handleDragLeave);
+        window.addEventListener("dragover", handleDragOver);
+        window.addEventListener("drop", handleDrop, true);
+        return () => {
+            window.removeEventListener("dragenter", handleDragEnter);
+            window.removeEventListener("dragleave", handleDragLeave);
+            window.removeEventListener("dragover", handleDragOver);
+            window.removeEventListener("drop", handleDrop, true);
+        };
+    }, [canEditContent]);
+
+    const handleTabChange = useCallback(
+        (v: Page) => {
+            setPage(v);
+            clearImage();
+            setPath([]);
+            pushNavState(v);
+            if (v === "browse") {
+                loadCategories();
+                loadUncategorizedImages();
+            }
         },
-        [updateBulkImportJob],
+        [clearImage, pushNavState, loadCategories, loadUncategorizedImages],
     );
+
+    // Called only when already on browse (AppShell gates the click);
+    // reloads data and resets to root.
+    const handleHomeClick = useCallback(() => {
+        loadCategories();
+        loadUncategorizedImages();
+        clearImage();
+        setPath([]);
+        pushNavState("browse");
+    }, [clearImage, pushNavState, loadCategories, loadUncategorizedImages]);
 
     // Show loading spinner while users are loading
     if (usersLoading) {
@@ -2009,237 +1312,29 @@ export default function App() {
             : undefined;
 
     return (
-        <Box
-            sx={{
-                display: "flex",
-                flexDirection: "column",
-                minHeight: "100vh",
-            }}
+        <AppShell
+            page={page}
+            onTabChange={handleTabChange}
+            onHomeClick={handleHomeClick}
+            canEditContent={canEditContent}
+            canManageUsers={canManageUsers}
+            currentUser={currentUser}
+            announcement={announcement}
+            profileOpen={profileOpen}
+            setProfileOpen={setProfileOpen}
+            avatarRef={avatarRef}
+            openEditProfile={openEditProfile}
+            logout={logout}
+            onOpenCategories={() => setDialogOpen(true)}
+            onOpenPrograms={() => setProgramModalOpen(true)}
+            onOpenAnnouncement={openAnnModal}
+            onSearchOpen={() => setSearchOpen(true)}
+            mode={mode}
+            frontendVersion={frontendVersion}
+            backendVersion={backendVersion}
+            backupVersion={backupVersion}
+            onReportIssue={() => setReportIssueOpen(true)}
         >
-            {/* App bar */}
-            <AppBar position="static" elevation={1}>
-                <Toolbar>
-                    <Box
-                        sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 1,
-                            mr: 2,
-                        }}
-                    >
-                        <Box
-                            component="img"
-                            src="/favicon.svg"
-                            alt="HRIV"
-                            sx={{ height: 32, width: 32 }}
-                        />
-                        <Typography variant="h6" component="h1">
-                            HRIV
-                        </Typography>
-                    </Box>
-                    <Tabs
-                        value={page}
-                        onChange={(_, v: Page) => {
-                            if (
-                                v === "browse" ||
-                                v === "manage" ||
-                                v === "people" ||
-                                v === "admin"
-                            ) {
-                                setPage(v);
-                                clearImage();
-                                setPath([]);
-                                if (v === "browse") {
-                                    loadCategories();
-                                    loadUncategorizedImages();
-                                }
-                            }
-                        }}
-                        textColor="inherit"
-                        TabIndicatorProps={{
-                            style: { backgroundColor: "white" },
-                        }}
-                        sx={{ flexGrow: 1 }}
-                    >
-                        <Tab
-                            label="Home"
-                            value="browse"
-                            onClick={() => {
-                                if (page === "browse") {
-                                    loadCategories();
-                                    loadUncategorizedImages();
-                                }
-                                setPage("browse");
-                                clearImage();
-                                setPath([]);
-                            }}
-                        />
-                        {canEditContent && (
-                            <Tab label="Images" value="manage" />
-                        )}
-                        {canEditContent && (
-                            <Tab
-                                label="Manage"
-                                value={false}
-                                onClick={(e) =>
-                                    setManageMenuAnchor(e.currentTarget)
-                                }
-                            />
-                        )}
-                        {canManageUsers && (
-                            <Tab label="People" value="people" />
-                        )}
-                        {canManageUsers && <Tab label="Admin" value="admin" />}
-                    </Tabs>
-                    <Menu
-                        anchorEl={manageMenuAnchor}
-                        open={Boolean(manageMenuAnchor)}
-                        onClose={() => setManageMenuAnchor(null)}
-                    >
-                        <MenuItem
-                            onClick={() => {
-                                setManageMenuAnchor(null);
-                                setDialogOpen(true);
-                            }}
-                        >
-                            Categories
-                        </MenuItem>
-                        <MenuItem
-                            onClick={() => {
-                                setManageMenuAnchor(null);
-                                setProgramModalOpen(true);
-                            }}
-                        >
-                            Programs
-                        </MenuItem>
-                        <MenuItem
-                            onClick={() => {
-                                setManageMenuAnchor(null);
-                                openAnnModal();
-                            }}
-                        >
-                            Announcement
-                        </MenuItem>
-                    </Menu>
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                        <ColorModeToggle iconButtonSx={{ color: "inherit" }} />
-                        <Tooltip title="Search">
-                            <IconButton
-                                onClick={() => setSearchOpen(true)}
-                                sx={{ color: "inherit" }}
-                                aria-label="Search"
-                            >
-                                <SearchIcon />
-                            </IconButton>
-                        </Tooltip>
-                        <IconButton
-                            ref={avatarRef}
-                            onClick={() => setProfileOpen(true)}
-                            sx={{ p: 0 }}
-                        >
-                            <Avatar
-                                sx={{
-                                    width: 34,
-                                    height: 34,
-                                    fontSize: 14,
-                                    bgcolor: "rgba(255,255,255,0.25)",
-                                    color: "white",
-                                }}
-                            >
-                                {currentUser.name
-                                    .split(" ")
-                                    .map((w) => w[0])
-                                    .join("")
-                                    .toUpperCase()
-                                    .slice(0, 2)}
-                            </Avatar>
-                        </IconButton>
-                        <Popover
-                            open={profileOpen}
-                            anchorEl={avatarRef.current}
-                            onClose={() => setProfileOpen(false)}
-                            anchorOrigin={{
-                                vertical: "bottom",
-                                horizontal: "right",
-                            }}
-                            transformOrigin={{
-                                vertical: "top",
-                                horizontal: "right",
-                            }}
-                        >
-                            <Card sx={{ minWidth: 240 }}>
-                                <CardContent>
-                                    <Typography
-                                        variant="subtitle1"
-                                        sx={{ fontWeight: 600 }}
-                                    >
-                                        {currentUser.name}
-                                    </Typography>
-                                    <Typography
-                                        variant="body2"
-                                        color="text.secondary"
-                                    >
-                                        {currentUser.email}
-                                    </Typography>
-                                    <Typography
-                                        variant="body2"
-                                        color="text.secondary"
-                                        sx={{ textTransform: "capitalize" }}
-                                    >
-                                        {currentUser.role}
-                                    </Typography>
-                                    {currentUser.program_names.length > 0 && (
-                                        <Typography
-                                            variant="body2"
-                                            color="text.secondary"
-                                        >
-                                            {currentUser.program_names.join(', ')}
-                                        </Typography>
-                                    )}
-                                    <Box
-                                        sx={{
-                                            display: "flex",
-                                            justifyContent: canManageUsers
-                                                ? "space-between"
-                                                : "flex-end",
-                                            mt: 2,
-                                        }}
-                                    >
-                                        {canManageUsers && (
-                                            <Link
-                                                component="button"
-                                                variant="body2"
-                                                onClick={() => {
-                                                    setProfileOpen(false);
-                                                    loadPrograms();
-                                                    setEditModalOpen(true);
-                                                }}
-                                            >
-                                                Update
-                                            </Link>
-                                        )}
-                                        <Link
-                                            component="button"
-                                            variant="body2"
-                                            color="primary"
-                                            onClick={() => {
-                                                setProfileOpen(false);
-                                                logout();
-                                            }}
-                                        >
-                                            Logout
-                                        </Link>
-                                    </Box>
-                                </CardContent>
-                            </Card>
-                        </Popover>
-                    </Box>
-                </Toolbar>
-            </AppBar>
-
-            {/* Announcement banner */}
-            {announcement && <AnnouncementBanner message={announcement} />}
-
             {/* Main content */}
             <Box
                 component="main"
@@ -2259,11 +1354,12 @@ export default function App() {
                     {page === "admin" && canManageUsers ? (
                         <AdminPage />
                     ) : page === "people" && canManageUsers ? (
-                        <PeoplePage programs={programs} />
+                        <PeoplePage programs={programs} initialEditUserId={editUserId} onEditUserHandled={clearEditUserId} />
                     ) : page === "manage" && canEditContent ? (
                         <ManagePage
                             categories={categories}
                             programs={programs}
+                            imagesVersion={imagesVersion}
                             onEditCategory={editCategoryInline}
                             onToggleVisibility={toggleCategoryVisibility}
                             onViewImage={(img) => {
@@ -2275,8 +1371,8 @@ export default function App() {
                                     categoryId: img.category_id,
                                     copyright: img.copyright,
                                     note: img.note,
-                                    programIds: img.program_ids,
                                     active: img.active,
+                                    sortOrder: img.sort_order,
                                     version: img.version,
                                     createdAt: img.created_at,
                                     updatedAt: img.updated_at,
@@ -2285,21 +1381,28 @@ export default function App() {
                                     height: img.height,
                                     fileSize: img.file_size,
                                 });
-                                // Build breadcrumb path from the image's category
-                                if (img.category_id != null) {
-                                    const catPath = findCategoryPath(
-                                        categories,
-                                        img.category_id,
-                                    );
-                                    if (catPath) setPath(catPath);
-                                } else {
-                                    setPath([]);
-                                }
+                                const catPath =
+                                    img.category_id != null
+                                        ? findCategoryPath(
+                                              categories,
+                                              img.category_id,
+                                          )
+                                        : null;
+                                setPath(catPath ?? []);
                                 setPage("browse");
+                                pushNavState(
+                                    "browse",
+                                    catPath?.map((c) => c.id) ?? [],
+                                    img.id,
+                                );
                             }}
                             onNavigateCategory={(categoryPath) => {
                                 setPath(categoryPath);
                                 setPage("browse");
+                                pushNavState(
+                                    "browse",
+                                    categoryPath.map((c) => c.id),
+                                );
                             }}
                             onCategoriesChanged={() => {
                                 loadCategories();
@@ -2312,6 +1415,14 @@ export default function App() {
                             onUploadProgress={handleUploadProgress}
                             onBulkImportStarted={handleBulkImportStarted}
                             onUploadFailed={handleUploadFailed}
+                            onUploadOpenChange={setManageUploadOpen}
+                            onSearchProgram={(programName) => {
+                                setSearchInitialQuery(programName);
+                                setSearchInitialTypeFilter('program');
+                                setSearchOpen(true);
+                            }}
+                            initialProgramFilter={manageProgramFilter}
+                            onInitialProgramFilterConsumed={clearManageProgramFilter}
                         />
                     ) : selectedImage ? (
                         /* ---- Viewer mode ---- */
@@ -2348,6 +1459,7 @@ export default function App() {
                                         onClick={() => {
                                             clearImage();
                                             navigateToDepth(0);
+                                            pushNavState("browse");
                                         }}
                                         sx={{
                                             display: "flex",
@@ -2369,6 +1481,12 @@ export default function App() {
                                             onClick={() => {
                                                 clearImage();
                                                 navigateToDepth(i + 1);
+                                                pushNavState(
+                                                    "browse",
+                                                    path
+                                                        .slice(0, i + 1)
+                                                        .map((c) => c.id),
+                                                );
                                             }}
                                             sx={{ cursor: "pointer" }}
                                         >
@@ -2390,19 +1508,27 @@ export default function App() {
                                         alignItems: "center",
                                     }}
                                 >
-                                    <Tooltip title={selectedImage.active ? "Visible" : "Hidden"}>
-                                        {selectedImage.active ? (
-                                            <VisibilityIcon
-                                                color="action"
-                                                sx={{ fontSize: 28 }}
-                                            />
-                                        ) : (
-                                            <DisabledVisibleIcon
-                                                color="disabled"
-                                                sx={{ fontSize: 28 }}
-                                            />
-                                        )}
-                                    </Tooltip>
+                                    {canEditContent && (
+                                        <Tooltip title={selectedImage.active ? "Hide from students" : "Show to students"}>
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => toggleImageVisibility(selectedImage.id)}
+                                                aria-label="Toggle visibility"
+                                            >
+                                                {selectedImage.active ? (
+                                                    <VisibilityIcon
+                                                        color="action"
+                                                        sx={{ fontSize: 28 }}
+                                                    />
+                                                ) : (
+                                                    <DisabledVisibleIcon
+                                                        color="disabled"
+                                                        sx={{ fontSize: 28 }}
+                                                    />
+                                                )}
+                                            </IconButton>
+                                        </Tooltip>
+                                    )}
                                     {canEditContent && (
                                         <Tooltip
                                             title={
@@ -2504,7 +1630,7 @@ export default function App() {
                                         {selectedImage.copyright}
                                     </Typography>
                                 )}
-                                {selectedImage.programIds.length > 0 && (
+                                {ancestorProgramIds.length > 0 && (
                                     <Typography
                                         variant="body2"
                                         color="text.secondary"
@@ -2512,12 +1638,12 @@ export default function App() {
                                     >
                                         <strong>
                                             Program
-                                            {selectedImage.programIds.length > 1
+                                            {ancestorProgramIds.length > 1
                                                 ? "s"
                                                 : ""}
                                             :
                                         </strong>{" "}
-                                        {selectedImage.programIds
+                                        {ancestorProgramIds
                                             .map(
                                                 (pid) =>
                                                     programs.find(
@@ -2613,60 +1739,241 @@ export default function App() {
                                     gap: 1,
                                 }}
                             >
-                                <MuiBreadcrumbs
-                                    aria-label="category breadcrumb"
+                                <Box
                                     sx={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 1,
                                         minWidth: 0,
-                                        "& .MuiBreadcrumbs-ol": {
-                                            flexWrap: "nowrap",
-                                        },
-                                        "& .MuiBreadcrumbs-li:last-of-type": {
-                                            overflow: "hidden",
-                                            textOverflow: "ellipsis",
-                                            whiteSpace: "nowrap",
-                                        },
                                     }}
                                 >
-                                    <Link
-                                        component="button"
-                                        variant="body2"
-                                        underline="hover"
-                                        color={
-                                            path.length === 0
-                                                ? "text.primary"
-                                                : "inherit"
-                                        }
-                                        onClick={() => navigateToDepth(0)}
+                                    <MuiBreadcrumbs
+                                        aria-label="category breadcrumb"
                                         sx={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 0.5,
-                                            cursor: "pointer",
+                                            minWidth: 0,
+                                            "& .MuiBreadcrumbs-ol": {
+                                                flexWrap: "nowrap",
+                                            },
+                                            "& .MuiBreadcrumbs-li:last-of-type":
+                                                {
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap",
+                                                },
                                         }}
                                     >
-                                        <HomeIcon fontSize="small" />
-                                        Home
-                                    </Link>
-                                    {path.map((cat, i) => (
                                         <Link
-                                            key={cat.id}
                                             component="button"
                                             variant="body2"
                                             underline="hover"
                                             color={
-                                                i === path.length - 1
+                                                path.length === 0
                                                     ? "text.primary"
                                                     : "inherit"
                                             }
-                                            onClick={() =>
-                                                navigateToDepth(i + 1)
-                                            }
-                                            sx={{ cursor: "pointer" }}
+                                            onClick={() => {
+                                                navigateToDepth(0);
+                                                pushNavState("browse");
+                                            }}
+                                            sx={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 0.5,
+                                                cursor: "pointer",
+                                            }}
                                         >
-                                            {cat.label}
+                                            <HomeIcon fontSize="small" />
+                                            Home
                                         </Link>
-                                    ))}
-                                </MuiBreadcrumbs>
+                                        {path.map((cat, i) => {
+                                            const isLast =
+                                                i === path.length - 1;
+                                            return (
+                                                <Box
+                                                    key={cat.id}
+                                                    sx={{
+                                                        display: "flex",
+                                                        alignItems:
+                                                            "center",
+                                                        gap: 0.25,
+                                                        minWidth: 0,
+                                                    }}
+                                                >
+                                                    <Link
+                                                        component="button"
+                                                        variant="body2"
+                                                        underline="hover"
+                                                        color={
+                                                            isLast
+                                                                ? "text.primary"
+                                                                : "inherit"
+                                                        }
+                                                        onClick={() => {
+                                                            navigateToDepth(
+                                                                i + 1,
+                                                            );
+                                                            pushNavState(
+                                                                "browse",
+                                                                path
+                                                                    .slice(
+                                                                        0,
+                                                                        i + 1,
+                                                                    )
+                                                                    .map(
+                                                                        (c) =>
+                                                                            c.id,
+                                                                    ),
+                                                            );
+                                                        }}
+                                                        sx={{
+                                                            cursor: "pointer",
+                                                            overflow:
+                                                                "hidden",
+                                                            textOverflow:
+                                                                "ellipsis",
+                                                            whiteSpace:
+                                                                "nowrap",
+                                                        }}
+                                                    >
+                                                        {cat.label}
+                                                    </Link>
+                                                    {isLast &&
+                                                        canEditContent && (
+                                                            <IconButton
+                                                                size="small"
+                                                                onClick={() =>
+                                                                    setEditNameCategory(
+                                                                        cat,
+                                                                    )
+                                                                }
+                                                                aria-label="Edit category"
+                                                                sx={{
+                                                                    ml: 0.25,
+                                                                }}
+                                                            >
+                                                                <EditIcon
+                                                                    sx={{
+                                                                        fontSize: 16,
+                                                                    }}
+                                                                />
+                                                            </IconButton>
+                                                        )}
+                                                </Box>
+                                            );
+                                        })}
+                                    </MuiBreadcrumbs>
+                                    {(() => {
+                                        const resolved =
+                                            ancestorProgramIds
+                                                .map((pid) =>
+                                                    programs.find(
+                                                        (p) =>
+                                                            p.id === pid,
+                                                    ),
+                                                )
+                                                .filter(
+                                                    (
+                                                        p,
+                                                    ): p is Program =>
+                                                        p != null,
+                                                )
+                                                .sort((a, b) =>
+                                                    a.name.localeCompare(
+                                                        b.name,
+                                                    ),
+                                                );
+                                        if (resolved.length === 0)
+                                            return null;
+                                        const MAX_INLINE = 2;
+                                        const inline = resolved.slice(
+                                            0,
+                                            MAX_INLINE,
+                                        );
+                                        const overflow =
+                                            resolved.length - MAX_INLINE;
+                                        return (
+                                            <>
+                                                {inline.map((p) => (
+                                                    <Chip
+                                                        key={p.id}
+                                                        label={p.name}
+                                                        size="small"
+                                                        color="primary"
+                                                    />
+                                                ))}
+                                                {overflow > 0 && (
+                                                    <>
+                                                        <Chip
+                                                            label={`+${overflow}`}
+                                                            size="small"
+                                                            color="primary"
+                                                            variant="outlined"
+                                                            onClick={(
+                                                                e,
+                                                            ) =>
+                                                                setProgramsPopoverAnchor(
+                                                                    e.currentTarget,
+                                                                )
+                                                            }
+                                                            aria-label={`${overflow} more programs`}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                            }}
+                                                        />
+                                                        <Popover
+                                                            open={
+                                                                programsPopoverAnchor !=
+                                                                null
+                                                            }
+                                                            anchorEl={
+                                                                programsPopoverAnchor
+                                                            }
+                                                            onClose={() =>
+                                                                setProgramsPopoverAnchor(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            anchorOrigin={{
+                                                                vertical:
+                                                                    "bottom",
+                                                                horizontal:
+                                                                    "left",
+                                                            }}
+                                                        >
+                                                            <Box
+                                                                sx={{
+                                                                    p: 1.5,
+                                                                    display:
+                                                                        "flex",
+                                                                    flexDirection:
+                                                                        "column",
+                                                                    gap: 0.5,
+                                                                }}
+                                                            >
+                                                                {resolved.map(
+                                                                    (
+                                                                        p,
+                                                                    ) => (
+                                                                        <Chip
+                                                                            key={
+                                                                                p.id
+                                                                            }
+                                                                            label={
+                                                                                p.name
+                                                                            }
+                                                                            size="small"
+                                                                            color="primary"
+                                                                        />
+                                                                    ),
+                                                                )}
+                                                            </Box>
+                                                        </Popover>
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                </Box>
                                 {canEditContent && (
                                     <Box
                                         sx={{
@@ -2675,6 +1982,19 @@ export default function App() {
                                             flexShrink: 0,
                                         }}
                                     >
+                                        {path.length < MAX_DEPTH && (
+                                            <Button
+                                                variant="outlined"
+                                                startIcon={
+                                                    <CreateNewFolderIcon />
+                                                }
+                                                onClick={() =>
+                                                    setAddCatOpen(true)
+                                                }
+                                            >
+                                                Add Category
+                                            </Button>
+                                        )}
                                         <Button
                                             variant="contained"
                                             startIcon={
@@ -2689,59 +2009,72 @@ export default function App() {
                             </Box>
 
                             {/* Tile grid */}
-                            <Box
-                                sx={{
-                                    display: "flex",
-                                    flexWrap: "wrap",
-                                    gap: 2,
-                                }}
-                            >
-                                {currentCategories.map((cat) => (
-                                    <CategoryTile
-                                        key={cat.id}
-                                        category={cat}
-                                        onClick={navigateToCategory}
-                                        onMove={
-                                            canEditContent
-                                                ? handleRequestMoveCategory
-                                                : undefined
-                                        }
-                                        onSetCardImage={
-                                            canEditContent
-                                                ? handleSetCardImage
-                                                : undefined
-                                        }
-                                        programs={programs}
-                                    />
-                                ))}
-                                {path.length === 0 &&
-                                    uncategorizedImages.map((img) => (
-                                        <ImageTile
-                                            key={img.id}
-                                            image={img}
-                                            onClick={setSelectedImage}
-                                            programs={programs}
-                                            onEditDetails={
-                                                canEditContent
-                                                    ? setBrowseEditImage
-                                                    : undefined
-                                            }
-                                        />
-                                    ))}
-                                {currentImages.map((img) => (
-                                    <ImageTile
-                                        key={img.id}
-                                        image={img}
-                                        onClick={setSelectedImage}
-                                        programs={programs}
-                                        onEditDetails={
-                                            canEditContent
-                                                ? setBrowseEditImage
-                                                : undefined
-                                        }
-                                    />
-                                ))}
-                            </Box>
+                            <SortableTileGrid
+                                allCategories={categories}
+                                currentCategories={currentCategories}
+                                currentImages={currentImages}
+                                uncategorizedImages={uncategorizedImages}
+                                path={path}
+                                canEditContent={canEditContent}
+                                fileDragActive={fileDragActive}
+                                programs={programs}
+                                onCategoryClick={handleCategoryTileClick}
+                                onMoveCategory={handleRequestMoveCategory}
+                                onSetCardImage={handleSetCardImage}
+                                onToggleCategoryVisibility={
+                                    toggleCategoryVisibility
+                                }
+                                onEditCategoryName={setEditNameCategory}
+                                onDropImageOnCategory={
+                                    handleDropImageOnCategory
+                                }
+                                onDropCategoryOnCategory={
+                                    handleDropCategoryOnCategory
+                                }
+                                onDropFilesOnCategory={
+                                    handleFilesDropOnCategory
+                                }
+                                onImageClick={handleImageClick}
+                                onEditImageDetails={setBrowseEditImage}
+                                onToggleImageVisibility={
+                                    toggleImageVisibility
+                                }
+                                onFilesDrop={handleFilesDropOnGrid}
+                                onGridDragOver={
+                                    canEditContent
+                                        ? (e) => {
+                                              if (
+                                                  e.dataTransfer.types.includes(
+                                                      "Files",
+                                                  )
+                                              ) {
+                                                  e.preventDefault();
+                                                  e.dataTransfer.dropEffect =
+                                                      "copy";
+                                              }
+                                          }
+                                        : undefined
+                                }
+                                onGridDrop={
+                                    canEditContent
+                                        ? (e) => {
+                                              if (
+                                                  e.dataTransfer.types.includes(
+                                                      "Files",
+                                                  )
+                                              ) {
+                                                  e.preventDefault();
+                                                  const all = Array.from(
+                                                      e.dataTransfer.files,
+                                                  );
+                                                  handleFilesDropOnGrid(all);
+                                              }
+                                          }
+                                        : undefined
+                                }
+                                onReorderComplete={handleReorderComplete}
+                                onReorderError={handleReorderError}
+                            />
 
                             {categoriesLoading ? (
                                 <Box
@@ -2763,8 +2096,9 @@ export default function App() {
                                         color="text.secondary"
                                         sx={{ mt: 4, textAlign: "center" }}
                                     >
-                                        This category is empty. Add a
-                                        sub-category to get started.
+                                        {canEditContent
+                                            ? "This category is empty. Add an image or sub-category to get started."
+                                            : "This category is empty."}
                                     </Typography>
                                 )
                             )}
@@ -2787,11 +2121,14 @@ export default function App() {
                 open={dialogOpen}
                 onClose={() => setDialogOpen(false)}
                 categories={categories}
+                uncategorizedImages={uncategorizedImages}
                 onAddCategory={addCategoryInline}
                 onDeleteCategory={deleteCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
                 onReorderCategories={reorderCategoriesInline}
+                onReorderImages={reorderImagesInline}
+                onReorderComplete={handleReorderComplete}
                 programs={programs}
             />
 
@@ -2808,6 +2145,7 @@ export default function App() {
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
+                programs={programs}
             />
 
             {/* Image edit modal (viewer page) — no View Image button since we're already viewing */}
@@ -2815,18 +2153,9 @@ export default function App() {
                 open={imageEditOpen}
                 onClose={() => setImageEditOpen(false)}
                 onSave={handleSaveViewerImage}
-                onDelete={
-                    selectedImage
-                        ? async () => {
-                              await apiDeleteImage(selectedImage.id);
-                              setImageEditOpen(false);
-                              clearImage();
-                              await loadCategories();
-                              loadUncategorizedImages();
-                          }
-                        : undefined
-                }
+                onDelete={selectedImage ? handleDeleteViewerImage : undefined}
                 onReplace={handleReplaceViewerImage}
+                onCancelReplace={cancelReplace}
                 replaceUploadProgress={viewerReplaceUploadProgress}
                 image={selectedApiImage}
                 categories={categories}
@@ -2841,17 +2170,9 @@ export default function App() {
                 open={browseEditImage != null}
                 onClose={() => setBrowseEditImage(null)}
                 onSave={handleSaveBrowseImage}
-                onDelete={
-                    browseEditImage
-                        ? async () => {
-                              await apiDeleteImage(browseEditImage.id);
-                              setBrowseEditImage(null);
-                              await loadCategories();
-                              loadUncategorizedImages();
-                          }
-                        : undefined
-                }
+                onDelete={browseEditImage ? handleDeleteBrowseImage : undefined}
                 onReplace={handleReplaceBrowseImage}
+                onCancelReplace={cancelReplace}
                 replaceUploadProgress={browseReplaceUploadProgress}
                 image={browseApiImage}
                 categories={categories}
@@ -2864,15 +2185,19 @@ export default function App() {
                         ? () => {
                               setSelectedImage(browseEditImage);
                               setBrowseEditImage(null);
-                              if (browseEditImage.categoryId != null) {
-                                  const catPath = findCategoryPath(
-                                      categories,
-                                      browseEditImage.categoryId,
-                                  );
-                                  if (catPath) setPath(catPath);
-                              } else {
-                                  setPath([]);
-                              }
+                              const catPath =
+                                  browseEditImage.categoryId != null
+                                      ? findCategoryPath(
+                                            categories,
+                                            browseEditImage.categoryId,
+                                        )
+                                      : null;
+                              setPath(catPath ?? []);
+                              pushNavState(
+                                  "browse",
+                                  catPath?.map((c) => c.id) ?? [],
+                                  browseEditImage.id,
+                              );
                           }
                         : undefined
                 }
@@ -2881,7 +2206,12 @@ export default function App() {
             {/* Upload image modal */}
             <UploadImageModal
                 open={uploadOpen}
-                onClose={() => setUploadOpen(false)}
+                onClose={() => {
+                    setUploadOpen(false);
+                    setFileDropCategoryId(null);
+                    setDroppedFiles([]);
+                }}
+                initialFiles={droppedFiles}
                 onUploaded={() => {
                     loadCategories();
                     loadUncategorizedImages();
@@ -2891,7 +2221,7 @@ export default function App() {
                 onUploadFailed={handleUploadFailed}
                 onProcessingStarted={handleProcessingStarted}
                 onBulkImportStarted={handleBulkImportStarted}
-                categoryId={path.length > 0 ? path[path.length - 1].id : null}
+                categoryId={fileDropCategoryId ?? (path.length > 0 ? path[path.length - 1].id : null)}
                 categories={categories}
                 programs={programs}
                 onAddCategory={addCategoryInline}
@@ -2899,21 +2229,58 @@ export default function App() {
                 onToggleVisibility={toggleCategoryVisibility}
             />
 
+            {/* Add category dialog (home tab) */}
+            <AddCategoryDialog
+                open={addCatOpen}
+                onClose={() => setAddCatOpen(false)}
+                onAdd={async (label, programIds) => {
+                    await addCategoryInline(
+                        label,
+                        path.length > 0
+                            ? path[path.length - 1].id
+                            : null,
+                        programIds,
+                    );
+                }}
+                parentLabel={path.length > 0 ? path[path.length - 1].label : undefined}
+                siblingNames={currentCategories.map((c) => c.label)}
+                programs={programs}
+                inheritedProgramIds={ancestorProgramIds}
+            />
+
+            {/* Edit category name dialog (home tab) */}
+            <EditCategoryDialog
+                open={editNameCategory != null}
+                onClose={() => setEditNameCategory(null)}
+                onSave={async (newLabel, programIds) => {
+                    if (!editNameCategory) return;
+                    await editCategoryInline(
+                        editNameCategory.id,
+                        newLabel,
+                        programIds,
+                    );
+                    if (path.some((p) => p.id === editNameCategory.id)) {
+                        setPath((prev) =>
+                            prev.map((p) =>
+                                p.id === editNameCategory.id
+                                    ? { ...p, label: newLabel, programIds: programIds ?? p.programIds }
+                                    : p,
+                            ),
+                        );
+                    }
+                }}
+                currentLabel={editCategoryContext.freshLabel}
+                siblingNames={editCategoryContext.siblingNames}
+                programs={programs}
+                currentProgramIds={editCategoryContext.freshProgramIds}
+                inheritedProgramIds={editCategoryContext.inheritedProgramIds}
+            />
+
             {/* Self-edit profile modal */}
             <AddEditPersonModal
                 open={editModalOpen}
                 onClose={() => setEditModalOpen(false)}
-                onSave={async (data) => {
-                    if (!currentUser) return;
-                    try {
-                        await apiUpdateUser(currentUser.id, data);
-                        setEditModalOpen(false);
-                        // Refresh current user data by re-validating the token
-                        window.location.reload();
-                    } catch (err) {
-                        console.error("Failed to update profile", err);
-                    }
-                }}
+                onSave={handleSaveProfile}
                 programs={programs}
                 user={currentApiUser}
             />
@@ -2997,7 +2364,13 @@ export default function App() {
             {/* Search modal */}
             <SearchModal
                 open={searchOpen}
-                onClose={() => setSearchOpen(false)}
+                onClose={() => {
+                    setSearchOpen(false);
+                    setSearchInitialQuery(undefined);
+                    setSearchInitialTypeFilter(undefined);
+                }}
+                initialQuery={searchInitialQuery}
+                initialTypeFilter={searchInitialTypeFilter as TypeFilter | undefined}
                 categories={categories}
                 uncategorizedImages={uncategorizedImages}
                 programs={programs}
@@ -3007,6 +2380,10 @@ export default function App() {
                     setPage("browse");
                     setPath(catPath);
                     clearImage();
+                    pushNavState(
+                        "browse",
+                        catPath.map((c) => c.id),
+                    );
                 }}
                 onSelectImage={(image, catPath) => {
                     setPage("browse");
@@ -3014,12 +2391,25 @@ export default function App() {
                     setSelectedImage(image);
                     setViewportState(undefined);
                     setOverlays([]);
+                    pushNavState(
+                        "browse",
+                        catPath.map((c) => c.id),
+                        image.id,
+                    );
                 }}
-                onSelectProgram={() => {
-                    if (canManageUsers) setPage("people");
+                onSelectProgram={(programName) => {
+                    if (canEditContent) {
+                        setManageProgramFilter(programName);
+                        setPage("manage");
+                        pushNavState("manage");
+                    }
                 }}
-                onSelectUser={() => {
-                    if (canManageUsers) setPage("people");
+                onSelectUser={(userId) => {
+                    if (canManageUsers) {
+                        setEditUserId(userId);
+                        setPage("people");
+                        pushNavState("people");
+                    }
                 }}
             />
 
@@ -3038,13 +2428,76 @@ export default function App() {
                 }}
             />
 
+            {/* Move-undo snackbar */}
+            <Snackbar
+                open={moveSnack !== null}
+                autoHideDuration={8000}
+                onClose={(_event, reason) => {
+                    if (reason === "clickaway") return;
+                    setMoveSnack(null);
+                }}
+                anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+                sx={{ zIndex: 1500 }}
+            >
+                <Alert
+                    severity="success"
+                    onClose={() => setMoveSnack(null)}
+                    variant="filled"
+                    action={
+                        <Button
+                            color="inherit"
+                            size="small"
+                            onClick={moveSnack?.onUndo}
+                            aria-label="Undo move"
+                        >
+                            Undo
+                        </Button>
+                    }
+                >
+                    {moveSnack?.message}
+                </Alert>
+            </Snackbar>
+
+            {/* Warning snackbar (e.g. unsupported file drops) */}
+            <Snackbar
+                open={warnSnack !== null}
+                autoHideDuration={6000}
+                onClose={() => setWarnSnack(null)}
+                anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+                sx={{ zIndex: 1500 }}
+            >
+                <Alert
+                    severity="warning"
+                    onClose={() => setWarnSnack(null)}
+                    variant="filled"
+                >
+                    {warnSnack}
+                </Alert>
+            </Snackbar>
+
+            {/* Error snackbar */}
+            <Snackbar
+                open={errorSnack !== null}
+                autoHideDuration={6000}
+                onClose={() => setErrorSnack(null)}
+                anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+                sx={{ zIndex: 1500 }}
+            >
+                <Alert
+                    severity="error"
+                    onClose={() => setErrorSnack(null)}
+                    variant="filled"
+                >
+                    {errorSnack}
+                </Alert>
+            </Snackbar>
+
             {/* Image upload + processing snackbars (one per job, stacked) */}
             {visibleJobs.map((job, index) => {
                 const uploadFraction =
-                    job.status === "uploading"
-                        ? (uploadProgressRef.current.get(job.uploadId!) ??
-                          job.uploadProgress ??
-                          0)
+                    job.status === "uploading" && job.uploadId != null
+                        ? (getUploadProgress(job.uploadId) ||
+                          (job.uploadProgress ?? 0))
                         : 0;
                 const displayProgress = getDisplayProgress(job);
                 const statusMsg = getStatusMessage(job);
@@ -3061,9 +2514,7 @@ export default function App() {
                         }
                         onClose={(_event, reason) => {
                             if (reason === "clickaway") return;
-                            setProcessingJobs((prev) =>
-                                prev.filter((j) => j.id !== job.id),
-                            );
+                            dismissJob(job.id);
                         }}
                         anchorOrigin={{
                             vertical: "bottom",
@@ -3098,11 +2549,7 @@ export default function App() {
                                     />
                                 ) : undefined
                             }
-                            onClose={() =>
-                                setProcessingJobs((prev) =>
-                                    prev.filter((j) => j.id !== job.id),
-                                )
-                            }
+                            onClose={() => dismissJob(job.id)}
                         >
                             {job.status === "uploading" && (
                                 <Box sx={{ width: "100%", minWidth: 220 }}>
@@ -3223,10 +2670,8 @@ export default function App() {
                                                 // Categories may not have refreshed yet; reload and search fresh data
                                                 let found = false;
                                                 try {
-                                                    const freshTree = (
-                                                        await fetchCategoryTree()
-                                                    ).map(apiTreeToCategory);
-                                                    setCategories(freshTree);
+                                                    const freshTree =
+                                                        await refreshCategories();
                                                     const result =
                                                         findImageInTree(
                                                             freshTree,
@@ -3242,6 +2687,13 @@ export default function App() {
                                                             undefined,
                                                         );
                                                         setOverlays([]);
+                                                        pushNavState(
+                                                            "browse",
+                                                            result.path.map(
+                                                                (c) => c.id,
+                                                            ),
+                                                            result.image.id,
+                                                        );
                                                         found = true;
                                                     }
                                                 } catch {
@@ -3249,38 +2701,8 @@ export default function App() {
                                                 }
                                                 if (!found) {
                                                     try {
-                                                        const freshUncat = (
-                                                            await fetchUncategorizedImages()
-                                                        ).map((img) => ({
-                                                            id: img.id,
-                                                            name: img.name,
-                                                            thumb: img.thumb,
-                                                            tileSources:
-                                                                img.tile_sources,
-                                                            categoryId:
-                                                                img.category_id,
-                                                            copyright:
-                                                                img.copyright,
-                                                            note: img.note,
-                                                            programIds:
-                                                                img.program_ids,
-                                                            active: img.active,
-                                                            version:
-                                                                img.version,
-                                                            createdAt:
-                                                                img.created_at,
-                                                            updatedAt:
-                                                                img.updated_at,
-                                                            metadataExtra:
-                                                                img.metadata_extra,
-                                                            width: img.width,
-                                                            height: img.height,
-                                                            fileSize:
-                                                                img.file_size,
-                                                        }));
-                                                        setUncategorizedImages(
-                                                            freshUncat,
-                                                        );
+                                                        const freshUncat =
+                                                            await refreshUncategorizedImages();
                                                         const uncatImg =
                                                             freshUncat.find(
                                                                 (img) =>
@@ -3297,6 +2719,11 @@ export default function App() {
                                                                 undefined,
                                                             );
                                                             setOverlays([]);
+                                                            pushNavState(
+                                                                "browse",
+                                                                [],
+                                                                uncatImg.id,
+                                                            );
                                                             found = true;
                                                         }
                                                     } catch {
@@ -3304,12 +2731,7 @@ export default function App() {
                                                     }
                                                 }
                                                 if (found) {
-                                                    setProcessingJobs((prev) =>
-                                                        prev.filter(
-                                                            (j) =>
-                                                                j.id !== job.id,
-                                                        ),
-                                                    );
+                                                    dismissJob(job.id);
                                                 }
                                             }}
                                         >
@@ -3327,6 +2749,6 @@ export default function App() {
                     </Snackbar>
                 );
             })}
-        </Box>
+        </AppShell>
     );
 }

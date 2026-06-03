@@ -17,21 +17,15 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
 import EditIcon from '@mui/icons-material/Edit'
+import LockIcon from '@mui/icons-material/Lock'
 import VisibilityIcon from '@mui/icons-material/Visibility'
-import type { Category, Program } from '../types'
+import type { Category, ImageItem, Program } from '../types'
+import { narrowProgramIds } from '../categoryUtils'
 import { MAX_DEPTH } from '../types'
 import AddCategoryDialog from './AddCategoryDialog'
 import EditCategoryDialog from './EditCategoryDialog'
-
-interface FlatOption {
-  id: number
-  label: string
-  depth: number
-  childCount: number
-  status: string | null
-  parentId: number | null
-  programIds: number[]
-}
+import { collectImagesByParent, interleavedSortOrders } from './manageCategoriesDialogUtils'
+import type { FlatOption } from './manageCategoriesDialogUtils'
 
 function countDescendants(node: Category): number {
   let count = node.children.length
@@ -41,11 +35,12 @@ function countDescendants(node: Category): number {
   return count
 }
 
-function flattenTree(nodes: Category[], depth: number = 0, parentId: number | null = null): FlatOption[] {
+function flattenTree(nodes: Category[], depth: number = 0, parentId: number | null = null, ancestorRestricted: boolean = false): FlatOption[] {
   const result: FlatOption[] = []
   for (const node of nodes) {
-    result.push({ id: node.id, label: node.label, depth, childCount: countDescendants(node), status: node.status ?? 'active', parentId, programIds: node.programIds })
-    result.push(...flattenTree(node.children, depth + 1, node.id))
+    const hasOwnRestriction = node.programIds.length > 0
+    result.push({ id: node.id, label: node.label, depth, childCount: countDescendants(node), status: node.status ?? 'active', parentId, programIds: node.programIds, inheritedRestriction: !hasOwnRestriction && ancestorRestricted })
+    result.push(...flattenTree(node.children, depth + 1, node.id, ancestorRestricted || hasOwnRestriction))
   }
   return result
 }
@@ -150,34 +145,40 @@ interface ManageCategoriesDialogProps {
   open: boolean
   onClose: () => void
   categories: Category[]
+  uncategorizedImages?: ImageItem[]
   onAddCategory: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   onDeleteCategory: (categoryId: number) => Promise<void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
   programs?: Program[]
-  onToggleVisibility?: (categoryId: number, hidden: boolean) => Promise<void>
+  onToggleVisibility?: (categoryId: number) => Promise<void>
   onReorderCategories?: (items: Array<{ id: number; parent_id: number | null; sort_order: number }>) => Promise<void>
+  onReorderImages?: (items: Array<{ id: number; sort_order: number }>) => Promise<void>
+  onReorderComplete?: () => void
 }
 
 export default function ManageCategoriesDialog({
   open,
   onClose,
   categories,
+  uncategorizedImages = [],
   onAddCategory,
   onDeleteCategory,
   onEditCategory,
   onToggleVisibility,
   onReorderCategories,
+  onReorderImages,
+  onReorderComplete,
   programs = [],
 }: ManageCategoriesDialogProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addParentId, setAddParentId] = useState<number | null>(null)
-  const [addParentDepth, setAddParentDepth] = useState(0)
+  const [addParentLabel, setAddParentLabel] = useState<string | undefined>(undefined)
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<FlatOption | null>(null)
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
-  const [editingCategory, setEditingCategory] = useState<FlatOption | null>(null)
+  const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null)
 
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
@@ -190,6 +191,12 @@ export default function ManageCategoriesDialog({
     [options, addParentId],
   )
 
+  // Derive editingCategory from ID + options so it stays fresh without an extra render
+  const editingCategory = useMemo(
+    () => editingCategoryId != null ? options.find((o) => o.id === editingCategoryId) ?? null : null,
+    [editingCategoryId, options],
+  )
+
   const editSiblingNames = useMemo(
     () =>
       editingCategory
@@ -200,9 +207,43 @@ export default function ManageCategoriesDialog({
     [options, editingCategory],
   )
 
-  const handleAddClick = (parentId: number | null, depth: number) => {
+  const addInheritedProgramIds = useMemo(() => {
+    if (addParentId == null) return []
+    const ancestors: FlatOption[] = []
+    let curId: number | null = addParentId
+    while (curId != null) {
+      const anc: FlatOption | undefined = options.find((o) => o.id === curId)
+      if (!anc) break
+      ancestors.push(anc)
+      curId = anc.parentId
+    }
+    ancestors.reverse()
+    return narrowProgramIds(ancestors)
+  }, [addParentId, options])
+
+  const inheritedProgramIds = useMemo(() => {
+    if (!editingCategory) return []
+    const ancestors: FlatOption[] = []
+    let curParentId: number | null = editingCategory.parentId
+    while (curParentId != null) {
+      const ancestor: FlatOption | undefined = options.find((o) => o.id === curParentId)
+      if (!ancestor) break
+      ancestors.push(ancestor)
+      curParentId = ancestor.parentId
+    }
+    ancestors.reverse()
+    return narrowProgramIds(ancestors)
+  }, [editingCategory, options])
+
+  const currentProgramIds = useMemo(
+    () => editingCategory?.programIds ?? [],
+    [editingCategory?.programIds],
+  )
+
+
+  const handleAddClick = (parentId: number | null, parentLabel?: string) => {
     setAddParentId(parentId)
-    setAddParentDepth(depth)
+    setAddParentLabel(parentLabel)
     setAddDialogOpen(true)
   }
 
@@ -229,7 +270,7 @@ export default function ManageCategoriesDialog({
   }, [])
 
   const handleEditClick = useCallback((opt: FlatOption) => {
-    setEditingCategory(opt)
+    setEditingCategoryId(opt.id)
     setEditDialogOpen(true)
   }, [])
 
@@ -302,25 +343,25 @@ export default function ManageCategoriesDialog({
       ...remaining.slice(insertIdx),
     ]
 
-    const reorderItems: Array<{ id: number; parent_id: number | null; sort_order: number }> = []
-    const sortCounters = new Map<string, number>()
-
-    for (const item of newList) {
-      const key = String(item.parentId)
-      const counter = sortCounters.get(key) ?? 0
-      reorderItems.push({
-        id: item.id,
-        parent_id: item.parentId,
-        sort_order: counter,
-      })
-      sortCounters.set(key, counter + 1)
-    }
+    const imagesByParent = collectImagesByParent(categories, uncategorizedImages)
+    const { catItems, imgItems } = interleavedSortOrders(newList, options, imagesByParent)
 
     setDragId(null)
     setDropTarget(null)
 
-    await onReorderCategories(reorderItems)
-  }, [dragId, dropTarget, options, onReorderCategories])
+    try {
+      await onReorderCategories(catItems)
+    } catch {
+      onReorderComplete?.()
+      return
+    }
+    if (imgItems.length > 0 && onReorderImages) {
+      try {
+        await onReorderImages(imgItems)
+      } catch { /* error already surfaced by the wrapper */ }
+    }
+    onReorderComplete?.()
+  }, [dragId, dropTarget, options, categories, uncategorizedImages, onReorderCategories, onReorderImages, onReorderComplete])
 
   // Compute the Y position and indentation for the drop indicator line
   const dropIndicatorStyle = useMemo(() => {
@@ -389,7 +430,7 @@ export default function ManageCategoriesDialog({
                   <IconButton
                     edge="end"
                     size="small"
-                    onClick={() => handleAddClick(null, 0)}
+                    onClick={() => handleAddClick(null)}
                   >
                     <AddIcon fontSize="small" />
                   </IconButton>
@@ -411,6 +452,7 @@ export default function ManageCategoriesDialog({
                 onDragEnd={handleDragEnd}
                 sx={{
                   pl: 2 + opt.depth * 3,
+                  pr: 18,
                   opacity: dragId === opt.id ? 0.4 : 1,
                   transition: 'opacity 0.15s',
                 }}
@@ -421,7 +463,7 @@ export default function ManageCategoriesDialog({
                           <IconButton
                             edge="end"
                             size="small"
-                            onClick={() => onToggleVisibility(opt.id, opt.status !== 'hidden')}
+                            onClick={() => onToggleVisibility(opt.id)}
                           >
                             {opt.status === 'hidden' ? (
                               <DisabledVisibleIcon fontSize="small" color="disabled" />
@@ -432,7 +474,7 @@ export default function ManageCategoriesDialog({
                         </Tooltip>
                       )}
                       {onEditCategory && (
-                        <Tooltip title="Rename category">
+                        <Tooltip title="Edit category">
                           <IconButton
                             edge="end"
                             size="small"
@@ -447,7 +489,7 @@ export default function ManageCategoriesDialog({
                           <IconButton
                             edge="end"
                             size="small"
-                            onClick={() => handleAddClick(opt.id, opt.depth + 1)}
+                            onClick={() => handleAddClick(opt.id, opt.label)}
                           >
                             <AddIcon fontSize="small" />
                           </IconButton>
@@ -482,6 +524,33 @@ export default function ManageCategoriesDialog({
                       <Typography component="span" sx={{ opacity: opt.status === 'hidden' ? 0.5 : 1 }}>
                         {opt.label}
                       </Typography>
+                      {(opt.programIds.length > 0 || opt.inheritedRestriction) && (
+                        onEditCategory ? (
+                          <Tooltip title={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}>
+                            <IconButton
+                              aria-label={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditClick(opt)
+                              }}
+                              sx={{ p: 0, ml: 0.5, verticalAlign: 'middle' }}
+                            >
+                              <LockIcon sx={{ fontSize: 14, color: 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
+                            </IconButton>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip title={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}>
+                            <span
+                              role="img"
+                              aria-label={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}
+                              style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: 4 }}
+                            >
+                              <LockIcon sx={{ fontSize: 14, color: 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
+                            </span>
+                          </Tooltip>
+                        )
+                      )}
                     </>
                   }
                 />
@@ -534,23 +603,27 @@ export default function ManageCategoriesDialog({
         open={addDialogOpen}
         onClose={() => setAddDialogOpen(false)}
         onAdd={handleAddCategory}
-        currentDepth={addParentDepth}
+        parentLabel={addParentLabel}
         siblingNames={addSiblingNames}
         programs={programs}
+        inheritedProgramIds={addInheritedProgramIds}
       />
 
-      <EditCategoryDialog
-        open={editDialogOpen}
-        onClose={() => {
-          setEditDialogOpen(false)
-          setEditingCategory(null)
-        }}
-        onSave={handleEditSave}
-        currentLabel={editingCategory?.label ?? ''}
-        siblingNames={editSiblingNames}
-        programs={programs}
-        currentProgramIds={editingCategory?.programIds ?? []}
-      />
+      {onEditCategory && (
+        <EditCategoryDialog
+          open={editDialogOpen && editingCategory != null}
+          onClose={() => {
+            setEditDialogOpen(false)
+            setEditingCategoryId(null)
+          }}
+          onSave={handleEditSave}
+          currentLabel={editingCategory?.label ?? ''}
+          siblingNames={editSiblingNames}
+          programs={programs}
+          currentProgramIds={currentProgramIds}
+          inheritedProgramIds={inheritedProgramIds}
+        />
+      )}
 
       {/* Confirm delete dialog */}
       <Dialog open={confirmDeleteOpen} onClose={handleCancelDelete}>

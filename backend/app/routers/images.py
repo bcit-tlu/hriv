@@ -6,7 +6,7 @@ import os
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from sqlalchemy import select, update as sql_update
@@ -15,8 +15,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import get_current_user, require_role
 from ..database import get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
-from ..models import Category, Image, Program, SourceImage, User
-from ..schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageOut, SourceImageOut
+from ..models import Category, Image, SourceImage, User
+from ..schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageReorderRequest, ImageOut, SourceImageOut
+from ..visibility import get_student_excluded_category_ids, is_category_visible_to_student
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -38,12 +39,13 @@ async def list_images(
         stmt = stmt.where(Image.category_id == category_id)
     if _user.role == "student":
         stmt = stmt.where(Image.active.is_(True))
-        # Exclude images belonging to hidden categories
-        hidden_cat_ids = select(Category.id).where(Category.status == "hidden").scalar_subquery()
-        stmt = stmt.where(
-            (Image.category_id.is_(None)) | (~Image.category_id.in_(hidden_cat_ids))
-        )
-    stmt = stmt.order_by(Image.name)
+        user_program_ids = {p.id for p in _user.programs}
+        excluded = await get_student_excluded_category_ids(db, user_program_ids)
+        if excluded:
+            stmt = stmt.where(
+                (Image.category_id.is_(None)) | (~Image.category_id.in_(excluded))
+            )
+    stmt = stmt.order_by(Image.sort_order, Image.name)
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -60,11 +62,9 @@ async def get_image(
     if _user.role == "student":
         if not img.active:
             raise HTTPException(status_code=404, detail="Image not found")
-        # Block access to images in hidden categories
-        if img.category_id is not None:
-            cat = await db.get(Category, img.category_id)
-            if cat and cat.status == "hidden":
-                raise HTTPException(status_code=404, detail="Image not found")
+        user_program_ids = {p.id for p in _user.programs}
+        if not await is_category_visible_to_student(db, img.category_id, user_program_ids):
+            raise HTTPException(status_code=404, detail="Image not found")
     return img
 
 
@@ -84,14 +84,12 @@ async def create_image(
                 copyright=body.copyright,
                 note=body.note,
                 active=body.active,
+                sort_order=body.sort_order,
                 metadata_=body.metadata_extra or {},
                 width=body.width,
                 height=body.height,
                 file_size=body.file_size,
             )
-            if body.program_ids:
-                progs = (await db.execute(select(Program).where(Program.id.in_(body.program_ids)))).scalars().all()
-                img.programs = list(progs)
             db.add(img)
             await db.commit()
             await db.refresh(img)
@@ -119,20 +117,14 @@ async def bulk_update_images(
             images = result.scalars().all()
             if len(images) != len(set(body.image_ids)):
                 raise HTTPException(status_code=404, detail="One or more images not found")
-            update_data = body.model_dump(exclude_unset=True, exclude={"image_ids", "program_ids"})
-            program_ids = body.program_ids
-            progs: list[Program] | None = None
-            if program_ids is not None:
-                progs = list((await db.execute(select(Program).where(Program.id.in_(program_ids)))).scalars().all())
+            update_data = body.model_dump(exclude_unset=True, exclude={"image_ids"})
             for img in images:
                 for key, value in update_data.items():
                     setattr(img, key, value)
-                if progs is not None:
-                    img.programs = progs
                 img.version = img.version + 1
             await db.commit()
             # Reload updated images
-            stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.name)
+            stmt = select(Image).where(Image.id.in_(body.image_ids)).order_by(Image.sort_order, Image.name)
             result = await db.execute(stmt)
             return result.scalars().all()
         except Exception as exc:
@@ -203,12 +195,8 @@ async def update_image(
                     else:
                         current[key] = value
                 update_data["metadata_"] = current if current else None
-            program_ids = update_data.pop("program_ids", None)
             for key, value in update_data.items():
                 setattr(img, key, value)
-            if program_ids is not None:
-                progs = (await db.execute(select(Program).where(Program.id.in_(program_ids)))).scalars().all()
-                img.programs = list(progs)
 
             await db.commit()
             await db.refresh(img)
@@ -235,12 +223,22 @@ async def replace_image(
     background_tasks: BackgroundTasks,
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
+    name: Annotated[str | None, Form()] = None,
+    category_id: Annotated[str | None, Form()] = None,
+    copyright: Annotated[str | None, Form()] = None,
+    note: Annotated[str | None, Form()] = None,
+    active: Annotated[str | None, Form()] = None,
+    metadata_extra: Annotated[str | None, Form()] = None,
 ) -> SourceImage:
-    """Replace an existing image file.
+    """Replace an existing image file, optionally updating metadata atomically.
 
     Uploads a new source file and triggers background processing that will
     regenerate tiles and thumbnails, update image dimensions and file size,
     and clear all canvas annotations and overlay metadata.
+
+    When metadata fields are included in the multipart form, the image record
+    is updated in the same transaction as the source-image creation, ensuring
+    both succeed or both fail.
     """
     with tracer.start_as_current_span("image.replace") as span:
         try:
@@ -254,6 +252,36 @@ async def replace_image(
 
             if not is_valid_image(file.filename, file.content_type):
                 raise HTTPException(status_code=400, detail="File must be an image")
+
+            # ── Apply optional metadata updates atomically ──────────
+            has_metadata = any(
+                v is not None
+                for v in (name, category_id, copyright, note, active, metadata_extra)
+            )
+            if has_metadata:
+                span.set_attribute("image.metadata_update", True)
+                if name is not None:
+                    img.name = name
+                if category_id is not None:
+                    try:
+                        parsed_cat = int(category_id) if category_id != "" else None
+                    except (ValueError, TypeError):
+                        raise HTTPException(status_code=400, detail="Invalid category_id")
+                    img.category_id = parsed_cat
+                if copyright is not None:
+                    img.copyright = copyright if copyright != "" else None
+                if note is not None:
+                    img.note = note if note != "" else None
+                if active is not None:
+                    img.active = active.lower() in ("true", "1")
+                if metadata_extra is not None:
+                    try:
+                        img.metadata_ = json.loads(metadata_extra) if metadata_extra else None
+                    except (json.JSONDecodeError, TypeError):
+                        raise HTTPException(status_code=400, detail="Invalid metadata_extra")
+                img.version = img.version + 1
+            else:
+                span.set_attribute("image.metadata_update", False)
 
             os.makedirs(settings.source_images_dir, exist_ok=True)
 
@@ -351,6 +379,28 @@ async def bulk_delete_images(
             for img in images:
                 await db.delete(img)
             await db.commit()
+        except Exception as exc:
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
+            raise
+
+
+@router.put("/reorder", status_code=200)
+async def reorder_images(
+    body: ImageReorderRequest,
+    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
+    db: AsyncSession = Depends(get_db),
+):
+    with tracer.start_as_current_span("image.reorder") as span:
+        try:
+            span.set_attribute("image.count", len(body.items))
+            for item in body.items:
+                img = await db.get(Image, item.id)
+                if img is None:
+                    raise HTTPException(status_code=404, detail=f"Image {item.id} not found")
+                img.sort_order = item.sort_order
+            await db.commit()
+            return {"status": "ok"}
         except Exception as exc:
             span.record_exception(exc)
             span.set_status(StatusCode.ERROR, str(exc))

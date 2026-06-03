@@ -13,10 +13,11 @@ on:
 permissions:
   contents: read
   packages: write
-  id-token: write          # Cosign keyless (Sigstore OIDC)
+  id-token: write
 
 env:
   REGISTRY: ghcr.io
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   publish:
@@ -50,32 +51,42 @@ jobs:
 
       - name: Cosign login (OCI)
         if: steps.parse.outputs.publish == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY: ${{ env.REGISTRY }}
+          ACTOR: ${{ github.actor }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            cosign login "${{ env.REGISTRY }}" \
-            -u "${{ github.actor }}" \
+          echo "${GITHUB_TOKEN}" | \
+            cosign login "${REGISTRY}" \
+            -u "${ACTOR}" \
             --password-stdin
 
       - name: Helm login (OCI)
         if: steps.parse.outputs.publish == 'true'
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY: ${{ env.REGISTRY }}
+          ACTOR: ${{ github.actor }}
         run: |
-          echo "${{ secrets.GITHUB_TOKEN }}" | \
-            helm registry login "${{ env.REGISTRY }}" \
-            -u "${{ github.actor }}" \
+          echo "${GITHUB_TOKEN}" | \
+            helm registry login "${REGISTRY}" \
+            -u "${ACTOR}" \
             --password-stdin
 
       - name: Package and push chart
         id: push
         if: steps.parse.outputs.publish == 'true'
         shell: bash
+        env:
+          VERSION: ${{ steps.parse.outputs.version }}
+          CHART_DIR: charts/${{ matrix.component }}
+          OCI_REPO: oci://${{ env.REGISTRY }}/${{ github.repository }}/charts
         run: |
           set -euo pipefail
 
-          VERSION="${{ steps.parse.outputs.version }}"
-          CHART_DIR="charts/${{ matrix.component }}"
+          CHART_NAME=$(yq '.name' "${CHART_DIR}/Chart.yaml")
           DEST_DIR="/tmp/charts"
-
           mkdir -p "${DEST_DIR}"
 
           helm dependency update "${CHART_DIR}" || true
@@ -86,16 +97,25 @@ jobs:
             -d "${DEST_DIR}"
 
           PUSH_OUT=$(helm push \
-            "${DEST_DIR}/hriv-${{ matrix.component }}-${VERSION}.tgz" \
-            "oci://${{ env.REGISTRY }}/${{ github.repository }}/charts" 2>&1) || true
+            "${DEST_DIR}/${CHART_NAME}-${VERSION}.tgz" \
+            "${OCI_REPO}" 2>&1) || { echo "${PUSH_OUT}"; exit 1; }
           echo "${PUSH_OUT}"
-          printf '%s\n' "${PUSH_OUT}" | grep -q '^Digest:' || { echo '::error::helm push failed'; exit 1; }
 
-          DIGEST=$(printf '%s\n' "${PUSH_OUT}" | awk '/^Digest:/{print $2}')
+          # Tolerant digest parse: case-insensitive, allows leading whitespace.
+          DIGEST=$(printf '%s\n' "${PUSH_OUT}" \
+            | awk 'tolower($1)=="digest:"{print $2; exit}')
+          if [[ -z "${DIGEST}" ]]; then
+            echo "::error::helm push succeeded but no digest found in output"
+            exit 1
+          fi
+
           echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "chart_name=${CHART_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Sign chart
         if: steps.parse.outputs.publish == 'true' && steps.push.outputs.digest != ''
+        env:
+          CHART_REF: ${{ env.REGISTRY }}/${{ github.repository }}/charts/${{ steps.push.outputs.chart_name }}
+          DIGEST: ${{ steps.push.outputs.digest }}
         run: |
-          cosign sign --yes \
-            "${{ env.REGISTRY }}/${{ github.repository }}/charts/hriv-${{ matrix.component }}@${{ steps.push.outputs.digest }}"
+          cosign sign --yes "${CHART_REF}@${DIGEST}"

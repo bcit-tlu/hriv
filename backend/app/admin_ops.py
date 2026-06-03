@@ -233,6 +233,7 @@ async def run_db_export(task_id: int) -> None:
                     {
                         "id": p.id,
                         "name": p.name,
+                        "oidc_group": p.oidc_group,
                         "created_at": dt(p.created_at),
                         "updated_at": dt(p.updated_at),
                     }
@@ -261,8 +262,8 @@ async def run_db_export(task_id: int) -> None:
                         "category_id": i.category_id,
                         "copyright": i.copyright,
                         "note": i.note,
-                        "program_ids": [p.id for p in i.programs],
                         "active": i.active,
+                        "sort_order": i.sort_order,
                         "metadata": i.metadata_,
                         "created_at": dt(i.created_at),
                         "updated_at": dt(i.updated_at),
@@ -304,7 +305,6 @@ async def run_db_export(task_id: int) -> None:
                         "copyright": s.copyright,
                         "note": s.note,
                         "active": s.active,
-                        "program": s.program,
                         "image_id": s.image_id,
                         "file_size": s.file_size,
                         "created_at": dt(s.created_at),
@@ -456,7 +456,6 @@ async def run_db_import(task_id: int) -> None:
                 await status_session.commit()
 
                 await data_session.execute(text("DELETE FROM source_images"))
-                await data_session.execute(text("DELETE FROM image_programs"))
                 await data_session.execute(text("DELETE FROM images"))
                 await data_session.execute(text("DELETE FROM category_programs"))
                 await data_session.execute(text("DELETE FROM categories"))
@@ -471,6 +470,7 @@ async def run_db_import(task_id: int) -> None:
                     program = Program(
                         id=p["id"],
                         name=p["name"],
+                        oidc_group=p.get("oidc_group"),
                         created_at=_parse_dt(p.get("created_at")),
                         updated_at=_parse_dt(p.get("updated_at")),
                     )
@@ -569,16 +569,11 @@ async def run_db_import(task_id: int) -> None:
                         copyright=i.get("copyright"),
                         note=i.get("note") or i.get("origin"),
                         active=i.get("active", True),
+                        sort_order=i.get("sort_order", 0),
                         metadata_=i.get("metadata", {}),
                         created_at=_parse_dt(i.get("created_at")),
                         updated_at=_parse_dt(i.get("updated_at")),
                     )
-                    prog_ids = i.get("program_ids", [])
-                    if prog_ids:
-                        progs = (await data_session.execute(
-                            select(Program).where(Program.id.in_(prog_ids))
-                        )).scalars().all()
-                        img.programs = list(progs)
                     data_session.add(img)
                 await data_session.flush()
 
@@ -597,7 +592,6 @@ async def run_db_import(task_id: int) -> None:
                         copyright=s.get("copyright"),
                         note=s.get("note"),
                         active=s.get("active", True),
-                        program=s.get("program"),
                         image_id=s.get("image_id"),
                         file_size=s.get("file_size"),
                         created_at=_parse_dt(s.get("created_at")),

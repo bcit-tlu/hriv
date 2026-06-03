@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
+import { alpha } from '@mui/material/styles'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import CardContent from '@mui/material/CardContent'
@@ -10,9 +11,11 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
+import EditIcon from '@mui/icons-material/Edit'
 import FolderIcon from '@mui/icons-material/Folder'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
-import MoreVertIcon from '@mui/icons-material/MoreVert'
+import ImageIcon from '@mui/icons-material/Image'
+import VisibilityIcon from '@mui/icons-material/Visibility'
 import type { Category, ImageItem, Program } from '../types'
 import CardImagePickerModal from './CardImagePickerModal'
 
@@ -45,32 +48,26 @@ function countAllImages(cat: Category): number {
   return count
 }
 
-/** Collect all unique program IDs from a category and all its descendants. */
-function collectProgramIds(cat: Category): Set<number> {
-  const ids = new Set<number>()
-  for (const img of cat.images) {
-    for (const pid of img.programIds) ids.add(pid)
-  }
-  for (const child of cat.children) {
-    for (const pid of collectProgramIds(child)) ids.add(pid)
-  }
-  return ids
-}
 
 interface CategoryTileProps {
   category: Category
   onClick: (category: Category) => void
   onMove?: (category: Category) => void
   onSetCardImage?: (categoryId: number, imageId: number | null) => void
+  onToggleVisibility?: (categoryId: number) => Promise<void>
+  onEditName?: (category: Category) => void
   programs: Program[]
+  /** Called when native files are dropped onto this category tile. */
+  onDropFiles?: (categoryId: number, files: File[]) => void
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage, programs }: CategoryTileProps) {
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, onDropFiles }: CategoryTileProps) {
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
+  const dragCounter = useRef(0)
 
   const subCategoryCount = useMemo(() => countAllSubcategories(category), [category])
   const imageCount = useMemo(() => countAllImages(category), [category])
-  const programIds = useMemo(() => collectProgramIds(category), [category])
 
   const detailParts: string[] = []
   if (subCategoryCount > 0) {
@@ -81,7 +78,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
   }
   const detailText = detailParts.length > 0 ? detailParts.join(' \u00b7 ') : 'Empty'
 
-  const programChips = Array.from(programIds)
+  const programChips = category.programIds
     .map((pid) => programs.find((p) => p.id === pid))
     .filter((p): p is Program => p != null)
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -90,12 +87,97 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
     ? findImageInCategory(category, category.cardImageId)
     : null
 
+  const isDropTarget = onDropFiles != null
+
+  const isAcceptedDrag = useCallback((e: React.DragEvent) => {
+    return e.dataTransfer.types.includes('Files')
+  }, [])
+
+  const handleDragEnter = useCallback((e: React.DragEvent) => {
+    if (!isAcceptedDrag(e)) return
+    e.preventDefault()
+    dragCounter.current += 1
+    if (dragCounter.current === 1) setDragOver(true)
+  }, [isAcceptedDrag])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (!isAcceptedDrag(e)) return
+    dragCounter.current -= 1
+    if (dragCounter.current === 0) setDragOver(false)
+  }, [isAcceptedDrag])
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    if (!isAcceptedDrag(e)) return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
+  }, [isAcceptedDrag])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    dragCounter.current = 0
+    setDragOver(false)
+
+    if (e.dataTransfer.types.includes('Files') && onDropFiles) {
+      e.stopPropagation()
+      onDropFiles(category.id, Array.from(e.dataTransfer.files))
+    }
+  }, [category.id, onDropFiles])
+
   return (
     <>
       <Card
-        elevation={2}
-        sx={{ width: '100%', maxWidth: 300, position: 'relative' }}
+        elevation={dragOver ? 8 : 2}
+        onDragEnter={isDropTarget ? handleDragEnter : undefined}
+        onDragLeave={isDropTarget ? handleDragLeave : undefined}
+        onDragOver={isDropTarget ? handleDragOver : undefined}
+        onDrop={isDropTarget ? handleDrop : undefined}
+        sx={{
+          width: '100%',
+          maxWidth: 300,
+          position: 'relative',
+          transition: 'box-shadow 0.15s, outline-color 0.2s, transform 0.15s',
+          outline: '3px dashed',
+          outlineColor: dragOver ? 'primary.main' : 'transparent',
+          outlineOffset: 3,
+          transform: dragOver ? 'scale(1.03)' : 'scale(1)',
+        }}
       >
+        {/* Drag-over overlay indicating drop target */}
+        {dragOver && (
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              zIndex: 2,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              bgcolor: (theme) => alpha(theme.palette.background.paper, 0.82),
+              borderRadius: 'inherit',
+              pointerEvents: 'none',
+              gap: 0.5,
+            }}
+          >
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                bgcolor: 'primary.main',
+                color: 'primary.contrastText',
+              }}
+            >
+              <DriveFileMoveIcon sx={{ fontSize: 22 }} />
+            </Box>
+            <Typography variant="caption" sx={{ fontWeight: 600, color: 'primary.main' }}>
+              Drop here
+            </Typography>
+          </Box>
+        )}
         <CardActionArea onClick={() => onClick(category)}>
           {cardImage ? (
             <CardMedia
@@ -119,16 +201,25 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
               <FolderIcon sx={{ fontSize: 64, opacity: 0.85 }} />
             </Box>
           )}
-          <CardContent>
+          <CardContent sx={{ opacity: category.status === 'hidden' ? 0.5 : 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <FolderOutlinedIcon fontSize="small" color="action" sx={{ flexShrink: 0 }} />
-              <Typography variant="h6" noWrap sx={{ opacity: category.status === 'hidden' ? 0.5 : 1 }}>
+              <Typography variant="h6" noWrap>
                 {category.label}
               </Typography>
-              {category.status === 'hidden' && (
-                <Tooltip title="Hidden from students">
-                  <DisabledVisibleIcon fontSize="small" color="disabled" />
-                </Tooltip>
+              {onEditName && (
+                <IconButton
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    e.preventDefault()
+                    onEditName(category)
+                  }}
+                  aria-label="Edit category name"
+                  sx={{ flexShrink: 0, ml: 0.25 }}
+                >
+                  <EditIcon sx={{ fontSize: 16 }} />
+                </IconButton>
               )}
             </Box>
             <Typography variant="body2" color="text.secondary">
@@ -137,7 +228,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             {programChips.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {programChips.map((p) => (
-                  <Chip key={p.id} label={p.name} size="small" />
+                  <Chip key={p.id} label={p.name} size="small" color="primary" />
                 ))}
               </Box>
             )}
@@ -152,23 +243,49 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             gap: 0.5,
           }}
         >
+          {onToggleVisibility && (
+            <Tooltip title={category.status === 'hidden' ? 'Show to students' : 'Hide from students'}>
+              <IconButton
+                size="small"
+                sx={{
+                  color: 'white',
+                  bgcolor: 'rgba(0,0,0,0.25)',
+                  '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  onToggleVisibility(category.id)
+                }}
+                aria-label="Toggle visibility"
+              >
+                {category.status === 'hidden' ? (
+                  <DisabledVisibleIcon fontSize="small" />
+                ) : (
+                  <VisibilityIcon fontSize="small" />
+                )}
+              </IconButton>
+            </Tooltip>
+          )}
           {onSetCardImage && (
-            <IconButton
-              size="small"
-              sx={{
-                color: 'white',
-                bgcolor: 'rgba(0,0,0,0.25)',
-                '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
-              }}
-              onClick={(e) => {
-                e.stopPropagation()
-                e.preventDefault()
-                setPickerOpen(true)
-              }}
-              aria-label="Set card image"
-            >
-              <MoreVertIcon fontSize="small" />
-            </IconButton>
+            <Tooltip title="Set card image">
+              <IconButton
+                size="small"
+                sx={{
+                  color: 'white',
+                  bgcolor: 'rgba(0,0,0,0.25)',
+                  '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
+                }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  setPickerOpen(true)
+                }}
+                aria-label="Set card image"
+              >
+                <ImageIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           )}
           {onMove && (
             <IconButton

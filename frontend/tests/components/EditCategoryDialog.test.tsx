@@ -233,6 +233,206 @@ describe('EditCategoryDialog', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
+  // ─── Inherited program restriction logic ──────────────────────────
+
+  describe('child program picker restriction', () => {
+    const allPrograms = [
+      { id: 1, name: 'Program A' },
+      { id: 2, name: 'Program B' },
+      { id: 3, name: 'Program C' },
+    ]
+
+    it('disables programs not in the inherited set', () => {
+      render(
+        <EditCategoryDialog
+          open
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          currentLabel="Child"
+          programs={allPrograms}
+          currentProgramIds={[]}
+          inheritedProgramIds={[1, 2]}
+        />,
+      )
+      // "Specific programs" is auto-selected when inheritedProgramIds exist
+
+      const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
+      const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
+      const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
+
+      expect(chipA).not.toHaveClass('Mui-disabled')
+      expect(chipB).not.toHaveClass('Mui-disabled')
+      expect(chipC).toHaveClass('Mui-disabled')
+    })
+
+    it('filters out invalid selections on dialog open', () => {
+      render(
+        <EditCategoryDialog
+          open
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          currentLabel="Child"
+          programs={allPrograms}
+          currentProgramIds={[1, 3]}
+          inheritedProgramIds={[1, 2]}
+        />,
+      )
+      // "Specific programs" should be pre-selected since currentProgramIds is non-empty
+      const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
+      const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
+
+      // Program A (id=1) is valid and should be selected (filled)
+      expect(chipA).toHaveClass('MuiChip-filled')
+
+      // Program C (id=3) is NOT in inherited set — should not be selected
+      expect(chipC).not.toHaveClass('MuiChip-filled')
+    })
+
+    it('allows toggling programs within the inherited set', async () => {
+      const user = userEvent.setup()
+      render(
+        <EditCategoryDialog
+          open
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          currentLabel="Child"
+          programs={allPrograms}
+          currentProgramIds={[1]}
+          inheritedProgramIds={[1, 2]}
+        />,
+      )
+
+      const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
+      await user.click(chipB)
+
+      // After clicking, Program B should now be selected (filled)
+      expect(chipB).toHaveClass('MuiChip-filled')
+    })
+
+    it('does not allow toggling disabled programs', () => {
+      render(
+        <EditCategoryDialog
+          open
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          currentLabel="Child"
+          programs={allPrograms}
+          currentProgramIds={[]}
+          inheritedProgramIds={[1, 2]}
+        />,
+      )
+      // "Specific programs" is auto-selected when inheritedProgramIds exist
+
+      // Program C should be disabled (pointer-events: none prevents clicks)
+      const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
+      expect(chipC).toHaveClass('Mui-disabled')
+      expect(chipC).not.toHaveClass('MuiChip-filled')
+    })
+
+    it('saves only valid inherited programs', async () => {
+      const user = userEvent.setup()
+      const onSave = vi.fn().mockResolvedValue(undefined)
+
+      render(
+        <EditCategoryDialog
+          open
+          onClose={vi.fn()}
+          onSave={onSave}
+          currentLabel="Child"
+          programs={allPrograms}
+          currentProgramIds={[1, 3]}
+          inheritedProgramIds={[1, 2]}
+        />,
+      )
+
+      // Change label to enable Save (since invalid programs were filtered,
+      // programsChanged is true but let's also change label for clarity)
+      const input = screen.getByDisplayValue('Child')
+      await user.clear(input)
+      await user.type(input, 'Updated Child')
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() => {
+        // Should save [1] only — Program C (id=3) was filtered out on open
+        expect(onSave).toHaveBeenCalledWith('Updated Child', [1])
+      })
+    })
+
+    it('shows all programs as enabled when no inherited restrictions exist', () => {
+      render(
+        <EditCategoryDialog
+          open
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          currentLabel="TopLevel"
+          programs={allPrograms}
+          currentProgramIds={[]}
+          inheritedProgramIds={[]}
+        />,
+      )
+      screen.getByLabelText('Specific programs').click()
+
+      const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
+      const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
+      const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
+
+      expect(chipA).not.toHaveClass('Mui-disabled')
+      expect(chipB).not.toHaveClass('Mui-disabled')
+      expect(chipC).not.toHaveClass('Mui-disabled')
+    })
+
+    it('defaults to specific-programs view when inherited restrictions exist', () => {
+      render(
+        <EditCategoryDialog
+          open
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          currentLabel="Child"
+          programs={allPrograms}
+          currentProgramIds={[]}
+          inheritedProgramIds={[1, 2]}
+        />,
+      )
+      // Should auto-select "Specific programs" when inheritedProgramIds exist
+      expect(screen.getByLabelText('Specific programs')).toBeChecked()
+
+      // Inherited programs should render at 0.5 opacity (not selected as own)
+      const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
+      const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
+      expect(chipA).toHaveStyle({ opacity: '0.5' })
+      expect(chipB).toHaveStyle({ opacity: '0.5' })
+      // Both should be filled primary
+      expect(chipA).toHaveClass('MuiChip-filled')
+      expect(chipB).toHaveClass('MuiChip-filled')
+    })
+
+    it('allows saving label change with inherited-only programs (no own selection)', async () => {
+      const user = userEvent.setup()
+      const onSave = vi.fn().mockResolvedValue(undefined)
+      render(
+        <EditCategoryDialog
+          open
+          onClose={vi.fn()}
+          onSave={onSave}
+          currentLabel="Child"
+          programs={allPrograms}
+          currentProgramIds={[]}
+          inheritedProgramIds={[1, 2]}
+        />,
+      )
+      // Change label — Save should be enabled even with 0 own selections
+      const input = screen.getByDisplayValue('Child')
+      await user.clear(input)
+      await user.type(input, 'Renamed Child')
+      const saveBtn = screen.getByRole('button', { name: 'Save' })
+      expect(saveBtn).not.toBeDisabled()
+      await user.click(saveBtn)
+      await waitFor(() => {
+        expect(onSave).toHaveBeenCalledWith('Renamed Child', [])
+      })
+    })
+  })
+
   it('cancel button calls onClose', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()

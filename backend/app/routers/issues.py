@@ -78,7 +78,7 @@ async def report_issue(
     issue_body = (
         f"{body.description}\n\n"
         f"---\n\n"
-        f"**Reported by:** {current_user.name} ({current_user.email})\n"
+        f"**Reported by:** {current_user.role} (user #{current_user.id})\n"
         f"**Page:** {body.page_url}"
     )
 

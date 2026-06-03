@@ -6,37 +6,25 @@
  * 2. Hidden indicator — dimmed title and DisabledVisible icon when status='hidden'
  * 3. Visible categories — no hidden indicator when status is not 'hidden'
  * 4. Card image — renders thumbnail when cardImageId is set
- * 5. Program chips — renders program labels from descendant images
+ * 5. Program chips — renders program labels from category's own programIds only
  * 6. Detail text — correct sub-category and image counts
  * 7. Move button — renders and calls callback
  */
 
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CategoryTile from '../../src/components/CategoryTile'
-import type { Category, Program } from '../../src/types'
+import type { Program } from '../../src/types'
+import { makeCategory } from '../helpers/fixtures'
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeCategory(overrides: Partial<Category> = {}): Category {
-  return {
-    id: 1,
-    label: 'Test Category',
-    parentId: null,
-    children: [],
-    images: [],
-    status: null,
-    cardImageId: null,
-    ...overrides,
-  }
-}
-
 const samplePrograms: Program[] = [
-  { id: 10, name: 'Pathology', created_at: '2024-01-01', updated_at: '2024-01-01' },
-  { id: 20, name: 'Radiology', created_at: '2024-01-01', updated_at: '2024-01-01' },
+  { id: 10, name: 'Pathology', oidc_group: null, created_at: '2024-01-01', updated_at: '2024-01-01' },
+  { id: 20, name: 'Radiology', oidc_group: null, created_at: '2024-01-01', updated_at: '2024-01-01' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -71,18 +59,19 @@ describe('CategoryTile', () => {
   // ─── Hidden indicator ─────────────────────────────────────────────
 
   describe('hidden indicator', () => {
-    it('shows the hidden icon when category status is hidden', () => {
+    it('shows the hidden icon when category status is hidden and toggle provided', () => {
       render(
         <CategoryTile
           category={makeCategory({ status: 'hidden' })}
           onClick={vi.fn()}
           programs={[]}
+          onToggleVisibility={vi.fn()}
         />,
       )
       expect(screen.getByTestId('DisabledVisibleIcon')).toBeInTheDocument()
     })
 
-    it('dims the title text when category is hidden', () => {
+    it('dims the card content when category is hidden', () => {
       render(
         <CategoryTile
           category={makeCategory({ status: 'hidden', label: 'Hidden Cat' })}
@@ -91,21 +80,35 @@ describe('CategoryTile', () => {
         />,
       )
       const title = screen.getByText('Hidden Cat')
-      expect(title).toHaveStyle({ opacity: 0.5 })
+      expect(title.closest('.MuiCardContent-root')).toHaveStyle({ opacity: 0.5 })
     })
 
-    it('does not show the hidden icon when category is visible', () => {
+    it('shows the visible icon when category is active and toggle provided', () => {
       render(
         <CategoryTile
           category={makeCategory({ status: null })}
           onClick={vi.fn()}
           programs={[]}
+          onToggleVisibility={vi.fn()}
         />,
       )
       expect(screen.queryByTestId('DisabledVisibleIcon')).not.toBeInTheDocument()
+      expect(screen.getByTestId('VisibilityIcon')).toBeInTheDocument()
     })
 
-    it('title has full opacity when category is visible', () => {
+    it('does not show visibility icons when toggle is not provided', () => {
+      render(
+        <CategoryTile
+          category={makeCategory({ status: 'hidden' })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+      expect(screen.queryByTestId('DisabledVisibleIcon')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('VisibilityIcon')).not.toBeInTheDocument()
+    })
+
+    it('card content has full opacity when category is visible', () => {
       render(
         <CategoryTile
           category={makeCategory({ status: null, label: 'Visible Cat' })}
@@ -114,7 +117,7 @@ describe('CategoryTile', () => {
         />,
       )
       const title = screen.getByText('Visible Cat')
-      expect(title).toHaveStyle({ opacity: 1 })
+      expect(title.closest('.MuiCardContent-root')).toHaveStyle({ opacity: 1 })
     })
   })
 
@@ -180,9 +183,9 @@ describe('CategoryTile', () => {
         <CategoryTile
           category={makeCategory({
             images: [
-              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
-              { id: 2, name: 'Img2', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
-              { id: 3, name: 'Img3', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
+              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
+              { id: 2, name: 'Img2', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
+              { id: 3, name: 'Img3', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
             ],
           })}
           onClick={vi.fn()}
@@ -197,7 +200,7 @@ describe('CategoryTile', () => {
         <CategoryTile
           category={makeCategory({
             images: [
-              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
+              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
             ],
           })}
           onClick={vi.fn()}
@@ -212,15 +215,15 @@ describe('CategoryTile', () => {
         <CategoryTile
           category={makeCategory({
             images: [
-              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
+              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
             ],
             children: [
               makeCategory({
                 id: 2,
                 label: 'Child',
                 images: [
-                  { id: 2, name: 'Img2', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
-                  { id: 3, name: 'Img3', thumb: '', tileSources: '', programIds: [], active: true, version: 1 },
+                  { id: 2, name: 'Img2', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
+                  { id: 3, name: 'Img3', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
                 ],
               }),
             ],
@@ -237,14 +240,10 @@ describe('CategoryTile', () => {
   // ─── Program chips ────────────────────────────────────────────────
 
   describe('program chips', () => {
-    it('renders program chips from image programIds', () => {
+    it('renders program chips only from category own programIds', () => {
       render(
         <CategoryTile
-          category={makeCategory({
-            images: [
-              { id: 1, name: 'Img', thumb: '', tileSources: '', programIds: [10, 20], active: true, version: 1 },
-            ],
-          })}
+          category={makeCategory({ programIds: [10, 20] })}
           onClick={vi.fn()}
           programs={samplePrograms}
         />,
@@ -253,7 +252,7 @@ describe('CategoryTile', () => {
       expect(screen.getByText('Radiology')).toBeInTheDocument()
     })
 
-    it('does not render program chips when no images have programIds', () => {
+    it('does not render program chips when programIds is empty', () => {
       render(
         <CategoryTile
           category={makeCategory()}
@@ -285,7 +284,7 @@ describe('CategoryTile', () => {
           category={makeCategory({
             cardImageId: 5,
             images: [
-              { id: 5, name: 'Card Img', thumb: '/thumbs/card.jpg', tileSources: '', programIds: [], active: true, version: 1 },
+              { id: 5, name: 'Card Img', thumb: '/thumbs/card.jpg', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
             ],
           })}
           onClick={vi.fn()}
@@ -338,6 +337,39 @@ describe('CategoryTile', () => {
         />,
       )
       expect(screen.queryByLabelText('Move category')).not.toBeInTheDocument()
+    })
+  })
+
+  // ─── Native file drop ──────────────────────────────────────────────
+
+  describe('native file drop', () => {
+    it('calls onDropFiles when native files are dropped', () => {
+      const onDropFiles = vi.fn()
+      const { container } = render(
+        <CategoryTile
+          category={makeCategory({ id: 8 })}
+          onClick={vi.fn()}
+          programs={[]}
+          onDropFiles={onDropFiles}
+        />,
+      )
+      const card = container.querySelector('.MuiCard-root')!
+      const fakeFile = new File(['data'], 'photo.png', { type: 'image/png' })
+      const event = new Event('drop', { bubbles: true })
+      Object.assign(event, {
+        dataTransfer: {
+          setData: vi.fn(),
+          getData: () => '',
+          effectAllowed: '',
+          dropEffect: '',
+          types: ['Files'],
+          files: [fakeFile],
+        },
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      })
+      fireEvent(card, event)
+      expect(onDropFiles).toHaveBeenCalledWith(8, [fakeFile])
     })
   })
 })

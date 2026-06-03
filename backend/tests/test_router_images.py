@@ -16,10 +16,11 @@ from app.routers.images import (
     update_image,
     bulk_update_images,
     bulk_delete_images,
+    reorder_images,
     delete_image,
     replace_image,
 )
-from app.schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete
+from app.schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageReorderItem, ImageReorderRequest
 
 
 def _make_image(
@@ -27,6 +28,7 @@ def _make_image(
     name: str = "test-img",
     category_id: int | None = None,
     active: bool = True,
+    sort_order: int = 0,
 ) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
@@ -38,6 +40,7 @@ def _make_image(
         copyright=None,
         note=None,
         active=active,
+        sort_order=sort_order,
         metadata_=None,
         version=1,
         width=None,
@@ -45,12 +48,11 @@ def _make_image(
         file_size=None,
         created_at=now,
         updated_at=now,
-        programs=[],
     )
 
 
-def _make_user(role: str = "admin") -> SimpleNamespace:
-    return SimpleNamespace(id=1, role=role, email="u@example.com")
+def _make_user(role: str = "admin", programs: list | None = None) -> SimpleNamespace:
+    return SimpleNamespace(id=1, role=role, email="u@example.com", programs=programs or [])
 
 
 def _mock_request(if_match: str | None = None) -> MagicMock:
@@ -103,8 +105,21 @@ async def test_list_images_student_filters() -> None:
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = imgs
 
+    # Visibility helper needs a categories query; return empty (no exclusions)
+    cat_result = MagicMock()
+    cat_result.scalars.return_value.unique.return_value.all.return_value = []
+
+    call_count = 0
+
+    async def execute_side_effect(stmt):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return cat_result
+        return mock_result
+
     db = AsyncMock()
-    db.execute = AsyncMock(return_value=mock_result)
+    db.execute = AsyncMock(side_effect=execute_side_effect)
 
     result = await list_images(_make_user("student"), db=db)
     assert len(result) == 1
@@ -140,7 +155,7 @@ async def test_get_image_student_inactive() -> None:
 
 async def test_get_image_student_hidden_category() -> None:
     img = _make_image(category_id=5)
-    cat = SimpleNamespace(id=5, status="hidden")
+    cat = SimpleNamespace(id=5, status="hidden", programs=[], parent_id=None)
 
     db = AsyncMock()
     db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
@@ -152,12 +167,58 @@ async def test_get_image_student_hidden_category() -> None:
 
 async def test_get_image_student_visible_category() -> None:
     img = _make_image(category_id=5)
-    cat = SimpleNamespace(id=5, status="active")
+    cat = SimpleNamespace(id=5, status="active", programs=[], parent_id=None)
 
     db = AsyncMock()
     db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
 
     result = await get_image(1, _make_user("student"), db)
+    assert result.name == "test-img"
+
+
+async def test_get_image_student_program_restricted() -> None:
+    prog = SimpleNamespace(id=10)
+    img = _make_image(category_id=5)
+    cat = SimpleNamespace(id=5, status="active", programs=[prog], parent_id=None)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
+
+    with pytest.raises(HTTPException) as exc:
+        await get_image(1, _make_user("student"), db)
+    assert exc.value.status_code == 404
+
+
+async def test_get_image_student_matching_program() -> None:
+    prog = SimpleNamespace(id=10)
+    img = _make_image(category_id=5)
+    cat = SimpleNamespace(id=5, status="active", programs=[prog], parent_id=None)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
+
+    result = await get_image(1, _make_user("student", programs=[prog]), db)
+    assert result.name == "test-img"
+
+
+async def test_get_image_student_uncategorized_visible() -> None:
+    img = _make_image(category_id=None)
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    result = await get_image(1, _make_user("student"), db)
+    assert result.name == "test-img"
+
+
+async def test_get_image_admin_sees_restricted() -> None:
+    prog = SimpleNamespace(id=10)
+    img = _make_image(category_id=5)
+    cat = SimpleNamespace(id=5, status="active", programs=[prog], parent_id=None)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
+
+    result = await get_image(1, _make_user("admin"), db)
     assert result.name == "test-img"
 
 
@@ -174,27 +235,6 @@ async def test_create_image_success() -> None:
     )
     result = await create_image(body, _make_user(), db)
     db.add.assert_called_once()
-
-
-async def test_create_image_with_programs() -> None:
-    progs = [SimpleNamespace(id=10), SimpleNamespace(id=20)]
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = progs
-
-    db = AsyncMock()
-    db.add = MagicMock()
-    db.commit = AsyncMock()
-    db.refresh = AsyncMock()
-    db.execute = AsyncMock(return_value=mock_result)
-
-    body = ImageCreate(
-        name="new-img",
-        thumb="/thumb.jpg",
-        tile_sources="/tiles/new",
-        program_ids=[10, 20],
-    )
-    result = await create_image(body, _make_user(), db)
-    db.execute.assert_awaited_once()
 
 
 async def test_update_image_success() -> None:
@@ -287,23 +327,6 @@ async def test_update_image_if_match_invalid() -> None:
     assert exc.value.status_code == 400
 
 
-async def test_update_image_with_programs() -> None:
-    img = _make_image()
-    progs = [SimpleNamespace(id=10)]
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = progs
-
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=img)
-    db.commit = AsyncMock()
-    db.refresh = AsyncMock()
-    db.execute = AsyncMock(return_value=mock_result)
-
-    body = ImageUpdate(program_ids=[10])
-    result = await update_image(1, body, _mock_request(), _make_user(), db)
-    assert img.programs == progs
-
-
 async def test_bulk_update_images_success() -> None:
     imgs = [_make_image(id=1), _make_image(id=2)]
 
@@ -339,32 +362,6 @@ async def test_bulk_update_images_not_found() -> None:
     with pytest.raises(HTTPException) as exc:
         await bulk_update_images(body, _make_user(), db)
     assert exc.value.status_code == 404
-
-
-async def test_bulk_update_images_with_programs() -> None:
-    imgs = [_make_image(id=1)]
-    progs = [SimpleNamespace(id=10)]
-
-    call_count = 0
-
-    async def mock_execute(stmt):
-        nonlocal call_count
-        call_count += 1
-        mock_result = MagicMock()
-        if call_count == 1:
-            mock_result.scalars.return_value.all.return_value = imgs
-        elif call_count == 2:
-            mock_result.scalars.return_value.all.return_value = progs
-        else:
-            mock_result.scalars.return_value.all.return_value = imgs
-        return mock_result
-
-    db = AsyncMock()
-    db.execute = AsyncMock(side_effect=mock_execute)
-    db.commit = AsyncMock()
-
-    body = ImageBulkUpdate(image_ids=[1], program_ids=[10])
-    result = await bulk_update_images(body, _make_user(), db)
 
 
 async def test_bulk_delete_images_success() -> None:
@@ -492,7 +489,6 @@ def _make_source_image(id: int = 10, image_id: int = 1) -> SimpleNamespace:
         copyright=None,
         note=None,
         active=True,
-        program=None,
         image_id=image_id,
         file_size=1024,
         created_at=now,
@@ -679,3 +675,53 @@ async def test_replace_image_enospc(
     assert exc.value.status_code == 507
     assert "storage" in exc.value.detail.lower()
     mock_unlink.assert_called_once()
+
+
+# ── Reorder images ────────────────────────────────────────
+
+
+async def test_reorder_images_success() -> None:
+    img1 = _make_image(id=1, sort_order=0)
+    img2 = _make_image(id=2, sort_order=1)
+
+    items = [
+        ImageReorderItem(id=1, sort_order=1),
+        ImageReorderItem(id=2, sort_order=0),
+    ]
+    body = ImageReorderRequest(items=items)
+
+    async def mock_get(model, id_):
+        lookup = {1: img1, 2: img2}
+        return lookup.get(id_)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=mock_get)
+    db.commit = AsyncMock()
+
+    result = await reorder_images(body, MagicMock(), db=db)
+    assert result == {"status": "ok"}
+    assert img1.sort_order == 1
+    assert img2.sort_order == 0
+    db.commit.assert_awaited_once()
+
+
+async def test_reorder_images_missing_image() -> None:
+    items = [ImageReorderItem(id=999, sort_order=0)]
+    body = ImageReorderRequest(items=items)
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+
+    with pytest.raises(HTTPException) as exc:
+        await reorder_images(body, MagicMock(), db=db)
+    assert exc.value.status_code == 404
+
+
+async def test_reorder_images_empty_list() -> None:
+    body = ImageReorderRequest(items=[])
+    db = AsyncMock()
+    db.commit = AsyncMock()
+
+    result = await reorder_images(body, MagicMock(), db=db)
+    assert result == {"status": "ok"}
+    db.commit.assert_awaited_once()

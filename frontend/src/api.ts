@@ -45,11 +45,51 @@ function authHeaders(): Record<string, string> {
 
 export class ApiError extends Error {
   status: number
+  detail: string
   constructor(status: number, detail: string) {
     super(`API ${status}: ${detail}`)
     this.name = 'ApiError'
     this.status = status
+    this.detail = detail
   }
+}
+
+export function userMessage(err: unknown, fallback: string): string {
+  if (err instanceof ApiError) {
+    if (err.status === 409) {
+      return 'This item was modified by another user. Please refresh and try again.'
+    }
+    if (err.status >= 400 && err.status < 500 && err.detail) {
+      const detail = err.detail.trim()
+      const looksLikeHtml = /^<(!doctype|html|head|body|div|p|span|h[1-6]|pre|ul|ol|table|section|article)\b/i.test(detail)
+      if (!looksLikeHtml && detail.length > 0 && detail.length <= 200) {
+        return detail
+      }
+    }
+    return fallback
+  }
+  // Network failure: fetch rejects with TypeError (e.g. "Failed to fetch").
+  // XHR-based handlers in this module also reject with TypeError for
+  // consistency, so all network-level failures surface here.
+  if (err instanceof TypeError) {
+    return 'Network error — check your connection and try again.'
+  }
+  // User-initiated aborts should not surface as errors
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return fallback
+  }
+  return fallback
+}
+
+function parseErrorDetail(text: string): string {
+  let detail = text
+  try {
+    const body = JSON.parse(text)
+    if (typeof body.detail === 'string') detail = body.detail
+    else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+    else if (body.detail !== undefined) detail = String(body.detail)
+  } catch { /* use raw text */ }
+  return detail
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -60,7 +100,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new ApiError(res.status, text)
+    throw new ApiError(res.status, parseErrorDetail(text))
   }
   if (res.status === 204) return undefined as unknown as T
   return res.json() as Promise<T>
@@ -74,6 +114,7 @@ export interface ApiCategory {
   parent_id: number | null
   program_ids: number[]
   status: string | null
+  sort_order: number
   metadata_extra: Record<string, unknown> | null
   created_at: string
   updated_at: string
@@ -92,8 +133,8 @@ export interface ApiImage {
   category_id: number | null
   copyright: string | null
   note: string | null
-  program_ids: number[]
   active: boolean
+  sort_order: number
   metadata_extra: Record<string, unknown> | null
   version: number
   width: number | null
@@ -119,6 +160,7 @@ export interface ApiUser {
 export interface ApiProgram {
   id: number
   name: string
+  oidc_group: string | null
   created_at: string
   updated_at: string
 }
@@ -136,8 +178,8 @@ export function fetchStatus(): Promise<ApiStatus> {
 
 // ── Categories ───────────────────────────────────────────
 
-export function fetchCategoryTree(): Promise<ApiCategoryTree[]> {
-  return request('/categories/tree')
+export function fetchCategoryTree(init?: RequestInit): Promise<ApiCategoryTree[]> {
+  return request('/categories/tree', init)
 }
 
 export function createCategory(body: {
@@ -183,6 +225,15 @@ export function reorderCategories(
 
 // ── Images ───────────────────────────────────────────────
 
+export function reorderImages(
+  items: Array<{ id: number; sort_order: number }>,
+): Promise<void> {
+  return request('/images/reorder', {
+    method: 'PUT',
+    body: JSON.stringify({ items }),
+  })
+}
+
 export function fetchImage(imageId: number): Promise<ApiImage> {
   return request(`/images/${imageId}`)
 }
@@ -192,8 +243,8 @@ export function fetchImages(categoryId?: number): Promise<ApiImage[]> {
   return request(`/images/${qs}`)
 }
 
-export function fetchUncategorizedImages(): Promise<ApiImage[]> {
-  return request('/images/?uncategorized=true')
+export function fetchUncategorizedImages(init?: RequestInit): Promise<ApiImage[]> {
+  return request('/images/?uncategorized=true', init)
 }
 
 export function updateImage(
@@ -205,7 +256,6 @@ export function updateImage(
     category_id?: number | null
     copyright?: string
     note?: string
-    program_ids?: number[]
     active?: boolean
     metadata_extra?: Record<string, unknown>
     metadata_extra_merge?: Record<string, unknown | null>
@@ -233,7 +283,6 @@ export function bulkUpdateImages(body: {
   category_id?: number | null
   copyright?: string
   note?: string
-  program_ids?: number[]
   active?: boolean
 }): Promise<ApiImage[]> {
   return request('/images/bulk', {
@@ -331,13 +380,32 @@ export function bulkUpdateUserProgram(body: {
   })
 }
 
+export function bulkUpdateUserRole(body: {
+  user_ids: number[]
+  role: string
+}): Promise<ApiUser[]> {
+  return request('/users/bulk/role', {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function bulkDeleteUsers(body: {
+  user_ids: number[]
+}): Promise<void> {
+  return request('/users/bulk', {
+    method: 'DELETE',
+    body: JSON.stringify(body),
+  })
+}
+
 // ── Programs ────────────────────────────────────────────
 
 export function fetchPrograms(): Promise<ApiProgram[]> {
   return request('/programs/')
 }
 
-export function createProgram(body: { name: string }): Promise<ApiProgram> {
+export function createProgram(body: { name: string; oidc_group?: string | null }): Promise<ApiProgram> {
   return request('/programs/', {
     method: 'POST',
     body: JSON.stringify(body),
@@ -346,7 +414,7 @@ export function createProgram(body: { name: string }): Promise<ApiProgram> {
 
 export function updateProgram(
   id: number,
-  body: { name: string },
+  body: { name?: string; oidc_group?: string | null },
 ): Promise<ApiProgram> {
   return request(`/programs/${id}`, {
     method: 'PATCH',
@@ -396,7 +464,6 @@ export interface ApiSourceImage {
   copyright: string | null
   note: string | null
   active: boolean
-  program_ids: number[]
   image_id: number | null
   file_size: number | null
   created_at: string
@@ -409,7 +476,6 @@ export async function uploadSourceImage(
   categoryId?: number | null,
   copyright?: string,
   note?: string,
-  programIds?: number[],
   active?: boolean,
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
@@ -420,11 +486,6 @@ export async function uploadSourceImage(
   if (categoryId != null) form.append('category_id', String(categoryId))
   if (copyright) form.append('copyright', copyright)
   if (note) form.append('note', note)
-  if (programIds) {
-    for (const id of programIds) {
-      form.append('program_ids', String(id))
-    }
-  }
   if (active !== undefined) form.append('active', String(active))
 
   // Use XMLHttpRequest for upload progress reporting (essential for large TIFFs)
@@ -450,7 +511,7 @@ export async function uploadSourceImage(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
-          reject(new Error(`Upload failed: ${xhr.responseText || xhr.statusText}`))
+          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
@@ -458,7 +519,7 @@ export async function uploadSourceImage(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new Error('Upload failed: network error'))
+      reject(new TypeError('Network error'))
     })
 
     xhr.addEventListener('abort', () => {
@@ -483,9 +544,27 @@ export async function replaceImage(
   file: File,
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
+  metadata?: {
+    name?: string
+    category_id?: number | null
+    copyright?: string
+    note?: string
+    active?: boolean
+    metadata_extra?: Record<string, unknown>
+  },
 ): Promise<ApiSourceImage> {
   const form = new FormData()
   form.append('file', file)
+  if (metadata) {
+    if (metadata.name !== undefined) form.append('name', metadata.name)
+    if (metadata.category_id !== undefined)
+      form.append('category_id', metadata.category_id === null ? '' : String(metadata.category_id))
+    if (metadata.copyright !== undefined) form.append('copyright', metadata.copyright)
+    if (metadata.note !== undefined) form.append('note', metadata.note)
+    if (metadata.active !== undefined) form.append('active', String(metadata.active))
+    if (metadata.metadata_extra !== undefined)
+      form.append('metadata_extra', JSON.stringify(metadata.metadata_extra))
+  }
 
   return new Promise<ApiSourceImage>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
@@ -509,7 +588,7 @@ export async function replaceImage(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
-          reject(new Error(`Replace failed: ${xhr.responseText || xhr.statusText}`))
+          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse replace response'))
@@ -517,7 +596,7 @@ export async function replaceImage(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new Error('Replace failed: network error'))
+      reject(new TypeError('Network error'))
     })
 
     xhr.addEventListener('abort', () => {
@@ -552,7 +631,6 @@ export async function bulkImportImages(
   categoryId: number,
   copyright?: string,
   note?: string,
-  programIds?: number[],
   active?: boolean,
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
@@ -564,11 +642,6 @@ export async function bulkImportImages(
   form.append('category_id', String(categoryId))
   if (copyright) form.append('copyright', copyright)
   if (note) form.append('note', note)
-  if (programIds) {
-    for (const id of programIds) {
-      form.append('program_ids', String(id))
-    }
-  }
   if (active !== undefined) form.append('active', String(active))
 
   return new Promise<ApiBulkImportJob>((resolve, reject) => {
@@ -593,7 +666,7 @@ export async function bulkImportImages(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiBulkImportJob)
         } else {
-          reject(new Error(`Bulk import failed: ${xhr.responseText || xhr.statusText}`))
+          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse bulk import response'))
@@ -601,7 +674,7 @@ export async function bulkImportImages(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new Error('Bulk import failed: network error'))
+      reject(new TypeError('Network error'))
     })
 
     xhr.addEventListener('abort', () => {
@@ -666,7 +739,7 @@ export async function startDbImport(file: File): Promise<AdminTask> {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new Error(`Import failed: ${text}`)
+    throw new ApiError(res.status, parseErrorDetail(text))
   }
   return res.json() as Promise<AdminTask>
 }
@@ -729,7 +802,7 @@ export function uploadTaskFile(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as AdminTask)
         } else {
-          reject(new Error(`Upload failed: ${xhr.responseText || xhr.statusText}`))
+          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
@@ -737,7 +810,7 @@ export function uploadTaskFile(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new Error('Upload failed: network error'))
+      reject(new TypeError('Network error'))
     })
 
     xhr.addEventListener('abort', () => {

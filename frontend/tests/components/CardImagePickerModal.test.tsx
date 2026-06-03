@@ -22,9 +22,11 @@ const category: Category = {
           tileSources: '/tiles/20',
           programIds: [],
           active: true,
+          sortOrder: 0,
           version: 1,
         },
       ],
+      sortOrder: 0,
     },
   ],
   images: [
@@ -35,9 +37,11 @@ const category: Category = {
       tileSources: '/tiles/10',
       programIds: [],
       active: true,
+      sortOrder: 0,
       version: 1,
     },
   ],
+  sortOrder: 0,
 }
 
 const emptyCategory: Category = {
@@ -46,6 +50,7 @@ const emptyCategory: Category = {
   parentId: null,
   children: [],
   images: [],
+  sortOrder: 0,
 }
 
 describe('CardImagePickerModal', () => {

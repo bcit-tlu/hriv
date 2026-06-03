@@ -7,10 +7,12 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import FormControl from '@mui/material/FormControl'
+import FormHelperText from '@mui/material/FormHelperText'
 import InputLabel from '@mui/material/InputLabel'
 import MenuItem from '@mui/material/MenuItem'
 import Select from '@mui/material/Select'
 import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import type { Role, Program } from '../types'
 import type { ApiUser } from '../api'
@@ -118,22 +120,28 @@ function AddEditPersonForm({
           </Select>
         </FormControl>
         <FormControl fullWidth>
-          <InputLabel>Programs</InputLabel>
+          <InputLabel shrink>Programs</InputLabel>
           <Select
             multiple
             value={programIds}
             label="Programs"
             onChange={handleProgramChange}
-            renderValue={(selected) => (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                {selected.map((id) => {
-                  const prog = programs.find((p) => p.id === id)
-                  return (
-                    <Chip key={id} label={prog?.name ?? id} size="small" />
-                  )
-                })}
-              </Box>
-            )}
+            displayEmpty
+            notched
+            renderValue={(selected) =>
+              selected.length === 0 ? (
+                <Typography color="text.secondary">All Programs</Typography>
+              ) : (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                  {selected.map((id) => {
+                    const prog = programs.find((p) => p.id === id)
+                    return (
+                      <Chip key={id} label={prog?.name ?? id} size="small" color="primary" />
+                    )
+                  })}
+                </Box>
+              )
+            }
           >
             {programs.map((p) => (
               <MenuItem key={p.id} value={p.id}>
@@ -141,6 +149,11 @@ function AddEditPersonForm({
               </MenuItem>
             ))}
           </Select>
+          <FormHelperText>
+            {role === 'student'
+              ? 'Select one or more programs to restrict access'
+              : 'Instructors and admins can see all content regardless of program assignment'}
+          </FormHelperText>
         </FormControl>
       </DialogContent>
       <DialogActions>

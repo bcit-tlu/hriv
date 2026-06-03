@@ -3,11 +3,11 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from app.schemas import ImageOut, ImageUpdate, SourceImageOut
+from app.schemas import ImageOut, ImageUpdate, ProgramCreate, ProgramUpdate, SourceImageOut
 
 
-def test_image_out_extracts_program_ids_from_orm() -> None:
-    """ImageOut.extract_program_ids converts ORM programs list to IDs."""
+def test_image_out_from_orm() -> None:
+    """ImageOut correctly maps ORM fields (no image-level program_ids)."""
     now = datetime.now(timezone.utc)
     orm_obj = SimpleNamespace(
         id=1,
@@ -18,6 +18,7 @@ def test_image_out_extracts_program_ids_from_orm() -> None:
         copyright=None,
         note=None,
         active=True,
+        sort_order=0,
         metadata_={"key": "val"},
         version=1,
         width=1024,
@@ -25,40 +26,15 @@ def test_image_out_extracts_program_ids_from_orm() -> None:
         file_size=5.25,
         created_at=now,
         updated_at=now,
-        programs=[SimpleNamespace(id=10), SimpleNamespace(id=20)],
     )
     out = ImageOut.model_validate(orm_obj)
-    assert out.program_ids == [10, 20]
     assert out.name == "test-img"
     assert out.metadata_extra == {"key": "val"}
-
-
-def test_image_out_handles_empty_programs() -> None:
-    now = datetime.now(timezone.utc)
-    orm_obj = SimpleNamespace(
-        id=2,
-        name="no-progs",
-        thumb="/thumb.jpg",
-        tile_sources="/tiles/2",
-        category_id=5,
-        copyright="CC",
-        note="a note",
-        active=False,
-        metadata_=None,
-        version=1,
-        width=None,
-        height=None,
-        file_size=None,
-        created_at=now,
-        updated_at=now,
-        programs=[],
-    )
-    out = ImageOut.model_validate(orm_obj)
-    assert out.program_ids == []
+    assert out.width == 1024
 
 
 def test_image_out_from_dict() -> None:
-    """ImageOut also works when given a plain dict (no 'programs' attr)."""
+    """ImageOut also works when given a plain dict."""
     now = datetime.now(timezone.utc)
     data = {
         "id": 3,
@@ -69,17 +45,18 @@ def test_image_out_from_dict() -> None:
         "copyright": None,
         "note": None,
         "active": True,
+        "sort_order": 0,
         "metadata_": None,
         "created_at": now,
         "updated_at": now,
-        "program_ids": [1, 2, 3],
     }
     out = ImageOut.model_validate(data)
-    assert out.program_ids == [1, 2, 3]
+    assert out.name == "dict-img"
+    assert out.metadata_extra is None
 
 
-def test_source_image_out_parses_program_json_from_orm() -> None:
-    """SourceImageOut extracts program_ids from JSON string."""
+def test_source_image_out_from_orm() -> None:
+    """SourceImageOut maps ORM fields (no image-level program_ids)."""
     now = datetime.now(timezone.utc)
     orm_obj = SimpleNamespace(
         id=1,
@@ -92,64 +69,15 @@ def test_source_image_out_parses_program_json_from_orm() -> None:
         copyright=None,
         note=None,
         active=True,
-        program="[10, 20]",
         image_id=5,
         file_size=1048576,
         created_at=now,
         updated_at=now,
     )
     out = SourceImageOut.model_validate(orm_obj)
-    assert out.program_ids == [10, 20]
     assert out.progress == 100
     assert out.file_size == 1048576
-
-
-def test_source_image_out_handles_null_program() -> None:
-    now = datetime.now(timezone.utc)
-    orm_obj = SimpleNamespace(
-        id=2,
-        original_filename="test2.png",
-        status="pending",
-        progress=0,
-        error_message=None,
-        name=None,
-        category_id=None,
-        copyright=None,
-        note=None,
-        active=True,
-        program=None,
-        image_id=None,
-        file_size=None,
-        created_at=now,
-        updated_at=now,
-    )
-    out = SourceImageOut.model_validate(orm_obj)
-    assert out.program_ids == []
-    assert out.progress == 0
-    assert out.file_size is None
-
-
-def test_source_image_out_handles_invalid_json_program() -> None:
-    now = datetime.now(timezone.utc)
-    orm_obj = SimpleNamespace(
-        id=3,
-        original_filename="bad.png",
-        status="pending",
-        progress=0,
-        error_message=None,
-        name=None,
-        category_id=None,
-        copyright=None,
-        note=None,
-        active=True,
-        program="not-json",
-        image_id=None,
-        file_size=None,
-        created_at=now,
-        updated_at=now,
-    )
-    out = SourceImageOut.model_validate(orm_obj)
-    assert out.program_ids == []
+    assert out.image_id == 5
 
 
 def test_source_image_out_from_dict() -> None:
@@ -164,37 +92,56 @@ def test_source_image_out_from_dict() -> None:
         "copyright": None,
         "note": None,
         "active": True,
-        "program": "[1, 2]",
         "image_id": None,
         "created_at": now,
         "updated_at": now,
     }
     out = SourceImageOut.model_validate(data)
-    assert out.program_ids == [1, 2]
+    assert out.original_filename == "dict.png"
+    assert out.status == "pending"
 
 
-def test_source_image_out_non_list_json_program() -> None:
-    """If program JSON parses to a non-list, program_ids should be empty."""
-    now = datetime.now(timezone.utc)
-    orm_obj = SimpleNamespace(
-        id=5,
-        original_filename="obj.png",
-        status="pending",
-        progress=0,
-        error_message=None,
-        name=None,
-        category_id=None,
-        copyright=None,
-        note=None,
-        active=True,
-        program='{"key": "value"}',
-        image_id=None,
-        file_size=None,
-        created_at=now,
-        updated_at=now,
-    )
-    out = SourceImageOut.model_validate(orm_obj)
-    assert out.program_ids == []
+# ── oidc_group normalization ─────────────────────────────
+
+
+def test_program_create_oidc_group_empty_string_becomes_none() -> None:
+    p = ProgramCreate(name="Test", oidc_group="")
+    assert p.oidc_group is None
+
+
+def test_program_create_oidc_group_whitespace_becomes_none() -> None:
+    p = ProgramCreate(name="Test", oidc_group="   ")
+    assert p.oidc_group is None
+
+
+def test_program_create_oidc_group_valid_string_preserved() -> None:
+    p = ProgramCreate(name="Test", oidc_group="mrad-group")
+    assert p.oidc_group == "mrad-group"
+
+
+def test_program_create_oidc_group_strips_whitespace() -> None:
+    p = ProgramCreate(name="Test", oidc_group="  mrad-group  ")
+    assert p.oidc_group == "mrad-group"
+
+
+def test_program_create_oidc_group_none_stays_none() -> None:
+    p = ProgramCreate(name="Test", oidc_group=None)
+    assert p.oidc_group is None
+
+
+def test_program_update_oidc_group_empty_string_becomes_none() -> None:
+    p = ProgramUpdate(oidc_group="")
+    assert p.oidc_group is None
+
+
+def test_program_update_oidc_group_whitespace_becomes_none() -> None:
+    p = ProgramUpdate(oidc_group="   ")
+    assert p.oidc_group is None
+
+
+def test_program_update_oidc_group_valid_string_preserved() -> None:
+    p = ProgramUpdate(oidc_group="mlt-group")
+    assert p.oidc_group == "mlt-group"
 
 
 # ── locked_overlays validation ────────────────────────────
