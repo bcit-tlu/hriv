@@ -38,12 +38,7 @@ import AddEditPersonModal from "./components/AddEditPersonModal";
 import ManagePage from "./components/ManagePage";
 import PeoplePage from "./components/PeoplePage";
 import LoginScreen from "./components/LoginScreen";
-import FooterBar from "./components/FooterBar";
 import EditImageModal from "./components/EditImageModal";
-import type {
-    ImageFormData,
-    ReplaceImageData,
-} from "./components/EditImageModal";
 import ProgramManagementModal from "./components/ProgramManagementModal";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
@@ -295,24 +290,8 @@ export default function App() {
                     setSelectedImage(uncatImg ?? null);
                     if (uncatImg) setPath([]);
                 }
-            }, 2000);
-            refs.set(job.bulkImportJobId, interval);
-        }
-
-        for (const [id, interval] of refs) {
-            if (
-                !processingJobs.some(
-                    (j) => j.bulkImportJobId === id && j.status === "importing",
-                )
-            ) {
-                clearInterval(interval);
-                refs.delete(id);
-            }
-        }
-
-        return () => {
-            for (const [, interval] of refs) {
-                clearInterval(interval);
+            } else {
+                setSelectedImage(null);
             }
             setViewportState(undefined);
             setOverlays([]);
@@ -409,17 +388,27 @@ export default function App() {
         setBrowseEditImage(null);
         setSearchOpen(false);
         setSearchUsers([]);
-        processingPollRefs.current.forEach((handle) => handle.cancel());
-        processingPollRefs.current.clear();
-        bulkImportPollRefs.current.forEach((interval) =>
-            clearInterval(interval),
+        resetProcessingJobs();
+        window.history.replaceState(
+            buildNavHistoryState("browse", [], null),
+            "",
+            window.location.pathname,
         );
-        bulkImportPollRefs.current.clear();
-        serverProgressRef.current.clear();
-        uploadProgressRef.current.clear();
-        serverStatusMessageRef.current.clear();
-        setProcessingJobs([]);
-    }, [currentUser]);
+    }, [currentUser, resetProcessingJobs, setViewportState, setOverlays, clearPending, setImageEditOpen, setBrowseEditImage, setEditModalOpen, setProfileOpen]);
+
+    // Initial data load — kept in this component (rather than inside
+    // useBrowseData) and declared after the reset effect above. React
+    // runs effects in declaration order within a single component, so
+    // the reset is guaranteed to fire before this load. This avoids
+    // relying on implicit effect ordering across the hook/component
+    // boundary, which would be unreliable.
+    useEffect(() => {
+        if (currentUser) {
+            loadCategories();
+            loadUncategorizedImages();
+            loadPrograms();
+        }
+    }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms]);
 
     // Load users for search when modal opens (admin/instructor only)
     useEffect(() => {
@@ -509,278 +498,20 @@ export default function App() {
         [loadPrograms],
     );
 
-    useEffect(() => {
-        if (currentUser) {
-            loadCategories();
-            loadUncategorizedImages();
-            loadPrograms();
-        }
-    }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms]);
-
-    // Once categories are loaded, restore a pending shared-link image
-    useEffect(() => {
-        if (pendingImageId.current === null || categoriesLoading) return;
-        const id = pendingImageId.current;
-
-        // Check uncategorized images first
-        const uncatImg = uncategorizedImages.find((img) => img.id === id);
-        if (uncatImg) {
-            pendingImageId.current = null;
-            setSelectedImage(uncatImg);
-            setViewportState(pendingViewport.current);
-            pendingViewport.current = undefined;
-            if (pendingOverlays.current) {
-                setOverlays(pendingOverlays.current);
-                pendingOverlays.current = undefined;
-            }
-            return;
-        }
-
-        const result = findImageInTree(categories, id);
-        if (result) {
-            pendingImageId.current = null;
-            setPath(result.path);
-            setSelectedImage(result.image);
-            setViewportState(pendingViewport.current);
-            pendingViewport.current = undefined;
-            if (pendingOverlays.current) {
-                setOverlays(pendingOverlays.current);
-                pendingOverlays.current = undefined;
-            }
-        } else if (!categoriesLoading && uncategorizedLoaded.current) {
-            // Both data sources have loaded — image doesn't exist.
-            // Clear pending state and URL so URL sync can resume normally.
-            pendingImageId.current = null;
-            pendingViewport.current = undefined;
-            pendingOverlays.current = undefined;
-            window.history.replaceState(null, "", window.location.pathname);
-        }
-        // Otherwise keep pendingImageId so we retry on the next data update.
-    }, [categories, uncategorizedImages, categoriesLoading]);
-
-    // Keep URL search params in sync with the current view
-    useEffect(() => {
-        // Don't overwrite URL while a shared-link image is still pending resolution
-        if (pendingImageId.current !== null) return;
-        const params = new URLSearchParams();
-        if (selectedImage) {
-            params.set("image", String(selectedImage.id));
-            if (viewportState) {
-                params.set("zoom", viewportState.zoom.toFixed(4));
-                params.set("x", viewportState.x.toFixed(6));
-                params.set("y", viewportState.y.toFixed(6));
-                if (viewportState.rotation) {
-                    params.set("rotation", viewportState.rotation.toFixed(1));
-                }
-            }
-            // Serialize overlay rectangles (up to MAX_SHARE_OVERLAYS)
-            for (
-                let i = 0;
-                i < Math.min(overlays.length, MAX_SHARE_OVERLAYS);
-                i++
-            ) {
-                const r = overlays[i];
-                params.set(
-                    `ov${i}`,
-                    [r.x, r.y, r.w, r.h].map((n) => n.toPrecision(8)).join(","),
-                );
-            }
-        }
-        const qs = params.toString();
-        const newUrl = qs
-            ? `${window.location.pathname}?${qs}`
-            : window.location.pathname;
-        window.history.replaceState(null, "", newUrl);
-    }, [selectedImage, viewportState, overlays]);
-
-    const handleViewportChange = useCallback((state: ViewportState) => {
-        setViewportState(state);
-    }, []);
-
-    const handleOverlaysChange = useCallback((newOverlays: OverlayRect[]) => {
-        setOverlays(newOverlays);
-    }, []);
-
-    // Memoize initialViewport so it stays referentially stable per image.
-    // Keyed on image ID so metadata-only updates (e.g. measurement settings)
-    // do not reset the viewport and re-create the OSD viewer.
-    const initialViewport = useMemo(() => viewportState, [selectedImage?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Derive locked overlays from the selected image's metadata.
-    // Validates each entry has numeric x, y, w, h to guard against malformed JSONB data.
-    const lockedOverlays = useMemo((): OverlayRect[] | undefined => {
-        const meta = selectedImage?.metadataExtra;
-        if (!meta) return undefined;
-        const locked = meta.locked_overlays;
-        if (!Array.isArray(locked) || locked.length === 0) return undefined;
-        const valid = locked.filter(
-            (entry): entry is OverlayRect =>
-                entry != null &&
-                typeof entry === "object" &&
-                typeof (entry as Record<string, unknown>).x === "number" &&
-                typeof (entry as Record<string, unknown>).y === "number" &&
-                typeof (entry as Record<string, unknown>).w === "number" &&
-                typeof (entry as Record<string, unknown>).h === "number",
-        );
-        return valid.length > 0 ? valid : undefined;
-    }, [selectedImage]);
-
-    const hasLockedOverlays =
-        lockedOverlays !== undefined && lockedOverlays.length > 0;
-
-    // Auto-engage lock when image has persisted overlays
-    useEffect(() => {
-        setLockEngaged(hasLockedOverlays);
-    }, [hasLockedOverlays]);
-
-    // Local override for canvas annotations so view mode reflects edits immediately
-    // (selectedImage is intentionally NOT updated after saves to avoid viewer remount)
-    const [localCanvasAnnotations, setLocalCanvasAnnotations] = useState<
-        CanvasAnnotation[] | null
-    >(null);
-
-    // Reset version ref when a different image is selected
-    useEffect(() => {
-        latestVersionRef.current = selectedImage?.version ?? 0;
-        latestMetadataRef.current = undefined; // reset to 'uninitialised' so first read falls back to selectedImage
-        setLocalCanvasAnnotations(null); // fall back to server-derived data for new image
-        // Clear any pending canvas annotation saves for the previous image
-        if (canvasSaveTimerRef.current) {
-            clearTimeout(canvasSaveTimerRef.current);
-            canvasSaveTimerRef.current = null;
-        }
-        pendingCanvasAnnotationsRef.current = null;
-        latestCanvasAnnotationsRef.current = null;
-        canvasSaveInFlightRef.current = false;
-        saveTargetImageIdRef.current = null;
-    }, [selectedImage]);
-
-    // Memoize initialOverlays: use locked overlays on initial load if no URL overlays.
-    // Keyed on image ID so metadata-only updates do not re-create the viewer.
-    const initialOverlays = useMemo(() => {
-        if (
-            lockedOverlays &&
-            lockedOverlays.length > 0 &&
-            overlays.length === 0
-        ) {
-            return lockedOverlays;
-        }
-        return overlays;
-    }, [selectedImage?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-    // Extract canvas annotations from the selected image's metadata
-    const canvasAnnotations = useMemo((): CanvasAnnotation[] => {
-        const meta = selectedImage?.metadataExtra;
-        if (!meta) return [];
-        const annotations = meta.canvas_annotations;
-        if (!Array.isArray(annotations)) return [];
-        return annotations as CanvasAnnotation[];
-    }, [selectedImage]);
-
-    // Persist canvas annotations to server.  Called by the debounced handler below.
-    const saveCanvasAnnotations = useCallback(
-        async (annotations: CanvasAnnotation[]) => {
-            if (!selectedImage) return;
-            const targetImageId = selectedImage.id;
-            saveTargetImageIdRef.current = targetImageId;
-            canvasSaveInFlightRef.current = true;
-            try {
-                const mergeValue = annotations.length > 0 ? annotations : null;
-                const currentVersion =
-                    latestVersionRef.current || selectedImage.version;
-                const updated = await apiUpdateImage(
-                    selectedImage.id,
-                    {
-                        metadata_extra_merge: {
-                            canvas_annotations: mergeValue,
-                        },
-                    },
-                    currentVersion,
-                );
-                // Only update shared refs if the image hasn't changed while we were saving
-                if (saveTargetImageIdRef.current === targetImageId) {
-                    latestVersionRef.current = updated.version;
-                    latestMetadataRef.current = updated.metadata_extra ?? {};
-                }
-                await loadCategories();
-                loadUncategorizedImages();
-            } catch (err) {
-                console.error("Failed to save canvas annotations", err);
-            } finally {
-                // Only clear in-flight flag and flush queue if still targeting the same image
-                if (saveTargetImageIdRef.current === targetImageId) {
-                    canvasSaveInFlightRef.current = false;
-                    if (pendingCanvasAnnotationsRef.current !== null) {
-                        const queued = pendingCanvasAnnotationsRef.current;
-                        pendingCanvasAnnotationsRef.current = null;
-                        void saveCanvasAnnotations(queued);
-                    }
-                }
-            }
-        },
-        [selectedImage, loadCategories, loadUncategorizedImages],
-    );
-
-    // Save canvas annotations to image metadata_extra (debounced).
-    // Rapid edits reset a 600ms timer; if a save is already in-flight the
-    // latest data is queued and flushed when the current request completes.
-    // Also eagerly updates local state so view mode reflects edits immediately.
-    const handleCanvasAnnotationsChange = useCallback(
-        (annotations: CanvasAnnotation[]) => {
-            setLocalCanvasAnnotations(annotations);
-            latestCanvasAnnotationsRef.current = annotations;
-            if (canvasSaveTimerRef.current)
-                clearTimeout(canvasSaveTimerRef.current);
-            if (canvasSaveInFlightRef.current) {
-                // A save is in-flight — queue the latest data (replaces any prior queued data)
-                pendingCanvasAnnotationsRef.current = annotations;
-                return;
-            }
-            canvasSaveTimerRef.current = setTimeout(() => {
-                canvasSaveTimerRef.current = null;
-                void saveCanvasAnnotations(annotations);
-            }, 600);
-        },
-        [saveCanvasAnnotations],
-    );
-
-    // Flush any pending canvas annotation save immediately (bypass debounce).
-    // Used by the "Done" button to ensure data is persisted before exiting edit mode,
-    // and by lock/clear operations to avoid race conditions.
-    const flushCanvasAnnotations = useCallback(async () => {
-        // Cancel any pending debounce timer
-        if (canvasSaveTimerRef.current) {
-            clearTimeout(canvasSaveTimerRef.current);
-            canvasSaveTimerRef.current = null;
-        }
-        // If there's queued data waiting behind an in-flight save, grab it
-        const pending = pendingCanvasAnnotationsRef.current;
-        pendingCanvasAnnotationsRef.current = null;
-        // If a save is already in-flight we need to wait for it, then save queued data
-        if (canvasSaveInFlightRef.current) {
-            // Re-queue so the in-flight finally block picks it up
-            if (pending) pendingCanvasAnnotationsRef.current = pending;
-            // Spin-wait (max ~3s) for the in-flight save to finish
-            for (let i = 0; i < 30 && canvasSaveInFlightRef.current; i++) {
-                await new Promise((r) => setTimeout(r, 100));
-            }
-            // After waiting, save any data the in-flight handler didn't pick up
-            const stillPending = pendingCanvasAnnotationsRef.current;
-            if (stillPending && !canvasSaveInFlightRef.current) {
-                pendingCanvasAnnotationsRef.current = null;
-                await saveCanvasAnnotations(stillPending);
-            }
-            return;
-        }
-        // Use the ref (always current) instead of localCanvasAnnotations state
-        // which may be stale due to React's async state batching.
-        const latest = latestCanvasAnnotationsRef.current;
-        if (pending) {
-            await saveCanvasAnnotations(pending);
-        } else if (latest) {
-            await saveCanvasAnnotations(latest);
-        }
-    }, [saveCanvasAnnotations]);
+    // Canvas annotations (extracted to useCanvasAnnotations hook)
+    const {
+        localCanvasAnnotations,
+        canvasAnnotations,
+        handleCanvasAnnotationsChange,
+        flushCanvasAnnotations,
+        latestVersionRef,
+        latestMetadataRef,
+    } = useCanvasAnnotations({
+        selectedImage,
+        loadCategories,
+        loadUncategorizedImages,
+        setErrorSnack,
+    });
 
     // Build measurement config from the selected image's metadata
     // Overlay persistence (extracted to useOverlayPersistence hook)
@@ -894,306 +625,12 @@ export default function App() {
                 setWarnSnack(
                     `${rejected} file${rejected > 1 ? "s" : ""} not supported (accepted: images, .zip)`,
                 );
-                const status =
-                    bulkJob.status === "completed"
-                        ? "completed"
-                        : bulkJob.status === "failed"
-                          ? "failed"
-                          : "importing";
-                if (existing) {
-                    return prev.map((j) =>
-                        j.id === existing.id
-                            ? {
-                                  ...j,
-                                  kind: "bulk-import" as const,
-                                  status,
-                                  bulkImportJobId: bulkJob.id,
-                                  serverProgress:
-                                      status === "completed" ? 100 : progress,
-                                  uploadId: undefined,
-                                  uploadProgress: undefined,
-                                  totalCount: bulkJob.total_count,
-                                  completedCount: bulkJob.completed_count,
-                                  failedCount: bulkJob.failed_count,
-                                  errors: bulkJob.errors,
-                                  errorMessage:
-                                      status === "failed"
-                                          ? "Bulk import failed."
-                                          : undefined,
-                              }
-                            : j,
-                    );
-                }
-                if (
-                    prev.filter(
-                        (j) =>
-                            j.status === "uploading" ||
-                            j.status === "processing" ||
-                            j.status === "importing",
-                    ).length >= MAX_PROCESSING_JOBS
-                )
-                    return prev;
-                return [
-                    ...prev,
-                    {
-                        id: -bulkJob.id,
-                        filename,
-                        status,
-                        kind: "bulk-import" as const,
-                        bulkImportJobId: bulkJob.id,
-                        serverProgress: status === "completed" ? 100 : progress,
-                        fileSize,
-                        startedAt: Date.now(),
-                        totalCount: bulkJob.total_count,
-                        completedCount: bulkJob.completed_count,
-                        failedCount: bulkJob.failed_count,
-                        errors: bulkJob.errors,
-                        errorMessage:
-                            status === "failed"
-                                ? "Bulk import failed."
-                                : undefined,
-                    },
-                ];
-            });
-        },
-        [],
-    );
-
-    const handleReplaceViewerImage = useCallback(
-        async ({ file, formData }: ReplaceImageData) => {
-            if (!selectedImage) return;
-            // Save metadata changes first (awaited — can throw on validation)
-            const updated = await apiUpdateImage(selectedImage.id, formData);
-            setSelectedImage({
-                id: updated.id,
-                name: updated.name,
-                thumb: updated.thumb,
-                tileSources: updated.tile_sources,
-                categoryId: updated.category_id,
-                copyright: updated.copyright,
-                note: updated.note,
-                programIds: updated.program_ids,
-                active: updated.active,
-                version: updated.version,
-                createdAt: updated.created_at,
-                updatedAt: updated.updated_at,
-                metadataExtra: updated.metadata_extra,
-                width: updated.width,
-                height: updated.height,
-                fileSize: updated.file_size,
-            });
-
-            // Create an uploading job so progress is tracked in snackbar/modal
-            const uploadId = nextReplaceUploadIdRef.current++;
-            activeReplaceUploadIdRef.current = { uploadId, context: "viewer" };
-            setProcessingJobs((prev) => {
-                if (
-                    prev.filter(
-                        (j) =>
-                            j.status === "uploading" ||
-                            j.status === "processing" ||
-                            j.status === "importing",
-                    ).length >= MAX_PROCESSING_JOBS
-                )
-                    return prev;
-                return [
-                    ...prev,
-                    {
-                        id: -uploadId,
-                        filename: file.name,
-                        status: "uploading" as const,
-                        kind: "image" as const,
-                        serverProgress: 0,
-                        fileSize: file.size,
-                        startedAt: Date.now(),
-                        uploadId,
-                        uploadProgress: 0,
-                    },
-                ];
-            });
-
-            // Fire-and-forget: upload runs in the background with progress
-            apiReplaceImage(selectedImage.id, file, (fraction) => {
-                uploadProgressRef.current.set(uploadId, fraction);
-            })
-                .then((result) => {
-                    uploadProgressRef.current.delete(uploadId);
-                    activeReplaceUploadIdRef.current = null;
-                    setProcessingJobs((prev) =>
-                        prev.map((j) =>
-                            j.uploadId === uploadId
-                                ? {
-                                      ...j,
-                                      id: result.id,
-                                      status: "processing" as const,
-                                      kind: "image" as const,
-                                      serverProgress: 0,
-                                      startedAt: Date.now(),
-                                      uploadId: undefined,
-                                      uploadProgress: undefined,
-                                  }
-                                : j,
-                        ),
-                    );
-                    setImageEditOpen(false);
-                    loadCategories();
-                    loadUncategorizedImages();
-                })
-                .catch(() => {
-                    uploadProgressRef.current.delete(uploadId);
-                    activeReplaceUploadIdRef.current = null;
-                    setProcessingJobs((prev) =>
-                        prev.map((j) =>
-                            j.uploadId === uploadId
-                                ? {
-                                      ...j,
-                                      status: "failed" as const,
-                                      errorMessage:
-                                          "Failed to upload replacement image",
-                                      uploadId: undefined,
-                                  }
-                                : j,
-                        ),
-                    );
-                    setImageEditOpen(false);
-                });
-        },
-        [selectedImage, loadCategories, loadUncategorizedImages],
-    );
-
-    const handleReplaceBrowseImage = useCallback(
-        async ({ file, formData }: ReplaceImageData) => {
-            if (!browseEditImage) return;
-            await apiUpdateImage(browseEditImage.id, formData);
-
-            const uploadId = nextReplaceUploadIdRef.current++;
-            activeReplaceUploadIdRef.current = { uploadId, context: "browse" };
-            setProcessingJobs((prev) => {
-                if (
-                    prev.filter(
-                        (j) =>
-                            j.status === "uploading" ||
-                            j.status === "processing" ||
-                            j.status === "importing",
-                    ).length >= MAX_PROCESSING_JOBS
-                )
-                    return prev;
-                return [
-                    ...prev,
-                    {
-                        id: -uploadId,
-                        filename: file.name,
-                        status: "uploading" as const,
-                        kind: "image" as const,
-                        serverProgress: 0,
-                        fileSize: file.size,
-                        startedAt: Date.now(),
-                        uploadId,
-                        uploadProgress: 0,
-                    },
-                ];
-            });
-
-            apiReplaceImage(browseEditImage.id, file, (fraction) => {
-                uploadProgressRef.current.set(uploadId, fraction);
-            })
-                .then((result) => {
-                    uploadProgressRef.current.delete(uploadId);
-                    activeReplaceUploadIdRef.current = null;
-                    setProcessingJobs((prev) =>
-                        prev.map((j) =>
-                            j.uploadId === uploadId
-                                ? {
-                                      ...j,
-                                      id: result.id,
-                                      status: "processing" as const,
-                                      kind: "image" as const,
-                                      serverProgress: 0,
-                                      startedAt: Date.now(),
-                                      uploadId: undefined,
-                                      uploadProgress: undefined,
-                                  }
-                                : j,
-                        ),
-                    );
-                    setBrowseEditImage(null);
-                    loadCategories();
-                    loadUncategorizedImages();
-                })
-                .catch(() => {
-                    uploadProgressRef.current.delete(uploadId);
-                    activeReplaceUploadIdRef.current = null;
-                    setProcessingJobs((prev) =>
-                        prev.map((j) =>
-                            j.uploadId === uploadId
-                                ? {
-                                      ...j,
-                                      status: "failed" as const,
-                                      errorMessage:
-                                          "Failed to upload replacement image",
-                                      uploadId: undefined,
-                                  }
-                                : j,
-                        ),
-                    );
-                    setBrowseEditImage(null);
-                });
-        },
-        [browseEditImage, loadCategories, loadUncategorizedImages],
-    );
-
-    const handleUploadStarted = useCallback(
-        (uploadId: number, filename: string, fileSize: number) => {
-            setProcessingJobs((prev) => {
-                if (
-                    prev.filter(
-                        (j) =>
-                            j.status === "uploading" ||
-                            j.status === "processing" ||
-                            j.status === "importing",
-                    ).length >= MAX_PROCESSING_JOBS
-                )
-                    return prev;
-                return [
-                    ...prev,
-                    {
-                        id: -uploadId,
-                        filename,
-                        status: "uploading" as const,
-                        kind: "image" as const,
-                        serverProgress: 0,
-                        fileSize,
-                        startedAt: Date.now(),
-                        uploadId,
-                        uploadProgress: 0,
-                    },
-                ];
-            });
-        },
-        [],
-    );
-
-    const handleUploadProgress = useCallback(
-        (uploadId: number, fraction: number) => {
-            uploadProgressRef.current.set(uploadId, fraction);
-        },
-        [],
-    );
-
-    const handleUploadFailed = useCallback(
-        (uploadId: number, error: string) => {
-            uploadProgressRef.current.delete(uploadId);
-            setProcessingJobs((prev) =>
-                prev.map((j) =>
-                    j.uploadId === uploadId
-                        ? {
-                              ...j,
-                              status: "failed" as const,
-                              errorMessage: error,
-                          }
-                        : j,
-                ),
-            );
+            }
+            if (accepted.length > 0) {
+                setFileDropCategoryId(categoryId);
+                setDroppedFiles(accepted);
+                setUploadOpen(true);
+            }
         },
         [],
     );
@@ -1299,17 +736,8 @@ export default function App() {
         return <LoginScreen onLogin={login} announcement={announcement} />;
     }
 
-    // Compute per-modal replacement upload progress.
-    // Each modal only sees progress for its own replacement operation.
-    const activeReplace = activeReplaceUploadIdRef.current;
-    const viewerReplaceUploadProgress =
-        activeReplace?.context === "viewer"
-            ? (uploadProgressRef.current.get(activeReplace.uploadId) ?? 0)
-            : undefined;
-    const browseReplaceUploadProgress =
-        activeReplace?.context === "browse"
-            ? (uploadProgressRef.current.get(activeReplace.uploadId) ?? 0)
-            : undefined;
+    const viewerReplaceUploadProgress = getReplaceUploadProgress("viewer");
+    const browseReplaceUploadProgress = getReplaceUploadProgress("browse");
 
     return (
         <AppShell
@@ -2107,15 +1535,6 @@ export default function App() {
                 </Container>
             </Box>
 
-            {/* Footer */}
-            <FooterBar
-                canManageUsers={canManageUsers}
-                frontendVersion={frontendVersion || undefined}
-                backendVersion={backendVersion ?? undefined}
-                backupVersion={backupVersion ?? undefined}
-                setReportIssueOpen={setReportIssueOpen}
-            />
-
             {/* Manage categories dialog */}
             <ManageCategoriesDialog
                 open={dialogOpen}
@@ -2561,7 +1980,9 @@ export default function App() {
                                     </Typography>
                                     <LinearProgress
                                         variant="determinate"
-                                        value={Math.round(uploadFraction * 100)}
+                                        value={Math.round(
+                                            uploadFraction * 100,
+                                        )}
                                         sx={{
                                             height: 6,
                                             borderRadius: 1,
