@@ -55,9 +55,23 @@ def test_resolve_role_matches_group() -> None:
         assert _resolve_role(["students"]) is None
 
 
-def test_resolve_role_first_match_wins() -> None:
+def test_resolve_role_highest_priority_wins() -> None:
     with patch("app.routers.oidc._parse_role_mapping", return_value={"a": "admin", "b": "student"}):
+        # admin > student regardless of token order
         assert _resolve_role(["a", "b"]) == "admin"
+        assert _resolve_role(["b", "a"]) == "admin"
+
+
+def test_resolve_role_priority_across_multiple_groups() -> None:
+    """Users in multiple mapped groups get the highest-privilege role."""
+    mapping = {"employees": "student", "instructors": "instructor", "admins": "admin"}
+    with patch("app.routers.oidc._parse_role_mapping", return_value=mapping):
+        # admin wins even when listed last
+        assert _resolve_role(["employees", "instructors", "admins"]) == "admin"
+        # instructor beats student
+        assert _resolve_role(["employees", "instructors"]) == "instructor"
+        # only student
+        assert _resolve_role(["employees"]) == "student"
 
 
 def test_resolve_role_invalid_role_skipped() -> None:
