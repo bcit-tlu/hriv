@@ -55,8 +55,7 @@ function DraggableTile({ id, disabled, children }: DraggableTileProps) {
             sx={{
                 opacity: isDragSource ? 0.5 : 1,
                 position: "relative",
-                width: "100%",
-                maxWidth: 300,
+                width: 300,
                 cursor: disabled
                     ? undefined
                     : isDragSource
