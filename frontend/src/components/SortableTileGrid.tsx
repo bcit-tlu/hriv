@@ -1,85 +1,110 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import DriveFileMoveIcon from "@mui/icons-material/DriveFileMove";
 import {
     DragDropProvider,
     DragOverlay,
-    useDroppable,
-    PointerSensor,
     KeyboardSensor,
+    PointerSensor,
+    useDraggable,
+    useDroppable,
 } from "@dnd-kit/react";
-import { useSortable } from "@dnd-kit/react/sortable";
 import { arrayMove } from "@dnd-kit/helpers";
 import { pointerIntersection } from "@dnd-kit/collision";
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { PointerActivationConstraints } from "@dnd-kit/dom";
 import type { Draggable } from "@dnd-kit/abstract";
+
 import type { Category, ImageItem, Program } from "../types";
 import CategoryTile from "./CategoryTile";
 import ImageTile from "./ImageTile";
 import FileDropZone from "./FileDropZone";
-import { reorderImages, reorderCategories } from "../api";
+import { reorderCategories, reorderImages } from "../api";
 import {
     buildTileItems,
-    tileId,
-    DROP_PREFIX,
     collectDescendantIds,
+    DROP_PREFIX,
     findCategory,
-    createGapOnlyClosestCenter,
+    insertionIndexForMove,
+    isReorderTargetId,
+    REORDER_END_ID,
+    REORDER_PREFIX,
+    reorderIndexFromTargetId,
+    tileId,
 } from "./sortableTileGridUtils";
 import type { TileItem } from "./sortableTileGridUtils";
 
-// ── Sortable wrapper ────────────────────────────────────────
-
-interface SortableItemProps {
+interface DraggableTileProps {
     id: string;
-    index: number;
     disabled: boolean;
-    collisionDetector: import("@dnd-kit/abstract").CollisionDetector;
     children: React.ReactNode;
 }
 
-function SortableItem({ id, index, disabled, collisionDetector, children }: SortableItemProps) {
-    const { ref, isDragSource } = useSortable({
+function DraggableTile({ id, disabled, children }: DraggableTileProps) {
+    const { ref, isDragSource } = useDraggable({
         id,
-        index,
         disabled,
         type: "tile",
-        collisionDetector,
     });
 
     return (
-        <div
+        <Box
             ref={ref}
-            style={{
+            sx={{
                 opacity: isDragSource ? 0.5 : 1,
                 position: "relative",
                 width: "100%",
                 maxWidth: 300,
-                cursor: disabled ? undefined : isDragSource ? "grabbing" : "grab",
+                cursor: disabled
+                    ? undefined
+                    : isDragSource
+                      ? "grabbing"
+                      : "grab",
             }}
             onDragStart={(e) => e.preventDefault()}
         >
             {children}
-        </div>
+        </Box>
     );
 }
 
-// ── Droppable category zone (for move-into-category) ─────────
-// Per-droppable collision: pointerIntersection activates when the
-// pointer is inside the full category tile rect.
-// CollisionPriority.High ensures move wins over sortable reorder
-// whenever the pointer is inside a category tile. Reorder only
-// triggers in the gap between tiles (where no drop zone fires).
+interface ReorderDropZoneProps {
+    id: string;
+    disabled: boolean;
+}
+
+function ReorderDropZone({ id, disabled }: ReorderDropZoneProps) {
+    const { ref, isDropTarget } = useDroppable({
+        id,
+        disabled,
+        collisionDetector: pointerIntersection,
+        collisionPriority: CollisionPriority.Normal,
+    });
+
+    return (
+        <Box
+            ref={ref}
+            aria-hidden="true"
+            sx={{
+                alignSelf: "stretch",
+                flex: "0 0 16px",
+                minHeight: 180,
+                borderRadius: 1,
+                outline: isDropTarget ? "2px solid" : "2px solid transparent",
+                outlineColor: isDropTarget ? "primary.main" : "transparent",
+                bgcolor: isDropTarget ? "action.hover" : "transparent",
+                transition: "background-color 0.12s, outline-color 0.12s",
+            }}
+        />
+    );
+}
 
 interface DroppableCategoryZoneProps {
     categoryId: number;
     disabled: boolean;
-    /** Map from category ID → set of IDs blocked as drop targets for that source (self + descendants). */
     blockedIdsMap: Map<number, Set<number>>;
-    /** Callback to register/unregister this zone's DOM element for collision suppression. */
-    onRegister: (categoryId: number, el: Element | null) => void;
     children: React.ReactNode;
 }
 
@@ -87,13 +112,13 @@ function DroppableCategoryZone({
     categoryId,
     disabled,
     blockedIdsMap,
-    onRegister,
     children,
 }: DroppableCategoryZoneProps) {
     const acceptFilter = useCallback(
         (source: Draggable) => {
             const sourceId = String(source.id);
             if (!sourceId.startsWith("cat-")) return true;
+
             const catId = Number(sourceId.slice(4));
             const blockedTargets = blockedIdsMap.get(catId);
             return !blockedTargets?.has(categoryId);
@@ -101,21 +126,13 @@ function DroppableCategoryZone({
         [blockedIdsMap, categoryId],
     );
 
-    const { ref: droppableRef, isDropTarget } = useDroppable({
+    const { ref, isDropTarget } = useDroppable({
         id: `${DROP_PREFIX}${categoryId}`,
         disabled,
         collisionDetector: pointerIntersection,
         collisionPriority: CollisionPriority.High,
         accept: acceptFilter,
     });
-
-    const ref = useCallback(
-        (el: Element | null) => {
-            droppableRef(el);
-            onRegister(categoryId, el);
-        },
-        [droppableRef, onRegister, categoryId],
-    );
 
     return (
         <Box
@@ -165,10 +182,7 @@ function DroppableCategoryZone({
                     </Box>
                     <Typography
                         variant="caption"
-                        sx={{
-                            fontWeight: 600,
-                            color: "primary.main",
-                        }}
+                        sx={{ fontWeight: 600, color: "primary.main" }}
                     >
                         Move here
                     </Typography>
@@ -178,46 +192,36 @@ function DroppableCategoryZone({
     );
 }
 
-// ── Main component ──────────────────────────────────────────
-
 export interface SortableTileGridProps {
-    /** Full category tree — used for ancestor-cycle prevention during drag. */
     allCategories: Category[];
     currentCategories: Category[];
     currentImages: ImageItem[];
     uncategorizedImages: ImageItem[];
-    /** Current navigation path — used to determine parent_id for category reorder. */
     path: Category[];
     canEditContent: boolean;
     fileDragActive: boolean;
     programs: Program[];
 
-    // CategoryTile callbacks
     onCategoryClick: (cat: Category) => void;
     onMoveCategory?: (cat: Category) => void;
     onSetCardImage?: (categoryId: number, imageId: number | null) => void;
     onToggleCategoryVisibility?: (categoryId: number) => Promise<void>;
     onEditCategoryName?: (cat: Category) => void;
     onDropImageOnCategory?: (imageId: number, categoryId: number) => void;
-    onDropCategoryOnCategory?: (categoryId: number, targetCategoryId: number) => void;
+    onDropCategoryOnCategory?: (
+        categoryId: number,
+        targetCategoryId: number,
+    ) => void;
     onDropFilesOnCategory?: (categoryId: number, files: File[]) => void;
 
-    // ImageTile callbacks
     onImageClick: (img: ImageItem) => void;
     onEditImageDetails?: (img: ImageItem) => void;
     onToggleImageVisibility?: (imageId: number) => Promise<void>;
 
-    // FileDropZone callback
     onFilesDrop: (files: File[]) => void;
-
-    // Tile-grid-level file drop handlers (for native OS drops on the grid)
     onGridDragOver?: React.DragEventHandler;
     onGridDrop?: React.DragEventHandler;
-
-    // Called after a successful reorder so parent can refresh data
     onReorderComplete?: () => void;
-
-    // Called when a reorder API call fails so the parent can show feedback
     onReorderError?: (err: unknown) => void;
 }
 
@@ -247,8 +251,6 @@ export default function SortableTileGrid({
     onReorderComplete,
     onReorderError,
 }: SortableTileGridProps) {
-    // Merge categories + images at this level into an interleaved sorted list.
-    // At root (path.length === 0), uncategorized images join the grid.
     const visibleImages = useMemo(
         () =>
             path.length === 0
@@ -258,32 +260,11 @@ export default function SortableTileGrid({
     );
 
     const [items, setItems] = useState<TileItem[]>([]);
+    const [activeItem, setActiveItem] = useState<TileItem | null>(null);
     const reorderInFlightRef = useRef(false);
     const prevCatsRef = useRef<Category[] | null>(null);
     const prevImgsRef = useRef<ImageItem[] | null>(null);
 
-    // Track category drop zone DOM elements so the sortable collision
-    // detector can suppress reorder when the pointer is over a drop zone.
-    const dropZoneElementsRef = useRef(new Set<Element>());
-    const prevDropZoneRef = useRef(new Map<number, Element>());
-    const registerDropZone = useCallback((categoryId: number, el: Element | null) => {
-        const prev = prevDropZoneRef.current.get(categoryId);
-        if (prev) {
-            dropZoneElementsRef.current.delete(prev);
-            prevDropZoneRef.current.delete(categoryId);
-        }
-        if (el) {
-            dropZoneElementsRef.current.add(el);
-            prevDropZoneRef.current.set(categoryId, el);
-        }
-    }, []);
-    const sortableCollision = useMemo(
-        () => createGapOnlyClosestCenter(dropZoneElementsRef.current),
-        [],
-    );
-
-    // Rebuild the sorted item list whenever source data changes by reference,
-    // unless an optimistic reorder is in-flight (to avoid reverting the drag).
     if (
         prevCatsRef.current !== currentCategories ||
         prevImgsRef.current !== visibleImages
@@ -295,8 +276,6 @@ export default function SortableTileGrid({
         }
     }
 
-    // Pre-compute blocked drop target IDs for each category (self + descendants).
-    // Used by DroppableCategoryZone accept filters for ancestor-cycle prevention.
     const blockedIdsMap = useMemo(() => {
         const map = new Map<number, Set<number>>();
         for (const cat of currentCategories) {
@@ -310,61 +289,69 @@ export default function SortableTileGrid({
         return map;
     }, [allCategories, currentCategories]);
 
-    const [activeItem, setActiveItem] = useState<TileItem | null>(null);
-
     const handleDragEnd = useCallback(
-        async (event: { operation: { source: { id: string | number } | null; target: { id: string | number } | null; canceled: boolean } }) => {
+        async (event: {
+            operation: {
+                source: { id: string | number } | null;
+                target: { id: string | number } | null;
+                canceled: boolean;
+            };
+        }) => {
             setActiveItem(null);
+
             const { operation } = event;
             if (operation.canceled) return;
 
             const source = operation.source;
             const target = operation.target;
             if (!source || !target || source.id === target.id) return;
-
-            // Reject concurrent drags — wait for the in-flight reorder to settle
             if (reorderInFlightRef.current) return;
 
-            const targetId = String(target.id);
             const sourceId = String(source.id);
+            const targetId = String(target.id);
 
-            // ── Move into category (drop on a droppable zone) ──
             if (targetId.startsWith(DROP_PREFIX)) {
                 const targetCatId = Number(targetId.slice(DROP_PREFIX.length));
                 if (sourceId.startsWith("img-")) {
-                    const imgId = Number(sourceId.slice(4));
-                    onDropImageOnCategory?.(imgId, targetCatId);
+                    onDropImageOnCategory?.(
+                        Number(sourceId.slice(4)),
+                        targetCatId,
+                    );
                 } else if (sourceId.startsWith("cat-")) {
-                    const catId = Number(sourceId.slice(4));
-                    onDropCategoryOnCategory?.(catId, targetCatId);
+                    onDropCategoryOnCategory?.(
+                        Number(sourceId.slice(4)),
+                        targetCatId,
+                    );
                 }
                 return;
             }
 
-            // ── Reorder (drop between items) ──
+            if (!isReorderTargetId(targetId)) return;
+
             const oldIndex = items.findIndex(
                 (item) => tileId(item) === sourceId,
             );
-            const newIndex = items.findIndex(
-                (item) => tileId(item) === targetId,
+            const targetIndex = reorderIndexFromTargetId(targetId, items);
+            if (oldIndex === -1 || targetIndex === null) return;
+
+            const newIndex = insertionIndexForMove(
+                oldIndex,
+                targetIndex,
+                items.length,
             );
-            if (oldIndex === -1 || newIndex === -1) return;
+            if (oldIndex === newIndex) return;
 
             const reordered = arrayMove(items, oldIndex, newIndex);
-
-            // Optimistically update local state; guard rebuilds until API settles
             reorderInFlightRef.current = true;
             setItems(reordered);
 
-            // Compute new sort_order values (sequential from 0)
+            const parentId = path.length > 0 ? path[path.length - 1].id : null;
             const catUpdates: Array<{
                 id: number;
                 parent_id: number | null;
                 sort_order: number;
             }> = [];
             const imgUpdates: Array<{ id: number; sort_order: number }> = [];
-            const parentId =
-                path.length > 0 ? path[path.length - 1].id : null;
 
             reordered.forEach((item, index) => {
                 if (item.type === "category") {
@@ -383,29 +370,26 @@ export default function SortableTileGrid({
 
             try {
                 const promises: Promise<void>[] = [];
-                if (catUpdates.length > 0) {
+                if (catUpdates.length > 0)
                     promises.push(reorderCategories(catUpdates));
-                }
-                if (imgUpdates.length > 0) {
+                if (imgUpdates.length > 0)
                     promises.push(reorderImages(imgUpdates));
-                }
+
                 const results = await Promise.allSettled(promises);
-                const failed = results.filter(
-                    (r) => r.status === "rejected",
-                );
+                const failed = results.filter((r) => r.status === "rejected");
                 reorderInFlightRef.current = false;
+
                 if (failed.length > 0) {
                     const err =
                         (failed[0] as PromiseRejectedResult).reason ??
                         new Error("Reorder partially failed");
                     console.error("Reorder partially failed", failed);
-                    // Revert only if no subsequent drag has changed items
                     setItems((current) =>
                         current === reordered ? items : current,
                     );
                     onReorderError?.(err);
                 }
-                // Always refresh from server to reconcile state
+
                 onReorderComplete?.();
             } catch (err) {
                 console.error("Failed to persist reorder", err);
@@ -420,10 +404,10 @@ export default function SortableTileGrid({
         [
             items,
             path,
+            onDropCategoryOnCategory,
+            onDropImageOnCategory,
             onReorderComplete,
             onReorderError,
-            onDropImageOnCategory,
-            onDropCategoryOnCategory,
         ],
     );
 
@@ -442,13 +426,14 @@ export default function SortableTileGrid({
                 onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
             />
         );
+
         if (!wrapDroppable) return tile;
+
         return (
             <DroppableCategoryZone
                 categoryId={cat.id}
                 disabled={!canEditContent}
                 blockedIdsMap={blockedIdsMap}
-                onRegister={registerDropZone}
             >
                 {tile}
             </DroppableCategoryZone>
@@ -478,9 +463,10 @@ export default function SortableTileGrid({
                             }),
                         ];
                     }
-                    // Mouse / pen: require intentional movement or a deliberate press-and-hold
                     return [
-                        new PointerActivationConstraints.Distance({ value: 10 }),
+                        new PointerActivationConstraints.Distance({
+                            value: 10,
+                        }),
                         new PointerActivationConstraints.Delay({
                             value: 200,
                             tolerance: 5,
@@ -511,35 +497,35 @@ export default function SortableTileGrid({
             <Box
                 role="region"
                 aria-label="Sortable tile grid"
-                sx={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 2,
-                }}
+                sx={{ display: "flex", flexWrap: "wrap", gap: 0, rowGap: 2 }}
                 onDragOver={onGridDragOver}
                 onDrop={onGridDrop}
             >
-                {items.map((item, index) => {
+                {items.map((item) => {
                     const id = tileId(item);
                     return (
-                        <SortableItem
+                        <Box
                             key={id}
-                            id={id}
-                            index={index}
-                            disabled={!canEditContent}
-                            collisionDetector={sortableCollision}
+                            sx={{ display: "flex", alignItems: "stretch" }}
                         >
-                            {item.type === "category"
-                                ? renderCategoryTile(
-                                      item.data,
-                                      true,
-                                  )
-                                : renderImageTile(
-                                      item.data as ImageItem,
-                                  )}
-                        </SortableItem>
+                            <ReorderDropZone
+                                id={`${REORDER_PREFIX}${id}`}
+                                disabled={!canEditContent}
+                            />
+                            <DraggableTile id={id} disabled={!canEditContent}>
+                                {item.type === "category"
+                                    ? renderCategoryTile(item.data, true)
+                                    : renderImageTile(item.data as ImageItem)}
+                            </DraggableTile>
+                        </Box>
                     );
                 })}
+                {items.length > 0 && (
+                    <ReorderDropZone
+                        id={REORDER_END_ID}
+                        disabled={!canEditContent}
+                    />
+                )}
                 {canEditContent && (
                     <FileDropZone
                         isDragActive={fileDragActive}
@@ -547,34 +533,22 @@ export default function SortableTileGrid({
                     />
                 )}
             </Box>
+
             <DragOverlay dropAnimation={null}>
-                {activeItem
-                    ? activeItem.type === "category"
-                        ? (
-                              <Box
-                                  sx={{
-                                      opacity: 0.85,
-                                      width: 300,
-                                      pointerEvents: "none",
-                                      cursor: "grabbing",
-                                  }}
-                              >
-                                  {renderCategoryTile(activeItem.data)}
-                              </Box>
-                          )
-                        : (
-                              <Box
-                                  sx={{
-                                      opacity: 0.85,
-                                      width: 300,
-                                      pointerEvents: "none",
-                                      cursor: "grabbing",
-                                  }}
-                              >
-                                  {renderImageTile(activeItem.data)}
-                              </Box>
-                          )
-                    : null}
+                {activeItem ? (
+                    <Box
+                        sx={{
+                            opacity: 0.85,
+                            width: 300,
+                            pointerEvents: "none",
+                            cursor: "grabbing",
+                        }}
+                    >
+                        {activeItem.type === "category"
+                            ? renderCategoryTile(activeItem.data)
+                            : renderImageTile(activeItem.data)}
+                    </Box>
+                ) : null}
             </DragOverlay>
         </DragDropProvider>
     );
