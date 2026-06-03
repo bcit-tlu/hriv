@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.20.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.19.1...frontend-v0.20.0) (2026-06-03)
+
+
+### Features
+
+* **dnd:** implement guarded A2 optimistic sortable reflow ([#551](https://github.com/bcit-tlu/hriv/issues/551)) ([ca0cd3a](https://github.com/bcit-tlu/hriv/commit/ca0cd3a5aea693c5650eb5af3308f3b6d1c3a397))
+* migrate drag-and-drop from @dnd-kit/core v1 to @dnd-kit/react v2 ([#547](https://github.com/bcit-tlu/hriv/issues/547)) ([a49550f](https://github.com/bcit-tlu/hriv/commit/a49550f6a634a1707e87914c80c16d92da12a19f))
+* prioritize move + live reorder preview for tile drag-and-drop ([#550](https://github.com/bcit-tlu/hriv/issues/550)) ([92d7220](https://github.com/bcit-tlu/hriv/commit/92d722085ce3a9b2c28202acc93150888b2dda26))
+
 ## [0.19.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.19.0...frontend-v0.19.1) (2026-06-02)
 
 
