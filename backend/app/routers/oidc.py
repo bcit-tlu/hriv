@@ -57,20 +57,28 @@ def _parse_role_mapping() -> dict[str, str]:
     return {}
 
 
+_ROLE_PRIORITY: dict[str, int] = {"admin": 0, "instructor": 1, "student": 2}
+
+
 def _resolve_role(groups: list[str]) -> str | None:
     """Map IdP groups/claims to a HRIV role.
 
-    The first matching group in the mapping wins.  Returns ``None`` when
-    no group matched any mapping entry so callers can distinguish
-    "no mapping available" from an explicit role assignment.
+    When a user belongs to multiple mapped groups the highest-privilege
+    role wins (admin > instructor > student).  This is essential for
+    IdPs like Azure AD where users are members of several groups
+    simultaneously (e.g. both ``Current_Employee`` and
+    ``HRIV_Admins``).  Returns ``None`` when no group matched any
+    mapping entry.
     """
     mapping = _parse_role_mapping()
+    best: str | None = None
     for group in groups:
         if group in mapping:
             role = mapping[group]
-            if role in ("admin", "instructor", "student"):
-                return role
-    return None
+            if role in _ROLE_PRIORITY:
+                if best is None or _ROLE_PRIORITY[role] < _ROLE_PRIORITY[best]:
+                    best = role
+    return best
 
 
 async def _resolve_programs(

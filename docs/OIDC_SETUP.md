@@ -50,7 +50,8 @@ HRIV maps IdP group memberships to its three roles: `admin`,
 default to `student`.
 
 Configure `OIDC_ROLE_MAPPING` as a JSON object where keys are IdP group
-names and values are HRIV roles:
+names (or Object IDs — see [Azure AD / Entra ID](#azure-ad--entra-id)
+below) and values are HRIV roles:
 
 ```json
 {
@@ -60,8 +61,11 @@ names and values are HRIV roles:
 }
 ```
 
-The first matching group wins, so order does not matter as long as each
-group maps to exactly one role.
+When a user belongs to **multiple** mapped groups, the highest-privilege
+role wins: `admin` > `instructor` > `student`.  This is important for
+IdPs like Azure AD where users are typically members of several groups
+simultaneously (e.g. both `Current_Employee` → student and
+`HRIV_Admins` → admin).
 
 > **Tip:** If the IdP does not emit a `groups` claim in the ID token,
 > existing users keep their current role and new users default to
@@ -117,6 +121,48 @@ backend is running).
 The local email/password login form is always available below the OIDC
 button, so admin bootstrap accounts continue to work regardless of OIDC
 configuration.
+
+---
+
+## Azure AD / Entra ID
+
+When connecting HRIV directly to Microsoft Entra ID (without Vault as
+a proxy), the groups claim contains **Object IDs** (GUIDs), not
+display names.  Map the Object IDs in `OIDC_ROLE_MAPPING`:
+
+```json
+{
+  "326e8c08-3c6d-476e-8822-d32807a4f50c": "admin",
+  "751cf57b-b100-4964-a905-c5e09f383f1b": "instructor",
+  "3a855564-3401-464c-b752-ba0697682ac6": "student"
+}
+```
+
+| Setting | Value |
+|---|---|
+| `OIDC_ISSUER` | `https://login.microsoftonline.com/{tenant-id}/v2.0` |
+| `OIDC_CLIENT_ID` | The Application (client) ID from the Entra app registration |
+| `OIDC_SCOPES` | `openid email profile` |
+| `OIDC_TRUST_EMAIL` | `true` (corporate Entra ID — all emails are managed) |
+
+### Prerequisites
+
+1. **App registration** in Entra ID with a redirect URI matching
+   `OIDC_REDIRECT_URI`.
+2. **Client secret** generated for the app registration.
+3. **Groups claim** enabled in Token Configuration → Add groups claim →
+   Security groups.  The token will contain the Object IDs of all
+   security groups the user belongs to.
+4. **Role groups** created and assigned to the app registration so they
+   appear in the token's `groups` claim.
+
+### Multiple group membership
+
+Users in a corporate directory typically belong to several groups at
+once (e.g. `Current_Employee` *and* `HRIV_Admins`).  Because HRIV
+resolves the **highest-privilege** role across all matched groups,
+an admin who is also an employee correctly receives the `admin` role
+even if `Current_Employee` → `student` appears first in the token.
 
 ---
 
