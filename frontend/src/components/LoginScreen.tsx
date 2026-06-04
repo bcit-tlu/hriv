@@ -151,6 +151,12 @@ export default function LoginScreen({
                                 mb: 5,
                             }}
                         >
+                            <Box
+                                component="img"
+                                src="/bcit-logo.svg"
+                                alt="BCIT"
+                                sx={{ height: 48 }}
+                            />
                             <Typography variant="h5" sx={{ fontWeight: 400 }}>
                                 High Resolution Image Viewer (HRIV) Login
                             </Typography>
