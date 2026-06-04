@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.19.1...backend-v0.19.2) (2026-06-04)
+
+
+### Bug Fixes
+
+* **oidc:** case-insensitive email matching and role resolution logging ([#574](https://github.com/bcit-tlu/hriv/issues/574)) ([ef8da2a](https://github.com/bcit-tlu/hriv/commit/ef8da2ad5b2a235483e8518a9d42a496e31ce3c9))
+
 ## [0.19.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.19.0...backend-v0.19.1) (2026-06-03)
 
 
