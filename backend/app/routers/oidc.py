@@ -372,6 +372,15 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
             # Resolve role from IdP groups — None means no group matched a mapping
             groups: list[str] = userinfo.get("groups", [])
             resolved_role = _resolve_role(groups)
+            logger.info(
+                "OIDC role resolution",
+                extra={
+                    "event": "oidc.role_resolution",
+                    "groups": groups,
+                    "role_mapping": _parse_role_mapping(),
+                    "resolved_role": resolved_role,
+                },
+            )
 
             # Upsert: find by oidc_subject first, then by email
             result = await db.execute(
