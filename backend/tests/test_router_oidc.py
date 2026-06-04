@@ -572,6 +572,54 @@ async def test_oidc_callback_email_linking_with_trusted_email() -> None:
     assert existing_user.oidc_subject == "new-oidc-sub"
 
 
+async def test_oidc_callback_email_linking_case_insensitive() -> None:
+    """Email matching for first-time OIDC login is case-insensitive."""
+    request = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.authorize_access_token = AsyncMock(return_value={
+        "userinfo": {
+            "sub": "new-oidc-sub",
+            "email": "kyle_hunter@bcit.ca",  # lowercase from IdP
+            "name": "Kyle Hunter",
+            "groups": [],
+        },
+    })
+
+    # First query (by oidc_subject) returns nothing
+    mock_result_empty = MagicMock()
+    mock_result_empty.scalars.return_value.first.return_value = None
+
+    # Second query (case-insensitive email) returns existing user with mixed-case email
+    existing_user = SimpleNamespace(
+        id=2, name="Kyle Hunter", email="Kyle_Hunter@bcit.ca",
+        oidc_subject=None, role="admin",
+        programs=[], last_access=None,
+    )
+    mock_result_found = MagicMock()
+    mock_result_found.scalars.return_value.first.return_value = existing_user
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[mock_result_empty, mock_result_found])
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_enabled = True
+        mock_settings.oidc_trust_email = True
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
+        mock_settings.oidc_role_mapping = "{}"
+        with patch("app.routers.oidc.oauth") as mock_oauth:
+            mock_oauth.create_client.return_value = mock_client
+            with patch("app.routers.oidc.create_access_token", return_value="jwt"):
+                result = await oidc_callback(request, db)
+
+    assert result.status_code == 200
+    assert existing_user.oidc_subject == "new-oidc-sub"
+    # Existing admin role preserved (no group matched, so role stays)
+    assert existing_user.role == "admin"
+
+
 async def test_oidc_callback_role_resolved_from_groups() -> None:
     """Role mapping from groups updates existing user's role."""
     request = MagicMock()

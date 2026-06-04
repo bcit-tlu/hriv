@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import HTMLResponse
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -372,6 +372,15 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
             # Resolve role from IdP groups — None means no group matched a mapping
             groups: list[str] = userinfo.get("groups", [])
             resolved_role = _resolve_role(groups)
+            logger.info(
+                "OIDC role resolution",
+                extra={
+                    "event": "oidc.role_resolution",
+                    "groups": groups,
+                    "role_mapping": _parse_role_mapping(),
+                    "resolved_role": resolved_role,
+                },
+            )
 
             # Upsert: find by oidc_subject first, then by email
             result = await db.execute(
@@ -391,7 +400,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 if email_verified:
                     result = await db.execute(
                         select(User)
-                        .where(User.email == email)
+                        .where(func.lower(User.email) == email.lower())
                     )
                     user = result.scalars().first()
                 else:
