@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.20.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.20.0...backend-v0.20.1) (2026-06-05)
+
+
+### Bug Fixes
+
+* allow instructors to delete images and categories ([#598](https://github.com/bcit-tlu/hriv/issues/598)) ([e37f0a6](https://github.com/bcit-tlu/hriv/commit/e37f0a6d1bfa56686cc5f23be815db4337919f04))
+* normalize email case across all auth paths and cache role mapping ([#590](https://github.com/bcit-tlu/hriv/issues/590)) ([a7e9cc3](https://github.com/bcit-tlu/hriv/commit/a7e9cc36f55156c9e96aaf94bdf171c2978fcc35))
+
 ## [0.20.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.19.2...backend-v0.20.0) (2026-06-05)
 
 
