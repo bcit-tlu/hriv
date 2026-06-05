@@ -203,12 +203,13 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
           )}
           <CardContent sx={{ opacity: category.status === 'hidden' ? 0.5 : 1 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <FolderOutlinedIcon fontSize="small" color="action" sx={{ flexShrink: 0 }} />
-              <Typography variant="h6" noWrap>
+              <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
+              <Typography variant="h6" noWrap color="primary">
                 {category.label}
               </Typography>
               {onEditName && (
                 <IconButton
+                  component="span"
                   size="small"
                   onClick={(e) => {
                     e.stopPropagation()
