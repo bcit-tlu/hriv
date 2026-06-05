@@ -26,7 +26,7 @@ import type { Program } from '../../src/types'
 import PeoplePage from '../../src/components/PeoplePage'
 
 const programs: Program[] = [
-  { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
+  { id: 1, name: 'Medical Lab', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
 ]
 
 const USERS = [

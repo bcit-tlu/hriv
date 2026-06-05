@@ -22,11 +22,19 @@ category_programs = Table(
 
 class Program(Base):
     __tablename__ = "programs"
+    __table_args__ = (
+        # Named explicitly to match the Alembic migration so that
+        # ``alembic revision --autogenerate`` does not propose dropping it.
+        Index("idx_programs_parent_program_id", "parent_program_id"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     oidc_group: Mapped[str | None] = mapped_column(
         String(255), nullable=True, unique=True,
+    )
+    parent_program_id: Mapped[int | None] = mapped_column(
+        ForeignKey("programs.id", ondelete="CASCADE"), nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
@@ -37,6 +45,12 @@ class Program(Base):
 
     users: Mapped[list["User"]] = relationship(
         "User", secondary=user_programs, back_populates="programs", viewonly=True,
+    )
+    parent: Mapped["Program | None"] = relationship(
+        "Program", back_populates="cohorts", remote_side=[id],
+    )
+    cohorts: Mapped[list["Program"]] = relationship(
+        "Program", back_populates="parent", cascade="all, delete-orphan",
     )
 
 

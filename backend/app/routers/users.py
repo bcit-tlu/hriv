@@ -5,8 +5,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role, hash_password
+from ..authz import tenant_ids
 from ..database import get_db
-from ..models import Program, User
+from ..models import Program, User, user_programs
 from ..schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete, UserOut
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -56,7 +57,22 @@ async def list_users(
     _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(User).order_by(User.name)
+    if _user.role == "admin":
+        stmt = select(User).order_by(User.name)
+    else:
+        # Instructors only see students who belong to one of their tenants.
+        tids = tenant_ids(_user)
+        if not tids:
+            return []
+        stmt = (
+            select(User)
+            .join(user_programs, user_programs.c.user_id == User.id)
+            .where(
+                User.role == "student",
+                user_programs.c.program_id.in_(tids),
+            )
+            .order_by(User.name)
+        )
     result = await db.execute(stmt)
     users = result.scalars().unique().all()
     return [_user_to_out(u) for u in users]

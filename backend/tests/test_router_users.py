@@ -72,22 +72,37 @@ async def test_list_users() -> None:
     db = AsyncMock()
     db.execute = AsyncMock(return_value=mock_result)
 
-    result = await list_users(MagicMock(), db)
+    admin = _make_user(id=1, role="admin")
+    result = await list_users(admin, db)
     assert len(result) == 2
 
 
-async def test_list_users_as_instructor() -> None:
-    """Instructors should be able to list users (for search results)."""
-    users = [_make_user(id=1), _make_user(id=2, email="two@example.com")]
+async def test_list_users_as_instructor_scoped_to_tenant_students() -> None:
+    """Instructors only see students belonging to one of their tenants."""
+    students = [
+        _make_user(id=1, role="student"),
+        _make_user(id=2, role="student", email="two@example.com"),
+    ]
     mock_result = MagicMock()
-    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+    mock_result.scalars.return_value.unique.return_value.all.return_value = students
 
     db = AsyncMock()
     db.execute = AsyncMock(return_value=mock_result)
 
-    instructor = _make_user(id=99, role="instructor")
+    tenant = SimpleNamespace(id=5, name="MedLab", parent_program_id=None)
+    instructor = _make_user(id=99, role="instructor", programs=[tenant])
     result = await list_users(instructor, db)
     assert len(result) == 2
+    db.execute.assert_awaited_once()
+
+
+async def test_list_users_instructor_without_tenants_returns_empty() -> None:
+    db = AsyncMock()
+    db.execute = AsyncMock()
+    instructor = _make_user(id=99, role="instructor", programs=[])
+    result = await list_users(instructor, db)
+    assert result == []
+    db.execute.assert_not_awaited()
 
 
 async def test_get_user_found() -> None:
