@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
 import AnnouncementBanner from '../../src/components/AnnouncementBanner'
@@ -24,6 +24,26 @@ describe('AnnouncementBanner', () => {
       <AnnouncementBanner message="Scheduled maintenance" variant="login" />,
     )
     expect(screen.getByText('Scheduled maintenance')).toBeInTheDocument()
+  })
+
+  it('renders dismiss link when onDismiss is provided', () => {
+    const onDismiss = vi.fn()
+    renderWithTheme(<AnnouncementBanner message="Update tonight" onDismiss={onDismiss} />)
+    const link = screen.getByRole('button', { name: 'Dismiss' })
+    expect(link).toBeInTheDocument()
+    link.click()
+    expect(onDismiss).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not render dismiss link when onDismiss is not provided', () => {
+    renderWithTheme(<AnnouncementBanner message="No dismiss" />)
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
+  })
+
+  it('does not render dismiss link for login variant', () => {
+    const onDismiss = vi.fn()
+    renderWithTheme(<AnnouncementBanner message="Login msg" variant="login" onDismiss={onDismiss} />)
+    expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
   })
 
   it('renders in dark mode without errors', () => {

@@ -30,6 +30,7 @@ export interface AppShellProps {
     canManageUsers: boolean;
     currentUser: { name: string; email: string; role: Role; program_names: string[] };
     announcement: string;
+    onDismissAnnouncement?: () => void;
     // Profile popover
     profileOpen: boolean;
     setProfileOpen: Dispatch<SetStateAction<boolean>>;
@@ -61,6 +62,7 @@ export default function AppShell(props: AppShellProps) {
         canManageUsers,
         currentUser,
         announcement,
+        onDismissAnnouncement,
         profileOpen,
         setProfileOpen,
         avatarRef,
@@ -300,7 +302,7 @@ export default function AppShell(props: AppShellProps) {
             </AppBar>
 
             {/* Announcement banner */}
-            {announcement && <AnnouncementBanner message={announcement} />}
+            {announcement && <AnnouncementBanner message={announcement} onDismiss={onDismissAnnouncement} />}
 
             {/* Main content */}
             {children}

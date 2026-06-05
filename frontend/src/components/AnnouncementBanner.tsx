@@ -1,13 +1,15 @@
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
+import Link from '@mui/material/Link'
 import { useTheme } from '@mui/material/styles'
 
 interface AnnouncementBannerProps {
   message: string
   variant?: 'login' | 'app'
+  onDismiss?: () => void
 }
 
-export default function AnnouncementBanner({ message, variant = 'app' }: AnnouncementBannerProps) {
+export default function AnnouncementBanner({ message, variant = 'app', onDismiss }: AnnouncementBannerProps) {
   const theme = useTheme()
   const isDark = theme.palette.mode === 'dark'
 
@@ -31,6 +33,19 @@ export default function AnnouncementBanner({ message, variant = 'app' }: Announc
     <Alert
       severity="info"
       variant="standard"
+      action={
+        onDismiss ? (
+          <Link
+            component="button"
+            underline="always"
+            color="inherit"
+            onClick={onDismiss}
+            sx={{ whiteSpace: 'nowrap', fontSize: 'inherit' }}
+          >
+            Dismiss
+          </Link>
+        ) : undefined
+      }
       sx={{
         borderRadius: 0,
         justifyContent: 'center',

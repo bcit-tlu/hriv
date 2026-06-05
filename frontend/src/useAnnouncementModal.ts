@@ -1,5 +1,7 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { fetchAnnouncement, updateAnnouncement, userMessage } from "./api";
+
+const DISMISSED_KEY = "hriv_dismissed_announcement";
 
 export function useAnnouncementModal() {
     const [announcement, setAnnouncement] = useState("");
@@ -10,11 +12,16 @@ export function useAnnouncementModal() {
     const [annDraftEnabled, setAnnDraftEnabled] = useState(false);
     const [annSaving, setAnnSaving] = useState(false);
     const [annError, setAnnError] = useState<string | null>(null);
+    const annUpdatedAt = useRef<string | null>(null);
 
     const loadAnnouncement = useCallback(async () => {
         try {
             const ann = await fetchAnnouncement();
-            setAnnouncement(ann.enabled ? ann.message : "");
+            annUpdatedAt.current = ann.updated_at;
+            const dismissed = localStorage.getItem(DISMISSED_KEY);
+            const visible =
+                ann.enabled && dismissed !== ann.updated_at;
+            setAnnouncement(visible ? ann.message : "");
             setAnnMessage(ann.message);
             setAnnEnabled(ann.enabled);
         } catch {
@@ -33,6 +40,13 @@ export function useAnnouncementModal() {
         setAnnModalOpen(true);
     }, [annMessage, annEnabled]);
 
+    const dismissAnnouncement = useCallback(() => {
+        if (annUpdatedAt.current) {
+            localStorage.setItem(DISMISSED_KEY, annUpdatedAt.current);
+        }
+        setAnnouncement("");
+    }, []);
+
     const handleAnnSave = useCallback(async () => {
         setAnnSaving(true);
         try {
@@ -40,6 +54,7 @@ export function useAnnouncementModal() {
                 message: annDraftMessage,
                 enabled: annDraftEnabled,
             });
+            annUpdatedAt.current = updated.updated_at;
             setAnnMessage(updated.message);
             setAnnEnabled(updated.enabled);
             setAnnouncement(updated.enabled ? updated.message : "");
@@ -53,6 +68,7 @@ export function useAnnouncementModal() {
 
     return {
         announcement,
+        dismissAnnouncement,
         annModalOpen,
         setAnnModalOpen,
         annDraftMessage,

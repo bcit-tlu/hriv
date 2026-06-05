@@ -28,6 +28,7 @@ function makeAnnouncement(overrides: Partial<api.ApiAnnouncement> = {}): api.Api
 
 beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     mockFetchAnnouncement.mockResolvedValue(makeAnnouncement());
 });
 
@@ -183,6 +184,50 @@ describe("useAnnouncementModal", () => {
             expect(result.current.annError).toBe("Failed to update announcement");
             expect(result.current.annModalOpen).toBe(true);
             expect(result.current.annSaving).toBe(false);
+        });
+    });
+
+    describe("dismissAnnouncement", () => {
+        it("hides the banner and persists updated_at to localStorage", async () => {
+            mockFetchAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "Hello", enabled: true, updated_at: "2026-06-01T00:00:00Z" }),
+            );
+            const { result } = renderHook(() => useAnnouncementModal());
+            await waitFor(() => {
+                expect(result.current.announcement).toBe("Hello");
+            });
+
+            act(() => {
+                result.current.dismissAnnouncement();
+            });
+
+            expect(result.current.announcement).toBe("");
+            expect(localStorage.getItem("hriv_dismissed_announcement")).toBe("2026-06-01T00:00:00Z");
+        });
+
+        it("suppresses banner on next load when dismissed", async () => {
+            const ann = makeAnnouncement({ message: "Persistent", enabled: true, updated_at: "2026-06-01T00:00:00Z" });
+            mockFetchAnnouncement.mockResolvedValue(ann);
+            localStorage.setItem("hriv_dismissed_announcement", "2026-06-01T00:00:00Z");
+
+            const { result } = renderHook(() => useAnnouncementModal());
+            await waitFor(() => {
+                expect(mockFetchAnnouncement).toHaveBeenCalled();
+            });
+
+            expect(result.current.announcement).toBe("");
+        });
+
+        it("shows banner again after admin updates the announcement", async () => {
+            localStorage.setItem("hriv_dismissed_announcement", "2026-06-01T00:00:00Z");
+            mockFetchAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "New one", enabled: true, updated_at: "2026-06-02T00:00:00Z" }),
+            );
+
+            const { result } = renderHook(() => useAnnouncementModal());
+            await waitFor(() => {
+                expect(result.current.announcement).toBe("New one");
+            });
         });
     });
 

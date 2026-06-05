@@ -54,6 +54,14 @@ describe("AppShell", () => {
             expect(screen.getByText("Maintenance tonight")).toBeInTheDocument();
         });
 
+        it("renders dismiss link on announcement banner when callback provided", () => {
+            const onDismiss = vi.fn();
+            render(<AppShell {...makeProps({ announcement: "Maintenance tonight", onDismissAnnouncement: onDismiss })} />);
+            const link = screen.getByRole("button", { name: "Dismiss" });
+            fireEvent.click(link);
+            expect(onDismiss).toHaveBeenCalledTimes(1);
+        });
+
         it("does not render announcement banner when empty", () => {
             render(<AppShell {...makeProps({ announcement: "" })} />);
             expect(screen.queryByText("Maintenance tonight")).not.toBeInTheDocument();
