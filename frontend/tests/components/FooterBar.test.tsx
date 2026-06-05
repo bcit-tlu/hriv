@@ -2,7 +2,7 @@
  * Unit tests for the FooterBar component.
  *
  * Covers:
- * 1. Base links (TLU + MPL-2.0) always render
+ * 1. Base link ("High Resolution Image Viewer" → repo) always renders
  * 2. "Report issue" invokes setReportIssueOpen when provided
  * 3. Admin (canManageUsers) view shows version links pointing at the
  *    releases page when a real version is supplied
@@ -51,24 +51,23 @@ describe("FooterBar", () => {
         vi.restoreAllMocks();
     });
 
-    it("renders the base TLU and licence links", () => {
+    it("renders the base 'High Resolution Image Viewer' repo link", () => {
         render(
             <FooterBar canManageUsers={false} setReportIssueOpen={vi.fn()} />,
         );
 
-        const tlu = screen.getByRole("link", {
-            name: "Teaching and Learning Unit",
+        const appLink = screen.getByRole("link", {
+            name: "High Resolution Image Viewer",
         });
-        expect(tlu).toHaveAttribute(
-            "href",
-            "https://www.bcit.ca/learning-teaching-centre/",
-        );
+        expect(appLink).toHaveAttribute("href", REPO_HREF);
 
-        const licence = screen.getByRole("link", { name: "MPL-2.0" });
-        expect(licence).toHaveAttribute(
-            "href",
-            "https://www.mozilla.org/en-US/MPL/2.0/",
-        );
+        // The old BCIT / licence links should no longer be present.
+        expect(
+            screen.queryByRole("link", { name: "Teaching and Learning Unit" }),
+        ).not.toBeInTheDocument();
+        expect(
+            screen.queryByRole("link", { name: "MPL-2.0" }),
+        ).not.toBeInTheDocument();
     });
 
     it("invokes setReportIssueOpen when 'Report issue' is clicked", async () => {

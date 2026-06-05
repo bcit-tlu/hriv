@@ -1,6 +1,82 @@
 import { Box, Link, Typography } from "@mui/material";
 import { useColorMode } from "../useColorMode";
 
+// A fixed-width inline gap used to separate footer items. Pulled out so the
+// spacing stays consistent across the base and admin sections.
+function Spacer() {
+    return (
+        <Box component="span" sx={{ display: "inline-block", width: "3ch" }} />
+    );
+}
+
+const RELEASES_HREF = "https://github.com/bcit-tlu/hriv/releases";
+const REPO_HREF = "https://github.com/bcit-tlu/hriv";
+
+// Real versions link to the tagged releases page; "dev"/unknown builds have
+// no matching release, so they fall back to the repository root.
+const hrefFor = (version: string) =>
+    version && version !== "dev" ? RELEASES_HREF : REPO_HREF;
+
+/**
+ * Admin-only version footer.
+ *
+ * Versions are admin-only: the strings leak info about the deployed image and
+ * are not relevant to other roles. Each component versions independently (see
+ * release-please packages in release-please-config.json) so the footer lists
+ * three distinct values rather than a single shared version.
+ *
+ * `display` is what the user sees; `linkValue` is what drives `hrefFor` — they
+ * differ when a version is missing (we show a "…" placeholder but resolve the
+ * link from an empty string, i.e. the repo root).
+ */
+function AdminVersions({
+    frontendVersion,
+    backendVersion,
+    backupVersion,
+}: {
+    frontendVersion?: string;
+    backendVersion?: string;
+    backupVersion?: string;
+}) {
+    const entries = [
+        {
+            label: "Frontend",
+            display: frontendVersion || "dev",
+            linkValue: frontendVersion || "dev",
+        },
+        {
+            label: "Backend",
+            display: backendVersion ?? "…",
+            linkValue: backendVersion ?? "",
+        },
+        {
+            label: "Backup",
+            display: backupVersion ?? "…",
+            linkValue: backupVersion ?? "",
+        },
+    ];
+
+    return (
+        <>
+            {entries.map(({ label, display, linkValue }) => (
+                <span key={label}>
+                    <Spacer />
+                    <strong>{label}:</strong>{" "}
+                    <Link
+                        href={hrefFor(linkValue)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        color="text.secondary"
+                        underline="hover"
+                    >
+                        {display}
+                    </Link>
+                </span>
+            ))}
+        </>
+    );
+}
+
 function FooterBar({
     canManageUsers,
     frontendVersion,
@@ -31,101 +107,22 @@ function FooterBar({
             }}
         >
             <Typography variant="caption" color="text.secondary">
-                <strong>BCIT</strong>{" "}
                 <Link
-                    href="https://www.bcit.ca/learning-teaching-centre/"
+                    href={REPO_HREF}
                     target="_blank"
                     rel="noopener noreferrer"
                     color="text.secondary"
                     underline="hover"
                 >
-                    Teaching and Learning Unit
+                    High Resolution Image Viewer
                 </Link>
-                <Box
-                    component="span"
-                    sx={{ display: "inline-block", width: "3ch" }}
-                />
-                <strong>Source code:</strong>{" "}
-                <Link
-                    href="https://www.mozilla.org/en-US/MPL/2.0/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    color="text.secondary"
-                    underline="hover"
-                >
-                    MPL-2.0
-                </Link>
-                {canManageUsers &&
-                    (() => {
-                        // Versions are admin-only: the strings leak info
-                        // about the deployed image and are not relevant
-                        // to other roles.  Each component versions
-                        // independently (see release-please packages in
-                        // release-please-config.json) so the footer
-                        // lists three distinct values rather than a
-                        // single shared version.
-                        const frontendVer = frontendVersion || "dev";
-                        const releasesHref =
-                            "https://github.com/bcit-tlu/hriv/releases";
-                        const repoHref = "https://github.com/bcit-tlu/hriv";
-                        const hrefFor = (v: string) =>
-                            v && v !== "dev" ? releasesHref : repoHref;
-                        return (
-                            <>
-                                <Box
-                                    component="span"
-                                    sx={{
-                                        display: "inline-block",
-                                        width: "3ch",
-                                    }}
-                                />
-                                <strong>Frontend:</strong>{" "}
-                                <Link
-                                    href={hrefFor(frontendVer)}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    color="text.secondary"
-                                    underline="hover"
-                                >
-                                    {frontendVer}
-                                </Link>
-                                <Box
-                                    component="span"
-                                    sx={{
-                                        display: "inline-block",
-                                        width: "3ch",
-                                    }}
-                                />
-                                <strong>Backend:</strong>{" "}
-                                <Link
-                                    href={hrefFor(backendVersion ?? "")}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    color="text.secondary"
-                                    underline="hover"
-                                >
-                                    {backendVersion ?? "…"}
-                                </Link>
-                                <Box
-                                    component="span"
-                                    sx={{
-                                        display: "inline-block",
-                                        width: "3ch",
-                                    }}
-                                />
-                                <strong>Backup:</strong>{" "}
-                                <Link
-                                    href={hrefFor(backupVersion ?? "")}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    color="text.secondary"
-                                    underline="hover"
-                                >
-                                    {backupVersion ?? "…"}
-                                </Link>
-                            </>
-                        );
-                    })()}
+                {canManageUsers && (
+                    <AdminVersions
+                        frontendVersion={frontendVersion}
+                        backendVersion={backendVersion}
+                        backupVersion={backupVersion}
+                    />
+                )}
             </Typography>
             {setReportIssueOpen && (
                 <Link
