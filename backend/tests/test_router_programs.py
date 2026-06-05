@@ -378,12 +378,10 @@ async def test_instructor_cannot_delete_cohort_out_of_scope() -> None:
 # ── Cohort membership endpoints ──────────────────────────────────────────────
 
 
-def _membership_db(cohort, student, already_member=False):
+def _membership_db(cohort, student):
     db = AsyncMock()
     db.get = AsyncMock(side_effect=[cohort, student])
-    exists_result = MagicMock()
-    exists_result.first.return_value = object() if already_member else None
-    db.execute = AsyncMock(return_value=exists_result)
+    db.execute = AsyncMock(return_value=MagicMock())
     db.commit = AsyncMock()
     db.refresh = AsyncMock()
     return db
@@ -395,20 +393,24 @@ async def test_instructor_adds_student_to_cohort() -> None:
     db = _membership_db(cohort, student)
 
     out = await add_cohort_member(100, 10, _instructor(tenant_ids=[5]), db)
-    # Two executes: the existence check and the insert.
-    assert db.execute.await_count == 2
+    # A single atomic upsert (INSERT ... ON CONFLICT DO NOTHING).
+    assert db.execute.await_count == 1
     db.commit.assert_awaited()
     assert out["id"] == 10
 
 
 async def test_add_member_idempotent_when_already_present() -> None:
+    # Idempotency is now enforced at the DB layer via ON CONFLICT DO NOTHING,
+    # so the endpoint issues the same single insert whether or not the row
+    # already exists and never raises.
     cohort = _cohort(id=100, parent_program_id=5)
     student = _student(tenant_ids=[5])
-    db = _membership_db(cohort, student, already_member=True)
+    db = _membership_db(cohort, student)
 
-    await add_cohort_member(100, 10, _instructor(tenant_ids=[5]), db)
-    # Only the existence check ran; no insert.
+    out = await add_cohort_member(100, 10, _instructor(tenant_ids=[5]), db)
     assert db.execute.await_count == 1
+    db.commit.assert_awaited()
+    assert out["id"] == 10
 
 
 async def test_instructor_cannot_add_student_outside_tenant() -> None:

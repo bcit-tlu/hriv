@@ -1,7 +1,8 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import delete as sql_delete, insert, select
+from sqlalchemy import delete as sql_delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
@@ -247,17 +248,14 @@ async def add_cohort_member(
             status_code=403,
             detail="Not permitted to change this student's cohort membership",
         )
-    existing = await db.execute(
-        select(user_programs).where(
-            user_programs.c.user_id == student.id,
-            user_programs.c.program_id == cohort.id,
-        )
+    # Atomic, idempotent insert: ON CONFLICT DO NOTHING avoids a TOCTOU race
+    # between concurrent identical requests (composite PK on user_programs).
+    await db.execute(
+        pg_insert(user_programs)
+        .values(user_id=student.id, program_id=cohort.id)
+        .on_conflict_do_nothing()
     )
-    if existing.first() is None:
-        await db.execute(
-            insert(user_programs).values(user_id=student.id, program_id=cohort.id)
-        )
-        await db.commit()
+    await db.commit()
     await db.refresh(student, ["programs"])
     return _user_to_out(student)
 
