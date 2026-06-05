@@ -209,6 +209,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
               </Typography>
               {onEditName && (
                 <IconButton
+                  component="span"
                   size="small"
                   onClick={(e) => {
                     e.stopPropagation()
