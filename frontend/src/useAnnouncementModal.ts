@@ -69,6 +69,7 @@ export function useAnnouncementModal() {
     return {
         announcement,
         dismissAnnouncement,
+        loadAnnouncement,
         annModalOpen,
         setAnnModalOpen,
         annDraftMessage,

@@ -305,6 +305,7 @@ export default function App() {
     const {
         announcement,
         dismissAnnouncement,
+        loadAnnouncement,
         annModalOpen,
         setAnnModalOpen,
         annDraftMessage,
@@ -409,7 +410,8 @@ export default function App() {
             loadUncategorizedImages();
             loadPrograms();
         }
-    }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms]);
+        loadAnnouncement();
+    }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms, loadAnnouncement]);
 
     // Load users for search when modal opens (admin/instructor only)
     useEffect(() => {
