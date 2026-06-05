@@ -96,7 +96,7 @@ async def test_create_program_success() -> None:
     db.refresh = AsyncMock()
 
     body = ProgramCreate(name="NewProg")
-    result = await create_program(body, _admin(), db)
+    await create_program(body, _admin(), db)
 
     db.add.assert_called_once()
     db.commit.assert_awaited_once()
@@ -129,7 +129,7 @@ async def test_update_program_success() -> None:
     db.refresh = AsyncMock()
 
     body = ProgramUpdate(name="NewName")
-    result = await update_program(1, body, _admin(), db)
+    await update_program(1, body, _admin(), db)
 
     assert prog.name == "NewName"
 
