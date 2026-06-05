@@ -1,7 +1,12 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useRef } from "react";
 import { fetchAnnouncement, updateAnnouncement, userMessage } from "./api";
 
-export function useAnnouncementModal() {
+const DISMISSED_PREFIX = "dismissed_announcement";
+
+export function useAnnouncementModal(userId?: number) {
+    const dismissedKey = userId
+        ? `${DISMISSED_PREFIX}_${userId}`
+        : DISMISSED_PREFIX;
     const [announcement, setAnnouncement] = useState("");
     const [annModalOpen, setAnnModalOpen] = useState(false);
     const [annMessage, setAnnMessage] = useState("");
@@ -10,21 +15,22 @@ export function useAnnouncementModal() {
     const [annDraftEnabled, setAnnDraftEnabled] = useState(false);
     const [annSaving, setAnnSaving] = useState(false);
     const [annError, setAnnError] = useState<string | null>(null);
+    const annUpdatedAt = useRef<string | null>(null);
 
     const loadAnnouncement = useCallback(async () => {
         try {
             const ann = await fetchAnnouncement();
-            setAnnouncement(ann.enabled ? ann.message : "");
+            annUpdatedAt.current = ann.updated_at;
+            const dismissed = localStorage.getItem(dismissedKey);
+            const visible =
+                ann.enabled && dismissed !== ann.updated_at;
+            setAnnouncement(visible ? ann.message : "");
             setAnnMessage(ann.message);
             setAnnEnabled(ann.enabled);
         } catch {
             // Silently ignore — announcement is non-critical
         }
-    }, []);
-
-    useEffect(() => {
-        loadAnnouncement();
-    }, [loadAnnouncement]);
+    }, [dismissedKey]);
 
     const openAnnModal = useCallback(() => {
         setAnnDraftMessage(annMessage);
@@ -33,6 +39,13 @@ export function useAnnouncementModal() {
         setAnnModalOpen(true);
     }, [annMessage, annEnabled]);
 
+    const dismissAnnouncement = useCallback(() => {
+        if (annUpdatedAt.current) {
+            localStorage.setItem(dismissedKey, annUpdatedAt.current);
+        }
+        setAnnouncement("");
+    }, [dismissedKey]);
+
     const handleAnnSave = useCallback(async () => {
         setAnnSaving(true);
         try {
@@ -40,6 +53,8 @@ export function useAnnouncementModal() {
                 message: annDraftMessage,
                 enabled: annDraftEnabled,
             });
+            annUpdatedAt.current = updated.updated_at;
+            localStorage.removeItem(dismissedKey);
             setAnnMessage(updated.message);
             setAnnEnabled(updated.enabled);
             setAnnouncement(updated.enabled ? updated.message : "");
@@ -49,10 +64,14 @@ export function useAnnouncementModal() {
         } finally {
             setAnnSaving(false);
         }
-    }, [annDraftMessage, annDraftEnabled]);
+    }, [annDraftMessage, annDraftEnabled, dismissedKey]);
 
     return {
         announcement,
+        annMessage,
+        annEnabled,
+        dismissAnnouncement,
+        loadAnnouncement,
         annModalOpen,
         setAnnModalOpen,
         annDraftMessage,

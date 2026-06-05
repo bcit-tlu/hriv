@@ -1,10 +1,14 @@
 import { useState, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from "react";
+import Alert from "@mui/material/Alert";
 import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
+import Dialog from "@mui/material/Dialog";
+import DialogContent from "@mui/material/DialogContent";
+import DialogTitle from "@mui/material/DialogTitle";
 import IconButton from "@mui/material/IconButton";
 import Link from "@mui/material/Link";
 import Menu from "@mui/material/Menu";
@@ -30,6 +34,9 @@ export interface AppShellProps {
     canManageUsers: boolean;
     currentUser: { name: string; email: string; role: Role; program_names: string[] };
     announcement: string;
+    annMessage: string;
+    annEnabled: boolean;
+    onDismissAnnouncement?: () => void;
     // Profile popover
     profileOpen: boolean;
     setProfileOpen: Dispatch<SetStateAction<boolean>>;
@@ -61,6 +68,9 @@ export default function AppShell(props: AppShellProps) {
         canManageUsers,
         currentUser,
         announcement,
+        annMessage,
+        annEnabled,
+        onDismissAnnouncement,
         profileOpen,
         setProfileOpen,
         avatarRef,
@@ -80,6 +90,8 @@ export default function AppShell(props: AppShellProps) {
 
     const [manageMenuAnchor, setManageMenuAnchor] =
         useState<HTMLElement | null>(null);
+    const [viewAnnOpen, setViewAnnOpen] = useState(false);
+    const showViewAnnLink = annEnabled && !announcement;
 
     return (
         <Box
@@ -263,23 +275,39 @@ export default function AppShell(props: AppShellProps) {
                                     <Box
                                         sx={{
                                             display: "flex",
-                                            justifyContent: canManageUsers
+                                            justifyContent: canManageUsers || showViewAnnLink
                                                 ? "space-between"
                                                 : "flex-end",
                                             mt: 2,
+                                            gap: 2,
+                                            flexWrap: "wrap",
                                         }}
                                     >
-                                        {canManageUsers && (
-                                            <Link
-                                                component="button"
-                                                variant="body2"
-                                                onClick={() => {
-                                                    openEditProfile();
-                                                }}
-                                            >
-                                                Update
-                                            </Link>
-                                        )}
+                                        <Box sx={{ display: "flex", gap: 2 }}>
+                                            {canManageUsers && (
+                                                <Link
+                                                    component="button"
+                                                    variant="body2"
+                                                    onClick={() => {
+                                                        openEditProfile();
+                                                    }}
+                                                >
+                                                    Update
+                                                </Link>
+                                            )}
+                                            {showViewAnnLink && (
+                                                <Link
+                                                    component="button"
+                                                    variant="body2"
+                                                    onClick={() => {
+                                                        setProfileOpen(false);
+                                                        setViewAnnOpen(true);
+                                                    }}
+                                                >
+                                                    View Announcement
+                                                </Link>
+                                            )}
+                                        </Box>
                                         <Link
                                             component="button"
                                             variant="body2"
@@ -300,7 +328,15 @@ export default function AppShell(props: AppShellProps) {
             </AppBar>
 
             {/* Announcement banner */}
-            {announcement && <AnnouncementBanner message={announcement} />}
+            {announcement && <AnnouncementBanner message={announcement} onDismiss={onDismissAnnouncement} />}
+
+            {/* Read-only announcement dialog (for dismissed announcements) */}
+            <Dialog open={viewAnnOpen} onClose={() => setViewAnnOpen(false)} maxWidth="sm" fullWidth>
+                <DialogTitle>Announcement</DialogTitle>
+                <DialogContent>
+                    <Alert severity="info" sx={{ mt: 1 }}>{annMessage}</Alert>
+                </DialogContent>
+            </Dialog>
 
             {/* Main content */}
             {children}

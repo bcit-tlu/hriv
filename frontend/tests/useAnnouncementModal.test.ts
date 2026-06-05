@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { renderHook, act } from "@testing-library/react";
 import { useAnnouncementModal } from "../src/useAnnouncementModal";
 import * as api from "../src/api";
 
@@ -26,8 +26,12 @@ function makeAnnouncement(overrides: Partial<api.ApiAnnouncement> = {}): api.Api
     };
 }
 
+const TEST_USER_ID = 42;
+const DISMISSED_KEY = `dismissed_announcement_${TEST_USER_ID}`;
+
 beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     mockFetchAnnouncement.mockResolvedValue(makeAnnouncement());
 });
 
@@ -44,33 +48,39 @@ describe("useAnnouncementModal", () => {
         });
     });
 
-    describe("loadAnnouncement (auto-loads on mount)", () => {
+    describe("loadAnnouncement", () => {
+        it("does not auto-load on mount (caller controls fetch)", () => {
+            renderHook(() => useAnnouncementModal());
+            expect(mockFetchAnnouncement).not.toHaveBeenCalled();
+        });
+
         it("loads enabled announcement into display state", async () => {
             mockFetchAnnouncement.mockResolvedValue(
                 makeAnnouncement({ message: "Hello world", enabled: true }),
             );
-            const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(result.current.announcement).toBe("Hello world");
+            const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID));
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
+            expect(result.current.announcement).toBe("Hello world");
         });
 
         it("sets announcement to empty string when disabled", async () => {
             mockFetchAnnouncement.mockResolvedValue(
                 makeAnnouncement({ message: "Not visible", enabled: false }),
             );
-            const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(mockFetchAnnouncement).toHaveBeenCalled();
+            const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID));
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
             expect(result.current.announcement).toBe("");
         });
 
         it("silently ignores fetch errors", async () => {
             mockFetchAnnouncement.mockRejectedValue(new Error("Network error"));
-            const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(mockFetchAnnouncement).toHaveBeenCalled();
+            const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID));
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
             expect(result.current.announcement).toBe("");
         });
@@ -81,9 +91,9 @@ describe("useAnnouncementModal", () => {
             mockFetchAnnouncement.mockResolvedValue(
                 makeAnnouncement({ message: "Current msg", enabled: true }),
             );
-            const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(result.current.announcement).toBe("Current msg");
+            const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID));
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
 
             act(() => {
@@ -106,9 +116,9 @@ describe("useAnnouncementModal", () => {
                 makeAnnouncement({ message: "New msg", enabled: true }),
             );
 
-            const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(mockFetchAnnouncement).toHaveBeenCalledTimes(1);
+            const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID));
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
 
             // Open modal and modify draft
@@ -132,8 +142,40 @@ describe("useAnnouncementModal", () => {
             expect(result.current.annModalOpen).toBe(false);
             // Display state updated immediately from response (no re-fetch needed)
             expect(result.current.announcement).toBe("New msg");
+            // Dismiss key cleared so banner is consistent on refresh
+            expect(localStorage.getItem(DISMISSED_KEY)).toBeNull();
             // No redundant re-fetch after save
             expect(mockFetchAnnouncement).toHaveBeenCalledTimes(1);
+        });
+
+        it("clears dismissed localStorage key on save", async () => {
+            mockFetchAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "Msg", enabled: true, updated_at: "2026-06-01T00:00:00Z" }),
+            );
+            mockUpdateAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "Msg", enabled: true, updated_at: "2026-06-01T00:00:00Z" }),
+            );
+            localStorage.setItem(DISMISSED_KEY, "2026-06-01T00:00:00Z");
+
+            const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID));
+            await act(async () => {
+                await result.current.loadAnnouncement();
+            });
+
+            // Banner suppressed because dismissed key matches updated_at
+            expect(result.current.announcement).toBe("");
+
+            act(() => {
+                result.current.openAnnModal();
+            });
+
+            await act(async () => {
+                await result.current.handleAnnSave();
+            });
+
+            // After save, dismiss key cleared and banner shows
+            expect(localStorage.getItem(DISMISSED_KEY)).toBeNull();
+            expect(result.current.announcement).toBe("Msg");
         });
 
         it("clears announcement display immediately when saving as disabled", async () => {
@@ -144,9 +186,9 @@ describe("useAnnouncementModal", () => {
                 makeAnnouncement({ message: "Visible", enabled: false }),
             );
 
-            const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(result.current.announcement).toBe("Visible");
+            const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID));
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
 
             act(() => {
@@ -167,9 +209,9 @@ describe("useAnnouncementModal", () => {
             mockFetchAnnouncement.mockResolvedValue(makeAnnouncement());
             mockUpdateAnnouncement.mockRejectedValue(new Error("Server error"));
 
-            const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(mockFetchAnnouncement).toHaveBeenCalled();
+            const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID));
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
 
             act(() => {
@@ -183,6 +225,51 @@ describe("useAnnouncementModal", () => {
             expect(result.current.annError).toBe("Failed to update announcement");
             expect(result.current.annModalOpen).toBe(true);
             expect(result.current.annSaving).toBe(false);
+        });
+    });
+
+    describe("dismissAnnouncement", () => {
+        it("hides the banner and persists updated_at to localStorage", async () => {
+            mockFetchAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "Hello", enabled: true, updated_at: "2026-06-01T00:00:00Z" }),
+            );
+            const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID));
+            await act(async () => {
+                await result.current.loadAnnouncement();
+            });
+
+            act(() => {
+                result.current.dismissAnnouncement();
+            });
+
+            expect(result.current.announcement).toBe("");
+            expect(localStorage.getItem(DISMISSED_KEY)).toBe("2026-06-01T00:00:00Z");
+        });
+
+        it("suppresses banner on next load when dismissed", async () => {
+            const ann = makeAnnouncement({ message: "Persistent", enabled: true, updated_at: "2026-06-01T00:00:00Z" });
+            mockFetchAnnouncement.mockResolvedValue(ann);
+            localStorage.setItem(DISMISSED_KEY, "2026-06-01T00:00:00Z");
+
+            const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID));
+            await act(async () => {
+                await result.current.loadAnnouncement();
+            });
+
+            expect(result.current.announcement).toBe("");
+        });
+
+        it("shows banner again after admin updates the announcement", async () => {
+            localStorage.setItem(DISMISSED_KEY, "2026-06-01T00:00:00Z");
+            mockFetchAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "New one", enabled: true, updated_at: "2026-06-02T00:00:00Z" }),
+            );
+
+            const { result } = renderHook(() => useAnnouncementModal(TEST_USER_ID));
+            await act(async () => {
+                await result.current.loadAnnouncement();
+            });
+            expect(result.current.announcement).toBe("New one");
         });
     });
 

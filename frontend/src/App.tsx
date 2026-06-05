@@ -304,6 +304,10 @@ export default function App() {
     // Announcement modal state (load, draft, save) — extracted to useAnnouncementModal hook
     const {
         announcement,
+        annMessage,
+        annEnabled,
+        dismissAnnouncement,
+        loadAnnouncement,
         annModalOpen,
         setAnnModalOpen,
         annDraftMessage,
@@ -315,7 +319,7 @@ export default function App() {
         setAnnError,
         openAnnModal,
         handleAnnSave,
-    } = useAnnouncementModal();
+    } = useAnnouncementModal(currentUser?.id);
 
     // User profile popover + edit modal state — extracted to useUserProfile hook
     const {
@@ -408,7 +412,8 @@ export default function App() {
             loadUncategorizedImages();
             loadPrograms();
         }
-    }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms]);
+        loadAnnouncement();
+    }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms, loadAnnouncement]);
 
     // Load users for search when modal opens (admin/instructor only)
     useEffect(() => {
@@ -748,6 +753,9 @@ export default function App() {
             canManageUsers={canManageUsers}
             currentUser={currentUser}
             announcement={announcement}
+            annMessage={annMessage}
+            annEnabled={annEnabled}
+            onDismissAnnouncement={dismissAnnouncement}
             profileOpen={profileOpen}
             setProfileOpen={setProfileOpen}
             avatarRef={avatarRef}
