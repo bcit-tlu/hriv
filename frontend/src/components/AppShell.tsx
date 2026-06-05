@@ -336,7 +336,7 @@ export default function AppShell(props: AppShellProps) {
             {/* Announcement banner */}
             {announcement && (
                 <Collapse in={!annCollapsed} onExited={onDismissAnnouncement}>
-                    <Box sx={{ mx: '5%', mt: 2, mb: 1 }}>
+                    <Box sx={{ mx: '10%', mt: '20px', mb: 0 }}>
                         <AnnouncementBanner message={announcement} onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined} />
                     </Box>
                 </Collapse>
