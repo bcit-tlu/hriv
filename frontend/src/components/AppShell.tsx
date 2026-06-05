@@ -279,6 +279,8 @@ export default function AppShell(props: AppShellProps) {
                                                 ? "space-between"
                                                 : "flex-end",
                                             mt: 2,
+                                            gap: 2,
+                                            flexWrap: "wrap",
                                         }}
                                     >
                                         <Box sx={{ display: "flex", gap: 2 }}>
