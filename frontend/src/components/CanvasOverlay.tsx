@@ -732,7 +732,7 @@ export default function CanvasOverlay({
         if (newObjs.length === 1) {
           fc.setActiveObject(newObjs[0])
         } else if (newObjs.length > 1) {
-          const sel = new fabric.ActiveSelection(newObjs, { canvas: fc })
+          const sel = new fabric.ActiveSelection(newObjs, { canvas: fc, originX: 'left', originY: 'top' })
           fc.setActiveObject(sel)
         }
         fc.renderAll()
