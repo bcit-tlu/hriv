@@ -70,7 +70,7 @@ const PALETTE = [
   '#FFFFFF', // White
 ]
 
-const LINE_WIDTHS = [1, 2, 4, 8]
+const LINE_WIDTHS = [1, 2, 4, 8, 16]
 
 type ArrowStyle = 'none' | 'standard' | 'triangle' | 'circle'
 type FillMode = 'outlined' | 'filled'
