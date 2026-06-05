@@ -48,10 +48,6 @@ export interface Program {
   id: number
   name: string
   oidc_group: string | null
-  /** Parent tenant id; null for tenant (top-level) programs. */
-  parent_program_id: number | null
-  /** True when the program is a cohort (has a parent tenant). */
-  is_cohort: boolean
   created_at: string
   updated_at: string
 }

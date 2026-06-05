@@ -129,7 +129,7 @@ describe("useBrowseData", () => {
         it("loads categories, images, and programs when called explicitly", async () => {
             const tree = [makeApiTree({ id: 1, label: "Cat A" })];
             const imgs = [makeApiImage(10)];
-            const progs = [{ id: 1, name: "P1", oidc_group: null, parent_program_id: null, is_cohort: false, created_at: "", updated_at: "" }];
+            const progs = [{ id: 1, name: "P1", oidc_group: null, created_at: "", updated_at: "" }];
 
             mockFetchCategoryTree.mockResolvedValue(tree);
             mockFetchUncategorizedImages.mockResolvedValue(imgs);

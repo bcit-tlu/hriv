@@ -180,6 +180,14 @@ describe("AppShell", () => {
             expect(screen.getByRole("menuitem", { name: "Announcement" })).toBeInTheDocument();
         });
 
+        it("hides Programs menu item for non-admin editors", () => {
+            render(<AppShell {...makeProps({ canEditContent: true, canManageUsers: false })} />);
+            fireEvent.click(screen.getByRole("tab", { name: "Manage" }));
+            expect(screen.getByRole("menuitem", { name: "Categories" })).toBeInTheDocument();
+            expect(screen.getByRole("menuitem", { name: "Announcement" })).toBeInTheDocument();
+            expect(screen.queryByRole("menuitem", { name: "Programs" })).not.toBeInTheDocument();
+        });
+
         it("calls onOpenCategories when Categories menu item is clicked", () => {
             const props = makeProps();
             render(<AppShell {...props} />);

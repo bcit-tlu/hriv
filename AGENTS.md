@@ -73,7 +73,7 @@
 - **Update documentation in the same PR as the feature.** Any PR that adds or changes user-facing behavior, roles/permissions, API endpoints, or env/config MUST update the relevant docs in that same PR (do not defer to a follow-up). Reviewers should treat missing doc updates as a blocking change-request. Check this list and update every file that applies:
   - `README.md` — **Role Capabilities** table and **Test Credentials** when roles, permissions, or seed accounts change.
   - `docs/TESTING.md` — the **API endpoint → minimum role** table and relevant test cases when endpoints, roles, or auth rules change.
-  - `docs/<feature>.md` — add or update a dedicated page for any non-trivial feature (model, authorization rules, API surface, frontend behavior, flow); link it from `README.md`. Existing examples: `docs/instructor-cohorts.md`, `docs/drag-and-drop.md`, `docs/OIDC_SETUP.md`.
+  - `docs/<feature>.md` — add or update a dedicated page for any non-trivial feature (model, authorization rules, API surface, frontend behavior, flow); link it from `README.md`. Existing examples: `docs/drag-and-drop.md`, `docs/OIDC_SETUP.md`.
   - `docs/OIDC_SETUP.md` — when auth / OIDC / group-mapping behavior changes.
   - `.agents/skills/*/SKILL.md` — when a feature changes how it should be set up or tested locally.
   - `AGENTS.md` — when setup commands, project structure, or contributor workflow change.

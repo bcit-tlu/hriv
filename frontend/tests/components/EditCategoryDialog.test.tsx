@@ -83,8 +83,8 @@ describe('EditCategoryDialog', () => {
         onSave={onSave}
         currentLabel="Architecture"
         programs={[
-          { id: 1, name: 'Admin', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
-          { id: 2, name: 'Design', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
+          { id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' },
+          { id: 2, name: 'Design', oidc_group: null, created_at: '', updated_at: '' },
         ]}
         currentProgramIds={[2]}
       />,
@@ -197,8 +197,8 @@ describe('EditCategoryDialog', () => {
         onSave={vi.fn()}
         currentLabel="Architecture"
         programs={[
-          { id: 1, name: 'Admin', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
-          { id: 2, name: 'Design', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
+          { id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' },
+          { id: 2, name: 'Design', oidc_group: null, created_at: '', updated_at: '' },
         ]}
         currentProgramIds={[2]}
       />,
@@ -221,8 +221,8 @@ describe('EditCategoryDialog', () => {
         onSave={vi.fn()}
         currentLabel="Architecture"
         programs={[
-          { id: 1, name: 'Admin', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
-          { id: 2, name: 'Design', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
+          { id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' },
+          { id: 2, name: 'Design', oidc_group: null, created_at: '', updated_at: '' },
         ]}
         currentProgramIds={[2]}
       />,
@@ -237,9 +237,9 @@ describe('EditCategoryDialog', () => {
 
   describe('child program picker restriction', () => {
     const allPrograms = [
-      { id: 1, name: 'Program A', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
-      { id: 2, name: 'Program B', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
-      { id: 3, name: 'Program C', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
+      { id: 1, name: 'Program A', oidc_group: null, created_at: '', updated_at: '' },
+      { id: 2, name: 'Program B', oidc_group: null, created_at: '', updated_at: '' },
+      { id: 3, name: 'Program C', oidc_group: null, created_at: '', updated_at: '' },
     ]
 
     it('disables programs not in the inherited set', () => {

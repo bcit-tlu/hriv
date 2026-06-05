@@ -1,204 +1,311 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ProgramManagementModal from '../../src/components/ProgramManagementModal'
 import type { Program } from '../../src/types'
 
 const programs: Program[] = [
-  { id: 1, name: 'Medical Lab', oidc_group: 'mlab-group', parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
-  { id: 2, name: 'Dental Hygiene', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
-  { id: 3, name: 'Cohort A', oidc_group: null, parent_program_id: 1, is_cohort: true, created_at: '', updated_at: '' },
+  { id: 1, name: 'Medical Lab', oidc_group: 'mlab-group', created_at: '', updated_at: '' },
+  { id: 2, name: 'Dental Hygiene', oidc_group: null, created_at: '', updated_at: '' },
 ]
 
-function renderModal(props: Partial<React.ComponentProps<typeof ProgramManagementModal>> = {}) {
-  return render(
-    <ProgramManagementModal
-      open
-      onClose={vi.fn()}
-      programs={programs}
-      isAdmin
-      myProgramIds={[]}
-      onAdd={vi.fn()}
-      onEdit={vi.fn()}
-      onDelete={vi.fn()}
-      onManageMembers={vi.fn()}
-      {...props}
-    />,
-  )
-}
-
-describe('ProgramManagementModal — admin', () => {
+describe('ProgramManagementModal', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('renders the admin title and full program list', () => {
-    renderModal()
+  it('renders title and program list', () => {
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={programs}
+        onAdd={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
     expect(screen.getByText('Manage Programs')).toBeInTheDocument()
     expect(screen.getByText('Medical Lab')).toBeInTheDocument()
     expect(screen.getByText('Dental Hygiene')).toBeInTheDocument()
-    expect(screen.getByText('Cohort A')).toBeInTheDocument()
   })
 
   it('shows "No programs yet" when list is empty', () => {
-    renderModal({ programs: [] })
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={[]}
+        onAdd={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
     expect(screen.getByText('No programs yet.')).toBeInTheDocument()
   })
 
-  it('calls onAdd with a null parent for a top-level program', async () => {
+  it('calls onAdd when typing a name and clicking Add', async () => {
     const user = userEvent.setup()
     const onAdd = vi.fn()
-    renderModal({ onAdd })
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={programs}
+        onAdd={onAdd}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
 
-    await user.type(screen.getByLabelText(/new program name/i), 'New Program')
+    const input = screen.getByLabelText(/new program name/i)
+    await user.type(input, 'New Program')
     await user.click(screen.getByRole('button', { name: 'Add' }))
 
-    expect(onAdd).toHaveBeenCalledWith('New Program', null, null)
+    expect(onAdd).toHaveBeenCalledWith('New Program', null)
+  })
+
+  it('calls onAdd when pressing Enter in the text field', async () => {
+    const user = userEvent.setup()
+    const onAdd = vi.fn()
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={programs}
+        onAdd={onAdd}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
+
+    const input = screen.getByLabelText(/new program name/i)
+    await user.type(input, 'Enter Program{Enter}')
+
+    expect(onAdd).toHaveBeenCalledWith('Enter Program', null)
   })
 
   it('Add button is disabled when input is empty', () => {
-    renderModal()
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={programs}
+        onAdd={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
     expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
   })
 
-  it('hides the OIDC field behind an Advanced disclosure (issue #559)', async () => {
-    const user = userEvent.setup()
-    const onAdd = vi.fn()
-    renderModal({ onAdd })
-
-    // Not visible until Advanced is expanded.
-    expect(screen.queryByLabelText(/oidc group \(optional\)/i)).not.toBeInTheDocument()
-
-    await user.type(screen.getByLabelText(/new program name/i), 'Radiology')
-    await user.click(screen.getByRole('button', { name: /advanced/i }))
-    await user.type(screen.getByLabelText(/oidc group \(optional\)/i), 'rad-group')
-    await user.click(screen.getByRole('button', { name: 'Add' }))
-
-    expect(onAdd).toHaveBeenCalledWith('Radiology', 'rad-group', null)
-  })
-
-  it('calls onDelete when clicking the delete icon', async () => {
+  it('calls onDelete when clicking delete icon', async () => {
     const user = userEvent.setup()
     const onDelete = vi.fn()
-    renderModal({ onDelete })
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={programs}
+        onAdd={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={onDelete}
+      />,
+    )
 
-    await user.click(screen.getAllByLabelText('delete program')[0])
+    const deleteButtons = screen.getAllByLabelText('delete program')
+    await user.click(deleteButtons[0])
     expect(onDelete).toHaveBeenCalledWith(1)
   })
 
-  it('edits a program name and preserves its OIDC group', async () => {
+  it('enters edit mode and saves edited program name', async () => {
     const user = userEvent.setup()
     const onEdit = vi.fn()
-    renderModal({ onEdit })
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={programs}
+        onAdd={vi.fn()}
+        onEdit={onEdit}
+        onDelete={vi.fn()}
+      />,
+    )
 
-    await user.click(screen.getAllByLabelText('edit program')[0])
+    const editButtons = screen.getAllByLabelText('edit program')
+    await user.click(editButtons[0])
+
+    // Should show a text field with the current name
     const editInput = screen.getByDisplayValue('Medical Lab')
     await user.clear(editInput)
     await user.type(editInput, 'Updated Lab')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
 
+    await user.click(screen.getByRole('button', { name: 'Save' }))
     expect(onEdit).toHaveBeenCalledWith(1, 'Updated Lab', 'mlab-group')
   })
 
-  it('reveals and updates the OIDC group via the Advanced gear in edit mode', async () => {
+  it('cancels edit mode', async () => {
     const user = userEvent.setup()
-    const onEdit = vi.fn()
-    renderModal({ onEdit })
-
-    await user.click(screen.getAllByLabelText('edit program')[0])
-    await user.click(screen.getByRole('button', { name: /oidc settings/i }))
-    const oidcInput = screen.getByDisplayValue('mlab-group')
-    await user.clear(oidcInput)
-    await user.type(oidcInput, 'new-mlab-group')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    expect(onEdit).toHaveBeenCalledWith(1, 'Medical Lab', 'new-mlab-group')
-  })
-
-  it('displays the OIDC group secondary text for tenant programs that have one', () => {
-    renderModal()
-    expect(screen.getByText('OIDC group: mlab-group')).toBeInTheDocument()
-  })
-
-  it('shows a manage-students button on cohort rows only', async () => {
-    const user = userEvent.setup()
-    const onManageMembers = vi.fn()
-    renderModal({ onManageMembers })
-
-    const btn = screen.getByLabelText('manage students in Cohort A')
-    await user.click(btn)
-    expect(onManageMembers).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 3, name: 'Cohort A' }),
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={programs}
+        onAdd={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
     )
+
+    const editButtons = screen.getAllByLabelText('edit program')
+    await user.click(editButtons[0])
+
+    await user.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    // Should be back to non-edit mode
+    expect(screen.getByText('Medical Lab')).toBeInTheDocument()
   })
 
-  it('calls onClose when clicking Close', async () => {
+  it('close button calls onClose', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
-    renderModal({ onClose })
+    render(
+      <ProgramManagementModal
+        open
+        onClose={onClose}
+        programs={programs}
+        onAdd={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
+
     await user.click(screen.getByRole('button', { name: 'Close' }))
     expect(onClose).toHaveBeenCalledOnce()
   })
-})
 
-describe('ProgramManagementModal — instructor (issue #559)', () => {
-  beforeEach(() => vi.clearAllMocks())
-
-  it('uses the cohort title and only lists cohorts under the instructor tenants', () => {
-    renderModal({ isAdmin: false, myProgramIds: [1] })
-    expect(screen.getByText('Manage Cohorts')).toBeInTheDocument()
-    expect(screen.getByText('Cohort A')).toBeInTheDocument()
-    // Tenants themselves are not shown to instructors.
-    expect(screen.queryByText('Medical Lab')).not.toBeInTheDocument()
-    expect(screen.queryByText('Dental Hygiene')).not.toBeInTheDocument()
+  it('displays OIDC group secondary text for programs that have one', () => {
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={programs}
+        onAdd={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('OIDC group: mlab-group')).toBeInTheDocument()
+    // Dental Hygiene has no oidc_group — no secondary text
+    expect(screen.queryByText(/OIDC group: (?!mlab-group)/)).not.toBeInTheDocument()
   })
 
-  it('never exposes any OIDC field to instructors', async () => {
-    const user = userEvent.setup()
-    renderModal({ isAdmin: false, myProgramIds: [1] })
-    expect(screen.queryByRole('button', { name: /advanced/i })).not.toBeInTheDocument()
-    expect(screen.queryByLabelText(/oidc/i)).not.toBeInTheDocument()
-    // Even in edit mode there is no advanced/OIDC affordance.
-    await user.click(screen.getByLabelText('edit program'))
-    expect(screen.queryByRole('button', { name: /advanced/i })).not.toBeInTheDocument()
+  it('renders OIDC group helper text on the add form', () => {
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={programs}
+        onAdd={vi.fn()}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('IdP group name for auto-assignment')).toBeInTheDocument()
   })
 
-  it('renames a cohort without sending an oidc_group (rename-only)', async () => {
-    const user = userEvent.setup()
-    const onEdit = vi.fn()
-    renderModal({ isAdmin: false, myProgramIds: [1], onEdit })
-
-    await user.click(screen.getByLabelText('edit program'))
-    const editInput = screen.getByDisplayValue('Cohort A')
-    await user.clear(editInput)
-    await user.type(editInput, 'Cohort A2')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
-
-    // undefined => omitted from the PATCH body so the rename-only guard passes.
-    expect(onEdit).toHaveBeenCalledWith(3, 'Cohort A2', undefined)
-  })
-
-  it('requires a parent tenant before a cohort can be added', async () => {
+  it('calls onAdd with oidcGroup when both fields are filled', async () => {
     const user = userEvent.setup()
     const onAdd = vi.fn()
-    renderModal({ isAdmin: false, myProgramIds: [1], onAdd })
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={programs}
+        onAdd={onAdd}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
 
-    await user.type(screen.getByLabelText(/new cohort name/i), 'Cohort B')
-    // No tenant selected yet → still disabled.
-    expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
-
-    await user.click(screen.getByRole('combobox'))
-    await user.click(within(screen.getByRole('listbox')).getByText('Medical Lab'))
+    await user.type(screen.getByLabelText(/new program name/i), 'Radiology')
+    await user.type(screen.getByLabelText(/oidc group \(optional\)/i), 'rad-group')
     await user.click(screen.getByRole('button', { name: 'Add' }))
 
-    expect(onAdd).toHaveBeenCalledWith('Cohort B', null, 1)
+    expect(onAdd).toHaveBeenCalledWith('Radiology', 'rad-group')
   })
 
-  it('only offers tenants the instructor belongs to in the picker', async () => {
+  it('calls onAdd via Enter in the OIDC group field', async () => {
     const user = userEvent.setup()
-    renderModal({ isAdmin: false, myProgramIds: [1] })
+    const onAdd = vi.fn()
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={programs}
+        onAdd={onAdd}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+      />,
+    )
 
-    await user.click(screen.getByRole('combobox'))
-    const listbox = screen.getByRole('listbox')
-    expect(within(listbox).getByText('Medical Lab')).toBeInTheDocument()
-    expect(within(listbox).queryByText('Dental Hygiene')).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText(/new program name/i), 'Nursing')
+    await user.type(screen.getByLabelText(/oidc group \(optional\)/i), 'nurs-group{Enter}')
+
+    expect(onAdd).toHaveBeenCalledWith('Nursing', 'nurs-group')
+  })
+
+  it('populates OIDC group field in edit mode and saves it', async () => {
+    const user = userEvent.setup()
+    const onEdit = vi.fn()
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={programs}
+        onAdd={vi.fn()}
+        onEdit={onEdit}
+        onDelete={vi.fn()}
+      />,
+    )
+
+    // Edit Medical Lab (has oidc_group='mlab-group')
+    const editButtons = screen.getAllByLabelText('edit program')
+    await user.click(editButtons[0])
+
+    // OIDC group field should be populated with the existing value
+    const oidcInput = screen.getByDisplayValue('mlab-group')
+    expect(oidcInput).toBeInTheDocument()
+
+    // Change the OIDC group
+    await user.clear(oidcInput)
+    await user.type(oidcInput, 'new-mlab-group')
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(onEdit).toHaveBeenCalledWith(1, 'Medical Lab', 'new-mlab-group')
+  })
+
+  it('clears OIDC group to null when editing to empty', async () => {
+    const user = userEvent.setup()
+    const onEdit = vi.fn()
+    render(
+      <ProgramManagementModal
+        open
+        onClose={vi.fn()}
+        programs={programs}
+        onAdd={vi.fn()}
+        onEdit={onEdit}
+        onDelete={vi.fn()}
+      />,
+    )
+
+    // Edit Medical Lab (has oidc_group='mlab-group')
+    const editButtons = screen.getAllByLabelText('edit program')
+    await user.click(editButtons[0])
+
+    // Clear the OIDC group field
+    const oidcInput = screen.getByDisplayValue('mlab-group')
+    await user.clear(oidcInput)
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+    expect(onEdit).toHaveBeenCalledWith(1, 'Medical Lab', null)
   })
 })

@@ -5,8 +5,8 @@ import BulkEditModal from '../../src/components/BulkEditModal'
 import type { Program } from '../../src/types'
 
 const programs: Program[] = [
-  { id: 1, name: 'Medical Lab', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
-  { id: 2, name: 'Dental Hygiene', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
+  { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
+  { id: 2, name: 'Dental Hygiene', oidc_group: null, created_at: '', updated_at: '' },
 ]
 
 describe('BulkEditModal', () => {

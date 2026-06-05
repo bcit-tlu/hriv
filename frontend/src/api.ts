@@ -161,8 +161,6 @@ export interface ApiProgram {
   id: number
   name: string
   oidc_group: string | null
-  parent_program_id: number | null
-  is_cohort: boolean
   created_at: string
   updated_at: string
 }
@@ -407,11 +405,7 @@ export function fetchPrograms(): Promise<ApiProgram[]> {
   return request('/programs/')
 }
 
-export function createProgram(body: {
-  name: string
-  oidc_group?: string | null
-  parent_program_id?: number | null
-}): Promise<ApiProgram> {
+export function createProgram(body: { name: string; oidc_group?: string | null }): Promise<ApiProgram> {
   return request('/programs/', {
     method: 'POST',
     body: JSON.stringify(body),
@@ -420,7 +414,7 @@ export function createProgram(body: {
 
 export function updateProgram(
   id: number,
-  body: { name?: string; oidc_group?: string | null; parent_program_id?: number | null },
+  body: { name?: string; oidc_group?: string | null },
 ): Promise<ApiProgram> {
   return request(`/programs/${id}`, {
     method: 'PATCH',
@@ -430,17 +424,6 @@ export function updateProgram(
 
 export function deleteProgram(id: number): Promise<void> {
   return request(`/programs/${id}`, { method: 'DELETE' })
-}
-
-// Delta membership writes for cohorts (instructor-facing). Unlike the admin
-// bulk endpoint these add/remove a single student without replacing the rest
-// of their program memberships. Both return the updated user.
-export function addCohortMember(cohortId: number, userId: number): Promise<ApiUser> {
-  return request(`/programs/${cohortId}/members/${userId}`, { method: 'POST' })
-}
-
-export function removeCohortMember(cohortId: number, userId: number): Promise<ApiUser> {
-  return request(`/programs/${cohortId}/members/${userId}`, { method: 'DELETE' })
 }
 
 // ── Announcement ────────────────────────────────────────
