@@ -90,6 +90,36 @@ async def test_list_users_as_instructor() -> None:
     assert len(result) == 2
 
 
+async def test_list_users_instructor_can_list_instructors() -> None:
+    """Instructors must be able to list other instructors for co-ownership."""
+    users = [_make_user(id=1, role="instructor")]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = (
+        users
+    )
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    instructor = _make_user(id=99, role="instructor")
+    result = await list_users(instructor, db, role="instructor")
+    assert len(result) == 1
+
+
+async def test_list_users_instructor_cannot_list_admins() -> None:
+    db = AsyncMock()
+    instructor = _make_user(id=99, role="instructor")
+    with pytest.raises(HTTPException) as exc:
+        await list_users(instructor, db, role="admin")
+    assert exc.value.status_code == 403
+
+
+async def test_list_users_invalid_role_422() -> None:
+    db = AsyncMock()
+    with pytest.raises(HTTPException) as exc:
+        await list_users(_make_user(role="admin"), db, role="bogus")
+    assert exc.value.status_code == 422
+
+
 async def test_get_user_found() -> None:
     user = _make_user()
     mock_result = MagicMock()

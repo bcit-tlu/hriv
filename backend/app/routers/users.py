@@ -39,17 +39,30 @@ async def _set_user_programs(
 async def list_users(
     _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
+    role: str | None = None,
 ):
+    if role is not None and role not in VALID_ROLES:
+        raise HTTPException(422, f"Invalid role: {role}")
     stmt = select(User).order_by(User.name)
-    # Instructors may list students (to populate group membership) but only
-    # see minimal fields, and never other staff accounts. Admins see all
-    # users with full detail.
+    # Instructors may list students (to populate group membership) and other
+    # instructors (for group co-ownership), but only with minimal fields and
+    # never admin accounts. Admins see all users with full detail.
     if _user.role == "instructor":
-        stmt = stmt.where(User.role == "student")
+        allowed = {"student", "instructor"}
+        if role is not None and role not in allowed:
+            raise HTTPException(
+                403, "Instructors may only list students and instructors",
+            )
+        stmt = stmt.where(User.role == role) if role else stmt.where(
+            User.role.in_(allowed)
+        )
+        result = await db.execute(stmt)
+        users = result.scalars().unique().all()
+        return [user_to_mini_out(u) for u in users]
+    if role is not None:
+        stmt = stmt.where(User.role == role)
     result = await db.execute(stmt)
     users = result.scalars().unique().all()
-    if _user.role == "instructor":
-        return [user_to_mini_out(u) for u in users]
     return [user_to_out(u) for u in users]
 
 
