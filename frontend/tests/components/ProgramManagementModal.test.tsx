@@ -161,6 +161,21 @@ describe('ProgramManagementModal — instructor (issue #559)', () => {
     expect(screen.queryByRole('button', { name: /advanced/i })).not.toBeInTheDocument()
   })
 
+  it('renames a cohort without sending an oidc_group (rename-only)', async () => {
+    const user = userEvent.setup()
+    const onEdit = vi.fn()
+    renderModal({ isAdmin: false, myProgramIds: [1], onEdit })
+
+    await user.click(screen.getByLabelText('edit program'))
+    const editInput = screen.getByDisplayValue('Cohort A')
+    await user.clear(editInput)
+    await user.type(editInput, 'Cohort A2')
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    // undefined => omitted from the PATCH body so the rename-only guard passes.
+    expect(onEdit).toHaveBeenCalledWith(3, 'Cohort A2', undefined)
+  })
+
   it('requires a parent tenant before a cohort can be added', async () => {
     const user = userEvent.setup()
     const onAdd = vi.fn()

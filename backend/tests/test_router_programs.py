@@ -296,6 +296,21 @@ async def test_update_parent_rejected_when_program_has_cohorts() -> None:
     assert exc.value.status_code == 422
 
 
+async def test_admin_cannot_set_oidc_group_on_existing_cohort() -> None:
+    # PATCH a cohort with only {"oidc_group": ...} (parent unchanged) must be
+    # rejected: a cohort never carries an OIDC group.
+    cohort = SimpleNamespace(
+        id=100, name="Cohort A", parent_program_id=5, oidc_group=None,
+    )
+    db = _dup_db()
+    db.get = AsyncMock(return_value=cohort)
+
+    body = ProgramUpdate(oidc_group="grp")
+    with pytest.raises(HTTPException) as exc:
+        await update_program(100, body, _admin(), db)
+    assert exc.value.status_code == 422
+
+
 async def test_instructor_renames_cohort_in_scope() -> None:
     cohort = _cohort(id=100, parent_program_id=5)
     db = _dup_db()

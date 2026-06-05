@@ -175,6 +175,16 @@ async def update_program(
             update_data["oidc_group"] = None
 
     if "oidc_group" in update_data and update_data["oidc_group"] is not None:
+        # A cohort never carries an OIDC group. Block setting one on a program
+        # that is (or remains) a cohort, even when parent_program_id is not part
+        # of this request.
+        effective_parent = update_data.get(
+            "parent_program_id", program.parent_program_id,
+        )
+        if effective_parent is not None:
+            raise HTTPException(
+                status_code=422, detail="Cohorts cannot carry an OIDC group",
+            )
         dup = await db.execute(
             select(Program).where(
                 Program.oidc_group == update_data["oidc_group"],

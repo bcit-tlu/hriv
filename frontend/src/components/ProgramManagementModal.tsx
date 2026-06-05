@@ -30,7 +30,11 @@ interface ProgramManagementModalProps {
   /** Program ids the current user belongs to (used to scope instructor tenants). */
   myProgramIds: number[]
   onAdd: (name: string, oidcGroup: string | null, parentProgramId: number | null) => void
-  onEdit: (id: number, name: string, oidcGroup: string | null) => void
+  onEdit: (
+    id: number,
+    name: string,
+    oidcGroup: string | null | undefined,
+  ) => void
   onDelete: (id: number) => void
   /** Open the student-assignment dialog for a cohort. */
   onManageMembers: (cohort: Program) => void
@@ -116,10 +120,12 @@ export default function ProgramManagementModal({
     if (editingId !== null && trimmed) {
       const program = programs.find((p) => p.id === editingId)
       // OIDC is only editable by admins on tenant (top-level) programs.
+      // Everyone else (instructors, or admins editing a cohort) must omit the
+      // field entirely so the backend's rename-only guard isn't tripped.
       const oidc =
         isAdmin && program?.parent_program_id === null
           ? editingOidcGroup.trim() || null
-          : (program?.oidc_group ?? null)
+          : undefined
       onEdit(editingId, trimmed, oidc)
       setEditingId(null)
       setEditingName('')

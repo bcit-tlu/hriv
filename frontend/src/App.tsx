@@ -485,9 +485,14 @@ export default function App() {
     );
 
     const handleEditProgram = useCallback(
-        async (id: number, name: string, oidcGroup: string | null) => {
+        async (id: number, name: string, oidcGroup: string | null | undefined) => {
             try {
-                await updateProgram(id, { name, oidc_group: oidcGroup });
+                await updateProgram(
+                    id,
+                    oidcGroup === undefined
+                        ? { name }
+                        : { name, oidc_group: oidcGroup },
+                );
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to edit program", err);
