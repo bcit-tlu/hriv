@@ -160,6 +160,48 @@ panel** for program multi-select — not a Select dropdown. The pattern:
 5. Cancel to discard changes
 6. Repeat in Add Images and Bulk Edit modals to verify consistent behavior
 
+### Instructor Cohort Management (tenant/cohort programs)
+
+Programs split into **tenants** (`parent_program_id IS NULL`, admin/OIDC-controlled) and
+**cohorts** (`parent_program_id` → a tenant, `oidc_group` always NULL, instructor-created).
+Authority follows tenant membership: an instructor co-manages every cohort under a tenant they
+belong to. The Manage → Programs entry opens a different dialog per role:
+- **instructor:** titled **"Manage Cohorts"**, dropdown labelled **"Program"** listing only the
+  instructor's tenants; no OIDC/Advanced controls at all.
+- **admin:** titled **"Manage Programs"**, dropdown labelled **"Parent program"** with a
+  "None (top-level program)" option, plus an **"Advanced"** disclosure that reveals the
+  "OIDC group (optional)" field (only when parent = None). This is issue #559's simplification.
+
+**Seed tenant membership (needed for cohort tests, not in the Programs table above):**
+`instructor@example.ca` (id=2) and `student@example.ca` (id=3) both belong to the
+**Digital Design** tenant (id=2). So an instructor can create a cohort under Digital Design and
+the seed student is eligible to be added to it.
+
+**CohortMembersDialog** (group icon on a cohort row → "Manage students — <cohort>") lists
+eligible students (members of the cohort's tenant) with a per-student **switch**. Toggling uses
+**delta** writes — `POST`/`DELETE /api/programs/{cohortId}/members/{userId}` — which each return
+the updated `ApiUser`; the switch settles to `program_ids.includes(cohort.id)` from that
+**response** (response-driven state), not a locally-derived value. So a correct add makes the
+switch settle **ON**; a broken serializer omitting the cohort id would make it snap back OFF.
+
+**End-to-end flow to test (record it):**
+1. Instructor → Manage → Programs → type a name, pick the tenant (only their tenants show), Add.
+   Cohort appears as "cohort of <tenant>".
+2. Group icon → toggle the seed student ON → switch settles checked.
+3. Toggle OFF → switch settles unchecked.
+4. Edit (pencil) → rename → Save. Instructor rename must NOT 403 (the PATCH omits `oidc_group`
+   for cohort renames; sending it would trip the cohort OIDC invariant).
+5. Log in as admin → Manage → Programs → with parent = None click **Advanced** → "OIDC group"
+   field appears. (Absent entirely for instructors.)
+
+**API spot-checks (curl with an instructor token):**
+- `PATCH /api/programs/{cohort}` `{"parent_program_id": <tenant>}` → **403
+  "Instructors may only rename cohorts"** (reparenting is admin-only).
+- `POST /api/programs/{cohort}/members/{student}` → response body `program_ids` includes the
+  cohort id (direct evidence the membership endpoints return the resolved user).
+- **Clean up after API tests:** `DELETE` the member then `DELETE /api/programs/{cohort}` so seed
+  state isn't polluted for later runs.
+
 ### Category Management
 - Manage > Categories has a full dialog with drag-and-drop reordering.
 - Category tree changes are reflected immediately on Browse without a refresh
@@ -805,6 +847,14 @@ canvas.toBlob(blob => {
 
 Since the file input is hidden, use Playwright CDP to inject the file directly
 rather than trying to interact with the OS file picker:
+
+**Precondition — the Edit Details (or Replace Image) modal must already be open.**
+The `input[type="file"]` element is rendered only while that modal is mounted, so
+running the snippet with the modal closed makes `page.locator('input[type="file"]')`
+match nothing and `set_input_files(...)` fails with a locator timeout. Selecting the
+correct page (e.g. by `localhost:5173` in `page.url`) does **not** help here — that
+only picks the tab, not whether the modal is visible. Open the modal first (click the
+row's ⋮ → Replace image / Edit details), then run:
 ```python
 import asyncio
 from playwright.async_api import async_playwright
@@ -820,7 +870,7 @@ async def inject_file():
 asyncio.run(inject_file())
 ```
 This directly sets the hidden `<input type="file">` without needing to interact
-with the native file chooser dialog. The modal must be open before running this.
+with the native file chooser dialog (modal-open precondition above still applies).
 
 ### Post-Replacement Verification
 
