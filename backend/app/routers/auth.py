@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import verify_password, create_access_token, get_current_user
 from ..database import get_db
@@ -49,7 +49,7 @@ async def login(
         )
 
     result = await db.execute(
-        select(User).where(User.email == body.email)
+        select(User).where(func.lower(User.email) == body.email.lower())
     )
     user = result.scalars().first()
 

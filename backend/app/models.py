@@ -250,6 +250,9 @@ class Announcement(Base):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index("ix_users_email_lower", text("lower(email)"), unique=True),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)

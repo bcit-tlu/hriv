@@ -4,6 +4,7 @@ Provides ``/api/auth/oidc/login`` (redirect to IdP) and
 ``/api/auth/oidc/callback`` (exchange code, upsert user, issue JWT).
 """
 
+import functools
 import html as _html
 import json
 import logging
@@ -43,8 +44,14 @@ if _settings.oidc_enabled:
     )
 
 
+@functools.lru_cache(maxsize=1)
 def _parse_role_mapping() -> dict[str, str]:
-    """Return the IdP-group → HRIV-role mapping from settings."""
+    """Return the IdP-group → HRIV-role mapping from settings.
+
+    The result is cached for the lifetime of the process since the
+    mapping is derived from environment-level settings that do not
+    change at runtime.
+    """
     try:
         mapping = json.loads(_settings.oidc_role_mapping)
         if isinstance(mapping, dict):
@@ -417,7 +424,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 # Brand-new user — create account (default to student if no mapping matched)
                 user = User(
                     name=name,
-                    email=email,
+                    email=email.lower(),
                     oidc_subject=sub,
                     role=resolved_role or "student",
                     last_access=datetime.now(timezone.utc),

@@ -491,7 +491,7 @@ async def run_db_import(task_id: int) -> None:
                     user = User(
                         id=u["id"],
                         name=u["name"],
-                        email=u["email"],
+                        email=u["email"].lower(),
                         password_hash=u.get("password_hash"),
                         oidc_subject=u.get("oidc_subject"),
                         role=u.get("role", "student"),
