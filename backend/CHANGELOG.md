@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.19.2...backend-v0.20.0) (2026-06-05)
+
+
+### Features
+
+* instructor-scoped program (cohort) management ([#581](https://github.com/bcit-tlu/hriv/issues/581)) ([b4ec9c2](https://github.com/bcit-tlu/hriv/commit/b4ec9c2a5906ce3449966ef62f9d5b7076e415ee))
+
 ## [0.19.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.19.1...backend-v0.19.2) (2026-06-04)
 
 
