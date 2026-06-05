@@ -1,9 +1,12 @@
 import { useState, useCallback, useRef } from "react";
 import { fetchAnnouncement, updateAnnouncement, userMessage } from "./api";
 
-const DISMISSED_KEY = "dismissed_announcement";
+const DISMISSED_PREFIX = "dismissed_announcement";
 
-export function useAnnouncementModal() {
+export function useAnnouncementModal(userId?: number) {
+    const dismissedKey = userId
+        ? `${DISMISSED_PREFIX}_${userId}`
+        : DISMISSED_PREFIX;
     const [announcement, setAnnouncement] = useState("");
     const [annModalOpen, setAnnModalOpen] = useState(false);
     const [annMessage, setAnnMessage] = useState("");
@@ -18,7 +21,7 @@ export function useAnnouncementModal() {
         try {
             const ann = await fetchAnnouncement();
             annUpdatedAt.current = ann.updated_at;
-            const dismissed = localStorage.getItem(DISMISSED_KEY);
+            const dismissed = localStorage.getItem(dismissedKey);
             const visible =
                 ann.enabled && dismissed !== ann.updated_at;
             setAnnouncement(visible ? ann.message : "");
@@ -27,7 +30,7 @@ export function useAnnouncementModal() {
         } catch {
             // Silently ignore — announcement is non-critical
         }
-    }, []);
+    }, [dismissedKey]);
 
     const openAnnModal = useCallback(() => {
         setAnnDraftMessage(annMessage);
@@ -38,10 +41,10 @@ export function useAnnouncementModal() {
 
     const dismissAnnouncement = useCallback(() => {
         if (annUpdatedAt.current) {
-            localStorage.setItem(DISMISSED_KEY, annUpdatedAt.current);
+            localStorage.setItem(dismissedKey, annUpdatedAt.current);
         }
         setAnnouncement("");
-    }, []);
+    }, [dismissedKey]);
 
     const handleAnnSave = useCallback(async () => {
         setAnnSaving(true);
@@ -51,7 +54,7 @@ export function useAnnouncementModal() {
                 enabled: annDraftEnabled,
             });
             annUpdatedAt.current = updated.updated_at;
-            localStorage.removeItem(DISMISSED_KEY);
+            localStorage.removeItem(dismissedKey);
             setAnnMessage(updated.message);
             setAnnEnabled(updated.enabled);
             setAnnouncement(updated.enabled ? updated.message : "");
@@ -61,7 +64,7 @@ export function useAnnouncementModal() {
         } finally {
             setAnnSaving(false);
         }
-    }, [annDraftMessage, annDraftEnabled]);
+    }, [annDraftMessage, annDraftEnabled, dismissedKey]);
 
     return {
         announcement,

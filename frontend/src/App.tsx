@@ -317,7 +317,7 @@ export default function App() {
         setAnnError,
         openAnnModal,
         handleAnnSave,
-    } = useAnnouncementModal();
+    } = useAnnouncementModal(currentUser?.id);
 
     // User profile popover + edit modal state — extracted to useUserProfile hook
     const {
