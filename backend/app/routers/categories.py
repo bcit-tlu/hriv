@@ -328,7 +328,7 @@ async def reorder_categories(
 @router.delete("/{category_id}", status_code=204)
 async def delete_category(
     category_id: int,
-    _user: Annotated[User, Depends(require_role("admin"))],
+    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
 ):
     cat = await db.get(Category, category_id)

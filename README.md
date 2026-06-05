@@ -30,7 +30,7 @@ All seed users share the password `password`.
 |---------------------------------|-------|------------|---------|
 | Browse categories & view images | Yes   | Yes        | Yes     |
 | Create/update categories        | Yes   | Yes        | No      |
-| Delete categories               | Yes   | No         | No      |
+| Delete categories               | Yes   | Yes        | No      |
 | Manage page (image table)       | Yes   | Yes        | No      |
 | Bulk import images              | Yes   | Yes        | No      |
 | Manage tenant programs (top-level / OIDC) | Yes | No | No   |

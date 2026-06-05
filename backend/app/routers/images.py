@@ -364,7 +364,7 @@ async def replace_image(
 @router.delete("/bulk", status_code=204)
 async def bulk_delete_images(
     body: ImageBulkDelete,
-    _user: Annotated[User, Depends(require_role("admin"))],
+    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
 ):
     """Bulk-delete multiple images."""
@@ -410,7 +410,7 @@ async def reorder_images(
 @router.delete("/{image_id}", status_code=204)
 async def delete_image(
     image_id: int,
-    _user: Annotated[User, Depends(require_role("admin"))],
+    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
 ):
     with tracer.start_as_current_span("image.delete") as span:
