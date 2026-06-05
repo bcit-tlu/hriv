@@ -11,7 +11,6 @@ from ..authz import (
     can_create_cohort_under,
     can_manage_cohort,
     is_tenant,
-    tenant_ids,
 )
 from ..database import get_db
 from ..models import Program, User, user_programs
