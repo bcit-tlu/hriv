@@ -74,7 +74,7 @@ async def create_user(
 ):
     user = User(
         name=body.name,
-        email=body.email,
+        email=body.email.lower(),
         password_hash=hash_password(body.password),
         role=body.role,
         metadata_=body.metadata_extra or {},
@@ -184,6 +184,8 @@ async def update_user(
         pwd = update_data.pop("password")
         if pwd is not None:
             update_data["password_hash"] = hash_password(pwd)
+    if "email" in update_data and update_data["email"] is not None:
+        update_data["email"] = update_data["email"].lower()
     for key, value in update_data.items():
         setattr(user, key, value)
     if program_ids is not None:

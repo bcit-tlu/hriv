@@ -4,10 +4,12 @@ Provides ``/api/auth/oidc/login`` (redirect to IdP) and
 ``/api/auth/oidc/callback`` (exchange code, upsert user, issue JWT).
 """
 
+import functools
 import html as _html
 import json
 import logging
 from datetime import datetime, timezone
+from types import MappingProxyType
 from typing import Any
 
 import httpx
@@ -43,18 +45,28 @@ if _settings.oidc_enabled:
     )
 
 
-def _parse_role_mapping() -> dict[str, str]:
-    """Return the IdP-group → HRIV-role mapping from settings."""
+_EMPTY_MAPPING: MappingProxyType[str, str] = MappingProxyType({})
+
+
+@functools.lru_cache(maxsize=1)
+def _parse_role_mapping() -> MappingProxyType[str, str]:
+    """Return the IdP-group → HRIV-role mapping from settings.
+
+    The result is cached for the lifetime of the process since the
+    mapping is derived from environment-level settings that do not
+    change at runtime.  Returns an immutable ``MappingProxyType`` so
+    callers cannot accidentally mutate the cached value.
+    """
     try:
         mapping = json.loads(_settings.oidc_role_mapping)
         if isinstance(mapping, dict):
-            return {str(k): str(v) for k, v in mapping.items()}
+            return MappingProxyType({str(k): str(v) for k, v in mapping.items()})
     except (json.JSONDecodeError, TypeError):
         logger.warning(
             "Invalid OIDC_ROLE_MAPPING — falling back to empty mapping",
             extra={"event": "oidc.role_mapping_invalid"},
         )
-    return {}
+    return _EMPTY_MAPPING
 
 
 _ROLE_PRIORITY: dict[str, int] = {"admin": 0, "instructor": 1, "student": 2}
@@ -417,7 +429,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 # Brand-new user — create account (default to student if no mapping matched)
                 user = User(
                     name=name,
-                    email=email,
+                    email=email.lower(),
                     oidc_subject=sub,
                     role=resolved_role or "student",
                     last_access=datetime.now(timezone.utc),

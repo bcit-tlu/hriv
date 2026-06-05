@@ -6,7 +6,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import verify_password, create_access_token, get_current_user
 from ..database import get_db
@@ -40,7 +40,8 @@ async def login(
     """Authenticate with email + password. Returns a JWT bearer token."""
     # Rate limiting (Phase 5.3)
     client_ip = get_client_ip(request.scope)
-    retry_after = await check_login_rate_limit(client_ip, body.email)
+    email_lower = body.email.lower()
+    retry_after = await check_login_rate_limit(client_ip, email_lower)
     if retry_after is not None:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -49,7 +50,7 @@ async def login(
         )
 
     result = await db.execute(
-        select(User).where(User.email == body.email)
+        select(User).where(func.lower(User.email) == email_lower)
     )
     user = result.scalars().first()
 
@@ -83,7 +84,7 @@ async def login(
 
     # Clear rate-limit counter on successful login so legitimate users
     # (especially those behind a shared campus NAT IP) aren't locked out.
-    await reset_login_rate_limit(client_ip, body.email)
+    await reset_login_rate_limit(client_ip, email_lower)
 
     logger.info(
         "Login successful",

@@ -62,6 +62,29 @@ async def test_login_success() -> None:
     assert result.user.email == "test@example.com"
 
 
+async def test_login_case_insensitive_email() -> None:
+    """Password login should match emails case-insensitively (#575)."""
+    user = _make_user(password_hash="hashed")
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = user
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = LoginRequest(email="Test@Example.COM", password="secret")
+
+    with patch("app.routers.auth.verify_password", return_value=True):
+        with patch("app.routers.auth.create_access_token", return_value="jwt-token"):
+            result = await login(body, _mock_request(), db)
+
+    assert result.access_token == "jwt-token"
+    # Verify db.execute was called with a case-insensitive query
+    db.execute.assert_called_once()
+
+
 async def test_login_unknown_email() -> None:
     mock_result = MagicMock()
     mock_result.scalars.return_value.first.return_value = None

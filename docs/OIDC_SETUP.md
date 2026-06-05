@@ -101,7 +101,8 @@ user.  Existing local-only accounts have this column set to `NULL`.
 
 When an OIDC user logs in for the first time and their email matches an
 existing local account, the accounts are linked automatically by
-populating `oidc_subject`.
+populating `oidc_subject`.  Email matching during account linking is
+case-insensitive, and all emails are stored in lowercase.
 
 ### Schema provenance
 
