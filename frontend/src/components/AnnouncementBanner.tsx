@@ -32,7 +32,7 @@ export default function AnnouncementBanner({ message, variant = 'app', onDismiss
   return (
     <Alert
       severity="info"
-      variant="standard"
+      variant="filled"
       action={
         onDismiss ? (
           <Button
@@ -45,7 +45,8 @@ export default function AnnouncementBanner({ message, variant = 'app', onDismiss
         ) : undefined
       }
       sx={{
-        ...(isDark && { bgcolor: '#1a3a5c', color: '#90caf9' }),
+        px: 0,
+        '& .MuiAlert-action': { mr: 0 },
       }}
     >
       {message}

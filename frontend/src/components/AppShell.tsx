@@ -1,8 +1,9 @@
-import { useState, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from "react";
+import { useEffect, useState, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from "react";
 import Alert from "@mui/material/Alert";
 import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
 import Box from "@mui/material/Box";
+import Collapse from "@mui/material/Collapse";
 import Card from "@mui/material/Card";
 import CardContent from "@mui/material/CardContent";
 import Chip from "@mui/material/Chip";
@@ -91,7 +92,12 @@ export default function AppShell(props: AppShellProps) {
     const [manageMenuAnchor, setManageMenuAnchor] =
         useState<HTMLElement | null>(null);
     const [viewAnnOpen, setViewAnnOpen] = useState(false);
+    const [annCollapsed, setAnnCollapsed] = useState(false);
     const showViewAnnLink = annEnabled && !announcement;
+
+    useEffect(() => {
+        if (announcement) setAnnCollapsed(false);
+    }, [announcement]);
 
     return (
         <Box
@@ -329,9 +335,11 @@ export default function AppShell(props: AppShellProps) {
 
             {/* Announcement banner */}
             {announcement && (
-                <Box sx={{ px: { xs: 2, sm: 3, lg: "72px", xl: "120px" }, mt: 2, mb: 1 }}>
-                    <AnnouncementBanner message={announcement} onDismiss={onDismissAnnouncement} />
-                </Box>
+                <Collapse in={!annCollapsed} onExited={onDismissAnnouncement}>
+                    <Box sx={{ px: { xs: 2, sm: 3, lg: "72px", xl: "120px" }, mt: 2, mb: 1 }}>
+                        <AnnouncementBanner message={announcement} onDismiss={() => setAnnCollapsed(true)} />
+                    </Box>
+                </Collapse>
             )}
 
             {/* Read-only announcement dialog (for dismissed announcements) */}

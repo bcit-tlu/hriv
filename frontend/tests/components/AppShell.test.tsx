@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import AppShell from "../../src/components/AppShell";
 import type { AppShellProps } from "../../src/components/AppShell";
 import { createRef } from "react";
@@ -56,12 +56,14 @@ describe("AppShell", () => {
             expect(screen.getByText("Maintenance tonight")).toBeInTheDocument();
         });
 
-        it("renders dismiss link on announcement banner when callback provided", () => {
+        it("renders dismiss link on announcement banner when callback provided", async () => {
             const onDismiss = vi.fn();
             render(<AppShell {...makeProps({ announcement: "Maintenance tonight", onDismissAnnouncement: onDismiss })} />);
             const link = screen.getByRole("button", { name: "Dismiss" });
             fireEvent.click(link);
-            expect(onDismiss).toHaveBeenCalledTimes(1);
+            await waitFor(() => {
+                expect(onDismiss).toHaveBeenCalledTimes(1);
+            });
         });
 
         it("does not render announcement banner when empty", () => {
