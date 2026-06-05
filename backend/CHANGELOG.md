@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.21.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.20.1...backend-v0.21.0) (2026-06-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove tenant/cohort program model ([#601](https://github.com/bcit-tlu/hriv/issues/601))
+
+### Features
+
+* remove tenant/cohort program model ([#601](https://github.com/bcit-tlu/hriv/issues/601)) ([818203e](https://github.com/bcit-tlu/hriv/commit/818203ea4ada1e9a697e748f3c7ed4313fcf551c))
+
 ## [0.20.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.20.0...backend-v0.20.1) (2026-06-05)
 
 
