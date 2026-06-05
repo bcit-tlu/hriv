@@ -41,6 +41,15 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     role: str | None = None,
 ):
+    """List users, optionally filtered by ``role``.
+
+    The response shape is role-dependent. Admins receive full ``UserOut``
+    objects (programs, metadata, last_access). Instructors receive a
+    **minimal** projection — only ``id, name, email, role`` are populated;
+    the remaining ``UserOut`` fields are defaulted (``program_ids: []``,
+    ``metadata_extra: None``, etc.) and must not be relied upon. Instructors
+    only ever see students and other instructors, never admins.
+    """
     if role is not None and role not in VALID_ROLES:
         raise HTTPException(422, f"Invalid role: {role}")
     stmt = select(User).order_by(User.name)
