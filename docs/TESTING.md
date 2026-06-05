@@ -210,6 +210,7 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | GET    | /api/images/{id}         | Yes           | student      |
 | PATCH  | /api/images/{id}         | Yes           | instructor   |
 | DELETE | /api/images/{id}         | Yes           | instructor   |
+| DELETE | /api/images/bulk         | Yes           | instructor   |
 | GET    | /api/users/              | Yes           | instructor¹  |
 | POST   | /api/users/              | Yes           | admin        |
 | GET    | /api/users/{id}          | Yes           | admin        |
