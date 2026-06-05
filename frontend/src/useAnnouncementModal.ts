@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { fetchAnnouncement, updateAnnouncement, userMessage } from "./api";
 
-const DISMISSED_KEY = "hriv_dismissed_announcement";
+const DISMISSED_KEY = "dismissed_announcement";
 
 export function useAnnouncementModal() {
     const [announcement, setAnnouncement] = useState("");
