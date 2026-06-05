@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.21.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.20.0...frontend-v0.21.0) (2026-06-05)
+
+
+### Features
+
+* dismissable announcement banner ([#582](https://github.com/bcit-tlu/hriv/issues/582)) ([c45cf28](https://github.com/bcit-tlu/hriv/commit/c45cf28db8787fed7ae2878d20838e30407db00d))
+* instructor-scoped program (cohort) management ([#581](https://github.com/bcit-tlu/hriv/issues/581)) ([b4ec9c2](https://github.com/bcit-tlu/hriv/commit/b4ec9c2a5906ce3449966ef62f9d5b7076e415ee))
+
+
+### Bug Fixes
+
+* **frontend:** optimize/mobile login page ([#374](https://github.com/bcit-tlu/hriv/issues/374)) ([c51b63f](https://github.com/bcit-tlu/hriv/commit/c51b63f8789dc1f508378c2bc2eed4e360425357))
+* **frontend:** resolve nested button hydration error and style category titles ([#588](https://github.com/bcit-tlu/hriv/issues/588)) ([d253020](https://github.com/bcit-tlu/hriv/commit/d253020b5af24ab34aa95cbb05aff74e69cfaa32))
+* use Button for Dismiss action to match standardized action typography ([#585](https://github.com/bcit-tlu/hriv/issues/585)) ([6cabb9e](https://github.com/bcit-tlu/hriv/commit/6cabb9ef51ad5025f573219d8b8b93bbe4c07a65))
+
 ## [0.20.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.19.1...frontend-v0.20.0) (2026-06-03)
 
 
