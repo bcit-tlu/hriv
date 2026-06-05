@@ -1,6 +1,6 @@
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Link from '@mui/material/Link'
+import Button from '@mui/material/Button'
 import { useTheme } from '@mui/material/styles'
 
 interface AnnouncementBannerProps {
@@ -35,15 +35,13 @@ export default function AnnouncementBanner({ message, variant = 'app', onDismiss
       variant="standard"
       action={
         onDismiss ? (
-          <Link
-            component="button"
-            underline="always"
+          <Button
             color="inherit"
+            size="small"
             onClick={onDismiss}
-            sx={{ whiteSpace: 'nowrap', fontSize: 'inherit' }}
           >
             Dismiss
-          </Link>
+          </Button>
         ) : undefined
       }
       sx={{
