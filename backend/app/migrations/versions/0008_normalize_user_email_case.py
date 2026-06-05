@@ -16,6 +16,22 @@ depends_on = None
 
 
 def upgrade() -> None:
+    # Abort early if case-insensitive duplicates exist; they must be
+    # resolved manually before this migration can run.
+    conn = op.get_bind()
+    dupes = conn.execute(
+        sa.text(
+            "SELECT lower(email) AS e, count(*) AS n "
+            "FROM users GROUP BY lower(email) HAVING count(*) > 1"
+        )
+    ).fetchall()
+    if dupes:
+        emails = ", ".join(row[0] for row in dupes)
+        raise RuntimeError(
+            f"Case-insensitive duplicate emails found: {emails}. "
+            "Resolve these duplicates before running this migration."
+        )
+
     # Lowercase all existing email values.
     op.execute(sa.text("UPDATE users SET email = lower(email)"))
 

@@ -184,7 +184,7 @@ async def update_user(
         pwd = update_data.pop("password")
         if pwd is not None:
             update_data["password_hash"] = hash_password(pwd)
-    if "email" in update_data:
+    if "email" in update_data and update_data["email"] is not None:
         update_data["email"] = update_data["email"].lower()
     for key, value in update_data.items():
         setattr(user, key, value)
