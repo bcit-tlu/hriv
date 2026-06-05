@@ -115,6 +115,7 @@ function drawArrowhead(
   headLen: number,
   color: string,
   style: ArrowStyle,
+  lineWidth: number,
 ) {
   if (style === 'none') return
   const angle = Math.atan2(y2 - y1, x2 - x1)
@@ -151,7 +152,7 @@ function drawArrowhead(
       y2 - headLen * Math.sin(angle + Math.PI / 6),
     )
     ctx.strokeStyle = color
-    ctx.lineWidth = Math.max(1, headLen / 4)
+    ctx.lineWidth = lineWidth
     ctx.stroke()
   }
 }
@@ -241,7 +242,8 @@ export default function CanvasOverlay({
         // Arrowhead: 3x larger default
         const headLen = Math.max(24, sw * 12)
         const arrowStyle = ann.arrowStyle ?? 'standard'
-        drawArrowhead(ctx, topLeft.x, topLeft.y, endPt.x, endPt.y, headLen, ann.color, arrowStyle)
+        const arrowLineWidth = Math.max(1, sw)
+        drawArrowhead(ctx, topLeft.x, topLeft.y, endPt.x, endPt.y, headLen, ann.color, arrowStyle, arrowLineWidth)
         continue
       }
 
