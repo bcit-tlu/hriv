@@ -24,7 +24,7 @@ from app.serializers import user_to_out
 
 
 def _make_program(id: int = 1, name: str = "Biology") -> SimpleNamespace:
-    return SimpleNamespace(id=id, name=name)
+    return SimpleNamespace(id=id, name=name, parent_program_id=None)
 
 
 def _make_user(
