@@ -187,14 +187,16 @@ export default function AppShell(props: AppShellProps) {
                         >
                             Categories
                         </MenuItem>
-                        <MenuItem
-                            onClick={() => {
-                                setManageMenuAnchor(null);
-                                onOpenPrograms();
-                            }}
-                        >
-                            Programs
-                        </MenuItem>
+                        {canManageUsers && (
+                            <MenuItem
+                                onClick={() => {
+                                    setManageMenuAnchor(null);
+                                    onOpenPrograms();
+                                }}
+                            >
+                                Programs
+                            </MenuItem>
+                        )}
                         <MenuItem
                             onClick={() => {
                                 setManageMenuAnchor(null);

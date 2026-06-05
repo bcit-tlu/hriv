@@ -12,7 +12,7 @@ from ..schemas import ProgramCreate, ProgramUpdate, ProgramOut
 router = APIRouter(prefix="/programs", tags=["programs"])
 
 _any_authenticated = get_current_user
-_editor = require_role("admin", "instructor")
+_admin = require_role("admin")
 
 
 @router.get("/", response_model=list[ProgramOut])
@@ -40,7 +40,7 @@ async def get_program(
 @router.post("/", response_model=ProgramOut, status_code=201)
 async def create_program(
     body: ProgramCreate,
-    _user: Annotated[User, Depends(_editor)],
+    _user: Annotated[User, Depends(_admin)],
     db: AsyncSession = Depends(get_db),
 ):
     # Check for duplicate name
@@ -70,7 +70,7 @@ async def create_program(
 async def update_program(
     program_id: int,
     body: ProgramUpdate,
-    _user: Annotated[User, Depends(_editor)],
+    _user: Annotated[User, Depends(_admin)],
     db: AsyncSession = Depends(get_db),
 ):
     program = await db.get(Program, program_id)
@@ -108,7 +108,7 @@ async def update_program(
 @router.delete("/{program_id}", status_code=204)
 async def delete_program(
     program_id: int,
-    _user: Annotated[User, Depends(_editor)],
+    _user: Annotated[User, Depends(_admin)],
     db: AsyncSession = Depends(get_db),
 ):
     program = await db.get(Program, program_id)

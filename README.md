@@ -33,7 +33,7 @@ All seed users share the password `password`.
 | Delete categories               | Yes   | Yes        | No      |
 | Manage page (image table)       | Yes   | Yes        | No      |
 | Bulk import images              | Yes   | Yes        | No      |
-| Manage programs                 | Yes   | Yes        | No      |
+| Manage programs                 | Yes   | No         | No      |
 | Manage announcement             | Yes   | Yes        | No      |
 | Admin page (DB import/export)   | Yes   | No         | No      |
 | User management (add/delete)    | Yes   | No         | No      |
@@ -41,7 +41,7 @@ All seed users share the password `password`.
 
 ### Programs
 
-A **program** is a flat, admin/OIDC-managed access-control unit that gates category/image visibility for students. Any admin or instructor can create, rename, and delete programs; a program may carry an `oidc_group` so membership is provisioned automatically by the IdP. A category tagged with one or more programs is visible to a student only if they belong to at least one of those programs (enforced by the student visibility filter). Programs are not hierarchical.
+A **program** is a flat, admin/OIDC-managed access-control unit that gates category/image visibility for students. Only admins create, rename, and delete programs; a program may carry an `oidc_group` so membership is provisioned automatically by the IdP. A category tagged with one or more programs is visible to a student only if they belong to at least one of those programs (enforced by the student visibility filter). Programs are not hierarchical.
 
 ### CLI Access via curl
 

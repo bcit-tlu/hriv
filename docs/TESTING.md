@@ -218,10 +218,10 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | DELETE | /api/users/{id}          | Yes           | admin        |
 | GET    | /api/programs/           | Yes           | student      |
 | GET    | /api/programs/{id}       | Yes           | student      |
-| POST   | /api/programs/           | Yes           | instructor   |
-| PATCH  | /api/programs/{id}       | Yes           | instructor   |
-| DELETE | /api/programs/{id}       | Yes           | instructor   |
+| POST   | /api/programs/           | Yes           | admin        |
+| PATCH  | /api/programs/{id}       | Yes           | admin        |
+| DELETE | /api/programs/{id}       | Yes           | admin        |
 | GET    | /api/admin/export        | Yes           | admin        |
 | POST   | /api/admin/import        | Yes           | admin        |
 
-Programs are a flat, admin/OIDC-managed entity: any admin or instructor may create, rename, or delete a program (optionally setting an `oidc_group`). `GET /api/users/` returns all users to admins and instructors. Programs are not hierarchical.
+Programs are a flat, admin/OIDC-managed entity: only admins may create, rename, or delete a program (optionally setting an `oidc_group`); all roles may read them. `GET /api/users/` returns all users to admins and instructors. Programs are not hierarchical.

@@ -162,13 +162,14 @@ panel** for program multi-select — not a Select dropdown. The pattern:
 
 ### Program Management
 
-Programs are a **flat**, admin/OIDC-managed entity (no hierarchy). Manage → Programs opens
-**ProgramManagementModal** for admins and instructors alike: a name field, an optional
-**OIDC group** field, and the list of existing programs with rename (pencil) and delete actions.
-Any admin or instructor may create, rename, or delete a program. A program with an `oidc_group`
-has its membership provisioned by the IdP; programs without one are managed manually via
-user assignment on the People tab (admin only). A category tagged with one or more programs is
-visible to a student only if they belong to at least one of those programs.
+Programs are a **flat**, admin/OIDC-managed entity (no hierarchy). The Manage → **Programs**
+menu entry is **admin-only** (hidden for instructors) and opens **ProgramManagementModal**:
+a name field, an optional **OIDC group** field, and the list of existing programs with rename
+(pencil) and delete actions. Only admins may create, rename, or delete a program; instructors
+and students can read programs (e.g. to attach them to categories) but cannot manage them.
+A program with an `oidc_group` has its membership provisioned by the IdP; programs without one
+are managed manually via user assignment on the People tab (admin only). A category tagged with
+one or more programs is visible to a student only if they belong to at least one of those programs.
 
 ### Category Management
 - Manage > Categories has a full dialog with drag-and-drop reordering.
