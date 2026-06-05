@@ -204,12 +204,13 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | GET    | /api/categories/tree     | Yes           | student      |
 | GET    | /api/categories/{id}     | Yes           | student      |
 | PATCH  | /api/categories/{id}     | Yes           | instructor   |
-| DELETE | /api/categories/{id}     | Yes           | admin        |
+| DELETE | /api/categories/{id}     | Yes           | instructor   |
 | GET    | /api/images/             | Yes           | student      |
 | POST   | /api/images/             | Yes           | instructor   |
 | GET    | /api/images/{id}         | Yes           | student      |
 | PATCH  | /api/images/{id}         | Yes           | instructor   |
-| DELETE | /api/images/{id}         | Yes           | admin        |
+| DELETE | /api/images/{id}         | Yes           | instructor   |
+| DELETE | /api/images/bulk         | Yes           | instructor   |
 | GET    | /api/users/              | Yes           | instructor¹  |
 | POST   | /api/users/              | Yes           | admin        |
 | GET    | /api/users/{id}          | Yes           | admin        |
