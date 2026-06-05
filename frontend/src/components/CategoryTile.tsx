@@ -217,7 +217,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
                     onEditName(category)
                   }}
                   aria-label="Edit category name"
-                  sx={{ flexShrink: 0, ml: 0.25, opacity: category.status === 'hidden' ? 0.5 : 1 }}
+                  sx={{ flexShrink: 0, ml: 0.25 }}
                 >
                   <EditIcon sx={{ fontSize: 16 }} />
                 </IconButton>
