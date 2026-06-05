@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.22.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.21.0...frontend-v0.22.0) (2026-06-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove tenant/cohort program model ([#601](https://github.com/bcit-tlu/hriv/issues/601))
+
+### Features
+
+* remove tenant/cohort program model ([#601](https://github.com/bcit-tlu/hriv/issues/601)) ([818203e](https://github.com/bcit-tlu/hriv/commit/818203ea4ada1e9a697e748f3c7ed4313fcf551c))
+
+
+### Bug Fixes
+
+* **frontend:** adapt CanvasOverlay for Fabric.js v7 breaking changes ([#589](https://github.com/bcit-tlu/hriv/issues/589)) ([d9c0dfc](https://github.com/bcit-tlu/hriv/commit/d9c0dfc4bbafa41152b5da855f74fb0948ca27f2))
+* preserve page state across refresh instead of resetting to browse ([#591](https://github.com/bcit-tlu/hriv/issues/591)) ([0e91950](https://github.com/bcit-tlu/hriv/commit/0e91950149971715b1a7d861df87e476128e809c))
+
 ## [0.21.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.20.0...frontend-v0.21.0) (2026-06-05)
 
 
