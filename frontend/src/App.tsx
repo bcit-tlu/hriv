@@ -40,6 +40,7 @@ import PeoplePage from "./components/PeoplePage";
 import LoginScreen from "./components/LoginScreen";
 import EditImageModal from "./components/EditImageModal";
 import ProgramManagementModal from "./components/ProgramManagementModal";
+import CohortMembersDialog from "./components/CohortMembersDialog";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
 import type { TypeFilter } from "./components/SearchModal";
@@ -239,6 +240,9 @@ export default function App() {
 
     // Program management modal state (for Manage menu)
     const [programModalOpen, setProgramModalOpen] = useState(false);
+    const [cohortForMembers, setCohortForMembers] = useState<Program | null>(
+        null,
+    );
 
     // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
     const [canvasEditActive, setCanvasEditActive] = useState(false);
@@ -465,9 +469,17 @@ export default function App() {
 
     // Program management handlers (for Manage menu)
     const handleAddProgram = useCallback(
-        async (name: string, oidcGroup: string | null) => {
+        async (
+            name: string,
+            oidcGroup: string | null,
+            parentProgramId: number | null,
+        ) => {
             try {
-                await createProgram({ name, oidc_group: oidcGroup });
+                await createProgram({
+                    name,
+                    oidc_group: oidcGroup,
+                    parent_program_id: parentProgramId,
+                });
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to add program", err);
@@ -478,9 +490,14 @@ export default function App() {
     );
 
     const handleEditProgram = useCallback(
-        async (id: number, name: string, oidcGroup: string | null) => {
+        async (id: number, name: string, oidcGroup: string | null | undefined) => {
             try {
-                await updateProgram(id, { name, oidc_group: oidcGroup });
+                await updateProgram(
+                    id,
+                    oidcGroup === undefined
+                        ? { name }
+                        : { name, oidc_group: oidcGroup },
+                );
                 await loadPrograms();
             } catch (err) {
                 console.error("Failed to edit program", err);
@@ -1777,9 +1794,19 @@ export default function App() {
                 open={programModalOpen}
                 onClose={() => setProgramModalOpen(false)}
                 programs={programs}
+                isAdmin={canManageUsers}
+                myProgramIds={currentUser?.program_ids ?? []}
                 onAdd={handleAddProgram}
                 onEdit={handleEditProgram}
                 onDelete={handleDeleteProgram}
+                onManageMembers={(cohort) => setCohortForMembers(cohort)}
+            />
+
+            {/* Cohort student-assignment dialog (delta membership writes) */}
+            <CohortMembersDialog
+                open={cohortForMembers !== null}
+                onClose={() => setCohortForMembers(null)}
+                cohort={cohortForMembers}
             />
 
             {/* Report issue modal */}

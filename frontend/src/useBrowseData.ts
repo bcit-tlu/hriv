@@ -114,6 +114,8 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
                     id: pg.id,
                     name: pg.name,
                     oidc_group: pg.oidc_group,
+                    parent_program_id: pg.parent_program_id,
+                    is_cohort: pg.is_cohort,
                     created_at: pg.created_at,
                     updated_at: pg.updated_at,
                 })),

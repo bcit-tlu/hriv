@@ -5,9 +5,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role, hash_password
+from ..authz import tenant_ids
 from ..database import get_db
-from ..models import Program, User
+from ..models import Program, User, user_programs
 from ..schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete, UserOut
+from ..serializers import user_to_out
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -15,23 +17,6 @@ _admin = require_role("admin")
 _editor = require_role("admin", "instructor")
 
 VALID_ROLES = {"admin", "instructor", "student"}
-
-
-def _user_to_out(user: User) -> dict:
-    """Convert a User ORM object to a dict with program info resolved."""
-    data = {
-        "id": user.id,
-        "name": user.name,
-        "email": user.email,
-        "role": user.role,
-        "program_ids": [p.id for p in user.programs],
-        "program_names": [p.name for p in user.programs],
-        "metadata_extra": user.metadata_,
-        "last_access": user.last_access,
-        "created_at": user.created_at,
-        "updated_at": user.updated_at,
-    }
-    return data
 
 
 async def _set_user_programs(
@@ -56,10 +41,29 @@ async def list_users(
     _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
 ):
-    stmt = select(User).order_by(User.name)
+    if _user.role == "admin":
+        stmt = select(User).order_by(User.name)
+    else:
+        # Instructors only see students who belong to one of their tenants.
+        tids = tenant_ids(_user)
+        if not tids:
+            return []
+        # A student in several of the instructor's tenants matches the JOIN
+        # once per tenant; DISTINCT collapses those duplicates in the DB so we
+        # don't transfer (and then re-dedup) redundant rows.
+        stmt = (
+            select(User)
+            .join(user_programs, user_programs.c.user_id == User.id)
+            .where(
+                User.role == "student",
+                user_programs.c.program_id.in_(tids),
+            )
+            .distinct()
+            .order_by(User.name)
+        )
     result = await db.execute(stmt)
     users = result.scalars().unique().all()
-    return [_user_to_out(u) for u in users]
+    return [user_to_out(u) for u in users]
 
 
 @router.post("/", response_model=UserOut, status_code=201)
@@ -81,7 +85,7 @@ async def create_user(
     await _set_user_programs(db, user, body.program_ids)
     await db.commit()
     await db.refresh(user, ["programs"])
-    return _user_to_out(user)
+    return user_to_out(user)
 
 
 @router.patch("/bulk/program", response_model=list[UserOut])
@@ -103,7 +107,7 @@ async def bulk_update_program(
     stmt = select(User).where(User.id.in_(body.user_ids))
     result = await db.execute(stmt)
     users = result.scalars().unique().all()
-    return [_user_to_out(u) for u in users]
+    return [user_to_out(u) for u in users]
 
 
 @router.patch("/bulk/role", response_model=list[UserOut])
@@ -126,7 +130,7 @@ async def bulk_update_role(
     stmt = select(User).where(User.id.in_(body.user_ids))
     result = await db.execute(stmt)
     users = result.scalars().unique().all()
-    return [_user_to_out(u) for u in users]
+    return [user_to_out(u) for u in users]
 
 
 @router.delete("/bulk", status_code=204)
@@ -159,7 +163,7 @@ async def get_user(
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return _user_to_out(user)
+    return user_to_out(user)
 
 
 @router.patch("/{user_id}", response_model=UserOut)
@@ -186,7 +190,7 @@ async def update_user(
         await _set_user_programs(db, user, program_ids)
     await db.commit()
     await db.refresh(user, ["programs"])
-    return _user_to_out(user)
+    return user_to_out(user)
 
 
 @router.delete("/{user_id}", status_code=204)

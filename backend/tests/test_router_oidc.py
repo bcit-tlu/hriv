@@ -707,8 +707,8 @@ async def test_oidc_callback_cors_origin_fallback() -> None:
 
 async def test_resolve_programs_returns_matching() -> None:
     """_resolve_programs queries programs whose oidc_group is in groups."""
-    prog_a = SimpleNamespace(id=1, name="MRAD", oidc_group="mrad-group")
-    prog_b = SimpleNamespace(id=2, name="MLT", oidc_group="mlt-group")
+    prog_a = SimpleNamespace(id=1, name="MRAD", oidc_group="mrad-group", parent_program_id=None)
+    prog_b = SimpleNamespace(id=2, name="MLT", oidc_group="mlt-group", parent_program_id=None)
 
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = [prog_a, prog_b]
@@ -731,9 +731,9 @@ async def test_resolve_programs_empty_groups() -> None:
 
 def test_sync_programs_merges_oidc_and_manual() -> None:
     """_sync_programs returns OIDC programs + manually-assigned programs."""
-    oidc_prog = SimpleNamespace(id=1, name="MRAD", oidc_group="mrad-group")
-    manual_prog = SimpleNamespace(id=2, name="Custom", oidc_group=None)
-    old_oidc_prog = SimpleNamespace(id=3, name="MLT", oidc_group="mlt-group")
+    oidc_prog = SimpleNamespace(id=1, name="MRAD", oidc_group="mrad-group", parent_program_id=None)
+    manual_prog = SimpleNamespace(id=2, name="Custom", oidc_group=None, parent_program_id=None)
+    old_oidc_prog = SimpleNamespace(id=3, name="MLT", oidc_group="mlt-group", parent_program_id=None)
 
     user = SimpleNamespace(programs=[manual_prog, old_oidc_prog])
     result = _sync_programs(user, [oidc_prog])
@@ -744,7 +744,7 @@ def test_sync_programs_merges_oidc_and_manual() -> None:
 
 def test_sync_programs_no_oidc_keeps_manual() -> None:
     """When no OIDC programs matched, manual assignments are preserved."""
-    manual_prog = SimpleNamespace(id=1, name="Custom", oidc_group=None)
+    manual_prog = SimpleNamespace(id=1, name="Custom", oidc_group=None, parent_program_id=None)
     user = SimpleNamespace(programs=[manual_prog])
 
     result = _sync_programs(user, [])
@@ -754,7 +754,7 @@ def test_sync_programs_no_oidc_keeps_manual() -> None:
 
 def test_sync_programs_no_duplicates() -> None:
     """If an OIDC program is already manually assigned, no duplicates."""
-    prog = SimpleNamespace(id=1, name="MRAD", oidc_group="mrad-group")
+    prog = SimpleNamespace(id=1, name="MRAD", oidc_group="mrad-group", parent_program_id=None)
     user = SimpleNamespace(programs=[prog])
 
     result = _sync_programs(user, [prog])
@@ -778,7 +778,7 @@ async def test_oidc_callback_new_user_with_programs() -> None:
         },
     })
 
-    prog = SimpleNamespace(id=10, name="MRAD", oidc_group="mrad-group")
+    prog = SimpleNamespace(id=10, name="MRAD", oidc_group="mrad-group", parent_program_id=None)
 
     # First execute: user lookup by oidc_subject → None
     mock_user_empty = MagicMock()
@@ -833,9 +833,9 @@ async def test_oidc_callback_existing_user_program_sync() -> None:
         },
     })
 
-    oidc_prog = SimpleNamespace(id=10, name="MRAD", oidc_group="mrad-group")
-    manual_prog = SimpleNamespace(id=20, name="Custom", oidc_group=None)
-    old_oidc_prog = SimpleNamespace(id=30, name="MLT", oidc_group="mlt-group")
+    oidc_prog = SimpleNamespace(id=10, name="MRAD", oidc_group="mrad-group", parent_program_id=None)
+    manual_prog = SimpleNamespace(id=20, name="Custom", oidc_group=None, parent_program_id=None)
+    old_oidc_prog = SimpleNamespace(id=30, name="MLT", oidc_group="mlt-group", parent_program_id=None)
 
     existing_user = SimpleNamespace(
         id=5, name="Sync User", email="sync@example.ca",
@@ -886,7 +886,7 @@ async def test_oidc_callback_role_and_program_sync() -> None:
         },
     })
 
-    oidc_prog = SimpleNamespace(id=10, name="MRAD", oidc_group="mrad-group")
+    oidc_prog = SimpleNamespace(id=10, name="MRAD", oidc_group="mrad-group", parent_program_id=None)
 
     existing_user = SimpleNamespace(
         id=7, name="Both User", email="both@example.ca",

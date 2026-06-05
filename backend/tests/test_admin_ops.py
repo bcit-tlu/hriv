@@ -392,7 +392,16 @@ async def test_run_db_export_success(tmp_path) -> None:
         result_filename=None, result_path=None, input_path=None, error_message=None,
     )
 
-    programs = [SimpleNamespace(id=1, name="CS", oidc_group=None, created_at=now, updated_at=now)]
+    programs = [
+        SimpleNamespace(
+            id=1, name="CS", oidc_group=None, parent_program_id=None,
+            created_at=now, updated_at=now,
+        ),
+        SimpleNamespace(
+            id=2, name="Cohort A", oidc_group=None, parent_program_id=1,
+            created_at=now, updated_at=now,
+        ),
+    ]
     categories = []
     images = []
     users = [SimpleNamespace(
@@ -448,6 +457,10 @@ async def test_run_db_export_success(tmp_path) -> None:
     # Ensure non-sensitive fields are still present
     assert dump["users"][0]["email"] == "admin@test.com"
     assert dump["users"][0]["role"] == "admin"
+    # The tenant/cohort hierarchy must survive the export round-trip.
+    by_id = {p["id"]: p for p in dump["programs"]}
+    assert by_id[1]["parent_program_id"] is None
+    assert by_id[2]["parent_program_id"] == 1
 
 
 # ── run_db_import tests ────────────────────────────────────
@@ -565,8 +578,10 @@ def _make_import_session(task: SimpleNamespace | None) -> tuple[AsyncMock, Magic
 def _full_dump() -> dict:
     return {
         "programs": [
-            {"id": 1, "name": "P1"},
-            {"id": 2, "name": "P2"},
+            # Cohort listed before its parent tenant to exercise the
+            # tenants-first import ordering (self-referential FK).
+            {"id": 2, "name": "P2", "parent_program_id": 1},
+            {"id": 1, "name": "P1", "parent_program_id": None},
         ],
         "users": [
             {

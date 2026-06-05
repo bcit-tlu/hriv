@@ -9,7 +9,6 @@ from fastapi import HTTPException
 
 from app.routers.users import (
     VALID_ROLES,
-    _user_to_out,
     _set_user_programs,
     list_users,
     get_user,
@@ -21,10 +20,11 @@ from app.routers.users import (
     delete_user,
 )
 from app.schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete
+from app.serializers import user_to_out
 
 
 def _make_program(id: int = 1, name: str = "Biology") -> SimpleNamespace:
-    return SimpleNamespace(id=id, name=name)
+    return SimpleNamespace(id=id, name=name, parent_program_id=None)
 
 
 def _make_user(
@@ -52,14 +52,14 @@ def _make_user(
 def test_user_to_out_with_programs() -> None:
     prog = _make_program(1, "Biology")
     user = _make_user(programs=[prog])
-    data = _user_to_out(user)
+    data = user_to_out(user)
     assert data["program_names"] == ["Biology"]
     assert data["program_ids"] == [1]
 
 
 def test_user_to_out_without_programs() -> None:
     user = _make_user()
-    data = _user_to_out(user)
+    data = user_to_out(user)
     assert data["program_names"] == []
     assert data["program_ids"] == []
 
@@ -72,22 +72,37 @@ async def test_list_users() -> None:
     db = AsyncMock()
     db.execute = AsyncMock(return_value=mock_result)
 
-    result = await list_users(MagicMock(), db)
+    admin = _make_user(id=1, role="admin")
+    result = await list_users(admin, db)
     assert len(result) == 2
 
 
-async def test_list_users_as_instructor() -> None:
-    """Instructors should be able to list users (for search results)."""
-    users = [_make_user(id=1), _make_user(id=2, email="two@example.com")]
+async def test_list_users_as_instructor_scoped_to_tenant_students() -> None:
+    """Instructors only see students belonging to one of their tenants."""
+    students = [
+        _make_user(id=1, role="student"),
+        _make_user(id=2, role="student", email="two@example.com"),
+    ]
     mock_result = MagicMock()
-    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+    mock_result.scalars.return_value.unique.return_value.all.return_value = students
 
     db = AsyncMock()
     db.execute = AsyncMock(return_value=mock_result)
 
-    instructor = _make_user(id=99, role="instructor")
+    tenant = SimpleNamespace(id=5, name="MedLab", parent_program_id=None)
+    instructor = _make_user(id=99, role="instructor", programs=[tenant])
     result = await list_users(instructor, db)
     assert len(result) == 2
+    db.execute.assert_awaited_once()
+
+
+async def test_list_users_instructor_without_tenants_returns_empty() -> None:
+    db = AsyncMock()
+    db.execute = AsyncMock()
+    instructor = _make_user(id=99, role="instructor", programs=[])
+    result = await list_users(instructor, db)
+    assert result == []
+    db.execute.assert_not_awaited()
 
 
 async def test_get_user_found() -> None:

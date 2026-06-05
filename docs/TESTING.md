@@ -208,10 +208,25 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | GET    | /api/images/{id}         | Yes           | student      |
 | PATCH  | /api/images/{id}         | Yes           | instructor   |
 | DELETE | /api/images/{id}         | Yes           | admin        |
-| GET    | /api/users/              | Yes           | admin        |
+| GET    | /api/users/              | Yes           | instructor¹  |
 | POST   | /api/users/              | Yes           | admin        |
 | GET    | /api/users/{id}          | Yes           | admin        |
 | PATCH  | /api/users/{id}          | Yes           | admin        |
 | DELETE | /api/users/{id}          | Yes           | admin        |
+| GET    | /api/programs/           | Yes           | student      |
+| GET    | /api/programs/{id}       | Yes           | student      |
+| POST   | /api/programs/           | Yes           | instructor²  |
+| PATCH  | /api/programs/{id}       | Yes           | instructor²  |
+| DELETE | /api/programs/{id}       | Yes           | instructor²  |
+| POST   | /api/programs/{cohort_id}/members/{user_id}   | Yes | instructor³ |
+| DELETE | /api/programs/{cohort_id}/members/{user_id}   | Yes | instructor³ |
 | GET    | /api/admin/export        | Yes           | admin        |
 | POST   | /api/admin/import        | Yes           | admin        |
+
+¹ `GET /api/users/` returns all users for admins; for instructors it is scoped to **students** in the instructor's tenant program(s).
+
+² Program writes are admin-unrestricted. For **instructors** they are scoped to **cohorts** under a tenant the instructor belongs to: instructors may create a cohort only under one of their tenants (`oidc_group` forced `NULL`, no nesting), and may only rename/delete cohorts under their tenants — never tenants themselves, never the `oidc_group`, and never reparent/promote a program (admin-only). Out-of-scope attempts return `403`; setting `oidc_group` on a cohort returns `422`.
+
+³ Cohort membership uses **delta** writes (add via `POST`, remove via `DELETE`; never set-replace) and returns the updated user. Instructors may only add/remove a **student** to/from a **cohort** under one of their tenants, and the student must already belong to that tenant. The add is idempotent (atomic `INSERT ... ON CONFLICT DO NOTHING`).
+
+See [`instructor-cohorts.md`](instructor-cohorts.md) for the tenant/cohort model and the end-to-end instructor flow.

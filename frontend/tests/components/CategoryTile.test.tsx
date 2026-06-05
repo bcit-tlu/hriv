@@ -23,8 +23,8 @@ import { makeCategory } from '../helpers/fixtures'
 // ---------------------------------------------------------------------------
 
 const samplePrograms: Program[] = [
-  { id: 10, name: 'Pathology', oidc_group: null, created_at: '2024-01-01', updated_at: '2024-01-01' },
-  { id: 20, name: 'Radiology', oidc_group: null, created_at: '2024-01-01', updated_at: '2024-01-01' },
+  { id: 10, name: 'Pathology', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '2024-01-01', updated_at: '2024-01-01' },
+  { id: 20, name: 'Radiology', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '2024-01-01', updated_at: '2024-01-01' },
 ]
 
 // ---------------------------------------------------------------------------
