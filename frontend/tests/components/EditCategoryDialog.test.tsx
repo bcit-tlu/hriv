@@ -83,8 +83,8 @@ describe('EditCategoryDialog', () => {
         onSave={onSave}
         currentLabel="Architecture"
         programs={[
-          { id: 1, name: 'Admin' },
-          { id: 2, name: 'Design' },
+          { id: 1, name: 'Admin', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
+          { id: 2, name: 'Design', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
         ]}
         currentProgramIds={[2]}
       />,
@@ -197,8 +197,8 @@ describe('EditCategoryDialog', () => {
         onSave={vi.fn()}
         currentLabel="Architecture"
         programs={[
-          { id: 1, name: 'Admin' },
-          { id: 2, name: 'Design' },
+          { id: 1, name: 'Admin', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
+          { id: 2, name: 'Design', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
         ]}
         currentProgramIds={[2]}
       />,
@@ -221,8 +221,8 @@ describe('EditCategoryDialog', () => {
         onSave={vi.fn()}
         currentLabel="Architecture"
         programs={[
-          { id: 1, name: 'Admin' },
-          { id: 2, name: 'Design' },
+          { id: 1, name: 'Admin', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
+          { id: 2, name: 'Design', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
         ]}
         currentProgramIds={[2]}
       />,
