@@ -18,6 +18,8 @@ function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
             program_names: [],
         },
         announcement: "",
+        annMessage: "",
+        annEnabled: false,
         profileOpen: false,
         setProfileOpen: vi.fn(),
         avatarRef: createRef<HTMLButtonElement>(),
@@ -271,6 +273,36 @@ describe("AppShell", () => {
             fireEvent.click(screen.getByText("Logout"));
             expect(props.setProfileOpen).toHaveBeenCalledWith(false);
             expect(props.logout).toHaveBeenCalled();
+        });
+
+        it("shows View Announcement link when announcement is enabled and dismissed", () => {
+            render(
+                <AppShell {...makeProps({ profileOpen: true, annEnabled: true, annMessage: "Scheduled maintenance", announcement: "" })} />,
+            );
+            expect(screen.getByText("View Announcement")).toBeInTheDocument();
+        });
+
+        it("hides View Announcement link when announcement banner is visible (not dismissed)", () => {
+            render(
+                <AppShell {...makeProps({ profileOpen: true, annEnabled: true, annMessage: "Scheduled maintenance", announcement: "Scheduled maintenance" })} />,
+            );
+            expect(screen.queryByText("View Announcement")).not.toBeInTheDocument();
+        });
+
+        it("hides View Announcement link when no announcement is enabled", () => {
+            render(
+                <AppShell {...makeProps({ profileOpen: true, annEnabled: false, annMessage: "", announcement: "" })} />,
+            );
+            expect(screen.queryByText("View Announcement")).not.toBeInTheDocument();
+        });
+
+        it("opens announcement dialog when View Announcement is clicked", () => {
+            render(
+                <AppShell {...makeProps({ profileOpen: true, annEnabled: true, annMessage: "Scheduled maintenance", announcement: "" })} />,
+            );
+            fireEvent.click(screen.getByText("View Announcement"));
+            expect(screen.getByText("Announcement")).toBeInTheDocument();
+            expect(screen.getByText("Scheduled maintenance")).toBeInTheDocument();
         });
     });
 });

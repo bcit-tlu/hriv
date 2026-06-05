@@ -304,6 +304,8 @@ export default function App() {
     // Announcement modal state (load, draft, save) — extracted to useAnnouncementModal hook
     const {
         announcement,
+        annMessage,
+        annEnabled,
         dismissAnnouncement,
         loadAnnouncement,
         annModalOpen,
@@ -751,6 +753,8 @@ export default function App() {
             canManageUsers={canManageUsers}
             currentUser={currentUser}
             announcement={announcement}
+            annMessage={annMessage}
+            annEnabled={annEnabled}
             onDismissAnnouncement={dismissAnnouncement}
             profileOpen={profileOpen}
             setProfileOpen={setProfileOpen}

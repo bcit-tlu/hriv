@@ -68,6 +68,8 @@ export function useAnnouncementModal(userId?: number) {
 
     return {
         announcement,
+        annMessage,
+        annEnabled,
         dismissAnnouncement,
         loadAnnouncement,
         annModalOpen,
