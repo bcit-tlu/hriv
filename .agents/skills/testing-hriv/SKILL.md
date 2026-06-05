@@ -1,6 +1,6 @@
 ---
 name: testing-hriv
-description: End-to-end testing guide for the HRIV app including local stack setup, seed data, auth, UI navigation, metadata operations, admin export/import, image upload, image replacement, drag-and-drop, tile sidecar routing, and bulk import with ManagePage auto-refresh.
+description: End-to-end testing guide for the HRIV app including local stack setup, seed data, auth, UI navigation, metadata operations, admin export/import, image upload, image replacement, drag-and-drop, tile sidecar routing, bulk import with ManagePage auto-refresh, and canvas annotation edit mode.
 ---
 
 # Testing HRIV
@@ -947,3 +947,67 @@ docker-compose testing (Vite dev proxy has no body limit).
   connect Playwright to `http://localhost:9222`.
 - **Playwright may not be pre-installed.** Install with `pip install playwright && python3 -m playwright install chromium`.
   Use ImageMagick `convert` instead of PIL for generating test images (it's available by default).
+
+## Canvas Annotation Edit Mode
+
+The viewer's pencil icon (toolbar button 10) toggles canvas annotation edit mode,
+powered by Fabric.js. Annotations are stored as JSON in `metadata_extra.canvas_annotations`.
+
+### Drawing Tools
+
+| Tool | Fabric Object | Notes |
+|---|---|---|
+| Rectangle | `fabric.Rect` | Outlined or filled via fill-mode toggle |
+| Ellipse | `fabric.Ellipse` | Outlined or filled via fill-mode toggle |
+| Arrow | `fabric.Line` | Has arrowhead style selector (none, standard, triangle, circle) |
+| Text | `fabric.IText` | Inline editable |
+| Link | `fabric.IText` | Like text but serialises a URL; shown as clickable in view mode |
+
+### Dual Rendering Modes
+
+- **Edit mode** renders via Fabric.js canvas objects (vector, interactive).
+- **View mode** renders via 2D canvas context using `drawArrowhead()` in `CanvasOverlay.tsx`.
+
+When testing arrowhead appearance, check **both** modes — a bug in `drawArrowhead()`
+only affects view mode, while Fabric object styling only affects edit mode.
+
+### Arrowhead Scaling
+
+The view-mode arrowhead scaling formula is:
+```
+sw = strokeWidth * zoom
+headLen = Math.max(24, sw * 12)
+arrowLineWidth = Math.max(1, sw)
+```
+
+**Key fix history (PR #589):** Standard arrowhead prong stroke was previously
+`headLen / 4` = `sw * 3` (3x thicker than line shaft). Fixed to use `lineWidth` = `sw`
+so prongs match the shaft thickness.
+
+**Testing procedure:**
+1. Open an image, enter edit mode (pencil icon).
+2. Draw 4 arrows, each with a different arrowhead style (standard, triangle, circle, plain-line).
+3. Exit edit mode to see the view-mode rendering.
+4. Zoom to ~2x: verify standard prongs match line thickness (not 3x thicker).
+5. Zoom to ~4x: verify proportional scaling, no blowup.
+6. Return to home zoom: verify all 4 styles render correctly.
+
+### Line Width Options
+
+`LINE_WIDTHS = [1, 2, 4, 8, 16]` — follows a 2x scaling pattern. The 16px option
+ensures annotations remain visible at low zoom levels.
+
+### Multi-Object Operations
+
+- **Select all:** Click one object to focus the Fabric canvas, then Shift+click others
+  (Ctrl+A selects HTML page text, not canvas objects).
+- **Copy/Paste:** Ctrl+C / Ctrl+V. Pasted objects appear near originals with a small offset.
+- **Right-click:** Should NOT start drawing (guarded since Fabric v7 flipped `fireRightClick` default).
+
+### Fabric.js v7 Breaking Changes (PR #589)
+
+- `originX`/`originY` defaults changed from `'left'/'top'` to `'center'/'center'`.
+  All 10 fabric constructors explicitly set `originX: 'left', originY: 'top'`.
+- `fireRightClick`/`fireMiddleClick` flipped to `true`. Mouse handler guards against
+  non-left-button events.
+- `fabric.Line` is deprecated in v7 but still functional. Tracked for future migration.
