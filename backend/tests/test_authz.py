@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from app.authz import (
     can_change_cohort_membership,
     can_create_cohort_under,
-    can_manage_cohort,
+    can_manage_program,
     is_cohort,
     is_tenant,
     tenant_ids,
@@ -57,34 +57,34 @@ def test_can_create_cohort_under_student_denied() -> None:
     assert can_create_cohort_under(student, _prog(5, None)) is False
 
 
-def test_can_manage_cohort_admin() -> None:
+def test_can_manage_program_admin() -> None:
     admin = _user("admin")
-    assert can_manage_cohort(admin, _prog(100, 5)) is True
-    assert can_manage_cohort(admin, _prog(5, None)) is True
+    assert can_manage_program(admin, _prog(100, 5)) is True
+    assert can_manage_program(admin, _prog(5, None)) is True
 
 
-def test_can_manage_cohort_instructor_in_scope() -> None:
+def test_can_manage_program_instructor_in_scope() -> None:
     inst = _user("instructor", [_prog(5, None)])
-    assert can_manage_cohort(inst, _prog(100, 5)) is True
+    assert can_manage_program(inst, _prog(100, 5)) is True
 
 
-def test_can_manage_cohort_instructor_out_of_scope() -> None:
+def test_can_manage_program_instructor_out_of_scope() -> None:
     inst = _user("instructor", [_prog(5, None)])
-    assert can_manage_cohort(inst, _prog(100, 7)) is False
+    assert can_manage_program(inst, _prog(100, 7)) is False
 
 
-def test_can_manage_cohort_instructor_rejects_tenant() -> None:
+def test_can_manage_program_instructor_rejects_tenant() -> None:
     inst = _user("instructor", [_prog(5, None)])
     # A tenant is not a cohort -> instructors can never manage it.
-    assert can_manage_cohort(inst, _prog(5, None)) is False
+    assert can_manage_program(inst, _prog(5, None)) is False
 
 
 def test_two_instructors_same_tenant_comanage() -> None:
     cohort = _prog(100, 5)
     inst_a = _user("instructor", [_prog(5, None)])
     inst_b = _user("instructor", [_prog(5, None)])
-    assert can_manage_cohort(inst_a, cohort)
-    assert can_manage_cohort(inst_b, cohort)
+    assert can_manage_program(inst_a, cohort)
+    assert can_manage_program(inst_b, cohort)
 
 
 def test_can_change_membership_instructor_student_in_tenant() -> None:

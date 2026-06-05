@@ -54,19 +54,21 @@ def can_create_cohort_under(user: User, parent: Program) -> bool:
     return parent.id in tenant_ids(user)
 
 
-def can_manage_cohort(user: User, cohort: Program) -> bool:
-    """Whether *user* may rename/delete/assign within *cohort*.
+def can_manage_program(user: User, program: Program) -> bool:
+    """Whether *user* may rename/delete/assign within *program*.
 
-    Admins manage every program. Instructors manage only cohorts whose parent
-    tenant is in their scope.
+    Admins manage every program (tenant or cohort). Instructors manage only
+    cohorts whose parent tenant is in their scope — they can never manage a
+    tenant. The name is deliberately program-wide because the admin branch
+    short-circuits before the cohort check.
     """
     if user.role == "admin":
         return True
     if user.role != "instructor":
         return False
-    if not is_cohort(cohort):
+    if not is_cohort(program):
         return False
-    return cohort.parent_program_id in tenant_ids(user)
+    return program.parent_program_id in tenant_ids(user)
 
 
 def can_change_cohort_membership(
@@ -83,7 +85,7 @@ def can_change_cohort_membership(
         return False
     if not is_cohort(cohort):
         return False
-    if not can_manage_cohort(user, cohort):
+    if not can_manage_program(user, cohort):
         return False
     if user.role == "admin":
         return True

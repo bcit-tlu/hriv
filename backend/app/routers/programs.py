@@ -9,7 +9,7 @@ from ..auth import get_current_user, require_role
 from ..authz import (
     can_change_cohort_membership,
     can_create_cohort_under,
-    can_manage_cohort,
+    can_manage_program,
     is_tenant,
 )
 from ..database import get_db
@@ -123,7 +123,7 @@ async def update_program(
 
     if user.role != "admin":
         # Instructors may only rename cohorts within their scope.
-        if not can_manage_cohort(user, program):
+        if not can_manage_program(user, program):
             raise HTTPException(
                 status_code=403, detail="Not permitted to modify this program",
             )
@@ -221,7 +221,7 @@ async def delete_program(
     program = await db.get(Program, program_id)
     if not program:
         raise HTTPException(status_code=404, detail="Program not found")
-    if user.role != "admin" and not can_manage_cohort(user, program):
+    if user.role != "admin" and not can_manage_program(user, program):
         raise HTTPException(
             status_code=403, detail="Not permitted to delete this program",
         )
