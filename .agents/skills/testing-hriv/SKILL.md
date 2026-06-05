@@ -160,6 +160,48 @@ panel** for program multi-select — not a Select dropdown. The pattern:
 5. Cancel to discard changes
 6. Repeat in Add Images and Bulk Edit modals to verify consistent behavior
 
+### Instructor Cohort Management (tenant/cohort programs)
+
+Programs split into **tenants** (`parent_program_id IS NULL`, admin/OIDC-controlled) and
+**cohorts** (`parent_program_id` → a tenant, `oidc_group` always NULL, instructor-created).
+Authority follows tenant membership: an instructor co-manages every cohort under a tenant they
+belong to. The Manage → Programs entry opens a different dialog per role:
+- **instructor:** titled **"Manage Cohorts"**, dropdown labelled **"Program"** listing only the
+  instructor's tenants; no OIDC/Advanced controls at all.
+- **admin:** titled **"Manage Programs"**, dropdown labelled **"Parent program"** with a
+  "None (top-level program)" option, plus an **"Advanced"** disclosure that reveals the
+  "OIDC group (optional)" field (only when parent = None). This is issue #559's simplification.
+
+**Seed tenant membership (needed for cohort tests, not in the Programs table above):**
+`instructor@example.ca` (id=2) and `student@example.ca` (id=3) both belong to the
+**Digital Design** tenant (id=2). So an instructor can create a cohort under Digital Design and
+the seed student is eligible to be added to it.
+
+**CohortMembersDialog** (group icon on a cohort row → "Manage students — <cohort>") lists
+eligible students (members of the cohort's tenant) with a per-student **switch**. Toggling uses
+**delta** writes — `POST`/`DELETE /api/programs/{cohortId}/members/{userId}` — which each return
+the updated `ApiUser`; the switch settles to `program_ids.includes(cohort.id)` from that
+**response** (response-driven state), not a locally-derived value. So a correct add makes the
+switch settle **ON**; a broken serializer omitting the cohort id would make it snap back OFF.
+
+**End-to-end flow to test (record it):**
+1. Instructor → Manage → Programs → type a name, pick the tenant (only their tenants show), Add.
+   Cohort appears as "cohort of <tenant>".
+2. Group icon → toggle the seed student ON → switch settles checked.
+3. Toggle OFF → switch settles unchecked.
+4. Edit (pencil) → rename → Save. Instructor rename must NOT 403 (the PATCH omits `oidc_group`
+   for cohort renames; sending it would trip the cohort OIDC invariant).
+5. Log in as admin → Manage → Programs → with parent = None click **Advanced** → "OIDC group"
+   field appears. (Absent entirely for instructors.)
+
+**API spot-checks (curl with an instructor token):**
+- `PATCH /api/programs/{cohort}` `{"parent_program_id": <tenant>}` → **403
+  "Instructors may only rename cohorts"** (reparenting is admin-only).
+- `POST /api/programs/{cohort}/members/{student}` → response body `program_ids` includes the
+  cohort id (direct evidence the membership endpoints return the resolved user).
+- **Clean up after API tests:** `DELETE` the member then `DELETE /api/programs/{cohort}` so seed
+  state isn't polluted for later runs.
+
 ### Category Management
 - Manage > Categories has a full dialog with drag-and-drop reordering.
 - Category tree changes are reflected immediately on Browse without a refresh
@@ -809,41 +851,74 @@ rather than trying to interact with the OS file picker:
 import asyncio
 from playwright.async_api import async_playwright
 
-async def inject_replacement():
+async def inject_file():
     async with async_playwright() as p:
-        browser = await p.chromium.connect_over_cdp('http://localhost:29229')
-        page = [pg for ctx in browser.contexts for pg in ctx.pages
-                if 'localhost:5173' in pg.url][0]
-        await page.locator('input[type="file"]').set_input_files('/tmp/test_replacement.jpg')
+        browser = await p.chromium.connect_over_cdp("http://localhost:29229")
+        context = browser.contexts[0]
+        page = context.pages[0]
+        file_input = page.locator('input[type="file"]')
+        await file_input.set_input_files('/tmp/test_replacement.jpg')
 
-asyncio.run(inject_replacement())
+asyncio.run(inject_file())
 ```
+This directly sets the hidden `<input type="file">` without needing to interact
+with the native file chooser dialog. The modal must be open before running this.
 
 ### Post-Replacement Verification
 
-- The image `version` increments; canvas metadata (`locked_overlays`,
-  `canvas_annotations`) is cleared.
-- Tiles are regenerated under `/data/tiles/<image_id>/`.
-- The viewer reflects the new image after processing completes.
+After the processing snackbar disappears, verify via API:
+```bash
+curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1 | python3 -m json.tool
+```
+
+Key assertions:
+- `tile_sources` changed from external URL to `/api/tiles/<id>/image.dzi`
+- `thumb` changed to `/api/tiles/<id>/thumbnail.jpeg`
+- `width` and `height` match the replacement image dimensions
+- `file_size` is populated
+- `metadata_extra` is `{}` (canvas metadata cleared)
+- `name`, `category_id`, `copyright`, `note`, `program_ids` are preserved
+- `version` has incremented
 
 ### Known Limitation (Issue #271)
 
-Replacing an image does not retroactively update categories that use the old image
-as their card image — the card image reference may break until re-set.
+The frontend performs two separate API calls for replacement:
+1. Metadata PATCH (`apiUpdateImage`) — updates form fields
+2. File POST (`apiReplaceImage`) — uploads the new file
+
+If the file upload fails after the metadata PATCH succeeds, metadata changes are
+committed but the file remains unchanged. This is a known trade-off; see issue #271
+for discussion of potential atomic replacement approaches.
 
 ### Localhost Throttling Limitation
 
-Large-image upload progress may appear to jump on localhost because there's no real
-network latency; the determinate progress bar can flash from 0 to 100 quickly.
+**The in-modal upload progress bar cannot be visually observed on localhost.** XHR
+`upload.onprogress` tracks bytes written to the OS TCP send buffer, not bytes received
+by the server. On loopback, the kernel's TCP buffers (128KB–4MB) absorb the entire
+file instantly — progress jumps 0→100% before the 500ms React re-render tick fires.
+
+Approaches that do NOT work on localhost:
+- `tc qdisc` on port 8000 — wrong port (XHR tracks browser→Vite on 5173)
+- `tc qdisc` on port 5173 IPv4 — Chrome uses IPv6 `::1`, bypasses filter
+- `tc qdisc` on port 5173 IPv4+IPv6 — throttles ALL traffic including PATCH
+- XHR monkey-patch — fake events fire but real `send()` completes instantly
+- CDP `Network.emulateNetworkConditions` — not available on browser-level WebSocket
+- TCP proxy with slow reads — no backpressure, OS buffers absorb all data
+
+**To test the progress bar**, deploy to a real network environment where upload
+latency is non-trivial, or use a remote server accessible over a WAN link.
 
 ### Nginx Body Size Limit (On-Cluster)
 
-The frontend nginx config caps request bodies (`client_max_body_size`). Very large
-uploads that work locally may 413 on-cluster — check the nginx chart values.
+The Helm chart nginx config (`charts/frontend/files/default.conf.template`) has
+`client_max_body_size 0` (unlimited) for upload endpoints and 10MB for other
+`/api/` routes. The replace endpoint pattern `images/\d+/replace` must be in the
+unlimited list, or large replacements will fail with 413. This doesn't affect
+docker-compose testing (Vite dev proxy has no body limit).
 
 ## Browser & Test Environment Tips
 
-- **CDP proxy:** The default Chrome CDP endpoint is `http://localhost:29229`.
+- **Chrome CDP:** The provisioned Chrome exposes CDP on `http://localhost:29229`.
   Use it for Playwright scripts (`p.chromium.connect_over_cdp(...)`) when native
   computer-use is awkward (file uploads, flaky timing, snackbars).
 - **Chrome binary (if you need to relaunch):** `/opt/.devin/chrome/chrome/linux-*/chrome-linux64/chrome`
@@ -863,3 +938,4 @@ uploads that work locally may 413 on-cluster — check the nginx chart values.
   returns empty, launch Chrome manually with `--remote-debugging-port=9222` and
   connect Playwright to `http://localhost:9222`.
 - **Playwright may not be pre-installed.** Install with `pip install playwright && python3 -m playwright install chromium`.
+  Use ImageMagick `convert` instead of PIL for generating test images (it's available by default).
