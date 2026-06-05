@@ -40,7 +40,10 @@ async def list_images(
     if _user.role == "student":
         stmt = stmt.where(Image.active.is_(True))
         user_program_ids = {p.id for p in _user.programs}
-        excluded = await get_student_excluded_category_ids(db, user_program_ids)
+        user_group_ids = {g.id for g in _user.groups}
+        excluded = await get_student_excluded_category_ids(
+            db, user_program_ids, user_group_ids
+        )
         if excluded:
             stmt = stmt.where(
                 (Image.category_id.is_(None)) | (~Image.category_id.in_(excluded))
@@ -63,7 +66,10 @@ async def get_image(
         if not img.active:
             raise HTTPException(status_code=404, detail="Image not found")
         user_program_ids = {p.id for p in _user.programs}
-        if not await is_category_visible_to_student(db, img.category_id, user_program_ids):
+        user_group_ids = {g.id for g in _user.groups}
+        if not await is_category_visible_to_student(
+            db, img.category_id, user_program_ids, user_group_ids
+        ):
             raise HTTPException(status_code=404, detail="Image not found")
     return img
 

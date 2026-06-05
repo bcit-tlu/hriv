@@ -30,6 +30,7 @@ def _make_category(
     status: str = "active",
     sort_order: int = 0,
     programs: list | None = None,
+    groups: list | None = None,
 ) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
@@ -37,6 +38,7 @@ def _make_category(
         label=label,
         parent_id=parent_id,
         programs=programs or [],
+        groups=groups or [],
         status=status,
         sort_order=sort_order,
         metadata_=None,
@@ -483,8 +485,16 @@ async def test_delete_category_not_found() -> None:
 # ── Program-scoped student filtering ────────────────────────
 
 
-def _make_student_user(programs: list | None = None) -> SimpleNamespace:
-    return SimpleNamespace(id=1, role="student", email="s@example.com", programs=programs or [])
+def _make_student_user(
+    programs: list | None = None, groups: list | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=1,
+        role="student",
+        email="s@example.com",
+        programs=programs or [],
+        groups=groups or [],
+    )
 
 
 async def test_list_categories_student_excludes_restricted() -> None:
@@ -634,3 +644,155 @@ async def test_get_category_student_unrestricted() -> None:
 
     result = await get_category(1, _make_student_user(), db=db)
     assert result.label == "Open"
+
+
+# ── Group attachment authorization + intersection warnings ───
+
+from app.routers.categories import _intersection_warnings  # noqa: E402
+
+
+def _editor(role: str, id: int = 1, programs=None, groups=None) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=id,
+        role=role,
+        programs=[SimpleNamespace(id=p) for p in (programs or [])],
+        groups=[SimpleNamespace(id=g) for g in (groups or [])],
+    )
+
+
+def _group_ns(id: int, instructors=None, members=None) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=id,
+        instructors=[SimpleNamespace(id=i) for i in (instructors or [])],
+        members=members or [],
+    )
+
+
+async def test_create_category_invalid_group_ids() -> None:
+    body = CategoryCreate(label="C", parent_id=None, group_ids=[5, 999])
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    grp_result = MagicMock()
+    grp_result.scalars.return_value.all.return_value = [_group_ns(5)]
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[dup, grp_result])
+    with pytest.raises(HTTPException) as exc:
+        await create_category(body, _editor("admin"), db=db)
+    assert exc.value.status_code == 422
+    assert "999" in str(exc.value.detail)
+
+
+async def test_create_category_instructor_cannot_attach_unmanaged_group() -> None:
+    body = CategoryCreate(label="C", parent_id=None, group_ids=[5])
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    grp_result = MagicMock()
+    grp_result.scalars.return_value.all.return_value = [_group_ns(5, instructors=[99])]
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[dup, grp_result])
+    with pytest.raises(HTTPException) as exc:
+        await create_category(body, _editor("instructor", id=7), db=db)
+    assert exc.value.status_code == 403
+
+
+async def test_create_category_admin_attaches_group() -> None:
+    body = CategoryCreate(label="C", parent_id=None, group_ids=[5])
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    group = _group_ns(5, instructors=[99])
+    grp_result = MagicMock()
+    grp_result.scalars.return_value.all.return_value = [group]
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[dup, grp_result])
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+    result = await create_category(body, _editor("admin"), db=db)
+    assert result.groups == [group]
+
+
+async def test_create_category_instructor_attaches_managed_group() -> None:
+    body = CategoryCreate(label="C", parent_id=None, group_ids=[5])
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    group = _group_ns(5, instructors=[7])
+    grp_result = MagicMock()
+    grp_result.scalars.return_value.all.return_value = [group]
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[dup, grp_result])
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+    result = await create_category(body, _editor("instructor", id=7), db=db)
+    assert result.groups == [group]
+
+
+# ── _intersection_warnings (symmetric, non-blocking advisory) ─
+
+
+def test_intersection_warning_none_when_single_dimension() -> None:
+    assert _intersection_warnings([_make_program(1)], []) == []
+    assert _intersection_warnings([], [_group_ns(1)]) == []
+
+
+def test_intersection_warning_none_when_all_members_in_program() -> None:
+    member = SimpleNamespace(id=1, programs=[SimpleNamespace(id=10)])
+    group = SimpleNamespace(id=5, members=[member])
+    assert _intersection_warnings([_make_program(10)], [group]) == []
+
+
+def test_intersection_warning_when_member_outside_program() -> None:
+    inside = SimpleNamespace(id=1, programs=[SimpleNamespace(id=10)])
+    outside = SimpleNamespace(id=2, programs=[])
+    group = SimpleNamespace(id=5, members=[inside, outside])
+    warnings = _intersection_warnings([_make_program(10)], [group])
+    assert len(warnings) == 1
+    assert warnings[0].code == "program_group_intersection"
+    assert "1 of 2" in warnings[0].message
+
+
+async def test_create_category_attaches_warning_to_response() -> None:
+    body = CategoryCreate(
+        label="C", parent_id=None, program_ids=[10], group_ids=[5]
+    )
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    prog_result = MagicMock()
+    prog_result.scalars.return_value.all.return_value = [_make_program(10)]
+    outside = SimpleNamespace(id=2, programs=[])
+    group = SimpleNamespace(id=5, instructors=[], members=[outside])
+    grp_result = MagicMock()
+    grp_result.scalars.return_value.all.return_value = [group]
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[dup, prog_result, grp_result])
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+    result = await create_category(body, _editor("admin"), db=db)
+    assert result._category_warnings[0].code == "program_group_intersection"
+
+
+# ── Dual-gate student tree filtering ─────────────────────────
+
+
+async def test_load_tree_student_group_gate_excludes() -> None:
+    cats = [
+        _make_category(1, "Open"),
+        _make_category(2, "GroupOnly", groups=[_group_ns(50)]),
+    ]
+    db = _mock_db(cats, [])
+    tree = await _load_tree(
+        db, None, user_role="student", user_program_ids=set(),
+        user_group_ids=set(),
+    )
+    assert [c.label for c in tree] == ["Open"]
+
+
+async def test_load_tree_student_in_group_sees_category() -> None:
+    cats = [_make_category(1, "GroupOnly", groups=[_group_ns(50)])]
+    db = _mock_db(cats, [])
+    tree = await _load_tree(
+        db, None, user_role="student", user_program_ids=set(),
+        user_group_ids={50},
+    )
+    assert [c.label for c in tree] == ["GroupOnly"]

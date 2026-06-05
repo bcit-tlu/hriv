@@ -412,14 +412,18 @@ async def test_run_db_export_success(tmp_path) -> None:
     source_images = []
     announcement = SimpleNamespace(message="", enabled=False, created_at=now, updated_at=now)
 
+    groups = []
     call_count = 0
 
     async def mock_execute(stmt):
         nonlocal call_count
         call_count += 1
         result = MagicMock()
-        data_map = {1: programs, 2: categories, 3: images, 4: users, 5: source_images}
-        if call_count <= 5:
+        data_map = {
+            1: programs, 2: groups, 3: categories, 4: images,
+            5: users, 6: source_images,
+        }
+        if call_count <= 6:
             result.scalars.return_value.all.return_value = data_map[call_count]
         else:
             result.scalar_one_or_none.return_value = announcement
@@ -1257,3 +1261,91 @@ async def test_run_files_import_success(tmp_path) -> None:
     assert task.status == "completed"
     assert task.progress == 100
     assert "Restored" in task.log
+
+
+async def test_run_db_import_with_groups(tmp_path) -> None:
+    """Groups and category group_ids are imported without error."""
+    dump = {
+        "users": [
+            {"id": 1, "name": "Ins", "email": "ins@e.com", "role": "instructor"},
+            {"id": 2, "name": "Stu", "email": "stu@e.com", "role": "student"},
+        ],
+        "groups": [
+            {
+                "id": 1,
+                "name": "G1",
+                "description": "d",
+                "created_by_user_id": 1,
+                "member_ids": [2],
+                "instructor_ids": [1],
+            }
+        ],
+        "categories": [
+            {"id": 1, "label": "root", "parent_id": None, "group_ids": [1]},
+        ],
+        "images": [],
+    }
+    input_file = tmp_path / "groups.json"
+    input_file.write_text(json.dumps(dump))
+    task = _make_import_task(str(input_file))
+
+    mock_session, factory = _make_import_session(task)
+
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_db_import(1)
+
+    assert task.status == "completed"
+    add_calls = [c.args[0] for c in mock_session.add.call_args_list]
+    assert any(type(obj).__name__ == "Group" for obj in add_calls)
+
+
+async def test_run_db_export_includes_groups(tmp_path) -> None:
+    """A group with members/instructors round-trips into the export dump."""
+    now = datetime.now(timezone.utc)
+    task = SimpleNamespace(
+        id=1, task_type="db_export", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=None, error_message=None,
+    )
+    group = SimpleNamespace(
+        id=1, name="G1", description="desc", created_by_user_id=1,
+        members=[SimpleNamespace(id=2)],
+        instructors=[SimpleNamespace(id=1)],
+        created_at=now, updated_at=now,
+    )
+    announcement = SimpleNamespace(message="", enabled=False, created_at=now, updated_at=now)
+    call_count = 0
+
+    async def mock_execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        result = MagicMock()
+        data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: []}
+        if call_count <= 6:
+            rows = data_map[call_count]
+            result.scalars.return_value.all.return_value = rows
+            result.scalars.return_value.unique.return_value.all.return_value = rows
+        else:
+            result.scalar_one_or_none.return_value = announcement
+        return result
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.execute = AsyncMock(side_effect=mock_execute)
+    mock_session.commit = AsyncMock()
+    factory = MagicMock()
+    factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    tasks_dir = str(tmp_path / "admin_tasks")
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch("app.admin_ops._TASKS_DIR", tasks_dir),
+    ):
+        await run_db_export(1)
+
+    assert task.status == "completed"
+    export_path = os.path.join(tasks_dir, task.result_filename)
+    with open(export_path) as f:
+        dump = json.load(f)
+    assert dump["groups"][0]["member_ids"] == [2]
+    assert dump["groups"][0]["instructor_ids"] == [1]

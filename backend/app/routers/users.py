@@ -8,7 +8,7 @@ from ..auth import require_role, hash_password
 from ..database import get_db
 from ..models import Program, User
 from ..schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete, UserOut
-from ..serializers import user_to_out
+from ..serializers import user_to_mini_out, user_to_out
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -39,8 +39,37 @@ async def _set_user_programs(
 async def list_users(
     _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
+    role: str | None = None,
 ):
+    """List users, optionally filtered by ``role``.
+
+    The response shape is role-dependent. Admins receive full ``UserOut``
+    objects (programs, metadata, last_access). Instructors receive a
+    **minimal** projection — only ``id, name, email, role`` are populated;
+    the remaining ``UserOut`` fields are defaulted (``program_ids: []``,
+    ``metadata_extra: None``, etc.) and must not be relied upon. Instructors
+    only ever see students and other instructors, never admins.
+    """
+    if role is not None and role not in VALID_ROLES:
+        raise HTTPException(422, f"Invalid role: {role}")
     stmt = select(User).order_by(User.name)
+    # Instructors may list students (to populate group membership) and other
+    # instructors (for group co-ownership), but only with minimal fields and
+    # never admin accounts. Admins see all users with full detail.
+    if _user.role == "instructor":
+        allowed = {"student", "instructor"}
+        if role is not None and role not in allowed:
+            raise HTTPException(
+                403, "Instructors may only list students and instructors",
+            )
+        stmt = stmt.where(User.role == role) if role else stmt.where(
+            User.role.in_(allowed)
+        )
+        result = await db.execute(stmt)
+        users = result.scalars().unique().all()
+        return [user_to_mini_out(u) for u in users]
+    if role is not None:
+        stmt = stmt.where(User.role == role)
     result = await db.execute(stmt)
     users = result.scalars().unique().all()
     return [user_to_out(u) for u in users]
