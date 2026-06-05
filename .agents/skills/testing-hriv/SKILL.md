@@ -847,6 +847,14 @@ canvas.toBlob(blob => {
 
 Since the file input is hidden, use Playwright CDP to inject the file directly
 rather than trying to interact with the OS file picker:
+
+**Precondition — the Edit Details (or Replace Image) modal must already be open.**
+The `input[type="file"]` element is rendered only while that modal is mounted, so
+running the snippet with the modal closed makes `page.locator('input[type="file"]')`
+match nothing and `set_input_files(...)` fails with a locator timeout. Selecting the
+correct page (e.g. by `localhost:5173` in `page.url`) does **not** help here — that
+only picks the tab, not whether the modal is visible. Open the modal first (click the
+row's ⋮ → Replace image / Edit details), then run:
 ```python
 import asyncio
 from playwright.async_api import async_playwright
@@ -862,7 +870,7 @@ async def inject_file():
 asyncio.run(inject_file())
 ```
 This directly sets the hidden `<input type="file">` without needing to interact
-with the native file chooser dialog. The modal must be open before running this.
+with the native file chooser dialog (modal-open precondition above still applies).
 
 ### Post-Replacement Verification
 
