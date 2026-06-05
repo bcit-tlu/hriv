@@ -45,9 +45,6 @@ export default function AnnouncementBanner({ message, variant = 'app', onDismiss
         ) : undefined
       }
       sx={{
-        borderRadius: 0,
-        justifyContent: 'center',
-        '& .MuiAlert-message': { textAlign: 'center' },
         ...(isDark && { bgcolor: '#1a3a5c', color: '#90caf9' }),
       }}
     >

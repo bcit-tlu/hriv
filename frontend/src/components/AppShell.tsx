@@ -328,7 +328,11 @@ export default function AppShell(props: AppShellProps) {
             </AppBar>
 
             {/* Announcement banner */}
-            {announcement && <AnnouncementBanner message={announcement} onDismiss={onDismissAnnouncement} />}
+            {announcement && (
+                <Box sx={{ px: { xs: 2, sm: 3, lg: "72px", xl: "120px" }, mt: 2, mb: 1 }}>
+                    <AnnouncementBanner message={announcement} onDismiss={onDismissAnnouncement} />
+                </Box>
+            )}
 
             {/* Read-only announcement dialog (for dismissed announcements) */}
             <Dialog open={viewAnnOpen} onClose={() => setViewAnnOpen(false)} maxWidth="sm" fullWidth>
