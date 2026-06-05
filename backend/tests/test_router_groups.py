@@ -365,3 +365,42 @@ async def test_remove_instructors_bulk_partial_ok() -> None:
         1, GroupMembersBulk(user_ids=[8]), _user("admin"), db=db
     )
     assert [i.id for i in result.instructors] == [7]
+
+
+def test_bulk_routes_not_shadowed_by_param_routes() -> None:
+    """Bulk endpoints must register before parametric /{user_id} routes.
+
+    FastAPI matches routes in registration order; if the parametric route
+    is first, ``/bulk`` is captured as ``user_id`` and 422s. This replicates
+    Starlette's first-FULL-match resolution against the mounted app, which a
+    direct-function unit test cannot catch.
+    """
+    from fastapi import FastAPI
+    from starlette.routing import Match
+
+    from app.routers import groups as groups_router
+
+    app = FastAPI()
+    app.include_router(groups_router.router, prefix="/api")
+
+    def _first_match(method: str, path: str):
+        scope = {"type": "http", "method": method, "path": path}
+        for route in app.router.routes:
+            match, _ = route.matches(scope)
+            if match == Match.FULL:
+                return route
+        return None
+
+    cases = [
+        ("POST", "/api/groups/1/members/bulk", "add_members_bulk"),
+        ("DELETE", "/api/groups/1/members/bulk", "remove_members_bulk"),
+        ("POST", "/api/groups/1/instructors/bulk", "add_instructors_bulk"),
+        ("DELETE", "/api/groups/1/instructors/bulk", "remove_instructors_bulk"),
+    ]
+    for method, path, expected in cases:
+        route = _first_match(method, path)
+        assert route is not None, f"{method} {path} matched no route"
+        assert route.endpoint.__name__ == expected, (
+            f"{method} {path} resolved to {route.endpoint.__name__}, "
+            f"expected {expected} (route-shadowing regression)"
+        )

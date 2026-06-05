@@ -176,40 +176,6 @@ async def list_members(
     return sorted(group.members, key=lambda u: u.name)
 
 
-@router.post("/{group_id}/members/{user_id}", response_model=GroupOut, status_code=201)
-async def add_member(
-    group_id: int,
-    user_id: int,
-    user: Annotated[User, Depends(_editor)],
-    db: AsyncSession = Depends(get_db),
-):
-    group = await _get_group_or_404(db, group_id)
-    _require_manage(user, group)
-    (student,) = await _load_users(db, [user_id], "student")
-    if student.id not in {m.id for m in group.members}:
-        group.members.append(student)
-        await db.commit()
-        await db.refresh(group, ["members", "instructors"])
-    return group
-
-
-@router.delete("/{group_id}/members/{user_id}", response_model=GroupOut)
-async def remove_member(
-    group_id: int,
-    user_id: int,
-    user: Annotated[User, Depends(_editor)],
-    db: AsyncSession = Depends(get_db),
-):
-    group = await _get_group_or_404(db, group_id)
-    _require_manage(user, group)
-    member = next((m for m in group.members if m.id == user_id), None)
-    if member is not None:
-        group.members.remove(member)
-        await db.commit()
-        await db.refresh(group, ["members", "instructors"])
-    return group
-
-
 @router.post("/{group_id}/members/bulk", response_model=GroupOut)
 async def add_members_bulk(
     group_id: int,
@@ -245,6 +211,40 @@ async def remove_members_bulk(
     return group
 
 
+@router.post("/{group_id}/members/{user_id}", response_model=GroupOut, status_code=201)
+async def add_member(
+    group_id: int,
+    user_id: int,
+    user: Annotated[User, Depends(_editor)],
+    db: AsyncSession = Depends(get_db),
+):
+    group = await _get_group_or_404(db, group_id)
+    _require_manage(user, group)
+    (student,) = await _load_users(db, [user_id], "student")
+    if student.id not in {m.id for m in group.members}:
+        group.members.append(student)
+        await db.commit()
+        await db.refresh(group, ["members", "instructors"])
+    return group
+
+
+@router.delete("/{group_id}/members/{user_id}", response_model=GroupOut)
+async def remove_member(
+    group_id: int,
+    user_id: int,
+    user: Annotated[User, Depends(_editor)],
+    db: AsyncSession = Depends(get_db),
+):
+    group = await _get_group_or_404(db, group_id)
+    _require_manage(user, group)
+    member = next((m for m in group.members if m.id == user_id), None)
+    if member is not None:
+        group.members.remove(member)
+        await db.commit()
+        await db.refresh(group, ["members", "instructors"])
+    return group
+
+
 # ── Instructors (owners) ──────────────────────────────────
 
 
@@ -256,49 +256,6 @@ async def list_instructors(
 ):
     group = await _get_group_or_404(db, group_id)
     return sorted(group.instructors, key=lambda u: u.name)
-
-
-@router.post(
-    "/{group_id}/instructors/{user_id}", response_model=GroupOut, status_code=201,
-)
-async def add_instructor(
-    group_id: int,
-    user_id: int,
-    user: Annotated[User, Depends(_editor)],
-    db: AsyncSession = Depends(get_db),
-):
-    group = await _get_group_or_404(db, group_id)
-    _require_manage(user, group)
-    (instructor,) = await _load_users(db, [user_id], "instructor")
-    if instructor.id not in {i.id for i in group.instructors}:
-        group.instructors.append(instructor)
-        await db.commit()
-        await db.refresh(group, ["members", "instructors"])
-    return group
-
-
-@router.delete("/{group_id}/instructors/{user_id}", response_model=GroupOut)
-async def remove_instructor(
-    group_id: int,
-    user_id: int,
-    user: Annotated[User, Depends(_editor)],
-    db: AsyncSession = Depends(get_db),
-):
-    group = await _get_group_or_404(db, group_id)
-    _require_manage(user, group)
-    if len(group.instructors) <= 1 and any(
-        i.id == user_id for i in group.instructors
-    ):
-        raise HTTPException(
-            status_code=409,
-            detail="Cannot remove the last instructor from a group",
-        )
-    instructor = next((i for i in group.instructors if i.id == user_id), None)
-    if instructor is not None:
-        group.instructors.remove(instructor)
-        await db.commit()
-        await db.refresh(group, ["members", "instructors"])
-    return group
 
 
 @router.post("/{group_id}/instructors/bulk", response_model=GroupOut)
@@ -341,4 +298,47 @@ async def remove_instructors_bulk(
     group.instructors = remaining
     await db.commit()
     await db.refresh(group, ["members", "instructors"])
+    return group
+
+
+@router.post(
+    "/{group_id}/instructors/{user_id}", response_model=GroupOut, status_code=201,
+)
+async def add_instructor(
+    group_id: int,
+    user_id: int,
+    user: Annotated[User, Depends(_editor)],
+    db: AsyncSession = Depends(get_db),
+):
+    group = await _get_group_or_404(db, group_id)
+    _require_manage(user, group)
+    (instructor,) = await _load_users(db, [user_id], "instructor")
+    if instructor.id not in {i.id for i in group.instructors}:
+        group.instructors.append(instructor)
+        await db.commit()
+        await db.refresh(group, ["members", "instructors"])
+    return group
+
+
+@router.delete("/{group_id}/instructors/{user_id}", response_model=GroupOut)
+async def remove_instructor(
+    group_id: int,
+    user_id: int,
+    user: Annotated[User, Depends(_editor)],
+    db: AsyncSession = Depends(get_db),
+):
+    group = await _get_group_or_404(db, group_id)
+    _require_manage(user, group)
+    if len(group.instructors) <= 1 and any(
+        i.id == user_id for i in group.instructors
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot remove the last instructor from a group",
+        )
+    instructor = next((i for i in group.instructors if i.id == user_id), None)
+    if instructor is not None:
+        group.instructors.remove(instructor)
+        await db.commit()
+        await db.refresh(group, ["members", "instructors"])
     return group
