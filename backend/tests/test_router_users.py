@@ -9,7 +9,6 @@ from fastapi import HTTPException
 
 from app.routers.users import (
     VALID_ROLES,
-    _user_to_out,
     _set_user_programs,
     list_users,
     get_user,
@@ -21,6 +20,7 @@ from app.routers.users import (
     delete_user,
 )
 from app.schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete
+from app.serializers import user_to_out
 
 
 def _make_program(id: int = 1, name: str = "Biology") -> SimpleNamespace:
@@ -52,14 +52,14 @@ def _make_user(
 def test_user_to_out_with_programs() -> None:
     prog = _make_program(1, "Biology")
     user = _make_user(programs=[prog])
-    data = _user_to_out(user)
+    data = user_to_out(user)
     assert data["program_names"] == ["Biology"]
     assert data["program_ids"] == [1]
 
 
 def test_user_to_out_without_programs() -> None:
     user = _make_user()
-    data = _user_to_out(user)
+    data = user_to_out(user)
     assert data["program_names"] == []
     assert data["program_ids"] == []
 

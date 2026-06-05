@@ -73,22 +73,14 @@ export default function CohortMembersDialog({
     setPendingId(student.id)
     setError(null)
     try {
-      if (member) {
-        await addCohortMember(cohort.id, student.id)
-      } else {
-        await removeCohortMember(cohort.id, student.id)
-      }
+      // The endpoints return the updated user; trust the server's
+      // program_ids rather than re-deriving them locally so any cascading
+      // server-side membership changes are reflected accurately.
+      const updated = member
+        ? await addCohortMember(cohort.id, student.id)
+        : await removeCohortMember(cohort.id, student.id)
       setStudents((prev) =>
-        prev.map((s) =>
-          s.id === student.id
-            ? {
-                ...s,
-                program_ids: member
-                  ? [...s.program_ids, cohort.id]
-                  : s.program_ids.filter((pid) => pid !== cohort.id),
-              }
-            : s,
-        ),
+        prev.map((s) => (s.id === updated.id ? updated : s)),
       )
     } catch {
       setError(

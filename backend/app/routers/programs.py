@@ -16,7 +16,7 @@ from ..authz import (
 from ..database import get_db
 from ..models import Program, User, user_programs
 from ..schemas import ProgramCreate, ProgramUpdate, ProgramOut, UserOut
-from .users import _user_to_out
+from ..serializers import user_to_out
 
 router = APIRouter(prefix="/programs", tags=["programs"])
 
@@ -144,6 +144,15 @@ async def update_program(
             raise HTTPException(status_code=409, detail="Program name already exists")
 
     if "parent_program_id" in update_data:
+        # Reparenting (and promoting a cohort to a tenant via ``null``) is an
+        # admin-only structural change. The instructor guard above already
+        # blocks this, but assert it explicitly here so the invariant survives
+        # any future refactor of that guard.
+        if user.role != "admin":
+            raise HTTPException(
+                status_code=403,
+                detail="Only admins can change a program's parent",
+            )
         new_parent_id = update_data["parent_program_id"]
         if new_parent_id is not None:
             if new_parent_id == program_id:
@@ -257,7 +266,7 @@ async def add_cohort_member(
     )
     await db.commit()
     await db.refresh(student, ["programs"])
-    return _user_to_out(student)
+    return user_to_out(student)
 
 
 @router.delete("/{cohort_id}/members/{user_id}", response_model=UserOut)
@@ -282,4 +291,4 @@ async def remove_cohort_member(
     )
     await db.commit()
     await db.refresh(student, ["programs"])
-    return _user_to_out(student)
+    return user_to_out(student)

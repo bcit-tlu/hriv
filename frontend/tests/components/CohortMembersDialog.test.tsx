@@ -51,8 +51,14 @@ describe('CohortMembersDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(api.fetchUsers).mockResolvedValue(users)
-    vi.mocked(api.addCohortMember).mockResolvedValue(mkUser({ id: 1 }))
-    vi.mocked(api.removeCohortMember).mockResolvedValue(mkUser({ id: 2 }))
+    // Endpoints return the updated user; mirror the post-mutation program_ids
+    // so the dialog reflects membership from the server response.
+    vi.mocked(api.addCohortMember).mockResolvedValue(
+      mkUser({ id: 1, name: 'Alice', email: 'alice@bcit.ca', program_ids: [1, 3] }),
+    )
+    vi.mocked(api.removeCohortMember).mockResolvedValue(
+      mkUser({ id: 2, name: 'Bob', email: 'bob@bcit.ca', program_ids: [1] }),
+    )
   })
 
   it('lists only students that belong to the cohort tenant', async () => {
