@@ -33,6 +33,8 @@ All seed users share the password `password`.
 6. Clear password, enter correct password: `password`, click Sign in.
 7. **Assert:** Login succeeds — AppBar appears with avatar, tabs are visible.
 8. **Assert:** Category tiles load (at least "Architecture" and "Panoramas" visible).
+9. Click Logout. Enter email with mixed case: `Admin@Example.CA`, password: `password`, click Sign in.
+10. **Assert:** Login succeeds — email matching is case-insensitive.
 
 ---
 
