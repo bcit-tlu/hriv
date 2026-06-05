@@ -76,6 +76,67 @@ class ProgramOut(ProgramBase):
     model_config = {"from_attributes": True}
 
 
+# ── Group ─────────────────────────────────────────────────
+
+class GroupBase(BaseModel):
+    name: str
+    description: str | None = None
+
+
+class GroupCreate(GroupBase):
+    pass
+
+
+class GroupUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+
+
+class GroupMemberOut(BaseModel):
+    """Minimal user representation for group member/instructor listings."""
+
+    id: int
+    name: str
+    email: str
+    role: str
+
+    model_config = {"from_attributes": True}
+
+
+class GroupOut(GroupBase):
+    id: int
+    created_by_user_id: int | None = None
+    member_ids: list[int] = []
+    instructor_ids: list[int] = []
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_member_ids(cls, data: object) -> object:
+        """Flatten the members/instructors relationships into id lists."""
+        if hasattr(data, "members"):
+            return dict(
+                id=data.id,
+                name=data.name,
+                description=data.description,
+                created_by_user_id=data.created_by_user_id,
+                member_ids=[m.id for m in data.members],
+                instructor_ids=[i.id for i in data.instructors],
+                created_at=data.created_at,
+                updated_at=data.updated_at,
+            )
+        return data
+
+
+class GroupMembersBulk(BaseModel):
+    """Payload for bulk add/remove of group members or instructors."""
+
+    user_ids: list[int]
+
+
 # ── Announcement ─────────────────────────────────────────
 
 class AnnouncementOut(BaseModel):
@@ -95,10 +156,23 @@ class AnnouncementUpdate(BaseModel):
 
 # ── Category ──────────────────────────────────────────────
 
+class CategoryWarning(BaseModel):
+    """Non-blocking advisory returned on category create/update.
+
+    Emitted when program and group restrictions intersect such that the
+    effective (AND-gated) student audience is narrower than either dimension
+    alone. The operation still succeeds; this is purely informational.
+    """
+
+    code: str
+    message: str
+
+
 class CategoryBase(BaseModel):
     label: str
     parent_id: int | None = None
     program_ids: list[int] = []
+    group_ids: list[int] = []
     status: str | None = "active"
     sort_order: int = 0
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
@@ -112,6 +186,7 @@ class CategoryUpdate(BaseModel):
     label: str | None = None
     parent_id: int | None = None
     program_ids: list[int] | None = None
+    group_ids: list[int] | None = None
     status: str | None = None
     sort_order: int | None = None
     metadata_extra: dict | None = None
@@ -131,25 +206,29 @@ class CategoryOut(CategoryBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    warnings: list[CategoryWarning] = []
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
     @model_validator(mode="before")
     @classmethod
     def extract_program_ids(cls, data: object) -> object:
-        """Convert the 'programs' relationship list into 'program_ids'."""
+        """Convert the 'programs'/'groups' relationships into id lists."""
         if hasattr(data, "programs"):
             program_ids = [p.id for p in data.programs]
+            group_ids = [g.id for g in data.groups]
             return dict(
                 label=data.label,
                 parent_id=data.parent_id,
                 program_ids=program_ids,
+                group_ids=group_ids,
                 status=data.status,
                 sort_order=data.sort_order,
                 metadata_=data.metadata_,
                 id=data.id,
                 created_at=data.created_at,
                 updated_at=data.updated_at,
+                warnings=getattr(data, "_category_warnings", []),
             )
         return data
 

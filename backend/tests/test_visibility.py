@@ -10,17 +10,23 @@ def _prog(id: int) -> SimpleNamespace:
     return SimpleNamespace(id=id)
 
 
+def _group(id: int) -> SimpleNamespace:
+    return SimpleNamespace(id=id)
+
+
 def _cat(
     id: int,
     parent_id: int | None = None,
     status: str = "active",
     programs: list | None = None,
+    groups: list | None = None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         id=id,
         parent_id=parent_id,
         status=status,
         programs=programs or [],
+        groups=groups or [],
     )
 
 
@@ -194,3 +200,100 @@ async def test_visible_category_not_in_db() -> None:
     db.get = AsyncMock(return_value=None)
     result = await is_category_visible_to_student(db, 999, {1})
     assert result is True
+
+
+# ── group gate (second visibility dimension) ─────────────────
+
+
+async def test_excluded_group_restricted_no_overlap() -> None:
+    cats = [_cat(1, groups=[_group(10)]), _cat(2)]
+    db = _mock_db_for_excluded(cats)
+    excluded = await get_student_excluded_category_ids(
+        db, set(), user_group_ids={20}
+    )
+    assert excluded == {1}
+
+
+async def test_excluded_group_restricted_with_overlap() -> None:
+    cats = [_cat(1, groups=[_group(10)]), _cat(2)]
+    db = _mock_db_for_excluded(cats)
+    excluded = await get_student_excluded_category_ids(
+        db, set(), user_group_ids={10}
+    )
+    assert excluded == set()
+
+
+async def test_excluded_dual_gate_requires_both() -> None:
+    """Category restricted by both program AND group; student must satisfy both."""
+    cats = [_cat(1, programs=[_prog(10)], groups=[_group(20)])]
+    db = _mock_db_for_excluded(cats)
+
+    # In program but not group → excluded.
+    assert await get_student_excluded_category_ids(
+        db, {10}, user_group_ids={99}
+    ) == {1}
+
+
+async def test_excluded_dual_gate_in_group_not_program() -> None:
+    cats = [_cat(1, programs=[_prog(10)], groups=[_group(20)])]
+    db = _mock_db_for_excluded(cats)
+    # In group but not program → still excluded (AND).
+    assert await get_student_excluded_category_ids(
+        db, {99}, user_group_ids={20}
+    ) == {1}
+
+
+async def test_excluded_dual_gate_in_both_visible() -> None:
+    cats = [_cat(1, programs=[_prog(10)], groups=[_group(20)])]
+    db = _mock_db_for_excluded(cats)
+    assert await get_student_excluded_category_ids(
+        db, {10}, user_group_ids={20}
+    ) == set()
+
+
+async def test_excluded_cascade_from_group_restricted_parent() -> None:
+    cats = [
+        _cat(1, groups=[_group(10)]),
+        _cat(2, parent_id=1),
+        _cat(3, parent_id=2),
+    ]
+    db = _mock_db_for_excluded(cats)
+    excluded = await get_student_excluded_category_ids(
+        db, set(), user_group_ids={99}
+    )
+    assert excluded == {1, 2, 3}
+
+
+async def test_visible_group_restricted_no_overlap() -> None:
+    cat = _cat(5, parent_id=None, groups=[_group(10)])
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+    result = await is_category_visible_to_student(
+        db, 5, set(), user_group_ids={20}
+    )
+    assert result is False
+
+
+async def test_visible_group_restricted_with_overlap() -> None:
+    cat = _cat(5, parent_id=None, groups=[_group(10)])
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+    result = await is_category_visible_to_student(
+        db, 5, set(), user_group_ids={10}
+    )
+    assert result is True
+
+
+async def test_visible_group_restricted_ancestor() -> None:
+    child = _cat(5, parent_id=3)
+    parent = _cat(3, parent_id=None, groups=[_group(10)])
+
+    async def mock_get(model, id_val):
+        return {5: child, 3: parent}.get(id_val)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=mock_get)
+    result = await is_category_visible_to_student(
+        db, 5, set(), user_group_ids={20}
+    )
+    assert result is False

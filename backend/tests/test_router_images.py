@@ -155,7 +155,7 @@ async def test_get_image_student_inactive() -> None:
 
 async def test_get_image_student_hidden_category() -> None:
     img = _make_image(category_id=5)
-    cat = SimpleNamespace(id=5, status="hidden", programs=[], parent_id=None)
+    cat = SimpleNamespace(id=5, status="hidden", programs=[], groups=[], parent_id=None)
 
     db = AsyncMock()
     db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
@@ -167,7 +167,7 @@ async def test_get_image_student_hidden_category() -> None:
 
 async def test_get_image_student_visible_category() -> None:
     img = _make_image(category_id=5)
-    cat = SimpleNamespace(id=5, status="active", programs=[], parent_id=None)
+    cat = SimpleNamespace(id=5, status="active", programs=[], groups=[], parent_id=None)
 
     db = AsyncMock()
     db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
@@ -179,7 +179,7 @@ async def test_get_image_student_visible_category() -> None:
 async def test_get_image_student_program_restricted() -> None:
     prog = SimpleNamespace(id=10)
     img = _make_image(category_id=5)
-    cat = SimpleNamespace(id=5, status="active", programs=[prog], parent_id=None)
+    cat = SimpleNamespace(id=5, status="active", programs=[prog], groups=[], parent_id=None)
 
     db = AsyncMock()
     db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
@@ -192,7 +192,7 @@ async def test_get_image_student_program_restricted() -> None:
 async def test_get_image_student_matching_program() -> None:
     prog = SimpleNamespace(id=10)
     img = _make_image(category_id=5)
-    cat = SimpleNamespace(id=5, status="active", programs=[prog], parent_id=None)
+    cat = SimpleNamespace(id=5, status="active", programs=[prog], groups=[], parent_id=None)
 
     db = AsyncMock()
     db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)
@@ -213,7 +213,7 @@ async def test_get_image_student_uncategorized_visible() -> None:
 async def test_get_image_admin_sees_restricted() -> None:
     prog = SimpleNamespace(id=10)
     img = _make_image(category_id=5)
-    cat = SimpleNamespace(id=5, status="active", programs=[prog], parent_id=None)
+    cat = SimpleNamespace(id=5, status="active", programs=[prog], groups=[], parent_id=None)
 
     db = AsyncMock()
     db.get = AsyncMock(side_effect=lambda model, id_val: img if id_val == 1 else cat)

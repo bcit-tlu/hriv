@@ -22,3 +22,24 @@ def user_to_out(user: User) -> dict:
         "created_at": user.created_at,
         "updated_at": user.updated_at,
     }
+
+
+def user_to_mini_out(user: User) -> dict:
+    """Minimal user representation (id, name, email, role).
+
+    Used for instructor-facing listings (e.g. selecting students for group
+    membership) so that program associations, metadata, and access times of
+    other users are not disclosed. Program/metadata fields are emptied.
+    """
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role,
+        "program_ids": [],
+        "program_names": [],
+        "metadata_extra": None,
+        "last_access": None,
+        "created_at": user.created_at,
+        "updated_at": user.updated_at,
+    }

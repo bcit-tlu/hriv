@@ -8,7 +8,7 @@ from ..auth import require_role, hash_password
 from ..database import get_db
 from ..models import Program, User
 from ..schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete, UserOut
-from ..serializers import user_to_out
+from ..serializers import user_to_mini_out, user_to_out
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -41,8 +41,15 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(User).order_by(User.name)
+    # Instructors may list students (to populate group membership) but only
+    # see minimal fields, and never other staff accounts. Admins see all
+    # users with full detail.
+    if _user.role == "instructor":
+        stmt = stmt.where(User.role == "student")
     result = await db.execute(stmt)
     users = result.scalars().unique().all()
+    if _user.role == "instructor":
+        return [user_to_mini_out(u) for u in users]
     return [user_to_out(u) for u in users]
 
 

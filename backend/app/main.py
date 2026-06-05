@@ -25,6 +25,7 @@ from .routers import (
     auth,
     bulk_import,
     categories,
+    groups,
     images,
     issues,
     oidc,
@@ -178,6 +179,7 @@ app.include_router(admin.router, prefix="/api")
 app.include_router(bulk_import.router, prefix="/api")
 app.include_router(announcement.router, prefix="/api")
 app.include_router(categories.router, prefix="/api")
+app.include_router(groups.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
 app.include_router(issues.router, prefix="/api")
 app.include_router(programs.router, prefix="/api")

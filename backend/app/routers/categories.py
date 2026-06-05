@@ -9,14 +9,119 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
+from ..authz import (
+    can_attach_group_to_category,
+    can_attach_program_to_category,
+)
 from ..database import get_db
-from ..models import Category, Image, Program, User
-from ..schemas import CategoryCreate, CategoryUpdate, CategoryOut, CategoryTree, CategoryReorderRequest, ImageOut
+from ..models import Category, Group, Image, Program, User
+from ..schemas import (
+    CategoryCreate,
+    CategoryUpdate,
+    CategoryOut,
+    CategoryTree,
+    CategoryReorderRequest,
+    CategoryWarning,
+    ImageOut,
+)
 from ..visibility import compute_excluded_category_ids, get_student_excluded_category_ids, is_category_visible_to_student
 
 tracer = trace.get_tracer(__name__)
 
 router = APIRouter(prefix="/categories", tags=["categories"])
+
+
+async def _resolve_programs(
+    db: AsyncSession, user: User, program_ids: list[int], existing_ids: set[int],
+) -> list[Program]:
+    """Validate program ids exist and that *user* may attach the new ones.
+
+    Programs already attached (in *existing_ids*) are left untouched — any
+    editor may remove a restriction (edit authority is global). Only newly
+    added programs require attach authority (admins: any; instructors: only
+    programs they belong to).
+    """
+    if not program_ids:
+        return []
+    progs = (await db.execute(
+        select(Program).where(Program.id.in_(program_ids))
+    )).scalars().all()
+    found_ids = {p.id for p in progs}
+    missing = set(program_ids) - found_ids
+    if missing:
+        raise HTTPException(422, f"Invalid program IDs: {sorted(missing)}")
+    for pid in set(program_ids) - existing_ids:
+        if not can_attach_program_to_category(user, pid):
+            raise HTTPException(
+                403,
+                f"You may only attach programs you belong to (program {pid})",
+            )
+    return list(progs)
+
+
+async def _resolve_groups(
+    db: AsyncSession, user: User, group_ids: list[int], existing_ids: set[int],
+) -> list[Group]:
+    """Validate group ids exist and that *user* may attach the new ones.
+
+    Only newly added groups require attach authority (admins: any;
+    instructors: only groups they manage).
+    """
+    if not group_ids:
+        return []
+    grps = (await db.execute(
+        select(Group).where(Group.id.in_(group_ids))
+    )).scalars().all()
+    found_ids = {g.id for g in grps}
+    missing = set(group_ids) - found_ids
+    if missing:
+        raise HTTPException(422, f"Invalid group IDs: {sorted(missing)}")
+    by_id = {g.id: g for g in grps}
+    for gid in set(group_ids) - existing_ids:
+        group = by_id[gid]
+        if not can_attach_group_to_category(
+            user, [i.id for i in group.instructors]
+        ):
+            raise HTTPException(
+                403,
+                f"You may only attach groups you manage (group {gid})",
+            )
+    return list(grps)
+
+
+def _intersection_warnings(
+    programs: list[Program], groups: list[Group],
+) -> list[CategoryWarning]:
+    """Symmetric non-blocking advisory when program AND group gates intersect.
+
+    When a category is restricted by both dimensions, a student must satisfy
+    *both* (be in a selected program AND a selected group). Group members who
+    belong to none of the selected programs therefore lose access. This warns
+    about that reduction regardless of which dimension was added last.
+    """
+    if not programs or not groups:
+        return []
+    program_ids = {p.id for p in programs}
+    total_members: set[int] = set()
+    excluded_members: set[int] = set()
+    for group in groups:
+        for member in group.members:
+            total_members.add(member.id)
+            if not ({p.id for p in member.programs} & program_ids):
+                excluded_members.add(member.id)
+    if not excluded_members:
+        return []
+    return [
+        CategoryWarning(
+            code="program_group_intersection",
+            message=(
+                f"{len(excluded_members)} of {len(total_members)} student(s) in "
+                f"the selected group(s) are not in any selected program and will "
+                f"not see this category because program and group restrictions "
+                f"are combined (AND)."
+            ),
+        )
+    ]
 
 
 async def _load_tree(
@@ -25,6 +130,7 @@ async def _load_tree(
     *,
     user_role: str = "admin",
     user_program_ids: set[int] | None = None,
+    user_group_ids: set[int] | None = None,
 ) -> list[CategoryTree]:
     """Build the full category tree using two flat queries instead of
     recursive per-level SELECTs.  This reduces the number of DB round-trips
@@ -62,7 +168,7 @@ async def _load_tree(
     excluded: set[int] = set()
     if user_role == "student":
         excluded = compute_excluded_category_ids(
-            all_categories, user_program_ids or set(),
+            all_categories, user_program_ids or set(), user_group_ids or set(),
         )
 
     # ── Recursive assembly (in-memory only, no DB calls) ──
@@ -79,6 +185,7 @@ async def _load_tree(
                 label=cat.label,
                 parent_id=cat.parent_id,
                 program_ids=[p.id for p in cat.programs],
+                group_ids=[g.id for g in cat.groups],
                 status=cat.status,
                 sort_order=cat.sort_order,
                 metadata_extra=cat.metadata_,
@@ -107,8 +214,16 @@ async def get_category_tree(
         if _user.role == "student"
         else None
     )
+    user_group_ids = (
+        {g.id for g in _user.groups}
+        if _user.role == "student"
+        else None
+    )
     tree = await _load_tree(
-        db, None, user_role=_user.role, user_program_ids=user_program_ids,
+        db, None,
+        user_role=_user.role,
+        user_program_ids=user_program_ids,
+        user_group_ids=user_group_ids,
     )
 
     # ── ETag / Cache-Control ──
@@ -144,7 +259,10 @@ async def list_categories(
         stmt = stmt.where(Category.parent_id.is_(None))
     if _user.role == "student":
         user_program_ids = {p.id for p in _user.programs}
-        excluded = await get_student_excluded_category_ids(db, user_program_ids)
+        user_group_ids = {g.id for g in _user.groups}
+        excluded = await get_student_excluded_category_ids(
+            db, user_program_ids, user_group_ids,
+        )
         if excluded:
             stmt = stmt.where(~Category.id.in_(excluded))
     stmt = stmt.order_by(Category.sort_order, Category.label)
@@ -163,7 +281,10 @@ async def get_category(
         raise HTTPException(status_code=404, detail="Category not found")
     if _user.role == "student":
         user_program_ids = {p.id for p in _user.programs}
-        if not await is_category_visible_to_student(db, category_id, user_program_ids):
+        user_group_ids = {g.id for g in _user.groups}
+        if not await is_category_visible_to_student(
+            db, category_id, user_program_ids, user_group_ids,
+        ):
             raise HTTPException(status_code=404, detail="Category not found")
     return cat
 
@@ -188,6 +309,9 @@ async def create_category(
             detail="A category with this name already exists at this level",
         )
 
+    progs = await _resolve_programs(db, _user, body.program_ids, set())
+    grps = await _resolve_groups(db, _user, body.group_ids, set())
+
     cat = Category(
         label=body.label,
         parent_id=body.parent_id,
@@ -195,18 +319,12 @@ async def create_category(
         sort_order=body.sort_order,
         metadata_=body.metadata_extra or {},
     )
-    if body.program_ids:
-        progs = (await db.execute(
-            select(Program).where(Program.id.in_(body.program_ids))
-        )).scalars().all()
-        found_ids = {p.id for p in progs}
-        missing = set(body.program_ids) - found_ids
-        if missing:
-            raise HTTPException(422, f"Invalid program IDs: {sorted(missing)}")
-        cat.programs = list(progs)
+    cat.programs = progs
+    cat.groups = grps
     db.add(cat)
     await db.commit()
     await db.refresh(cat)
+    cat._category_warnings = _intersection_warnings(progs, grps)
     return cat
 
 
@@ -256,24 +374,26 @@ async def update_category(
                 detail="A category with this name already exists at this level",
             )
     program_ids = update_data.pop("program_ids", None)
+    group_ids = update_data.pop("group_ids", None)
     if "metadata_extra" in update_data:
         update_data["metadata_"] = update_data.pop("metadata_extra")
     for key, value in update_data.items():
         setattr(cat, key, value)
     if program_ids is not None:
-        if program_ids:
-            progs = (await db.execute(
-                select(Program).where(Program.id.in_(program_ids))
-            )).scalars().all()
-            found_ids = {p.id for p in progs}
-            missing = set(program_ids) - found_ids
-            if missing:
-                raise HTTPException(422, f"Invalid program IDs: {sorted(missing)}")
-            cat.programs = list(progs)
-        else:
-            cat.programs = []
+        existing_program_ids = {p.id for p in cat.programs}
+        cat.programs = await _resolve_programs(
+            db, _user, program_ids, existing_program_ids,
+        )
+    if group_ids is not None:
+        existing_group_ids = {g.id for g in cat.groups}
+        cat.groups = await _resolve_groups(
+            db, _user, group_ids, existing_group_ids,
+        )
     await db.commit()
     await db.refresh(cat)
+    cat._category_warnings = _intersection_warnings(
+        list(cat.programs), list(cat.groups)
+    )
     return cat
 
 

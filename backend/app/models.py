@@ -19,6 +19,29 @@ category_programs = Table(
     Column("program_id", Integer, ForeignKey("programs.id", ondelete="CASCADE"), primary_key=True),
 )
 
+group_members = Table(
+    "group_members",
+    Base.metadata,
+    Column("group_id", Integer, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+)
+
+group_instructors = Table(
+    "group_instructors",
+    Base.metadata,
+    Column("group_id", Integer, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+    Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
+    Column("created_at", DateTime(timezone=True), server_default=func.now()),
+)
+
+category_groups = Table(
+    "category_groups",
+    Base.metadata,
+    Column("category_id", Integer, ForeignKey("categories.id", ondelete="CASCADE"), primary_key=True),
+    Column("group_id", Integer, ForeignKey("groups.id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class Program(Base):
     __tablename__ = "programs"
@@ -37,6 +60,41 @@ class Program(Base):
 
     users: Mapped[list["User"]] = relationship(
         "User", secondary=user_programs, back_populates="programs", viewonly=True,
+    )
+
+
+class Group(Base):
+    """First-class, instructor-managed visibility group.
+
+    Independent of programs: a category may be gated by programs and/or
+    groups, and students must satisfy both dimensions (see ``visibility``).
+    Group membership is students; ownership is the set of instructors in
+    ``group_instructors``.  ``created_by_user_id`` is audit-only.
+    """
+
+    __tablename__ = "groups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    members: Mapped[list["User"]] = relationship(
+        "User", secondary=group_members, lazy="selectin",
+    )
+    instructors: Mapped[list["User"]] = relationship(
+        "User", secondary=group_instructors, lazy="selectin",
+    )
+    categories: Mapped[list["Category"]] = relationship(
+        "Category", secondary=category_groups, lazy="selectin", viewonly=True,
     )
 
 
@@ -86,6 +144,9 @@ class Category(Base):
     )
     programs: Mapped[list["Program"]] = relationship(
         "Program", secondary=category_programs, lazy="selectin"
+    )
+    groups: Mapped[list["Group"]] = relationship(
+        "Group", secondary=category_groups, lazy="selectin"
     )
 
 
@@ -270,6 +331,9 @@ class User(Base):
 
     programs: Mapped[list["Program"]] = relationship(
         "Program", secondary=user_programs, back_populates="users", lazy="selectin"
+    )
+    groups: Mapped[list["Group"]] = relationship(
+        "Group", secondary=group_members, lazy="selectin", viewonly=True,
     )
 
 

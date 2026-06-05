@@ -29,6 +29,7 @@ from .models import (
     AdminTask,
     Announcement,
     Category,
+    Group,
     Image,
     Program,
     SourceImage,
@@ -197,6 +198,11 @@ async def run_db_export(task_id: int) -> None:
             result = await session.execute(select(Program).order_by(Program.id))
             programs = result.scalars().all()
 
+            # Groups
+            await _update_task(session, task, log_line="Exporting groups…", progress=15, check_cancelled=True)
+            result = await session.execute(select(Group).order_by(Group.id))
+            groups = result.scalars().unique().all()
+
             # Categories
             await _update_task(session, task, log_line="Exporting categories…", progress=20, check_cancelled=True)
             result = await session.execute(select(Category).order_by(Category.id))
@@ -239,12 +245,26 @@ async def run_db_export(task_id: int) -> None:
                     }
                     for p in programs
                 ],
+                "groups": [
+                    {
+                        "id": g.id,
+                        "name": g.name,
+                        "description": g.description,
+                        "created_by_user_id": g.created_by_user_id,
+                        "member_ids": [m.id for m in g.members],
+                        "instructor_ids": [i.id for i in g.instructors],
+                        "created_at": dt(g.created_at),
+                        "updated_at": dt(g.updated_at),
+                    }
+                    for g in groups
+                ],
                 "categories": [
                     {
                         "id": c.id,
                         "label": c.label,
                         "parent_id": c.parent_id,
                         "program_ids": [p.id for p in c.programs],
+                        "group_ids": [g.id for g in c.groups],
                         "status": c.status,
                         "sort_order": c.sort_order,
                         "metadata": c.metadata_,
@@ -331,6 +351,7 @@ async def run_db_export(task_id: int) -> None:
 
             summary = (
                 f"Exported {len(dump['programs'])} programs, "
+                f"{len(dump['groups'])} groups, "
                 f"{len(dump['categories'])} categories, "
                 f"{len(dump['images'])} images, "
                 f"{len(dump['users'])} users, "
@@ -457,8 +478,12 @@ async def run_db_import(task_id: int) -> None:
 
                 await data_session.execute(text("DELETE FROM source_images"))
                 await data_session.execute(text("DELETE FROM images"))
+                await data_session.execute(text("DELETE FROM category_groups"))
                 await data_session.execute(text("DELETE FROM category_programs"))
                 await data_session.execute(text("DELETE FROM categories"))
+                await data_session.execute(text("DELETE FROM group_members"))
+                await data_session.execute(text("DELETE FROM group_instructors"))
+                await data_session.execute(text("DELETE FROM groups"))
                 await data_session.execute(text("DELETE FROM user_programs"))
                 await data_session.execute(text("DELETE FROM users"))
                 await data_session.execute(text("DELETE FROM announcements"))
@@ -505,6 +530,32 @@ async def run_db_import(task_id: int) -> None:
                     data_session.add(user)
                 await data_session.flush()
 
+                # Import groups (after users: members/instructors/creator are users)
+                await _update_task(status_session, task, log_line="Importing groups…", progress=30)
+                for g in dump.get("groups", []):
+                    group = Group(
+                        id=g["id"],
+                        name=g["name"],
+                        description=g.get("description"),
+                        created_by_user_id=g.get("created_by_user_id"),
+                        created_at=_parse_dt(g.get("created_at")),
+                        updated_at=_parse_dt(g.get("updated_at")),
+                    )
+                    member_ids = g.get("member_ids", [])
+                    if member_ids:
+                        members = (await data_session.execute(
+                            select(User).where(User.id.in_(member_ids))
+                        )).scalars().all()
+                        group.members = list(members)
+                    instructor_ids = g.get("instructor_ids", [])
+                    if instructor_ids:
+                        instructors = (await data_session.execute(
+                            select(User).where(User.id.in_(instructor_ids))
+                        )).scalars().all()
+                        group.instructors = list(instructors)
+                    data_session.add(group)
+                await data_session.flush()
+
                 # Import categories (topologically sorted)
                 await _update_task(status_session, task, log_line="Importing categories…", progress=35)
                 inserted_ids: set[int] = set()
@@ -545,6 +596,14 @@ async def run_db_import(task_id: int) -> None:
                                     )
                                 )).scalars().all()
                                 cat.programs = list(progs)
+                            group_ids = c.get("group_ids", [])
+                            if group_ids:
+                                grps = (await data_session.execute(
+                                    select(Group).where(
+                                        Group.id.in_(group_ids)
+                                    )
+                                )).scalars().all()
+                                cat.groups = list(grps)
                             data_session.add(cat)
                             inserted_ids.add(c["id"])
                             progress_made = True
@@ -618,7 +677,7 @@ async def run_db_import(task_id: int) -> None:
 
                 # Reset sequences
                 await _update_task(status_session, task, log_line="Resetting sequences…", progress=85)
-                for tbl in ("programs", "categories", "images", "users", "announcements", "source_images"):
+                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "source_images"):
                     await data_session.execute(
                         text(
                             f"SELECT setval('{tbl}_id_seq', "
@@ -632,6 +691,7 @@ async def run_db_import(task_id: int) -> None:
 
                 summary = (
                     f"Imported {len(dump.get('programs', []))} programs, "
+                    f"{len(dump.get('groups', []))} groups, "
                     f"{len(dump['categories'])} categories, "
                     f"{len(dump['images'])} images, "
                     f"{len(dump['users'])} users, "
