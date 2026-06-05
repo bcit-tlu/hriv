@@ -1,7 +1,6 @@
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
-import Link from '@mui/material/Link'
-import { useTheme } from '@mui/material/styles'
+import Button from '@mui/material/Button'
 
 interface AnnouncementBannerProps {
   message: string
@@ -10,19 +9,12 @@ interface AnnouncementBannerProps {
 }
 
 export default function AnnouncementBanner({ message, variant = 'app', onDismiss }: AnnouncementBannerProps) {
-  const theme = useTheme()
-  const isDark = theme.palette.mode === 'dark'
-
   if (!message) return null
 
   if (variant === 'login') {
     return (
       <Box sx={{ width: '100%', maxWidth: 400, mb: 3 }}>
-        <Alert
-          severity="info"
-          variant="standard"
-          sx={isDark ? { bgcolor: '#1a3a5c', color: '#90caf9' } : undefined}
-        >
+        <Alert severity="info" variant="filled">
           {message}
         </Alert>
       </Box>
@@ -32,26 +24,19 @@ export default function AnnouncementBanner({ message, variant = 'app', onDismiss
   return (
     <Alert
       severity="info"
-      variant="standard"
+      variant="filled"
       action={
         onDismiss ? (
-          <Link
-            component="button"
-            underline="always"
+          <Button
             color="inherit"
+            size="small"
             onClick={onDismiss}
-            sx={{ whiteSpace: 'nowrap', fontSize: 'inherit' }}
           >
             Dismiss
-          </Link>
+          </Button>
         ) : undefined
       }
-      sx={{
-        borderRadius: 0,
-        justifyContent: 'center',
-        '& .MuiAlert-message': { textAlign: 'center' },
-        ...(isDark && { bgcolor: '#1a3a5c', color: '#90caf9' }),
-      }}
+      sx={{ '& .MuiAlert-action': { mr: 0 } }}
     >
       {message}
     </Alert>
