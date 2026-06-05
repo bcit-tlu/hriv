@@ -375,21 +375,31 @@ export default function App() {
     });
 
     // Reset navigation state when user identity changes (login/logout/switch).
-    // Track previous user so we only clear pending shared-link refs on actual
-    // user switches (logout or account change), not on the initial null→user
-    // auth transition which must preserve URL-parsed pending state.
+    // Track previous user so we only reset on actual user switches — NOT on
+    // the initial null→user auth transition (session restore after refresh)
+    // or the mount-time null→null render.  This preserves the URL-derived
+    // page state (initialised from the query string by useState) so that
+    // refreshing a non-browse page keeps the user where they were (#577).
     const prevUserRef = useRef(currentUser);
     useEffect(() => {
         const prevUser = prevUserRef.current;
         prevUserRef.current = currentUser;
-        setPage("browse");
-        setPath([]);
-        setSelectedImage(null);
-        setViewportState(undefined);
-        setOverlays([]);
-        if (prevUser != null && prevUser !== currentUser) {
+
+        const isRealUserSwitch = prevUser != null && prevUser !== currentUser;
+        if (isRealUserSwitch) {
+            setPage("browse");
+            setPath([]);
+            setSelectedImage(null);
+            setViewportState(undefined);
+            setOverlays([]);
             clearPending();
+            window.history.replaceState(
+                buildNavHistoryState("browse", [], null),
+                "",
+                window.location.pathname,
+            );
         }
+
         setProfileOpen(false);
         setEditModalOpen(false);
         setImageEditOpen(false);
@@ -397,11 +407,6 @@ export default function App() {
         setSearchOpen(false);
         setSearchUsers([]);
         resetProcessingJobs();
-        window.history.replaceState(
-            buildNavHistoryState("browse", [], null),
-            "",
-            window.location.pathname,
-        );
     }, [currentUser, resetProcessingJobs, setViewportState, setOverlays, clearPending, setImageEditOpen, setBrowseEditImage, setEditModalOpen, setProfileOpen]);
 
     // Initial data load — kept in this component (rather than inside
