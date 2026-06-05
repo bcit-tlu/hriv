@@ -264,6 +264,38 @@ async def test_admin_create_cohort_forces_oidc_null() -> None:
     assert created.oidc_group is None
 
 
+async def test_admin_update_parent_forces_oidc_null_even_if_submitted() -> None:
+    # Admin sets parent_program_id and oidc_group in the same request; the
+    # cohort invariant must win so the submitted oidc_group is discarded.
+    prog = SimpleNamespace(
+        id=1, name="P", parent_program_id=None, oidc_group="keep",
+    )
+    tenant = SimpleNamespace(id=5, name="MedLab", parent_program_id=None)
+    db = _dup_db()  # child-existence query returns None
+    db.get = AsyncMock(side_effect=[prog, tenant])
+
+    body = ProgramUpdate(parent_program_id=5, oidc_group="sneaky")
+    await update_program(1, body, _admin(), db)
+
+    assert prog.parent_program_id == 5
+    assert prog.oidc_group is None
+
+
+async def test_update_parent_rejected_when_program_has_cohorts() -> None:
+    prog = SimpleNamespace(
+        id=1, name="P", parent_program_id=None, oidc_group=None,
+    )
+    tenant = SimpleNamespace(id=5, name="MedLab", parent_program_id=None)
+    # child-existence query returns a row -> program already has cohorts.
+    db = _dup_db(scalar=999)
+    db.get = AsyncMock(side_effect=[prog, tenant])
+
+    body = ProgramUpdate(parent_program_id=5)
+    with pytest.raises(HTTPException) as exc:
+        await update_program(1, body, _admin(), db)
+    assert exc.value.status_code == 422
+
+
 async def test_instructor_renames_cohort_in_scope() -> None:
     cohort = _cohort(id=100, parent_program_id=5)
     db = _dup_db()

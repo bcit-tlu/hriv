@@ -237,9 +237,9 @@ describe('EditCategoryDialog', () => {
 
   describe('child program picker restriction', () => {
     const allPrograms = [
-      { id: 1, name: 'Program A' },
-      { id: 2, name: 'Program B' },
-      { id: 3, name: 'Program C' },
+      { id: 1, name: 'Program A', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
+      { id: 2, name: 'Program B', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
+      { id: 3, name: 'Program C', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
     ]
 
     it('disables programs not in the inherited set', () => {

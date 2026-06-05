@@ -157,13 +157,22 @@ async def update_program(
                     status_code=422,
                     detail="Cohorts cannot be nested; parent must be a top-level program",
                 )
-            if program.cohorts:
+            # Query for children directly: accessing the lazy ``cohorts``
+            # relationship would trigger blocking IO under the async session.
+            child = await db.execute(
+                select(Program.id)
+                .where(Program.parent_program_id == program_id)
+                .limit(1)
+            )
+            if child.scalar_one_or_none() is not None:
                 raise HTTPException(
                     status_code=422,
                     detail="Cannot turn a program with cohorts into a cohort",
                 )
-            # A cohort never carries an OIDC group.
-            program.oidc_group = None
+            # A cohort never carries an OIDC group. Route this through
+            # ``update_data`` so the setattr loop below cannot re-apply an
+            # ``oidc_group`` submitted in the same request.
+            update_data["oidc_group"] = None
 
     if "oidc_group" in update_data and update_data["oidc_group"] is not None:
         dup = await db.execute(
