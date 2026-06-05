@@ -392,6 +392,8 @@ export default function CanvasOverlay({
         const line = new fabric.Line(
           [topLeft.x, topLeft.y, endPt.x, endPt.y],
           {
+            originX: 'left',
+            originY: 'top',
             stroke: ann.color,
             strokeWidth: Math.max(1, (ann.strokeWidth ?? 2) * viewer.viewport.getZoom()),
             selectable: true,
@@ -415,6 +417,8 @@ export default function CanvasOverlay({
       if (ann.type === 'rect') {
         const isFilled = ann.filled ?? false
         const rect = new fabric.Rect({
+          originX: 'left',
+          originY: 'top',
           left: topLeft.x,
           top: topLeft.y,
           width: Math.abs(pw),
@@ -435,6 +439,8 @@ export default function CanvasOverlay({
       if (ann.type === 'circle') {
         const isFilled = ann.filled ?? false
         const ellipse = new fabric.Ellipse({
+          originX: 'left',
+          originY: 'top',
           left: topLeft.x,
           top: topLeft.y,
           rx: Math.abs(pw / 2),
@@ -457,6 +463,8 @@ export default function CanvasOverlay({
         const pxFontSize = Math.abs(vpFontSize * pw / (ann.vpWidth || 1))
         const displayText = ann.type === 'link' ? (ann.text || ann.url || 'Link') : (ann.text || '')
         const text = new fabric.IText(displayText, {
+          originX: 'left',
+          originY: 'top',
           left: topLeft.x,
           top: topLeft.y,
           fontFamily: 'sans-serif',
@@ -781,6 +789,7 @@ export default function CanvasOverlay({
     fc.hoverCursor = 'crosshair'
 
     const handleMouseDown = (opt: fabric.TEvent<fabric.TPointerEvent>) => {
+      if (opt.e instanceof MouseEvent && opt.e.button !== 0) return
       if (activeTool === 'text' || activeTool === 'link') return
       console.debug(LOG_PREFIX, 'mouse:down tool=', activeTool)
       isDrawingRef.current = true
@@ -790,6 +799,8 @@ export default function CanvasOverlay({
       if (activeTool === 'rect') {
         const isFilled = activeFillMode === 'filled'
         const rect = new fabric.Rect({
+          originX: 'left',
+          originY: 'top',
           left: pointer.x,
           top: pointer.y,
           width: 0,
@@ -810,6 +821,8 @@ export default function CanvasOverlay({
       } else if (activeTool === 'circle') {
         const isFilled = activeFillMode === 'filled'
         const ellipse = new fabric.Ellipse({
+          originX: 'left',
+          originY: 'top',
           left: pointer.x,
           top: pointer.y,
           rx: 0,
@@ -831,6 +844,8 @@ export default function CanvasOverlay({
         const line = new fabric.Line(
           [pointer.x, pointer.y, pointer.x, pointer.y],
           {
+            originX: 'left',
+            originY: 'top',
             stroke: activeColor,
             strokeWidth: activeLineWidth,
             selectable: false,
@@ -924,6 +939,8 @@ export default function CanvasOverlay({
     if (!fc) return
     const center = { x: fc.width! / 2, y: fc.height! / 2 }
     const text = new fabric.IText('Text', {
+      originX: 'left',
+      originY: 'top',
       left: center.x - 90,
       top: center.y - 30,
       fontFamily: 'sans-serif',
@@ -952,6 +969,8 @@ export default function CanvasOverlay({
     setLinkDialogOpen(false)
     const center = { x: fc.width! / 2, y: fc.height! / 2 }
     const text = new fabric.IText(linkText || linkUrl, {
+      originX: 'left',
+      originY: 'top',
       left: center.x - 120,
       top: center.y - 30,
       fontFamily: 'sans-serif',
