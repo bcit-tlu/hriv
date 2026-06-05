@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useRef } from "react";
 import { fetchAnnouncement, updateAnnouncement, userMessage } from "./api";
 
 const DISMISSED_KEY = "hriv_dismissed_announcement";
@@ -29,10 +29,6 @@ export function useAnnouncementModal() {
         }
     }, []);
 
-    useEffect(() => {
-        loadAnnouncement();
-    }, [loadAnnouncement]);
-
     const openAnnModal = useCallback(() => {
         setAnnDraftMessage(annMessage);
         setAnnDraftEnabled(annEnabled);
@@ -55,6 +51,7 @@ export function useAnnouncementModal() {
                 enabled: annDraftEnabled,
             });
             annUpdatedAt.current = updated.updated_at;
+            localStorage.removeItem(DISMISSED_KEY);
             setAnnMessage(updated.message);
             setAnnEnabled(updated.enabled);
             setAnnouncement(updated.enabled ? updated.message : "");

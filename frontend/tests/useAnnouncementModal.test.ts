@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { renderHook, act } from "@testing-library/react";
 import { useAnnouncementModal } from "../src/useAnnouncementModal";
 import * as api from "../src/api";
 
@@ -45,15 +45,21 @@ describe("useAnnouncementModal", () => {
         });
     });
 
-    describe("loadAnnouncement (auto-loads on mount)", () => {
+    describe("loadAnnouncement", () => {
+        it("does not auto-load on mount (caller controls fetch)", () => {
+            renderHook(() => useAnnouncementModal());
+            expect(mockFetchAnnouncement).not.toHaveBeenCalled();
+        });
+
         it("loads enabled announcement into display state", async () => {
             mockFetchAnnouncement.mockResolvedValue(
                 makeAnnouncement({ message: "Hello world", enabled: true }),
             );
             const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(result.current.announcement).toBe("Hello world");
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
+            expect(result.current.announcement).toBe("Hello world");
         });
 
         it("sets announcement to empty string when disabled", async () => {
@@ -61,8 +67,8 @@ describe("useAnnouncementModal", () => {
                 makeAnnouncement({ message: "Not visible", enabled: false }),
             );
             const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(mockFetchAnnouncement).toHaveBeenCalled();
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
             expect(result.current.announcement).toBe("");
         });
@@ -70,8 +76,8 @@ describe("useAnnouncementModal", () => {
         it("silently ignores fetch errors", async () => {
             mockFetchAnnouncement.mockRejectedValue(new Error("Network error"));
             const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(mockFetchAnnouncement).toHaveBeenCalled();
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
             expect(result.current.announcement).toBe("");
         });
@@ -83,8 +89,8 @@ describe("useAnnouncementModal", () => {
                 makeAnnouncement({ message: "Current msg", enabled: true }),
             );
             const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(result.current.announcement).toBe("Current msg");
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
 
             act(() => {
@@ -108,8 +114,8 @@ describe("useAnnouncementModal", () => {
             );
 
             const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(mockFetchAnnouncement).toHaveBeenCalledTimes(1);
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
 
             // Open modal and modify draft
@@ -133,8 +139,40 @@ describe("useAnnouncementModal", () => {
             expect(result.current.annModalOpen).toBe(false);
             // Display state updated immediately from response (no re-fetch needed)
             expect(result.current.announcement).toBe("New msg");
+            // Dismiss key cleared so banner is consistent on refresh
+            expect(localStorage.getItem("hriv_dismissed_announcement")).toBeNull();
             // No redundant re-fetch after save
             expect(mockFetchAnnouncement).toHaveBeenCalledTimes(1);
+        });
+
+        it("clears dismissed localStorage key on save", async () => {
+            mockFetchAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "Msg", enabled: true, updated_at: "2026-06-01T00:00:00Z" }),
+            );
+            mockUpdateAnnouncement.mockResolvedValue(
+                makeAnnouncement({ message: "Msg", enabled: true, updated_at: "2026-06-01T00:00:00Z" }),
+            );
+            localStorage.setItem("hriv_dismissed_announcement", "2026-06-01T00:00:00Z");
+
+            const { result } = renderHook(() => useAnnouncementModal());
+            await act(async () => {
+                await result.current.loadAnnouncement();
+            });
+
+            // Banner suppressed because dismissed key matches updated_at
+            expect(result.current.announcement).toBe("");
+
+            act(() => {
+                result.current.openAnnModal();
+            });
+
+            await act(async () => {
+                await result.current.handleAnnSave();
+            });
+
+            // After save, dismiss key cleared and banner shows
+            expect(localStorage.getItem("hriv_dismissed_announcement")).toBeNull();
+            expect(result.current.announcement).toBe("Msg");
         });
 
         it("clears announcement display immediately when saving as disabled", async () => {
@@ -146,8 +184,8 @@ describe("useAnnouncementModal", () => {
             );
 
             const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(result.current.announcement).toBe("Visible");
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
 
             act(() => {
@@ -169,8 +207,8 @@ describe("useAnnouncementModal", () => {
             mockUpdateAnnouncement.mockRejectedValue(new Error("Server error"));
 
             const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(mockFetchAnnouncement).toHaveBeenCalled();
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
 
             act(() => {
@@ -193,8 +231,8 @@ describe("useAnnouncementModal", () => {
                 makeAnnouncement({ message: "Hello", enabled: true, updated_at: "2026-06-01T00:00:00Z" }),
             );
             const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(result.current.announcement).toBe("Hello");
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
 
             act(() => {
@@ -211,8 +249,8 @@ describe("useAnnouncementModal", () => {
             localStorage.setItem("hriv_dismissed_announcement", "2026-06-01T00:00:00Z");
 
             const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(mockFetchAnnouncement).toHaveBeenCalled();
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
 
             expect(result.current.announcement).toBe("");
@@ -225,9 +263,10 @@ describe("useAnnouncementModal", () => {
             );
 
             const { result } = renderHook(() => useAnnouncementModal());
-            await waitFor(() => {
-                expect(result.current.announcement).toBe("New one");
+            await act(async () => {
+                await result.current.loadAnnouncement();
             });
+            expect(result.current.announcement).toBe("New one");
         });
     });
 
