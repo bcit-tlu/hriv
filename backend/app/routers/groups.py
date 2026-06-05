@@ -331,7 +331,9 @@ async def remove_instructors_bulk(
     _require_manage(user, group)
     to_remove = set(body.user_ids)
     remaining = [i for i in group.instructors if i.id not in to_remove]
-    if not remaining:
+    # Only block when this request would actually empty a non-empty roster;
+    # a no-op bulk remove on a group with no instructors must not 409.
+    if not remaining and group.instructors:
         raise HTTPException(
             status_code=409,
             detail="Cannot remove the last instructor from a group",

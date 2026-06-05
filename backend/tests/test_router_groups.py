@@ -345,6 +345,16 @@ async def test_remove_instructors_bulk_blocks_emptying() -> None:
     assert exc.value.status_code == 409
 
 
+async def test_remove_instructors_bulk_noop_on_empty_group() -> None:
+    # Admin-created groups start with no instructors; a bulk-remove must not 409.
+    group = _group(1, instructors=[])
+    db = _mock_db(group=group)
+    result = await remove_instructors_bulk(
+        1, GroupMembersBulk(user_ids=[7]), _user("admin"), db=db
+    )
+    assert list(result.instructors) == []
+
+
 async def test_remove_instructors_bulk_partial_ok() -> None:
     group = _group(
         1,
