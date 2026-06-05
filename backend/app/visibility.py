@@ -44,7 +44,7 @@ def _passes_gates(
 def compute_excluded_category_ids(
     categories: Sequence[Category],
     user_program_ids: set[int],
-    user_group_ids: set[int] | None = None,
+    user_group_ids: set[int],
 ) -> set[int]:
     """Pure in-memory computation of excluded category IDs.
 
@@ -58,7 +58,6 @@ def compute_excluded_category_ids(
     Categories with an empty programs/groups list are unrestricted on that
     dimension and visible to everyone.
     """
-    user_group_ids = user_group_ids or set()
     cat_by_id: dict[int, Category] = {c.id: c for c in categories}
     children_by_parent: dict[int | None, list[int]] = {}
     for cat in categories:
@@ -85,7 +84,7 @@ def compute_excluded_category_ids(
 async def get_student_excluded_category_ids(
     db: AsyncSession,
     user_program_ids: set[int],
-    user_group_ids: set[int] | None = None,
+    user_group_ids: set[int],
 ) -> set[int]:
     """Return the set of category IDs a student must not access.
 
@@ -104,7 +103,7 @@ async def is_category_visible_to_student(
     db: AsyncSession,
     category_id: int | None,
     user_program_ids: set[int],
-    user_group_ids: set[int] | None = None,
+    user_group_ids: set[int],
 ) -> bool:
     """Check whether *category_id* and all its ancestors are visible.
 
@@ -115,7 +114,6 @@ async def is_category_visible_to_student(
     if category_id is None:
         return True
 
-    user_group_ids = user_group_ids or set()
     current_id: int | None = category_id
     while current_id is not None:
         cat = await db.get(Category, current_id)
