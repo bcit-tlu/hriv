@@ -201,10 +201,10 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
               <FolderIcon sx={{ fontSize: 64, opacity: 0.85 }} />
             </Box>
           )}
-          <CardContent sx={{ opacity: category.status === 'hidden' ? 0.5 : 1 }}>
+          <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <FolderOutlinedIcon fontSize="small" color="action" sx={{ flexShrink: 0 }} />
-              <Typography variant="h6" noWrap>
+              <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0, opacity: category.status === 'hidden' ? 0.5 : 1 }} />
+              <Typography variant="h6" noWrap color="primary" sx={{ opacity: category.status === 'hidden' ? 0.5 : 1 }}>
                 {category.label}
               </Typography>
               {onEditName && (
@@ -223,11 +223,11 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
                 </IconButton>
               )}
             </Box>
-            <Typography variant="body2" color="text.secondary">
+            <Typography variant="body2" color="text.secondary" sx={{ opacity: category.status === 'hidden' ? 0.5 : 1 }}>
               {detailText}
             </Typography>
             {programChips.length > 0 && (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5, opacity: category.status === 'hidden' ? 0.5 : 1 }}>
                 {programChips.map((p) => (
                   <Chip key={p.id} label={p.name} size="small" color="primary" />
                 ))}
