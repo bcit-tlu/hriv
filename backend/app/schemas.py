@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import BaseModel, Field, computed_field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ── Overlay Rect (shared validation for locked_overlays in metadata_extra) ────
@@ -56,7 +56,6 @@ def _normalize_oidc_group(v: str | None) -> str | None:
 
 class ProgramCreate(ProgramBase):
     oidc_group: str | None = None
-    parent_program_id: int | None = None
 
     _norm_oidc = field_validator("oidc_group", mode="before")(_normalize_oidc_group)
 
@@ -64,7 +63,6 @@ class ProgramCreate(ProgramBase):
 class ProgramUpdate(BaseModel):
     name: str | None = None
     oidc_group: str | None = None
-    parent_program_id: int | None = None
 
     _norm_oidc = field_validator("oidc_group", mode="before")(_normalize_oidc_group)
 
@@ -72,16 +70,10 @@ class ProgramUpdate(BaseModel):
 class ProgramOut(ProgramBase):
     id: int
     oidc_group: str | None = None
-    parent_program_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
-
-    @computed_field
-    @property
-    def is_cohort(self) -> bool:
-        return self.parent_program_id is not None
 
 
 # ── Announcement ─────────────────────────────────────────

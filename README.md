@@ -33,26 +33,15 @@ All seed users share the password `password`.
 | Delete categories               | Yes   | Yes        | No      |
 | Manage page (image table)       | Yes   | Yes        | No      |
 | Bulk import images              | Yes   | Yes        | No      |
-| Manage tenant programs (top-level / OIDC) | Yes | No | No   |
-| Create & manage cohorts         | Yes   | Scoped¹    | No      |
-| Assign students to cohorts      | Yes   | Scoped¹    | No      |
+| Manage programs                 | Yes   | Yes        | No      |
 | Manage announcement             | Yes   | Yes        | No      |
 | Admin page (DB import/export)   | Yes   | No         | No      |
 | User management (add/delete)    | Yes   | No         | No      |
-| List users                      | Yes   | Scoped²    | No      |
+| List users                      | Yes   | Yes        | No      |
 
-¹ Instructor cohort authority is **tenant-derived**: an admin (or OIDC) assigns an instructor to one or more **tenant** programs, and the instructor may then create/rename/delete **cohorts** under those tenants and add/remove **students** to/from them — including cohorts created by other instructors in the same tenant. Instructors can never change tenant membership (their own or anyone's) and can never set a program's OIDC group, so they cannot escalate their own scope.
+### Programs
 
-² Instructors see only **students** who belong to one of their tenants; admins see all users.
-
-### Programs: tenants and cohorts
-
-A **program** is the access-control unit that gates category/image visibility for students. Programs come in two kinds, distinguished by the nullable self-reference `parent_program_id`:
-
-- **Tenant** (`parent_program_id IS NULL`, e.g. *MedLab Science*) — a top-level program. Tenants may carry an `oidc_group`, and tenant membership is controlled only by admins/OIDC.
-- **Cohort** (`parent_program_id` → a tenant; `oidc_group` always `NULL`) — an instructor-created subdivision of a tenant, used to restrict a category to a subset of that tenant's students (e.g. one assessment group). Cohorts are single-level — a cohort's parent must be a tenant.
-
-Typical flow: an admin/OIDC seeds instructors and students into a tenant → an instructor creates a cohort under that tenant and assigns their students → the instructor tags a new category with the cohort → only that cohort's students can see it (enforced by the existing student visibility filter). See [`docs/instructor-cohorts.md`](docs/instructor-cohorts.md) for full details.
+A **program** is a flat, admin/OIDC-managed access-control unit that gates category/image visibility for students. Any admin or instructor can create, rename, and delete programs; a program may carry an `oidc_group` so membership is provisioned automatically by the IdP. A category tagged with one or more programs is visible to a student only if they belong to at least one of those programs (enforced by the student visibility filter). Programs are not hierarchical.
 
 ### CLI Access via curl
 

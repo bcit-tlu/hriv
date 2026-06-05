@@ -234,7 +234,6 @@ async def run_db_export(task_id: int) -> None:
                         "id": p.id,
                         "name": p.name,
                         "oidc_group": p.oidc_group,
-                        "parent_program_id": p.parent_program_id,
                         "created_at": dt(p.created_at),
                         "updated_at": dt(p.updated_at),
                     }
@@ -467,18 +466,11 @@ async def run_db_import(task_id: int) -> None:
 
                 # Import programs
                 await _update_task(status_session, task, log_line="Importing programs…", progress=15, check_cancelled=True)
-                # Insert tenants (parent_program_id IS NULL) before cohorts so
-                # the self-referential FK (non-deferrable) is satisfied.
-                imported_programs = sorted(
-                    dump.get("programs", []),
-                    key=lambda p: p.get("parent_program_id") is not None,
-                )
-                for p in imported_programs:
+                for p in dump.get("programs", []):
                     program = Program(
                         id=p["id"],
                         name=p["name"],
                         oidc_group=p.get("oidc_group"),
-                        parent_program_id=p.get("parent_program_id"),
                         created_at=_parse_dt(p.get("created_at")),
                         updated_at=_parse_dt(p.get("updated_at")),
                     )

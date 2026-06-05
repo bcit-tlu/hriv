@@ -5,9 +5,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role, hash_password
-from ..authz import tenant_ids
 from ..database import get_db
-from ..models import Program, User, user_programs
+from ..models import Program, User
 from ..schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete, UserOut
 from ..serializers import user_to_out
 
@@ -41,26 +40,7 @@ async def list_users(
     _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
 ):
-    if _user.role == "admin":
-        stmt = select(User).order_by(User.name)
-    else:
-        # Instructors only see students who belong to one of their tenants.
-        tids = tenant_ids(_user)
-        if not tids:
-            return []
-        # A student in several of the instructor's tenants matches the JOIN
-        # once per tenant; DISTINCT collapses those duplicates in the DB so we
-        # don't transfer (and then re-dedup) redundant rows.
-        stmt = (
-            select(User)
-            .join(user_programs, user_programs.c.user_id == User.id)
-            .where(
-                User.role == "student",
-                user_programs.c.program_id.in_(tids),
-            )
-            .distinct()
-            .order_by(User.name)
-        )
+    stmt = select(User).order_by(User.name)
     result = await db.execute(stmt)
     users = result.scalars().unique().all()
     return [user_to_out(u) for u in users]

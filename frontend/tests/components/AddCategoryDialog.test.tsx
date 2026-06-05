@@ -147,9 +147,9 @@ describe('AddCategoryDialog', () => {
 
   it('defaults to "Specific programs" with inherited programs pre-selected', async () => {
     const programs = [
-      { id: 1, name: 'Nursing', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
-      { id: 2, name: 'Dental', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
-      { id: 3, name: 'Radiology', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
+      { id: 1, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' },
+      { id: 2, name: 'Dental', oidc_group: null, created_at: '', updated_at: '' },
+      { id: 3, name: 'Radiology', oidc_group: null, created_at: '', updated_at: '' },
     ]
     renderDialog({ programs, inheritedProgramIds: [1, 3] })
 
@@ -164,8 +164,8 @@ describe('AddCategoryDialog', () => {
   it('submits inherited program IDs when user creates without changing selection', async () => {
     const user = userEvent.setup()
     const programs = [
-      { id: 1, name: 'Nursing', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
-      { id: 2, name: 'Dental', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
+      { id: 1, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' },
+      { id: 2, name: 'Dental', oidc_group: null, created_at: '', updated_at: '' },
     ]
     const { onAdd } = renderDialog({ programs, inheritedProgramIds: [1, 2] })
 
@@ -177,7 +177,7 @@ describe('AddCategoryDialog', () => {
 
   it('defaults to "All students" when no inherited programs', () => {
     const programs = [
-      { id: 1, name: 'Nursing', oidc_group: null, parent_program_id: null, is_cohort: false, created_at: '', updated_at: '' },
+      { id: 1, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' },
     ]
     renderDialog({ programs, inheritedProgramIds: [] })
 

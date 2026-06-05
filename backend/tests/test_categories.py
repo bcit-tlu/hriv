@@ -20,7 +20,7 @@ from app.schemas import CategoryCreate, CategoryUpdate, CategoryReorderRequest, 
 
 
 def _make_program(id: int = 1, name: str = "Test Program") -> SimpleNamespace:
-    return SimpleNamespace(id=id, name=name, parent_program_id=None)
+    return SimpleNamespace(id=id, name=name)
 
 
 def _make_category(
