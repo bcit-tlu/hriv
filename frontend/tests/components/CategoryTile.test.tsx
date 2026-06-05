@@ -79,7 +79,8 @@ describe('CategoryTile', () => {
           programs={[]}
         />,
       )
-      expect(screen.getByText('Hidden Cat')).toHaveStyle({ opacity: 0.5 })
+      const title = screen.getByText('Hidden Cat')
+      expect(title.closest('.MuiCardContent-root')).toHaveStyle({ opacity: 0.5 })
     })
 
     it('shows the visible icon when category is active and toggle provided', () => {
@@ -115,7 +116,8 @@ describe('CategoryTile', () => {
           programs={[]}
         />,
       )
-      expect(screen.getByText('Visible Cat')).toHaveStyle({ opacity: 1 })
+      const title = screen.getByText('Visible Cat')
+      expect(title.closest('.MuiCardContent-root')).toHaveStyle({ opacity: 1 })
     })
   })
 
