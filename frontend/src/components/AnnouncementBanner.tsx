@@ -44,6 +44,7 @@ export default function AnnouncementBanner({ message, variant = 'app', onDismiss
           </Button>
         ) : undefined
       }
+      sx={{ '& .MuiAlert-action': { mr: 0 } }}
     >
       {message}
     </Alert>
