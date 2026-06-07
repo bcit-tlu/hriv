@@ -40,7 +40,7 @@ async def list_users(
     _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
     role: str | None = None,
-    program_id: int | None = None,
+    program_id: Annotated[list[int] | None, Query()] = None,
     q: str | None = None,
     page: Annotated[int | None, Query(ge=1)] = None,
     page_size: Annotated[int | None, Query(ge=1, le=200)] = None,
@@ -58,7 +58,9 @@ async def list_users(
 
     Filtering / pagination (applied for every role):
 
-    * ``program_id`` — restrict to users who belong to that program.
+    * ``program_id`` — restrict to users who belong to **any** of the given
+      programs (repeatable, e.g. ``?program_id=1&program_id=2`` → OR). Backs
+      the multi-select program filter chips.
     * ``q`` — case-insensitive substring match on name or email.
     * ``page`` + ``page_size`` — server-side pagination. When supplied, the
       total number of matching users (before pagination) is returned in the
@@ -85,8 +87,8 @@ async def list_users(
     elif role is not None:
         conditions.append(User.role == role)
 
-    if program_id is not None:
-        conditions.append(User.programs.any(Program.id == program_id))
+    if program_id:
+        conditions.append(User.programs.any(Program.id.in_(program_id)))
     if q and q.strip():
         like = f"%{q.strip()}%"
         conditions.append(or_(User.name.ilike(like), User.email.ilike(like)))

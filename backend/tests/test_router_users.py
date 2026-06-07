@@ -144,9 +144,23 @@ async def test_list_users_program_filter() -> None:
     db.execute = AsyncMock(return_value=mock_result)
 
     instructor = _make_user(id=99, role="instructor")
-    result = await list_users(instructor, db, role="student", program_id=2)
+    result = await list_users(instructor, db, role="student", program_id=[2])
     assert len(result) == 1
     assert result[0]["program_ids"] == [2]
+
+
+async def test_list_users_program_filter_multi_or() -> None:
+    """Multiple program_id values filter with OR (IN) semantics."""
+    users = [_make_user(id=3), _make_user(id=4, email="four@example.com")]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    result = await list_users(
+        _make_user(role="admin"), db, program_id=[1, 2],
+    )
+    assert len(result) == 2
 
 
 async def test_list_users_search_q() -> None:

@@ -231,7 +231,7 @@ Programs are a flat, admin/OIDC-managed entity: only admins may create, rename, 
 | Param | Type | Effect |
 |-------|------|--------|
 | `role` | `admin\|instructor\|student` | Filter by role. Instructors are constrained to `student`/`instructor` (403 on `admin`, 422 on unknown). |
-| `program_id` | int | Restrict to users belonging to that program. |
+| `program_id` | int (repeatable) | Restrict to users belonging to **any** of the given programs (`?program_id=1&program_id=2` → OR), backing the multi-select program filter chips. |
 | `q` | string | Case-insensitive substring match on name or email. |
 | `page` | int (≥1) | Page number (used with `page_size`). |
 | `page_size` | int (1–200) | Page size. When `page`/`page_size` are supplied, the pre-pagination total is returned in the **`X-Total-Count`** response header so the client can render page controls. Omitting them returns the full filtered list. |
