@@ -22,6 +22,7 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import SearchIcon from "@mui/icons-material/Search";
 import ColorModeToggle from "./ColorModeToggle";
+import { getGroupChipColors } from "../theme";
 import AnnouncementBanner from "./AnnouncementBanner";
 import type { Role } from "../types";
 
@@ -33,7 +34,7 @@ export interface AppShellProps {
     onHomeClick: () => void;
     canEditContent: boolean;
     canManageUsers: boolean;
-    currentUser: { name: string; email: string; role: Role; program_names: string[] };
+    currentUser: { name: string; email: string; role: Role; program_names: string[]; group_names: string[] };
     announcement: string;
     annMessage: string;
     annEnabled: boolean;
@@ -287,6 +288,21 @@ export default function AppShell(props: AppShellProps) {
                                         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                                             {currentUser.program_names.map((name) => (
                                                 <Chip key={name} label={name} size="small" color="primary" />
+                                            ))}
+                                        </Box>
+                                    )}
+                                    {currentUser.group_names.length > 0 && (
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                                            {currentUser.group_names.map((name) => (
+                                                <Chip
+                                                    key={name}
+                                                    label={name}
+                                                    size="small"
+                                                    sx={{
+                                                        bgcolor: getGroupChipColors(mode).bg,
+                                                        color: getGroupChipColors(mode).text,
+                                                    }}
+                                                />
                                             ))}
                                         </Box>
                                     )}

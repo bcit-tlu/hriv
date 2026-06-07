@@ -42,6 +42,8 @@ export interface User {
   role: Role
   program_ids: number[]
   program_names: string[]
+  group_ids: number[]
+  group_names: string[]
   lastAccess?: string | null
 }
 

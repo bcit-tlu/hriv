@@ -159,6 +159,8 @@ export interface ApiUser {
   role: string
   program_ids: number[]
   program_names: string[]
+  group_ids: number[]
+  group_names: string[]
   last_access: string | null
   metadata_extra: Record<string, unknown> | null
   created_at: string
@@ -354,6 +356,49 @@ export function fetchUsers(role?: string): Promise<ApiUser[]> {
   return request(`/users/${query}`)
 }
 
+export interface UserListParams {
+  role?: string
+  /** OR-filter: users belonging to any of these programs. */
+  programIds?: number[]
+  q?: string
+  page?: number
+  pageSize?: number
+}
+
+export interface PaginatedUsers {
+  items: ApiUser[]
+  /** Total matching users before pagination (from the X-Total-Count header). */
+  total: number
+}
+
+/**
+ * Server-side filtered/paginated user listing for the membership picker.
+ * Reads the `X-Total-Count` header to drive page controls; falls back to the
+ * returned item count when the header is absent (e.g. unpaginated response).
+ */
+export async function fetchUsersPaged(
+  params: UserListParams,
+): Promise<PaginatedUsers> {
+  const qs = new URLSearchParams()
+  if (params.role) qs.set('role', params.role)
+  for (const id of params.programIds ?? []) qs.append('program_id', String(id))
+  if (params.q && params.q.trim()) qs.set('q', params.q.trim())
+  if (params.page != null) qs.set('page', String(params.page))
+  if (params.pageSize != null) qs.set('page_size', String(params.pageSize))
+  const query = qs.toString()
+  const res = await fetch(`${BASE}/api/users/${query ? `?${query}` : ''}`, {
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new ApiError(res.status, parseErrorDetail(text))
+  }
+  const items = (await res.json()) as ApiUser[]
+  const header = res.headers.get('X-Total-Count')
+  const total = header != null ? Number(header) : items.length
+  return { items, total }
+}
+
 export interface LoginResponse {
   access_token: string
   token_type: string
@@ -508,6 +553,46 @@ export function addGroupInstructor(groupId: number, userId: number): Promise<Api
 
 export function removeGroupInstructor(groupId: number, userId: number): Promise<ApiGroup> {
   return request(`/groups/${groupId}/instructors/${userId}`, { method: 'DELETE' })
+}
+
+export function addGroupMembersBulk(
+  groupId: number,
+  userIds: number[],
+): Promise<ApiGroup> {
+  return request(`/groups/${groupId}/members/bulk`, {
+    method: 'POST',
+    body: JSON.stringify({ user_ids: userIds }),
+  })
+}
+
+export function removeGroupMembersBulk(
+  groupId: number,
+  userIds: number[],
+): Promise<ApiGroup> {
+  return request(`/groups/${groupId}/members/bulk`, {
+    method: 'DELETE',
+    body: JSON.stringify({ user_ids: userIds }),
+  })
+}
+
+export function addGroupInstructorsBulk(
+  groupId: number,
+  userIds: number[],
+): Promise<ApiGroup> {
+  return request(`/groups/${groupId}/instructors/bulk`, {
+    method: 'POST',
+    body: JSON.stringify({ user_ids: userIds }),
+  })
+}
+
+export function removeGroupInstructorsBulk(
+  groupId: number,
+  userIds: number[],
+): Promise<ApiGroup> {
+  return request(`/groups/${groupId}/instructors/bulk`, {
+    method: 'DELETE',
+    body: JSON.stringify({ user_ids: userIds }),
+  })
 }
 
 // ── Announcement ────────────────────────────────────────

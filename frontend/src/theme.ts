@@ -27,6 +27,12 @@ const lightPalette = {
   },
   /** Custom surface used for the People / Admin pages. */
   surfaceVariant: '#DAC7B5',
+  /**
+   * Group membership chip. White on #5B6973 ≈ 5.6:1 contrast (WCAG-AA for
+   * normal text). Distinct from the brand-red program chips so the two
+   * visibility dimensions read differently.
+   */
+  groupChip: { bg: '#5B6973', text: '#FFFFFF' },
 }
 
 /** Dark-mode colours – a complementary set that keeps the same brand feel. */
@@ -50,6 +56,11 @@ const darkPalette = {
   },
   /** Custom surface used for the People / Admin pages. */
   surfaceVariant: '#3A3230',
+  /**
+   * Group membership chip (dark mode). A lighter slate that stays legible on
+   * the dark paper; dark text on #8A99A6 ≈ 5.5:1 contrast (WCAG-AA).
+   */
+  groupChip: { bg: '#8A99A6', text: '#1E1E1E' },
 }
 
 // ---------------------------------------------------------------------------
@@ -84,4 +95,16 @@ export function buildTheme(mode: 'light' | 'dark') {
  */
 export function getSurfaceVariant(mode: 'light' | 'dark'): string {
   return mode === 'dark' ? darkPalette.surfaceVariant : lightPalette.surfaceVariant
+}
+
+/**
+ * Group membership chip colours for the current mode. Background is #5B6973
+ * in light mode (per design) and a WCAG-AA compliant lighter slate in dark
+ * mode; `text` is the matching contrast colour.
+ */
+export function getGroupChipColors(mode: 'light' | 'dark'): {
+  bg: string
+  text: string
+} {
+  return mode === 'dark' ? darkPalette.groupChip : lightPalette.groupChip
 }
