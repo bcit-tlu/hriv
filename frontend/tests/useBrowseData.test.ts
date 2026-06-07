@@ -13,6 +13,7 @@ vi.mock("../src/api", async () => {
         fetchCategoryTree: vi.fn(),
         fetchUncategorizedImages: vi.fn(),
         fetchPrograms: vi.fn(),
+        fetchGroups: vi.fn(),
     };
 });
 
@@ -23,6 +24,7 @@ vi.mock("../src/useBackgroundRefresh", () => ({
 const mockFetchCategoryTree = vi.mocked(api.fetchCategoryTree);
 const mockFetchUncategorizedImages = vi.mocked(api.fetchUncategorizedImages);
 const mockFetchPrograms = vi.mocked(api.fetchPrograms);
+const mockFetchGroups = vi.mocked(api.fetchGroups);
 
 function makeUser(overrides: Partial<User> = {}): User {
     return {
@@ -101,6 +103,8 @@ describe("useBrowseData", () => {
         mockFetchCategoryTree.mockResolvedValue([]);
         mockFetchUncategorizedImages.mockResolvedValue([]);
         mockFetchPrograms.mockResolvedValue([]);
+        mockFetchGroups.mockReset();
+        mockFetchGroups.mockResolvedValue([]);
     });
     afterEach(() => {
         vi.restoreAllMocks();
@@ -572,6 +576,72 @@ describe("useBrowseData", () => {
             });
             const cat = apiTreeToCategory(apiTree);
             expect(cat.cardImageId).toBeNull();
+        });
+
+        it("maps group_ids onto the domain category", () => {
+            const cat = apiTreeToCategory(makeApiTree({ group_ids: [7, 8] }));
+            expect(cat.groupIds).toEqual([7, 8]);
+        });
+
+        it("defaults groupIds to [] when group_ids is absent", () => {
+            const cat = apiTreeToCategory(makeApiTree());
+            expect(cat.groupIds).toEqual([]);
+        });
+    });
+
+    describe("getPathGroupRestriction", () => {
+        it("narrows group ids through the ancestor path independently of programs", async () => {
+            const child = makeApiTree({
+                id: 2,
+                label: "Child",
+                parent_id: 1,
+                group_ids: [10, 20],
+            });
+            const root = makeApiTree({
+                id: 1,
+                label: "Root",
+                children: [child],
+                group_ids: [10, 20, 30],
+            });
+            mockFetchCategoryTree.mockResolvedValue([root]);
+
+            const deps = makeDeps({
+                currentUser: makeUser(),
+                path: [apiTreeToCategory(root), apiTreeToCategory(child)],
+            });
+            const { result } = renderHook(() => useBrowseData(deps));
+
+            await triggerInitialLoad(result);
+
+            // narrowGroupIds intersects: [10,20,30] ∩ [10,20] = [10,20]
+            expect(result.current.ancestorGroupIds).toEqual([10, 20]);
+            // depth=1 returns only the root's groups
+            expect(result.current.getPathGroupRestriction(1)).toEqual([10, 20, 30]);
+        });
+
+        it("loads groups via loadGroups", async () => {
+            mockFetchGroups.mockResolvedValue([
+                {
+                    id: 5,
+                    name: "Cohort A",
+                    description: null,
+                    created_by_user_id: 1,
+                    member_ids: [],
+                    instructor_ids: [1],
+                    created_at: "",
+                    updated_at: "",
+                },
+            ]);
+            const deps = makeDeps({ currentUser: makeUser() });
+            const { result } = renderHook(() => useBrowseData(deps));
+
+            await act(async () => {
+                await result.current.loadGroups();
+            });
+
+            expect(mockFetchGroups).toHaveBeenCalled();
+            expect(result.current.groups).toHaveLength(1);
+            expect(result.current.groups[0].name).toBe("Cohort A");
         });
     });
 });

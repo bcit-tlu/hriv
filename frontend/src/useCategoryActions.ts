@@ -19,10 +19,14 @@ export interface UseCategoryActionsDeps {
     currentCategories: Category[];
     ancestorProgramIds: number[];
     getPathRestriction: (depth?: number) => number[];
+    ancestorGroupIds: number[];
+    getPathGroupRestriction: (depth?: number) => number[];
     path: Category[];
     setPath: React.Dispatch<React.SetStateAction<Category[]>>;
     editNameCategory: Category | null;
     setErrorSnack: React.Dispatch<React.SetStateAction<string | null>>;
+    /** Surfaces non-blocking category advisories (e.g. program/group intersection). */
+    setWarningSnack?: React.Dispatch<React.SetStateAction<string | null>>;
     setMoveSnack: React.Dispatch<
         React.SetStateAction<{ message: string; onUndo: () => void } | null>
     >;
@@ -36,10 +40,13 @@ export function useCategoryActions({
     currentCategories,
     ancestorProgramIds,
     getPathRestriction,
+    ancestorGroupIds,
+    getPathGroupRestriction,
     path,
     setPath,
     editNameCategory,
     setErrorSnack,
+    setWarningSnack,
     setMoveSnack,
 }: UseCategoryActionsDeps) {
     const [moveCatOpen, setMoveCatOpen] = useState(false);
@@ -49,8 +56,10 @@ export function useCategoryActions({
         const fallback = {
             siblingNames: [] as string[],
             inheritedProgramIds: [] as number[],
+            inheritedGroupIds: [] as number[],
             freshLabel: editNameCategory?.label ?? "",
             freshProgramIds: editNameCategory?.programIds ?? [],
+            freshGroupIds: editNameCategory?.groupIds ?? [],
         };
         if (!editNameCategory) return fallback;
         const isBreadcrumbCategory =
@@ -69,8 +78,10 @@ export function useCategoryActions({
             return {
                 siblingNames,
                 inheritedProgramIds: getPathRestriction(path.length - 1),
+                inheritedGroupIds: getPathGroupRestriction(path.length - 1),
                 freshLabel: freshCat?.label ?? editNameCategory.label,
                 freshProgramIds: freshCat?.programIds ?? editNameCategory.programIds,
+                freshGroupIds: freshCat?.groupIds ?? editNameCategory.groupIds,
             };
         }
         const freshChild = currentCategories.find((c) => c.id === editNameCategory.id);
@@ -79,28 +90,35 @@ export function useCategoryActions({
                 .filter((c) => c.id !== editNameCategory.id)
                 .map((c) => c.label),
             inheritedProgramIds: ancestorProgramIds,
+            inheritedGroupIds: ancestorGroupIds,
             freshLabel: freshChild?.label ?? editNameCategory.label,
             freshProgramIds: freshChild?.programIds ?? editNameCategory.programIds,
+            freshGroupIds: freshChild?.groupIds ?? editNameCategory.groupIds,
         };
-    }, [editNameCategory, path, categories, currentCategories, ancestorProgramIds, getPathRestriction]);
+    }, [editNameCategory, path, categories, currentCategories, ancestorProgramIds, getPathRestriction, ancestorGroupIds, getPathGroupRestriction]);
 
     const addCategoryInline = useCallback(
         async (
             label: string,
             parentId: number | null,
             programIds?: number[],
+            groupIds?: number[],
         ): Promise<number | void> => {
             const body: Parameters<typeof apiCreateCategory>[0] = {
                 label,
                 parent_id: parentId,
             };
             if (programIds !== undefined) body.program_ids = programIds;
+            if (groupIds !== undefined) body.group_ids = groupIds;
             const created = await apiCreateCategory(body);
+            if (created.warnings?.length && setWarningSnack) {
+                setWarningSnack(created.warnings.map((w) => w.message).join(" "));
+            }
             await loadCategories();
             loadUncategorizedImages();
             return created.id;
         },
-        [loadCategories, loadUncategorizedImages],
+        [loadCategories, loadUncategorizedImages, setWarningSnack],
     );
 
     const deleteCategoryInline = useCallback(
@@ -126,15 +144,20 @@ export function useCategoryActions({
             categoryId: number,
             newLabel: string,
             programIds?: number[],
+            groupIds?: number[],
         ) => {
             const body: Parameters<typeof apiUpdateCategory>[1] = {
                 label: newLabel,
             };
             if (programIds !== undefined) body.program_ids = programIds;
-            await apiUpdateCategory(categoryId, body);
+            if (groupIds !== undefined) body.group_ids = groupIds;
+            const updated = await apiUpdateCategory(categoryId, body);
+            if (updated.warnings?.length && setWarningSnack) {
+                setWarningSnack(updated.warnings.map((w) => w.message).join(" "));
+            }
             await loadCategories();
         },
-        [loadCategories],
+        [loadCategories, setWarningSnack],
     );
 
     const toggleCategoryVisibility = useCallback(

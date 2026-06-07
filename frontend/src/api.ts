@@ -108,16 +108,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ── Types matching the backend schemas ────────────────────
 
+export interface ApiCategoryWarning {
+  code: string
+  message: string
+}
+
 export interface ApiCategory {
   id: number
   label: string
   parent_id: number | null
   program_ids: number[]
+  group_ids: number[]
   status: string | null
   sort_order: number
   metadata_extra: Record<string, unknown> | null
   created_at: string
   updated_at: string
+  /** Non-blocking advisories returned on create/update (e.g. program/group intersection). */
+  warnings?: ApiCategoryWarning[]
 }
 
 export interface ApiCategoryTree extends ApiCategory {
@@ -165,6 +173,25 @@ export interface ApiProgram {
   updated_at: string
 }
 
+export interface ApiGroup {
+  id: number
+  name: string
+  description: string | null
+  created_by_user_id: number | null
+  member_ids: number[]
+  instructor_ids: number[]
+  created_at: string
+  updated_at: string
+}
+
+/** Minimal user projection returned by group member/instructor listings. */
+export interface ApiGroupMember {
+  id: number
+  name: string
+  email: string
+  role: string
+}
+
 // ── Status ────────────────────────────────────────────────
 
 export interface ApiStatus {
@@ -186,6 +213,7 @@ export function createCategory(body: {
   label: string
   parent_id?: number | null
   program_ids?: number[]
+  group_ids?: number[]
   status?: string
 }): Promise<ApiCategory> {
   return request('/categories/', {
@@ -200,6 +228,7 @@ export function updateCategory(
     label?: string
     parent_id?: number | null
     program_ids?: number[]
+    group_ids?: number[]
     status?: string
     metadata_extra?: Record<string, unknown>
   },
@@ -320,8 +349,9 @@ export function getOidcLoginUrl(): string {
 
 // ── Users ────────────────────────────────────────────────
 
-export function fetchUsers(): Promise<ApiUser[]> {
-  return request('/users/')
+export function fetchUsers(role?: string): Promise<ApiUser[]> {
+  const query = role ? `?role=${encodeURIComponent(role)}` : ''
+  return request(`/users/${query}`)
 }
 
 export interface LoginResponse {
@@ -424,6 +454,60 @@ export function updateProgram(
 
 export function deleteProgram(id: number): Promise<void> {
   return request(`/programs/${id}`, { method: 'DELETE' })
+}
+
+// ── Groups ──────────────────────────────────────────────
+
+export function fetchGroups(): Promise<ApiGroup[]> {
+  return request('/groups/')
+}
+
+export function createGroup(body: {
+  name: string
+  description?: string | null
+}): Promise<ApiGroup> {
+  return request('/groups/', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateGroup(
+  id: number,
+  body: { name?: string; description?: string | null },
+): Promise<ApiGroup> {
+  return request(`/groups/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteGroup(id: number): Promise<void> {
+  return request(`/groups/${id}`, { method: 'DELETE' })
+}
+
+export function fetchGroupMembers(groupId: number): Promise<ApiGroupMember[]> {
+  return request(`/groups/${groupId}/members`)
+}
+
+export function addGroupMember(groupId: number, userId: number): Promise<ApiGroup> {
+  return request(`/groups/${groupId}/members/${userId}`, { method: 'POST' })
+}
+
+export function removeGroupMember(groupId: number, userId: number): Promise<ApiGroup> {
+  return request(`/groups/${groupId}/members/${userId}`, { method: 'DELETE' })
+}
+
+export function fetchGroupInstructors(groupId: number): Promise<ApiGroupMember[]> {
+  return request(`/groups/${groupId}/instructors`)
+}
+
+export function addGroupInstructor(groupId: number, userId: number): Promise<ApiGroup> {
+  return request(`/groups/${groupId}/instructors/${userId}`, { method: 'POST' })
+}
+
+export function removeGroupInstructor(groupId: number, userId: number): Promise<ApiGroup> {
+  return request(`/groups/${groupId}/instructors/${userId}`, { method: 'DELETE' })
 }
 
 // ── Announcement ────────────────────────────────────────

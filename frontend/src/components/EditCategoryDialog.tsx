@@ -14,20 +14,28 @@ import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import type { Program } from '../types'
+import type { Group, Program } from '../types'
 
 const filter = createFilterOptions<string>()
 
 interface EditCategoryDialogProps {
   open: boolean
   onClose: () => void
-  onSave: (newLabel: string, programIds?: number[]) => void | Promise<void>
+  onSave: (
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => void | Promise<void>
   currentLabel: string
   siblingNames?: string[]
   programs?: Program[]
   currentProgramIds?: number[]
   /** Program IDs inherited from ancestor categories (read-only display). */
   inheritedProgramIds?: number[]
+  groups?: Group[]
+  currentGroupIds?: number[]
+  /** Group IDs inherited from ancestor categories (read-only display). */
+  inheritedGroupIds?: number[]
 }
 
 export default function EditCategoryDialog({
@@ -39,12 +47,17 @@ export default function EditCategoryDialog({
   programs = [],
   currentProgramIds = [],
   inheritedProgramIds = [],
+  groups = [],
+  currentGroupIds = [],
+  inheritedGroupIds = [],
 }: EditCategoryDialogProps) {
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [visibility, setVisibility] = useState<'all' | 'specific'>('all')
   const [selectedProgramIds, setSelectedProgramIds] = useState<Set<number>>(new Set())
+  const [groupVisibility, setGroupVisibility] = useState<'all' | 'specific'>('all')
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(new Set())
 
   // Populate state from props when dialog opens (false → true transition only)
   const prevOpen = useRef(false)
@@ -59,9 +72,14 @@ export default function EditCategoryDialog({
         ? currentProgramIds.filter((id) => inheritedProgramIds.includes(id))
         : currentProgramIds
       setSelectedProgramIds(new Set(validIds))
+      setGroupVisibility(currentGroupIds.length > 0 || inheritedGroupIds.length > 0 ? 'specific' : 'all')
+      const validGroupIds = inheritedGroupIds.length > 0
+        ? currentGroupIds.filter((id) => inheritedGroupIds.includes(id))
+        : currentGroupIds
+      setSelectedGroupIds(new Set(validGroupIds))
     }
     prevOpen.current = open
-  }, [open, currentLabel, currentProgramIds, inheritedProgramIds])
+  }, [open, currentLabel, currentProgramIds, inheritedProgramIds, currentGroupIds, inheritedGroupIds])
 
   const exactMatch = useMemo(
     () =>
@@ -75,6 +93,8 @@ export default function EditCategoryDialog({
     setError(null)
     setVisibility('all')
     setSelectedProgramIds(new Set())
+    setGroupVisibility('all')
+    setSelectedGroupIds(new Set())
     onClose()
   }
 
@@ -85,6 +105,18 @@ export default function EditCategoryDialog({
         next.delete(programId)
       } else {
         next.add(programId)
+      }
+      return next
+    })
+  }
+
+  const toggleGroup = (groupId: number) => {
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(groupId)) {
+        next.delete(groupId)
+      } else {
+        next.add(groupId)
       }
       return next
     })
@@ -105,21 +137,42 @@ export default function EditCategoryDialog({
     return false
   }, [currentProgramIds, inheritedProgramIds, selectedProgramIds, visibility])
 
+  const groupsChanged = useMemo(() => {
+    const baseline = inheritedGroupIds.length > 0
+      ? currentGroupIds.filter((id) => inheritedGroupIds.includes(id))
+      : currentGroupIds
+    const currentSet = new Set(baseline)
+    const effectiveIds = groupVisibility === 'specific' ? selectedGroupIds : new Set<number>()
+    if (currentSet.size !== effectiveIds.size) return true
+    for (const id of effectiveIds) {
+      if (!currentSet.has(id)) return true
+    }
+    return false
+  }, [currentGroupIds, inheritedGroupIds, selectedGroupIds, groupVisibility])
+
+  const programRestricted = visibility === 'specific' && selectedProgramIds.size > 0
+  const groupRestricted = groupVisibility === 'specific' && selectedGroupIds.size > 0
+
   const handleSubmit = async () => {
     const trimmed = label.trim()
     if (!trimmed) return
     const labelChanged = trimmed !== currentLabel
-    if (!labelChanged && !programsChanged) return
+    if (!labelChanged && !programsChanged && !groupsChanged) return
     const programIds = programs.length > 0
       ? (visibility === 'specific' ? Array.from(selectedProgramIds) : [])
+      : undefined
+    const groupIds = groups.length > 0
+      ? (groupVisibility === 'specific' ? Array.from(selectedGroupIds) : [])
       : undefined
     setSaving(true)
     setError(null)
     try {
-      await onSave(trimmed, programIds)
+      await onSave(trimmed, programIds, groupIds)
       setLabel('')
       setVisibility('all')
       setSelectedProgramIds(new Set())
+      setGroupVisibility('all')
+      setSelectedGroupIds(new Set())
       onClose()
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -206,6 +259,46 @@ export default function EditCategoryDialog({
             )}
           </Box>
         )}
+        {groups.length > 0 && (
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              Group restriction
+            </Typography>
+            <RadioGroup
+              value={groupVisibility}
+              onChange={(e) => setGroupVisibility(e.target.value as 'all' | 'specific')}
+            >
+              <FormControlLabel value="all" control={<Radio size="small" />} label="All groups" />
+              <FormControlLabel value="specific" control={<Radio size="small" />} label="Specific groups" />
+            </RadioGroup>
+            {groupVisibility === 'specific' && (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
+                {groups.map((g) => {
+                  const disabled = inheritedGroupIds.length > 0 && !inheritedGroupIds.includes(g.id)
+                  const isInheritedOnly = inheritedGroupIds.includes(g.id) && !selectedGroupIds.has(g.id)
+                  return (
+                    <Chip
+                      key={g.id}
+                      label={g.name}
+                      size="small"
+                      color={selectedGroupIds.has(g.id) || isInheritedOnly ? 'secondary' : 'default'}
+                      variant={selectedGroupIds.has(g.id) || isInheritedOnly ? 'filled' : 'outlined'}
+                      onClick={disabled ? undefined : () => toggleGroup(g.id)}
+                      disabled={disabled}
+                      sx={isInheritedOnly ? { opacity: 0.5 } : undefined}
+                    />
+                  )
+                })}
+              </Box>
+            )}
+          </Box>
+        )}
+        {programRestricted && groupRestricted && (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            This category is restricted by both program and group. A student must
+            be in a listed program <strong>and</strong> a listed group to see it.
+          </Alert>
+        )}
         {error && (
           <Alert severity="error" sx={{ mt: 1 }} onClose={() => setError(null)}>
             {error}
@@ -217,7 +310,7 @@ export default function EditCategoryDialog({
         <Button
           onClick={handleSubmit}
           variant="contained"
-          disabled={!label.trim() || (!labelChanged && !programsChanged) || (visibility === 'specific' && selectedProgramIds.size === 0 && programs.length > 0 && inheritedProgramIds.length === 0) || saving}
+          disabled={!label.trim() || (!labelChanged && !programsChanged && !groupsChanged) || (visibility === 'specific' && selectedProgramIds.size === 0 && programs.length > 0 && inheritedProgramIds.length === 0) || (groupVisibility === 'specific' && selectedGroupIds.size === 0 && groups.length > 0 && inheritedGroupIds.length === 0) || saving}
         >
           Save
         </Button>

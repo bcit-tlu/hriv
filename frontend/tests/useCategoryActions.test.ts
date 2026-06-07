@@ -34,10 +34,13 @@ function makeDeps(overrides: Partial<UseCategoryActionsDeps> = {}): UseCategoryA
         currentCategories: [],
         ancestorProgramIds: [],
         getPathRestriction: vi.fn().mockReturnValue([]),
+        ancestorGroupIds: [],
+        getPathGroupRestriction: vi.fn().mockReturnValue([]),
         path: [],
         setPath: vi.fn(),
         editNameCategory: null,
         setErrorSnack: vi.fn(),
+        setWarningSnack: vi.fn(),
         setMoveSnack: vi.fn(),
         ...overrides,
     };
@@ -107,6 +110,60 @@ describe("useCategoryActions", () => {
                 parent_id: 5,
                 program_ids: [1, 2],
             });
+        });
+
+        it("passes groupIds when provided", async () => {
+            const deps = makeDeps();
+            mockCreateCategory.mockResolvedValue({
+                id: 12,
+                label: "Grp",
+                parent_id: null,
+                program_ids: [],
+                group_ids: [7, 8],
+                status: null,
+                sort_order: 0,
+                metadata_extra: null,
+                created_at: "",
+                updated_at: "",
+            });
+            const { result } = renderHook(() => useCategoryActions(deps));
+
+            await act(async () => {
+                await result.current.addCategoryInline("Grp", null, [], [7, 8]);
+            });
+
+            expect(mockCreateCategory).toHaveBeenCalledWith({
+                label: "Grp",
+                parent_id: null,
+                program_ids: [],
+                group_ids: [7, 8],
+            });
+        });
+
+        it("surfaces non-blocking warnings via setWarningSnack", async () => {
+            const deps = makeDeps();
+            mockCreateCategory.mockResolvedValue({
+                id: 13,
+                label: "Both",
+                parent_id: null,
+                program_ids: [1],
+                group_ids: [7],
+                status: null,
+                sort_order: 0,
+                metadata_extra: null,
+                created_at: "",
+                updated_at: "",
+                warnings: [
+                    { code: "program_group_intersection", message: "Restricted by both." },
+                ],
+            });
+            const { result } = renderHook(() => useCategoryActions(deps));
+
+            await act(async () => {
+                await result.current.addCategoryInline("Both", null, [1], [7]);
+            });
+
+            expect(deps.setWarningSnack).toHaveBeenCalledWith("Restricted by both.");
         });
     });
 
@@ -799,8 +856,10 @@ describe("useCategoryActions", () => {
             expect(result.current.editCategoryContext).toEqual({
                 siblingNames: [],
                 inheritedProgramIds: [],
+                inheritedGroupIds: [],
                 freshLabel: "",
                 freshProgramIds: [],
+                freshGroupIds: [],
             });
         });
 

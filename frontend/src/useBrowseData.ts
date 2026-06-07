@@ -3,10 +3,12 @@ import {
     fetchCategoryTree,
     fetchUncategorizedImages,
     fetchPrograms as apiFetchPrograms,
+    fetchGroups as apiFetchGroups,
 } from "./api";
 import type { ApiCategoryTree, ApiImage } from "./api";
-import type { Category, ImageItem, Program, User } from "./types";
-import { narrowProgramIds } from "./categoryUtils";
+import type { Category, Group, ImageItem, Program, User } from "./types";
+import { narrowProgramIds, narrowGroupIds } from "./categoryUtils";
+import { apiGroupToGroup } from "./groupUtils";
 import { useBackgroundRefresh } from "./useBackgroundRefresh";
 
 function apiImageToItem(img: ApiImage): ImageItem {
@@ -39,6 +41,7 @@ export function apiTreeToCategory(node: ApiCategoryTree): Category {
         children: node.children.map(apiTreeToCategory),
         images: node.images.map(apiImageToItem),
         programIds: node.program_ids ?? [],
+        groupIds: node.group_ids ?? [],
         status: node.status,
         sortOrder: node.sort_order,
         cardImageId:
@@ -59,6 +62,7 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
         [],
     );
     const [programs, setPrograms] = useState<Program[]>([]);
+    const [groups, setGroups] = useState<Group[]>([]);
     const uncategorizedLoaded = useRef(false);
 
     // Ref holds the invalidateBackground function once the hook mounts.
@@ -120,6 +124,15 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
             );
         } catch {
             // Silently ignore — programs are non-critical for initial load
+        }
+    }, []);
+
+    const loadGroups = useCallback(async () => {
+        try {
+            const g = await apiFetchGroups();
+            setGroups(g.map(apiGroupToGroup));
+        } catch {
+            // Silently ignore — groups are non-critical for initial load
         }
     }, []);
 
@@ -200,6 +213,29 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
         [getPathRestriction],
     );
 
+    // Group analogue of getPathRestriction: walk the path applying the same
+    // ancestor-narrowing semantics to the (independent) group dimension.
+    const getPathGroupRestriction = useCallback(
+        (depth?: number): number[] => {
+            const ancestors: Category[] = [];
+            let node = categories;
+            const limit = depth ?? path.length;
+            for (let i = 0; i < limit; i++) {
+                const found = node.find((c) => c.id === path[i].id);
+                if (!found) break;
+                ancestors.push(found);
+                node = found.children;
+            }
+            return narrowGroupIds(ancestors);
+        },
+        [categories, path],
+    );
+
+    const ancestorGroupIds = useMemo(
+        () => getPathGroupRestriction(),
+        [getPathGroupRestriction],
+    );
+
     // Filter out hidden categories for students in browse mode
     const isStudent = currentUser?.role === "student";
     const currentCategories = useMemo(
@@ -216,14 +252,19 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
         uncategorizedImages,
         uncategorizedLoaded,
         programs,
+        groups,
+        setGroups,
         loadCategories,
         loadUncategorizedImages,
         loadPrograms,
+        loadGroups,
         refreshCategories,
         refreshUncategorizedImages,
         currentImages,
         getPathRestriction,
         ancestorProgramIds,
+        getPathGroupRestriction,
+        ancestorGroupIds,
         currentCategories,
     };
 }

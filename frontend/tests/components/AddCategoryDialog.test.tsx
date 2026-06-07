@@ -32,10 +32,17 @@ function renderDialog(props: Partial<Parameters<typeof AddCategoryDialog>[0]> = 
       siblingNames={props.siblingNames}
       programs={props.programs}
       inheritedProgramIds={props.inheritedProgramIds}
+      groups={props.groups}
+      inheritedGroupIds={props.inheritedGroupIds}
     />,
   )
   return { ...result, onClose, onAdd }
 }
+
+const GROUPS = [
+  { id: 10, name: 'Cohort A', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '', updatedAt: '' },
+  { id: 11, name: 'Cohort B', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '', updatedAt: '' },
+]
 
 function getCategoryInput() {
   return screen.getByLabelText('Category name')
@@ -79,7 +86,7 @@ describe('AddCategoryDialog', () => {
     await user.type(getCategoryInput(), '  Histology  ')
     await user.click(getCreateButton())
 
-    expect(onAdd).toHaveBeenCalledWith('Histology', [])
+    expect(onAdd).toHaveBeenCalledWith('Histology', [], [])
     expect(onClose).toHaveBeenCalled()
   })
 
@@ -97,7 +104,7 @@ describe('AddCategoryDialog', () => {
     await user.type(getCategoryInput(), 'Pathology')
     await user.keyboard('{Enter}')
 
-    expect(onAdd).toHaveBeenCalledWith('Pathology', [])
+    expect(onAdd).toHaveBeenCalledWith('Pathology', [], [])
     expect(onClose).toHaveBeenCalled()
   })
 
@@ -133,7 +140,7 @@ describe('AddCategoryDialog', () => {
     await user.type(input, 'Test')
     await user.keyboard('{Enter}')
 
-    expect(onAdd).toHaveBeenCalledWith('Test', [])
+    expect(onAdd).toHaveBeenCalledWith('Test', [], [])
     // The outer div should NOT receive the Enter keydown thanks to stopPropagation
     const enterEvents = outerKeyDown.mock.calls.filter(
       (call: [KeyboardEvent]) => call[0].key === 'Enter',
@@ -172,7 +179,7 @@ describe('AddCategoryDialog', () => {
     await user.type(getCategoryInput(), 'Subcategory')
     await user.click(getCreateButton())
 
-    expect(onAdd).toHaveBeenCalledWith('Subcategory', expect.arrayContaining([1, 2]))
+    expect(onAdd).toHaveBeenCalledWith('Subcategory', expect.arrayContaining([1, 2]), [])
   })
 
   it('defaults to "All students" when no inherited programs', () => {
@@ -182,6 +189,59 @@ describe('AddCategoryDialog', () => {
     renderDialog({ programs, inheritedProgramIds: [] })
 
     expect(screen.getByLabelText('All students')).toBeChecked()
+  })
+
+  // --- Group restriction section ---
+
+  it('does not render the group section when no groups are provided', () => {
+    renderDialog()
+    expect(screen.queryByText('Group restriction')).not.toBeInTheDocument()
+  })
+
+  it('renders the group section and defaults to "All groups"', () => {
+    renderDialog({ groups: GROUPS })
+    expect(screen.getByText('Group restriction')).toBeInTheDocument()
+    expect(screen.getByLabelText('All groups')).toBeChecked()
+  })
+
+  it('passes selected groupIds to onAdd', async () => {
+    const user = userEvent.setup()
+    const { onAdd } = renderDialog({ groups: GROUPS })
+
+    await user.type(getCategoryInput(), 'Restricted')
+    await user.click(screen.getByLabelText('Specific groups'))
+    await user.click(screen.getByText('Cohort A'))
+    await user.click(getCreateButton())
+
+    expect(onAdd).toHaveBeenCalledWith('Restricted', [], [10])
+  })
+
+  it('pre-selects inherited groups and submits them', async () => {
+    const user = userEvent.setup()
+    const { onAdd } = renderDialog({ groups: GROUPS, inheritedGroupIds: [11] })
+
+    expect(screen.getByLabelText('Specific groups')).toBeChecked()
+    await user.type(getCategoryInput(), 'Child')
+    await user.click(getCreateButton())
+
+    expect(onAdd).toHaveBeenCalledWith('Child', [], expect.arrayContaining([11]))
+  })
+
+  it('shows the symmetric intersection warning when both program and group restricted', async () => {
+    const user = userEvent.setup()
+    const programs = [
+      { id: 1, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' },
+    ]
+    renderDialog({ programs, groups: GROUPS })
+
+    expect(screen.queryByText(/restricted by both program and group/i)).not.toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('Specific programs'))
+    await user.click(screen.getByText('Nursing'))
+    await user.click(screen.getByLabelText('Specific groups'))
+    await user.click(screen.getByText('Cohort A'))
+
+    expect(screen.getByText(/restricted by both program and group/i)).toBeInTheDocument()
   })
 
   // --- Cancel ---
