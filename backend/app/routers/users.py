@@ -1,7 +1,7 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role, hash_password
@@ -40,38 +40,77 @@ async def list_users(
     _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
     role: str | None = None,
+    program_id: int | None = None,
+    q: str | None = None,
+    page: Annotated[int | None, Query(ge=1)] = None,
+    page_size: Annotated[int | None, Query(ge=1, le=200)] = None,
+    response: Response = None,  # type: ignore[assignment]
 ):
-    """List users, optionally filtered by ``role``.
+    """List users, optionally filtered by ``role``, ``program_id`` and ``q``.
 
     The response shape is role-dependent. Admins receive full ``UserOut``
     objects (programs, metadata, last_access). Instructors receive a
-    **minimal** projection — only ``id, name, email, role`` are populated;
-    the remaining ``UserOut`` fields are defaulted (``program_ids: []``,
-    ``metadata_extra: None``, etc.) and must not be relied upon. Instructors
-    only ever see students and other instructors, never admins.
+    **minimal** projection — ``id, name, email, role`` plus the user's
+    ``program_ids``/``program_names`` (so the membership picker can filter
+    by program and render program chips); ``metadata_extra``/``last_access``
+    remain hidden. Instructors only ever see students and other instructors,
+    never admins.
+
+    Filtering / pagination (applied for every role):
+
+    * ``program_id`` — restrict to users who belong to that program.
+    * ``q`` — case-insensitive substring match on name or email.
+    * ``page`` + ``page_size`` — server-side pagination. When supplied, the
+      total number of matching users (before pagination) is returned in the
+      ``X-Total-Count`` response header so the client can render page
+      controls. Omitting them returns the full filtered list.
     """
     if role is not None and role not in VALID_ROLES:
         raise HTTPException(422, f"Invalid role: {role}")
-    stmt = select(User).order_by(User.name)
+
+    is_instructor = _user.role == "instructor"
     # Instructors may list students (to populate group membership) and other
     # instructors (for group co-ownership), but only with minimal fields and
     # never admin accounts. Admins see all users with full detail.
-    if _user.role == "instructor":
+    conditions = []
+    if is_instructor:
         allowed = {"student", "instructor"}
         if role is not None and role not in allowed:
             raise HTTPException(
                 403, "Instructors may only list students and instructors",
             )
-        stmt = stmt.where(User.role == role) if role else stmt.where(
-            User.role.in_(allowed)
+        conditions.append(
+            User.role == role if role else User.role.in_(allowed)
         )
-        result = await db.execute(stmt)
-        users = result.scalars().unique().all()
-        return [user_to_mini_out(u) for u in users]
-    if role is not None:
-        stmt = stmt.where(User.role == role)
+    elif role is not None:
+        conditions.append(User.role == role)
+
+    if program_id is not None:
+        conditions.append(User.programs.any(Program.id == program_id))
+    if q and q.strip():
+        like = f"%{q.strip()}%"
+        conditions.append(or_(User.name.ilike(like), User.email.ilike(like)))
+
+    # Total count (before pagination) for the X-Total-Count header.
+    count_stmt = select(func.count()).select_from(User)
+    for cond in conditions:
+        count_stmt = count_stmt.where(cond)
+    total = (await db.execute(count_stmt)).scalar_one()
+    if response is not None:
+        response.headers["X-Total-Count"] = str(total)
+
+    stmt = select(User)
+    for cond in conditions:
+        stmt = stmt.where(cond)
+    stmt = stmt.order_by(User.name)
+    if page_size is not None:
+        offset = (page - 1) * page_size if page is not None else 0
+        stmt = stmt.limit(page_size).offset(offset)
+
     result = await db.execute(stmt)
     users = result.scalars().unique().all()
+    if is_instructor:
+        return [user_to_mini_out(u) for u in users]
     return [user_to_out(u) for u in users]
 
 

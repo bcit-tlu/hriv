@@ -225,3 +225,17 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | POST   | /api/admin/import        | Yes           | admin        |
 
 Programs are a flat, admin/OIDC-managed entity: only admins may create, rename, or delete a program (optionally setting an `oidc_group`); all roles may read them. `GET /api/users/` returns all users to admins and instructors. Programs are not hierarchical.
+
+`GET /api/users/` accepts optional filter/search/pagination query params (applied for every role):
+
+| Param | Type | Effect |
+|-------|------|--------|
+| `role` | `admin\|instructor\|student` | Filter by role. Instructors are constrained to `student`/`instructor` (403 on `admin`, 422 on unknown). |
+| `program_id` | int | Restrict to users belonging to that program. |
+| `q` | string | Case-insensitive substring match on name or email. |
+| `page` | int (≥1) | Page number (used with `page_size`). |
+| `page_size` | int (1–200) | Page size. When `page`/`page_size` are supplied, the pre-pagination total is returned in the **`X-Total-Count`** response header so the client can render page controls. Omitting them returns the full filtered list. |
+
+The response shape stays role-dependent: admins receive full `UserOut`; instructors receive a minimal projection (`id, name, email, role` plus `program_ids`/`program_names` so the membership picker can filter by program and render chips — `metadata_extra`/`last_access` stay hidden). These params back the redesigned Manage Members dialog (server-side program filtering, name/email search, and pagination over hundreds of students).
+
+`GET /api/auth/me` (and the `POST /api/auth/login` response) now also include the caller's group memberships as `group_ids`/`group_names`, alongside `program_ids`/`program_names`, so the profile menu can show students which groups they belong to.

@@ -399,6 +399,8 @@ class UserOut(UserBase):
     created_at: datetime
     updated_at: datetime
     program_names: list[str] = []
+    group_ids: list[int] = []
+    group_names: list[str] = []
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
