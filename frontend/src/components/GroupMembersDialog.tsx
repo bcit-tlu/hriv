@@ -68,19 +68,35 @@ export default function GroupMembersDialog({
     } finally {
       setLoading(false)
     }
-  }, [group])
+    // Only the group id matters for which users to fetch; depending on the
+    // whole `group` would re-fetch on every membership mutation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [group?.id])
 
+  // Fetch the user lists once per open/group — not on every membership
+  // change. A membership toggle flows a new `group` prop in (same id), which
+  // must not trigger a re-fetch or the dialog would flash a spinner each time.
   useEffect(() => {
     if (open && group) {
-      setMemberIds(new Set(group.memberIds))
-      setInstructorIds(new Set(group.instructorIds))
       load()
     } else if (!open) {
       setStudents([])
       setInstructors([])
       setError(null)
     }
-  }, [open, group, load])
+    // Intentionally keyed on group id, not the whole group, so a membership
+    // mutation (same id) does not re-trigger the user fetch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, group?.id, load])
+
+  // Keep the local selection in sync with the latest group, including the
+  // updated member_ids/instructor_ids returned after a membership mutation.
+  useEffect(() => {
+    if (group) {
+      setMemberIds(new Set(group.memberIds))
+      setInstructorIds(new Set(group.instructorIds))
+    }
+  }, [group])
 
   const toggleMember = async (student: ApiUser, member: boolean) => {
     if (!group) return

@@ -130,6 +130,7 @@ const CATEGORY_FIXTURE: ApiCategory = {
   label: 'Architecture',
   parent_id: null,
   program_ids: [],
+  group_ids: [],
   status: null,
   sort_order: 0,
   metadata_extra: null,

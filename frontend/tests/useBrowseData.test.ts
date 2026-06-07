@@ -44,6 +44,7 @@ function makeApiTree(overrides: Partial<ApiCategoryTree> = {}): ApiCategoryTree 
         label: "Root",
         parent_id: null,
         program_ids: [],
+        group_ids: [],
         status: null,
         sort_order: 0,
         metadata_extra: null,

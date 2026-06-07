@@ -100,6 +100,30 @@ describe('GroupMembersDialog', () => {
     expect(screen.getByLabelText('toggle Carol Instructor co-ownership')).toBeChecked()
   })
 
+  it('does not re-fetch users when the group prop updates with the same id', async () => {
+    const { rerender } = render(
+      <GroupMembersDialog open group={group} onClose={vi.fn()} onGroupUpdated={vi.fn()} />,
+    )
+    await waitFor(() => expect(screen.getByText('Alice Student')).toBeInTheDocument())
+    const callsAfterLoad = vi.mocked(fetchUsers).mock.calls.length
+
+    // The parent flows an updated group (same id) back in after a membership
+    // mutation — selection must update without another user fetch.
+    rerender(
+      <GroupMembersDialog
+        open
+        group={{ ...group, memberIds: [101, 102] }}
+        onClose={vi.fn()}
+        onGroupUpdated={vi.fn()}
+      />,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('toggle Bob Student membership')).toBeChecked(),
+    )
+    expect(vi.mocked(fetchUsers).mock.calls.length).toBe(callsAfterLoad)
+  })
+
   it('adds a student member and propagates the updated group', async () => {
     const user = userEvent.setup()
     const onGroupUpdated = vi.fn()
