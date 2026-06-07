@@ -252,6 +252,11 @@ async def test_create_user_success() -> None:
     # programs must be refreshed before _set_user_programs to avoid
     # MissingGreenlet when assigning the collection in async context
     assert db.refresh.await_count == 2
+    # The post-commit refresh must reload BOTH programs and groups, because
+    # user_to_out now reads user.groups; refreshing only programs would leave
+    # the groups relationship expired and raise MissingGreenlet on access.
+    assert db.refresh.await_args_list[-1].args[1] == ["programs", "groups"]
+    assert result["group_ids"] == []
 
 
 async def test_update_user_success() -> None:
@@ -266,6 +271,9 @@ async def test_update_user_success() -> None:
     result = await update_user(1, body, MagicMock(), db)
 
     assert user.name == "Updated"
+    # Post-commit refresh must reload groups too (see create_user guard).
+    assert db.refresh.await_args_list[-1].args[1] == ["programs", "groups"]
+    assert result["group_ids"] == []
 
 
 async def test_update_user_not_found() -> None:
