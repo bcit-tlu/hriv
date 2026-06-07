@@ -35,6 +35,7 @@ def _make_user(
     email: str = "test@example.com",
     role: str = "student",
     programs: list | None = None,
+    groups: list | None = None,
 ) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
@@ -44,6 +45,7 @@ def _make_user(
         password_hash="hashed",
         role=role,
         programs=programs or [],
+        groups=groups or [],
         metadata_=None,
         last_access=now,
         created_at=now,
@@ -64,6 +66,23 @@ def test_user_to_out_without_programs() -> None:
     data = user_to_out(user)
     assert data["program_names"] == []
     assert data["program_ids"] == []
+
+
+def test_user_to_out_includes_groups() -> None:
+    group = SimpleNamespace(id=7, name="Field Studies")
+    user = _make_user(groups=[group])
+    data = user_to_out(user)
+    assert data["group_ids"] == [7]
+    assert data["group_names"] == ["Field Studies"]
+
+
+def test_user_to_mini_out_hides_groups() -> None:
+    """Other users' group memberships must not leak via the minimal listing."""
+    group = SimpleNamespace(id=7, name="Field Studies")
+    user = _make_user(groups=[group])
+    data = user_to_mini_out(user)
+    assert data["group_ids"] == []
+    assert data["group_names"] == []
 
 
 async def test_list_users() -> None:
