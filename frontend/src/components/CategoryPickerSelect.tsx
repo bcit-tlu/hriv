@@ -75,7 +75,7 @@ interface CategoryPickerSelectProps {
   label?: string
   excludeCategoryId?: number
   includeRoot?: boolean
-  /** Text shown when value is null and includeRoot is false. Prevents displaying "None (root level)" in contexts where null means "no selection". */
+  /** Text shown in the collapsed select when value is null. Use with includeRoot={false} in contexts where null means "no selection" rather than root level. */
   placeholder?: string
   /** When provided, a "+" button appears on each menu item to add a child category. */
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
