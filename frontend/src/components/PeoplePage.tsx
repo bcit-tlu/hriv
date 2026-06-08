@@ -695,7 +695,7 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
               onClick={async () => {
                 if (deleteConfirmUser) {
                   await handleDeletePerson(deleteConfirmUser.id)
-                  setDeleteConfirmUser(null)
+                  setDeleteConfirmUser(cur => cur?.id === deleteConfirmUser.id ? null : cur)
                 }
               }}
               fullWidth
