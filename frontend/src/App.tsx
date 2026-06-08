@@ -286,7 +286,7 @@ export default function App() {
             // Fetch fresh categories so sort_order changes (from a recent
             // reorder) are reflected when the user navigates back to browse
             // via the browser back/forward buttons.
-            loadCategories();
+            loadCategories({ silent: true });
 
             const catPath = resolveCategoryPath(
                 categoriesRef.current,
