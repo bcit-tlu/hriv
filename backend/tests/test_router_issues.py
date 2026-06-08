@@ -301,3 +301,8 @@ class TestValidatePageUrl:
         # Default is "*" so all hosts allowed
         result = _validate_page_url("https://any-host.dev/page")
         assert "any-host.dev" in result
+
+    def test_strips_space_injected_mentions(self) -> None:
+        result = _validate_page_url("https://localhost/p @victim1 @victim2")
+        assert "@victim" not in result
+        assert result == "https://localhost/p"
