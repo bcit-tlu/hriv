@@ -7,7 +7,7 @@ import {
 } from "./api";
 import type { ApiCategoryTree, ApiImage } from "./api";
 import type { Category, Group, ImageItem, Program, User } from "./types";
-import { narrowProgramIds, narrowGroupIds } from "./categoryUtils";
+import { narrowProgramIds, narrowGroupIds, resolvePathNode } from "./categoryUtils";
 import { apiGroupToGroup } from "./groupUtils";
 import { useBackgroundRefresh } from "./useBackgroundRefresh";
 
@@ -48,26 +48,6 @@ export function apiTreeToCategory(node: ApiCategoryTree): Category {
             typeof meta?.card_image_id === "number" ? meta.card_image_id : null,
         metadataExtra: meta ?? null,
     };
-}
-
-/**
- * Walk the category tree along `path` and return the children/images
- * at the terminal node.
- */
-function resolvePathNode(
-    categories: Category[],
-    path: Category[],
-): { cats: Category[]; imgs: ImageItem[] } {
-    let node = categories;
-    for (const segment of path) {
-        const found = node.find((c) => c.id === segment.id);
-        if (!found) return { cats: [], imgs: [] };
-        node = found.children;
-        if (segment === path[path.length - 1]) {
-            return { cats: found.children, imgs: found.images };
-        }
-    }
-    return { cats: node, imgs: [] };
 }
 
 export interface UseBrowseDataDeps {
