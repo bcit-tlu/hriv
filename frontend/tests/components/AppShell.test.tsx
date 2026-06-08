@@ -27,6 +27,7 @@ function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
         logout: vi.fn(),
         onOpenCategories: vi.fn(),
         onOpenPrograms: vi.fn(),
+        onOpenGroups: vi.fn(),
         onOpenAnnouncement: vi.fn(),
         onSearchOpen: vi.fn(),
         mode: "light",
@@ -202,6 +203,20 @@ describe("AppShell", () => {
             fireEvent.click(screen.getByRole("tab", { name: "Manage" }));
             fireEvent.click(screen.getByRole("menuitem", { name: "Programs" }));
             expect(props.onOpenPrograms).toHaveBeenCalled();
+        });
+
+        it("shows Groups menu item for non-admin editors (instructors)", () => {
+            render(<AppShell {...makeProps({ canEditContent: true, canManageUsers: false })} />);
+            fireEvent.click(screen.getByRole("tab", { name: "Manage" }));
+            expect(screen.getByRole("menuitem", { name: "Groups" })).toBeInTheDocument();
+        });
+
+        it("calls onOpenGroups when Groups menu item is clicked", () => {
+            const props = makeProps();
+            render(<AppShell {...props} />);
+            fireEvent.click(screen.getByRole("tab", { name: "Manage" }));
+            fireEvent.click(screen.getByRole("menuitem", { name: "Groups" }));
+            expect(props.onOpenGroups).toHaveBeenCalled();
         });
 
         it("calls onOpenAnnouncement when Announcement menu item is clicked", () => {

@@ -16,6 +16,7 @@ export function makeCategory(overrides: Partial<Category> = {}): Category {
         children: [],
         images: [],
         programIds: [],
+        groupIds: [],
         status: null,
         sortOrder: 0,
         cardImageId: null,

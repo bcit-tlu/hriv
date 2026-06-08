@@ -55,6 +55,16 @@ import {
   createProgram,
   updateProgram,
   deleteProgram,
+  fetchGroups,
+  createGroup,
+  updateGroup,
+  deleteGroup,
+  fetchGroupMembers,
+  addGroupMember,
+  removeGroupMember,
+  fetchGroupInstructors,
+  addGroupInstructor,
+  removeGroupInstructor,
   fetchAnnouncement,
   updateAnnouncement,
   fetchSourceImage,
@@ -120,6 +130,7 @@ const CATEGORY_FIXTURE: ApiCategory = {
   label: 'Architecture',
   parent_id: null,
   program_ids: [],
+  group_ids: [],
   status: null,
   sort_order: 0,
   metadata_extra: null,
@@ -541,6 +552,12 @@ describe('User API', () => {
     expect(result).toEqual([USER_FIXTURE])
   })
 
+  it('fetchUsers appends a role query parameter when provided', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([USER_FIXTURE]))
+    await fetchUsers('instructor')
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/users/?role=instructor')
+  })
+
   it('loginUser sends POST with credentials', async () => {
     const loginResp = { access_token: 'tok', token_type: 'bearer', user: USER_FIXTURE }
     mockFetch.mockReturnValueOnce(jsonResponse(loginResp))
@@ -619,6 +636,102 @@ describe('Program API', () => {
     await deleteProgram(1)
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/programs/1')
+    expect(init.method).toBe('DELETE')
+  })
+})
+
+// ── Groups ───────────────────────────────────────────────────────────────
+
+describe('Group API', () => {
+  const GROUP_FIXTURE = {
+    id: 1,
+    name: 'Cohort A',
+    description: null,
+    created_by_user_id: 10,
+    member_ids: [101],
+    instructor_ids: [10],
+    created_at: '',
+    updated_at: '',
+  }
+  const MEMBER_FIXTURE = { id: 101, name: 'Alice', email: 'alice@bcit.ca', role: 'student' }
+
+  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  afterEach(() => setToken(null))
+
+  it('fetchGroups sends GET to /api/groups/', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([GROUP_FIXTURE]))
+    const result = await fetchGroups()
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/groups/')
+    expect(result).toEqual([GROUP_FIXTURE])
+  })
+
+  it('createGroup sends POST with body', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(GROUP_FIXTURE))
+    await createGroup({ name: 'Cohort A', description: 'desc' })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/groups/')
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(init.body)).toEqual({ name: 'Cohort A', description: 'desc' })
+  })
+
+  it('updateGroup sends PATCH to /api/groups/:id', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(GROUP_FIXTURE))
+    await updateGroup(1, { name: 'Renamed' })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/groups/1')
+    expect(init.method).toBe('PATCH')
+  })
+
+  it('deleteGroup sends DELETE to /api/groups/:id', async () => {
+    mockFetch.mockReturnValueOnce(noContentResponse())
+    await deleteGroup(1)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/groups/1')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('fetchGroupMembers sends GET to /api/groups/:id/members', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([MEMBER_FIXTURE]))
+    const result = await fetchGroupMembers(1)
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/groups/1/members')
+    expect(result).toEqual([MEMBER_FIXTURE])
+  })
+
+  it('addGroupMember sends POST to /api/groups/:id/members/:userId', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(GROUP_FIXTURE))
+    await addGroupMember(1, 101)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/groups/1/members/101')
+    expect(init.method).toBe('POST')
+  })
+
+  it('removeGroupMember sends DELETE to /api/groups/:id/members/:userId', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(GROUP_FIXTURE))
+    await removeGroupMember(1, 101)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/groups/1/members/101')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('fetchGroupInstructors sends GET to /api/groups/:id/instructors', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([MEMBER_FIXTURE]))
+    await fetchGroupInstructors(1)
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/groups/1/instructors')
+  })
+
+  it('addGroupInstructor sends POST to /api/groups/:id/instructors/:userId', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(GROUP_FIXTURE))
+    await addGroupInstructor(1, 10)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/groups/1/instructors/10')
+    expect(init.method).toBe('POST')
+  })
+
+  it('removeGroupInstructor sends DELETE to /api/groups/:id/instructors/:userId', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(GROUP_FIXTURE))
+    await removeGroupInstructor(1, 10)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/groups/1/instructors/10')
     expect(init.method).toBe('DELETE')
   })
 })

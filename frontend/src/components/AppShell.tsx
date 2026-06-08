@@ -47,6 +47,7 @@ export interface AppShellProps {
     // Manage menu
     onOpenCategories: () => void;
     onOpenPrograms: () => void;
+    onOpenGroups: () => void;
     onOpenAnnouncement: () => void;
     // Search
     onSearchOpen: () => void;
@@ -79,6 +80,7 @@ export default function AppShell(props: AppShellProps) {
         logout,
         onOpenCategories,
         onOpenPrograms,
+        onOpenGroups,
         onOpenAnnouncement,
         onSearchOpen,
         mode,
@@ -197,6 +199,14 @@ export default function AppShell(props: AppShellProps) {
                                 Programs
                             </MenuItem>
                         )}
+                        <MenuItem
+                            onClick={() => {
+                                setManageMenuAnchor(null);
+                                onOpenGroups();
+                            }}
+                        >
+                            Groups
+                        </MenuItem>
                         <MenuItem
                             onClick={() => {
                                 setManageMenuAnchor(null);

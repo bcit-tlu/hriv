@@ -67,7 +67,7 @@ describe('EditCategoryDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith('New Name', undefined)
+      expect(onSave).toHaveBeenCalledWith('New Name', undefined, undefined)
     })
     expect(onClose).toHaveBeenCalled()
   })
@@ -96,7 +96,7 @@ describe('EditCategoryDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith('New Name', [2])
+      expect(onSave).toHaveBeenCalledWith('New Name', [2], undefined)
     })
   })
 
@@ -354,7 +354,7 @@ describe('EditCategoryDialog', () => {
 
       await waitFor(() => {
         // Should save [1] only — Program C (id=3) was filtered out on open
-        expect(onSave).toHaveBeenCalledWith('Updated Child', [1])
+        expect(onSave).toHaveBeenCalledWith('Updated Child', [1], undefined)
       })
     })
 
@@ -428,7 +428,7 @@ describe('EditCategoryDialog', () => {
       expect(saveBtn).not.toBeDisabled()
       await user.click(saveBtn)
       await waitFor(() => {
-        expect(onSave).toHaveBeenCalledWith('Renamed Child', [])
+        expect(onSave).toHaveBeenCalledWith('Renamed Child', [], undefined)
       })
     })
   })
@@ -446,5 +446,78 @@ describe('EditCategoryDialog', () => {
     )
     await user.click(screen.getByRole('button', { name: /cancel/i }))
     expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  describe('group restriction', () => {
+    const groups = [
+      { id: 10, name: 'Cohort A', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '', updatedAt: '' },
+      { id: 11, name: 'Cohort B', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '', updatedAt: '' },
+    ]
+
+    it('does not render group section when no groups provided', () => {
+      render(
+        <EditCategoryDialog open onClose={vi.fn()} onSave={vi.fn()} currentLabel="Child" />,
+      )
+      expect(screen.queryByText('Group restriction')).not.toBeInTheDocument()
+    })
+
+    it('renders group section and pre-selects current groups', () => {
+      render(
+        <EditCategoryDialog
+          open
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          currentLabel="Child"
+          groups={groups}
+          currentGroupIds={[10]}
+        />,
+      )
+      expect(screen.getByText('Group restriction')).toBeInTheDocument()
+      expect(screen.getByLabelText('Specific groups')).toBeChecked()
+    })
+
+    it('saves updated groupIds when a group is toggled', async () => {
+      const user = userEvent.setup()
+      const onSave = vi.fn().mockResolvedValue(undefined)
+      render(
+        <EditCategoryDialog
+          open
+          onClose={vi.fn()}
+          onSave={onSave}
+          currentLabel="Child"
+          groups={groups}
+          currentGroupIds={[10]}
+        />,
+      )
+      // Add Cohort B to the selection
+      await user.click(screen.getByText('Cohort B'))
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+
+      await waitFor(() =>
+        expect(onSave).toHaveBeenCalledWith(
+          'Child',
+          undefined,
+          expect.arrayContaining([10, 11]),
+        ),
+      )
+    })
+
+    it('shows symmetric intersection warning when restricted by both program and group', () => {
+      render(
+        <EditCategoryDialog
+          open
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          currentLabel="Child"
+          programs={[
+            { id: 1, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' },
+          ]}
+          currentProgramIds={[1]}
+          groups={groups}
+          currentGroupIds={[10]}
+        />,
+      )
+      expect(screen.getByText(/restricted by both program and group/i)).toBeInTheDocument()
+    })
   })
 })

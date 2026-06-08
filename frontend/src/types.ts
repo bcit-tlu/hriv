@@ -24,6 +24,7 @@ export interface Category {
   children: Category[]
   images: ImageItem[]
   programIds: number[]
+  groupIds: number[]
   status?: string | null
   sortOrder: number
   cardImageId?: number | null
@@ -50,4 +51,15 @@ export interface Program {
   oidc_group: string | null
   created_at: string
   updated_at: string
+}
+
+export interface Group {
+  id: number
+  name: string
+  description: string | null
+  createdByUserId: number | null
+  memberIds: number[]
+  instructorIds: number[]
+  createdAt: string
+  updatedAt: string
 }

@@ -40,6 +40,8 @@ import PeoplePage from "./components/PeoplePage";
 import LoginScreen from "./components/LoginScreen";
 import EditImageModal from "./components/EditImageModal";
 import ProgramManagementModal from "./components/ProgramManagementModal";
+import GroupManagementModal from "./components/GroupManagementModal";
+import GroupMembersDialog from "./components/GroupMembersDialog";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
 import type { TypeFilter } from "./components/SearchModal";
@@ -58,6 +60,9 @@ import {
     createProgram,
     updateProgram,
     deleteProgram,
+    createGroup,
+    updateGroup,
+    deleteGroup,
     userMessage,
 } from "./api";
 import type {
@@ -65,7 +70,7 @@ import type {
 } from "./api";
 import MoveCategoryDialog from "./components/MoveCategoryDialog";
 import { useProcessingJobs } from "./useProcessingJobs";
-import type { Category, ImageItem, Program } from "./types";
+import type { Category, Group, ImageItem, Program } from "./types";
 import { MAX_DEPTH } from "./types";
 import AddCategoryDialog from "./components/AddCategoryDialog";
 import EditCategoryDialog from "./components/EditCategoryDialog";
@@ -148,14 +153,19 @@ export default function App() {
         uncategorizedImages,
         uncategorizedLoaded,
         programs,
+        groups,
+        setGroups,
         loadCategories,
         loadUncategorizedImages,
         loadPrograms,
+        loadGroups,
         refreshCategories,
         refreshUncategorizedImages,
         currentImages,
         getPathRestriction,
         ancestorProgramIds,
+        getPathGroupRestriction,
+        ancestorGroupIds,
         currentCategories,
     } = useBrowseData({ path, currentUser });
 
@@ -239,6 +249,10 @@ export default function App() {
 
     // Program management modal state (for Manage menu)
     const [programModalOpen, setProgramModalOpen] = useState(false);
+
+    // Group management modal state (for Manage menu) + member-management dialog
+    const [groupModalOpen, setGroupModalOpen] = useState(false);
+    const [membersDialogGroup, setMembersDialogGroup] = useState<Group | null>(null);
 
     // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
     const [canvasEditActive, setCanvasEditActive] = useState(false);
@@ -416,9 +430,12 @@ export default function App() {
             loadCategories();
             loadUncategorizedImages();
             loadPrograms();
+            if (currentUser.role === "admin" || currentUser.role === "instructor") {
+                loadGroups();
+            }
         }
         loadAnnouncement();
-    }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms, loadAnnouncement]);
+    }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms, loadGroups, loadAnnouncement]);
 
     // Load users for search when modal opens (admin/instructor only)
     useEffect(() => {
@@ -508,6 +525,76 @@ export default function App() {
         [loadPrograms],
     );
 
+    // Group management handlers (for Manage menu). Admins manage all groups;
+    // instructors manage groups they co-own. The backend enforces this; the UI
+    // gates the buttons via canManageGroup to avoid 403s on no-op clicks.
+    const canManageGroup = useCallback(
+        (group: Group): boolean => {
+            if (!currentUser) return false;
+            if (currentUser.role === "admin") return true;
+            return group.instructorIds.includes(currentUser.id);
+        },
+        [currentUser],
+    );
+
+    const handleAddGroup = useCallback(
+        async (name: string, description: string | null) => {
+            try {
+                await createGroup({ name, description });
+                await loadGroups();
+            } catch (err) {
+                console.error("Failed to add group", err);
+                setErrorSnack(userMessage(err, "Failed to add group."));
+            }
+        },
+        [loadGroups],
+    );
+
+    const handleEditGroup = useCallback(
+        async (id: number, name: string, description: string | null) => {
+            try {
+                await updateGroup(id, { name, description });
+                await loadGroups();
+            } catch (err) {
+                console.error("Failed to edit group", err);
+                setErrorSnack(userMessage(err, "Failed to edit group."));
+            }
+        },
+        [loadGroups],
+    );
+
+    const handleDeleteGroup = useCallback(
+        async (id: number) => {
+            try {
+                await deleteGroup(id);
+                await loadGroups();
+            } catch (err) {
+                console.error("Failed to delete group", err);
+                setErrorSnack(
+                    userMessage(
+                        err,
+                        "Failed to delete group. It may still be attached to categories.",
+                    ),
+                );
+            }
+        },
+        [loadGroups],
+    );
+
+    // Membership mutations return the full updated group; reflect it in the
+    // groups list and keep the open members dialog in sync.
+    const handleGroupUpdated = useCallback(
+        (updated: Group) => {
+            setGroups((prev) =>
+                prev.map((g) => (g.id === updated.id ? updated : g)),
+            );
+            setMembersDialogGroup((prev) =>
+                prev && prev.id === updated.id ? updated : prev,
+            );
+        },
+        [setGroups],
+    );
+
     // Canvas annotations (extracted to useCanvasAnnotations hook)
     const {
         localCanvasAnnotations,
@@ -569,10 +656,13 @@ export default function App() {
         currentCategories,
         ancestorProgramIds,
         getPathRestriction,
+        ancestorGroupIds,
+        getPathGroupRestriction,
         path,
         setPath,
         editNameCategory,
         setErrorSnack,
+        setWarningSnack: setWarnSnack,
         setMoveSnack,
     });
 
@@ -768,6 +858,7 @@ export default function App() {
             logout={logout}
             onOpenCategories={() => setDialogOpen(true)}
             onOpenPrograms={() => setProgramModalOpen(true)}
+            onOpenGroups={() => setGroupModalOpen(true)}
             onOpenAnnouncement={openAnnModal}
             onSearchOpen={() => setSearchOpen(true)}
             mode={mode}
@@ -1665,37 +1756,46 @@ export default function App() {
             <AddCategoryDialog
                 open={addCatOpen}
                 onClose={() => setAddCatOpen(false)}
-                onAdd={async (label, programIds) => {
+                onAdd={async (label, programIds, groupIds) => {
                     await addCategoryInline(
                         label,
                         path.length > 0
                             ? path[path.length - 1].id
                             : null,
                         programIds,
+                        groupIds,
                     );
                 }}
                 parentLabel={path.length > 0 ? path[path.length - 1].label : undefined}
                 siblingNames={currentCategories.map((c) => c.label)}
                 programs={programs}
                 inheritedProgramIds={ancestorProgramIds}
+                groups={groups}
+                inheritedGroupIds={ancestorGroupIds}
             />
 
             {/* Edit category name dialog (home tab) */}
             <EditCategoryDialog
                 open={editNameCategory != null}
                 onClose={() => setEditNameCategory(null)}
-                onSave={async (newLabel, programIds) => {
+                onSave={async (newLabel, programIds, groupIds) => {
                     if (!editNameCategory) return;
                     await editCategoryInline(
                         editNameCategory.id,
                         newLabel,
                         programIds,
+                        groupIds,
                     );
                     if (path.some((p) => p.id === editNameCategory.id)) {
                         setPath((prev) =>
                             prev.map((p) =>
                                 p.id === editNameCategory.id
-                                    ? { ...p, label: newLabel, programIds: programIds ?? p.programIds }
+                                    ? {
+                                          ...p,
+                                          label: newLabel,
+                                          programIds: programIds ?? p.programIds,
+                                          groupIds: groupIds ?? p.groupIds,
+                                      }
                                     : p,
                             ),
                         );
@@ -1706,6 +1806,9 @@ export default function App() {
                 programs={programs}
                 currentProgramIds={editCategoryContext.freshProgramIds}
                 inheritedProgramIds={editCategoryContext.inheritedProgramIds}
+                groups={groups}
+                currentGroupIds={editCategoryContext.freshGroupIds}
+                inheritedGroupIds={editCategoryContext.inheritedGroupIds}
             />
 
             {/* Self-edit profile modal */}
@@ -1785,6 +1888,26 @@ export default function App() {
                 onAdd={handleAddProgram}
                 onEdit={handleEditProgram}
                 onDelete={handleDeleteProgram}
+            />
+
+            {/* Group management modal (from Manage menu) */}
+            <GroupManagementModal
+                open={groupModalOpen}
+                onClose={() => setGroupModalOpen(false)}
+                groups={groups}
+                onAdd={handleAddGroup}
+                onEdit={handleEditGroup}
+                onDelete={handleDeleteGroup}
+                onManageMembers={(g) => setMembersDialogGroup(g)}
+                canManage={canManageGroup}
+            />
+
+            {/* Group members dialog (opened from the group management modal) */}
+            <GroupMembersDialog
+                open={membersDialogGroup != null}
+                onClose={() => setMembersDialogGroup(null)}
+                group={membersDialogGroup}
+                onGroupUpdated={handleGroupUpdated}
             />
 
             {/* Report issue modal */}

@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { narrowProgramIds, splitDirectAncestorProgramIds } from '../src/categoryUtils'
+import {
+  narrowGroupIds,
+  narrowProgramIds,
+  splitDirectAncestorProgramIds,
+} from '../src/categoryUtils'
 
 describe('narrowProgramIds', () => {
   it('returns empty array for empty ancestors', () => {
@@ -161,5 +165,57 @@ describe('splitDirectAncestorProgramIds', () => {
     // effective = [5,6]; leaf.programIds = []
     // direct = []; ancestor = [5,6]
     expect(splitDirectAncestorProgramIds(path)).toEqual({ direct: [], ancestor: [5, 6] })
+  })
+})
+
+describe('narrowGroupIds', () => {
+  it('returns empty array for empty ancestors', () => {
+    expect(narrowGroupIds([])).toEqual([])
+  })
+
+  it('returns empty array when no ancestor has groupIds', () => {
+    expect(narrowGroupIds([{ groupIds: [] }, { groupIds: [] }])).toEqual([])
+  })
+
+  it('returns groupIds from the first ancestor that has them', () => {
+    expect(narrowGroupIds([{ groupIds: [] }, { groupIds: [1, 2, 3] }])).toEqual([1, 2, 3])
+  })
+
+  it('intersects when multiple ancestors have groupIds', () => {
+    expect(
+      narrowGroupIds([{ groupIds: [1, 2, 3] }, { groupIds: [2, 3, 4] }]),
+    ).toEqual([2, 3])
+  })
+
+  it('narrows progressively through three levels', () => {
+    expect(
+      narrowGroupIds([
+        { groupIds: [1, 2, 3, 4] },
+        { groupIds: [2, 3, 4, 5] },
+        { groupIds: [3, 4, 5, 6] },
+      ]),
+    ).toEqual([3, 4])
+  })
+
+  it('skips ancestors with empty groupIds in the middle', () => {
+    expect(
+      narrowGroupIds([
+        { groupIds: [1, 2, 3] },
+        { groupIds: [] },
+        { groupIds: [2, 3, 4] },
+      ]),
+    ).toEqual([2, 3])
+  })
+
+  it('returns empty array when intersection is empty', () => {
+    expect(narrowGroupIds([{ groupIds: [1, 2] }, { groupIds: [3, 4] }])).toEqual([])
+  })
+
+  it('does not mutate the input ancestors', () => {
+    const a1 = { groupIds: [1, 2, 3] }
+    const a2 = { groupIds: [2, 3] }
+    narrowGroupIds([a1, a2])
+    expect(a1.groupIds).toEqual([1, 2, 3])
+    expect(a2.groupIds).toEqual([2, 3])
   })
 })
