@@ -6,8 +6,8 @@ Then** where helpful. For tile drag-and-drop reordering specifically, see
 [drag-and-drop.md](drag-and-drop.md) — this doc does not re-specify it.
 
 Component tests referenced below live in `frontend/tests/components/`; hook/util
-tests live in `frontend/tests/`. See the [agent test matrix](agent-test-matrix.md)
-for which tests to run per change.
+tests live in `frontend/tests/`. See the [agent feature map](agent-feature-map.md)
+for where each feature lives and its tests.
 
 ---
 
@@ -99,8 +99,9 @@ never widen access an ancestor restricts:
 
 - `CategoryPickerSelect` flattens the tree into an indented list and shows each
   category's **direct** image count. Restricted categories render a lock icon —
-  per accessibility convention, the lock is a focusable `<span role="img"
-  aria-label="…" tabIndex={0}>` (query via `getByLabelText`, not `getByTitle`).
+  per accessibility convention (see [`REVIEW.md`](../REVIEW.md)), the lock is a
+  non-interactive `<span role="img" aria-label="…">` **without** `tabIndex`
+  (query via `getByLabelText`, not `getByTitle`).
 
 ### Manage page filtering & auto-refresh (`ManagePage.tsx`)
 
@@ -140,5 +141,4 @@ never widen access an ancestor restricts:
   feel-test required before merge).
 - [category-visibility-and-programs.md](category-visibility-and-programs.md) — the
   authoritative visibility model (frontend narrowing vs backend enforcement).
-- [agent-feature-map.md](agent-feature-map.md) — where each feature lives.
-- [agent-test-matrix.md](agent-test-matrix.md) — which tests to run per change.
+- [agent-feature-map.md](agent-feature-map.md) — where each feature lives and its tests.
