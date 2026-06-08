@@ -48,8 +48,12 @@ always wins; reorder can only win once the pointer crosses the centre.
 3. Reorder only becomes possible once `farHalfReorderCollision` reports a tile
    (pointer past its centre along the drag axis); the near half and the
    inter-tile gap never produce a reorder target at runtime.
-4. Self-drop (`source.id === target.id`), null target, and canceled drags are
-   no-ops.
+4. Null target and canceled drags are explicit no-ops. After optimistic reflow,
+   the collision detector may resolve the target as the source itself
+   (`source.id === target.id`); this is **not** short-circuited — `move()` still
+   computes the correct reordered array using the source's projected sortable
+   index. True self-drops (no actual movement) are caught downstream by the
+   identity check (`reorderedIds.every((id, i) => id === ids[i])`).
 
 ## Live preview
 
