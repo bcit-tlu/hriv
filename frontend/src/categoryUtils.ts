@@ -1,9 +1,12 @@
 /**
- * Shared utility for computing effective program restrictions via narrowing
- * (intersection) semantics on an ordered ancestor chain.
+ * Shared category-tree utilities: narrowing semantics for program/group
+ * restrictions, and path-based tree traversal.
  *
- * Used by App.tsx, ManageCategoriesDialog, CategoryPickerSelect, and ManagePage.
+ * Used by App.tsx, ManageCategoriesDialog, CategoryPickerSelect, ManagePage,
+ * and useBrowseData.
  */
+
+import type { Category, ImageItem } from "./types";
 
 /**
  * Walk an ordered (top-down) list of ancestors applying narrowing semantics:
@@ -66,4 +69,24 @@ export function splitDirectAncestorProgramIds(
   const direct = effective.filter((pid) => directIds.has(pid))
   const ancestor = effective.filter((pid) => !directIds.has(pid))
   return { direct, ancestor }
+}
+
+/**
+ * Walk the category tree along `path` and return the children/images
+ * at the terminal node.
+ */
+export function resolvePathNode(
+  categories: Category[],
+  path: Category[],
+): { cats: Category[]; imgs: ImageItem[] } {
+  let node = categories
+  for (const segment of path) {
+    const found = node.find((c) => c.id === segment.id)
+    if (!found) return { cats: [], imgs: [] }
+    node = found.children
+    if (segment === path[path.length - 1]) {
+      return { cats: found.children, imgs: found.images }
+    }
+  }
+  return { cats: node, imgs: [] }
 }

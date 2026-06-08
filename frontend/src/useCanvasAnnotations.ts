@@ -47,6 +47,27 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     // Track which image ID the current in-flight save targets so stale completions
     // don't overwrite refs after an image change
     const saveTargetImageIdRef = useRef<number | null>(null);
+    // Stable ref for the save function so the callback can flush queued saves
+    // without a self-reference (which the React Compiler cannot memoize).
+    const saveCanvasAnnotationsRef = useRef<
+        (annotations: CanvasAnnotation[]) => Promise<void>
+    >(async () => {});
+
+    // Synchronously clear race-sensitive refs during render when the image
+    // changes.  The useEffect below runs as a passive effect (deferred), so
+    // there is a window between re-render and effect execution where an
+    // in-flight save's `finally` block could read stale guard refs and flush
+    // queued saves via `saveCanvasAnnotationsRef.current` — which already
+    // points to the new closure (wrong image).  Clearing synchronously
+    // eliminates that window.
+    const prevSelectedImageIdRef = useRef<number | null>(null);
+    const currentImageId = selectedImage?.id ?? null;
+    if (currentImageId !== prevSelectedImageIdRef.current) {
+        prevSelectedImageIdRef.current = currentImageId;
+        pendingCanvasAnnotationsRef.current = null;
+        saveTargetImageIdRef.current = null;
+        canvasSaveInFlightRef.current = false;
+    }
 
     // --- State ---
 
@@ -125,13 +146,14 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
                     if (pendingCanvasAnnotationsRef.current !== null) {
                         const queued = pendingCanvasAnnotationsRef.current;
                         pendingCanvasAnnotationsRef.current = null;
-                        void saveCanvasAnnotations(queued);
+                        void saveCanvasAnnotationsRef.current(queued);
                     }
                 }
             }
         },
         [selectedImage, loadCategories, loadUncategorizedImages, setErrorSnack],
     );
+    saveCanvasAnnotationsRef.current = saveCanvasAnnotations;
 
     // Save canvas annotations to image metadata_extra (debounced).
     // Rapid edits reset a 600ms timer; if a save is already in-flight the

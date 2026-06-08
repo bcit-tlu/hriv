@@ -7,7 +7,7 @@ import {
 } from "./api";
 import type { ApiCategoryTree, ApiImage } from "./api";
 import type { Category, Group, ImageItem, Program, User } from "./types";
-import { narrowProgramIds, narrowGroupIds } from "./categoryUtils";
+import { narrowProgramIds, narrowGroupIds, resolvePathNode } from "./categoryUtils";
 import { apiGroupToGroup } from "./groupUtils";
 import { useBackgroundRefresh } from "./useBackgroundRefresh";
 
@@ -175,19 +175,10 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
 
     // Resolve the live children/images from the categories state tree
     // so newly added categories appear immediately.
-    const { cats: resolvedCategories, imgs: currentImages } = useMemo(() => {
-        let node = categories;
-        for (const segment of path) {
-            const found = node.find((c) => c.id === segment.id);
-            if (!found)
-                return { cats: [] as Category[], imgs: [] as ImageItem[] };
-            node = found.children;
-            if (segment === path[path.length - 1]) {
-                return { cats: found.children, imgs: found.images };
-            }
-        }
-        return { cats: node, imgs: [] as ImageItem[] };
-    }, [categories, path]);
+    const { cats: resolvedCategories, imgs: currentImages } = useMemo(
+        () => resolvePathNode(categories, path),
+        [categories, path],
+    );
 
     // Walk the categories tree along the given path segments applying narrowing
     // (intersection) semantics. `depth` controls how many path segments to
