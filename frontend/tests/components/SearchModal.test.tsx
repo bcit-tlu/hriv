@@ -74,7 +74,7 @@ const testUsers: ApiUser[] = [
         email: "jane@bcit.ca",
         role: "instructor",
         program_ids: [1],
-        program_names: ["Medical Lab Science"],
+        program_names: ["Medical Lab Science"], group_ids: [], group_names: [],
         last_access: null,
         metadata_extra: null,
         created_at: "",

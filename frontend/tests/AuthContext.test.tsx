@@ -115,7 +115,7 @@ describe('AuthProvider', () => {
         email: 'admin@example.ca',
         role: 'admin',
         program_ids: [],
-        program_names: [],
+        program_names: [], group_ids: [], group_names: [],
         last_access: null,
       }),
     })
@@ -187,7 +187,7 @@ describe('AuthProvider', () => {
         email: 'instructor@example.ca',
         role: 'instructor',
         program_ids: [],
-        program_names: [],
+        program_names: [], group_ids: [], group_names: [],
         last_access: null,
       },
     })
@@ -227,7 +227,7 @@ describe('AuthProvider', () => {
         email: 'new@example.ca',
         role: 'student',
         program_ids: [],
-        program_names: [],
+        program_names: [], group_ids: [], group_names: [],
         last_access: null,
       },
     })
@@ -267,7 +267,7 @@ describe('AuthProvider', () => {
         email: 'same@example.ca',
         role: 'student',
         program_ids: [],
-        program_names: [],
+        program_names: [], group_ids: [], group_names: [],
         last_access: null,
       },
     })
@@ -307,7 +307,7 @@ describe('AuthProvider', () => {
         email: 'a@example.ca',
         role: 'student',
         program_ids: [],
-        program_names: [],
+        program_names: [], group_ids: [], group_names: [],
         last_access: null,
       }),
     })
@@ -344,7 +344,7 @@ describe('AuthProvider', () => {
         email: 'i@example.ca',
         role: 'instructor',
         program_ids: [],
-        program_names: [],
+        program_names: [], group_ids: [], group_names: [],
         last_access: null,
       }),
     })
@@ -370,13 +370,13 @@ describe('AuthProvider', () => {
       ok: true,
       json: () => Promise.resolve({
         id: 1, name: 'A', email: 'admin@example.ca', role: 'admin',
-        program_ids: [], program_names: [], last_access: null,
+        program_ids: [], program_names: [], group_ids: [], group_names: [], last_access: null,
       }),
     })
     mockFetchUsers.mockResolvedValueOnce([])
     mockCreateUser.mockResolvedValueOnce({
       id: 5, name: 'New', email: 'new@example.ca', role: 'student',
-      program_ids: [], program_names: [], last_access: null,
+      program_ids: [], program_names: [], group_ids: [], group_names: [], last_access: null,
       metadata_extra: null, created_at: '', updated_at: '',
     })
 
@@ -412,13 +412,13 @@ describe('AuthProvider', () => {
       ok: true,
       json: () => Promise.resolve({
         id: 1, name: 'A', email: 'admin@example.ca', role: 'admin',
-        program_ids: [], program_names: [], last_access: null,
+        program_ids: [], program_names: [], group_ids: [], group_names: [], last_access: null,
       }),
     })
     mockFetchUsers.mockResolvedValueOnce([
       {
         id: 5, name: 'Other', email: 'other@example.ca', role: 'student',
-        program_ids: [], program_names: [], last_access: null,
+        program_ids: [], program_names: [], group_ids: [], group_names: [], last_access: null,
         metadata_extra: null, created_at: '', updated_at: '',
       },
     ])

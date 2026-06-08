@@ -15,7 +15,7 @@ const existingUser: ApiUser = {
   email: 'test@example.ca',
   role: 'student',
   program_ids: [1],
-  program_names: ['Medical Lab'],
+  program_names: ['Medical Lab'], group_ids: [], group_names: [],
   last_access: null,
   metadata_extra: null,
   created_at: '2026-01-01T00:00:00Z',

@@ -138,6 +138,8 @@ describe("useUserProfile", () => {
                 role: "admin",
                 program_ids: [10, 20],
                 program_names: ["Program A", "Program B"],
+                group_ids: [],
+                group_names: [],
                 last_access: "2026-01-01T00:00:00Z",
                 metadata_extra: null,
                 created_at: "2026-01-01T00:00:00Z",

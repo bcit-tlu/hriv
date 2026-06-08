@@ -11,6 +11,7 @@ vi.mock('../../src/api', async (importOriginal) => {
     addGroupMembersBulk: vi.fn(),
     addGroupInstructorsBulk: vi.fn(),
     removeGroupMember: vi.fn(),
+    removeGroupInstructor: vi.fn(),
   }
 })
 
@@ -20,6 +21,7 @@ import {
   addGroupMembersBulk,
   addGroupInstructorsBulk,
   removeGroupMember,
+  removeGroupInstructor,
 } from '../../src/api'
 import type { ApiGroup, ApiProgram, ApiUser, UserListParams } from '../../src/api'
 import type { Group } from '../../src/types'
@@ -234,6 +236,29 @@ describe('GroupMembersDialog', () => {
     await waitFor(() => expect(removeGroupMember).toHaveBeenCalledWith(5, 101))
     expect(onGroupUpdated).toHaveBeenCalledWith(
       expect.objectContaining({ id: 5, memberIds: [] }),
+    )
+  })
+
+  it('removes an existing co-owner from the Instructors tab', async () => {
+    const user = userEvent.setup()
+    const onGroupUpdated = vi.fn()
+    vi.mocked(removeGroupInstructor).mockResolvedValue(apiGroup({ instructor_ids: [] }))
+    render(
+      <GroupMembersDialog open group={group} onClose={vi.fn()} onGroupUpdated={onGroupUpdated} />,
+    )
+    await waitFor(() => expect(screen.getByText('Alice Student')).toBeInTheDocument())
+
+    await user.click(screen.getByRole('tab', { name: 'Instructors' }))
+    await waitFor(() =>
+      expect(screen.getByLabelText('remove Carol Instructor')).toBeInTheDocument(),
+    )
+    expect(screen.getByText('Co-owner')).toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('remove Carol Instructor'))
+
+    await waitFor(() => expect(removeGroupInstructor).toHaveBeenCalledWith(5, 201))
+    expect(onGroupUpdated).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 5, instructorIds: [] }),
     )
   })
 

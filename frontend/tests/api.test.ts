@@ -170,7 +170,7 @@ const USER_FIXTURE: ApiUser = {
   email: 'admin@example.ca',
   role: 'admin',
   program_ids: [],
-  program_names: [],
+  program_names: [], group_ids: [], group_names: [],
   last_access: null,
   metadata_extra: null,
   created_at: '2026-01-01T00:00:00Z',
