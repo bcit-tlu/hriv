@@ -223,6 +223,12 @@ export default function CategoryPickerSelect({
           value={value == null ? '' : String(value)}
           onChange={handleChange}
           label={label}
+          displayEmpty
+          renderValue={(selected) => {
+            if (selected === '') return <em>None (root level)</em>
+            const opt = options.find((o) => String(o.id) === selected)
+            return opt?.label ?? selected
+          }}
         >
           {includeRoot && (
             <MenuItem value="">

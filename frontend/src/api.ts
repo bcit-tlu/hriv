@@ -797,7 +797,7 @@ export interface ApiBulkImportJob {
 
 export async function bulkImportImages(
   files: File[],
-  categoryId: number,
+  categoryId: number | null,
   copyright?: string,
   note?: string,
   active?: boolean,
@@ -808,7 +808,7 @@ export async function bulkImportImages(
   for (const file of files) {
     form.append('files', file)
   }
-  form.append('category_id', String(categoryId))
+  if (categoryId != null) form.append('category_id', String(categoryId))
   if (copyright) form.append('copyright', copyright)
   if (note) form.append('note', note)
   if (active !== undefined) form.append('active', String(active))

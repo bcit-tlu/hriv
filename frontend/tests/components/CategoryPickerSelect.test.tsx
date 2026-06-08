@@ -48,6 +48,30 @@ describe('CategoryPickerSelect — LockIcon', () => {
     expect(lockElement).toHaveAttribute('role', 'img')
   })
 
+  it('displays "None (root level)" when root is selected (value=null)', () => {
+    const categories = [makeCategory({ id: 1, label: 'Test' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('None (root level)')).toBeInTheDocument()
+  })
+
+  it('displays selected category label in the collapsed select', () => {
+    const categories = [makeCategory({ id: 5, label: 'Histology' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={5}
+        onChange={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('Histology')).toBeInTheDocument()
+  })
+
   it('renders inherited restriction tooltip for child categories', async () => {
     const user = userEvent.setup()
     const parent = makeCategory({

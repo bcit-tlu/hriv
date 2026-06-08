@@ -225,6 +225,43 @@ async def test_bulk_import_images_accepts_plain_image(tmp_path) -> None:
     assert args[1] == 42
 
 
+async def test_bulk_import_images_accepts_no_category(tmp_path) -> None:
+    """Bulk import with category_id=None uploads images to root level."""
+    created_job = SimpleNamespace(
+        id=50,
+        status="pending",
+        total_count=1,
+        category_id=None,
+    )
+    db = AsyncMock()
+    # category_id=None means db.get for Category is never called
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+
+    async def _refresh(obj) -> None:
+        obj.id = created_job.id
+
+    db.refresh = AsyncMock(side_effect=_refresh)
+    bg = MagicMock()
+
+    with patch("app.routers.bulk_import.settings") as mock_settings:
+        mock_settings.source_images_dir = str(tmp_path)
+        result = await bulk_import_images(
+            files=[_make_upload("a.png", [b"png-bytes", b""])],
+            category_id=None,
+            background_tasks=bg,
+            _user=MagicMock(),
+            db=db,
+        )
+
+    assert result.id == 50
+    stored = list(tmp_path.iterdir())
+    assert len(stored) == 1
+    assert bg.add_task.call_count == 1
+    # db.get should NOT have been called (no category to validate)
+    db.get.assert_not_called()
+
+
 async def test_bulk_import_images_silently_skips_non_image_files(tmp_path) -> None:
     category = SimpleNamespace(id=1)
     db = AsyncMock()
