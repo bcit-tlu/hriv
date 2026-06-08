@@ -78,6 +78,26 @@
   - `.agents/skills/*/SKILL.md` — when a feature changes how it should be set up or tested locally.
   - `AGENTS.md` — when setup commands, project structure, or contributor workflow change.
 
+## Critical Invariants
+
+Project-specific rules that agents (and contributors) must not break. Each links
+to the deeper doc that explains the behaviour.
+
+- **Do not treat frontend filtering as security.** Student visibility MUST be enforced in backend routers (`visibility.py`, `routers/images.py`, `routers/categories.py`); the frontend filters for UX only. See [`docs/category-visibility-and-programs.md`](docs/category-visibility-and-programs.md).
+- **Student visibility is a dual gate (programs AND groups).** A student sees a category only if it passes BOTH the program gate and the group gate, evaluated up the ancestor chain (plus the hidden-subtree rule). Empty programs/groups on a category = unrestricted on that dimension. See [`docs/category-visibility-and-programs.md`](docs/category-visibility-and-programs.md) and [`docs/groups.md`](docs/groups.md).
+- **Always pass `user_group_ids` to the visibility helpers.** It is a required parameter (no default); omitting it = empty set = deny-all on the group dimension. Every student-scoped caller (`routers/categories.py`, `routers/images.py`) must pass `{g.id for g in user.groups}`.
+- **Programs and groups are independent.** Group membership does not imply program membership; do not derive one from the other. See [`docs/groups.md`](docs/groups.md).
+- **Category edit authority is global; attach authority is scoped.** Any admin/instructor can edit any category, but instructors can only attach programs they belong to and groups they manage. Do not conflate edit with attach/visibility. See [`docs/groups.md`](docs/groups.md).
+- **Group membership is role-enforced.** Members must be students, instructors must be instructors (422 on mismatch). A group's last instructor cannot be removed (409). A group attached to categories cannot be deleted (409). See [`docs/groups.md`](docs/groups.md).
+- **Do not widen child category program/group access beyond ancestor restrictions.** `categoryUtils.ts` uses narrowing/intersection semantics — a child can never grant access an ancestor restricts. See [`docs/category-visibility-and-programs.md`](docs/category-visibility-and-programs.md).
+- **Do not hand-edit the schema without an Alembic migration.** Alembic is the sole source of truth. See `backend/README.md` and [`docs/domain-model.md`](docs/domain-model.md).
+- **`metadata_` (Python) is the DB column `metadata`.** Don't rename one without the other; misusing JSONB writes can silently destroy unrelated metadata fields (e.g. overwriting annotations when only updating measurement scale).
+- **Do not assume image-level program restrictions exist.** Visibility is category/program/group based only (image-level program associations were deprecated in PR #385).
+- **Do not change drag-and-drop collision logic** without updating [`docs/drag-and-drop.md`](docs/drag-and-drop.md) and performing a human feel-test before merge.
+
+See the [agent feature map](docs/agent-feature-map.md) for where each feature
+lives, and the [domain model](docs/domain-model.md) for schema details.
+
 ## Development Workflow
 - Create feature branches from `main`
 - Use pull requests for code review
