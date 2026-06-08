@@ -21,8 +21,7 @@ describe('BulkEditModal', () => {
       />,
     )
     expect(screen.getByText('Bulk Edit Programs')).toBeInTheDocument()
-    expect(screen.getByText(/3 selected/)).toBeInTheDocument()
-    expect(screen.getByText(/people/)).toBeInTheDocument()
+    expect(screen.getByText(/Assign programs to 3 selected people/)).toBeInTheDocument()
   })
 
   it('shows singular "person" when selectedCount is 1', () => {
@@ -35,8 +34,7 @@ describe('BulkEditModal', () => {
         selectedCount={1}
       />,
     )
-    expect(screen.getByText(/1 selected/)).toBeInTheDocument()
-    expect(screen.getByText(/person/)).toBeInTheDocument()
+    expect(screen.getByText(/1 selected person/)).toBeInTheDocument()
   })
 
   it('calls onSave with null when no program is selected', async () => {
@@ -54,6 +52,19 @@ describe('BulkEditModal', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }))
     expect(onSave).toHaveBeenCalledWith([])
+  })
+
+  it('displays overwrite warning text', () => {
+    render(
+      <BulkEditModal
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        programs={programs}
+        selectedCount={2}
+      />,
+    )
+    expect(screen.getByText(/will replace any existing program associations/)).toBeInTheDocument()
   })
 
   it('cancel calls onClose', async () => {

@@ -87,6 +87,9 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
   // Bulk delete confirmation
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
+  // Individual delete confirmation
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState<ApiUser | null>(null)
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
@@ -576,7 +579,7 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                     <Button
                       size="small"
                       color="error"
-                      onClick={() => handleDeletePerson(user.id)}
+                      onClick={() => setDeleteConfirmUser(user)}
                     >
                       Delete
                     </Button>
@@ -674,6 +677,42 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setBulkDeleteOpen(false)}>Cancel</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Individual Delete Confirmation Dialog */}
+      <Dialog open={deleteConfirmUser != null} onClose={() => setDeleteConfirmUser(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>Delete Person</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Are you sure you want to delete <strong>{deleteConfirmUser?.name ?? deleteConfirmUser?.email}</strong>?
+          </Typography>
+          <Divider />
+          <Box>
+            <Button
+              color="error"
+              variant="contained"
+              onClick={async () => {
+                if (deleteConfirmUser) {
+                  await handleDeletePerson(deleteConfirmUser.id)
+                  setDeleteConfirmUser(null)
+                }
+              }}
+              fullWidth
+            >
+              Delete
+            </Button>
+            <Typography
+              variant="caption"
+              color="error"
+              sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
+            >
+              This action cannot be undone.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmUser(null)}>Cancel</Button>
         </DialogActions>
       </Dialog>
     </Box>
