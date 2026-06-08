@@ -138,7 +138,11 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
 
     const refreshCategories = useCallback(async (): Promise<Category[]> => {
         invalidateRef.current?.();
-        const tree = await fetchCategoryTree();
+        // Force bypass the browser HTTP cache so we always get the
+        // freshly-committed sort_order values after a reorder.  Without
+        // this the browser may serve a stale 304-backed response whose
+        // ETag was computed before the reorder transaction committed.
+        const tree = await fetchCategoryTree({ cache: "reload" });
         const cats = tree.map(apiTreeToCategory);
         setCategories(cats);
         return cats;
@@ -146,7 +150,7 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
 
     const refreshUncategorizedImages = useCallback(
         async (): Promise<ImageItem[]> => {
-            const imgs = await fetchUncategorizedImages();
+            const imgs = await fetchUncategorizedImages({ cache: "reload" });
             const items = imgs.map(apiImageToItem);
             setUncategorizedImages(items);
             uncategorizedLoaded.current = true;
