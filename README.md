@@ -101,5 +101,6 @@ reconciliation model for both environments.
 | [docs/TESTING.md](docs/TESTING.md) | Test plan, API endpoint → minimum-role table |
 | [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md) | OIDC / auth configuration |
 | [docs/drag-and-drop.md](docs/drag-and-drop.md) | Tile drag-and-drop move-vs-reorder contract |
+| [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md) | UI behaviour spec (role gating, browse, dialogs, viewer, file drop) |
 | [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md) | Release-please + Flux deploy flow |
 | [AGENTS.md](AGENTS.md) | Contributor setup, workflow, and **Critical Invariants** |
