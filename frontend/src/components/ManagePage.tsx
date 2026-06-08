@@ -563,6 +563,16 @@ export default function ManagePage({
               size="small"
               onClick={() => setShowFilters((prev) => !prev)}
               color={showFilters || hasActiveFilters ? 'primary' : 'default'}
+              aria-label={showFilters ? 'Hide filters' : 'Show filters'}
+              sx={
+                hasActiveFilters
+                  ? {
+                      bgcolor: 'primary.main',
+                      color: 'primary.contrastText',
+                      '&:hover': { bgcolor: 'primary.dark' },
+                    }
+                  : undefined
+              }
             >
               <FilterListIcon />
             </IconButton>
