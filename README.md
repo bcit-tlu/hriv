@@ -97,6 +97,7 @@ reconciliation model for both environments.
 | [docs/domain-model.md](docs/domain-model.md) | Data model reference (entities, junctions, conventions) |
 | [docs/admin-import-export.md](docs/admin-import-export.md) | Admin import/export task lifecycle and data round-trip |
 | [docs/agent-feature-map.md](docs/agent-feature-map.md) | "Where to change what" map across frontend/backend/tests/docs |
+| [docs/agent-test-matrix.md](docs/agent-test-matrix.md) | "I changed X → run Y" decision tree for targeted test runs |
 | [docs/TESTING.md](docs/TESTING.md) | Test plan, API endpoint → minimum-role table |
 | [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md) | OIDC / auth configuration |
 | [docs/drag-and-drop.md](docs/drag-and-drop.md) | Tile drag-and-drop move-vs-reorder contract |
