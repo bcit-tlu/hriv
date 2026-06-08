@@ -42,6 +42,8 @@
 
 ## Testing Guidelines
 
+- **"I changed X → run Y":** see [`docs/agent-test-matrix.md`](docs/agent-test-matrix.md) for a decision tree mapping each change area to the targeted backend/frontend tests (and skills) to run. Run the full suite before opening a PR.
+
 ### Frontend
 - Write unit tests for all new functions
 - Use Vitest for testing framework (with `@testing-library/react` for component tests)
