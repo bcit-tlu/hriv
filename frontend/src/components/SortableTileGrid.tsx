@@ -274,7 +274,7 @@ export default function SortableTileGrid({
 
             const source = operation.source;
             const target = operation.target;
-            if (!source || !target || source.id === target.id) return;
+            if (!source || !target) return;
             if (reorderInFlightRef.current) return;
 
             const sourceId = String(source.id);

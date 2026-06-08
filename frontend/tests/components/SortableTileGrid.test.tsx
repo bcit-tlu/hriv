@@ -332,17 +332,20 @@ describe("handleDragEnd — move guards", () => {
         expect(onDropImageOnCategory).not.toHaveBeenCalled();
     });
 
-    it("does nothing when source and target are the same tile", async () => {
+    it("does nothing when source and target are the same tile (identity check)", async () => {
         const onDropImageOnCategory = vi.fn();
         renderGrid({
             currentImages: [makeImage({ id: 10, name: "Slide", sortOrder: 0 })],
             onDropImageOnCategory,
         });
 
+        // After optimistic reflow the collision detector may resolve the target
+        // as the source itself. With projected index === initialIndex, move()
+        // returns the same array and the downstream identity check no-ops.
         await act(async () => {
             await capturedOnDragEnd!({
                 operation: {
-                    source: { id: "img-10" },
+                    source: sortableSource("img-10", 0, 0),
                     target: { id: "img-10" },
                     canceled: false,
                 },
@@ -351,6 +354,33 @@ describe("handleDragEnd — move guards", () => {
 
         expect(onDropImageOnCategory).not.toHaveBeenCalled();
         expect(reorderImages).not.toHaveBeenCalled();
+    });
+
+    it("reorders when source.id === target.id but projected index differs (optimistic reflow)", async () => {
+        renderGrid({
+            currentImages: [
+                makeImage({ id: 10, name: "Slide A", sortOrder: 0 }),
+                makeImage({ id: 11, name: "Slide B", sortOrder: 1 }),
+            ],
+        });
+
+        // After optimistic reflow, the collision detector resolves the target as
+        // the source itself. But the source's projected index (0) differs from
+        // initialIndex (1) — real movement happened, so reorder must fire.
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: sortableSource("img-11", 0, 1),
+                    target: { id: "img-11" },
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(reorderImages).toHaveBeenCalledWith([
+            { id: 11, sort_order: 0 },
+            { id: 10, sort_order: 1 },
+        ]);
     });
 
     it("does nothing when target is null", async () => {
