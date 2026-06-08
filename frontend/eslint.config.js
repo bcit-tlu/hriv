@@ -22,11 +22,9 @@ export default defineConfig([
     rules: {
       // React Compiler rules (enabled by default in eslint-plugin-react-hooks
       // v7 "recommended" config). Disabled until the codebase is refactored to
-      // comply — re-enable incrementally.
+      // comply — re-enable incrementally per #223.
       'react-hooks/set-state-in-effect': 'off',
       'react-hooks/refs': 'off',
-      'react-hooks/immutability': 'off',
-      'react-hooks/preserve-manual-memoization': 'off',
     },
   },
 ])

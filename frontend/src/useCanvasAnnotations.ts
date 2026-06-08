@@ -47,6 +47,11 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     // Track which image ID the current in-flight save targets so stale completions
     // don't overwrite refs after an image change
     const saveTargetImageIdRef = useRef<number | null>(null);
+    // Stable ref for the save function so the callback can flush queued saves
+    // without a self-reference (which the React Compiler cannot memoize).
+    const saveCanvasAnnotationsRef = useRef<
+        (annotations: CanvasAnnotation[]) => Promise<void>
+    >(async () => {});
 
     // --- State ---
 
@@ -125,13 +130,14 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
                     if (pendingCanvasAnnotationsRef.current !== null) {
                         const queued = pendingCanvasAnnotationsRef.current;
                         pendingCanvasAnnotationsRef.current = null;
-                        void saveCanvasAnnotations(queued);
+                        void saveCanvasAnnotationsRef.current(queued);
                     }
                 }
             }
         },
         [selectedImage, loadCategories, loadUncategorizedImages, setErrorSnack],
     );
+    saveCanvasAnnotationsRef.current = saveCanvasAnnotations;
 
     // Save canvas annotations to image metadata_extra (debounced).
     // Rapid edits reset a 600ms timer; if a save is already in-flight the

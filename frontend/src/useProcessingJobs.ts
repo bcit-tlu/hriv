@@ -314,6 +314,90 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
         }
     }, [processingJobs]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    const updateBulkImportJob = useCallback(
+        (
+            bulkJob: ApiBulkImportJob,
+            filename: string,
+            fileSize: number,
+            uploadId?: number,
+        ) => {
+            const done = bulkJob.completed_count + bulkJob.failed_count;
+            const progress =
+                bulkJob.total_count > 0
+                    ? Math.round((done / bulkJob.total_count) * 100)
+                    : 0;
+            setProcessingJobs((prev) => {
+                const existing = prev.find(
+                    (j) =>
+                        j.bulkImportJobId === bulkJob.id ||
+                        (uploadId !== undefined && j.uploadId === uploadId),
+                );
+                const status =
+                    bulkJob.status === "completed"
+                        ? "completed"
+                        : bulkJob.status === "failed"
+                          ? "failed"
+                          : "importing";
+                if (existing) {
+                    return prev.map((j) =>
+                        j.id === existing.id
+                            ? {
+                                  ...j,
+                                  kind: "bulk-import" as const,
+                                  status,
+                                  bulkImportJobId: bulkJob.id,
+                                  serverProgress:
+                                      status === "completed" ? 100 : progress,
+                                  uploadId: undefined,
+                                  uploadProgress: undefined,
+                                  totalCount: bulkJob.total_count,
+                                  completedCount: bulkJob.completed_count,
+                                  failedCount: bulkJob.failed_count,
+                                  errors: bulkJob.errors,
+                                  errorMessage:
+                                      status === "failed"
+                                          ? "Bulk import failed."
+                                          : undefined,
+                              }
+                            : j,
+                    );
+                }
+                if (
+                    prev.filter(
+                        (j) =>
+                            j.status === "uploading" ||
+                            j.status === "processing" ||
+                            j.status === "importing",
+                    ).length >= MAX_PROCESSING_JOBS
+                )
+                    return prev;
+                return [
+                    ...prev,
+                    {
+                        id: -bulkJob.id,
+                        filename,
+                        status,
+                        kind: "bulk-import" as const,
+                        bulkImportJobId: bulkJob.id,
+                        serverProgress:
+                            status === "completed" ? 100 : progress,
+                        fileSize,
+                        startedAt: Date.now(),
+                        totalCount: bulkJob.total_count,
+                        completedCount: bulkJob.completed_count,
+                        failedCount: bulkJob.failed_count,
+                        errors: bulkJob.errors,
+                        errorMessage:
+                            status === "failed"
+                                ? "Bulk import failed."
+                                : undefined,
+                    },
+                ];
+            });
+        },
+        [],
+    );
+
     // Bulk import polling
     useEffect(() => {
         const refs = bulkImportPollRefs.current;
@@ -423,90 +507,6 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
                         serverProgress: 0,
                         fileSize,
                         startedAt: Date.now(),
-                    },
-                ];
-            });
-        },
-        [],
-    );
-
-    const updateBulkImportJob = useCallback(
-        (
-            bulkJob: ApiBulkImportJob,
-            filename: string,
-            fileSize: number,
-            uploadId?: number,
-        ) => {
-            const done = bulkJob.completed_count + bulkJob.failed_count;
-            const progress =
-                bulkJob.total_count > 0
-                    ? Math.round((done / bulkJob.total_count) * 100)
-                    : 0;
-            setProcessingJobs((prev) => {
-                const existing = prev.find(
-                    (j) =>
-                        j.bulkImportJobId === bulkJob.id ||
-                        (uploadId !== undefined && j.uploadId === uploadId),
-                );
-                const status =
-                    bulkJob.status === "completed"
-                        ? "completed"
-                        : bulkJob.status === "failed"
-                          ? "failed"
-                          : "importing";
-                if (existing) {
-                    return prev.map((j) =>
-                        j.id === existing.id
-                            ? {
-                                  ...j,
-                                  kind: "bulk-import" as const,
-                                  status,
-                                  bulkImportJobId: bulkJob.id,
-                                  serverProgress:
-                                      status === "completed" ? 100 : progress,
-                                  uploadId: undefined,
-                                  uploadProgress: undefined,
-                                  totalCount: bulkJob.total_count,
-                                  completedCount: bulkJob.completed_count,
-                                  failedCount: bulkJob.failed_count,
-                                  errors: bulkJob.errors,
-                                  errorMessage:
-                                      status === "failed"
-                                          ? "Bulk import failed."
-                                          : undefined,
-                              }
-                            : j,
-                    );
-                }
-                if (
-                    prev.filter(
-                        (j) =>
-                            j.status === "uploading" ||
-                            j.status === "processing" ||
-                            j.status === "importing",
-                    ).length >= MAX_PROCESSING_JOBS
-                )
-                    return prev;
-                return [
-                    ...prev,
-                    {
-                        id: -bulkJob.id,
-                        filename,
-                        status,
-                        kind: "bulk-import" as const,
-                        bulkImportJobId: bulkJob.id,
-                        serverProgress:
-                            status === "completed" ? 100 : progress,
-                        fileSize,
-                        startedAt: Date.now(),
-                        totalCount: bulkJob.total_count,
-                        completedCount: bulkJob.completed_count,
-                        failedCount: bulkJob.failed_count,
-                        errors: bulkJob.errors,
-                        errorMessage:
-                            status === "failed"
-                                ? "Bulk import failed."
-                                : undefined,
                     },
                 ];
             });
