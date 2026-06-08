@@ -7,7 +7,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import TextField from '@mui/material/TextField'
 import Alert from '@mui/material/Alert'
 import CircularProgress from '@mui/material/CircularProgress'
-import { reportIssue } from '../api'
+import { reportIssue, userMessage } from '../api'
 
 interface ReportIssueModalProps {
   open: boolean
@@ -60,7 +60,7 @@ export default function ReportIssueModal({ open, onClose }: ReportIssueModalProp
       }, 2000)
       void result
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to submit report.')
+      setError(userMessage(err, 'Failed to submit report.'))
     } finally {
       setSubmitting(false)
     }
