@@ -221,8 +221,34 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | POST   | /api/programs/           | Yes           | admin        |
 | PATCH  | /api/programs/{id}       | Yes           | admin        |
 | DELETE | /api/programs/{id}       | Yes           | admin        |
+| GET    | /api/groups/                           | Yes | instructor   |
+| POST   | /api/groups/                           | Yes | instructor   |
+| GET    | /api/groups/{id}                       | Yes | instructor   |
+| PATCH  | /api/groups/{id}                       | Yes | instructor † |
+| DELETE | /api/groups/{id}                       | Yes | instructor † |
+| GET    | /api/groups/{id}/members               | Yes | instructor   |
+| POST   | /api/groups/{id}/members/bulk          | Yes | instructor † |
+| DELETE | /api/groups/{id}/members/bulk          | Yes | instructor † |
+| POST   | /api/groups/{id}/members/{user_id}     | Yes | instructor † |
+| DELETE | /api/groups/{id}/members/{user_id}     | Yes | instructor † |
+| GET    | /api/groups/{id}/instructors           | Yes | instructor   |
+| POST   | /api/groups/{id}/instructors/bulk      | Yes | instructor † |
+| DELETE | /api/groups/{id}/instructors/bulk      | Yes | instructor † |
+| POST   | /api/groups/{id}/instructors/{user_id} | Yes | instructor † |
+| DELETE | /api/groups/{id}/instructors/{user_id} | Yes | instructor † |
 | GET    | /api/admin/export        | Yes           | admin        |
 | POST   | /api/admin/import        | Yes           | admin        |
+
+All `/api/groups/` endpoints require the `admin` or `instructor` role (read
+endpoints are open to any instructor). Rows marked **†** are mutations that
+additionally require **manage authority** on that specific group: admins manage
+any group; instructors manage only groups they co-own (403 otherwise). Group
+members must be students and instructors must be instructors (**422** on role
+mismatch); creating a duplicate group name, deleting a group still attached to a
+category, or removing a group's last instructor all return **409**. See
+[groups.md](groups.md) for the full model, authorization, and API details, and
+[category-visibility-and-programs.md](category-visibility-and-programs.md) for
+the dual-gate visibility evaluation.
 
 Programs are a flat, admin/OIDC-managed entity: only admins may create, rename, or delete a program (optionally setting an `oidc_group`); all roles may read them. `GET /api/users/` returns all users to admins and instructors. Programs are not hierarchical.
 
