@@ -166,6 +166,42 @@ describe("useNavigationHistory", () => {
             expect(onPopState).toHaveBeenCalledWith("browse", [], null);
         });
 
+        it("defaults to browse root when state has _hriv but missing page", () => {
+            const onPopState = vi.fn();
+            renderHook(() => useNavigationHistory(onPopState));
+
+            const event = new PopStateEvent("popstate", {
+                state: { _hriv: true },
+            });
+            window.dispatchEvent(event);
+
+            expect(onPopState).toHaveBeenCalledWith("browse", [], null);
+        });
+
+        it("defaults to browse root when catIds is not an array", () => {
+            const onPopState = vi.fn();
+            renderHook(() => useNavigationHistory(onPopState));
+
+            const event = new PopStateEvent("popstate", {
+                state: { _hriv: true, page: "browse", catIds: "not-array", imageId: null },
+            });
+            window.dispatchEvent(event);
+
+            expect(onPopState).toHaveBeenCalledWith("browse", [], null);
+        });
+
+        it("defaults to browse root when imageId is a string", () => {
+            const onPopState = vi.fn();
+            renderHook(() => useNavigationHistory(onPopState));
+
+            const event = new PopStateEvent("popstate", {
+                state: { _hriv: true, page: "browse", catIds: [], imageId: "bad" },
+            });
+            window.dispatchEvent(event);
+
+            expect(onPopState).toHaveBeenCalledWith("browse", [], null);
+        });
+
         it("uses the latest callback reference", () => {
             const first = vi.fn();
             const second = vi.fn();

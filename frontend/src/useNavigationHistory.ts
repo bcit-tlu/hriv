@@ -9,10 +9,13 @@ export interface NavHistoryState {
 }
 
 function isNavState(s: unknown): s is NavHistoryState {
+    if (s == null || typeof s !== "object") return false;
+    const o = s as Record<string, unknown>;
     return (
-        s != null &&
-        typeof s === "object" &&
-        (s as NavHistoryState)._hriv === true
+        o._hriv === true &&
+        typeof o.page === "string" &&
+        Array.isArray(o.catIds) &&
+        (o.imageId === null || typeof o.imageId === "number")
     );
 }
 
