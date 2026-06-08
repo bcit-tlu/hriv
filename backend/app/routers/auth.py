@@ -96,7 +96,7 @@ async def login(
     )
 
     token = create_access_token(user)
-    await db.refresh(user, ["programs"])
+    await db.refresh(user, ["programs", "groups"])
     user_data = {
         "id": user.id,
         "name": user.name,
@@ -104,6 +104,8 @@ async def login(
         "role": user.role,
         "program_ids": [p.id for p in user.programs],
         "program_names": [p.name for p in user.programs],
+        "group_ids": [g.id for g in user.groups],
+        "group_names": [g.name for g in user.groups],
         "metadata_extra": user.metadata_,
         "last_access": user.last_access,
         "created_at": user.created_at,
@@ -120,8 +122,13 @@ async def get_me(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Return the currently authenticated user. Any role can access this."""
-    await db.refresh(current_user, ["programs"])
+    """Return the currently authenticated user. Any role can access this.
+
+    Includes the caller's group memberships (``group_ids``/``group_names``)
+    so the UI can show the user which groups they belong to, alongside their
+    program chips.
+    """
+    await db.refresh(current_user, ["programs", "groups"])
     return UserOut(
         id=current_user.id,
         name=current_user.name,
@@ -129,6 +136,8 @@ async def get_me(
         role=current_user.role,
         program_ids=[p.id for p in current_user.programs],
         program_names=[p.name for p in current_user.programs],
+        group_ids=[g.id for g in current_user.groups],
+        group_names=[g.name for g in current_user.groups],
         metadata_extra=current_user.metadata_,
         last_access=current_user.last_access,
         created_at=current_user.created_at,

@@ -19,8 +19,10 @@ from app.routers.users import (
     bulk_delete_users,
     delete_user,
 )
+from fastapi import Response
+
 from app.schemas import UserCreate, UserUpdate, UserBulkUpdate, UserBulkRoleUpdate, UserBulkDelete
-from app.serializers import user_to_out
+from app.serializers import user_to_mini_out, user_to_out
 
 
 def _make_program(id: int = 1, name: str = "Biology") -> SimpleNamespace:
@@ -33,6 +35,7 @@ def _make_user(
     email: str = "test@example.com",
     role: str = "student",
     programs: list | None = None,
+    groups: list | None = None,
 ) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
@@ -42,6 +45,7 @@ def _make_user(
         password_hash="hashed",
         role=role,
         programs=programs or [],
+        groups=groups or [],
         metadata_=None,
         last_access=now,
         created_at=now,
@@ -62,6 +66,23 @@ def test_user_to_out_without_programs() -> None:
     data = user_to_out(user)
     assert data["program_names"] == []
     assert data["program_ids"] == []
+
+
+def test_user_to_out_includes_groups() -> None:
+    group = SimpleNamespace(id=7, name="Field Studies")
+    user = _make_user(groups=[group])
+    data = user_to_out(user)
+    assert data["group_ids"] == [7]
+    assert data["group_names"] == ["Field Studies"]
+
+
+def test_user_to_mini_out_hides_groups() -> None:
+    """Other users' group memberships must not leak via the minimal listing."""
+    group = SimpleNamespace(id=7, name="Field Studies")
+    user = _make_user(groups=[group])
+    data = user_to_mini_out(user)
+    assert data["group_ids"] == []
+    assert data["group_names"] == []
 
 
 async def test_list_users() -> None:
@@ -120,6 +141,77 @@ async def test_list_users_invalid_role_422() -> None:
     assert exc.value.status_code == 422
 
 
+def test_user_to_mini_out_includes_programs() -> None:
+    """Mini projection exposes program info (for the membership picker filter
+    + chips) but hides metadata/last_access."""
+    prog = _make_program(2, "Digital Design")
+    user = _make_user(id=3, name="Mira Patel", programs=[prog])
+    data = user_to_mini_out(user)
+    assert data["program_ids"] == [2]
+    assert data["program_names"] == ["Digital Design"]
+    assert data["metadata_extra"] is None
+    assert data["last_access"] is None
+
+
+async def test_list_users_program_filter() -> None:
+    """program_id filters server-side; instructor sees program chips."""
+    prog = _make_program(2, "Digital Design")
+    users = [_make_user(id=3, name="Mira Patel", programs=[prog])]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    instructor = _make_user(id=99, role="instructor")
+    result = await list_users(instructor, db, role="student", program_id=[2])
+    assert len(result) == 1
+    assert result[0]["program_ids"] == [2]
+
+
+async def test_list_users_program_filter_multi_or() -> None:
+    """Multiple program_id values filter with OR (IN) semantics."""
+    users = [_make_user(id=3), _make_user(id=4, email="four@example.com")]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    result = await list_users(
+        _make_user(role="admin"), db, program_id=[1, 2],
+    )
+    assert len(result) == 2
+
+
+async def test_list_users_search_q() -> None:
+    """q is accepted and the query executes (filter is applied in SQL)."""
+    users = [_make_user(id=3, name="Mira Patel")]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    result = await list_users(_make_user(role="admin"), db, q="mira")
+    assert len(result) == 1
+
+
+async def test_list_users_pagination_sets_total_count_header() -> None:
+    """When page/page_size are supplied, the pre-pagination total is returned
+    in the X-Total-Count response header."""
+    users = [_make_user(id=1), _make_user(id=2, email="two@example.com")]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.unique.return_value.all.return_value = users
+    mock_result.scalar_one.return_value = 42
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+
+    response = Response()
+    result = await list_users(
+        _make_user(role="admin"), db, page=1, page_size=2, response=response,
+    )
+    assert len(result) == 2
+    assert response.headers["X-Total-Count"] == "42"
+
+
 async def test_get_user_found() -> None:
     user = _make_user()
     mock_result = MagicMock()
@@ -160,6 +252,11 @@ async def test_create_user_success() -> None:
     # programs must be refreshed before _set_user_programs to avoid
     # MissingGreenlet when assigning the collection in async context
     assert db.refresh.await_count == 2
+    # The post-commit refresh must reload BOTH programs and groups, because
+    # user_to_out now reads user.groups; refreshing only programs would leave
+    # the groups relationship expired and raise MissingGreenlet on access.
+    assert db.refresh.await_args_list[-1].args[1] == ["programs", "groups"]
+    assert result["group_ids"] == []
 
 
 async def test_update_user_success() -> None:
@@ -174,6 +271,9 @@ async def test_update_user_success() -> None:
     result = await update_user(1, body, MagicMock(), db)
 
     assert user.name == "Updated"
+    # Post-commit refresh must reload groups too (see create_user guard).
+    assert db.refresh.await_args_list[-1].args[1] == ["programs", "groups"]
+    assert result["group_ids"] == []
 
 
 async def test_update_user_not_found() -> None:

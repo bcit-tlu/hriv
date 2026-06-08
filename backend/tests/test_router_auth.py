@@ -25,6 +25,7 @@ def _make_user(
     password_hash: str | None = None,
     role: str = "student",
     programs: list | None = None,
+    groups: list | None = None,
 ) -> SimpleNamespace:
     now = datetime.now(timezone.utc)
     return SimpleNamespace(
@@ -34,6 +35,7 @@ def _make_user(
         password_hash=password_hash,
         role=role,
         programs=programs or [],
+        groups=groups or [],
         metadata_=None,
         last_access=now,
         created_at=now,
@@ -176,3 +178,41 @@ async def test_get_me_without_programs() -> None:
     result = await get_me(user, db)
     assert result.program_names == []
     assert result.program_ids == []
+    assert result.group_ids == []
+    assert result.group_names == []
+
+
+async def test_get_me_includes_groups() -> None:
+    """A student's group memberships are returned so the UI can show them
+    alongside program chips."""
+    group = SimpleNamespace(id=7, name="Field Studies")
+    user = _make_user(groups=[group])
+
+    db = AsyncMock()
+    db.refresh = AsyncMock()
+
+    result = await get_me(user, db)
+    assert result.group_ids == [7]
+    assert result.group_names == ["Field Studies"]
+
+
+async def test_login_includes_groups() -> None:
+    group = SimpleNamespace(id=7, name="Field Studies")
+    user = _make_user(password_hash="hashed", groups=[group])
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.first.return_value = user
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = LoginRequest(email="test@example.com", password="secret")
+
+    with patch("app.routers.auth.verify_password", return_value=True):
+        with patch("app.routers.auth.create_access_token", return_value="jwt-token"):
+            result = await login(body, _mock_request(), db)
+
+    assert result.user.group_ids == [7]
+    assert result.user.group_names == ["Field Studies"]
