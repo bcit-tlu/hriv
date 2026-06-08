@@ -42,8 +42,8 @@ _user_timestamps: dict[int, list[float]] = defaultdict(list)
 # ---------------------------------------------------------------------------
 
 # Patterns that indicate PII or secrets in free text
-_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
-_JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+")
+_EMAIL_RE = re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+")
+_JWT_RE = re.compile(r"eyJ[^.\s]+\.[^.\s]+\.[^.\s]+")
 _KEY_PREFIX_RE = re.compile(
     r"(sk|pk|ghp|gho|ghs|ghr|xox[baprs])[-_][A-Za-z0-9_-]{16,}"
 )
