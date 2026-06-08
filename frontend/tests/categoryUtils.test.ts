@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest'
 import {
   narrowGroupIds,
   narrowProgramIds,
+  resolvePathNode,
   splitDirectAncestorProgramIds,
 } from '../src/categoryUtils'
+import type { Category, ImageItem } from '../src/types'
 
 describe('narrowProgramIds', () => {
   it('returns empty array for empty ancestors', () => {
@@ -217,5 +219,63 @@ describe('narrowGroupIds', () => {
     narrowGroupIds([a1, a2])
     expect(a1.groupIds).toEqual([1, 2, 3])
     expect(a2.groupIds).toEqual([2, 3])
+  })
+})
+
+describe('resolvePathNode', () => {
+  const img = (id: number): ImageItem => ({
+    id,
+    name: `img-${id}`,
+    thumb: '',
+    tileSources: '',
+    active: true,
+    sortOrder: 0,
+    version: 1,
+  })
+
+  const cat = (
+    id: number,
+    children: Category[] = [],
+    images: ImageItem[] = [],
+  ): Category => ({
+    id,
+    label: `cat-${id}`,
+    parentId: null,
+    children,
+    images,
+    programIds: [],
+    groupIds: [],
+    sortOrder: 0,
+  })
+
+  const leaf = cat(3, [], [img(10), img(11)])
+  const mid = cat(2, [leaf], [img(5)])
+  const root = cat(1, [mid], [img(1)])
+  const tree = [root, cat(99)]
+
+  it('returns top-level categories with no images for empty path', () => {
+    const result = resolvePathNode(tree, [])
+    expect(result).toEqual({ cats: tree, imgs: [] })
+  })
+
+  it('returns children and images of a single-segment path', () => {
+    const result = resolvePathNode(tree, [root])
+    expect(result).toEqual({ cats: [mid], imgs: [img(1)] })
+  })
+
+  it('walks a multi-level path to the terminal node', () => {
+    const result = resolvePathNode(tree, [root, mid, leaf])
+    expect(result).toEqual({ cats: [], imgs: [img(10), img(11)] })
+  })
+
+  it('returns empty when a path segment is not found', () => {
+    const missing = cat(999)
+    const result = resolvePathNode(tree, [root, missing])
+    expect(result).toEqual({ cats: [], imgs: [] })
+  })
+
+  it('returns empty for non-empty path against empty categories', () => {
+    const result = resolvePathNode([], [root])
+    expect(result).toEqual({ cats: [], imgs: [] })
   })
 })
