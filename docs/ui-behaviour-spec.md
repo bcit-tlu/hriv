@@ -38,6 +38,16 @@ Two capability flags in `AuthContext.tsx` drive all gating:
   **Programs** item inside Manage is hidden (admin-only) while **Groups** is shown.
 - **Given** an admin, **Then** all tabs and all Manage items appear.
 
+> **This table covers navigation/tab visibility only — not API-level access.**
+> Tab gating and API authorization are independent. Notably, the **People** tab
+> is admin-only (`AppShell.tsx` `canManageUsers`), but instructors *can* still
+> list users via the API (`GET /api/users/` is gated by
+> `require_role("admin", "instructor")` in `backend/app/routers/users.py`) — the
+> Manage Members dialog relies on this. So an instructor not seeing the People
+> tab does **not** mean they cannot list users. For the authoritative
+> endpoint → minimum-role mapping, see
+> [`docs/TESTING.md`](TESTING.md) and the README Role Capabilities table.
+
 > Editor-only actions (edit buttons, upload, bulk operations) are likewise gated
 > by `canEditContent`; these are UX gates — actual authorization is enforced
 > server-side (see [category-visibility-and-programs.md](category-visibility-and-programs.md)).
