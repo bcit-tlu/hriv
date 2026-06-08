@@ -28,6 +28,8 @@ export function useUserProfile(deps: UseUserProfileDeps) {
                       role: currentUser.role,
                       program_ids: currentUser.program_ids ?? [],
                       program_names: currentUser.program_names ?? [],
+                      group_ids: currentUser.group_ids ?? [],
+                      group_names: currentUser.group_names ?? [],
                       last_access: currentUser.lastAccess ?? null,
                       metadata_extra: null,
                       created_at: "",

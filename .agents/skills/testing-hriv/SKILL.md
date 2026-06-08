@@ -273,6 +273,63 @@ input.dispatchEvent(new Event('input', { bubbles: true }));
 input.dispatchEvent(new Event('change', { bubbles: true }));
 ```
 
+### Manage Members (Groups — bulk association)
+
+`GroupMembersDialog` (Manage → **Groups** → a group's **Manage members** action) is built for
+instructors to associate many students/instructors at scale (hundreds of students across ~4
+heavy programs). It is gated by group co-ownership (`canManageGroup`). The dialog has two tabs:
+
+- **Students** tab — a paginated table (10 rows/page) of student accounts, with:
+  - **Program filter chips** (multi-select, **OR** semantics) — clicking chips narrows the table
+    to students in *any* selected program. Chips render from each student's `program_ids`.
+  - **Search box** (name **or** email, debounced ~300 ms).
+  - A header **"select all on page"** checkbox + per-row checkboxes, and an **"Add N to group"**
+    button that calls `POST /api/groups/{id}/members/bulk` once for the whole selection.
+  - Existing members show a **Member** chip + a remove (trash) icon → `DELETE /api/groups/{id}/members/{user_id}`.
+- **Instructors** tab — same searchable/paginated table for co-owners, **without** the program
+  filter (instructors aren't program-gated). Bulk add → `POST /api/groups/{id}/instructors/bulk`;
+  existing co-owners show a **Co-owner** chip + remove icon (last-instructor removal is blocked
+  with a 409 surfaced as an inline error).
+
+Server-side filtering/pagination is driven by `GET /api/users/?role=<student|instructor>&program_id=<id>&q=<text>&page=<n>&page_size=<n>`,
+reading the **`X-Total-Count`** response header to render page controls. The table updates local
+state from the `GroupOut` response returned by the bulk/remove calls (no full re-fetch on toggle).
+
+**Key behaviors to verify:**
+- Selecting one or more program chips filters the student rows to the OR-union of those programs;
+  clearing chips restores the full list. The instructors tab has no program chips.
+- Typing in search filters by name/email after the debounce; combining search + program chips
+  applies both (AND between dimensions, OR within the program set).
+- "Select all on page" selects only the **current page's** rows; paging to the next page and the
+  "Add N" count reflects the running multi-page selection.
+- "Add N to group" performs **one** bulk call, the added users immediately appear as members with
+  a remove icon, and the selection clears. No spinner flash / full list re-fetch on add or remove.
+- Removing a member/co-owner updates the table from the API response. Removing the final
+  instructor is rejected (409) with an inline message; the co-owner stays listed.
+- **Student profile menu** shows the caller's groups as read-only chips alongside program chips
+  (`group_names` from `GET /api/auth/me`).
+
+**Group chip colour:** `#5B6973` (white text) in light theme, `#8A99A6` (dark text) in dark theme
+— both WCAG-AA (≥4.5:1). Verify via `getGroupChipColors(mode)` in `frontend/src/theme.ts`.
+
+**API verification pattern (paginated listing + bulk add):**
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"instructor@example.ca","password":"password"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Page 1 of students in program 2, searching "an"; X-Total-Count drives page controls
+curl -s -D - -o /dev/null -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/users/?role=student&program_id=2&q=an&page=1&page_size=10" \
+  | grep -i x-total-count
+
+# Bulk add students 3 and 5 to group 1 → returns the updated GroupOut (member_ids)
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"user_ids":[3,5]}' http://localhost:8000/api/groups/1/members/bulk \
+  | python3 -c "import sys,json; print('member_ids=', json.load(sys.stdin)['member_ids'])"
+```
+
 ### People tab (admin only)
 - Add / delete / edit users. Persistence survives a hard refresh.
 

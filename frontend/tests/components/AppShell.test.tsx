@@ -16,6 +16,7 @@ function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
             email: "test@example.com",
             role: "admin",
             program_names: [],
+            group_names: [],
         },
         announcement: "",
         annMessage: "",
@@ -237,7 +238,7 @@ describe("AppShell", () => {
         });
 
         it("renders user avatar with initials", () => {
-            render(<AppShell {...makeProps({ currentUser: { name: "Jane Doe", email: "j@t.com", role: "admin", program_names: [] } })} />);
+            render(<AppShell {...makeProps({ currentUser: { name: "Jane Doe", email: "j@t.com", role: "admin", program_names: [], group_names: [] } })} />);
             expect(screen.getByText("JD")).toBeInTheDocument();
         });
 
@@ -262,6 +263,7 @@ describe("AppShell", () => {
                             email: "test@example.com",
                             role: "admin",
                             program_names: ["CS", "Math"],
+                            group_names: [],
                         },
                     })}
                 />,
@@ -269,6 +271,25 @@ describe("AppShell", () => {
             expect(screen.getByText("test@example.com")).toBeInTheDocument();
             expect(screen.getByText("CS")).toBeInTheDocument();
             expect(screen.getByText("Math")).toBeInTheDocument();
+        });
+
+        it("shows the caller's group chips in the profile popover", () => {
+            render(
+                <AppShell
+                    {...makeProps({
+                        profileOpen: true,
+                        currentUser: {
+                            name: "Stu Dent",
+                            email: "stu@example.com",
+                            role: "student",
+                            program_names: [],
+                            group_names: ["Field Studies", "Capstone"],
+                        },
+                    })}
+                />,
+            );
+            expect(screen.getByText("Field Studies")).toBeInTheDocument();
+            expect(screen.getByText("Capstone")).toBeInTheDocument();
         });
 
         it("shows Update link when canManageUsers", () => {

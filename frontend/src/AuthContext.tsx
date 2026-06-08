@@ -29,6 +29,8 @@ function toUser(u: ApiUser): User {
     role: u.role as Role,
     program_ids: u.program_ids ?? [],
     program_names: u.program_names ?? [],
+    group_ids: u.group_ids ?? [],
+    group_names: u.group_names ?? [],
     lastAccess: u.last_access,
   }
 }

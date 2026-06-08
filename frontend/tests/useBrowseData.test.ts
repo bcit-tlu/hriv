@@ -33,7 +33,7 @@ function makeUser(overrides: Partial<User> = {}): User {
         email: "test@bcit.ca",
         role: "admin",
         program_ids: [],
-        program_names: [],
+        program_names: [], group_ids: [], group_names: [],
         ...overrides,
     };
 }

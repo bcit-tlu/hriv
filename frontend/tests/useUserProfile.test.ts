@@ -23,6 +23,8 @@ function makeUser(overrides: Partial<User> = {}): User {
         role: "admin",
         program_ids: [10, 20],
         program_names: ["Program A", "Program B"],
+        group_ids: [],
+        group_names: [],
         lastAccess: "2026-01-01T00:00:00Z",
         ...overrides,
     };
@@ -67,6 +69,8 @@ describe("useUserProfile", () => {
                 role: "instructor",
                 program_ids: [1, 2],
                 program_names: ["P1", "P2"],
+                group_ids: [7],
+                group_names: ["Field Studies"],
                 lastAccess: "2026-03-15T12:00:00Z",
             });
             const deps = makeDeps({ currentUser: user });
@@ -79,6 +83,8 @@ describe("useUserProfile", () => {
                 role: "instructor",
                 program_ids: [1, 2],
                 program_names: ["P1", "P2"],
+                group_ids: [7],
+                group_names: ["Field Studies"],
                 last_access: "2026-03-15T12:00:00Z",
                 metadata_extra: null,
                 created_at: "",
@@ -132,6 +138,8 @@ describe("useUserProfile", () => {
                 role: "admin",
                 program_ids: [10, 20],
                 program_names: ["Program A", "Program B"],
+                group_ids: [],
+                group_names: [],
                 last_access: "2026-01-01T00:00:00Z",
                 metadata_extra: null,
                 created_at: "2026-01-01T00:00:00Z",
