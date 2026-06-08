@@ -123,7 +123,7 @@ async def test_report_issue_success() -> None:
     assert "Test User" not in body_text
     assert "t@example.com" not in body_text
     # Non-identifying role and internal ID used instead
-    assert "student (user #8888)" in body_text
+    assert "student (user \u200b#8888)" in body_text
 
     # Verify the label call (second POST)
     label_call = mock_client.post.call_args_list[1]
