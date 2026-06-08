@@ -60,6 +60,20 @@ describe('CategoryPickerSelect — LockIcon', () => {
     expect(screen.getByText('None (root level)')).toBeInTheDocument()
   })
 
+  it('displays placeholder text when provided and value is null', () => {
+    const categories = [makeCategory({ id: 1, label: 'Test' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        placeholder="(no change)"
+      />,
+    )
+    expect(screen.getByText('(no change)')).toBeInTheDocument()
+    expect(screen.queryByText('None (root level)')).not.toBeInTheDocument()
+  })
+
   it('displays selected category label in the collapsed select', () => {
     const categories = [makeCategory({ id: 5, label: 'Histology' })]
     render(

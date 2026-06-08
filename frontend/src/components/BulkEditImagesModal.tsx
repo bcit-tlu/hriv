@@ -143,6 +143,7 @@ export default function BulkEditImagesModal({
               setCategoryChanged(true)
             }}
             label="Move to Category"
+            placeholder="(no change)"
             onAddCategory={onAddCategory}
             onEditCategory={onEditCategory}
             onToggleVisibility={onToggleVisibility}

@@ -75,6 +75,8 @@ interface CategoryPickerSelectProps {
   label?: string
   excludeCategoryId?: number
   includeRoot?: boolean
+  /** Text shown when value is null and includeRoot is false. Prevents displaying "None (root level)" in contexts where null means "no selection". */
+  placeholder?: string
   /** When provided, a "+" button appears on each menu item to add a child category. */
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
   /** When provided, a delete button appears on each menu item to delete that category. */
@@ -94,6 +96,7 @@ export default function CategoryPickerSelect({
   label = 'Category',
   excludeCategoryId,
   includeRoot = true,
+  placeholder,
   onAddCategory,
   onDeleteCategory,
   onEditCategory,
@@ -223,9 +226,13 @@ export default function CategoryPickerSelect({
           value={value == null ? '' : String(value)}
           onChange={handleChange}
           label={label}
-          displayEmpty
+          displayEmpty={includeRoot || !!placeholder}
           renderValue={(selected) => {
-            if (selected === '') return <em>None (root level)</em>
+            if (selected === '') {
+              if (placeholder) return <em>{placeholder}</em>
+              if (includeRoot) return <em>None (root level)</em>
+              return ''
+            }
             const opt = options.find((o) => String(o.id) === selected)
             return opt?.label ?? selected
           }}
