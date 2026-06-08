@@ -377,12 +377,10 @@ describe("handleDragEnd — move guards", () => {
             });
         });
 
-        expect(reorderImages).toHaveBeenCalledWith(
-            expect.arrayContaining([
-                expect.objectContaining({ id: 11, sort_order: 0 }),
-                expect.objectContaining({ id: 10, sort_order: 1 }),
-            ]),
-        );
+        expect(reorderImages).toHaveBeenCalledWith([
+            { id: 11, sort_order: 0 },
+            { id: 10, sort_order: 1 },
+        ]);
     });
 
     it("does nothing when target is null", async () => {
