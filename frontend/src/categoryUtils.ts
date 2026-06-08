@@ -76,17 +76,17 @@ export function splitDirectAncestorProgramIds(
  * at the terminal node.
  */
 export function resolvePathNode(
-    categories: Category[],
-    path: Category[],
+  categories: Category[],
+  path: Category[],
 ): { cats: Category[]; imgs: ImageItem[] } {
-    let node = categories;
-    for (const segment of path) {
-        const found = node.find((c) => c.id === segment.id);
-        if (!found) return { cats: [], imgs: [] };
-        node = found.children;
-        if (segment === path[path.length - 1]) {
-            return { cats: found.children, imgs: found.images };
-        }
+  let node = categories
+  for (const segment of path) {
+    const found = node.find((c) => c.id === segment.id)
+    if (!found) return { cats: [], imgs: [] }
+    node = found.children
+    if (segment === path[path.length - 1]) {
+      return { cats: found.children, imgs: found.images }
     }
-    return { cats: node, imgs: [] };
+  }
+  return { cats: node, imgs: [] }
 }
