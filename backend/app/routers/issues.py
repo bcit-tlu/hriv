@@ -116,11 +116,9 @@ def _validate_page_url(raw: str) -> str:
     Requires http(s) scheme. If CORS_ORIGINS is configured (non-wildcard),
     validates the host against allowed origins. Strips sensitive query params.
     """
-    # Strip whitespace — valid URLs never contain unencoded spaces;
-    # spaces could be used to inject @mentions after the URL text.
-    raw = raw.strip()
-    if " " in raw or "\t" in raw:
-        raw = raw.split()[0]  # keep only the URL portion before any space
+    # Truncate at first whitespace — valid URLs never contain unencoded
+    # whitespace; it could be used to inject @mentions after the URL.
+    raw = raw.split()[0] if raw.split() else ""
 
     parsed = urlparse(raw)
     if parsed.scheme not in ("http", "https"):

@@ -306,3 +306,8 @@ class TestValidatePageUrl:
         result = _validate_page_url("https://localhost/p @victim1 @victim2")
         assert "@victim" not in result
         assert result == "https://localhost/p"
+
+    def test_strips_vertical_tab_injected_mentions(self) -> None:
+        result = _validate_page_url("https://localhost/page\x0b@victim")
+        assert "@victim" not in result
+        assert result == "https://localhost/page"
