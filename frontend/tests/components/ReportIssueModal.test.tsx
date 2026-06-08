@@ -65,7 +65,7 @@ describe('ReportIssueModal', () => {
     await user.click(screen.getByRole('button', { name: /submit/i }))
 
     await waitFor(() => {
-      expect(screen.getByText('Network error')).toBeInTheDocument()
+      expect(screen.getByText('Failed to submit report.')).toBeInTheDocument()
     })
   })
 

@@ -144,7 +144,7 @@ describe('EditCategoryDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
-      expect(screen.getByText('Server error')).toBeInTheDocument()
+      expect(screen.getByText('Failed to rename category.')).toBeInTheDocument()
     })
   })
 
