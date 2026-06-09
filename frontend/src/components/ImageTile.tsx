@@ -78,7 +78,9 @@ export default function ImageTile({ image, onClick, onEditDetails, onToggleVisib
             </Typography>
             {!image.active && !onToggleVisibility && (
               <Tooltip title="Visibility: Inactive">
-                <VisibilityOffOutlined fontSize="small" sx={{ color: visColors.inactive }} />
+                <span role="img" aria-label="Visibility: Inactive" style={{ display: 'inline-flex' }}>
+                  <VisibilityOffOutlined fontSize="small" sx={{ color: visColors.inactive }} />
+                </span>
               </Tooltip>
             )}
             {onEditDetails && (
