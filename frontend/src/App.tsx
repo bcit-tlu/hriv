@@ -746,9 +746,11 @@ export default function App() {
         } catch {
             setWarnSnack("Could not refresh categories after reorder.");
         }
-        refreshUncategorizedImages().catch(() => {
+        try {
+            await refreshUncategorizedImages();
+        } catch {
             setWarnSnack("Could not refresh images after reorder.");
-        });
+        }
     }, [refreshCategories, refreshUncategorizedImages]);
 
     const handleReorderError = useCallback(

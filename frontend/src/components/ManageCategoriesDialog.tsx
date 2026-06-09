@@ -352,7 +352,7 @@ export default function ManageCategoriesDialog({
     try {
       await onReorderCategories(catItems)
     } catch {
-      onReorderComplete?.()
+      await onReorderComplete?.()
       return
     }
     if (imgItems.length > 0 && onReorderImages) {
@@ -360,7 +360,7 @@ export default function ManageCategoriesDialog({
         await onReorderImages(imgItems)
       } catch { /* error already surfaced by the wrapper */ }
     }
-    onReorderComplete?.()
+    await onReorderComplete?.()
   }, [dragId, dropTarget, options, categories, uncategorizedImages, onReorderCategories, onReorderImages, onReorderComplete])
 
   // Compute the Y position and indentation for the drop indicator line
