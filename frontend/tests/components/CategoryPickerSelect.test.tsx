@@ -144,6 +144,29 @@ describe('CategoryPickerSelect — LockIcon', () => {
     expect(screen.getByText('Histology')).toBeInTheDocument()
   })
 
+  it('shows non-excluded categories in dropdown when excludeCategoryId is set', async () => {
+    const user = userEvent.setup()
+    const categories = [
+      makeCategory({ id: 1, label: 'Skills 1', children: [
+        makeCategory({ id: 2, label: 'Sub A', parentId: 1 }),
+      ] }),
+      makeCategory({ id: 3, label: 'Skills 2' }),
+    ]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        excludeCategoryId={1}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    // Skills 1 and Sub A excluded; Skills 2 still visible
+    expect(screen.queryByText('Skills 1')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Sub A/)).not.toBeInTheDocument()
+    expect(screen.getByText('Skills 2')).toBeInTheDocument()
+  })
+
   it('renders inherited restriction tooltip for child categories', async () => {
     const user = userEvent.setup()
     const parent = makeCategory({

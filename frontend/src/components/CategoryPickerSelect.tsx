@@ -272,6 +272,15 @@ export default function CategoryPickerSelect({
               </Box>
             </MenuItem>
           )}
+          {options.length === 0 && (
+            <MenuItem disabled>
+              <ListItemText>
+                <Typography variant="body2" color="text.secondary">
+                  No other categories available
+                </Typography>
+              </ListItemText>
+            </MenuItem>
+          )}
           {options.map((opt) => (
             <MenuItem key={opt.id} value={String(opt.id)} sx={{ pl: 2 + opt.depth * 3 }}>
               <Box
