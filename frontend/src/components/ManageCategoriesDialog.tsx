@@ -153,7 +153,7 @@ interface ManageCategoriesDialogProps {
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onReorderCategories?: (items: Array<{ id: number; parent_id: number | null; sort_order: number }>) => Promise<void>
   onReorderImages?: (items: Array<{ id: number; sort_order: number }>) => Promise<void>
-  onReorderComplete?: () => void
+  onReorderComplete?: () => Promise<void> | void
 }
 
 export default function ManageCategoriesDialog({

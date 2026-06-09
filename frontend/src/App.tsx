@@ -740,10 +740,12 @@ export default function App() {
         [],
     );
 
-    const handleReorderComplete = useCallback(() => {
-        refreshCategories().catch(() => {
+    const handleReorderComplete = useCallback(async () => {
+        try {
+            await refreshCategories();
+        } catch {
             setWarnSnack("Could not refresh categories after reorder.");
-        });
+        }
         refreshUncategorizedImages().catch(() => {
             setWarnSnack("Could not refresh images after reorder.");
         });
