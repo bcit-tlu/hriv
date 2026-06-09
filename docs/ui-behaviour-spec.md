@@ -43,7 +43,7 @@ Two capability flags in `AuthContext.tsx` drive all gating:
 > is admin-only (`AppShell.tsx` `canManageUsers`), but instructors *can* still
 > list users via the API (`GET /api/users/` is gated by
 > `require_role("admin", "instructor")` in `backend/app/routers/users.py`) — the
-> Manage Members dialog relies on this. So an instructor not seeing the People
+> Manage Groups detail panel relies on this. So an instructor not seeing the People
 > tab does **not** mean they cannot list users. For the authoritative
 > endpoint → minimum-role mapping, see
 > [`docs/TESTING.md`](TESTING.md) and the README Role Capabilities table.

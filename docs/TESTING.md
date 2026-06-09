@@ -262,6 +262,6 @@ Programs are a flat, admin/OIDC-managed entity: only admins may create, rename, 
 | `page` | int (≥1) | Page number (used with `page_size`). |
 | `page_size` | int (1–200) | Page size. When `page`/`page_size` are supplied, the pre-pagination total is returned in the **`X-Total-Count`** response header so the client can render page controls. Omitting them returns the full filtered list. |
 
-The response shape stays role-dependent: admins receive full `UserOut`; instructors receive a minimal projection (`id, name, email, role` plus `program_ids`/`program_names` so the membership picker can filter by program and render chips — `metadata_extra`/`last_access` stay hidden). These params back the redesigned Manage Members dialog (server-side program filtering, name/email search, and pagination over hundreds of students).
+The response shape stays role-dependent: admins receive full `UserOut`; instructors receive a minimal projection (`id, name, email, role` plus `program_ids`/`program_names` so the membership picker can filter by program and render chips — `metadata_extra`/`last_access` stay hidden). These params back the redesigned Manage Groups detail panel (server-side program filtering, name/email search, and pagination over hundreds of students).
 
 `GET /api/auth/me` (and the `POST /api/auth/login` response) now also include the caller's group memberships as `group_ids`/`group_names`, alongside `program_ids`/`program_names`, so the profile menu can show students which groups they belong to.

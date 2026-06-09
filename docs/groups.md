@@ -152,18 +152,20 @@ same way regardless of which dimension was added last.
 | Concern | Where |
 |---------|-------|
 | Manage → **Groups** entry (admin + instructor only) | `components/AppShell.tsx` |
-| Group list / create / rename / delete modal | `components/GroupManagementModal.tsx` |
-| Manage Members dialog (bulk add students + co-owners) | `components/GroupMembersDialog.tsx` |
+| Group list / create / rename / delete and member management modal | `components/GroupManagementModal.tsx` |
 | Group restriction section on category dialogs | `components/AddCategoryDialog.tsx`, `components/EditCategoryDialog.tsx` |
 | Read-only group chips in the profile menu | `components/AppShell.tsx` |
 | Group API wrappers / types (`ApiGroup`, `fetchUsersPaged`, `addGroupMembersBulk`, …) | `api.ts` |
 | Group chip colours | `theme.ts` (`getGroupChipColors`) |
 
-### Manage Members dialog
+### Manage Groups modal
 
-Redesigned for rosters of several hundred students
-([#619](https://github.com/bcit-tlu/hriv/pull/619)). It has **Students** and
-**Instructors** tabs, each backed by a server-paginated table:
+The Manage Groups workflow is a master-detail modal: a left rail lists groups
+with create/rename/delete actions, and the right detail panel manages the
+selected group's students and instructor co-owners. It is designed for rosters
+of several hundred students and keeps the membership table inline rather than
+opening a second dialog. The detail panel has **Students** and **Instructors**
+tabs, each backed by a server-paginated table:
 
 - **Students tab** — multi-select program **filter chips** (OR semantics) plus a
   debounced name/email search box, over a paginated table (10 rows/page). Row
@@ -208,7 +210,7 @@ and sequence-reset details.
 | Category group attach + warnings | `backend/tests/test_categories.py` |
 | Image visibility through group gate | `backend/tests/test_router_images.py` |
 | Export/import round-trip | `backend/tests/test_admin_ops.py` |
-| Frontend dialogs | `frontend/tests/components/GroupManagementModal.test.tsx`, `frontend/tests/components/GroupMembersDialog.test.tsx` |
+| Frontend group modal | `frontend/tests/components/GroupManagementModal.test.tsx` |
 
 Local end-to-end setup and walkthroughs live in
 [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md).

@@ -41,7 +41,6 @@ import LoginScreen from "./components/LoginScreen";
 import EditImageModal from "./components/EditImageModal";
 import ProgramManagementModal from "./components/ProgramManagementModal";
 import GroupManagementModal from "./components/GroupManagementModal";
-import GroupMembersDialog from "./components/GroupMembersDialog";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
 import type { TypeFilter } from "./components/SearchModal";
@@ -250,9 +249,8 @@ export default function App() {
     // Program management modal state (for Manage menu)
     const [programModalOpen, setProgramModalOpen] = useState(false);
 
-    // Group management modal state (for Manage menu) + member-management dialog
+    // Group management modal state (for Manage menu)
     const [groupModalOpen, setGroupModalOpen] = useState(false);
-    const [membersDialogGroup, setMembersDialogGroup] = useState<Group | null>(null);
 
     // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
     const [canvasEditActive, setCanvasEditActive] = useState(false);
@@ -549,7 +547,7 @@ export default function App() {
                 await loadGroups();
             } catch (err) {
                 console.error("Failed to add group", err);
-                setErrorSnack(userMessage(err, "Failed to add group."));
+                throw err;
             }
         },
         [loadGroups],
@@ -562,7 +560,7 @@ export default function App() {
                 await loadGroups();
             } catch (err) {
                 console.error("Failed to edit group", err);
-                setErrorSnack(userMessage(err, "Failed to edit group."));
+                throw err;
             }
         },
         [loadGroups],
@@ -575,12 +573,7 @@ export default function App() {
                 await loadGroups();
             } catch (err) {
                 console.error("Failed to delete group", err);
-                setErrorSnack(
-                    userMessage(
-                        err,
-                        "Failed to delete group. It may still be attached to categories.",
-                    ),
-                );
+                throw err;
             }
         },
         [loadGroups],
@@ -592,9 +585,6 @@ export default function App() {
         (updated: Group) => {
             setGroups((prev) =>
                 prev.map((g) => (g.id === updated.id ? updated : g)),
-            );
-            setMembersDialogGroup((prev) =>
-                prev && prev.id === updated.id ? updated : prev,
             );
         },
         [setGroups],
@@ -1923,15 +1913,7 @@ export default function App() {
                 onAdd={handleAddGroup}
                 onEdit={handleEditGroup}
                 onDelete={handleDeleteGroup}
-                onManageMembers={(g) => setMembersDialogGroup(g)}
                 canManage={canManageGroup}
-            />
-
-            {/* Group members dialog (opened from the group management modal) */}
-            <GroupMembersDialog
-                open={membersDialogGroup != null}
-                onClose={() => setMembersDialogGroup(null)}
-                group={membersDialogGroup}
                 onGroupUpdated={handleGroupUpdated}
             />
 
