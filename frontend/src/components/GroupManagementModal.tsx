@@ -30,7 +30,7 @@ import Tabs from '@mui/material/Tabs'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import useMediaQuery from '@mui/material/useMediaQuery'
-import { useTheme } from '@mui/material/styles'
+import { alpha, useTheme } from '@mui/material/styles'
 import AddIcon from '@mui/icons-material/Add'
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CloseIcon from '@mui/icons-material/Close'
@@ -547,7 +547,7 @@ export default function GroupManagementModal({
                           color: 'primary.contrastText',
                           '&:hover': { bgcolor: 'primary.dark' },
                           '& .MuiListItemText-secondary': {
-                            color: 'rgba(255, 255, 255, 0.72)',
+                            color: (theme) => alpha(theme.palette.primary.contrastText, 0.72),
                           },
                         },
                       }}
