@@ -98,6 +98,7 @@ export default function App() {
         canEditContent,
     } = useAuth();
     const { mode } = useColorMode();
+    const visColors = getVisibilityColors(mode);
 
     const [page, setPage] = useState<Page>(() => {
         const p = new URLSearchParams(window.location.search).get("page");
@@ -1048,11 +1049,11 @@ export default function App() {
                                             >
                                                 {selectedImage.active ? (
                                                     <Visibility
-                                                        sx={{ fontSize: 28, color: getVisibilityColors(mode).active }}
+                                                        sx={{ fontSize: 28, color: visColors.active }}
                                                     />
                                                 ) : (
                                                     <VisibilityOff
-                                                        sx={{ fontSize: 28, color: getVisibilityColors(mode).inactive }}
+                                                        sx={{ fontSize: 28, color: visColors.inactive }}
                                                     />
                                                 )}
                                             </IconButton>
