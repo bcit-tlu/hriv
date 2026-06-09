@@ -375,6 +375,16 @@ export default function SortableTileGrid({
                     /* handled inside the callback */
                 }
                 reorderInFlightRef.current = false;
+                // The render-time guard ran while the flag was raised
+                // and skipped setItems, so rebuild from fresh data now.
+                if (prevCatsRef.current && prevImgsRef.current) {
+                    setItems(
+                        buildTileItems(
+                            prevCatsRef.current,
+                            prevImgsRef.current,
+                        ),
+                    );
+                }
             } catch (err) {
                 console.error("Failed to persist reorder", err);
                 reorderInFlightRef.current = false;
