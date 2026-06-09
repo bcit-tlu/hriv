@@ -468,6 +468,7 @@ export default function ManageCategoriesDialog({
                           <IconButton
                             edge="end"
                             size="small"
+                            aria-label={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}
                             onClick={() => onToggleVisibility(opt.id)}
                           >
                             {opt.status === 'hidden' ? (

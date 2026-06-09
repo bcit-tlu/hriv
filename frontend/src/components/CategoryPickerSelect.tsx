@@ -317,6 +317,7 @@ export default function CategoryPickerSelect({
                   <Tooltip title={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}>
                     <IconButton
                       size="small"
+                      aria-label={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.stopPropagation()
