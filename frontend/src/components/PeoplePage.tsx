@@ -692,7 +692,7 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
         <DialogTitle>Delete Person</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Are you sure you want to delete <strong>{deleteConfirmUser?.name ?? deleteConfirmUser?.email}</strong>?
+            Are you sure you want to delete <strong>{deleteConfirmUser?.name || deleteConfirmUser?.email}</strong>?
           </Typography>
           <Divider />
           <Box>
@@ -701,8 +701,18 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
               variant="contained"
               onClick={async () => {
                 if (deleteConfirmUser) {
-                  await handleDeletePerson(deleteConfirmUser.id)
-                  setDeleteConfirmOpen(false)
+                  try {
+                    await deleteUser(deleteConfirmUser.id)
+                    setSelected((prev) => {
+                      const next = new Set(prev)
+                      next.delete(deleteConfirmUser.id)
+                      return next
+                    })
+                    await loadData()
+                    setDeleteConfirmOpen(false)
+                  } catch (err) {
+                    console.error('Failed to delete person', err)
+                  }
                 }
               }}
               fullWidth
