@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { buildTheme, getSurfaceVariant } from "../src/theme";
+import { buildTheme, getSurfaceVariant, getVisibilityColors } from "../src/theme";
 
 describe("buildTheme", () => {
     it("returns a theme with palette.mode === 'light' for light mode", () => {
@@ -49,5 +49,19 @@ describe("getSurfaceVariant", () => {
 
     it("returns #3A3230 for dark mode", () => {
         expect(getSurfaceVariant("dark")).toBe("#3A3230");
+    });
+});
+
+describe("getVisibilityColors", () => {
+    it("returns light-mode visibility colours", () => {
+        const c = getVisibilityColors("light");
+        expect(c.active).toBe("#A74A4A");
+        expect(c.inactive).toBe("#3E3C3Ab3");
+    });
+
+    it("returns dark-mode visibility colours", () => {
+        const c = getVisibilityColors("dark");
+        expect(c.active).toBe("#D58881");
+        expect(c.inactive).toBe("#E0DDD999");
     });
 });

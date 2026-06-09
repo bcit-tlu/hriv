@@ -48,7 +48,7 @@ export default function ImageMetadataFields({
             onChange={(e) => onChange({ ...values, active: e.target.checked })}
           />
         }
-        label="Active (visible to students)"
+        label="Visibility (visible to students)"
       />
     </>
   )
