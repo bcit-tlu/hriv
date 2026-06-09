@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import GroupManagementModal from '../../src/components/GroupManagementModal'
 import type { ApiGroup, ApiProgram, ApiUser, UserListParams } from '../../src/api'
@@ -183,48 +183,58 @@ describe('GroupManagementModal', () => {
   })
 
   it('creates a group from the create group dialog', async () => {
-    const user = userEvent.setup()
     const { onAdd } = renderModal()
 
-    await user.click(screen.getByRole('button', { name: /create group/i }))
-    await user.type(screen.getByLabelText(/group name/i), '  New Group  ')
-    await user.click(screen.getByRole('button', { name: 'Create' }))
+    fireEvent.click(screen.getByRole('button', { name: /create group/i }))
+    fireEvent.change(screen.getByLabelText(/group name/i), { target: { value: '  New Group  ' } })
+    fireEvent.change(screen.getByLabelText(/description \(optional\)/i), {
+      target: { value: '  Created from modal  ' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
-    expect(onAdd).toHaveBeenCalledWith('New Group', null)
+    expect(onAdd).toHaveBeenCalledWith('New Group', 'Created from modal')
   })
 
   it('renames a group from the group actions menu', async () => {
-    const user = userEvent.setup()
     const { onEdit } = renderModal()
 
-    await user.click(screen.getByLabelText('group actions for Cohort A'))
-    await user.click(screen.getByRole('menuitem', { name: 'Rename' }))
+    fireEvent.click(screen.getByLabelText('group actions for Cohort A'))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }))
     const input = screen.getByLabelText(/group name/i)
-    await user.clear(input)
-    await user.type(input, 'Cohort A2')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    fireEvent.change(input, { target: { value: 'Cohort A2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
 
     expect(onEdit).toHaveBeenCalledWith(1, 'Cohort A2', 'First cohort')
   })
 
+  it('keeps failed group creation errors visible inside the create dialog', async () => {
+    const onAdd = vi.fn().mockRejectedValue(new Error('duplicate'))
+    renderModal({ onAdd })
+
+    fireEvent.click(screen.getByRole('button', { name: /create group/i }))
+    fireEvent.change(screen.getByLabelText(/group name/i), { target: { value: 'Existing Group' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }))
+
+    expect(await screen.findByText('Failed to create group.')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Create New Group' })).toBeInTheDocument()
+  })
+
   it('confirms group deletion from the group actions menu', async () => {
-    const user = userEvent.setup()
     const { onDelete } = renderModal()
 
-    await user.click(screen.getByLabelText('group actions for Cohort A'))
-    await user.click(screen.getByRole('menuitem', { name: 'Delete' }))
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    fireEvent.click(screen.getByLabelText('group actions for Cohort A'))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
     expect(onDelete).toHaveBeenCalledWith(1)
   })
 
   it('adds selected available students and propagates the updated group', async () => {
-    const user = userEvent.setup()
     mockAddGroupMembersBulk.mockResolvedValue(apiGroup({ member_ids: [101, 102] }))
     const { onGroupUpdated } = renderModal()
 
-    await user.click(await screen.findByLabelText('select Student Two'))
-    await user.click(screen.getByRole('button', { name: /add 1 to group/i }))
+    fireEvent.click(await screen.findByLabelText('select Student Two'))
+    fireEvent.click(screen.getByRole('button', { name: /add 1 to group/i }))
 
     expect(mockAddGroupMembersBulk).toHaveBeenCalledWith(1, [102])
     await waitFor(() =>

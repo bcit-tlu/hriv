@@ -547,7 +547,6 @@ export default function App() {
                 await loadGroups();
             } catch (err) {
                 console.error("Failed to add group", err);
-                setErrorSnack(userMessage(err, "Failed to add group."));
                 throw err;
             }
         },
@@ -561,7 +560,6 @@ export default function App() {
                 await loadGroups();
             } catch (err) {
                 console.error("Failed to edit group", err);
-                setErrorSnack(userMessage(err, "Failed to edit group."));
                 throw err;
             }
         },
@@ -575,12 +573,6 @@ export default function App() {
                 await loadGroups();
             } catch (err) {
                 console.error("Failed to delete group", err);
-                setErrorSnack(
-                    userMessage(
-                        err,
-                        "Failed to delete group. It may still be attached to categories.",
-                    ),
-                );
                 throw err;
             }
         },

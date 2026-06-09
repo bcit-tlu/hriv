@@ -90,6 +90,7 @@ export default function GroupManagementModal({
 
   const [groupDialogMode, setGroupDialogMode] = useState<GroupDialogMode>(null)
   const [groupNameDraft, setGroupNameDraft] = useState('')
+  const [groupDescriptionDraft, setGroupDescriptionDraft] = useState('')
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null)
   const [menuGroupId, setMenuGroupId] = useState<number | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -105,6 +106,7 @@ export default function GroupManagementModal({
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE)
   const [loading, setLoading] = useState(false)
   const [memberError, setMemberError] = useState<string | null>(null)
+  const [groupActionError, setGroupActionError] = useState<string | null>(null)
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(new Set())
   const [bulkPending, setBulkPending] = useState(false)
   const [pendingRemoveId, setPendingRemoveId] = useState<number | null>(null)
@@ -120,6 +122,7 @@ export default function GroupManagementModal({
     () => localGroups.find((group) => group.id === selectedGroupId) ?? null,
     [localGroups, selectedGroupId],
   )
+  const selectedGroupIdForFetch = selectedGroup?.id ?? null
 
   useEffect(() => {
     if (!open) return
@@ -162,6 +165,7 @@ export default function GroupManagementModal({
       setMobileDetailOpen(false)
       setGroupDialogMode(null)
       setGroupNameDraft('')
+      setGroupDescriptionDraft('')
       setMenuAnchorEl(null)
       setMenuGroupId(null)
       setDeleteDialogOpen(false)
@@ -175,11 +179,12 @@ export default function GroupManagementModal({
       setPageSize(DEFAULT_PAGE_SIZE)
       setSelectedUserIds(new Set())
       setMemberError(null)
+      setGroupActionError(null)
     }
   }, [open])
 
   useEffect(() => {
-    if (!open || !selectedGroup) {
+    if (!open || selectedGroupIdForFetch == null) {
       return undefined
     }
     let cancelled = false
@@ -206,7 +211,7 @@ export default function GroupManagementModal({
     return () => {
       cancelled = true
     }
-  }, [open, selectedGroup, tab, q, selectedProgramIds, page, pageSize, reloadKey])
+  }, [open, selectedGroupIdForFetch, tab, q, selectedProgramIds, page, pageSize, reloadKey])
 
   const memberIds = useMemo(() => new Set(selectedGroup?.memberIds ?? []), [selectedGroup])
   const instructorIds = useMemo(
@@ -231,6 +236,8 @@ export default function GroupManagementModal({
 
   const openCreateDialog = () => {
     setGroupNameDraft('')
+    setGroupDescriptionDraft('')
+    setGroupActionError(null)
     setGroupDialogMode('create')
   }
 
@@ -248,35 +255,39 @@ export default function GroupManagementModal({
     const group = localGroups.find((item) => item.id === menuGroupId)
     if (group) {
       setGroupNameDraft(group.name)
+      setGroupDescriptionDraft(group.description ?? '')
+      setGroupActionError(null)
       setGroupDialogMode('rename')
     }
     closeGroupMenu()
   }
 
   const startDelete = () => {
+    setGroupActionError(null)
     setDeleteDialogOpen(true)
     closeGroupMenu()
   }
 
   const handleGroupDialogSubmit = async () => {
     const name = groupNameDraft.trim()
+    const description = groupDescriptionDraft.trim() || null
     if (!name) return
     setGroupPending(true)
-    setMemberError(null)
+    setGroupActionError(null)
     try {
       if (groupDialogMode === 'create') {
-        await Promise.resolve(onAdd(name, null))
+        await Promise.resolve(onAdd(name, description))
       } else if (groupDialogMode === 'rename' && menuGroupId != null) {
-        const group = localGroups.find((item) => item.id === menuGroupId)
-        await Promise.resolve(onEdit(menuGroupId, name, group?.description ?? null))
+        await Promise.resolve(onEdit(menuGroupId, name, description))
         setLocalGroups((prev) =>
-          prev.map((item) => (item.id === menuGroupId ? { ...item, name } : item)),
+          prev.map((item) => (item.id === menuGroupId ? { ...item, name, description } : item)),
         )
       }
       setGroupDialogMode(null)
       setGroupNameDraft('')
+      setGroupDescriptionDraft('')
     } catch {
-      setMemberError(
+      setGroupActionError(
         groupDialogMode === 'create' ? 'Failed to create group.' : 'Failed to rename group.',
       )
     } finally {
@@ -287,7 +298,7 @@ export default function GroupManagementModal({
   const handleDeleteConfirm = async () => {
     if (menuGroupId == null) return
     setGroupPending(true)
-    setMemberError(null)
+    setGroupActionError(null)
     try {
       await Promise.resolve(onDelete(menuGroupId))
       setLocalGroups((prev) => prev.filter((group) => group.id !== menuGroupId))
@@ -298,7 +309,7 @@ export default function GroupManagementModal({
       setDeleteDialogOpen(false)
       setMenuGroupId(null)
     } catch {
-      setMemberError('Failed to delete group. It may still be attached to categories.')
+      setGroupActionError('Failed to delete group. It may still be attached to categories.')
     } finally {
       setGroupPending(false)
     }
@@ -587,6 +598,11 @@ export default function GroupManagementModal({
                         {selectedGroup.memberIds.length} students · {selectedGroup.instructorIds.length}{' '}
                         instructors
                       </Typography>
+                      {selectedGroup.description && (
+                        <Typography variant="body2" color="text.secondary" noWrap>
+                          {selectedGroup.description}
+                        </Typography>
+                      )}
                     </Box>
                   </Stack>
                 </Box>
@@ -768,12 +784,20 @@ export default function GroupManagementModal({
 
       <Dialog
         open={groupDialogMode != null}
-        onClose={() => setGroupDialogMode(null)}
+        onClose={() => {
+          setGroupDialogMode(null)
+          setGroupActionError(null)
+        }}
         maxWidth="xs"
         fullWidth
       >
         <DialogTitle>{groupDialogMode === 'create' ? 'Create New Group' : 'Rename Group'}</DialogTitle>
         <DialogContent>
+          {groupActionError && (
+            <Alert severity="error" sx={{ mt: 1, mb: 1 }}>
+              {groupActionError}
+            </Alert>
+          )}
           <TextField
             autoFocus
             fullWidth
@@ -786,9 +810,25 @@ export default function GroupManagementModal({
             }}
             sx={{ mt: 1 }}
           />
+          <TextField
+            fullWidth
+            multiline
+            minRows={2}
+            label="Description (optional)"
+            value={groupDescriptionDraft}
+            onChange={(event) => setGroupDescriptionDraft(event.target.value)}
+            sx={{ mt: 2 }}
+          />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setGroupDialogMode(null)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              setGroupDialogMode(null)
+              setGroupActionError(null)
+            }}
+          >
+            Cancel
+          </Button>
           <Button
             variant="contained"
             disabled={!groupNameDraft.trim() || groupPending}
@@ -799,9 +839,22 @@ export default function GroupManagementModal({
         </DialogActions>
       </Dialog>
 
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => {
+          setDeleteDialogOpen(false)
+          setGroupActionError(null)
+        }}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>Delete Group</DialogTitle>
         <DialogContent>
+          {groupActionError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {groupActionError}
+            </Alert>
+          )}
           <Alert severity="warning" sx={{ mb: 2 }}>
             This will remove all student and instructor associations for this group. Categories that
             use this group may also be affected.
@@ -809,7 +862,14 @@ export default function GroupManagementModal({
           <Typography>Are you sure you want to delete this group?</Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              setDeleteDialogOpen(false)
+              setGroupActionError(null)
+            }}
+          >
+            Cancel
+          </Button>
           <Button
             color="error"
             variant="contained"
