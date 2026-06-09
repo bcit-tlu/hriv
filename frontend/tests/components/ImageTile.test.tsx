@@ -210,7 +210,7 @@ describe("ImageTile", () => {
                 />,
             );
 
-            await user.click(screen.getByLabelText("Toggle visibility"));
+            await user.click(screen.getByLabelText("Visibility: Hide from students"));
             expect(onToggle).toHaveBeenCalledWith(42);
         });
 
@@ -222,7 +222,7 @@ describe("ImageTile", () => {
                 />,
             );
             expect(
-                screen.queryByLabelText("Toggle visibility"),
+                screen.queryByLabelText(/Visibility: (Hide|Show) from students/),
             ).not.toBeInTheDocument();
         });
 

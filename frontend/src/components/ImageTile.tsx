@@ -52,7 +52,7 @@ export default function ImageTile({ image, onClick, onEditDetails, onToggleVisib
                 e.stopPropagation()
                 onToggleVisibility(image.id)
               }}
-              aria-label="Toggle visibility"
+              aria-label={image.active ? 'Visibility: Hide from students' : 'Visibility: Show to students'}
             >
               {image.active ? (
                 <VisibilityOutlined fontSize="small" />

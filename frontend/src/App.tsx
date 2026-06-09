@@ -1044,7 +1044,7 @@ export default function App() {
                                             <IconButton
                                                 size="small"
                                                 onClick={() => toggleImageVisibility(selectedImage.id)}
-                                                aria-label="Toggle visibility"
+                                                aria-label={selectedImage.active ? "Visibility: Hide from students" : "Visibility: Show to students"}
                                             >
                                                 {selectedImage.active ? (
                                                     <VisibilityOutlined

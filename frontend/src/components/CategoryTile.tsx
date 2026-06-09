@@ -262,7 +262,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
                   e.preventDefault()
                   onToggleVisibility(category.id)
                 }}
-                aria-label="Toggle visibility"
+                aria-label={category.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}
               >
                 {category.status === 'hidden' ? (
                   <VisibilityOffOutlined fontSize="small" />
