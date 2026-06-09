@@ -254,7 +254,7 @@ async def bulk_import_images(
 
     with tracer.start_as_current_span("bulk_import.enqueue") as span:
         try:
-            span.set_attribute("bulk_import.category_id", category_id or 0)
+            span.set_attribute("bulk_import.category_id", category_id if category_id is not None else "none")
 
             os.makedirs(settings.source_images_dir, exist_ok=True)
 

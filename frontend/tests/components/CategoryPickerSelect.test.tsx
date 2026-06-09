@@ -74,6 +74,37 @@ describe('CategoryPickerSelect — LockIcon', () => {
     expect(screen.queryByText('None (root level)')).not.toBeInTheDocument()
   })
 
+  it('displays "None (root level)" after selecting root when placeholder was shown', async () => {
+    const user = userEvent.setup()
+    const categories = [makeCategory({ id: 1, label: 'Test' })]
+    const onChange = vi.fn()
+    const { rerender } = render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={onChange}
+        placeholder="(no change)"
+      />,
+    )
+    // Initially shows placeholder
+    expect(screen.getByText('(no change)')).toBeInTheDocument()
+
+    // Open dropdown and select root option
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByText('None (root level)'))
+
+    // Simulate parent state update: value stays null but placeholder removed
+    rerender(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={onChange}
+      />,
+    )
+    expect(screen.getByText('None (root level)')).toBeInTheDocument()
+    expect(screen.queryByText('(no change)')).not.toBeInTheDocument()
+  })
+
   it('displays selected category label in the collapsed select', () => {
     const categories = [makeCategory({ id: 5, label: 'Histology' })]
     render(

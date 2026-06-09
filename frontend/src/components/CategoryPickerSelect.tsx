@@ -75,7 +75,7 @@ interface CategoryPickerSelectProps {
   label?: string
   excludeCategoryId?: number
   includeRoot?: boolean
-  /** Text shown in the collapsed select when value is null. Use with includeRoot={false} in contexts where null means "no selection" rather than root level. */
+  /** Text shown in the collapsed select when value is null. Works with both includeRoot={true} (e.g. BulkEditImagesModal — placeholder shows initially, root option still available in dropdown) and includeRoot={false} (null means "no selection" only). */
   placeholder?: string
   /** When provided, a "+" button appears on each menu item to add a child category. */
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
