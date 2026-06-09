@@ -87,7 +87,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
   // Bulk delete confirmation
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
-  // Individual delete confirmation
+  // Individual delete confirmation (separate open flag preserves content during exit animation)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteConfirmUser, setDeleteConfirmUser] = useState<ApiUser | null>(null)
 
   const loadData = useCallback(async () => {
@@ -579,7 +580,7 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                     <Button
                       size="small"
                       color="error"
-                      onClick={() => setDeleteConfirmUser(user)}
+                      onClick={() => { setDeleteConfirmUser(user); setDeleteConfirmOpen(true) }}
                     >
                       Delete
                     </Button>
@@ -681,7 +682,13 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
       </Dialog>
 
       {/* Individual Delete Confirmation Dialog */}
-      <Dialog open={deleteConfirmUser != null} onClose={() => setDeleteConfirmUser(null)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        TransitionProps={{ onExited: () => setDeleteConfirmUser(null) }}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>Delete Person</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
@@ -695,7 +702,7 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
               onClick={async () => {
                 if (deleteConfirmUser) {
                   await handleDeletePerson(deleteConfirmUser.id)
-                  setDeleteConfirmUser(cur => cur?.id === deleteConfirmUser.id ? null : cur)
+                  setDeleteConfirmOpen(false)
                 }
               }}
               fullWidth
@@ -712,7 +719,7 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteConfirmUser(null)}>Cancel</Button>
+          <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
         </DialogActions>
       </Dialog>
     </Box>
