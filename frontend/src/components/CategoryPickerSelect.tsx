@@ -68,6 +68,9 @@ function findCategoryById(nodes: Category[], id: number): Category | null {
   return null
 }
 
+// Sentinel value so MUI fires onChange even when external value is already null
+const ROOT_VALUE = '__root__'
+
 interface CategoryPickerSelectProps {
   categories: Category[]
   value: number | null
@@ -175,9 +178,6 @@ export default function CategoryPickerSelect({
     [editingOpt?.programIds],
   )
 
-
-  // Sentinel so MUI fires onChange even when external value is already null
-  const ROOT_VALUE = '__root__'
 
   const selectValue = value == null
     ? (placeholder ? '' : (includeRoot ? ROOT_VALUE : ''))
