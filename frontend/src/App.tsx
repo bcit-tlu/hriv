@@ -1336,44 +1336,60 @@ export default function App() {
                                                         minWidth: 0,
                                                     }}
                                                 >
-                                                    <Link
-                                                        component="button"
-                                                        variant="body2"
-                                                        underline="hover"
-                                                        color={
-                                                            isLast
-                                                                ? "text.primary"
-                                                                : "inherit"
-                                                        }
-                                                        onClick={() => {
-                                                            navigateToDepth(
-                                                                i + 1,
-                                                            );
-                                                            pushNavState(
-                                                                "browse",
-                                                                path
-                                                                    .slice(
-                                                                        0,
-                                                                        i + 1,
-                                                                    )
-                                                                    .map(
-                                                                        (c) =>
-                                                                            c.id,
-                                                                    ),
-                                                            );
-                                                        }}
-                                                        sx={{
-                                                            cursor: "pointer",
-                                                            overflow:
-                                                                "hidden",
-                                                            textOverflow:
-                                                                "ellipsis",
-                                                            whiteSpace:
-                                                                "nowrap",
-                                                        }}
-                                                    >
-                                                        {cat.label}
-                                                    </Link>
+                                                    {isLast ? (
+                                                        <Typography
+                                                            variant="body2"
+                                                            color="text.primary"
+                                                            sx={{
+                                                                overflow:
+                                                                    "hidden",
+                                                                textOverflow:
+                                                                    "ellipsis",
+                                                                whiteSpace:
+                                                                    "nowrap",
+                                                            }}
+                                                        >
+                                                            {cat.label}
+                                                        </Typography>
+                                                    ) : (
+                                                        <Link
+                                                            component="button"
+                                                            variant="body2"
+                                                            underline="hover"
+                                                            color="inherit"
+                                                            onClick={() => {
+                                                                navigateToDepth(
+                                                                    i + 1,
+                                                                );
+                                                                pushNavState(
+                                                                    "browse",
+                                                                    path
+                                                                        .slice(
+                                                                            0,
+                                                                            i +
+                                                                                1,
+                                                                        )
+                                                                        .map(
+                                                                            (
+                                                                                c,
+                                                                            ) =>
+                                                                                c.id,
+                                                                        ),
+                                                                );
+                                                            }}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                                overflow:
+                                                                    "hidden",
+                                                                textOverflow:
+                                                                    "ellipsis",
+                                                                whiteSpace:
+                                                                    "nowrap",
+                                                            }}
+                                                        >
+                                                            {cat.label}
+                                                        </Link>
+                                                    )}
                                                     {isLast &&
                                                         canEditContent && (
                                                             <IconButton
