@@ -105,6 +105,33 @@ describe('CategoryPickerSelect — LockIcon', () => {
     expect(screen.queryByText('(no change)')).not.toBeInTheDocument()
   })
 
+  it('shrinks the input label when root option is displayed', () => {
+    const categories = [makeCategory({ id: 1, label: 'Test' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+      />,
+    )
+    const label = document.querySelector('label')
+    expect(label).toHaveAttribute('data-shrink', 'true')
+  })
+
+  it('shrinks the input label when placeholder is displayed', () => {
+    const categories = [makeCategory({ id: 1, label: 'Test' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        placeholder="(no change)"
+      />,
+    )
+    const label = document.querySelector('label')
+    expect(label).toHaveAttribute('data-shrink', 'true')
+  })
+
   it('displays selected category label in the collapsed select', () => {
     const categories = [makeCategory({ id: 5, label: 'Histology' })]
     render(
@@ -115,6 +142,29 @@ describe('CategoryPickerSelect — LockIcon', () => {
       />,
     )
     expect(screen.getByText('Histology')).toBeInTheDocument()
+  })
+
+  it('shows non-excluded categories in dropdown when excludeCategoryId is set', async () => {
+    const user = userEvent.setup()
+    const categories = [
+      makeCategory({ id: 1, label: 'Skills 1', children: [
+        makeCategory({ id: 2, label: 'Sub A', parentId: 1 }),
+      ] }),
+      makeCategory({ id: 3, label: 'Skills 2' }),
+    ]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        excludeCategoryId={1}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    // Skills 1 and Sub A excluded; Skills 2 still visible
+    expect(screen.queryByText('Skills 1')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Sub A/)).not.toBeInTheDocument()
+    expect(screen.getByText('Skills 2')).toBeInTheDocument()
   })
 
   it('renders inherited restriction tooltip for child categories', async () => {
