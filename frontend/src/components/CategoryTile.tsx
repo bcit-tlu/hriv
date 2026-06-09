@@ -178,7 +178,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             </Typography>
           </Box>
         )}
-        <CardActionArea onClick={() => onClick(category)}>
+        <CardActionArea onClick={() => onClick(category)} sx={{ filter: category.status === 'hidden' ? 'grayscale(100%)' : 'none' }}>
           {cardImage ? (
             <CardMedia
               component="img"
@@ -201,7 +201,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
               <FolderIcon sx={{ fontSize: 64, opacity: 0.85 }} />
             </Box>
           )}
-          <CardContent sx={{ opacity: category.status === 'hidden' ? 0.5 : 1 }}>
+          <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
               <Typography variant="h6" noWrap color="primary">

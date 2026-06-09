@@ -3,7 +3,7 @@
  *
  * Covers:
  * 1. Basic rendering — image name, thumbnail, and card structure
- * 2. Inactive indicator — dimmed title and DisabledVisible icon when active=false
+ * 2. Inactive indicator — greyscale card and DisabledVisible icon when active=false
  * 3. Active images — no inactive indicator when active=true
  * 4. Copyright text — renders copyright when present
  * 5. Edit details button — renders and calls callback
@@ -62,7 +62,7 @@ describe("ImageTile", () => {
             ).toBeInTheDocument();
         });
 
-        it("dims the card content when image is inactive", () => {
+        it("renders the card in greyscale when image is inactive", () => {
             render(
                 <ImageTile
                     image={makeImage({ active: false, name: "Inactive Slide" })}
@@ -70,8 +70,8 @@ describe("ImageTile", () => {
                 />,
             );
             const title = screen.getByText("Inactive Slide");
-            expect(title.closest(".MuiCardContent-root")).toHaveStyle({
-                opacity: 0.5,
+            expect(title.closest(".MuiCardActionArea-root")).toHaveStyle({
+                filter: "grayscale(100%)",
             });
         });
 
@@ -87,7 +87,7 @@ describe("ImageTile", () => {
             ).not.toBeInTheDocument();
         });
 
-        it("card content has full opacity when image is active", () => {
+        it("does not apply greyscale when image is active", () => {
             render(
                 <ImageTile
                     image={makeImage({ active: true, name: "Active Slide" })}
@@ -95,8 +95,8 @@ describe("ImageTile", () => {
                 />,
             );
             const title = screen.getByText("Active Slide");
-            expect(title.closest(".MuiCardContent-root")).toHaveStyle({
-                opacity: 1,
+            expect(title.closest(".MuiCardActionArea-root")).toHaveStyle({
+                filter: "none",
             });
         });
     });

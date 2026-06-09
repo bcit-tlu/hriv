@@ -58,7 +58,7 @@ export default function ImageTile({ image, onClick, onEditDetails, onToggleVisib
           </Tooltip>
         )}
       </Box>
-      <CardActionArea onClick={() => onClick(image)} sx={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'stretch' }}>
+      <CardActionArea onClick={() => onClick(image)} sx={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'stretch', filter: !image.active ? 'grayscale(100%)' : 'none' }}>
         <CardMedia
           component="img"
           height="160"
@@ -66,7 +66,7 @@ export default function ImageTile({ image, onClick, onEditDetails, onToggleVisib
           alt={image.name}
           sx={{ objectFit: 'cover', objectPosition: 'center' }}
         />
-        <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, opacity: !image.active ? 0.5 : 1 }}>
+        <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Typography variant="h6" noWrap>
               {image.name}

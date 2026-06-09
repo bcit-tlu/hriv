@@ -3,7 +3,7 @@
  *
  * Covers:
  * 1. Basic rendering — category label, detail text, and card structure
- * 2. Hidden indicator — dimmed title and DisabledVisible icon when status='hidden'
+ * 2. Hidden indicator — greyscale card and DisabledVisible icon when status='hidden'
  * 3. Visible categories — no hidden indicator when status is not 'hidden'
  * 4. Card image — renders thumbnail when cardImageId is set
  * 5. Program chips — renders program labels from category's own programIds only
@@ -71,7 +71,7 @@ describe('CategoryTile', () => {
       expect(screen.getByTestId('DisabledVisibleIcon')).toBeInTheDocument()
     })
 
-    it('dims the card content when category is hidden', () => {
+    it('renders the card in greyscale when category is hidden', () => {
       render(
         <CategoryTile
           category={makeCategory({ status: 'hidden', label: 'Hidden Cat' })}
@@ -80,7 +80,7 @@ describe('CategoryTile', () => {
         />,
       )
       const title = screen.getByText('Hidden Cat')
-      expect(title.closest('.MuiCardContent-root')).toHaveStyle({ opacity: 0.5 })
+      expect(title.closest('.MuiCardActionArea-root')).toHaveStyle({ filter: 'grayscale(100%)' })
     })
 
     it('shows the visible icon when category is active and toggle provided', () => {
@@ -108,7 +108,7 @@ describe('CategoryTile', () => {
       expect(screen.queryByTestId('VisibilityIcon')).not.toBeInTheDocument()
     })
 
-    it('card content has full opacity when category is visible', () => {
+    it('does not apply greyscale when category is visible', () => {
       render(
         <CategoryTile
           category={makeCategory({ status: null, label: 'Visible Cat' })}
@@ -117,7 +117,7 @@ describe('CategoryTile', () => {
         />,
       )
       const title = screen.getByText('Visible Cat')
-      expect(title.closest('.MuiCardContent-root')).toHaveStyle({ opacity: 1 })
+      expect(title.closest('.MuiCardActionArea-root')).toHaveStyle({ filter: 'none' })
     })
   })
 

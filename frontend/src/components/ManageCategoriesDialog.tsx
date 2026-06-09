@@ -521,7 +521,7 @@ export default function ManageCategoriesDialog({
                           {'\u2514 '}
                         </Typography>
                       )}
-                      <Typography component="span" sx={{ opacity: opt.status === 'hidden' ? 0.5 : 1 }}>
+                      <Typography component="span" sx={{ filter: opt.status === 'hidden' ? 'grayscale(100%)' : 'none' }}>
                         {opt.label}
                       </Typography>
                       {(opt.programIds.length > 0 || opt.inheritedRestriction) && (

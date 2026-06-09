@@ -292,7 +292,7 @@ export default function CategoryPickerSelect({
                 }}
               >
                 <ListItemText>
-                  {opt.depth > 0 ? '\u2514 ' : ''}<span style={{ opacity: opt.status === 'hidden' ? 0.5 : 1 }}>{opt.label}</span>
+                  {opt.depth > 0 ? '\u2514 ' : ''}<span style={{ filter: opt.status === 'hidden' ? 'grayscale(100%)' : 'none' }}>{opt.label}</span>
                   <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
                     ({opt.imageCount})
                   </Typography>
