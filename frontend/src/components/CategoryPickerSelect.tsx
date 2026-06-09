@@ -176,9 +176,16 @@ export default function CategoryPickerSelect({
   )
 
 
+  // Sentinel so MUI fires onChange even when external value is already null
+  const ROOT_VALUE = '__root__'
+
+  const selectValue = value == null
+    ? (placeholder ? '' : (includeRoot ? ROOT_VALUE : ''))
+    : String(value)
+
   const handleChange = (e: SelectChangeEvent<string>) => {
     const val = e.target.value
-    onChange(val === '' ? null : Number(val))
+    onChange(val === '' || val === ROOT_VALUE ? null : Number(val))
   }
 
   const handleAddClick = (
@@ -221,24 +228,24 @@ export default function CategoryPickerSelect({
   return (
     <>
       <FormControl fullWidth variant="outlined">
-        <InputLabel>{label}</InputLabel>
+        <InputLabel shrink={(value != null || includeRoot || !!placeholder) || undefined}>{label}</InputLabel>
         <Select
-          value={value == null ? '' : String(value)}
+          value={selectValue}
           onChange={handleChange}
           label={label}
           displayEmpty={includeRoot || !!placeholder}
           renderValue={(selected) => {
             if (selected === '') {
               if (placeholder) return <em>{placeholder}</em>
-              if (includeRoot) return <em>None (root level)</em>
               return ''
             }
+            if (selected === ROOT_VALUE) return <em>None (root level)</em>
             const opt = options.find((o) => String(o.id) === selected)
             return opt?.label ?? selected
           }}
         >
           {includeRoot && (
-            <MenuItem value="">
+            <MenuItem value={ROOT_VALUE}>
               <Box
                 sx={{
                   display: 'flex',

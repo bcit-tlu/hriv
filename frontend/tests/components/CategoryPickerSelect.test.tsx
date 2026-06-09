@@ -105,6 +105,33 @@ describe('CategoryPickerSelect — LockIcon', () => {
     expect(screen.queryByText('(no change)')).not.toBeInTheDocument()
   })
 
+  it('shrinks the input label when root option is displayed', () => {
+    const categories = [makeCategory({ id: 1, label: 'Test' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+      />,
+    )
+    const label = document.querySelector('label')
+    expect(label).toHaveAttribute('data-shrink', 'true')
+  })
+
+  it('shrinks the input label when placeholder is displayed', () => {
+    const categories = [makeCategory({ id: 1, label: 'Test' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        placeholder="(no change)"
+      />,
+    )
+    const label = document.querySelector('label')
+    expect(label).toHaveAttribute('data-shrink', 'true')
+  })
+
   it('displays selected category label in the collapsed select', () => {
     const categories = [makeCategory({ id: 5, label: 'Histology' })]
     render(
