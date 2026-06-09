@@ -87,6 +87,10 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
   // Bulk delete confirmation
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
 
+  // Individual delete confirmation (separate open flag preserves content during exit animation)
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState<ApiUser | null>(null)
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true)
@@ -261,20 +265,6 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
       await loadData()
     } catch (err) {
       console.error('Failed to save person', err)
-    }
-  }
-
-  const handleDeletePerson = async (userId: number) => {
-    try {
-      await deleteUser(userId)
-      setSelected((prev) => {
-        const next = new Set(prev)
-        next.delete(userId)
-        return next
-      })
-      await loadData()
-    } catch (err) {
-      console.error('Failed to delete person', err)
     }
   }
 
@@ -586,7 +576,7 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                     <Button
                       size="small"
                       color="error"
-                      onClick={() => handleDeletePerson(user.id)}
+                      onClick={() => { setDeleteConfirmUser(user); setDeleteConfirmOpen(true) }}
                     >
                       Delete
                     </Button>
@@ -684,6 +674,58 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setBulkDeleteOpen(false)}>Cancel</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Individual Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmOpen}
+        onClose={() => setDeleteConfirmOpen(false)}
+        TransitionProps={{ onExited: () => setDeleteConfirmUser(null) }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Delete Person</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Are you sure you want to delete <strong>{deleteConfirmUser?.name || deleteConfirmUser?.email}</strong>?
+          </Typography>
+          <Divider />
+          <Box>
+            <Button
+              color="error"
+              variant="contained"
+              onClick={async () => {
+                if (deleteConfirmUser) {
+                  try {
+                    await deleteUser(deleteConfirmUser.id)
+                    setSelected((prev) => {
+                      const next = new Set(prev)
+                      next.delete(deleteConfirmUser.id)
+                      return next
+                    })
+                    await loadData()
+                    setDeleteConfirmOpen(false)
+                  } catch (err) {
+                    console.error('Failed to delete person', err)
+                  }
+                }
+              }}
+              fullWidth
+            >
+              Delete
+            </Button>
+            <Typography
+              variant="caption"
+              color="error"
+              sx={{ display: 'block', mt: 0.5, textAlign: 'center' }}
+            >
+              This action cannot be undone.
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
         </DialogActions>
       </Dialog>
     </Box>

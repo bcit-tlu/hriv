@@ -116,7 +116,7 @@ describe('PeoplePage', () => {
     expect(screen.getByDisplayValue('Admin User')).toBeInTheDocument()
   })
 
-  it('calls deleteUser when Delete button is clicked', async () => {
+  it('calls deleteUser after confirming in the confirmation dialog', async () => {
     const user = userEvent.setup()
     vi.mocked(deleteUser).mockResolvedValue()
     render(<PeoplePage programs={programs} />)
@@ -125,8 +125,17 @@ describe('PeoplePage', () => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
 
+    // Click table row Delete button — opens confirmation dialog
     const deleteButtons = screen.getAllByRole('button', { name: /delete/i })
     await user.click(deleteButtons[0])
+
+    // Confirmation dialog appears
+    expect(screen.getByText('Delete Person')).toBeInTheDocument()
+    expect(screen.getByText(/This action cannot be undone/)).toBeInTheDocument()
+
+    // Confirm deletion via dialog button
+    const confirmBtn = screen.getByRole('button', { name: 'Delete' })
+    await user.click(confirmBtn)
 
     await waitFor(() => {
       expect(deleteUser).toHaveBeenCalledWith(1)

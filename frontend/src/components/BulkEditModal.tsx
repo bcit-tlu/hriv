@@ -57,6 +57,10 @@ export default function BulkEditModal({
           Assign programs to {selectedCount} selected{' '}
           {selectedCount === 1 ? 'person' : 'people'}.
         </Typography>
+        <Typography variant="body2" color="warning.main">
+          This will replace any existing program associations for the selected{' '}
+          {selectedCount === 1 ? 'person' : 'people'}.
+        </Typography>
         <FormControl fullWidth>
           <InputLabel id="bulk-edit-program-label">Programs</InputLabel>
           <Select
