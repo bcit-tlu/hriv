@@ -275,9 +275,9 @@ input.dispatchEvent(new Event('change', { bubbles: true }));
 
 ### Manage Members (Groups — bulk association)
 
-`GroupMembersDialog` (Manage → **Groups** → a group's **Manage members** action) is built for
+`GroupManagementModal` (Manage → **Groups** → select a group in the left rail) is built for
 instructors to associate many students/instructors at scale (hundreds of students across ~4
-heavy programs). It is gated by group co-ownership (`canManageGroup`). The dialog has two tabs:
+heavy programs). It is gated by group co-ownership (`canManageGroup`). The detail panel has two tabs:
 
 - **Students** tab — a paginated table (10 rows/page) of student accounts, with:
   - **Program filter chips** (multi-select, **OR** semantics) — clicking chips narrows the table

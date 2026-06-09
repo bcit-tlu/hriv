@@ -23,7 +23,7 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 ### Changed groups (membership, ownership, category attach, dual-gate visibility)
 - backend: `poetry run pytest tests/test_router_groups.py tests/test_authz.py tests/test_visibility.py tests/test_categories.py tests/test_router_images.py`
-- frontend: `npm test -- GroupManagementModal GroupMembersDialog groupUtils EditCategoryDialog AddCategoryDialog`
+- frontend: `npm test -- GroupManagementModal groupUtils EditCategoryDialog AddCategoryDialog`
 - **Any change touching the group gate in `visibility.py` MUST also run
   `tests/test_router_images.py`** — the images router is a separate caller that
   must pass `user_group_ids` (regression fixed in #604). See [groups.md](groups.md).
