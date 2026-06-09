@@ -44,6 +44,8 @@ import { fetchImages, updateImage, deleteImage, replaceImage, bulkUpdateImages, 
 import type { ApiBulkImportJob, ApiImage } from '../api'
 import type { Category, Program } from '../types'
 import { splitDirectAncestorProgramIds } from '../categoryUtils'
+import { getVisibilityColors } from '../theme'
+import { useColorMode } from '../useColorMode'
 import BulkEditImagesModal from './BulkEditImagesModal'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
@@ -170,6 +172,8 @@ export default function ManagePage({
   initialProgramFilter,
   onInitialProgramFilterConsumed,
 }: ManagePageProps) {
+  const { mode } = useColorMode()
+  const visColors = getVisibilityColors(mode)
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -674,7 +678,7 @@ export default function ManagePage({
                     direction={sortColumn === 'active' ? sortDirection : 'asc'}
                     onClick={() => handleSort('active')}
                   >
-                    Status
+                    Visibility
                   </TableSortLabel>
                 </TableCell>
                 <TableCell sortDirection={sortColumn === 'updated_at' ? sortDirection : false}>
@@ -789,10 +793,11 @@ export default function ManagePage({
                   key={img.id}
                   hover
                   selected={selected.has(img.id)}
-                  sx={{ cursor: 'pointer' }}
+                  sx={{ cursor: 'pointer', ...(!img.active && { '& .MuiTableCell-body:not([data-interactive])': { color: visColors.inactive } }) }}
                   onClick={() => handleRowClick(img)}
                 >
                   <TableCell
+                    data-interactive="true"
                     padding="checkbox"
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -804,6 +809,7 @@ export default function ManagePage({
                     />
                   </TableCell>
                   <TableCell
+                    data-interactive="true"
                     sx={{ p: 0.5 }}
                     onClick={(e) => {
                       if (onViewImage) {
@@ -882,6 +888,7 @@ export default function ManagePage({
                     })()}
                   </TableCell>
                   <TableCell
+                    data-interactive="true"
                     onClick={(e) => e.stopPropagation()}
                   >
                     <Switch
@@ -894,6 +901,7 @@ export default function ManagePage({
                     {new Date(img.updated_at).toLocaleDateString()}
                   </TableCell>
                   <TableCell
+                    data-interactive="true"
                     align="right"
                     onClick={(e) => e.stopPropagation()}
                   >

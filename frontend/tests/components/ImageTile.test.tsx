@@ -3,7 +3,7 @@
  *
  * Covers:
  * 1. Basic rendering — image name, thumbnail, and card structure
- * 2. Inactive indicator — greyscale card and DisabledVisible icon when active=false
+ * 2. Inactive indicator — greyscale card and VisibilityOffOutlined icon when active=false
  * 3. Active images — no inactive indicator when active=true
  * 4. Copyright text — renders copyright when present
  * 5. Edit details button — renders and calls callback
@@ -58,7 +58,7 @@ describe("ImageTile", () => {
                 />,
             );
             expect(
-                screen.getByTestId("DisabledVisibleIcon"),
+                screen.getByTestId("VisibilityOffOutlinedIcon"),
             ).toBeInTheDocument();
         });
 
@@ -83,7 +83,7 @@ describe("ImageTile", () => {
                 />,
             );
             expect(
-                screen.queryByTestId("DisabledVisibleIcon"),
+                screen.queryByTestId("VisibilityOffOutlinedIcon"),
             ).not.toBeInTheDocument();
         });
 
@@ -169,7 +169,7 @@ describe("ImageTile", () => {
     // ─── Visibility toggle ────────────────────────────────────────────
 
     describe("visibility toggle", () => {
-        it("renders the VisibilityIcon when image is active and toggle provided", () => {
+        it("renders the VisibilityOutlinedIcon when image is active and toggle provided", () => {
             render(
                 <ImageTile
                     image={makeImage({ active: true })}
@@ -177,13 +177,13 @@ describe("ImageTile", () => {
                     onToggleVisibility={vi.fn()}
                 />,
             );
-            expect(screen.getByTestId("VisibilityIcon")).toBeInTheDocument();
+            expect(screen.getByTestId("VisibilityOutlinedIcon")).toBeInTheDocument();
             expect(
-                screen.queryByTestId("DisabledVisibleIcon"),
+                screen.queryByTestId("VisibilityOffOutlinedIcon"),
             ).not.toBeInTheDocument();
         });
 
-        it("renders the DisabledVisibleIcon when image is inactive and toggle provided", () => {
+        it("renders the VisibilityOffOutlinedIcon when image is inactive and toggle provided", () => {
             render(
                 <ImageTile
                     image={makeImage({ active: false })}
@@ -192,10 +192,10 @@ describe("ImageTile", () => {
                 />,
             );
             expect(
-                screen.getByTestId("DisabledVisibleIcon"),
+                screen.getByTestId("VisibilityOffOutlinedIcon"),
             ).toBeInTheDocument();
             expect(
-                screen.queryByTestId("VisibilityIcon"),
+                screen.queryByTestId("VisibilityOutlinedIcon"),
             ).not.toBeInTheDocument();
         });
 
@@ -226,7 +226,7 @@ describe("ImageTile", () => {
             ).not.toBeInTheDocument();
         });
 
-        it("suppresses inline DisabledVisibleIcon when toggle is provided", () => {
+        it("suppresses inline VisibilityOffOutlinedIcon when toggle is provided", () => {
             render(
                 <ImageTile
                     image={makeImage({ active: false })}
@@ -234,8 +234,8 @@ describe("ImageTile", () => {
                     onToggleVisibility={vi.fn()}
                 />,
             );
-            // Only one DisabledVisibleIcon (in the toggle button), not the inline one next to title
-            const icons = screen.getAllByTestId("DisabledVisibleIcon");
+            // Only one VisibilityOffOutlinedIcon (in the toggle button), not the inline one next to title
+            const icons = screen.getAllByTestId("VisibilityOffOutlinedIcon");
             expect(icons).toHaveLength(1);
         });
     });

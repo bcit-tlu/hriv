@@ -9,14 +9,16 @@ import Chip from '@mui/material/Chip'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
-import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import EditIcon from '@mui/icons-material/Edit'
 import FolderIcon from '@mui/icons-material/Folder'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import ImageIcon from '@mui/icons-material/Image'
-import VisibilityIcon from '@mui/icons-material/Visibility'
+import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined'
+import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined'
 import type { Category, ImageItem, Program } from '../types'
+import { useColorMode } from '../useColorMode'
+import { getVisibilityColors } from '../theme'
 import CardImagePickerModal from './CardImagePickerModal'
 
 function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
@@ -62,6 +64,8 @@ interface CategoryTileProps {
 }
 
 export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, onDropFiles }: CategoryTileProps) {
+  const { mode } = useColorMode()
+  const visColors = getVisibilityColors(mode)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const dragCounter = useRef(0)
@@ -204,7 +208,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
           <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
-              <Typography variant="h6" noWrap color="primary">
+              <Typography variant="h6" noWrap sx={{ color: category.status === 'hidden' ? visColors.inactive : 'primary.main' }}>
                 {category.label}
               </Typography>
               {onEditName && (
@@ -245,13 +249,13 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
           }}
         >
           {onToggleVisibility && (
-            <Tooltip title={category.status === 'hidden' ? 'Show to students' : 'Hide from students'}>
+            <Tooltip title={category.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}>
               <IconButton
                 size="small"
                 sx={{
-                  color: 'white',
-                  bgcolor: 'rgba(0,0,0,0.25)',
-                  '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
+                  color: category.status === 'hidden' ? visColors.inactive : visColors.active,
+                  bgcolor: (theme) => alpha(theme.palette.background.paper, 0.85),
+                  '&:hover': { bgcolor: (theme) => alpha(theme.palette.background.paper, 0.95) },
                 }}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -261,9 +265,9 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
                 aria-label="Toggle visibility"
               >
                 {category.status === 'hidden' ? (
-                  <DisabledVisibleIcon fontSize="small" />
+                  <VisibilityOffOutlined fontSize="small" />
                 ) : (
-                  <VisibilityIcon fontSize="small" />
+                  <VisibilityOutlined fontSize="small" />
                 )}
               </IconButton>
             </Tooltip>

@@ -23,8 +23,8 @@ import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import AddPhotoAlternateIcon from "@mui/icons-material/AddPhotoAlternate";
 import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
-import DisabledVisibleIcon from "@mui/icons-material/DisabledVisible";
-import VisibilityIcon from "@mui/icons-material/Visibility";
+import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
+import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
 import EditIcon from "@mui/icons-material/Edit";
 import HomeIcon from "@mui/icons-material/Home";
 import LinkIcon from "@mui/icons-material/Link";
@@ -75,7 +75,7 @@ import AddCategoryDialog from "./components/AddCategoryDialog";
 import EditCategoryDialog from "./components/EditCategoryDialog";
 import { useColorMode } from "./useColorMode";
 import { useBrowseData } from "./useBrowseData";
-import { getSurfaceVariant } from "./theme";
+import { getSurfaceVariant, getVisibilityColors } from "./theme";
 import {
     useNavigationHistory,
     buildNavHistoryState,
@@ -1040,21 +1040,19 @@ export default function App() {
                                     }}
                                 >
                                     {canEditContent && (
-                                        <Tooltip title={selectedImage.active ? "Hide from students" : "Show to students"}>
+                                        <Tooltip title={selectedImage.active ? "Visibility: Hide from students" : "Visibility: Show to students"}>
                                             <IconButton
                                                 size="small"
                                                 onClick={() => toggleImageVisibility(selectedImage.id)}
                                                 aria-label="Toggle visibility"
                                             >
                                                 {selectedImage.active ? (
-                                                    <VisibilityIcon
-                                                        color="action"
-                                                        sx={{ fontSize: 28 }}
+                                                    <VisibilityOutlined
+                                                        sx={{ fontSize: 28, color: getVisibilityColors(mode).active }}
                                                     />
                                                 ) : (
-                                                    <DisabledVisibleIcon
-                                                        color="disabled"
-                                                        sx={{ fontSize: 28 }}
+                                                    <VisibilityOffOutlined
+                                                        sx={{ fontSize: 28, color: getVisibilityColors(mode).inactive }}
                                                     />
                                                 )}
                                             </IconButton>

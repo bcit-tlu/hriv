@@ -3,7 +3,7 @@
  *
  * Covers:
  * 1. Basic rendering — category label, detail text, and card structure
- * 2. Hidden indicator — greyscale card and DisabledVisible icon when status='hidden'
+ * 2. Hidden indicator — greyscale card and VisibilityOffOutlined icon when status='hidden'
  * 3. Visible categories — no hidden indicator when status is not 'hidden'
  * 4. Card image — renders thumbnail when cardImageId is set
  * 5. Program chips — renders program labels from category's own programIds only
@@ -68,7 +68,7 @@ describe('CategoryTile', () => {
           onToggleVisibility={vi.fn()}
         />,
       )
-      expect(screen.getByTestId('DisabledVisibleIcon')).toBeInTheDocument()
+      expect(screen.getByTestId('VisibilityOffOutlinedIcon')).toBeInTheDocument()
     })
 
     it('renders the card in greyscale when category is hidden', () => {
@@ -92,8 +92,8 @@ describe('CategoryTile', () => {
           onToggleVisibility={vi.fn()}
         />,
       )
-      expect(screen.queryByTestId('DisabledVisibleIcon')).not.toBeInTheDocument()
-      expect(screen.getByTestId('VisibilityIcon')).toBeInTheDocument()
+      expect(screen.queryByTestId('VisibilityOffOutlinedIcon')).not.toBeInTheDocument()
+      expect(screen.getByTestId('VisibilityOutlinedIcon')).toBeInTheDocument()
     })
 
     it('does not show visibility icons when toggle is not provided', () => {
@@ -104,8 +104,8 @@ describe('CategoryTile', () => {
           programs={[]}
         />,
       )
-      expect(screen.queryByTestId('DisabledVisibleIcon')).not.toBeInTheDocument()
-      expect(screen.queryByTestId('VisibilityIcon')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('VisibilityOffOutlinedIcon')).not.toBeInTheDocument()
+      expect(screen.queryByTestId('VisibilityOutlinedIcon')).not.toBeInTheDocument()
     })
 
     it('does not apply greyscale when category is visible', () => {

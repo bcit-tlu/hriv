@@ -405,7 +405,7 @@ function EditImageForm({
               onChange={(e) => setActive(e.target.checked)}
             />
           }
-          label="Active (visible to students)"
+          label="Visibility (visible to students)"
         />
         <Typography variant="subtitle2" sx={{ mt: 1 }}>
           Measurement Settings

@@ -33,6 +33,12 @@ const lightPalette = {
    * visibility dimensions read differently.
    */
   groupChip: { bg: '#5B6973', text: '#FFFFFF' },
+  /**
+   * Visibility status colours. Active uses the brand-red primary so "visible"
+   * categories/images pop; inactive uses text.primary at 0.7 alpha (#3E3C3Ab3)
+   * giving ≈ 4.7 : 1 contrast on white — WCAG-AA for normal text.
+   */
+  visibility: { active: '#A74A4A', inactive: '#3E3C3Ab3' },
 }
 
 /** Dark-mode colours – a complementary set that keeps the same brand feel. */
@@ -61,6 +67,12 @@ const darkPalette = {
    * the dark paper; dark text on #8A99A6 ≈ 5.5:1 contrast (WCAG-AA).
    */
   groupChip: { bg: '#8A99A6', text: '#1E1E1E' },
+  /**
+   * Visibility status colours (dark mode). Active uses the dark primary;
+   * inactive uses text.primary at 0.6 alpha (#E0DDD999) giving ≈ 4.7 : 1
+   * contrast on the dark paper — matching the light-mode ratio.
+   */
+  visibility: { active: '#D58881', inactive: '#E0DDD999' },
 }
 
 // ---------------------------------------------------------------------------
@@ -107,4 +119,16 @@ export function getGroupChipColors(mode: 'light' | 'dark'): {
   text: string
 } {
   return mode === 'dark' ? darkPalette.groupChip : lightPalette.groupChip
+}
+
+/**
+ * Visibility status colours for the current mode. `active` is the brand-red
+ * primary; `inactive` is a WCAG-AA grey with built-in alpha so it can be
+ * used directly as a CSS colour value.
+ */
+export function getVisibilityColors(mode: 'light' | 'dark'): {
+  active: string
+  inactive: string
+} {
+  return mode === 'dark' ? darkPalette.visibility : lightPalette.visibility
 }

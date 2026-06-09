@@ -10,14 +10,16 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
-import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import EditIcon from '@mui/icons-material/Edit'
 import LockIcon from '@mui/icons-material/Lock'
-import VisibilityIcon from '@mui/icons-material/Visibility'
+import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined'
+import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import type { Category, Program } from '../types'
 import { narrowProgramIds } from '../categoryUtils'
+import { getVisibilityColors } from '../theme'
 import { MAX_DEPTH } from '../types'
+import { useColorMode } from '../useColorMode'
 import AddCategoryDialog from './AddCategoryDialog'
 import EditCategoryDialog from './EditCategoryDialog'
 
@@ -109,6 +111,9 @@ export default function CategoryPickerSelect({
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addParentId, setAddParentId] = useState<number | null>(null)
   const [addParentLabel, setAddParentLabel] = useState<string | undefined>(undefined)
+
+  const { mode } = useColorMode()
+  const visColors = getVisibilityColors(mode)
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editingOptId, setEditingOptId] = useState<number | null>(null)
@@ -292,7 +297,7 @@ export default function CategoryPickerSelect({
                 }}
               >
                 <ListItemText>
-                  {opt.depth > 0 ? '\u2514 ' : ''}<Box component="span" sx={{ color: opt.status === 'hidden' ? 'text.disabled' : undefined }}>{opt.label}</Box>
+                  {opt.depth > 0 ? '\u2514 ' : ''}<Box component="span" sx={{ color: opt.status === 'hidden' ? visColors.inactive : undefined }}>{opt.label}</Box>
                   <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
                     ({opt.imageCount})
                   </Typography>
@@ -303,13 +308,13 @@ export default function CategoryPickerSelect({
                         aria-label={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}
                         style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: 4 }}
                       >
-                        <LockIcon sx={{ fontSize: 14, color: 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
+                        <LockIcon sx={{ fontSize: 14, color: opt.status === 'hidden' ? 'action.active' : 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
                       </span>
                     </Tooltip>
                   )}
                 </ListItemText>
                 {onToggleVisibility && (
-                  <Tooltip title={opt.status === 'hidden' ? 'Show to students' : 'Hide from students'}>
+                  <Tooltip title={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}>
                     <IconButton
                       size="small"
                       onMouseDown={(e) => e.stopPropagation()}
@@ -321,9 +326,9 @@ export default function CategoryPickerSelect({
                       sx={{ p: 0.5 }}
                     >
                       {opt.status === 'hidden' ? (
-                        <DisabledVisibleIcon fontSize="small" color="disabled" />
+                        <VisibilityOffOutlined fontSize="small" sx={{ color: visColors.inactive }} />
                       ) : (
-                        <VisibilityIcon fontSize="small" />
+                        <VisibilityOutlined fontSize="small" sx={{ color: visColors.active }} />
                       )}
                     </IconButton>
                   </Tooltip>
