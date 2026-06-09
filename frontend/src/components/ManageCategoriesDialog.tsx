@@ -41,7 +41,7 @@ function flattenTree(nodes: Category[], depth: number = 0, parentId: number | nu
   const result: FlatOption[] = []
   for (const node of nodes) {
     const hasOwnRestriction = node.programIds.length > 0
-    result.push({ id: node.id, label: node.label, depth, childCount: countDescendants(node), status: node.status ?? 'active', parentId, programIds: node.programIds, inheritedRestriction: !hasOwnRestriction && ancestorRestricted })
+    result.push({ id: node.id, label: node.label, depth, childCount: countDescendants(node), status: node.status ?? 'active', parentId, programIds: node.programIds, inheritedRestriction: ancestorRestricted })
     result.push(...flattenTree(node.children, depth + 1, node.id, ancestorRestricted || hasOwnRestriction))
   }
   return result

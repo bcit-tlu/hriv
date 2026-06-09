@@ -45,7 +45,7 @@ function flattenTree(
   for (const node of nodes) {
     if (excludeIds?.has(node.id)) continue
     const hasOwnRestriction = node.programIds.length > 0
-    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId, imageCount: node.images.length, programIds: node.programIds, inheritedRestriction: !hasOwnRestriction && ancestorRestricted })
+    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId, imageCount: node.images.length, programIds: node.programIds, inheritedRestriction: ancestorRestricted })
     result.push(...flattenTree(node.children, depth + 1, excludeIds, node.id, ancestorRestricted || hasOwnRestriction))
   }
   return result
