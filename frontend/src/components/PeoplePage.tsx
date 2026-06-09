@@ -268,20 +268,6 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
     }
   }
 
-  const handleDeletePerson = async (userId: number) => {
-    try {
-      await deleteUser(userId)
-      setSelected((prev) => {
-        const next = new Set(prev)
-        next.delete(userId)
-        return next
-      })
-      await loadData()
-    } catch (err) {
-      console.error('Failed to delete person', err)
-    }
-  }
-
   // Bulk edit program handler
   const handleBulkSave = async (programIds: number[]) => {
     try {
