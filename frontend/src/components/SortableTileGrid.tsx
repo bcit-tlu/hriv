@@ -197,7 +197,7 @@ export interface SortableTileGridProps {
     onFilesDrop: (files: File[]) => void;
     onGridDragOver?: React.DragEventHandler;
     onGridDrop?: React.DragEventHandler;
-    onReorderComplete?: () => void;
+    onReorderComplete?: () => Promise<void> | void;
     onReorderError?: (err: unknown) => void;
 }
 
@@ -351,20 +351,40 @@ export default function SortableTileGrid({
 
                 const results = await Promise.allSettled(promises);
                 const failed = results.filter((r) => r.status === "rejected");
-                reorderInFlightRef.current = false;
 
                 if (failed.length > 0) {
                     const err =
                         (failed[0] as PromiseRejectedResult).reason ??
                         new Error("Reorder partially failed");
                     console.error("Reorder partially failed", failed);
+                    reorderInFlightRef.current = false;
                     setItems((current) =>
                         current === reordered ? items : current,
                     );
                     onReorderError?.(err);
+                    onReorderComplete?.();
+                    return;
                 }
 
-                onReorderComplete?.();
+                // Keep the in-flight flag raised until the caller
+                // refreshes categories so the render-time guard
+                // doesn't rebuild items from stale sort_order.
+                try {
+                    await onReorderComplete?.();
+                } catch {
+                    /* handled inside the callback */
+                }
+                reorderInFlightRef.current = false;
+                // The render-time guard ran while the flag was raised
+                // and skipped setItems, so rebuild from fresh data now.
+                if (prevCatsRef.current && prevImgsRef.current) {
+                    setItems(
+                        buildTileItems(
+                            prevCatsRef.current,
+                            prevImgsRef.current,
+                        ),
+                    );
+                }
             } catch (err) {
                 console.error("Failed to persist reorder", err);
                 reorderInFlightRef.current = false;

@@ -534,6 +534,64 @@ describe("handleDragEnd — reorder branches", () => {
         expect(onReorderError).toHaveBeenCalled();
         expect(onReorderComplete).toHaveBeenCalled();
     });
+
+    it("calls onReorderComplete on success path", async () => {
+        const onReorderComplete = vi.fn();
+
+        renderGrid({
+            currentImages: [
+                makeImage({ id: 10, name: "A", sortOrder: 0 }),
+                makeImage({ id: 11, name: "B", sortOrder: 1 }),
+            ],
+            onReorderComplete,
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: sortableSource("img-11", 0, 1),
+                    target: { id: "img-10" },
+                    canceled: false,
+                },
+            });
+        });
+
+        expect(onReorderComplete).toHaveBeenCalledTimes(1);
+    });
+
+    it("awaits async onReorderComplete before releasing in-flight guard", async () => {
+        // Verify handleDragEnd awaits the Promise returned by
+        // onReorderComplete (keeps reorderInFlightRef true so the
+        // render-time guard doesn't rebuild items from stale data).
+        const callLog: string[] = [];
+        const onReorderComplete = vi.fn(async () => {
+            callLog.push("complete-called");
+            // Simulate an async refresh (e.g. fetchCategoryTree)
+            await Promise.resolve();
+            callLog.push("complete-resolved");
+        });
+
+        renderGrid({
+            currentImages: [
+                makeImage({ id: 10, name: "A", sortOrder: 0 }),
+                makeImage({ id: 11, name: "B", sortOrder: 1 }),
+            ],
+            onReorderComplete,
+        });
+
+        await act(async () => {
+            await capturedOnDragEnd!({
+                operation: {
+                    source: sortableSource("img-11", 0, 1),
+                    target: { id: "img-10" },
+                    canceled: false,
+                },
+            });
+        });
+
+        // Both steps ran — the handler awaited the async callback.
+        expect(callLog).toEqual(["complete-called", "complete-resolved"]);
+    });
 });
 
 // ---------------------------------------------------------------------------

@@ -153,7 +153,7 @@ interface ManageCategoriesDialogProps {
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onReorderCategories?: (items: Array<{ id: number; parent_id: number | null; sort_order: number }>) => Promise<void>
   onReorderImages?: (items: Array<{ id: number; sort_order: number }>) => Promise<void>
-  onReorderComplete?: () => void
+  onReorderComplete?: () => Promise<void> | void
 }
 
 export default function ManageCategoriesDialog({
@@ -352,7 +352,7 @@ export default function ManageCategoriesDialog({
     try {
       await onReorderCategories(catItems)
     } catch {
-      onReorderComplete?.()
+      await onReorderComplete?.()
       return
     }
     if (imgItems.length > 0 && onReorderImages) {
@@ -360,7 +360,7 @@ export default function ManageCategoriesDialog({
         await onReorderImages(imgItems)
       } catch { /* error already surfaced by the wrapper */ }
     }
-    onReorderComplete?.()
+    await onReorderComplete?.()
   }, [dragId, dropTarget, options, categories, uncategorizedImages, onReorderCategories, onReorderImages, onReorderComplete])
 
   // Compute the Y position and indentation for the drop indicator line

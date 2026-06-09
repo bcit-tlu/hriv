@@ -740,13 +740,17 @@ export default function App() {
         [],
     );
 
-    const handleReorderComplete = useCallback(() => {
-        refreshCategories().catch(() => {
+    const handleReorderComplete = useCallback(async () => {
+        const [catResult, imgResult] = await Promise.allSettled([
+            refreshCategories(),
+            refreshUncategorizedImages(),
+        ]);
+        if (catResult.status === "rejected") {
             setWarnSnack("Could not refresh categories after reorder.");
-        });
-        refreshUncategorizedImages().catch(() => {
+        }
+        if (imgResult.status === "rejected") {
             setWarnSnack("Could not refresh images after reorder.");
-        });
+        }
     }, [refreshCategories, refreshUncategorizedImages]);
 
     const handleReorderError = useCallback(
