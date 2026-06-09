@@ -228,31 +228,33 @@ async def _process_bulk_import(
 @router.post("/", response_model=BulkImportJobOut, status_code=201)
 async def bulk_import_images(
     files: Annotated[list[UploadFile], File()],
-    category_id: Annotated[int, Form()],
     background_tasks: BackgroundTasks,
     _user: Annotated[User, Depends(_editor)],
     db: AsyncSession = Depends(get_db),
+    category_id: Annotated[int | None, Form()] = None,
     copyright: Annotated[str | None, Form()] = None,
     note: Annotated[str | None, Form()] = None,
     active: Annotated[bool, Form()] = True,
 ) -> BulkImportJob:
     """Upload multiple image files and/or zip archives for bulk import.
 
-    All images are assigned to the specified category.  Metadata fields
-    (copyright, note, active) are applied uniformly to every image in the
-    batch.  Omitted fields fall back to sensible defaults.
+    Images are assigned to the specified category, or placed at root level
+    when ``category_id`` is omitted.  Metadata fields (copyright, note,
+    active) are applied uniformly to every image in the batch.  Omitted
+    fields fall back to sensible defaults.
     """
     if not files:
         raise HTTPException(status_code=400, detail="No files provided")
 
-    # Validate that the target category exists
-    category = await db.get(Category, category_id)
-    if category is None:
-        raise HTTPException(status_code=400, detail="Category not found")
+    # Validate that the target category exists (if specified)
+    if category_id is not None:
+        category = await db.get(Category, category_id)
+        if category is None:
+            raise HTTPException(status_code=400, detail="Category not found")
 
     with tracer.start_as_current_span("bulk_import.enqueue") as span:
         try:
-            span.set_attribute("bulk_import.category_id", category_id)
+            span.set_attribute("bulk_import.category_id", category_id if category_id is not None else "none")
 
             os.makedirs(settings.source_images_dir, exist_ok=True)
 

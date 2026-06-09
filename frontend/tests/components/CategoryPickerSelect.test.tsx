@@ -48,6 +48,75 @@ describe('CategoryPickerSelect — LockIcon', () => {
     expect(lockElement).toHaveAttribute('role', 'img')
   })
 
+  it('displays "None (root level)" when root is selected (value=null)', () => {
+    const categories = [makeCategory({ id: 1, label: 'Test' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('None (root level)')).toBeInTheDocument()
+  })
+
+  it('displays placeholder text when provided and value is null', () => {
+    const categories = [makeCategory({ id: 1, label: 'Test' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        placeholder="(no change)"
+      />,
+    )
+    expect(screen.getByText('(no change)')).toBeInTheDocument()
+    expect(screen.queryByText('None (root level)')).not.toBeInTheDocument()
+  })
+
+  it('displays "None (root level)" after selecting root when placeholder was shown', async () => {
+    const user = userEvent.setup()
+    const categories = [makeCategory({ id: 1, label: 'Test' })]
+    const onChange = vi.fn()
+    const { rerender } = render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={onChange}
+        placeholder="(no change)"
+      />,
+    )
+    // Initially shows placeholder
+    expect(screen.getByText('(no change)')).toBeInTheDocument()
+
+    // Open dropdown and select root option
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByText('None (root level)'))
+
+    // Simulate parent state update: value stays null but placeholder removed
+    rerender(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={onChange}
+      />,
+    )
+    expect(screen.getByText('None (root level)')).toBeInTheDocument()
+    expect(screen.queryByText('(no change)')).not.toBeInTheDocument()
+  })
+
+  it('displays selected category label in the collapsed select', () => {
+    const categories = [makeCategory({ id: 5, label: 'Histology' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={5}
+        onChange={vi.fn()}
+      />,
+    )
+    expect(screen.getByText('Histology')).toBeInTheDocument()
+  })
+
   it('renders inherited restriction tooltip for child categories', async () => {
     const user = userEvent.setup()
     const parent = makeCategory({

@@ -194,11 +194,7 @@ export default function UploadImageModal({
     if (files.length === 0) return
 
     if (bulk) {
-      // Bulk import workflow
-      if (categoryId == null) {
-        setError('Please select a category')
-        return
-      }
+      // Bulk import workflow — category is optional (images go to root if unset)
       setUploading(true)
       setError(null)
       setUploadProgress(0)
