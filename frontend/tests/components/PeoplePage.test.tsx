@@ -281,4 +281,26 @@ describe('PeoplePage', () => {
 
     expect(screen.queryByText('Edit Person')).not.toBeInTheDocument()
   })
+
+  it('filter icon changes aria-label and color when panel is toggled', async () => {
+    const user = userEvent.setup()
+    render(
+      <PeoplePage programs={programs} initialEditUserId={null} />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    // Initially: aria-label is "Show filters"
+    const filterBtn = screen.getByLabelText('Show filters')
+    expect(filterBtn).toBeInTheDocument()
+
+    // Click to expand filter row
+    await user.click(filterBtn)
+
+    // After toggle: aria-label changes to "Hide filters"
+    expect(screen.getByLabelText('Hide filters')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Show filters')).not.toBeInTheDocument()
+  })
 })
