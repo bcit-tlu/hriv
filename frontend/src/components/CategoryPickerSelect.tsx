@@ -292,7 +292,7 @@ export default function CategoryPickerSelect({
                 }}
               >
                 <ListItemText>
-                  {opt.depth > 0 ? '\u2514 ' : ''}<span style={{ color: opt.status === 'hidden' ? 'rgba(0, 0, 0, 0.38)' : undefined }}>{opt.label}</span>
+                  {opt.depth > 0 ? '\u2514 ' : ''}<Box component="span" sx={{ color: opt.status === 'hidden' ? 'text.disabled' : undefined }}>{opt.label}</Box>
                   <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
                     ({opt.imageCount})
                   </Typography>
