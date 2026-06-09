@@ -23,8 +23,8 @@ import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import AddPhotoAlternateIcon from "@mui/icons-material/AddPhotoAlternate";
 import CreateNewFolderIcon from "@mui/icons-material/CreateNewFolder";
-import VisibilityOffOutlined from "@mui/icons-material/VisibilityOffOutlined";
-import VisibilityOutlined from "@mui/icons-material/VisibilityOutlined";
+import VisibilityOff from "@mui/icons-material/VisibilityOff";
+import Visibility from "@mui/icons-material/Visibility";
 import EditIcon from "@mui/icons-material/Edit";
 import HomeIcon from "@mui/icons-material/Home";
 import LinkIcon from "@mui/icons-material/Link";
@@ -1047,11 +1047,11 @@ export default function App() {
                                                 aria-label={selectedImage.active ? "Visibility: Hide from students" : "Visibility: Show to students"}
                                             >
                                                 {selectedImage.active ? (
-                                                    <VisibilityOutlined
+                                                    <Visibility
                                                         sx={{ fontSize: 28, color: getVisibilityColors(mode).active }}
                                                     />
                                                 ) : (
-                                                    <VisibilityOffOutlined
+                                                    <VisibilityOff
                                                         sx={{ fontSize: 28, color: getVisibilityColors(mode).inactive }}
                                                     />
                                                 )}

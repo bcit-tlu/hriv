@@ -4,12 +4,11 @@ import CardActionArea from '@mui/material/CardActionArea'
 import CardMedia from '@mui/material/CardMedia'
 import CardContent from '@mui/material/CardContent'
 import IconButton from '@mui/material/IconButton'
-import { alpha } from '@mui/material/styles'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import EditIcon from '@mui/icons-material/Edit'
-import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined'
-import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
+import Visibility from '@mui/icons-material/Visibility'
 import type { ImageItem } from '../types'
 import { useColorMode } from '../useColorMode'
 import { getVisibilityColors } from '../theme'
@@ -44,9 +43,9 @@ export default function ImageTile({ image, onClick, onEditDetails, onToggleVisib
             <IconButton
               size="small"
               sx={{
-                color: image.active ? visColors.active : visColors.inactive,
-                bgcolor: (theme) => alpha(theme.palette.background.paper, 0.85),
-                '&:hover': { bgcolor: (theme) => alpha(theme.palette.background.paper, 0.95) },
+                color: 'white',
+                bgcolor: 'rgba(0,0,0,0.25)',
+                '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
               }}
               onClick={(e) => {
                 e.stopPropagation()
@@ -55,9 +54,9 @@ export default function ImageTile({ image, onClick, onEditDetails, onToggleVisib
               aria-label={image.active ? 'Visibility: Hide from students' : 'Visibility: Show to students'}
             >
               {image.active ? (
-                <VisibilityOutlined fontSize="small" />
+                <Visibility fontSize="small" />
               ) : (
-                <VisibilityOffOutlined fontSize="small" />
+                <VisibilityOff fontSize="small" />
               )}
             </IconButton>
           </Tooltip>
@@ -79,7 +78,7 @@ export default function ImageTile({ image, onClick, onEditDetails, onToggleVisib
             {!image.active && !onToggleVisibility && (
               <Tooltip title="Visibility: Inactive">
                 <span role="img" aria-label="Visibility: Inactive" style={{ display: 'inline-flex' }}>
-                  <VisibilityOffOutlined fontSize="small" sx={{ color: visColors.inactive }} />
+                  <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
                 </span>
               </Tooltip>
             )}

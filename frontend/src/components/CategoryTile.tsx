@@ -14,8 +14,8 @@ import EditIcon from '@mui/icons-material/Edit'
 import FolderIcon from '@mui/icons-material/Folder'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import ImageIcon from '@mui/icons-material/Image'
-import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined'
-import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
+import Visibility from '@mui/icons-material/Visibility'
 import type { Category, ImageItem, Program } from '../types'
 import { useColorMode } from '../useColorMode'
 import { getVisibilityColors } from '../theme'
@@ -253,9 +253,9 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
               <IconButton
                 size="small"
                 sx={{
-                  color: category.status === 'hidden' ? visColors.inactive : visColors.active,
-                  bgcolor: (theme) => alpha(theme.palette.background.paper, 0.85),
-                  '&:hover': { bgcolor: (theme) => alpha(theme.palette.background.paper, 0.95) },
+                  color: 'white',
+                  bgcolor: 'rgba(0,0,0,0.25)',
+                  '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
                 }}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -265,9 +265,9 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
                 aria-label={category.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}
               >
                 {category.status === 'hidden' ? (
-                  <VisibilityOffOutlined fontSize="small" />
+                  <VisibilityOff fontSize="small" />
                 ) : (
-                  <VisibilityOutlined fontSize="small" />
+                  <Visibility fontSize="small" />
                 )}
               </IconButton>
             </Tooltip>

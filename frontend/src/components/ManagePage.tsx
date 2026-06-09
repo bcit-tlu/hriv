@@ -793,7 +793,7 @@ export default function ManagePage({
                   key={img.id}
                   hover
                   selected={selected.has(img.id)}
-                  sx={{ cursor: 'pointer', ...(!img.active && { '& .MuiTableCell-body:not([data-interactive])': { color: visColors.inactive } }) }}
+                  sx={{ cursor: 'pointer', ...(!img.active && { '& .MuiTableCell-body:not([data-interactive])': { color: visColors.inactive }, '& .MuiTableCell-body:not([data-interactive]) a, & .MuiTableCell-body:not([data-interactive]) .MuiLink-root': { color: 'inherit' } }) }}
                   onClick={() => handleRowClick(img)}
                 >
                   <TableCell

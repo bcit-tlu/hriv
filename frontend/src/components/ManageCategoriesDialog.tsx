@@ -17,8 +17,8 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
 import EditIcon from '@mui/icons-material/Edit'
 import LockIcon from '@mui/icons-material/Lock'
-import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined'
-import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
+import Visibility from '@mui/icons-material/Visibility'
 import type { Category, ImageItem, Program } from '../types'
 import { narrowProgramIds } from '../categoryUtils'
 import { getVisibilityColors } from '../theme'
@@ -472,9 +472,9 @@ export default function ManageCategoriesDialog({
                             onClick={() => onToggleVisibility(opt.id)}
                           >
                             {opt.status === 'hidden' ? (
-                              <VisibilityOffOutlined fontSize="small" sx={{ color: visColors.inactive }} />
+                              <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
                             ) : (
-                              <VisibilityOutlined fontSize="small" sx={{ color: visColors.active }} />
+                              <Visibility fontSize="small" sx={{ color: visColors.active }} />
                             )}
                           </IconButton>
                         </Tooltip>
@@ -507,7 +507,7 @@ export default function ManageCategoriesDialog({
                         size="small"
                         onClick={() => handleDeleteClick(opt)}
                       >
-                        <DeleteIcon fontSize="small" color="primary" />
+                        <DeleteIcon fontSize="small" sx={{ color: opt.status === 'hidden' ? visColors.inactive : 'primary.main' }} />
                       </IconButton>
                     </Tooltip>
                   </Box>

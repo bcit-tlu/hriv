@@ -12,8 +12,8 @@ import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import LockIcon from '@mui/icons-material/Lock'
-import VisibilityOffOutlined from '@mui/icons-material/VisibilityOffOutlined'
-import VisibilityOutlined from '@mui/icons-material/VisibilityOutlined'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
+import Visibility from '@mui/icons-material/Visibility'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import type { Category, Program } from '../types'
 import { narrowProgramIds } from '../categoryUtils'
@@ -327,9 +327,9 @@ export default function CategoryPickerSelect({
                       sx={{ p: 0.5 }}
                     >
                       {opt.status === 'hidden' ? (
-                        <VisibilityOffOutlined fontSize="small" sx={{ color: visColors.inactive }} />
+                        <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
                       ) : (
-                        <VisibilityOutlined fontSize="small" sx={{ color: visColors.active }} />
+                        <Visibility fontSize="small" sx={{ color: visColors.active }} />
                       )}
                     </IconButton>
                   </Tooltip>
@@ -370,7 +370,7 @@ export default function CategoryPickerSelect({
                       }}
                       sx={{ p: 0.5 }}
                     >
-                      <DeleteIcon fontSize="small" color="primary" />
+                      <DeleteIcon fontSize="small" sx={{ color: opt.status === 'hidden' ? visColors.inactive : 'primary.main' }} />
                     </IconButton>
                   </Tooltip>
                 )}
