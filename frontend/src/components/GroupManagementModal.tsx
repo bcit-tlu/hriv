@@ -111,29 +111,33 @@ export default function GroupManagementModal({
   const [bulkPending, setBulkPending] = useState(false)
   const [pendingRemoveId, setPendingRemoveId] = useState<number | null>(null)
   const [groupPending, setGroupPending] = useState(false)
-  const [localGroups, setLocalGroups] = useState<Group[]>(groups)
-  const [reloadKey, setReloadKey] = useState(0)
+  const [optimisticGroups, setOptimisticGroups] = useState<Map<number, Group>>(() => new Map())
 
-  useEffect(() => {
-    setLocalGroups(groups)
-  }, [groups])
+  const displayGroups = useMemo(
+    () => groups.map((group) => optimisticGroups.get(group.id) ?? group),
+    [groups, optimisticGroups],
+  )
 
   const selectedGroup = useMemo(
-    () => localGroups.find((group) => group.id === selectedGroupId) ?? null,
-    [localGroups, selectedGroupId],
+    () => displayGroups.find((group) => group.id === selectedGroupId) ?? null,
+    [displayGroups, selectedGroupId],
   )
   const selectedGroupIdForFetch = selectedGroup?.id ?? null
 
   useEffect(() => {
+    setOptimisticGroups((prev) => (prev.size === 0 ? prev : new Map()))
+  }, [groups])
+
+  useEffect(() => {
     if (!open) return
-    if (localGroups.length === 0) {
+    if (displayGroups.length === 0) {
       setSelectedGroupId(null)
       return
     }
-    if (selectedGroupId == null || !localGroups.some((group) => group.id === selectedGroupId)) {
-      setSelectedGroupId(localGroups[0].id)
+    if (selectedGroupId == null || !displayGroups.some((group) => group.id === selectedGroupId)) {
+      setSelectedGroupId(displayGroups[0].id)
     }
-  }, [localGroups, open, selectedGroupId])
+  }, [displayGroups, open, selectedGroupId])
 
   useEffect(() => {
     if (!open) return
@@ -180,6 +184,7 @@ export default function GroupManagementModal({
       setSelectedUserIds(new Set())
       setMemberError(null)
       setGroupActionError(null)
+      setOptimisticGroups(new Map())
     }
   }, [open])
 
@@ -211,7 +216,7 @@ export default function GroupManagementModal({
     return () => {
       cancelled = true
     }
-  }, [open, selectedGroupIdForFetch, tab, q, selectedProgramIds, page, pageSize, reloadKey])
+  }, [open, selectedGroupIdForFetch, tab, q, selectedProgramIds, page, pageSize])
 
   const memberIds = useMemo(() => new Set(selectedGroup?.memberIds ?? []), [selectedGroup])
   const instructorIds = useMemo(
@@ -252,7 +257,7 @@ export default function GroupManagementModal({
   }
 
   const startRename = () => {
-    const group = localGroups.find((item) => item.id === menuGroupId)
+    const group = displayGroups.find((item) => item.id === menuGroupId)
     if (group) {
       setGroupNameDraft(group.name)
       setGroupDescriptionDraft(group.description ?? '')
@@ -278,10 +283,11 @@ export default function GroupManagementModal({
       if (groupDialogMode === 'create') {
         await Promise.resolve(onAdd(name, description))
       } else if (groupDialogMode === 'rename' && menuGroupId != null) {
+        const group = displayGroups.find((item) => item.id === menuGroupId)
         await Promise.resolve(onEdit(menuGroupId, name, description))
-        setLocalGroups((prev) =>
-          prev.map((item) => (item.id === menuGroupId ? { ...item, name, description } : item)),
-        )
+        if (group) {
+          setOptimisticGroup({ ...group, name, description })
+        }
       }
       setGroupDialogMode(null)
       setGroupNameDraft('')
@@ -301,9 +307,8 @@ export default function GroupManagementModal({
     setGroupActionError(null)
     try {
       await Promise.resolve(onDelete(menuGroupId))
-      setLocalGroups((prev) => prev.filter((group) => group.id !== menuGroupId))
       if (selectedGroupId === menuGroupId) {
-        const nextGroup = localGroups.find((group) => group.id !== menuGroupId)
+        const nextGroup = displayGroups.find((group) => group.id !== menuGroupId)
         setSelectedGroupId(nextGroup?.id ?? null)
       }
       setDeleteDialogOpen(false)
@@ -347,8 +352,16 @@ export default function GroupManagementModal({
     })
   }
 
-  const updateLocalGroup = (updated: Group) => {
-    setLocalGroups((prev) => prev.map((group) => (group.id === updated.id ? updated : group)))
+  const setOptimisticGroup = (updated: Group) => {
+    setOptimisticGroups((prev) => {
+      const next = new Map(prev)
+      next.set(updated.id, updated)
+      return next
+    })
+  }
+
+  const updateGroupFromApi = (updated: Group) => {
+    setOptimisticGroup(updated)
     onGroupUpdated?.(updated)
   }
 
@@ -362,9 +375,8 @@ export default function GroupManagementModal({
         tab === 'students'
           ? await addGroupMembersBulk(selectedGroup.id, ids)
           : await addGroupInstructorsBulk(selectedGroup.id, ids)
-      updateLocalGroup(apiGroupToGroup(updatedGroup))
+      updateGroupFromApi(apiGroupToGroup(updatedGroup))
       setSelectedUserIds(new Set())
-      setReloadKey((key) => key + 1)
     } catch {
       setMemberError(
         tab === 'students'
@@ -385,8 +397,7 @@ export default function GroupManagementModal({
         tab === 'students'
           ? await removeGroupMember(selectedGroup.id, user.id)
           : await removeGroupInstructor(selectedGroup.id, user.id)
-      updateLocalGroup(apiGroupToGroup(updatedGroup))
-      setReloadKey((key) => key + 1)
+      updateGroupFromApi(apiGroupToGroup(updatedGroup))
     } catch {
       setMemberError(
         tab === 'students'
@@ -508,11 +519,11 @@ export default function GroupManagementModal({
                 Create Group
               </Button>
               <Typography variant="caption" color="text.secondary" sx={{ px: 0.5 }}>
-                {localGroups.length} {localGroups.length === 1 ? 'group' : 'groups'}
+                {displayGroups.length} {displayGroups.length === 1 ? 'group' : 'groups'}
               </Typography>
             </Box>
             <Divider />
-            {localGroups.length === 0 ? (
+            {displayGroups.length === 0 ? (
               <Box sx={{ p: 2 }}>
                 <Typography variant="body2" color="text.secondary">
                   No groups yet. Create a group to start adding students and instructors.
@@ -520,7 +531,7 @@ export default function GroupManagementModal({
               </Box>
             ) : (
               <List sx={{ flex: 1, overflow: 'auto', px: 1, py: 1 }}>
-                {localGroups.map((group) => {
+                {displayGroups.map((group) => {
                   const isSelected = group.id === selectedGroupId
                   const groupManageable = canManage(group)
                   return (

@@ -234,12 +234,14 @@ describe('GroupManagementModal', () => {
     const { onGroupUpdated } = renderModal()
 
     fireEvent.click(await screen.findByLabelText('select Student Two'))
+    const fetchCallsBeforeAdd = mockFetchUsersPaged.mock.calls.length
     fireEvent.click(screen.getByRole('button', { name: /add 1 to group/i }))
 
     expect(mockAddGroupMembersBulk).toHaveBeenCalledWith(1, [102])
     await waitFor(() =>
       expect(onGroupUpdated).toHaveBeenCalledWith(expect.objectContaining({ memberIds: [101, 102] })),
     )
+    expect(mockFetchUsersPaged).toHaveBeenCalledTimes(fetchCallsBeforeAdd)
   })
 
   it('filters available students by program chip in the redesigned detail panel', async () => {
