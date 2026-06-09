@@ -122,9 +122,10 @@ export function getGroupChipColors(mode: 'light' | 'dark'): {
 }
 
 /**
- * Visibility status colours for the current mode. `active` is the brand-red
- * primary; `inactive` is a WCAG-AA grey with built-in alpha so it can be
- * used directly as a CSS colour value.
+ * Visibility status colours for the current mode. `active` is a neutral
+ * grey so the default "visible" state stays unremarkable; `inactive` is a
+ * WCAG-AA grey with built-in alpha so it can be used directly as a CSS
+ * colour value.
  */
 export function getVisibilityColors(mode: 'light' | 'dark'): {
   active: string
