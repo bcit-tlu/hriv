@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.22.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.21.0...backend-v0.22.0) (2026-06-10)
+
+
+### Features
+
+* add groups backend (PR2 of groups refactor) ([#604](https://github.com/bcit-tlu/hriv/issues/604)) ([ebc6e33](https://github.com/bcit-tlu/hriv/commit/ebc6e33596998e08c82c1fec5f3000038eb54f9a))
+* paginate/filter user listing + expose group memberships in /me ([#617](https://github.com/bcit-tlu/hriv/issues/617)) ([e282835](https://github.com/bcit-tlu/hriv/commit/e282835e5f2e0844f24ae4e280ca2e11826cae2e))
+
+
+### Bug Fixes
+
+* harden /api/issues/report against PII leakage and abuse ([#625](https://github.com/bcit-tlu/hriv/issues/625)) ([bb3471c](https://github.com/bcit-tlu/hriv/commit/bb3471cac34a39b72ecc2c5c48113959840b3ab6))
+* make category optional for bulk import and display root selection ([#632](https://github.com/bcit-tlu/hriv/issues/632)) ([a602ce7](https://github.com/bcit-tlu/hriv/commit/a602ce742fdd8799430fc5dc3dee3f7b5f44696d))
+
 ## [0.21.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.20.1...backend-v0.21.0) (2026-06-05)
 
 
