@@ -798,7 +798,6 @@ export default function ManagePage({
                     cursor: 'pointer',
                     '&[data-dimmed] .MuiTableCell-body:not([data-interactive])': { color: visColors.inactive },
                     '&[data-dimmed] .MuiTableCell-body:not([data-interactive]) a, &[data-dimmed] .MuiTableCell-body:not([data-interactive]) .MuiLink-root': { color: 'inherit' },
-                    '&[data-dimmed] .MuiChip-root': { opacity: 0.45 },
                   }}
                   onClick={() => handleRowClick(img)}
                 >
@@ -871,7 +870,7 @@ export default function ManagePage({
                                 key={p.id}
                                 label={p.name}
                                 size="small"
-                                color="primary"
+                                color={img.active ? 'primary' : 'default'}
                                 onClick={() => chipClick(p.name)}
                                 sx={{ cursor: 'pointer' }}
                               />
@@ -884,7 +883,7 @@ export default function ManagePage({
                                 key={p.id}
                                 label={p.name}
                                 size="small"
-                                color="primary"
+                                color={img.active ? 'primary' : 'default'}
                                 onClick={() => chipClick(p.name)}
                                 sx={{ cursor: 'pointer', opacity: 0.5 }}
                               />
