@@ -174,7 +174,7 @@ export default function BulkEditImagesModal({
               }}
             />
           }
-          label="Active (visible to students)"
+          label="Visibility (visible to students)"
         />
 
         <Divider />

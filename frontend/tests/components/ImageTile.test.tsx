@@ -3,7 +3,7 @@
  *
  * Covers:
  * 1. Basic rendering — image name, thumbnail, and card structure
- * 2. Inactive indicator — dimmed title and DisabledVisible icon when active=false
+ * 2. Inactive indicator — greyscale card and VisibilityOff icon when active=false
  * 3. Active images — no inactive indicator when active=true
  * 4. Copyright text — renders copyright when present
  * 5. Edit details button — renders and calls callback
@@ -58,11 +58,11 @@ describe("ImageTile", () => {
                 />,
             );
             expect(
-                screen.getByTestId("DisabledVisibleIcon"),
+                screen.getByTestId("VisibilityOffIcon"),
             ).toBeInTheDocument();
         });
 
-        it("dims the card content when image is inactive", () => {
+        it("renders the card in greyscale when image is inactive", () => {
             render(
                 <ImageTile
                     image={makeImage({ active: false, name: "Inactive Slide" })}
@@ -70,8 +70,8 @@ describe("ImageTile", () => {
                 />,
             );
             const title = screen.getByText("Inactive Slide");
-            expect(title.closest(".MuiCardContent-root")).toHaveStyle({
-                opacity: 0.5,
+            expect(title.closest(".MuiCardActionArea-root")).toHaveStyle({
+                filter: "grayscale(100%)",
             });
         });
 
@@ -83,11 +83,11 @@ describe("ImageTile", () => {
                 />,
             );
             expect(
-                screen.queryByTestId("DisabledVisibleIcon"),
+                screen.queryByTestId("VisibilityOffIcon"),
             ).not.toBeInTheDocument();
         });
 
-        it("card content has full opacity when image is active", () => {
+        it("does not apply greyscale when image is active", () => {
             render(
                 <ImageTile
                     image={makeImage({ active: true, name: "Active Slide" })}
@@ -95,8 +95,8 @@ describe("ImageTile", () => {
                 />,
             );
             const title = screen.getByText("Active Slide");
-            expect(title.closest(".MuiCardContent-root")).toHaveStyle({
-                opacity: 1,
+            expect(title.closest(".MuiCardActionArea-root")).toHaveStyle({
+                filter: "none",
             });
         });
     });
@@ -179,11 +179,11 @@ describe("ImageTile", () => {
             );
             expect(screen.getByTestId("VisibilityIcon")).toBeInTheDocument();
             expect(
-                screen.queryByTestId("DisabledVisibleIcon"),
+                screen.queryByTestId("VisibilityOffIcon"),
             ).not.toBeInTheDocument();
         });
 
-        it("renders the DisabledVisibleIcon when image is inactive and toggle provided", () => {
+        it("renders the VisibilityOffIcon when image is inactive and toggle provided", () => {
             render(
                 <ImageTile
                     image={makeImage({ active: false })}
@@ -192,7 +192,7 @@ describe("ImageTile", () => {
                 />,
             );
             expect(
-                screen.getByTestId("DisabledVisibleIcon"),
+                screen.getByTestId("VisibilityOffIcon"),
             ).toBeInTheDocument();
             expect(
                 screen.queryByTestId("VisibilityIcon"),
@@ -210,7 +210,7 @@ describe("ImageTile", () => {
                 />,
             );
 
-            await user.click(screen.getByLabelText("Toggle visibility"));
+            await user.click(screen.getByLabelText("Visibility: Hide from students"));
             expect(onToggle).toHaveBeenCalledWith(42);
         });
 
@@ -222,11 +222,11 @@ describe("ImageTile", () => {
                 />,
             );
             expect(
-                screen.queryByLabelText("Toggle visibility"),
+                screen.queryByLabelText(/Visibility: (Hide|Show) from students/),
             ).not.toBeInTheDocument();
         });
 
-        it("suppresses inline DisabledVisibleIcon when toggle is provided", () => {
+        it("suppresses inline VisibilityOffIcon when toggle is provided", () => {
             render(
                 <ImageTile
                     image={makeImage({ active: false })}
@@ -234,8 +234,8 @@ describe("ImageTile", () => {
                     onToggleVisibility={vi.fn()}
                 />,
             );
-            // Only one DisabledVisibleIcon (in the toggle button), not the inline one next to title
-            const icons = screen.getAllByTestId("DisabledVisibleIcon");
+            // Only one VisibilityOffIcon (in the toggle button), not the inline one next to title
+            const icons = screen.getAllByTestId("VisibilityOffIcon");
             expect(icons).toHaveLength(1);
         });
     });

@@ -14,14 +14,16 @@ import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
-import DisabledVisibleIcon from '@mui/icons-material/DisabledVisible'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
 import EditIcon from '@mui/icons-material/Edit'
 import LockIcon from '@mui/icons-material/Lock'
-import VisibilityIcon from '@mui/icons-material/Visibility'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
+import Visibility from '@mui/icons-material/Visibility'
 import type { Category, ImageItem, Program } from '../types'
 import { narrowProgramIds } from '../categoryUtils'
+import { getVisibilityColors } from '../theme'
 import { MAX_DEPTH } from '../types'
+import { useColorMode } from '../useColorMode'
 import AddCategoryDialog from './AddCategoryDialog'
 import EditCategoryDialog from './EditCategoryDialog'
 import { collectImagesByParent, interleavedSortOrders } from './manageCategoriesDialogUtils'
@@ -170,6 +172,9 @@ export default function ManageCategoriesDialog({
   onReorderComplete,
   programs = [],
 }: ManageCategoriesDialogProps) {
+  const { mode } = useColorMode()
+  const visColors = getVisibilityColors(mode)
+
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addParentId, setAddParentId] = useState<number | null>(null)
   const [addParentLabel, setAddParentLabel] = useState<string | undefined>(undefined)
@@ -459,16 +464,17 @@ export default function ManageCategoriesDialog({
                 secondaryAction={
                     <Box sx={{ display: 'flex', gap: 0.5 }}>
                       {onToggleVisibility && (
-                        <Tooltip title={opt.status === 'hidden' ? 'Show to students' : 'Hide from students'}>
+                        <Tooltip title={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}>
                           <IconButton
                             edge="end"
                             size="small"
+                            aria-label={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}
                             onClick={() => onToggleVisibility(opt.id)}
                           >
                             {opt.status === 'hidden' ? (
-                              <DisabledVisibleIcon fontSize="small" color="disabled" />
+                              <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
                             ) : (
-                              <VisibilityIcon fontSize="small" />
+                              <Visibility fontSize="small" sx={{ color: visColors.active }} />
                             )}
                           </IconButton>
                         </Tooltip>
@@ -501,7 +507,7 @@ export default function ManageCategoriesDialog({
                         size="small"
                         onClick={() => handleDeleteClick(opt)}
                       >
-                        <DeleteIcon fontSize="small" color="primary" />
+                        <DeleteIcon fontSize="small" sx={{ color: opt.status === 'hidden' ? visColors.inactive : 'primary.main' }} />
                       </IconButton>
                     </Tooltip>
                   </Box>
@@ -521,7 +527,7 @@ export default function ManageCategoriesDialog({
                           {'\u2514 '}
                         </Typography>
                       )}
-                      <Typography component="span" sx={{ opacity: opt.status === 'hidden' ? 0.5 : 1 }}>
+                      <Typography component="span" sx={{ color: opt.status === 'hidden' ? visColors.inactive : undefined }}>
                         {opt.label}
                       </Typography>
                       {(opt.programIds.length > 0 || opt.inheritedRestriction) && (
@@ -536,7 +542,7 @@ export default function ManageCategoriesDialog({
                               }}
                               sx={{ p: 0, ml: 0.5, verticalAlign: 'middle' }}
                             >
-                              <LockIcon sx={{ fontSize: 14, color: 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
+                              <LockIcon sx={{ fontSize: 14, color: opt.status === 'hidden' ? 'action.active' : 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
                             </IconButton>
                           </Tooltip>
                         ) : (
@@ -546,7 +552,7 @@ export default function ManageCategoriesDialog({
                               aria-label={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}
                               style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: 4 }}
                             >
-                              <LockIcon sx={{ fontSize: 14, color: 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
+                              <LockIcon sx={{ fontSize: 14, color: opt.status === 'hidden' ? 'action.active' : 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
                             </span>
                           </Tooltip>
                         )

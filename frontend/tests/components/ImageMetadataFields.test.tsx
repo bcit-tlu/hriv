@@ -20,7 +20,7 @@ describe('ImageMetadataFields', () => {
     )
     expect(screen.getByLabelText(/copyright/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/note/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/active/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/visibility/i)).toBeInTheDocument()
   })
 
   it('calls onChange when copyright text is entered', async () => {
@@ -68,7 +68,7 @@ describe('ImageMetadataFields', () => {
       />,
     )
 
-    const toggle = screen.getByRole('switch', { name: /active.*visible to students/i })
+    const toggle = screen.getByRole('switch', { name: /visibility.*visible to students/i })
     await user.click(toggle)
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ active: false }),
