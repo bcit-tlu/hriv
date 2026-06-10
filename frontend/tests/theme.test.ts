@@ -57,11 +57,13 @@ describe("getVisibilityColors", () => {
         const c = getVisibilityColors("light");
         expect(c.active).toBe("rgba(0,0,0,0.45)");
         expect(c.inactive).toBe("#3E3C3Ab3");
+        expect(c.inactiveChipBg).toBe("#6B6966");
     });
 
     it("returns dark-mode visibility colours", () => {
         const c = getVisibilityColors("dark");
         expect(c.active).toBe("rgba(255,255,255,0.70)");
         expect(c.inactive).toBe("#E0DDD999");
+        expect(c.inactiveChipBg).toBe("#6B6966");
     });
 });

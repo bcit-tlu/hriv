@@ -38,7 +38,7 @@ const lightPalette = {
    * default "visible" state stays unremarkable; inactive uses text.primary
    * at 0.7 alpha (#3E3C3Ab3) giving ≈ 4.7 : 1 contrast on white — WCAG-AA.
    */
-  visibility: { active: 'rgba(0,0,0,0.45)', inactive: '#3E3C3Ab3' },
+  visibility: { active: 'rgba(0,0,0,0.45)', inactive: '#3E3C3Ab3', inactiveChipBg: '#6B6966' },
 }
 
 /** Dark-mode colours – a complementary set that keeps the same brand feel. */
@@ -72,7 +72,7 @@ const darkPalette = {
    * light-grey; inactive uses text.primary at 0.6 alpha (#E0DDD999)
    * giving ≈ 4.7 : 1 contrast on dark paper — matching the light ratio.
    */
-  visibility: { active: 'rgba(255,255,255,0.70)', inactive: '#E0DDD999' },
+  visibility: { active: 'rgba(255,255,255,0.70)', inactive: '#E0DDD999', inactiveChipBg: '#6B6966' },
 }
 
 // ---------------------------------------------------------------------------
@@ -130,6 +130,7 @@ export function getGroupChipColors(mode: 'light' | 'dark'): {
 export function getVisibilityColors(mode: 'light' | 'dark'): {
   active: string
   inactive: string
+  inactiveChipBg: string
 } {
   return mode === 'dark' ? darkPalette.visibility : lightPalette.visibility
 }

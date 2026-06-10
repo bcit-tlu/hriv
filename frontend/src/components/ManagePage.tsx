@@ -873,7 +873,7 @@ export default function ManagePage({
                                 onClick={() => chipClick(p.name)}
                                 {...(img.active
                                   ? { color: 'primary', sx: { cursor: 'pointer' } }
-                                  : { sx: { cursor: 'pointer', bgcolor: visColors.inactive, color: '#fff' } }
+                                  : { sx: { cursor: 'pointer', bgcolor: visColors.inactiveChipBg, color: '#fff' } }
                                 )}
                               />
                             ))}
@@ -888,7 +888,7 @@ export default function ManagePage({
                                 onClick={() => chipClick(p.name)}
                                 {...(img.active
                                   ? { color: 'primary', sx: { cursor: 'pointer', opacity: 0.5 } }
-                                  : { sx: { cursor: 'pointer', bgcolor: visColors.inactive, color: '#fff', opacity: 0.5 } }
+                                  : { sx: { cursor: 'pointer', bgcolor: visColors.inactiveChipBg, color: '#fff', opacity: 0.5 } }
                                 )}
                               />
                             ))}
