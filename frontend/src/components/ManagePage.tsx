@@ -870,9 +870,11 @@ export default function ManagePage({
                                 key={p.id}
                                 label={p.name}
                                 size="small"
-                                color={img.active ? 'primary' : 'default'}
                                 onClick={() => chipClick(p.name)}
-                                sx={{ cursor: 'pointer' }}
+                                {...(img.active
+                                  ? { color: 'primary', sx: { cursor: 'pointer' } }
+                                  : { sx: { cursor: 'pointer', bgcolor: visColors.inactive, color: '#fff' } }
+                                )}
                               />
                             ))}
                           {ancestor
@@ -883,9 +885,11 @@ export default function ManagePage({
                                 key={p.id}
                                 label={p.name}
                                 size="small"
-                                color={img.active ? 'primary' : 'default'}
                                 onClick={() => chipClick(p.name)}
-                                sx={{ cursor: 'pointer', opacity: 0.5 }}
+                                {...(img.active
+                                  ? { color: 'primary', sx: { cursor: 'pointer', opacity: 0.5 } }
+                                  : { sx: { cursor: 'pointer', bgcolor: visColors.inactive, color: '#fff', opacity: 0.5 } }
+                                )}
                               />
                             ))}
                         </Box>
