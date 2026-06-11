@@ -2036,6 +2036,7 @@ export default function App() {
                 onReorderImages={reorderImagesInline}
                 onReorderComplete={handleReorderComplete}
                 programs={programs}
+                groups={groups}
             />
 
             {/* Move category dialog */}
@@ -2052,6 +2053,7 @@ export default function App() {
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
                 programs={programs}
+                groups={groups}
             />
 
             {/* Image edit modal (viewer page) — no View Image button since we're already viewing */}
@@ -2066,6 +2068,7 @@ export default function App() {
                 image={selectedApiImage}
                 categories={categories}
                 programs={programs}
+                groups={groups}
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
@@ -2083,6 +2086,7 @@ export default function App() {
                 image={browseApiImage}
                 categories={categories}
                 programs={programs}
+                groups={groups}
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
@@ -2130,6 +2134,7 @@ export default function App() {
                 categoryId={fileDropCategoryId ?? (path.length > 0 ? path[path.length - 1].id : null)}
                 categories={categories}
                 programs={programs}
+                groups={groups}
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}

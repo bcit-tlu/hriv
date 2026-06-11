@@ -105,6 +105,47 @@ describe('ManageCategoriesDialog — LockIcon', () => {
       />,
     )
     expect(screen.getByLabelText('Restricted to specific programs')).toBeInTheDocument()
-    expect(screen.getByLabelText('Restricted (inherited from parent)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Program restriction inherited from parent')).toBeInTheDocument()
+  })
+
+  it('renders LockIcon for a category with groupIds', () => {
+    const categories = [makeCategory({ id: 1, label: 'Group Restricted', groupIds: [20] })]
+    render(
+      <ManageCategoriesDialog
+        open
+        onClose={vi.fn()}
+        categories={categories}
+        onAddCategory={vi.fn()}
+        onDeleteCategory={vi.fn()}
+        onEditCategory={vi.fn()}
+        programs={programs}
+      />,
+    )
+    expect(screen.getByText('Group Restricted')).toBeInTheDocument()
+    expect(screen.getByLabelText('Restricted to specific groups')).toBeInTheDocument()
+  })
+
+  it('renders inherited group restriction LockIcon for child categories', () => {
+    const parent = makeCategory({
+      id: 1,
+      label: 'Parent',
+      groupIds: [20],
+      children: [
+        makeCategory({ id: 2, label: 'Child', parentId: 1, groupIds: [] }),
+      ],
+    })
+    render(
+      <ManageCategoriesDialog
+        open
+        onClose={vi.fn()}
+        categories={[parent]}
+        onAddCategory={vi.fn()}
+        onDeleteCategory={vi.fn()}
+        onEditCategory={vi.fn()}
+        programs={programs}
+      />,
+    )
+    expect(screen.getByLabelText('Restricted to specific groups')).toBeInTheDocument()
+    expect(screen.getByLabelText('Group restriction inherited from parent')).toBeInTheDocument()
   })
 })

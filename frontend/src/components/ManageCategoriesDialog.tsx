@@ -19,8 +19,8 @@ import EditIcon from '@mui/icons-material/Edit'
 import LockIcon from '@mui/icons-material/Lock'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
-import type { Category, ImageItem, Program } from '../types'
-import { narrowProgramIds } from '../categoryUtils'
+import type { Category, Group, ImageItem, Program } from '../types'
+import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getVisibilityColors } from '../theme'
 import { MAX_DEPTH } from '../types'
 import { useColorMode } from '../useColorMode'
@@ -37,12 +37,38 @@ function countDescendants(node: Category): number {
   return count
 }
 
-function flattenTree(nodes: Category[], depth: number = 0, parentId: number | null = null, ancestorRestricted: boolean = false): FlatOption[] {
+function flattenTree(
+  nodes: Category[],
+  depth: number = 0,
+  parentId: number | null = null,
+  ancestorProgramRestricted: boolean = false,
+  ancestorGroupRestricted: boolean = false,
+): FlatOption[] {
   const result: FlatOption[] = []
   for (const node of nodes) {
-    const hasOwnRestriction = node.programIds.length > 0
-    result.push({ id: node.id, label: node.label, depth, childCount: countDescendants(node), status: node.status ?? 'active', parentId, programIds: node.programIds, inheritedRestriction: !hasOwnRestriction && ancestorRestricted })
-    result.push(...flattenTree(node.children, depth + 1, node.id, ancestorRestricted || hasOwnRestriction))
+    const hasOwnProgramRestriction = node.programIds.length > 0
+    const hasOwnGroupRestriction = node.groupIds.length > 0
+    result.push({
+      id: node.id,
+      label: node.label,
+      depth,
+      childCount: countDescendants(node),
+      status: node.status ?? 'active',
+      parentId,
+      programIds: node.programIds,
+      groupIds: node.groupIds,
+      inheritedProgramRestriction: !hasOwnProgramRestriction && ancestorProgramRestricted,
+      inheritedGroupRestriction: !hasOwnGroupRestriction && ancestorGroupRestricted,
+    })
+    result.push(
+      ...flattenTree(
+        node.children,
+        depth + 1,
+        node.id,
+        ancestorProgramRestricted || hasOwnProgramRestriction,
+        ancestorGroupRestricted || hasOwnGroupRestriction,
+      ),
+    )
   }
   return result
 }
@@ -148,10 +174,11 @@ interface ManageCategoriesDialogProps {
   onClose: () => void
   categories: Category[]
   uncategorizedImages?: ImageItem[]
-  onAddCategory: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
+  onAddCategory: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
   onDeleteCategory: (categoryId: number) => Promise<void>
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
   programs?: Program[]
+  groups?: Group[]
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onReorderCategories?: (items: Array<{ id: number; parent_id: number | null; sort_order: number }>) => Promise<void>
   onReorderImages?: (items: Array<{ id: number; sort_order: number }>) => Promise<void>
@@ -171,6 +198,7 @@ export default function ManageCategoriesDialog({
   onReorderImages,
   onReorderComplete,
   programs = [],
+  groups = [],
 }: ManageCategoriesDialogProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
@@ -245,6 +273,39 @@ export default function ManageCategoriesDialog({
     [editingCategory?.programIds],
   )
 
+  const addInheritedGroupIds = useMemo(() => {
+    if (addParentId == null) return []
+    const ancestors: FlatOption[] = []
+    let curId: number | null = addParentId
+    while (curId != null) {
+      const anc: FlatOption | undefined = options.find((o) => o.id === curId)
+      if (!anc) break
+      ancestors.push(anc)
+      curId = anc.parentId
+    }
+    ancestors.reverse()
+    return narrowGroupIds(ancestors)
+  }, [addParentId, options])
+
+  const inheritedGroupIds = useMemo(() => {
+    if (!editingCategory) return []
+    const ancestors: FlatOption[] = []
+    let curParentId: number | null = editingCategory.parentId
+    while (curParentId != null) {
+      const ancestor: FlatOption | undefined = options.find((o) => o.id === curParentId)
+      if (!ancestor) break
+      ancestors.push(ancestor)
+      curParentId = ancestor.parentId
+    }
+    ancestors.reverse()
+    return narrowGroupIds(ancestors)
+  }, [editingCategory, options])
+
+  const currentGroupIds = useMemo(
+    () => editingCategory?.groupIds ?? [],
+    [editingCategory?.groupIds],
+  )
+
 
   const handleAddClick = (parentId: number | null, parentLabel?: string) => {
     setAddParentId(parentId)
@@ -252,8 +313,8 @@ export default function ManageCategoriesDialog({
     setAddDialogOpen(true)
   }
 
-  const handleAddCategory = async (label: string, programIds: number[]) => {
-    await onAddCategory(label, addParentId, programIds)
+  const handleAddCategory = async (label: string, programIds: number[], groupIds: number[]) => {
+    await onAddCategory(label, addParentId, programIds, groupIds)
   }
 
   const handleDeleteClick = useCallback((opt: FlatOption) => {
@@ -279,9 +340,9 @@ export default function ManageCategoriesDialog({
     setEditDialogOpen(true)
   }, [])
 
-  const handleEditSave = useCallback(async (newLabel: string, programIds?: number[]) => {
+  const handleEditSave = useCallback(async (newLabel: string, programIds?: number[], groupIds?: number[]) => {
     if (editingCategory && onEditCategory) {
-      await onEditCategory(editingCategory.id, newLabel, programIds)
+      await onEditCategory(editingCategory.id, newLabel, programIds, groupIds)
     }
   }, [editingCategory, onEditCategory])
 
@@ -530,11 +591,11 @@ export default function ManageCategoriesDialog({
                       <Typography component="span" sx={{ color: opt.status === 'hidden' ? visColors.inactive : undefined }}>
                         {opt.label}
                       </Typography>
-                      {(opt.programIds.length > 0 || opt.inheritedRestriction) && (
+                      {(opt.programIds.length > 0 || opt.inheritedProgramRestriction) && (
                         onEditCategory ? (
-                          <Tooltip title={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}>
+                          <Tooltip title={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Program restriction inherited from parent'}>
                             <IconButton
-                              aria-label={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}
+                              aria-label={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Program restriction inherited from parent'}
                               size="small"
                               onClick={(e) => {
                                 e.stopPropagation()
@@ -542,17 +603,44 @@ export default function ManageCategoriesDialog({
                               }}
                               sx={{ p: 0, ml: 0.5, verticalAlign: 'middle' }}
                             >
-                              <LockIcon sx={{ fontSize: 14, color: opt.status === 'hidden' ? 'action.active' : 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
+                              <LockIcon sx={{ fontSize: 14, color: opt.status === 'hidden' ? 'action.active' : 'primary.main', opacity: opt.inheritedProgramRestriction ? 0.5 : 1 }} />
                             </IconButton>
                           </Tooltip>
                         ) : (
-                          <Tooltip title={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}>
+                          <Tooltip title={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Program restriction inherited from parent'}>
                             <span
                               role="img"
-                              aria-label={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}
+                              aria-label={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Program restriction inherited from parent'}
                               style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: 4 }}
                             >
-                              <LockIcon sx={{ fontSize: 14, color: opt.status === 'hidden' ? 'action.active' : 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
+                              <LockIcon sx={{ fontSize: 14, color: opt.status === 'hidden' ? 'action.active' : 'primary.main', opacity: opt.inheritedProgramRestriction ? 0.5 : 1 }} />
+                            </span>
+                          </Tooltip>
+                        )
+                      )}
+                      {(opt.groupIds.length > 0 || opt.inheritedGroupRestriction) && (
+                        onEditCategory ? (
+                          <Tooltip title={opt.groupIds.length > 0 ? 'Restricted to specific groups' : 'Group restriction inherited from parent'}>
+                            <IconButton
+                              aria-label={opt.groupIds.length > 0 ? 'Restricted to specific groups' : 'Group restriction inherited from parent'}
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                handleEditClick(opt)
+                              }}
+                              sx={{ p: 0, ml: 0.5, verticalAlign: 'middle' }}
+                            >
+                              <LockIcon sx={{ fontSize: 14, color: opt.status === 'hidden' ? 'action.active' : 'secondary.main', opacity: opt.inheritedGroupRestriction ? 0.5 : 1 }} />
+                            </IconButton>
+                          </Tooltip>
+                        ) : (
+                          <Tooltip title={opt.groupIds.length > 0 ? 'Restricted to specific groups' : 'Group restriction inherited from parent'}>
+                            <span
+                              role="img"
+                              aria-label={opt.groupIds.length > 0 ? 'Restricted to specific groups' : 'Group restriction inherited from parent'}
+                              style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: 4 }}
+                            >
+                              <LockIcon sx={{ fontSize: 14, color: opt.status === 'hidden' ? 'action.active' : 'secondary.main', opacity: opt.inheritedGroupRestriction ? 0.5 : 1 }} />
                             </span>
                           </Tooltip>
                         )
@@ -613,6 +701,8 @@ export default function ManageCategoriesDialog({
         siblingNames={addSiblingNames}
         programs={programs}
         inheritedProgramIds={addInheritedProgramIds}
+        groups={groups}
+        inheritedGroupIds={addInheritedGroupIds}
       />
 
       {onEditCategory && (
@@ -628,6 +718,9 @@ export default function ManageCategoriesDialog({
           programs={programs}
           currentProgramIds={currentProgramIds}
           inheritedProgramIds={inheritedProgramIds}
+          groups={groups}
+          currentGroupIds={currentGroupIds}
+          inheritedGroupIds={inheritedGroupIds}
         />
       )}
 

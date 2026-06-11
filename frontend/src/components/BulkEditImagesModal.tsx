@@ -13,7 +13,7 @@ import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import CategoryPickerSelect from './CategoryPickerSelect'
-import type { Category, Program } from '../types'
+import type { Category, Group, Program } from '../types'
 
 interface BulkEditImagesModalProps {
   open: boolean
@@ -28,8 +28,9 @@ interface BulkEditImagesModalProps {
   categories: Category[]
   selectedCount: number
   programs?: Program[]
-  onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
+  groups?: Group[]
+  onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
 }
 
@@ -41,6 +42,7 @@ export default function BulkEditImagesModal({
   categories,
   selectedCount,
   programs,
+  groups,
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
@@ -148,6 +150,7 @@ export default function BulkEditImagesModal({
             onEditCategory={onEditCategory}
             onToggleVisibility={onToggleVisibility}
             programs={programs}
+            groups={groups}
           />
         </Box>
         <TextField

@@ -27,7 +27,9 @@ function makeFlatOption(overrides: Partial<FlatOption> = {}): FlatOption {
         status: null,
         parentId: null,
         programIds: [],
-        inheritedRestriction: false,
+        groupIds: [],
+        inheritedProgramRestriction: false,
+        inheritedGroupRestriction: false,
         ...overrides,
     }
 }

@@ -8,7 +8,9 @@ export interface FlatOption {
   status: string | null
   parentId: number | null
   programIds: number[]
-  inheritedRestriction: boolean
+  groupIds: number[]
+  inheritedProgramRestriction: boolean
+  inheritedGroupRestriction: boolean
 }
 
 /** Collect images per parent from the category tree. */

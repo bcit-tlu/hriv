@@ -186,6 +186,42 @@ describe('CategoryPickerSelect — LockIcon', () => {
     )
     await user.click(screen.getByRole('combobox'))
     expect(screen.getByLabelText('Restricted to specific programs')).toBeInTheDocument()
-    expect(screen.getByLabelText('Restricted (inherited from parent)')).toBeInTheDocument()
+    expect(screen.getByLabelText('Program restriction inherited from parent')).toBeInTheDocument()
+  })
+
+  it('renders a secondary lock icon for direct group restrictions', async () => {
+    const user = userEvent.setup()
+    const categories = [makeCategory({ id: 1, label: 'Grouped', groupIds: [20] })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.getByLabelText('Restricted to specific groups')).toBeInTheDocument()
+  })
+
+  it('renders inherited group restriction tooltip for child categories', async () => {
+    const user = userEvent.setup()
+    const parent = makeCategory({
+      id: 1,
+      label: 'Parent',
+      groupIds: [20],
+      children: [
+        makeCategory({ id: 2, label: 'Child', parentId: 1, groupIds: [] }),
+      ],
+    })
+    render(
+      <CategoryPickerSelect
+        categories={[parent]}
+        value={null}
+        onChange={vi.fn()}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.getByLabelText('Restricted to specific groups')).toBeInTheDocument()
+    expect(screen.getByLabelText('Group restriction inherited from parent')).toBeInTheDocument()
   })
 })

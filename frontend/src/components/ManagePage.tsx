@@ -127,8 +127,8 @@ interface ManagePageProps {
   onViewImage?: (image: ApiImage) => void
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
-  onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
+  onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onReplaceImage?: (sourceImageId: number, filename: string, fileSize: number) => void
   onProcessingStarted?: (
@@ -1131,6 +1131,7 @@ export default function ManagePage({
         image={editingImage}
         categories={categories}
         programs={programs}
+        groups={groups}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
@@ -1152,6 +1153,7 @@ export default function ManagePage({
         }}
         categories={categories}
         programs={programs}
+        groups={groups}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
@@ -1171,6 +1173,7 @@ export default function ManagePage({
         categories={categories}
         selectedCount={selected.size}
         programs={programs}
+        groups={groups}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
@@ -1231,6 +1234,7 @@ export default function ManagePage({
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
         programs={programs}
+        groups={groups}
       />
     </Box>
   )
