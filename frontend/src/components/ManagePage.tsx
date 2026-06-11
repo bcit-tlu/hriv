@@ -955,11 +955,10 @@ export default function ManagePage({
                                 key={g.id}
                                 label={g.name}
                                 size="small"
+                                color="secondary"
                                 onClick={() => chipClick(g.name)}
                                 sx={{
                                   cursor: 'pointer',
-                                  bgcolor: groupColors.solidBg,
-                                  color: groupColors.solidText,
                                   ...(img.active ? {} : { filter: 'grayscale(100%)' }),
                                 }}
                               />

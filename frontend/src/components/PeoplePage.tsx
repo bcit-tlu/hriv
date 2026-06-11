@@ -41,8 +41,6 @@ import {
 } from '../api'
 import type { ApiUser } from '../api'
 import type { Role, Program } from '../types'
-import { getGroupChipColors } from '../theme'
-import { useColorMode } from '../useColorMode'
 import AddEditPersonModal from './AddEditPersonModal'
 import BulkEditModal from './BulkEditModal'
 
@@ -58,8 +56,6 @@ interface PeoplePageProps {
 }
 
 export default function PeoplePage({ programs, initialEditUserId, onEditUserHandled }: PeoplePageProps) {
-  const { mode } = useColorMode()
-  const groupColors = getGroupChipColors(mode)
   const [users, setUsers] = useState<ApiUser[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -597,10 +593,7 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                             key={name}
                             label={name}
                             size="small"
-                            sx={{
-                              bgcolor: groupColors.solidBg,
-                              color: groupColors.solidText,
-                            }}
+                            color="secondary"
                           />
                         ))}
                       </Box>

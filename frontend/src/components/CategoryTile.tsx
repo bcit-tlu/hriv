@@ -18,7 +18,7 @@ import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
 import type { Category, Group, ImageItem, Program } from '../types'
 import { useColorMode } from '../useColorMode'
-import { getGroupChipColors, getVisibilityColors } from '../theme'
+import { getVisibilityColors } from '../theme'
 import CardImagePickerModal from './CardImagePickerModal'
 
 function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
@@ -67,7 +67,6 @@ interface CategoryTileProps {
 export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, groups = [], onDropFiles }: CategoryTileProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
-  const groupColors = getGroupChipColors(mode)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const dragCounter = useRef(0)
@@ -251,10 +250,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
                     key={g.id}
                     label={g.name}
                     size="small"
-                    sx={{
-                      bgcolor: groupColors.solidBg,
-                      color: groupColors.solidText,
-                    }}
+                    color="secondary"
                   />
                 ))}
               </Box>
