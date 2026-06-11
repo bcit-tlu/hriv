@@ -123,6 +123,8 @@ export default function App() {
     const [addCatOpen, setAddCatOpen] = useState(false);
     const [programsPopoverAnchor, setProgramsPopoverAnchor] =
         useState<HTMLElement | null>(null);
+    const [groupsPopoverAnchor, setGroupsPopoverAnchor] =
+        useState<HTMLElement | null>(null);
     const [editNameCategory, setEditNameCategory] = useState<Category | null>(null);
 
     const [errorSnack, setErrorSnack] = useState<string | null>(null);
@@ -1184,6 +1186,29 @@ export default function App() {
                                             .join(", ")}
                                     </Typography>
                                 )}
+                                {ancestorGroupIds.length > 0 && (
+                                    <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                        component="span"
+                                    >
+                                        <strong>
+                                            Group
+                                            {ancestorGroupIds.length > 1
+                                                ? "s"
+                                                : ""}
+                                            :
+                                        </strong>{" "}
+                                        {ancestorGroupIds
+                                            .map(
+                                                (gid) =>
+                                                    groups.find(
+                                                        (g) => g.id === gid,
+                                                    )?.name ?? gid,
+                                            )
+                                            .join(", ")}
+                                    </Typography>
+                                )}
                                 {selectedImage.note && (
                                     <Typography
                                         variant="body2"
@@ -1510,6 +1535,117 @@ export default function App() {
                                                                             }
                                                                             size="small"
                                                                             color="primary"
+                                                                        />
+                                                                    ),
+                                                                )}
+                                                            </Box>
+                                                        </Popover>
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                    {(() => {
+                                        const resolved =
+                                            ancestorGroupIds
+                                                .map((gid) =>
+                                                    groups.find(
+                                                        (g) =>
+                                                            g.id === gid,
+                                                    ),
+                                                )
+                                                .filter(
+                                                    (
+                                                        g,
+                                                    ): g is Group =>
+                                                        g != null,
+                                                )
+                                                .sort((a, b) =>
+                                                    a.name.localeCompare(
+                                                        b.name,
+                                                    ),
+                                                );
+                                        if (resolved.length === 0)
+                                            return null;
+                                        const MAX_INLINE = 2;
+                                        const inline = resolved.slice(
+                                            0,
+                                            MAX_INLINE,
+                                        );
+                                        const overflow =
+                                            resolved.length - MAX_INLINE;
+                                        return (
+                                            <>
+                                                {inline.map((g) => (
+                                                    <Chip
+                                                        key={g.id}
+                                                        label={g.name}
+                                                        size="small"
+                                                        color="secondary"
+                                                    />
+                                                ))}
+                                                {overflow > 0 && (
+                                                    <>
+                                                        <Chip
+                                                            label={`+${overflow}`}
+                                                            size="small"
+                                                            color="secondary"
+                                                            variant="outlined"
+                                                            onClick={(
+                                                                e,
+                                                            ) =>
+                                                                setGroupsPopoverAnchor(
+                                                                    e.currentTarget,
+                                                                )
+                                                            }
+                                                            aria-label={`${overflow} more groups`}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                            }}
+                                                        />
+                                                        <Popover
+                                                            open={
+                                                                groupsPopoverAnchor !=
+                                                                null
+                                                            }
+                                                            anchorEl={
+                                                                groupsPopoverAnchor
+                                                            }
+                                                            onClose={() =>
+                                                                setGroupsPopoverAnchor(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            anchorOrigin={{
+                                                                vertical:
+                                                                    "bottom",
+                                                                horizontal:
+                                                                    "left",
+                                                            }}
+                                                        >
+                                                            <Box
+                                                                sx={{
+                                                                    p: 1.5,
+                                                                    display:
+                                                                        "flex",
+                                                                    flexDirection:
+                                                                        "column",
+                                                                    gap: 0.5,
+                                                                }}
+                                                            >
+                                                                {resolved.map(
+                                                                    (
+                                                                        g,
+                                                                    ) => (
+                                                                        <Chip
+                                                                            key={
+                                                                                g.id
+                                                                            }
+                                                                            label={
+                                                                                g.name
+                                                                            }
+                                                                            size="small"
+                                                                            color="secondary"
                                                                         />
                                                                     ),
                                                                 )}
