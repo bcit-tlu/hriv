@@ -47,6 +47,7 @@ import {
 } from '../api'
 import type { ApiProgram, ApiUser } from '../api'
 import { apiGroupToGroup } from '../groupUtils'
+import { getVisibilityColors } from '../theme'
 import type { Group } from '../types'
 
 interface GroupManagementModalProps {
@@ -85,6 +86,8 @@ export default function GroupManagementModal({
 }: GroupManagementModalProps) {
   const theme = useTheme()
   const fullScreen = useMediaQuery(theme.breakpoints.down('md'))
+  const visColors = getVisibilityColors(theme.palette.mode)
+  const selectedGroupBg = alpha(visColors.inactiveChipBg, 0.5)
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
 
@@ -448,7 +451,7 @@ export default function GroupManagementModal({
                 key={programId}
                 label={programNameById.get(programId) ?? `#${programId}`}
                 size="small"
-                variant="outlined"
+                color="primary"
               />
             ))}
           </Stack>
@@ -543,11 +546,12 @@ export default function GroupManagementModal({
                         borderRadius: 1,
                         mb: 0.5,
                         '&.Mui-selected': {
-                          bgcolor: 'primary.main',
-                          color: 'primary.contrastText',
-                          '&:hover': { bgcolor: 'primary.dark' },
+                          bgcolor: selectedGroupBg,
+                          color: '#fff',
+                          opacity: 0.5,
+                          '&:hover': { bgcolor: selectedGroupBg },
                           '& .MuiListItemText-secondary': {
-                            color: (theme) => alpha(theme.palette.primary.contrastText, 0.72),
+                            color: alpha('#fff', 0.72),
                           },
                         },
                       }}

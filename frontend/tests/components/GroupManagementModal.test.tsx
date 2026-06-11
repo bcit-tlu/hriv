@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import GroupManagementModal from '../../src/components/GroupManagementModal'
 import type { ApiGroup, ApiProgram, ApiUser, UserListParams } from '../../src/api'
@@ -173,6 +173,30 @@ describe('GroupManagementModal', () => {
     expect(mockFetchUsersPaged).toHaveBeenCalledWith(
       expect.objectContaining({ role: 'student', page: 1, pageSize: 25 }),
     )
+  })
+
+  it('renders the selected group row with inactive grey background and half opacity', async () => {
+    renderModal()
+
+    expect(await screen.findByText('CURRENT MEMBERS')).toBeInTheDocument()
+
+    const selectedGroupRow = screen.getAllByText('Cohort A')[0].closest('.MuiListItemButton-root')
+    expect(selectedGroupRow).not.toBeNull()
+    expect(selectedGroupRow).toHaveStyle({
+      backgroundColor: 'rgba(107, 105, 102, 0.5)',
+      color: 'rgb(255, 255, 255)',
+      opacity: '0.5',
+    })
+  })
+
+  it('renders table program chips with the standard primary filled styling', async () => {
+    renderModal()
+
+    const studentRow = (await screen.findByText('Student One')).closest('tr')
+    expect(studentRow).not.toBeNull()
+
+    const programChip = within(studentRow as HTMLElement).getByText('Program A')
+    expect(programChip.closest('.MuiChip-root')).toHaveClass('MuiChip-filledPrimary')
   })
 
   it('shows an empty state when there are no groups', () => {
