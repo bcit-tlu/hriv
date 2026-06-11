@@ -185,14 +185,17 @@ reference.
 
 ### Group chip colours
 
-Read-only group chips (profile menu) use a slate palette distinct from the
-brand-red program chips, so the two visibility dimensions read differently
-(`theme.ts::getGroupChipColors`):
+Groups now use the app's **secondary** palette as their shared visual identity
+(`theme.ts::getGroupChipColors`). The full-strength variant is used for primary
+group affordances (for example, the selected group in the Manage Groups list and
+the read-only group chips in the profile menu). The subtle variant is used for
+lower-emphasis inherited/read-only states in the category dialogs, and keeps
+text contrast at WCAG-AA without dimming the entire chip:
 
-| Mode | Background | Text | Contrast |
-|------|-----------|------|----------|
-| Light | `#5B6973` | `#FFFFFF` | ≈ 5.6:1 (WCAG-AA, normal text) |
-| Dark | `#8A99A6` | `#1E1E1E` | ≈ 5.5:1 (WCAG-AA, normal text) |
+| Mode | Full-strength background | Full-strength text | Subtle background | Subtle text |
+|------|--------------------------|--------------------|------------------|-------------|
+| Light | `#7F665D` | `#FFFFFF` | `rgba(127, 102, 93, 0.16)` | `#3E3C3A` |
+| Dark | `#A89288` | `#1E1E1E` | `rgba(168, 146, 136, 0.16)` | `#E0DDD9` |
 
 ## Export / import
 
