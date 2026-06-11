@@ -959,7 +959,12 @@ export default function ManagePage({
                                 onClick={() => chipClick(g.name)}
                                 sx={{
                                   cursor: 'pointer',
-                                  ...(img.active ? {} : { filter: 'grayscale(100%)' }),
+                                  ...(img.active
+                                    ? {}
+                                    : {
+                                        bgcolor: visColors.inactiveChipBg,
+                                        color: '#fff',
+                                      }),
                                 }}
                               />
                             ))}
@@ -974,10 +979,17 @@ export default function ManagePage({
                                 onClick={() => chipClick(g.name)}
                                 sx={{
                                   cursor: 'pointer',
-                                  bgcolor: groupColors.subtleBg,
-                                  color: groupColors.subtleText,
-                                  opacity: 0.75,
-                                  ...(img.active ? {} : { filter: 'grayscale(100%)' }),
+                                  ...(img.active
+                                    ? {
+                                        bgcolor: groupColors.subtleBg,
+                                        color: groupColors.subtleText,
+                                        opacity: 0.75,
+                                      }
+                                    : {
+                                        bgcolor: visColors.inactiveChipBg,
+                                        color: '#fff',
+                                        opacity: 0.5,
+                                      }),
                                 }}
                               />
                             ))}
