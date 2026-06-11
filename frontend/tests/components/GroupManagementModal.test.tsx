@@ -175,7 +175,7 @@ describe('GroupManagementModal', () => {
     )
   })
 
-  it('renders the selected group row with inactive grey background and half opacity', async () => {
+  it('renders the selected group row with the subtle secondary group colour', async () => {
     renderModal()
 
     expect(await screen.findByText('CURRENT MEMBERS')).toBeInTheDocument()
@@ -183,10 +183,18 @@ describe('GroupManagementModal', () => {
     const selectedGroupRow = screen.getAllByText('Cohort A')[0].closest('.MuiListItemButton-root')
     expect(selectedGroupRow).not.toBeNull()
     expect(selectedGroupRow).toHaveStyle({
-      backgroundColor: 'rgba(107, 105, 102, 0.5)',
-      color: 'rgb(255, 255, 255)',
-      opacity: '0.5',
+      backgroundColor: 'rgba(127, 102, 93, 0.16)',
+      color: 'rgb(62, 60, 58)',
     })
+  })
+
+  it('renders the create and add actions with the strong secondary button colour', async () => {
+    renderModal()
+
+    expect(await screen.findByText('CURRENT MEMBERS')).toBeInTheDocument()
+
+    expect(screen.getByRole('button', { name: /create group/i })).toHaveClass('MuiButton-containedSecondary')
+    expect(screen.getByRole('button', { name: /add to group/i })).toHaveClass('MuiButton-containedSecondary')
   })
 
   it('renders table program chips with the standard primary filled styling', async () => {

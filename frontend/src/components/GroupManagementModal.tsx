@@ -47,7 +47,7 @@ import {
 } from '../api'
 import type { ApiProgram, ApiUser } from '../api'
 import { apiGroupToGroup } from '../groupUtils'
-import { getVisibilityColors } from '../theme'
+import { getGroupChipColors } from '../theme'
 import type { Group } from '../types'
 
 interface GroupManagementModalProps {
@@ -86,8 +86,7 @@ export default function GroupManagementModal({
 }: GroupManagementModalProps) {
   const theme = useTheme()
   const fullScreen = useMediaQuery(theme.breakpoints.down('md'))
-  const visColors = getVisibilityColors(theme.palette.mode)
-  const selectedGroupBg = alpha(visColors.inactiveChipBg, 0.5)
+  const groupColors = getGroupChipColors(theme.palette.mode)
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
 
@@ -514,6 +513,7 @@ export default function GroupManagementModal({
             <Box sx={{ p: 2, pb: 1.5 }}>
               <Button
                 variant="contained"
+                color="secondary"
                 fullWidth
                 startIcon={<AddIcon />}
                 onClick={openCreateDialog}
@@ -546,12 +546,11 @@ export default function GroupManagementModal({
                         borderRadius: 1,
                         mb: 0.5,
                         '&.Mui-selected': {
-                          bgcolor: selectedGroupBg,
-                          color: '#fff',
-                          opacity: 0.5,
-                          '&:hover': { bgcolor: selectedGroupBg },
+                          bgcolor: groupColors.subtleBg,
+                          color: groupColors.subtleText,
+                          '&:hover': { bgcolor: groupColors.subtleBg },
                           '& .MuiListItemText-secondary': {
-                            color: alpha('#fff', 0.72),
+                            color: alpha(groupColors.subtleText, 0.72),
                           },
                         },
                       }}
@@ -660,6 +659,7 @@ export default function GroupManagementModal({
                     />
                     <Button
                       variant="contained"
+                      color="secondary"
                       startIcon={bulkPending ? <CircularProgress size={16} /> : <AddIcon />}
                       disabled={selectedUserIds.size === 0 || bulkPending || !manageable}
                       onClick={() => void handleBulkAdd()}
