@@ -972,69 +972,300 @@ export default function App() {
                                     gap: 1,
                                 }}
                             >
-                                <MuiBreadcrumbs
-                                    aria-label="image breadcrumb"
+                                <Box
                                     sx={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 1,
                                         minWidth: 0,
-                                        "& .MuiBreadcrumbs-ol": {
-                                            flexWrap: "nowrap",
-                                        },
-                                        "& .MuiBreadcrumbs-li:last-of-type": {
-                                            overflow: "hidden",
-                                            textOverflow: "ellipsis",
-                                            whiteSpace: "nowrap",
-                                        },
                                     }}
                                 >
-                                    <Link
-                                        component="button"
-                                        variant="body2"
-                                        underline="hover"
-                                        color="inherit"
-                                        onClick={() => {
-                                            clearImage();
-                                            navigateToDepth(0);
-                                            pushNavState("browse");
-                                        }}
+                                    <MuiBreadcrumbs
+                                        aria-label="image breadcrumb"
                                         sx={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 0.5,
-                                            cursor: "pointer",
+                                            minWidth: 0,
+                                            "& .MuiBreadcrumbs-ol": {
+                                                flexWrap: "nowrap",
+                                            },
+                                            "& .MuiBreadcrumbs-li:last-of-type": {
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                            },
                                         }}
                                     >
-                                        <HomeIcon fontSize="small" />
-                                        Home
-                                    </Link>
-                                    {path.map((cat, i) => (
                                         <Link
-                                            key={cat.id}
                                             component="button"
                                             variant="body2"
                                             underline="hover"
                                             color="inherit"
                                             onClick={() => {
                                                 clearImage();
-                                                navigateToDepth(i + 1);
-                                                pushNavState(
-                                                    "browse",
-                                                    path
-                                                        .slice(0, i + 1)
-                                                        .map((c) => c.id),
-                                                );
+                                                navigateToDepth(0);
+                                                pushNavState("browse");
                                             }}
-                                            sx={{ cursor: "pointer" }}
+                                            sx={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 0.5,
+                                                cursor: "pointer",
+                                            }}
                                         >
-                                            {cat.label}
+                                            <HomeIcon fontSize="small" />
+                                            Home
                                         </Link>
-                                    ))}
-                                    <Typography
-                                        variant="body2"
-                                        color="text.primary"
-                                    >
-                                        {selectedImage.name}
-                                    </Typography>
-                                </MuiBreadcrumbs>
+                                        {path.map((cat, i) => (
+                                            <Link
+                                                key={cat.id}
+                                                component="button"
+                                                variant="body2"
+                                                underline="hover"
+                                                color="inherit"
+                                                onClick={() => {
+                                                    clearImage();
+                                                    navigateToDepth(i + 1);
+                                                    pushNavState(
+                                                        "browse",
+                                                        path
+                                                            .slice(0, i + 1)
+                                                            .map((c) => c.id),
+                                                    );
+                                                }}
+                                                sx={{ cursor: "pointer" }}
+                                            >
+                                                {cat.label}
+                                            </Link>
+                                        ))}
+                                        <Typography
+                                            variant="body2"
+                                            color="text.primary"
+                                        >
+                                            {selectedImage.name}
+                                        </Typography>
+                                    </MuiBreadcrumbs>
+                                    {(() => {
+                                        const resolved =
+                                            ancestorProgramIds
+                                                .map((pid) =>
+                                                    programs.find(
+                                                        (p) =>
+                                                            p.id === pid,
+                                                    ),
+                                                )
+                                                .filter(
+                                                    (
+                                                        p,
+                                                    ): p is Program =>
+                                                        p != null,
+                                                )
+                                                .sort((a, b) =>
+                                                    a.name.localeCompare(
+                                                        b.name,
+                                                    ),
+                                                );
+                                        if (resolved.length === 0)
+                                            return null;
+                                        const MAX_INLINE = 2;
+                                        const inline = resolved.slice(
+                                            0,
+                                            MAX_INLINE,
+                                        );
+                                        const overflow =
+                                            resolved.length - MAX_INLINE;
+                                        return (
+                                            <>
+                                                {inline.map((p) => (
+                                                    <Chip
+                                                        key={p.id}
+                                                        label={p.name}
+                                                        size="small"
+                                                        color="primary"
+                                                    />
+                                                ))}
+                                                {overflow > 0 && (
+                                                    <>
+                                                        <Chip
+                                                            label={`+${overflow}`}
+                                                            size="small"
+                                                            color="primary"
+                                                            variant="outlined"
+                                                            onClick={(
+                                                                e,
+                                                            ) =>
+                                                                setProgramsPopoverAnchor(
+                                                                    e.currentTarget,
+                                                                )
+                                                            }
+                                                            aria-label={`${overflow} more programs`}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                            }}
+                                                        />
+                                                        <Popover
+                                                            open={
+                                                                programsPopoverAnchor !=
+                                                                null
+                                                            }
+                                                            anchorEl={
+                                                                programsPopoverAnchor
+                                                            }
+                                                            onClose={() =>
+                                                                setProgramsPopoverAnchor(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            anchorOrigin={{
+                                                                vertical:
+                                                                    "bottom",
+                                                                horizontal:
+                                                                    "left",
+                                                            }}
+                                                        >
+                                                            <Box
+                                                                sx={{
+                                                                    p: 1.5,
+                                                                    display:
+                                                                        "flex",
+                                                                    flexDirection:
+                                                                        "column",
+                                                                    gap: 0.5,
+                                                                }}
+                                                            >
+                                                                {resolved.map(
+                                                                    (
+                                                                        p,
+                                                                    ) => (
+                                                                        <Chip
+                                                                            key={
+                                                                                p.id
+                                                                            }
+                                                                            label={
+                                                                                p.name
+                                                                            }
+                                                                            size="small"
+                                                                            color="primary"
+                                                                        />
+                                                                    ),
+                                                                )}
+                                                            </Box>
+                                                        </Popover>
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                    {(() => {
+                                        const resolved =
+                                            ancestorGroupIds
+                                                .map((gid) =>
+                                                    groups.find(
+                                                        (g) =>
+                                                            g.id === gid,
+                                                    ),
+                                                )
+                                                .filter(
+                                                    (
+                                                        g,
+                                                    ): g is Group =>
+                                                        g != null,
+                                                )
+                                                .sort((a, b) =>
+                                                    a.name.localeCompare(
+                                                        b.name,
+                                                    ),
+                                                );
+                                        if (resolved.length === 0)
+                                            return null;
+                                        const MAX_INLINE = 2;
+                                        const inline = resolved.slice(
+                                            0,
+                                            MAX_INLINE,
+                                        );
+                                        const overflow =
+                                            resolved.length - MAX_INLINE;
+                                        return (
+                                            <>
+                                                {inline.map((g) => (
+                                                    <Chip
+                                                        key={g.id}
+                                                        label={g.name}
+                                                        size="small"
+                                                        color="secondary"
+                                                    />
+                                                ))}
+                                                {overflow > 0 && (
+                                                    <>
+                                                        <Chip
+                                                            label={`+${overflow}`}
+                                                            size="small"
+                                                            color="secondary"
+                                                            variant="outlined"
+                                                            onClick={(
+                                                                e,
+                                                            ) =>
+                                                                setGroupsPopoverAnchor(
+                                                                    e.currentTarget,
+                                                                )
+                                                            }
+                                                            aria-label={`${overflow} more groups`}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                            }}
+                                                        />
+                                                        <Popover
+                                                            open={
+                                                                groupsPopoverAnchor !=
+                                                                null
+                                                            }
+                                                            anchorEl={
+                                                                groupsPopoverAnchor
+                                                            }
+                                                            onClose={() =>
+                                                                setGroupsPopoverAnchor(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            anchorOrigin={{
+                                                                vertical:
+                                                                    "bottom",
+                                                                horizontal:
+                                                                    "left",
+                                                            }}
+                                                        >
+                                                            <Box
+                                                                sx={{
+                                                                    p: 1.5,
+                                                                    display:
+                                                                        "flex",
+                                                                    flexDirection:
+                                                                        "column",
+                                                                    gap: 0.5,
+                                                                }}
+                                                            >
+                                                                {resolved.map(
+                                                                    (
+                                                                        g,
+                                                                    ) => (
+                                                                        <Chip
+                                                                            key={
+                                                                                g.id
+                                                                            }
+                                                                            label={
+                                                                                g.name
+                                                                            }
+                                                                            size="small"
+                                                                            color="secondary"
+                                                                        />
+                                                                    ),
+                                                                )}
+                                                            </Box>
+                                                        </Popover>
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                </Box>
                                 <Box
                                     sx={{
                                         display: "flex",
