@@ -154,6 +154,9 @@ same way regardless of which dimension was added last.
 | Manage → **Groups** entry (admin + instructor only) | `components/AppShell.tsx` |
 | Group list / create / rename / delete and member management modal | `components/GroupManagementModal.tsx` |
 | Group restriction section on category dialogs | `components/AddCategoryDialog.tsx`, `components/EditCategoryDialog.tsx` |
+| Group chips on category tiles | `components/CategoryTile.tsx` |
+| Group chips in the Images table | `components/ManagePage.tsx` |
+| Group chips in the People table | `components/PeoplePage.tsx` |
 | Read-only group chips in the profile menu | `components/AppShell.tsx` |
 | Group API wrappers / types (`ApiGroup`, `fetchUsersPaged`, `addGroupMembersBulk`, …) | `api.ts` |
 | Group chip colours | `theme.ts` (`getGroupChipColors`) |

@@ -48,7 +48,7 @@ const USERS = [
     email: 'student@example.ca',
     role: 'student',
     program_ids: [1],
-    program_names: ['Medical Lab'], group_ids: [], group_names: [],
+    program_names: ['Medical Lab'], group_ids: [7], group_names: ['Lab A2'],
     last_access: null,
     metadata_extra: null,
     created_at: '2026-01-01T00:00:00Z',
@@ -170,6 +170,18 @@ describe('PeoplePage', () => {
     expect(chip).toBeInTheDocument()
   })
 
+  it('displays group names as chips in the Groups column', async () => {
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Lab A2')).toBeInTheDocument()
+    })
+
+    const chip = screen.getByText('Lab A2').closest('.MuiChip-root')
+    expect(chip).toBeInTheDocument()
+    expect(screen.getByText('Groups')).toBeInTheDocument()
+  })
+
   it('displays last accessed date when available', async () => {
     render(<PeoplePage programs={programs} />)
 
@@ -192,6 +204,7 @@ describe('PeoplePage', () => {
     expect(screen.getByText('Email')).toBeInTheDocument()
     expect(screen.getByText('Role')).toBeInTheDocument()
     expect(screen.getByText('Program')).toBeInTheDocument()
+    expect(screen.getByText('Groups')).toBeInTheDocument()
     expect(screen.getByText('Last Accessed')).toBeInTheDocument()
     expect(screen.getByText('Created')).toBeInTheDocument()
   })

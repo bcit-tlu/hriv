@@ -41,10 +41,12 @@ import {
 } from '../api'
 import type { ApiUser } from '../api'
 import type { Role, Program } from '../types'
+import { getGroupChipColors } from '../theme'
+import { useColorMode } from '../useColorMode'
 import AddEditPersonModal from './AddEditPersonModal'
 import BulkEditModal from './BulkEditModal'
 
-type SortableColumn = 'id' | 'name' | 'email' | 'role' | 'program' | 'last_access' | 'created_at'
+type SortableColumn = 'id' | 'name' | 'email' | 'role' | 'program' | 'group' | 'last_access' | 'created_at'
 type SortDirection = 'asc' | 'desc'
 
 const ROLES: Role[] = ['admin', 'instructor', 'student']
@@ -56,6 +58,8 @@ interface PeoplePageProps {
 }
 
 export default function PeoplePage({ programs, initialEditUserId, onEditUserHandled }: PeoplePageProps) {
+  const { mode } = useColorMode()
+  const groupColors = getGroupChipColors(mode)
   const [users, setUsers] = useState<ApiUser[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -142,6 +146,7 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
       if (!match('name', user.name)) return false
       if (!match('email', user.email)) return false
       if (!match('program', user.program_names.join(', '))) return false
+      if (!match('group', user.group_names.join(', '))) return false
       const roleFilter = filters['role']
       if (roleFilter && user.role !== roleFilter) return false
       return true
@@ -167,6 +172,9 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
           break
         case 'program':
           cmp = a.program_names.join(', ').localeCompare(b.program_names.join(', '))
+          break
+        case 'group':
+          cmp = a.group_names.join(', ').localeCompare(b.group_names.join(', '))
           break
         case 'last_access':
           cmp = (a.last_access ?? '').localeCompare(b.last_access ?? '')
@@ -446,6 +454,15 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                     Program
                   </TableSortLabel>
                 </TableCell>
+                <TableCell sortDirection={sortColumn === 'group' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'group'}
+                    direction={sortColumn === 'group' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('group')}
+                  >
+                    Groups
+                  </TableSortLabel>
+                </TableCell>
                 <TableCell sortDirection={sortColumn === 'last_access' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'last_access'}
@@ -522,6 +539,17 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                     InputProps={filters['program'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('program', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
                 </TableCell>
+                <TableCell>
+                  <TextField
+                    size="small"
+                    variant="standard"
+                    placeholder="Filter"
+                    value={filters['group'] ?? ''}
+                    onChange={(e) => handleFilterChange('group', e.target.value)}
+                    slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
+                    InputProps={filters['group'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('group', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
+                  />
+                </TableCell>
                 <TableCell />
                 <TableCell />
                 <TableCell />
@@ -557,6 +585,23 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                         {user.program_names.map((name) => (
                           <Chip key={name} label={name} size="small" color="primary" />
+                        ))}
+                      </Box>
+                    ) : '—'}
+                  </TableCell>
+                  <TableCell>
+                    {user.group_names.length > 0 ? (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {user.group_names.map((name) => (
+                          <Chip
+                            key={name}
+                            label={name}
+                            size="small"
+                            sx={{
+                              bgcolor: groupColors.solidBg,
+                              color: groupColors.solidText,
+                            }}
+                          />
                         ))}
                       </Box>
                     ) : '—'}

@@ -891,6 +891,7 @@ export default function App() {
                         <ManagePage
                             categories={categories}
                             programs={programs}
+                            groups={groups}
                             imagesVersion={imagesVersion}
                             onEditCategory={editCategoryInline}
                             onToggleVisibility={toggleCategoryVisibility}
@@ -1564,6 +1565,7 @@ export default function App() {
                                 canEditContent={canEditContent}
                                 fileDragActive={fileDragActive}
                                 programs={programs}
+                                groups={groups}
                                 onCategoryClick={handleCategoryTileClick}
                                 onMoveCategory={handleRequestMoveCategory}
                                 onSetCardImage={handleSetCardImage}

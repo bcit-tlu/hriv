@@ -16,9 +16,9 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import ImageIcon from '@mui/icons-material/Image'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
-import type { Category, ImageItem, Program } from '../types'
+import type { Category, Group, ImageItem, Program } from '../types'
 import { useColorMode } from '../useColorMode'
-import { getVisibilityColors } from '../theme'
+import { getGroupChipColors, getVisibilityColors } from '../theme'
 import CardImagePickerModal from './CardImagePickerModal'
 
 function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
@@ -59,13 +59,15 @@ interface CategoryTileProps {
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onEditName?: (category: Category) => void
   programs: Program[]
+  groups?: Group[]
   /** Called when native files are dropped onto this category tile. */
   onDropFiles?: (categoryId: number, files: File[]) => void
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, onDropFiles }: CategoryTileProps) {
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, groups = [], onDropFiles }: CategoryTileProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
+  const groupColors = getGroupChipColors(mode)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const dragCounter = useRef(0)
@@ -85,6 +87,11 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
   const programChips = category.programIds
     .map((pid) => programs.find((p) => p.id === pid))
     .filter((p): p is Program => p != null)
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const groupChips = category.groupIds
+    .map((gid) => groups.find((g) => g.id === gid))
+    .filter((g): g is Group => g != null)
     .sort((a, b) => a.name.localeCompare(b.name))
 
   const cardImage = category.cardImageId
@@ -234,6 +241,21 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {programChips.map((p) => (
                   <Chip key={p.id} label={p.name} size="small" color="primary" />
+                ))}
+              </Box>
+            )}
+            {groupChips.length > 0 && (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                {groupChips.map((g) => (
+                  <Chip
+                    key={g.id}
+                    label={g.name}
+                    size="small"
+                    sx={{
+                      bgcolor: groupColors.solidBg,
+                      color: groupColors.solidText,
+                    }}
+                  />
                 ))}
               </Box>
             )}
