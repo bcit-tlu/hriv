@@ -24,12 +24,14 @@ import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
 import TextField from '@mui/material/TextField'
-import Tooltip from '@mui/material/Tooltip'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import ClearIcon from '@mui/icons-material/Clear'
 import FilterListIcon from '@mui/icons-material/FilterList'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
+import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import {
   fetchUsers,
   createUser,
@@ -41,13 +43,51 @@ import {
 } from '../api'
 import type { ApiUser } from '../api'
 import type { Role, Program } from '../types'
+import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import AddEditPersonModal from './AddEditPersonModal'
 import BulkEditModal from './BulkEditModal'
+import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
 
 type SortableColumn = 'id' | 'name' | 'email' | 'role' | 'program' | 'group' | 'last_access' | 'created_at'
 type SortDirection = 'asc' | 'desc'
+type PeopleTableColumn =
+  | 'id'
+  | 'name'
+  | 'email'
+  | 'role'
+  | 'program'
+  | 'group'
+  | 'last_access'
+  | 'created_at'
 
 const ROLES: Role[] = ['admin', 'instructor', 'student']
+const PEOPLE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<PeopleTableColumn>[] = [
+  { key: 'id', label: 'ID' },
+  { key: 'name', label: 'Name' },
+  { key: 'email', label: 'Email' },
+  { key: 'role', label: 'Role' },
+  { key: 'program', label: 'Program' },
+  { key: 'group', label: 'Groups' },
+  { key: 'last_access', label: 'Last Accessed' },
+  { key: 'created_at', label: 'Created' },
+]
+
+const PEOPLE_DEFAULT_VISIBLE_COLUMNS: readonly PeopleTableColumn[] = [
+  'name',
+  'email',
+  'role',
+  'program',
+  'last_access',
+]
+const PEOPLE_ALL_COLUMNS: readonly PeopleTableColumn[] = PEOPLE_COLUMN_OPTIONS.map((column) => column.key)
+
+const PEOPLE_COLUMN_FILTER_KEYS: Partial<Record<PeopleTableColumn, string>> = {
+  name: 'name',
+  email: 'email',
+  role: 'role',
+  program: 'program',
+  group: 'group',
+}
 
 interface PeoplePageProps {
   programs: Program[]
@@ -70,6 +110,16 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
 
   // Filter row visibility
   const [showFilters, setShowFilters] = useState(false)
+  const [columnDialogOpen, setColumnDialogOpen] = useState(false)
+  const {
+    visibleColumns,
+    isColumnVisible,
+    setColumnVisible,
+  } = useTableColumnPreferences<PeopleTableColumn>({
+    tableKey: 'people',
+    allColumns: PEOPLE_ALL_COLUMNS,
+    defaultVisibleColumns: PEOPLE_DEFAULT_VISIBLE_COLUMNS,
+  })
 
   // Pagination state
   const [rowsPerPage, setRowsPerPage] = useState(25)
@@ -202,6 +252,22 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
     setCurrentPage(0)
   }
 
+  const handleColumnVisibilityToggle = useCallback((column: PeopleTableColumn) => {
+    const nextVisible = !visibleColumns[column]
+    setColumnVisible(column, nextVisible)
+    if (!nextVisible) {
+      const filterKey = PEOPLE_COLUMN_FILTER_KEYS[column]
+      if (filterKey) {
+        setFilters((prev) => {
+          if (!prev[filterKey]) return prev
+          const next = { ...prev }
+          delete next[filterKey]
+          return next
+        })
+      }
+    }
+  }, [setColumnVisible, visibleColumns])
+
   const pageUsers = useMemo(
     () => sortedUsers.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage),
     [sortedUsers, currentPage, rowsPerPage],
@@ -332,25 +398,28 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
           People
         </Typography>
         <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'center' }}>
-          <Tooltip title={showFilters ? 'Hide filters' : 'Show filters'}>
-            <IconButton
+          <ToggleButtonGroup size="small" aria-label="People table controls">
+            <ToggleButton
+              value="filters"
+              selected={showFilters || hasActiveFilters}
               size="small"
-              onClick={() => setShowFilters((prev) => !prev)}
-              color={showFilters || hasActiveFilters ? 'primary' : 'default'}
+              title={showFilters ? 'Hide filters' : 'Show filters'}
               aria-label={showFilters ? 'Hide filters' : 'Show filters'}
-              sx={
-                hasActiveFilters
-                  ? {
-                      bgcolor: 'primary.main',
-                      color: 'primary.contrastText',
-                      '&:hover': { bgcolor: 'primary.dark' },
-                    }
-                  : undefined
-              }
+              onClick={() => setShowFilters((prev) => !prev)}
             >
-              <FilterListIcon />
-            </IconButton>
-          </Tooltip>
+              <FilterListIcon fontSize="small" />
+            </ToggleButton>
+            <ToggleButton
+              value="columns"
+              selected={columnDialogOpen}
+              size="small"
+              title="Choose columns"
+              aria-label="Choose columns"
+              onClick={() => setColumnDialogOpen(true)}
+            >
+              <ViewColumnIcon fontSize="small" />
+            </ToggleButton>
+          </ToggleButtonGroup>
           {selected.size > 0 && (
             <>
               <Button
@@ -405,7 +474,7 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                     onChange={(e) => handleSelectAll(e.target.checked)}
                   />
                 </TableCell>
-                <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
+                {isColumnVisible('id') && <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'id'}
                     direction={sortColumn === 'id' ? sortDirection : 'asc'}
@@ -413,8 +482,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                   >
                     ID
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('name') && <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'name'}
                     direction={sortColumn === 'name' ? sortDirection : 'asc'}
@@ -422,8 +491,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                   >
                     Name
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'email' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('email') && <TableCell sortDirection={sortColumn === 'email' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'email'}
                     direction={sortColumn === 'email' ? sortDirection : 'asc'}
@@ -431,8 +500,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                   >
                     Email
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'role' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('role') && <TableCell sortDirection={sortColumn === 'role' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'role'}
                     direction={sortColumn === 'role' ? sortDirection : 'asc'}
@@ -440,8 +509,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                   >
                     Role
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'program' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('program') && <TableCell sortDirection={sortColumn === 'program' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'program'}
                     direction={sortColumn === 'program' ? sortDirection : 'asc'}
@@ -449,8 +518,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                   >
                     Program
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'group' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('group') && <TableCell sortDirection={sortColumn === 'group' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'group'}
                     direction={sortColumn === 'group' ? sortDirection : 'asc'}
@@ -458,8 +527,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                   >
                     Groups
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'last_access' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('last_access') && <TableCell sortDirection={sortColumn === 'last_access' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'last_access'}
                     direction={sortColumn === 'last_access' ? sortDirection : 'asc'}
@@ -467,8 +536,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                   >
                     Last Accessed
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'created_at' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('created_at') && <TableCell sortDirection={sortColumn === 'created_at' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'created_at'}
                     direction={sortColumn === 'created_at' ? sortDirection : 'asc'}
@@ -476,7 +545,7 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                   >
                     Created
                   </TableSortLabel>
-                </TableCell>
+                </TableCell>}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
               {showFilters && (
@@ -488,8 +557,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                     </IconButton>
                   )}
                 </TableCell>
-                <TableCell />
-                <TableCell>
+                {isColumnVisible('id') && <TableCell />}
+                {isColumnVisible('name') && <TableCell>
                   <TextField
                     size="small"
                     variant="standard"
@@ -499,8 +568,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
                     InputProps={filters['name'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('name', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
-                </TableCell>
-                <TableCell>
+                </TableCell>}
+                {isColumnVisible('email') && <TableCell>
                   <TextField
                     size="small"
                     variant="standard"
@@ -510,8 +579,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
                     InputProps={filters['email'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('email', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
-                </TableCell>
-                <TableCell>
+                </TableCell>}
+                {isColumnVisible('role') && <TableCell>
                   <FormControl size="small" variant="standard" fullWidth>
                     <Select
                       value={filters['role'] ?? ''}
@@ -523,8 +592,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                       {ROLES.map((r) => <MenuItem key={r} value={r}>{r}</MenuItem>)}
                     </Select>
                   </FormControl>
-                </TableCell>
-                <TableCell>
+                </TableCell>}
+                {isColumnVisible('program') && <TableCell>
                   <TextField
                     size="small"
                     variant="standard"
@@ -534,8 +603,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
                     InputProps={filters['program'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('program', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
-                </TableCell>
-                <TableCell>
+                </TableCell>}
+                {isColumnVisible('group') && <TableCell>
                   <TextField
                     size="small"
                     variant="standard"
@@ -545,9 +614,9 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
                     InputProps={filters['group'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('group', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
-                </TableCell>
-                <TableCell />
-                <TableCell />
+                </TableCell>}
+                {isColumnVisible('last_access') && <TableCell />}
+                {isColumnVisible('created_at') && <TableCell />}
                 <TableCell />
               </TableRow>
               )}
@@ -572,11 +641,11 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                       }
                     />
                   </TableCell>
-                  <TableCell>{user.id}</TableCell>
-                  <TableCell>{user.name}</TableCell>
-                  <TableCell>{user.email}</TableCell>
-                  <TableCell>{user.role}</TableCell>
-                  <TableCell>
+                  {isColumnVisible('id') && <TableCell>{user.id}</TableCell>}
+                  {isColumnVisible('name') && <TableCell>{user.name}</TableCell>}
+                  {isColumnVisible('email') && <TableCell>{user.email}</TableCell>}
+                  {isColumnVisible('role') && <TableCell>{user.role}</TableCell>}
+                  {isColumnVisible('program') && <TableCell>
                     {user.program_names.length > 0 ? (
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                         {user.program_names.map((name) => (
@@ -584,8 +653,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                         ))}
                       </Box>
                     ) : '—'}
-                  </TableCell>
-                  <TableCell>
+                  </TableCell>}
+                  {isColumnVisible('group') && <TableCell>
                     {user.group_names.length > 0 ? (
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                         {user.group_names.map((name) => (
@@ -598,15 +667,15 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                         ))}
                       </Box>
                     ) : '—'}
-                  </TableCell>
-                  <TableCell>
+                  </TableCell>}
+                  {isColumnVisible('last_access') && <TableCell>
                     {user.last_access
                       ? new Date(user.last_access).toLocaleDateString()
                       : '—'}
-                  </TableCell>
-                  <TableCell>
+                  </TableCell>}
+                  {isColumnVisible('created_at') && <TableCell>
                     {new Date(user.created_at).toLocaleDateString()}
-                  </TableCell>
+                  </TableCell>}
                   <TableCell
                     align="right"
                     onClick={(e) => e.stopPropagation()}
@@ -637,6 +706,15 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
           />
         </TableContainer>
       )}
+
+      <ColumnVisibilityDialog
+        open={columnDialogOpen}
+        title="Choose people table columns"
+        columns={PEOPLE_COLUMN_OPTIONS}
+        visibleColumns={visibleColumns}
+        onClose={() => setColumnDialogOpen(false)}
+        onToggleColumn={handleColumnVisibilityToggle}
+      />
 
       {/* Modals */}
       <AddEditPersonModal

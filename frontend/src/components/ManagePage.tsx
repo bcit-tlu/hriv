@@ -28,7 +28,8 @@ import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
 import TextField from '@mui/material/TextField'
-import Tooltip from '@mui/material/Tooltip'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
@@ -40,13 +41,16 @@ import FilterListIcon from '@mui/icons-material/FilterList'
 import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityIcon from '@mui/icons-material/Visibility'
+import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import { fetchImages, updateImage, deleteImage, replaceImage, bulkUpdateImages, bulkDeleteImages } from '../api'
 import type { ApiBulkImportJob, ApiImage } from '../api'
 import type { Category, Group, Program } from '../types'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from '../categoryUtils'
 import { getGroupChipColors, getVisibilityColors } from '../theme'
+import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import { useColorMode } from '../useColorMode'
 import BulkEditImagesModal from './BulkEditImagesModal'
+import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
 import MoveImageDialog from './MoveImageDialog'
@@ -118,6 +122,51 @@ function CategoryBreadcrumb({
 
 type SortableColumn = 'id' | 'name' | 'category' | 'copyright' | 'note' | 'program' | 'group' | 'active' | 'updated_at'
 type SortDirection = 'asc' | 'desc'
+type ManageTableColumn =
+  | 'thumbnail'
+  | 'id'
+  | 'name'
+  | 'category'
+  | 'copyright'
+  | 'note'
+  | 'program'
+  | 'group'
+  | 'active'
+  | 'updated_at'
+
+const MANAGE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageTableColumn>[] = [
+  { key: 'thumbnail', label: 'Thumbnail' },
+  { key: 'id', label: 'ID' },
+  { key: 'name', label: 'Name' },
+  { key: 'category', label: 'Category' },
+  { key: 'copyright', label: 'Copyright' },
+  { key: 'note', label: 'Note' },
+  { key: 'program', label: 'Program' },
+  { key: 'group', label: 'Groups' },
+  { key: 'active', label: 'Visibility' },
+  { key: 'updated_at', label: 'Modified' },
+]
+
+const MANAGE_DEFAULT_VISIBLE_COLUMNS: readonly ManageTableColumn[] = [
+  'thumbnail',
+  'name',
+  'category',
+  'group',
+  'active',
+  'updated_at',
+]
+const MANAGE_ALL_COLUMNS: readonly ManageTableColumn[] = MANAGE_COLUMN_OPTIONS.map((column) => column.key)
+
+const MANAGE_COLUMN_FILTER_KEYS: Partial<Record<ManageTableColumn, string>> = {
+  id: 'id',
+  name: 'name',
+  category: 'category',
+  copyright: 'copyright',
+  note: 'note',
+  program: 'program',
+  group: 'group',
+  active: 'active',
+}
 
 interface ManagePageProps {
   categories: Category[]
@@ -216,6 +265,16 @@ export default function ManagePage({
 
   // Filter row visibility
   const [showFilters, setShowFilters] = useState(false)
+  const [columnDialogOpen, setColumnDialogOpen] = useState(false)
+  const {
+    visibleColumns,
+    isColumnVisible,
+    setColumnVisible,
+  } = useTableColumnPreferences<ManageTableColumn>({
+    tableKey: 'manage-images',
+    allColumns: MANAGE_ALL_COLUMNS,
+    defaultVisibleColumns: MANAGE_DEFAULT_VISIBLE_COLUMNS,
+  })
 
   // Pagination state
   const [rowsPerPage, setRowsPerPage] = useState(25)
@@ -387,6 +446,22 @@ export default function ManagePage({
     setFilters({})
     setCurrentPage(0)
   }
+
+  const handleColumnVisibilityToggle = useCallback((column: ManageTableColumn) => {
+    const nextVisible = !visibleColumns[column]
+    setColumnVisible(column, nextVisible)
+    if (!nextVisible) {
+      const filterKey = MANAGE_COLUMN_FILTER_KEYS[column]
+      if (filterKey) {
+        setFilters((prev) => {
+          if (!prev[filterKey]) return prev
+          const next = { ...prev }
+          delete next[filterKey]
+          return next
+        })
+      }
+    }
+  }, [setColumnVisible, visibleColumns])
 
   const pageImages = sortedImages.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage)
 
@@ -605,25 +680,28 @@ export default function ManagePage({
           Images
         </Typography>
         <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'center' }}>
-          <Tooltip title={showFilters ? 'Hide filters' : 'Show filters'}>
-            <IconButton
+          <ToggleButtonGroup size="small" aria-label="Image table controls">
+            <ToggleButton
+              value="filters"
+              selected={showFilters || hasActiveFilters}
               size="small"
-              onClick={() => setShowFilters((prev) => !prev)}
-              color={showFilters || hasActiveFilters ? 'primary' : 'default'}
+              title={showFilters ? 'Hide filters' : 'Show filters'}
               aria-label={showFilters ? 'Hide filters' : 'Show filters'}
-              sx={
-                hasActiveFilters
-                  ? {
-                      bgcolor: 'primary.main',
-                      color: 'primary.contrastText',
-                      '&:hover': { bgcolor: 'primary.dark' },
-                    }
-                  : undefined
-              }
+              onClick={() => setShowFilters((prev) => !prev)}
             >
-              <FilterListIcon />
-            </IconButton>
-          </Tooltip>
+              <FilterListIcon fontSize="small" />
+            </ToggleButton>
+            <ToggleButton
+              value="columns"
+              selected={columnDialogOpen}
+              size="small"
+              title="Choose columns"
+              aria-label="Choose columns"
+              onClick={() => setColumnDialogOpen(true)}
+            >
+              <ViewColumnIcon fontSize="small" />
+            </ToggleButton>
+          </ToggleButtonGroup>
           {selected.size > 0 && (
             <Button
               variant="contained"
@@ -660,8 +738,8 @@ export default function ManagePage({
                     onChange={(e) => handleSelectAll(e.target.checked)}
                   />
                 </TableCell>
-                <TableCell sx={{ width: 48, p: 0.5 }} />
-                <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
+                {isColumnVisible('thumbnail') && <TableCell sx={{ width: 48, p: 0.5 }} />}
+                {isColumnVisible('id') && <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'id'}
                     direction={sortColumn === 'id' ? sortDirection : 'asc'}
@@ -669,8 +747,8 @@ export default function ManagePage({
                   >
                     ID
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('name') && <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'name'}
                     direction={sortColumn === 'name' ? sortDirection : 'asc'}
@@ -678,8 +756,8 @@ export default function ManagePage({
                   >
                     Name
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'category' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('category') && <TableCell sortDirection={sortColumn === 'category' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'category'}
                     direction={sortColumn === 'category' ? sortDirection : 'asc'}
@@ -687,8 +765,8 @@ export default function ManagePage({
                   >
                     Category
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'copyright' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('copyright') && <TableCell sortDirection={sortColumn === 'copyright' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'copyright'}
                     direction={sortColumn === 'copyright' ? sortDirection : 'asc'}
@@ -696,8 +774,8 @@ export default function ManagePage({
                   >
                     Copyright
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'note' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('note') && <TableCell sortDirection={sortColumn === 'note' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'note'}
                     direction={sortColumn === 'note' ? sortDirection : 'asc'}
@@ -705,8 +783,8 @@ export default function ManagePage({
                   >
                     Note
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'program' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('program') && <TableCell sortDirection={sortColumn === 'program' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'program'}
                     direction={sortColumn === 'program' ? sortDirection : 'asc'}
@@ -714,8 +792,8 @@ export default function ManagePage({
                   >
                     Program
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'group' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('group') && <TableCell sortDirection={sortColumn === 'group' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'group'}
                     direction={sortColumn === 'group' ? sortDirection : 'asc'}
@@ -723,8 +801,8 @@ export default function ManagePage({
                   >
                     Groups
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'active' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('active') && <TableCell sortDirection={sortColumn === 'active' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'active'}
                     direction={sortColumn === 'active' ? sortDirection : 'asc'}
@@ -732,8 +810,8 @@ export default function ManagePage({
                   >
                     Visibility
                   </TableSortLabel>
-                </TableCell>
-                <TableCell sortDirection={sortColumn === 'updated_at' ? sortDirection : false}>
+                </TableCell>}
+                {isColumnVisible('updated_at') && <TableCell sortDirection={sortColumn === 'updated_at' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'updated_at'}
                     direction={sortColumn === 'updated_at' ? sortDirection : 'asc'}
@@ -741,7 +819,7 @@ export default function ManagePage({
                   >
                     Modified
                   </TableSortLabel>
-                </TableCell>
+                </TableCell>}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
               {showFilters && (
@@ -753,8 +831,8 @@ export default function ManagePage({
                     </IconButton>
                   )}
                 </TableCell>
-                <TableCell />
-                <TableCell>
+                {isColumnVisible('thumbnail') && <TableCell />}
+                {isColumnVisible('id') && <TableCell>
                   <TextField
                     size="small"
                     variant="standard"
@@ -764,8 +842,8 @@ export default function ManagePage({
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
                     InputProps={filters['id'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('id', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
-                </TableCell>
-                <TableCell>
+                </TableCell>}
+                {isColumnVisible('name') && <TableCell>
                   <TextField
                     size="small"
                     variant="standard"
@@ -775,8 +853,8 @@ export default function ManagePage({
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
                     InputProps={filters['name'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('name', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
-                </TableCell>
-                <TableCell>
+                </TableCell>}
+                {isColumnVisible('category') && <TableCell>
                   <TextField
                     size="small"
                     variant="standard"
@@ -786,8 +864,8 @@ export default function ManagePage({
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
                     InputProps={filters['category'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('category', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
-                </TableCell>
-                <TableCell>
+                </TableCell>}
+                {isColumnVisible('copyright') && <TableCell>
                   <TextField
                     size="small"
                     variant="standard"
@@ -797,8 +875,8 @@ export default function ManagePage({
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
                     InputProps={filters['copyright'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('copyright', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
-                </TableCell>
-                <TableCell>
+                </TableCell>}
+                {isColumnVisible('note') && <TableCell>
                   <TextField
                     size="small"
                     variant="standard"
@@ -808,8 +886,8 @@ export default function ManagePage({
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
                     InputProps={filters['note'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('note', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
-                </TableCell>
-                <TableCell>
+                </TableCell>}
+                {isColumnVisible('program') && <TableCell>
                   <TextField
                     size="small"
                     variant="standard"
@@ -819,8 +897,8 @@ export default function ManagePage({
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
                     InputProps={filters['program'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('program', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
-                </TableCell>
-                <TableCell>
+                </TableCell>}
+                {isColumnVisible('group') && <TableCell>
                   <TextField
                     size="small"
                     variant="standard"
@@ -830,8 +908,8 @@ export default function ManagePage({
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
                     InputProps={filters['group'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('group', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
-                </TableCell>
-                <TableCell>
+                </TableCell>}
+                {isColumnVisible('active') && <TableCell>
                   <FormControl size="small" variant="standard" fullWidth>
                     <Select
                       value={filters['active'] ?? ''}
@@ -844,8 +922,8 @@ export default function ManagePage({
                       <MenuItem value="inactive">Inactive</MenuItem>
                     </Select>
                   </FormControl>
-                </TableCell>
-                <TableCell />
+                </TableCell>}
+                {isColumnVisible('updated_at') && <TableCell />}
                 <TableCell />
               </TableRow>
               )}
@@ -876,7 +954,7 @@ export default function ManagePage({
                       }
                     />
                   </TableCell>
-                  <TableCell
+                  {isColumnVisible('thumbnail') && <TableCell
                     data-interactive="true"
                     sx={{ p: 0.5 }}
                     onClick={(e) => {
@@ -900,19 +978,19 @@ export default function ManagePage({
                         ...(img.active ? {} : { filter: 'grayscale(100%)' }),
                       }}
                     />
-                  </TableCell>
-                  <TableCell>{img.id}</TableCell>
-                  <TableCell>{img.name}</TableCell>
-                  <TableCell>
+                  </TableCell>}
+                  {isColumnVisible('id') && <TableCell>{img.id}</TableCell>}
+                  {isColumnVisible('name') && <TableCell>{img.name}</TableCell>}
+                  {isColumnVisible('category') && <TableCell>
                     <CategoryBreadcrumb
                       categoryId={img.category_id}
                       categoryPaths={categoryPaths}
                       onNavigate={onNavigateCategory}
                     />
-                  </TableCell>
-                  <TableCell>{img.copyright ?? '—'}</TableCell>
-                  <TableCell>{img.note ?? '—'}</TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
+                  </TableCell>}
+                  {isColumnVisible('copyright') && <TableCell>{img.copyright ?? '—'}</TableCell>}
+                  {isColumnVisible('note') && <TableCell>{img.note ?? '—'}</TableCell>}
+                  {isColumnVisible('program') && <TableCell onClick={(e) => e.stopPropagation()}>
                     {(() => {
                       const { direct, ancestor } = getInheritedProgramIds(img)
                       if (direct.length === 0 && ancestor.length === 0) return 'All programs'
@@ -959,8 +1037,8 @@ export default function ManagePage({
                         </Box>
                       )
                     })()}
-                  </TableCell>
-                  <TableCell onClick={(e) => e.stopPropagation()}>
+                  </TableCell>}
+                  {isColumnVisible('group') && <TableCell onClick={(e) => e.stopPropagation()}>
                     {(() => {
                       const { direct, ancestor } = getInheritedGroupIds(img)
                       if (direct.length === 0 && ancestor.length === 0) return 'All groups'
@@ -1019,8 +1097,8 @@ export default function ManagePage({
                         </Box>
                       )
                     })()}
-                  </TableCell>
-                  <TableCell
+                  </TableCell>}
+                  {isColumnVisible('active') && <TableCell
                     data-interactive="true"
                     onClick={(e) => e.stopPropagation()}
                   >
@@ -1029,10 +1107,10 @@ export default function ManagePage({
                       checked={img.active}
                       onChange={() => handleToggleActive(img)}
                     />
-                  </TableCell>
-                  <TableCell>
+                  </TableCell>}
+                  {isColumnVisible('updated_at') && <TableCell>
                     {new Date(img.updated_at).toLocaleDateString()}
-                  </TableCell>
+                  </TableCell>}
                   <TableCell
                     data-interactive="true"
                     align="right"
@@ -1064,6 +1142,15 @@ export default function ManagePage({
           />
         </TableContainer>
       )}
+
+      <ColumnVisibilityDialog
+        open={columnDialogOpen}
+        title="Choose image table columns"
+        columns={MANAGE_COLUMN_OPTIONS}
+        visibleColumns={visibleColumns}
+        onClose={() => setColumnDialogOpen(false)}
+        onToggleColumn={handleColumnVisibilityToggle}
+      />
 
       {/* Action menu */}
       <Menu

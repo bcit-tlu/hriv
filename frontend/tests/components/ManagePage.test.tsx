@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 vi.mock('../../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api')>()
@@ -39,6 +40,8 @@ const categories = [
 describe('ManagePage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
     vi.mocked(fetchImages).mockResolvedValue([
       {
         id: 101,
@@ -71,6 +74,22 @@ describe('ManagePage', () => {
     expect(screen.getByText('Groups')).toBeInTheDocument()
     const groupChip = screen.getByText('Lab A2').closest('.MuiChip-root')
     expect(groupChip).toBeInTheDocument()
+  })
+
+  it('shows the configured default visible columns', async () => {
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Category' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Visibility' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Modified' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'ID' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Program' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Copyright' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Note' })).not.toBeInTheDocument()
   })
 
   it('greyscales the thumbnail when an image is inactive', async () => {
@@ -133,5 +152,29 @@ describe('ManagePage', () => {
       expect(updateImage).toHaveBeenCalledWith(101, { active: false }, 1)
     })
     expect(fetchImages).toHaveBeenCalledTimes(1)
+  })
+
+  it('persists selected columns between renders', async () => {
+    const user = userEvent.setup()
+    const { unmount } = render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+    expect(screen.queryByRole('columnheader', { name: 'Program' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Choose columns' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Choose image table columns' })
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Program' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Done' }))
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Choose image table columns' })).not.toBeInTheDocument()
+    })
+
+    expect(screen.getByRole('columnheader', { name: 'Program' })).toBeInTheDocument()
+
+    unmount()
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+    expect(screen.getByRole('columnheader', { name: 'Program' })).toBeInTheDocument()
   })
 })
