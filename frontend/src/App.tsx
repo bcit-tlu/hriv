@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
@@ -111,6 +111,15 @@ export default function App() {
     const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
     const selectedImageRef = useRef<ImageItem | null>(null);
     selectedImageRef.current = selectedImage;
+    const inactiveViewerActionSx = useMemo(
+        () =>
+            selectedImage?.active
+                ? undefined
+                : {
+                      filter: "grayscale(100%)",
+                  },
+        [selectedImage?.active],
+    );
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [fileDropCategoryId, setFileDropCategoryId] = useState<
@@ -1351,6 +1360,7 @@ export default function App() {
                                                         setImageEditOpen(true)
                                                     }
                                                     disabled={canvasEditActive}
+                                                    sx={inactiveViewerActionSx}
                                                 >
                                                     Edit Details
                                                 </Button>
@@ -1362,6 +1372,7 @@ export default function App() {
                                             variant="outlined"
                                             startIcon={<LinkIcon />}
                                             onClick={copyShareLink}
+                                            sx={inactiveViewerActionSx}
                                         >
                                             Share View
                                         </Button>

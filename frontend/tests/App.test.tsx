@@ -332,8 +332,12 @@ describe('App breadcrumbs', () => {
 
     const programChip = within(imageBreadcrumb as HTMLElement).getByText('Pathology').closest('.MuiChip-root')
     const groupChip = within(imageBreadcrumb as HTMLElement).getByText('Lab A2').closest('.MuiChip-root')
+    const editButton = screen.getByRole('button', { name: 'Edit Details' })
+    const shareButton = screen.getByText('Share View').closest('button')
 
     expect(programChip).toHaveStyle({ filter: 'grayscale(100%)' })
     expect(groupChip).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(editButton).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(shareButton).toHaveStyle({ filter: 'grayscale(100%)' })
   })
 })
