@@ -402,21 +402,21 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
             size="small"
             aria-label="People table controls"
             sx={{
-              '& .MuiToggleButton-root': {
-                bgcolor: 'grey.200',
-                color: 'text.primary',
-                borderColor: 'grey.300',
+              '& .MuiToggleButton-root': (theme) => ({
+                bgcolor: theme.palette.mode === 'dark' ? '#4A4442' : '#DAC7B5',
+                color: theme.palette.text.primary,
+                borderColor: theme.palette.mode === 'dark' ? '#5C5552' : '#CDB8A5',
                 '&:hover': {
-                  bgcolor: 'grey.300',
+                  bgcolor: theme.palette.mode === 'dark' ? '#5C5552' : '#CDB8A5',
                 },
-              },
-              '& .MuiToggleButton-root.Mui-selected': {
-                bgcolor: 'grey.300',
-                color: 'text.primary',
+              }),
+              '& .MuiToggleButton-root.Mui-selected': (theme) => ({
+                bgcolor: theme.palette.mode === 'dark' ? '#5C5552' : '#CDB8A5',
+                color: theme.palette.text.primary,
                 '&:hover': {
-                  bgcolor: 'grey.300',
+                  bgcolor: theme.palette.mode === 'dark' ? '#5C5552' : '#CDB8A5',
                 },
-              },
+              }),
             }}
           >
             <ToggleButton
