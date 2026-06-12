@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.23.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.22.0...frontend-v0.23.0) (2026-06-12)
+
+
+### Features
+
+* add groups frontend (PR3 of groups refactor) ([#616](https://github.com/bcit-tlu/hriv/issues/616)) ([29d4b75](https://github.com/bcit-tlu/hriv/commit/29d4b75bd1bafc43ef34d9086bb9c487b0761a84))
+* add persisted table column choosers ([#661](https://github.com/bcit-tlu/hriv/issues/661)) ([c146994](https://github.com/bcit-tlu/hriv/commit/c146994a14bb27ca645616476247db487283d7ed))
+* expose groups across tiles and tables ([#657](https://github.com/bcit-tlu/hriv/issues/657)) ([b6bc889](https://github.com/bcit-tlu/hriv/commit/b6bc889364f3a9bde3159e426706a346c3ab26d2))
+* redesign manage groups workflow ([#645](https://github.com/bcit-tlu/hriv/issues/645)) ([f103df4](https://github.com/bcit-tlu/hriv/commit/f103df4885d7e33eded4fd3ceff416ad308d496d))
+* redesign Manage Members dialog for bulk group association ([#619](https://github.com/bcit-tlu/hriv/issues/619)) ([ec7c748](https://github.com/bcit-tlu/hriv/commit/ec7c748e6d2e463198ad8866ec82ce38d27d8aad))
+* standardize visibility indicators across frontend ([#650](https://github.com/bcit-tlu/hriv/issues/650)) ([f24bc58](https://github.com/bcit-tlu/hriv/commit/f24bc584ad00f0729615aa3d5310cb292e1be98e))
+
+
+### Bug Fixes
+
+* add delete confirmation dialog and bulk programs overwrite warning ([#635](https://github.com/bcit-tlu/hriv/issues/635)) ([c178051](https://github.com/bcit-tlu/hriv/commit/c17805154c2efbb66f35be624bac28eca0be1ccf))
+* avoid visibility toggle refresh flash ([#659](https://github.com/bcit-tlu/hriv/issues/659)) ([76d8bce](https://github.com/bcit-tlu/hriv/commit/76d8bcea992d0c1a11860a362e8a57b7088aac49))
+* eliminate order-flash blip after drag-and-drop reorder ([#639](https://github.com/bcit-tlu/hriv/issues/639)) ([05b3c89](https://github.com/bcit-tlu/hriv/commit/05b3c89511db2cafe8354f9fec6455b8ac5e4883))
+* ensure fresh data after reorder and on popstate navigation ([#630](https://github.com/bcit-tlu/hriv/issues/630)) ([9c16416](https://github.com/bcit-tlu/hriv/commit/9c164163d376d87967aa8a6a5cee7130b2832d9f))
+* **frontend:** re-enable immutability and preserve-manual-memoization lint rules ([#627](https://github.com/bcit-tlu/hriv/issues/627)) ([8b7ffe7](https://github.com/bcit-tlu/hriv/commit/8b7ffe78879720ffc44c0e35fa1dd91cb97d809a))
+* group styling ([#656](https://github.com/bcit-tlu/hriv/issues/656)) ([b212213](https://github.com/bcit-tlu/hriv/commit/b21221366f45a91ca8b0ef36c33591de4586a5eb))
+* harden table column visibility preferences ([#663](https://github.com/bcit-tlu/hriv/issues/663)) ([59a7ae4](https://github.com/bcit-tlu/hriv/commit/59a7ae40a775e2c59e30b17e08a436c7d1e5b10c))
+* make category optional for bulk import and display root selection ([#632](https://github.com/bcit-tlu/hriv/issues/632)) ([a602ce7](https://github.com/bcit-tlu/hriv/commit/a602ce742fdd8799430fc5dc3dee3f7b5f44696d))
+* make filter icon visually prominent when filters are active ([#634](https://github.com/bcit-tlu/hriv/issues/634)) ([1e28142](https://github.com/bcit-tlu/hriv/commit/1e2814285246501847502d4a0d50d2459102d07d))
+* make last-child breadcrumb non-clickable in browse mode ([#633](https://github.com/bcit-tlu/hriv/issues/633)) ([bc43195](https://github.com/bcit-tlu/hriv/commit/bc4319547264c27198b8f72b14791ec9ae2f182c))
+* normalize frontend error display via userMessage() ([#624](https://github.com/bcit-tlu/hriv/issues/624)) ([f5ea277](https://github.com/bcit-tlu/hriv/commit/f5ea2772c45294c6fd4e79d20e45f6837f3f14ca))
+* persist drag-and-drop reorder when optimistic reflow resolves target as source ([#631](https://github.com/bcit-tlu/hriv/issues/631)) ([0702969](https://github.com/bcit-tlu/hriv/commit/070296963624fc660441e86c6514922db2b79d9c))
+* resolve category dropdown label overlap and root selection bug ([#640](https://github.com/bcit-tlu/hriv/issues/640)) ([3b4ce28](https://github.com/bcit-tlu/hriv/commit/3b4ce2862512a59a459d5e88380f3fe36ccafe14))
+* validate full shape in isNavState type guard ([#626](https://github.com/bcit-tlu/hriv/issues/626)) ([e03d42f](https://github.com/bcit-tlu/hriv/commit/e03d42f7c7b5efa51bb828862f3370759b436f75))
+
 ## [0.22.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.21.0...frontend-v0.22.0) (2026-06-05)
 
 
