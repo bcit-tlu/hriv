@@ -19,6 +19,7 @@ pkgs.mkShell {
 
     # Utilities
     git
+    gh
     jq
     nixd
   ];
