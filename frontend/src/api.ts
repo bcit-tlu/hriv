@@ -24,6 +24,10 @@ export function getToken(): string | null {
  * Remove all HRIV-scoped localStorage keys (`hriv_*` and `hriv-*`).
  * Called on logout and when a different user logs in to prevent
  * cross-account state leakage on shared browsers.
+ *
+ * Deliberately excludes `hrivpref:` UI preference keys because those are
+ * already user-scoped (for example, persisted table column selections) and
+ * should survive logout/login cycles for the same browser profile.
  */
 export function clearUserStorage(): void {
   const keysToRemove: string[] = []

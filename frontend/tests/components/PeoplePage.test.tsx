@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../src/api', async (importOriginal) => {
@@ -59,6 +59,8 @@ const USERS = [
 describe('PeoplePage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    localStorage.clear()
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
     vi.mocked(fetchUsers).mockResolvedValue(USERS)
   })
 
@@ -170,16 +172,21 @@ describe('PeoplePage', () => {
     expect(chip).toBeInTheDocument()
   })
 
-  it('displays group names as chips in the Groups column', async () => {
+  it('shows the configured default visible columns', async () => {
     render(<PeoplePage programs={programs} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Lab A2')).toBeInTheDocument()
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
 
-    const chip = screen.getByText('Lab A2').closest('.MuiChip-root')
-    expect(chip).toBeInTheDocument()
-    expect(screen.getByText('Groups')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Email' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Role' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Program' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Last Accessed' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'ID' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Created' })).not.toBeInTheDocument()
   })
 
   it('displays last accessed date when available', async () => {
@@ -204,9 +211,38 @@ describe('PeoplePage', () => {
     expect(screen.getByText('Email')).toBeInTheDocument()
     expect(screen.getByText('Role')).toBeInTheDocument()
     expect(screen.getByText('Program')).toBeInTheDocument()
-    expect(screen.getByText('Groups')).toBeInTheDocument()
     expect(screen.getByText('Last Accessed')).toBeInTheDocument()
-    expect(screen.getByText('Created')).toBeInTheDocument()
+  })
+
+  it('can show the Groups column and persists that choice between renders', async () => {
+    const user = userEvent.setup()
+    const { unmount } = render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Choose columns' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Choose people table columns' })
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Groups' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Done' }))
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Choose people table columns' })).not.toBeInTheDocument()
+    })
+
+    expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
+    const chip = screen.getByText('Lab A2').closest('.MuiChip-root')
+    expect(chip).toBeInTheDocument()
+
+    unmount()
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+    expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
   })
 
   it('opens bulk role dialog and calls API', async () => {

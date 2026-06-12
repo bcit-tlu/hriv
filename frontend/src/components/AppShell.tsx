@@ -24,6 +24,7 @@ import SearchIcon from "@mui/icons-material/Search";
 import ColorModeToggle from "./ColorModeToggle";
 import AnnouncementBanner from "./AnnouncementBanner";
 import type { Role } from "../types";
+import { getSurfaceVariant } from "../theme";
 
 export type Page = "browse" | "manage" | "people" | "admin";
 
@@ -95,6 +96,10 @@ export default function AppShell(props: AppShellProps) {
     const [viewAnnOpen, setViewAnnOpen] = useState(false);
     const [annCollapsed, setAnnCollapsed] = useState(false);
     const showViewAnnLink = annEnabled && !announcement;
+    const contentBg =
+        page === "people" || page === "admin"
+            ? getSurfaceVariant(mode)
+            : undefined;
 
     useEffect(() => {
         if (announcement) setAnnCollapsed(false);
@@ -359,8 +364,18 @@ export default function AppShell(props: AppShellProps) {
             {/* Announcement banner */}
             {announcement && (
                 <Collapse in={!annCollapsed} onExited={onDismissAnnouncement}>
-                    <Box sx={{ mx: '10%', mt: '20px', mb: 0 }}>
-                        <AnnouncementBanner message={announcement} onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined} />
+                    <Box
+                        sx={{
+                            bgcolor: contentBg,
+                            pt: "20px",
+                        }}
+                    >
+                        <Box sx={{ mx: "10%", mb: 0 }}>
+                            <AnnouncementBanner
+                                message={announcement}
+                                onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined}
+                            />
+                        </Box>
                     </Box>
                 </Collapse>
             )}
