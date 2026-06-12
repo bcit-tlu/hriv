@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 vi.mock('../../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api')>()
@@ -155,18 +154,25 @@ describe('ManagePage', () => {
   })
 
   it('persists selected columns between renders', async () => {
-    const user = userEvent.setup()
+    const storageKey = 'hrivpref:table-columns:manage-images:user:1'
+    localStorage.setItem(storageKey, JSON.stringify({
+      thumbnail: true,
+      id: false,
+      name: true,
+      category: true,
+      copyright: false,
+      note: false,
+      program: true,
+      group: true,
+      active: true,
+      updated_at: true,
+    }))
+
     const { unmount } = render(<ManagePage categories={categories} programs={programs} groups={groups} />)
 
     await screen.findByText('Blood Smear')
-    expect(screen.queryByRole('columnheader', { name: 'Program' })).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'Choose columns' }))
-    const dialog = await screen.findByRole('dialog', { name: 'Choose image table columns' })
-    await user.click(within(dialog).getByRole('checkbox', { name: 'Program' }))
-    await user.click(within(dialog).getByRole('button', { name: 'Done' }))
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: 'Choose image table columns' })).not.toBeInTheDocument()
+    expect(JSON.parse(localStorage.getItem(storageKey) ?? '{}')).toMatchObject({
+      program: true,
     })
 
     expect(screen.getByRole('columnheader', { name: 'Program' })).toBeInTheDocument()

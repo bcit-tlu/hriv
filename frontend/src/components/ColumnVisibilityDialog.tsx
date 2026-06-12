@@ -17,6 +17,7 @@ interface ColumnVisibilityDialogProps<Key extends string> {
   title: string
   columns: readonly ColumnVisibilityOption<Key>[]
   visibleColumns: Record<Key, boolean>
+  minimumVisibleColumns?: number
   onClose: () => void
   onToggleColumn: (column: Key) => void
 }
@@ -26,26 +27,35 @@ export default function ColumnVisibilityDialog<Key extends string>({
   title,
   columns,
   visibleColumns,
+  minimumVisibleColumns = 1,
   onClose,
   onToggleColumn,
 }: ColumnVisibilityDialogProps<Key>) {
+  const visibleColumnCount = columns.filter((column) => visibleColumns[column.key]).length
+
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent dividers>
         <FormGroup>
-          {columns.map((column) => (
-            <FormControlLabel
-              key={column.key}
-              control={
-                <Checkbox
-                  checked={visibleColumns[column.key]}
-                  onChange={() => onToggleColumn(column.key)}
-                />
-              }
-              label={column.label}
-            />
-          ))}
+          {columns.map((column) => {
+            const checked = visibleColumns[column.key]
+            const disableToggleOff = checked && visibleColumnCount <= minimumVisibleColumns
+
+            return (
+              <FormControlLabel
+                key={column.key}
+                control={
+                  <Checkbox
+                    checked={checked}
+                    disabled={disableToggleOff}
+                    onChange={() => onToggleColumn(column.key)}
+                  />
+                }
+                label={column.label}
+              />
+            )
+          })}
         </FormGroup>
       </DialogContent>
       <DialogActions>

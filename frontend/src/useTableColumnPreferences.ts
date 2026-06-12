@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 type ColumnVisibilityMap<Key extends string> = Record<Key, boolean>
 
@@ -50,6 +50,14 @@ function loadStoredVisibility<Key extends string>(
   }
 }
 
+function areVisibilityMapsEqual<Key extends string>(
+  left: ColumnVisibilityMap<Key>,
+  right: ColumnVisibilityMap<Key>,
+  allColumns: readonly Key[],
+): boolean {
+  return allColumns.every((column) => left[column] === right[column])
+}
+
 export function useTableColumnPreferences<Key extends string>({
   tableKey,
   allColumns,
@@ -61,18 +69,48 @@ export function useTableColumnPreferences<Key extends string>({
     () => buildDefaultVisibility(allColumns, defaultVisibleColumns),
     [allColumns, defaultVisibleColumns],
   )
+  const loadedVisibility = useMemo(
+    () => loadStoredVisibility(storageKey, allColumns, defaultVisibility),
+    [storageKey, allColumns, defaultVisibility],
+  )
+  const loadedVisibilitySerialized = useMemo(
+    () => JSON.stringify(loadedVisibility),
+    [loadedVisibility],
+  )
   const [visibleColumns, setVisibleColumns] =
-    useState<ColumnVisibilityMap<Key>>(() =>
-      loadStoredVisibility(storageKey, allColumns, defaultVisibility),
+    useState<ColumnVisibilityMap<Key>>(loadedVisibility)
+  const hasMountedRef = useRef(false)
+  const pendingHydrationRef = useRef<{ storageKey: string, serialized: string } | null>({
+    storageKey,
+    serialized: loadedVisibilitySerialized,
+  })
+
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true
+      return
+    }
+
+    pendingHydrationRef.current = {
+      storageKey,
+      serialized: loadedVisibilitySerialized,
+    }
+    setVisibleColumns((prev) =>
+      areVisibilityMapsEqual(prev, loadedVisibility, allColumns) ? prev : loadedVisibility,
     )
+  }, [allColumns, loadedVisibility, loadedVisibilitySerialized, storageKey])
 
   useEffect(() => {
-    setVisibleColumns(loadStoredVisibility(storageKey, allColumns, defaultVisibility))
-  }, [allColumns, defaultVisibility, storageKey])
+    const serialized = JSON.stringify(visibleColumns)
+    const pendingHydration = pendingHydrationRef.current
+    if (pendingHydration?.storageKey === storageKey) {
+      if (pendingHydration.serialized !== serialized) return
+      pendingHydrationRef.current = null
+      return
+    }
 
-  useEffect(() => {
     try {
-      localStorage.setItem(storageKey, JSON.stringify(visibleColumns))
+      localStorage.setItem(storageKey, serialized)
     } catch {
       // Ignore localStorage write failures and fall back to in-memory state.
     }

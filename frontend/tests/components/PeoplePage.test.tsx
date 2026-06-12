@@ -183,9 +183,9 @@ describe('PeoplePage', () => {
     expect(screen.getByRole('columnheader', { name: 'Email' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Role' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Program' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Last Accessed' })).toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'ID' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Created' })).not.toBeInTheDocument()
   })
 
@@ -214,7 +214,7 @@ describe('PeoplePage', () => {
     expect(screen.getByText('Last Accessed')).toBeInTheDocument()
   })
 
-  it('can show the Groups column and persists that choice between renders', async () => {
+  it('can hide the Groups column and persists that choice between renders', async () => {
     const user = userEvent.setup()
     const { unmount } = render(<PeoplePage programs={programs} />)
 
@@ -222,7 +222,7 @@ describe('PeoplePage', () => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
 
-    expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Choose columns' }))
     const dialog = await screen.findByRole('dialog', { name: 'Choose people table columns' })
@@ -232,9 +232,7 @@ describe('PeoplePage', () => {
       expect(screen.queryByRole('dialog', { name: 'Choose people table columns' })).not.toBeInTheDocument()
     })
 
-    expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
-    const chip = screen.getByText('Lab A2').closest('.MuiChip-root')
-    expect(chip).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
 
     unmount()
     render(<PeoplePage programs={programs} />)
@@ -242,7 +240,7 @@ describe('PeoplePage', () => {
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
-    expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
   })
 
   it('opens bulk role dialog and calls API', async () => {
