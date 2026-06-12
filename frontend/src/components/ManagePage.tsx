@@ -680,7 +680,27 @@ export default function ManagePage({
           Images
         </Typography>
         <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'center' }}>
-          <ToggleButtonGroup size="small" aria-label="Image table controls">
+          <ToggleButtonGroup
+            size="small"
+            aria-label="Image table controls"
+            sx={{
+              '& .MuiToggleButton-root': {
+                bgcolor: 'grey.200',
+                color: 'text.primary',
+                borderColor: 'grey.300',
+                '&:hover': {
+                  bgcolor: 'grey.300',
+                },
+              },
+              '& .MuiToggleButton-root.Mui-selected': {
+                bgcolor: 'grey.300',
+                color: 'text.primary',
+                '&:hover': {
+                  bgcolor: 'grey.300',
+                },
+              },
+            }}
+          >
             <ToggleButton
               value="filters"
               selected={showFilters || hasActiveFilters}
