@@ -472,10 +472,32 @@ export default function ManagePage({
 
   // Toggle active status via switch
   const handleToggleActive = async (image: ApiImage) => {
+    const nextActive = !image.active
+    setImages((prev) =>
+      prev.map((item) =>
+        item.id === image.id ? { ...item, active: nextActive } : item,
+      ),
+    )
     try {
-      await updateImage(image.id, { active: !image.active })
-      await loadImages()
+      const updated = await updateImage(image.id, { active: nextActive }, image.version)
+      setImages((prev) =>
+        prev.map((item) =>
+          item.id === image.id
+            ? {
+                ...item,
+                active: updated.active,
+                version: updated.version,
+                updated_at: updated.updated_at,
+              }
+            : item,
+        ),
+      )
     } catch (err) {
+      setImages((prev) =>
+        prev.map((item) =>
+          item.id === image.id ? { ...item, active: image.active } : item,
+        ),
+      )
       console.error('Failed to toggle image status', err)
     }
   }
@@ -875,6 +897,7 @@ export default function ManagePage({
                         borderRadius: 0.5,
                         display: 'block',
                         cursor: onViewImage ? 'pointer' : 'default',
+                        ...(img.active ? {} : { filter: 'grayscale(100%)' }),
                       }}
                     />
                   </TableCell>

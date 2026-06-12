@@ -152,8 +152,10 @@ export default function App() {
     const {
         categories,
         categoriesLoading,
+        setCategories,
         uncategorizedImages,
         uncategorizedLoaded,
+        setUncategorizedImages,
         programs,
         groups,
         setGroups,
@@ -374,7 +376,9 @@ export default function App() {
         handleDeleteBrowseImage,
     } = useImageActions({
         categories,
+        setCategories,
         uncategorizedImages,
+        setUncategorizedImages,
         selectedImage,
         setSelectedImage,
         setPath,
@@ -1080,6 +1084,13 @@ export default function App() {
                                                         label={p.name}
                                                         size="small"
                                                         color="primary"
+                                                        sx={
+                                                            selectedImage.active
+                                                                ? undefined
+                                                                : {
+                                                                      filter: "grayscale(100%)",
+                                                                  }
+                                                        }
                                                     />
                                                 ))}
                                                 {overflow > 0 && (
@@ -1099,6 +1110,11 @@ export default function App() {
                                                             aria-label={`${overflow} more programs`}
                                                             sx={{
                                                                 cursor: "pointer",
+                                                                ...(selectedImage.active
+                                                                    ? {}
+                                                                    : {
+                                                                          filter: "grayscale(100%)",
+                                                                      }),
                                                             }}
                                                         />
                                                         <Popover
@@ -1144,6 +1160,13 @@ export default function App() {
                                                                             }
                                                                             size="small"
                                                                             color="primary"
+                                                                            sx={
+                                                                                selectedImage.active
+                                                                                    ? undefined
+                                                                                    : {
+                                                                                          filter: "grayscale(100%)",
+                                                                                      }
+                                                                            }
                                                                         />
                                                                     ),
                                                                 )}
@@ -1191,6 +1214,13 @@ export default function App() {
                                                         label={g.name}
                                                         size="small"
                                                         color="secondary"
+                                                        sx={
+                                                            selectedImage.active
+                                                                ? undefined
+                                                                : {
+                                                                      filter: "grayscale(100%)",
+                                                                  }
+                                                        }
                                                     />
                                                 ))}
                                                 {overflow > 0 && (
@@ -1210,6 +1240,11 @@ export default function App() {
                                                             aria-label={`${overflow} more groups`}
                                                             sx={{
                                                                 cursor: "pointer",
+                                                                ...(selectedImage.active
+                                                                    ? {}
+                                                                    : {
+                                                                          filter: "grayscale(100%)",
+                                                                      }),
                                                             }}
                                                         />
                                                         <Popover
@@ -1255,6 +1290,13 @@ export default function App() {
                                                                             }
                                                                             size="small"
                                                                             color="secondary"
+                                                                            sx={
+                                                                                selectedImage.active
+                                                                                    ? undefined
+                                                                                    : {
+                                                                                          filter: "grayscale(100%)",
+                                                                                      }
+                                                                            }
                                                                         />
                                                                     ),
                                                                 )}

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 vi.mock('../../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api')>()
@@ -14,7 +14,7 @@ vi.mock('../../src/api', async (importOriginal) => {
   }
 })
 
-import { fetchImages } from '../../src/api'
+import { fetchImages, updateImage } from '../../src/api'
 import type { Group, Program } from '../../src/types'
 import { makeCategory } from '../helpers/fixtures'
 import ManagePage from '../../src/components/ManagePage'
@@ -71,5 +71,67 @@ describe('ManagePage', () => {
     expect(screen.getByText('Groups')).toBeInTheDocument()
     const groupChip = screen.getByText('Lab A2').closest('.MuiChip-root')
     expect(groupChip).toBeInTheDocument()
+  })
+
+  it('greyscales the thumbnail when an image is inactive', async () => {
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        id: 101,
+        name: 'Blood Smear',
+        thumb: '/thumb.jpg',
+        tile_sources: '/tile.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: false,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    const thumbnail = await screen.findByAltText('Blood Smear')
+    expect(thumbnail).toHaveStyle({ filter: 'grayscale(100%)' })
+  })
+
+  it('toggles visibility without refetching the image list', async () => {
+    vi.mocked(updateImage).mockResolvedValue({
+      id: 101,
+      name: 'Blood Smear',
+      thumb: '/thumb.jpg',
+      tile_sources: '/tile.dzi',
+      category_id: 10,
+      copyright: null,
+      note: null,
+      active: false,
+      sort_order: 0,
+      metadata_extra: null,
+      version: 2,
+      width: null,
+      height: null,
+      file_size: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-03T00:00:00Z',
+    })
+
+    const { container } = render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+    const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]'))
+    const toggle = checkboxes.find((input) => input.checked)
+    expect(toggle).toBeDefined()
+    fireEvent.click(toggle!)
+
+    await waitFor(() => {
+      expect(updateImage).toHaveBeenCalledWith(101, { active: false }, 1)
+    })
+    expect(fetchImages).toHaveBeenCalledTimes(1)
   })
 })

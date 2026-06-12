@@ -32,6 +32,21 @@ export function findCategoryPath(
     return null;
 }
 
+/** Return a new tree with a single image updated by ID. */
+export function updateImageInTree(
+    tree: Category[],
+    imageId: number,
+    updater: (image: ImageItem) => ImageItem,
+): Category[] {
+    return tree.map((category) => ({
+        ...category,
+        images: category.images.map((image) =>
+            image.id === imageId ? updater(image) : image,
+        ),
+        children: updateImageInTree(category.children, imageId, updater),
+    }));
+}
+
 /** Walk the category tree following an ordered list of IDs to reconstruct a path. */
 export function resolveCategoryPath(tree: Category[], ids: number[]): Category[] {
     const result: Category[] = [];

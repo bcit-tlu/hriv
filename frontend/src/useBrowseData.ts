@@ -244,8 +244,10 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     return {
         categories,
         categoriesLoading,
+        setCategories,
         uncategorizedImages,
         uncategorizedLoaded,
+        setUncategorizedImages,
         programs,
         groups,
         setGroups,
