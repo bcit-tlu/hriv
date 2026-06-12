@@ -404,19 +404,19 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
             aria-label="People table controls"
             sx={{
               '& .MuiToggleButton-root': (theme) => ({
-                bgcolor: alpha(theme.palette.text.primary, 0.08),
+                bgcolor: alpha(theme.palette.text.primary, 0.09),
                 color: theme.palette.text.primary,
-                borderColor: alpha(theme.palette.text.primary, 0.18),
+                borderColor: alpha(theme.palette.text.primary, 0.2),
                 '&:hover': {
-                  bgcolor: alpha(theme.palette.text.primary, 0.12),
+                  bgcolor: alpha(theme.palette.text.primary, 0.13),
                 },
               }),
               '& .MuiToggleButton-root.Mui-selected': (theme) => ({
-                bgcolor: alpha(theme.palette.text.primary, 0.14),
+                bgcolor: alpha(theme.palette.text.primary, 0.15),
                 color: theme.palette.text.primary,
-                borderColor: alpha(theme.palette.text.primary, 0.24),
+                borderColor: alpha(theme.palette.text.primary, 0.26),
                 '&:hover': {
-                  bgcolor: alpha(theme.palette.text.primary, 0.14),
+                  bgcolor: alpha(theme.palette.text.primary, 0.17),
                 },
               }),
             }}
