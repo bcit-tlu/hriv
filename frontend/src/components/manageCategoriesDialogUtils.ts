@@ -1,15 +1,7 @@
 import type { Category, ImageItem } from '../types'
+import type { FlatCategoryOption } from './categoryOptionUtils'
 
-export interface FlatOption {
-  id: number
-  label: string
-  depth: number
-  childCount: number
-  status: string | null
-  parentId: number | null
-  programIds: number[]
-  inheritedRestriction: boolean
-}
+export type FlatOption = FlatCategoryOption
 
 /** Collect images per parent from the category tree. */
 export function collectImagesByParent(

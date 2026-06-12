@@ -11,45 +11,18 @@ import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
-import LockIcon from '@mui/icons-material/Lock'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
 import type { SelectChangeEvent } from '@mui/material/Select'
-import type { Category, Program } from '../types'
-import { narrowProgramIds } from '../categoryUtils'
+import type { Category, Group, Program } from '../types'
+import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getVisibilityColors } from '../theme'
 import { MAX_DEPTH } from '../types'
 import { useColorMode } from '../useColorMode'
 import AddCategoryDialog from './AddCategoryDialog'
+import CategoryRestrictionIcons from './CategoryRestrictionIcons'
 import EditCategoryDialog from './EditCategoryDialog'
-
-interface FlatOption {
-  id: number
-  label: string
-  depth: number
-  status: string | null
-  parentId: number | null
-  imageCount: number
-  programIds: number[]
-  inheritedRestriction: boolean
-}
-
-function flattenTree(
-  nodes: Category[],
-  depth: number = 0,
-  excludeIds?: Set<number>,
-  parentId: number | null = null,
-  ancestorRestricted: boolean = false,
-): FlatOption[] {
-  const result: FlatOption[] = []
-  for (const node of nodes) {
-    if (excludeIds?.has(node.id)) continue
-    const hasOwnRestriction = node.programIds.length > 0
-    result.push({ id: node.id, label: node.label, depth, status: node.status ?? 'active', parentId, imageCount: node.images.length, programIds: node.programIds, inheritedRestriction: !hasOwnRestriction && ancestorRestricted })
-    result.push(...flattenTree(node.children, depth + 1, excludeIds, node.id, ancestorRestricted || hasOwnRestriction))
-  }
-  return result
-}
+import { flattenCategoryOptions, type FlatCategoryOption } from './categoryOptionUtils'
 
 function collectDescendantIds(node: Category): Set<number> {
   const ids = new Set<number>([node.id])
@@ -83,15 +56,17 @@ interface CategoryPickerSelectProps {
   /** Text shown in the collapsed select when value is null. Works with both includeRoot={true} (e.g. BulkEditImagesModal — placeholder shows initially, root option still available in dropdown) and includeRoot={false} (null means "no selection" only). */
   placeholder?: string
   /** When provided, a "+" button appears on each menu item to add a child category. */
-  onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
+  onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
   /** When provided, a delete button appears on each menu item to delete that category. */
   onDeleteCategory?: (categoryId: number) => Promise<void>
   /** When provided, a pencil button appears on each menu item to rename that category. */
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
   /** When provided, a visibility toggle appears on each menu item. */
   onToggleVisibility?: (categoryId: number) => Promise<void>
   /** Available programs for the add/edit category dialogs. */
   programs?: Program[]
+  /** Available groups for the add/edit category dialogs. */
+  groups?: Group[]
 }
 
 export default function CategoryPickerSelect({
@@ -107,6 +82,7 @@ export default function CategoryPickerSelect({
   onEditCategory,
   onToggleVisibility,
   programs,
+  groups,
 }: CategoryPickerSelectProps) {
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addParentId, setAddParentId] = useState<number | null>(null)
@@ -126,7 +102,7 @@ export default function CategoryPickerSelect({
         excludeIds = collectDescendantIds(cat)
       }
     }
-    return flattenTree(categories, 0, excludeIds)
+    return flattenCategoryOptions(categories, 0, excludeIds)
   }, [categories, excludeCategoryId])
 
   const addSiblingNames = useMemo(
@@ -152,10 +128,10 @@ export default function CategoryPickerSelect({
 
   const addInheritedProgramIds = useMemo(() => {
     if (addParentId == null) return []
-    const ancestors: FlatOption[] = []
+    const ancestors: FlatCategoryOption[] = []
     let curId: number | null = addParentId
     while (curId != null) {
-      const anc: FlatOption | undefined = options.find((o) => o.id === curId)
+      const anc: FlatCategoryOption | undefined = options.find((o) => o.id === curId)
       if (!anc) break
       ancestors.push(anc)
       curId = anc.parentId
@@ -166,10 +142,10 @@ export default function CategoryPickerSelect({
 
   const inheritedProgramIds = useMemo(() => {
     if (!editingOpt) return []
-    const ancestors: FlatOption[] = []
+    const ancestors: FlatCategoryOption[] = []
     let curParentId: number | null = editingOpt.parentId
     while (curParentId != null) {
-      const ancestor: FlatOption | undefined = options.find((o) => o.id === curParentId)
+      const ancestor: FlatCategoryOption | undefined = options.find((o) => o.id === curParentId)
       if (!ancestor) break
       ancestors.push(ancestor)
       curParentId = ancestor.parentId
@@ -181,6 +157,39 @@ export default function CategoryPickerSelect({
   const currentProgramIds = useMemo(
     () => editingOpt?.programIds ?? [],
     [editingOpt?.programIds],
+  )
+
+  const addInheritedGroupIds = useMemo(() => {
+    if (addParentId == null) return []
+    const ancestors: FlatCategoryOption[] = []
+    let curId: number | null = addParentId
+    while (curId != null) {
+      const anc: FlatCategoryOption | undefined = options.find((o) => o.id === curId)
+      if (!anc) break
+      ancestors.push(anc)
+      curId = anc.parentId
+    }
+    ancestors.reverse()
+    return narrowGroupIds(ancestors)
+  }, [addParentId, options])
+
+  const inheritedGroupIds = useMemo(() => {
+    if (!editingOpt) return []
+    const ancestors: FlatCategoryOption[] = []
+    let curParentId: number | null = editingOpt.parentId
+    while (curParentId != null) {
+      const ancestor: FlatCategoryOption | undefined = options.find((o) => o.id === curParentId)
+      if (!ancestor) break
+      ancestors.push(ancestor)
+      curParentId = ancestor.parentId
+    }
+    ancestors.reverse()
+    return narrowGroupIds(ancestors)
+  }, [editingOpt, options])
+
+  const currentGroupIds = useMemo(
+    () => editingOpt?.groupIds ?? [],
+    [editingOpt?.groupIds],
   )
 
 
@@ -205,9 +214,9 @@ export default function CategoryPickerSelect({
     setAddDialogOpen(true)
   }
 
-  const handleAddCategory = async (categoryLabel: string, programIds?: number[]) => {
+  const handleAddCategory = async (categoryLabel: string, programIds?: number[], groupIds?: number[]) => {
     if (onAddCategory) {
-      const newId = await onAddCategory(categoryLabel, addParentId, programIds)
+      const newId = await onAddCategory(categoryLabel, addParentId, programIds, groupIds)
       if (typeof newId === 'number') {
         onChange(newId)
       }
@@ -216,7 +225,7 @@ export default function CategoryPickerSelect({
 
   const handleEditClick = (
     e: React.MouseEvent,
-    opt: FlatOption,
+    opt: FlatCategoryOption,
   ) => {
     e.stopPropagation()
     e.preventDefault()
@@ -224,9 +233,9 @@ export default function CategoryPickerSelect({
     setEditDialogOpen(true)
   }
 
-  const handleEditSave = async (newLabel: string, programIds?: number[]) => {
+  const handleEditSave = async (newLabel: string, programIds?: number[], groupIds?: number[]) => {
     if (editingOpt && onEditCategory) {
-      await onEditCategory(editingOpt.id, newLabel, programIds)
+      await onEditCategory(editingOpt.id, newLabel, programIds, groupIds)
     }
   }
 
@@ -301,17 +310,13 @@ export default function CategoryPickerSelect({
                   <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
                     ({opt.imageCount})
                   </Typography>
-                  {(opt.programIds.length > 0 || opt.inheritedRestriction) && (
-                    <Tooltip title={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}>
-                      <span
-                        role="img"
-                        aria-label={opt.programIds.length > 0 ? 'Restricted to specific programs' : 'Restricted (inherited from parent)'}
-                        style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: 4 }}
-                      >
-                        <LockIcon sx={{ fontSize: 14, color: opt.status === 'hidden' ? 'action.active' : 'primary.main', opacity: opt.inheritedRestriction ? 0.5 : 1 }} />
-                      </span>
-                    </Tooltip>
-                  )}
+                  <CategoryRestrictionIcons
+                    hasProgramRestriction={opt.programIds.length > 0 || opt.inheritedProgramRestriction}
+                    inheritedProgramRestriction={opt.inheritedProgramRestriction}
+                    hasGroupRestriction={opt.groupIds.length > 0 || opt.inheritedGroupRestriction}
+                    inheritedGroupRestriction={opt.inheritedGroupRestriction}
+                    hidden={opt.status === 'hidden'}
+                  />
                 </ListItemText>
                 {onToggleVisibility && (
                   <Tooltip title={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}>
@@ -389,6 +394,8 @@ export default function CategoryPickerSelect({
           siblingNames={addSiblingNames}
           programs={programs}
           inheritedProgramIds={addInheritedProgramIds}
+          groups={groups}
+          inheritedGroupIds={addInheritedGroupIds}
         />
       )}
 
@@ -405,6 +412,9 @@ export default function CategoryPickerSelect({
           programs={programs}
           currentProgramIds={currentProgramIds}
           inheritedProgramIds={inheritedProgramIds}
+          groups={groups}
+          currentGroupIds={currentGroupIds}
+          inheritedGroupIds={inheritedGroupIds}
         />
       )}
     </>

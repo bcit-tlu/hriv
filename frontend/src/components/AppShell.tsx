@@ -22,7 +22,6 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import SearchIcon from "@mui/icons-material/Search";
 import ColorModeToggle from "./ColorModeToggle";
-import { getGroupChipColors } from "../theme";
 import AnnouncementBanner from "./AnnouncementBanner";
 import type { Role } from "../types";
 
@@ -91,8 +90,6 @@ export default function AppShell(props: AppShellProps) {
         onReportIssue,
         children,
     } = props;
-    const groupColors = getGroupChipColors(mode);
-
     const [manageMenuAnchor, setManageMenuAnchor] =
         useState<HTMLElement | null>(null);
     const [viewAnnOpen, setViewAnnOpen] = useState(false);
@@ -299,10 +296,7 @@ export default function AppShell(props: AppShellProps) {
                                                     key={name}
                                                     label={name}
                                                     size="small"
-                                                    sx={{
-                                                        bgcolor: groupColors.solidBg,
-                                                        color: groupColors.solidText,
-                                                    }}
+                                                    color="secondary"
                                                 />
                                             ))}
                                         </Box>

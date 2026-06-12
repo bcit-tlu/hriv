@@ -42,9 +42,9 @@ import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import { fetchImages, updateImage, deleteImage, replaceImage, bulkUpdateImages, bulkDeleteImages } from '../api'
 import type { ApiBulkImportJob, ApiImage } from '../api'
-import type { Category, Program } from '../types'
-import { splitDirectAncestorProgramIds } from '../categoryUtils'
-import { getVisibilityColors } from '../theme'
+import type { Category, Group, Program } from '../types'
+import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from '../categoryUtils'
+import { getGroupChipColors, getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
 import BulkEditImagesModal from './BulkEditImagesModal'
 import EditImageModal from './EditImageModal'
@@ -116,18 +116,19 @@ function CategoryBreadcrumb({
   )
 }
 
-type SortableColumn = 'id' | 'name' | 'category' | 'copyright' | 'note' | 'program' | 'active' | 'updated_at'
+type SortableColumn = 'id' | 'name' | 'category' | 'copyright' | 'note' | 'program' | 'group' | 'active' | 'updated_at'
 type SortDirection = 'asc' | 'desc'
 
 interface ManagePageProps {
   categories: Category[]
   programs: Program[]
+  groups?: Group[]
   imagesVersion?: number
   onViewImage?: (image: ApiImage) => void
   onNavigateCategory?: (categoryPath: Category[]) => void
   onCategoriesChanged?: () => void
-  onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
+  onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onReplaceImage?: (sourceImageId: number, filename: string, fileSize: number) => void
   onProcessingStarted?: (
@@ -154,6 +155,7 @@ interface ManagePageProps {
 export default function ManagePage({
   categories,
   programs,
+  groups = [],
   imagesVersion,
   onViewImage,
   onNavigateCategory,
@@ -174,6 +176,7 @@ export default function ManagePage({
 }: ManagePageProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
+  const groupColors = getGroupChipColors(mode)
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -290,6 +293,20 @@ export default function ManagePage({
       .join(', ')
   }, [programs, getInheritedProgramIds])
 
+  const getInheritedGroupIds = useCallback((img: ApiImage): { direct: number[]; ancestor: number[] } => {
+    if (img.category_id == null) return { direct: [], ancestor: [] }
+    const seg = categoryPaths.get(img.category_id)
+    if (!seg) return { direct: [], ancestor: [] }
+    return splitDirectAncestorGroupIds([...seg.ancestors, seg.category])
+  }, [categoryPaths])
+
+  const getGroupNames = useCallback((img: ApiImage): string => {
+    const { direct, ancestor } = getInheritedGroupIds(img)
+    return [...direct, ...ancestor]
+      .map((gid) => groups.find((g) => g.id === gid)?.name ?? '')
+      .join(', ')
+  }, [groups, getInheritedGroupIds])
+
   // Filtered and sorted images
   const filteredImages = useMemo(() => {
     if (!hasActiveFilters) return images
@@ -305,6 +322,7 @@ export default function ManagePage({
       if (!match('copyright', img.copyright ?? '')) return false
       if (!match('note', img.note ?? '')) return false
       if (!match('program', getProgramNames(img))) return false
+      if (!match('group', getGroupNames(img))) return false
       const statusFilter = filters['active']
       if (statusFilter) {
         if (statusFilter === 'active' && !img.active) return false
@@ -312,7 +330,7 @@ export default function ManagePage({
       }
       return true
     })
-  }, [images, filters, hasActiveFilters, getCategoryLabel, getProgramNames])
+  }, [images, filters, hasActiveFilters, getCategoryLabel, getProgramNames, getGroupNames])
 
   const sortedImages = useMemo(() => {
     const sorted = [...filteredImages]
@@ -337,6 +355,9 @@ export default function ManagePage({
         case 'program':
           cmp = getProgramNames(a).localeCompare(getProgramNames(b))
           break
+        case 'group':
+          cmp = getGroupNames(a).localeCompare(getGroupNames(b))
+          break
         case 'active':
           cmp = Number(a.active) - Number(b.active)
           break
@@ -347,7 +368,7 @@ export default function ManagePage({
       return sortDirection === 'asc' ? cmp : -cmp
     })
     return sorted
-  }, [filteredImages, sortColumn, sortDirection, getCategoryLabel, getProgramNames])
+  }, [filteredImages, sortColumn, sortDirection, getCategoryLabel, getProgramNames, getGroupNames])
 
   // Auto-correct currentPage when dataset shrinks (e.g. after delete/bulk-delete)
   useEffect(() => {
@@ -672,6 +693,15 @@ export default function ManagePage({
                     Program
                   </TableSortLabel>
                 </TableCell>
+                <TableCell sortDirection={sortColumn === 'group' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'group'}
+                    direction={sortColumn === 'group' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('group')}
+                  >
+                    Groups
+                  </TableSortLabel>
+                </TableCell>
                 <TableCell sortDirection={sortColumn === 'active' ? sortDirection : false}>
                   <TableSortLabel
                     active={sortColumn === 'active'}
@@ -766,6 +796,17 @@ export default function ManagePage({
                     onChange={(e) => handleFilterChange('program', e.target.value)}
                     slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
                     InputProps={filters['program'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('program', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
+                  />
+                </TableCell>
+                <TableCell>
+                  <TextField
+                    size="small"
+                    variant="standard"
+                    placeholder="Filter"
+                    value={filters['group'] ?? ''}
+                    onChange={(e) => handleFilterChange('group', e.target.value)}
+                    slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
+                    InputProps={filters['group'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('group', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
                   />
                 </TableCell>
                 <TableCell>
@@ -890,6 +931,66 @@ export default function ManagePage({
                                   ? { color: 'primary', sx: { cursor: 'pointer', opacity: 0.5 } }
                                   : { sx: { cursor: 'pointer', bgcolor: visColors.inactiveChipBg, color: '#fff', opacity: 0.5 } }
                                 )}
+                              />
+                            ))}
+                        </Box>
+                      )
+                    })()}
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    {(() => {
+                      const { direct, ancestor } = getInheritedGroupIds(img)
+                      if (direct.length === 0 && ancestor.length === 0) return 'All groups'
+                      const chipClick = (name: string) => {
+                        setShowFilters(true)
+                        handleFilterChange('group', name)
+                      }
+                      return (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {direct
+                            .map((gid) => groups.find((g) => g.id === gid))
+                            .filter((g): g is Group => g != null)
+                            .map((g) => (
+                              <Chip
+                                key={g.id}
+                                label={g.name}
+                                size="small"
+                                color="secondary"
+                                onClick={() => chipClick(g.name)}
+                                sx={{
+                                  cursor: 'pointer',
+                                  ...(img.active
+                                    ? {}
+                                    : {
+                                        bgcolor: visColors.inactiveChipBg,
+                                        color: '#fff',
+                                      }),
+                                }}
+                              />
+                            ))}
+                          {ancestor
+                            .map((gid) => groups.find((g) => g.id === gid))
+                            .filter((g): g is Group => g != null)
+                            .map((g) => (
+                              <Chip
+                                key={g.id}
+                                label={g.name}
+                                size="small"
+                                onClick={() => chipClick(g.name)}
+                                sx={{
+                                  cursor: 'pointer',
+                                  ...(img.active
+                                    ? {
+                                        bgcolor: groupColors.subtleBg,
+                                        color: groupColors.subtleText,
+                                        opacity: 0.75,
+                                      }
+                                    : {
+                                        bgcolor: visColors.inactiveChipBg,
+                                        color: '#fff',
+                                        opacity: 0.5,
+                                      }),
+                                }}
                               />
                             ))}
                         </Box>
@@ -1030,6 +1131,7 @@ export default function ManagePage({
         image={editingImage}
         categories={categories}
         programs={programs}
+        groups={groups}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
@@ -1051,6 +1153,7 @@ export default function ManagePage({
         }}
         categories={categories}
         programs={programs}
+        groups={groups}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
@@ -1070,6 +1173,7 @@ export default function ManagePage({
         categories={categories}
         selectedCount={selected.size}
         programs={programs}
+        groups={groups}
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
@@ -1130,6 +1234,7 @@ export default function ManagePage({
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
         programs={programs}
+        groups={groups}
       />
     </Box>
   )

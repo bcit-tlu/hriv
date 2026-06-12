@@ -17,7 +17,7 @@ import { PointerActivationConstraints } from "@dnd-kit/dom";
 import type { Draggable } from "@dnd-kit/abstract";
 import type { DragEndEvent } from "@dnd-kit/react";
 
-import type { Category, ImageItem, Program } from "../types";
+import type { Category, Group, ImageItem, Program } from "../types";
 import CategoryTile from "./CategoryTile";
 import ImageTile from "./ImageTile";
 import FileDropZone from "./FileDropZone";
@@ -177,6 +177,7 @@ export interface SortableTileGridProps {
     canEditContent: boolean;
     fileDragActive: boolean;
     programs: Program[];
+    groups?: Group[];
 
     onCategoryClick: (cat: Category) => void;
     onMoveCategory?: (cat: Category) => void;
@@ -210,6 +211,7 @@ export default function SortableTileGrid({
     canEditContent,
     fileDragActive,
     programs,
+    groups = [],
     onCategoryClick,
     onMoveCategory,
     onSetCardImage,
@@ -417,6 +419,7 @@ export default function SortableTileGrid({
                 }
                 onEditName={canEditContent ? onEditCategoryName : undefined}
                 programs={programs}
+                groups={groups}
                 onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
             />
         );

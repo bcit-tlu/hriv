@@ -72,6 +72,24 @@ export function splitDirectAncestorProgramIds(
 }
 
 /**
+ * Given an ordered top-down category path (ancestors followed by the leaf
+ * category), compute the effective group restriction via narrowing and split
+ * the result into "direct" IDs (present on the leaf category itself) and
+ * "ancestor" IDs (inherited from above but not on the leaf).
+ */
+export function splitDirectAncestorGroupIds(
+  fullPath: ReadonlyArray<{ groupIds: number[] }>,
+): { direct: number[]; ancestor: number[] } {
+  if (fullPath.length === 0) return { direct: [], ancestor: [] }
+  const ownCategory = fullPath[fullPath.length - 1]
+  const effective = narrowGroupIds(fullPath)
+  const directIds = new Set(ownCategory.groupIds)
+  const direct = effective.filter((gid) => directIds.has(gid))
+  const ancestor = effective.filter((gid) => !directIds.has(gid))
+  return { direct, ancestor }
+}
+
+/**
  * Walk the category tree along `path` and return the children/images
  * at the terminal node.
  */

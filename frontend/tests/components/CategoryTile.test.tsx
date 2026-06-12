@@ -15,7 +15,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CategoryTile from '../../src/components/CategoryTile'
-import type { Program } from '../../src/types'
+import type { Group, Program } from '../../src/types'
 import { makeCategory } from '../helpers/fixtures'
 
 // ---------------------------------------------------------------------------
@@ -25,6 +25,11 @@ import { makeCategory } from '../helpers/fixtures'
 const samplePrograms: Program[] = [
   { id: 10, name: 'Pathology', oidc_group: null, created_at: '2024-01-01', updated_at: '2024-01-01' },
   { id: 20, name: 'Radiology', oidc_group: null, created_at: '2024-01-01', updated_at: '2024-01-01' },
+]
+
+const sampleGroups: Group[] = [
+  { id: 30, name: 'Lab A2', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '2024-01-01', updatedAt: '2024-01-01' },
+  { id: 40, name: 'Seminar B', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '2024-01-01', updatedAt: '2024-01-01' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -261,6 +266,21 @@ describe('CategoryTile', () => {
         />,
       )
       expect(screen.queryByText('Pathology')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('group chips', () => {
+    it('renders group chips from category own groupIds', () => {
+      render(
+        <CategoryTile
+          category={makeCategory({ groupIds: [30, 40] })}
+          onClick={vi.fn()}
+          programs={samplePrograms}
+          groups={sampleGroups}
+        />,
+      )
+      expect(screen.getByText('Lab A2')).toBeInTheDocument()
+      expect(screen.getByText('Seminar B')).toBeInTheDocument()
     })
   })
 
