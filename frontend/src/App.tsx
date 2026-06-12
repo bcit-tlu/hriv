@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
@@ -111,6 +111,15 @@ export default function App() {
     const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
     const selectedImageRef = useRef<ImageItem | null>(null);
     selectedImageRef.current = selectedImage;
+    const inactiveViewerActionSx = useMemo(
+        () =>
+            selectedImage?.active
+                ? undefined
+                : {
+                      filter: "grayscale(100%)",
+                  },
+        [selectedImage?.active],
+    );
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [fileDropCategoryId, setFileDropCategoryId] = useState<
@@ -152,8 +161,10 @@ export default function App() {
     const {
         categories,
         categoriesLoading,
+        setCategories,
         uncategorizedImages,
         uncategorizedLoaded,
+        setUncategorizedImages,
         programs,
         groups,
         setGroups,
@@ -374,7 +385,9 @@ export default function App() {
         handleDeleteBrowseImage,
     } = useImageActions({
         categories,
+        setCategories,
         uncategorizedImages,
+        setUncategorizedImages,
         selectedImage,
         setSelectedImage,
         setPath,
@@ -1080,6 +1093,13 @@ export default function App() {
                                                         label={p.name}
                                                         size="small"
                                                         color="primary"
+                                                        sx={
+                                                            selectedImage.active
+                                                                ? undefined
+                                                                : {
+                                                                      filter: "grayscale(100%)",
+                                                                  }
+                                                        }
                                                     />
                                                 ))}
                                                 {overflow > 0 && (
@@ -1099,6 +1119,11 @@ export default function App() {
                                                             aria-label={`${overflow} more programs`}
                                                             sx={{
                                                                 cursor: "pointer",
+                                                                ...(selectedImage.active
+                                                                    ? {}
+                                                                    : {
+                                                                          filter: "grayscale(100%)",
+                                                                      }),
                                                             }}
                                                         />
                                                         <Popover
@@ -1144,6 +1169,13 @@ export default function App() {
                                                                             }
                                                                             size="small"
                                                                             color="primary"
+                                                                            sx={
+                                                                                selectedImage.active
+                                                                                    ? undefined
+                                                                                    : {
+                                                                                          filter: "grayscale(100%)",
+                                                                                      }
+                                                                            }
                                                                         />
                                                                     ),
                                                                 )}
@@ -1191,6 +1223,13 @@ export default function App() {
                                                         label={g.name}
                                                         size="small"
                                                         color="secondary"
+                                                        sx={
+                                                            selectedImage.active
+                                                                ? undefined
+                                                                : {
+                                                                      filter: "grayscale(100%)",
+                                                                  }
+                                                        }
                                                     />
                                                 ))}
                                                 {overflow > 0 && (
@@ -1210,6 +1249,11 @@ export default function App() {
                                                             aria-label={`${overflow} more groups`}
                                                             sx={{
                                                                 cursor: "pointer",
+                                                                ...(selectedImage.active
+                                                                    ? {}
+                                                                    : {
+                                                                          filter: "grayscale(100%)",
+                                                                      }),
                                                             }}
                                                         />
                                                         <Popover
@@ -1255,6 +1299,13 @@ export default function App() {
                                                                             }
                                                                             size="small"
                                                                             color="secondary"
+                                                                            sx={
+                                                                                selectedImage.active
+                                                                                    ? undefined
+                                                                                    : {
+                                                                                          filter: "grayscale(100%)",
+                                                                                      }
+                                                                            }
                                                                         />
                                                                     ),
                                                                 )}
@@ -1309,6 +1360,7 @@ export default function App() {
                                                         setImageEditOpen(true)
                                                     }
                                                     disabled={canvasEditActive}
+                                                    sx={inactiveViewerActionSx}
                                                 >
                                                     Edit Details
                                                 </Button>
@@ -1320,6 +1372,7 @@ export default function App() {
                                             variant="outlined"
                                             startIcon={<LinkIcon />}
                                             onClick={copyShareLink}
+                                            sx={inactiveViewerActionSx}
                                         >
                                             Share View
                                         </Button>

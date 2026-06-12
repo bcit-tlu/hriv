@@ -1,5 +1,5 @@
 import { createRef, type ReactNode } from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import App from '../src/App'
 
@@ -247,8 +247,10 @@ vi.mock('../src/useBrowseData', () => ({
   useBrowseData: () => ({
     categories: mockCategories,
     categoriesLoading: false,
+    setCategories: vi.fn(),
     uncategorizedImages: [],
     uncategorizedLoaded: true,
+    setUncategorizedImages: vi.fn(),
     programs: mockPrograms,
     groups: mockGroups,
     ...browseDataFns,
@@ -299,6 +301,10 @@ vi.mock('../src/useCategoryActions', () => ({
 }))
 
 describe('App breadcrumbs', () => {
+  beforeEach(() => {
+    mockImage.active = true
+  })
+
   it('renders program and group chips in both browse and image breadcrumb rows', () => {
     render(<App />)
 
@@ -313,5 +319,25 @@ describe('App breadcrumbs', () => {
     expect(imageBreadcrumb).not.toBeNull()
     expect(within(imageBreadcrumb as HTMLElement).getByText('Pathology')).toBeInTheDocument()
     expect(within(imageBreadcrumb as HTMLElement).getByText('Lab A2')).toBeInTheDocument()
+  })
+
+  it('desaturates program and group chips in the image breadcrumb when the image is inactive', () => {
+    mockImage.active = false
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
+    expect(imageBreadcrumb).not.toBeNull()
+
+    const programChip = within(imageBreadcrumb as HTMLElement).getByText('Pathology').closest('.MuiChip-root')
+    const groupChip = within(imageBreadcrumb as HTMLElement).getByText('Lab A2').closest('.MuiChip-root')
+    const editButton = screen.getByRole('button', { name: 'Edit Details' })
+    const shareButton = screen.getByText('Share View').closest('button')
+
+    expect(programChip).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(groupChip).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(editButton).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(shareButton).toHaveStyle({ filter: 'grayscale(100%)' })
   })
 })

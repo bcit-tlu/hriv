@@ -8,11 +8,13 @@ import {
 import type { ApiImage } from "./api";
 import type { ImageFormData, ReplaceImageData } from "./components/EditImageModal";
 import type { Category, ImageItem } from "./types";
-import { findImageInTree, findCategoryPath } from "./treeUtils";
+import { findCategoryPath, findImageInTree, updateImageInTree } from "./treeUtils";
 
 export interface UseImageActionsDeps {
     categories: Category[];
+    setCategories: React.Dispatch<React.SetStateAction<Category[]>>;
     uncategorizedImages: ImageItem[];
+    setUncategorizedImages: React.Dispatch<React.SetStateAction<ImageItem[]>>;
     selectedImage: ImageItem | null;
     setSelectedImage: React.Dispatch<React.SetStateAction<ImageItem | null>>;
     setPath: React.Dispatch<React.SetStateAction<Category[]>>;
@@ -34,7 +36,9 @@ export interface UseImageActionsDeps {
 export function useImageActions(deps: UseImageActionsDeps) {
     const {
         categories,
+        setCategories,
         uncategorizedImages,
+        setUncategorizedImages,
         selectedImage,
         setSelectedImage,
         setPath,
@@ -53,32 +57,62 @@ export function useImageActions(deps: UseImageActionsDeps) {
     const [imageEditOpen, setImageEditOpen] = useState(false);
     const [browseEditImage, setBrowseEditImage] = useState<ImageItem | null>(null);
 
+    const patchLocalImage = useCallback(
+        (imageId: number, updater: (image: ImageItem) => ImageItem) => {
+            setCategories((prev) => updateImageInTree(prev, imageId, updater));
+            setUncategorizedImages((prev) =>
+                prev.map((image) => (image.id === imageId ? updater(image) : image)),
+            );
+            setSelectedImage((prev) =>
+                prev && prev.id === imageId ? updater(prev) : prev,
+            );
+        },
+        [setCategories, setSelectedImage, setUncategorizedImages],
+    );
+
     const toggleImageVisibility = useCallback(
         async (imageId: number) => {
+            const found = findImageInTree(categories, imageId);
+            const img =
+                found?.image ??
+                uncategorizedImages.find((i) => i.id === imageId) ??
+                (selectedImage?.id === imageId ? selectedImage : null);
+            if (!img) return;
+
+            const nextActive = !img.active;
+            patchLocalImage(imageId, (image) => ({
+                ...image,
+                active: nextActive,
+            }));
             try {
-                const found = findImageInTree(categories, imageId);
-                const img =
-                    found?.image ??
-                    uncategorizedImages.find((i) => i.id === imageId);
-                if (!img) return;
                 const updated = await apiUpdateImage(
                     imageId,
-                    { active: !img.active },
+                    { active: nextActive },
                     img.version,
                 );
-                setSelectedImage((prev) =>
-                    prev && prev.id === imageId
-                        ? { ...prev, active: updated.active, version: updated.version }
-                        : prev,
-                );
-                await loadCategories();
-                loadUncategorizedImages();
+                patchLocalImage(imageId, (image) => ({
+                    ...image,
+                    active: updated.active,
+                    version: updated.version,
+                    updatedAt: updated.updated_at,
+                }));
             } catch (err) {
+                patchLocalImage(imageId, (image) => ({
+                    ...image,
+                    active: img.active,
+                    version: img.version,
+                }));
                 console.error("Failed to toggle image visibility", err);
                 setErrorSnack(userMessage(err, "Failed to toggle image visibility."));
             }
         },
-        [categories, uncategorizedImages, loadCategories, loadUncategorizedImages, setSelectedImage, setErrorSnack],
+        [
+            categories,
+            uncategorizedImages,
+            selectedImage,
+            patchLocalImage,
+            setErrorSnack,
+        ],
     );
 
     const selectedApiImage: ApiImage | null = useMemo(
