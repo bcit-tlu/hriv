@@ -28,6 +28,7 @@ import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
+import { alpha } from '@mui/material/styles'
 import ClearIcon from '@mui/icons-material/Clear'
 import FilterListIcon from '@mui/icons-material/FilterList'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
@@ -403,18 +404,19 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
             aria-label="People table controls"
             sx={{
               '& .MuiToggleButton-root': (theme) => ({
-                bgcolor: theme.palette.mode === 'dark' ? '#4A4442' : '#DAC7B5',
+                bgcolor: alpha(theme.palette.text.primary, 0.08),
                 color: theme.palette.text.primary,
-                borderColor: theme.palette.mode === 'dark' ? '#5C5552' : '#CDB8A5',
+                borderColor: alpha(theme.palette.text.primary, 0.18),
                 '&:hover': {
-                  bgcolor: theme.palette.mode === 'dark' ? '#5C5552' : '#CDB8A5',
+                  bgcolor: alpha(theme.palette.text.primary, 0.12),
                 },
               }),
               '& .MuiToggleButton-root.Mui-selected': (theme) => ({
-                bgcolor: theme.palette.mode === 'dark' ? '#5C5552' : '#CDB8A5',
+                bgcolor: alpha(theme.palette.text.primary, 0.14),
                 color: theme.palette.text.primary,
+                borderColor: alpha(theme.palette.text.primary, 0.24),
                 '&:hover': {
-                  bgcolor: theme.palette.mode === 'dark' ? '#5C5552' : '#CDB8A5',
+                  bgcolor: alpha(theme.palette.text.primary, 0.14),
                 },
               }),
             }}
