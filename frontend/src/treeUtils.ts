@@ -38,13 +38,32 @@ export function updateImageInTree(
     imageId: number,
     updater: (image: ImageItem) => ImageItem,
 ): Category[] {
-    return tree.map((category) => ({
-        ...category,
-        images: category.images.map((image) =>
-            image.id === imageId ? updater(image) : image,
-        ),
-        children: updateImageInTree(category.children, imageId, updater),
-    }));
+    let changed = false;
+    const nextTree = tree.map((category) => {
+        let categoryChanged = false;
+
+        const nextImages = category.images.map((image) => {
+            if (image.id !== imageId) return image;
+            categoryChanged = true;
+            return updater(image);
+        });
+
+        const nextChildren = updateImageInTree(category.children, imageId, updater);
+        if (nextChildren !== category.children) {
+            categoryChanged = true;
+        }
+
+        if (!categoryChanged) return category;
+
+        changed = true;
+        return {
+            ...category,
+            images: nextImages,
+            children: nextChildren,
+        };
+    });
+
+    return changed ? nextTree : tree;
 }
 
 /** Walk the category tree following an ordered list of IDs to reconstruct a path. */
