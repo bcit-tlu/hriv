@@ -285,11 +285,12 @@ export default function ManagePage({
   useEffect(() => {
     if (initialProgramFilter) {
       setFilters((prev) => ({ ...prev, program: initialProgramFilter }))
+      setColumnVisible('program', true)
       setShowFilters(true)
       setCurrentPage(0)
       onInitialProgramFilterConsumed?.()
     }
-  }, [initialProgramFilter, onInitialProgramFilterConsumed])
+  }, [initialProgramFilter, onInitialProgramFilterConsumed, setColumnVisible])
 
   // Action menu state
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
