@@ -96,4 +96,24 @@ describe('ColumnVisibilityDialog', () => {
 
     expect(onClose).toHaveBeenCalledOnce()
   })
+
+  it('prevents hiding the last visible column', async () => {
+    const onToggleColumn = vi.fn()
+
+    render(
+      <ColumnVisibilityDialog<TestColumn>
+        open
+        title="Choose columns"
+        columns={columns}
+        visibleColumns={{ name: true, email: false, role: false }}
+        onClose={vi.fn()}
+        onToggleColumn={onToggleColumn}
+      />,
+    )
+
+    const nameCheckbox = screen.getByRole('checkbox', { name: 'Name' })
+    expect(nameCheckbox).toBeChecked()
+    expect(nameCheckbox).toBeDisabled()
+    expect(onToggleColumn).not.toHaveBeenCalled()
+  })
 })

@@ -78,6 +78,7 @@ const PEOPLE_DEFAULT_VISIBLE_COLUMNS: readonly PeopleTableColumn[] = [
   'email',
   'role',
   'program',
+  'group',
   'last_access',
 ]
 const PEOPLE_ALL_COLUMNS: readonly PeopleTableColumn[] = PEOPLE_COLUMN_OPTIONS.map((column) => column.key)

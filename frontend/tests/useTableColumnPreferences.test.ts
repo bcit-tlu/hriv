@@ -18,7 +18,11 @@ function renderPreferencesHook(tableKey = 'people') {
 }
 
 function storageKeyFor(userId: number | string) {
-  return `hrivpref:table-columns:people:user:${userId}`
+  return storageKeyForTable('people', userId)
+}
+
+function storageKeyForTable(tableKey: string, userId: number | string) {
+  return `hrivpref:table-columns:${tableKey}:user:${userId}`
 }
 
 describe('useTableColumnPreferences', () => {
@@ -129,11 +133,7 @@ describe('useTableColumnPreferences', () => {
       email: false,
       role: true,
     })
-    expect(JSON.parse(localStorage.getItem(storageKeyFor(2)) ?? '{}')).toMatchObject({
-      name: true,
-      email: false,
-      role: true,
-    })
+    expect(localStorage.getItem(storageKeyFor(2))).toBeNull()
   })
 
   it('falls back to default visibility when stored preference JSON is corrupted', () => {
@@ -170,5 +170,57 @@ describe('useTableColumnPreferences', () => {
     })
 
     expect(result.current.visibleColumns.email).toBe(true)
+  })
+
+  it('does not rewrite the current visibility snapshot on initial mount', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+
+    renderPreferencesHook()
+
+    expect(setItemSpy).not.toHaveBeenCalledWith(
+      storageKeyFor(1),
+      JSON.stringify({
+        name: true,
+        email: false,
+        role: true,
+      }),
+    )
+  })
+
+  it('does not write stale visibility data when the storage key changes', async () => {
+    const firstState = {
+      name: false,
+      email: true,
+      role: false,
+    }
+    const secondState = {
+      name: true,
+      email: false,
+      role: true,
+    }
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    localStorage.setItem(storageKeyForTable('people', 1), JSON.stringify(firstState))
+    localStorage.setItem(storageKeyForTable('admin', 1), JSON.stringify(secondState))
+    const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+
+    const { result, rerender } = renderHook(
+      ({ tableKey }) =>
+        useTableColumnPreferences<TestColumn>({
+          tableKey,
+          allColumns,
+          defaultVisibleColumns,
+        }),
+      { initialProps: { tableKey: 'people' } },
+    )
+
+    setItemSpy.mockClear()
+    rerender({ tableKey: 'admin' })
+
+    expect(result.current.visibleColumns).toEqual(secondState)
+    expect(setItemSpy).not.toHaveBeenCalledWith(
+      storageKeyForTable('admin', 1),
+      JSON.stringify(firstState),
+    )
   })
 })
