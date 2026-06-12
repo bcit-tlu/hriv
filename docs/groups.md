@@ -190,10 +190,11 @@ reference.
 
 Groups now use the app's **secondary** palette as their shared visual identity
 (`theme.ts::getGroupChipColors`). The full-strength variant is used for primary
-group affordances (for example, the selected group in the Manage Groups list and
-the read-only group chips in the profile menu). The subtle variant is used for
-lower-emphasis inherited/read-only states in the category dialogs, and keeps
-text contrast at WCAG-AA without dimming the entire chip:
+group affordances (for example, the action buttons in the Manage Groups modal
+and the read-only group chips in the profile menu). The subtle variant is used
+for the selected group highlight in the Manage Groups list, lower-emphasis
+inherited/read-only states in the category dialogs, and keeps text contrast at
+WCAG-AA without dimming the entire chip:
 
 | Mode | Full-strength background | Full-strength text | Subtle background | Subtle text |
 |------|--------------------------|--------------------|------------------|-------------|

@@ -90,7 +90,6 @@ export default function AppShell(props: AppShellProps) {
         onReportIssue,
         children,
     } = props;
-
     const [manageMenuAnchor, setManageMenuAnchor] =
         useState<HTMLElement | null>(null);
     const [viewAnnOpen, setViewAnnOpen] = useState(false);
