@@ -1,4 +1,4 @@
-import { createTheme, type ThemeOptions } from '@mui/material/styles'
+import { alpha, createTheme, type ThemeOptions } from '@mui/material/styles'
 
 // ---------------------------------------------------------------------------
 // Colour palettes – edit these values to adjust light / dark appearance.
@@ -28,11 +28,16 @@ const lightPalette = {
   /** Custom surface used for the People / Admin pages. */
   surfaceVariant: '#DAC7B5',
   /**
-   * Group membership chip. White on #5B6973 ≈ 5.6:1 contrast (WCAG-AA for
-   * normal text). Distinct from the brand-red program chips so the two
-   * visibility dimensions read differently.
+   * Groups use the secondary palette as their brand colour. The subtle
+   * variant is a low-alpha fill with dark text so inherited/read-only states
+   * stay WCAG-AA compliant without relying on whole-chip opacity.
    */
-  groupChip: { bg: '#5B6973', text: '#FFFFFF' },
+  groupChip: {
+    solidBg: '#7F665D',
+    solidText: '#FFFFFF',
+    subtleBg: alpha('#7F665D', 0.16),
+    subtleText: '#3E3C3A',
+  },
   /**
    * Visibility status colours. Active uses a neutral dark-grey so the
    * default "visible" state stays unremarkable; inactive uses text.primary
@@ -63,10 +68,16 @@ const darkPalette = {
   /** Custom surface used for the People / Admin pages. */
   surfaceVariant: '#3A3230',
   /**
-   * Group membership chip (dark mode). A lighter slate that stays legible on
-   * the dark paper; dark text on #8A99A6 ≈ 5.5:1 contrast (WCAG-AA).
+   * Groups use the secondary palette as their brand colour in dark mode too.
+   * The subtle variant keeps light text over a low-alpha fill so it remains
+   * WCAG-AA compliant on dark paper.
    */
-  groupChip: { bg: '#8A99A6', text: '#1E1E1E' },
+  groupChip: {
+    solidBg: '#A89288',
+    solidText: '#1E1E1E',
+    subtleBg: alpha('#A89288', 0.16),
+    subtleText: '#E0DDD9',
+  },
   /**
    * Visibility status colours (dark mode). Active uses a neutral
    * light-grey; inactive uses text.primary at 0.6 alpha (#E0DDD999)
@@ -110,13 +121,15 @@ export function getSurfaceVariant(mode: 'light' | 'dark'): string {
 }
 
 /**
- * Group membership chip colours for the current mode. Background is #5B6973
- * in light mode (per design) and a WCAG-AA compliant lighter slate in dark
- * mode; `text` is the matching contrast colour.
+ * Group colours for the current mode. `solid*` is the primary group colour
+ * treatment; `subtle*` is the lower-emphasis version for inherited/read-only
+ * states that still meets WCAG-AA contrast.
  */
 export function getGroupChipColors(mode: 'light' | 'dark'): {
-  bg: string
-  text: string
+  solidBg: string
+  solidText: string
+  subtleBg: string
+  subtleText: string
 } {
   return mode === 'dark' ? darkPalette.groupChip : lightPalette.groupChip
 }

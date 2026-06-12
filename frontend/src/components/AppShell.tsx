@@ -105,6 +105,7 @@ export default function AppShell(props: AppShellProps) {
         onReportIssue,
         children,
     } = props;
+    const groupColors = getGroupChipColors(mode);
 
     const [manageMenuAnchor, setManageMenuAnchor] =
         useState<HTMLElement | null>(null);
@@ -335,13 +336,8 @@ export default function AppShell(props: AppShellProps) {
                                                         label={name}
                                                         size="small"
                                                         sx={{
-                                                            bgcolor:
-                                                                getGroupChipColors(
-                                                                    mode,
-                                                                ).bg,
-                                                            color: getGroupChipColors(
-                                                                mode,
-                                                            ).text,
+                                                            bgcolor: groupColors.solidBg,
+                                                            color: groupColors.solidText,
                                                         }}
                                                     />
                                                 ),

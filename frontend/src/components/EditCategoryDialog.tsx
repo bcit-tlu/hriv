@@ -14,7 +14,9 @@ import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { useTheme } from '@mui/material/styles'
 import type { Group, Program } from '../types'
+import { getGroupChipColors } from '../theme'
 
 const filter = createFilterOptions<string>()
 
@@ -51,6 +53,8 @@ export default function EditCategoryDialog({
   currentGroupIds = [],
   inheritedGroupIds = [],
 }: EditCategoryDialogProps) {
+  const theme = useTheme()
+  const groupColors = getGroupChipColors(theme.palette.mode)
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -276,16 +280,27 @@ export default function EditCategoryDialog({
                 {groups.map((g) => {
                   const disabled = inheritedGroupIds.length > 0 && !inheritedGroupIds.includes(g.id)
                   const isInheritedOnly = inheritedGroupIds.includes(g.id) && !selectedGroupIds.has(g.id)
+                  const isSelected = selectedGroupIds.has(g.id)
+                  const isActive = isSelected || isInheritedOnly
                   return (
                     <Chip
                       key={g.id}
                       label={g.name}
                       size="small"
-                      color={selectedGroupIds.has(g.id) || isInheritedOnly ? 'secondary' : 'default'}
-                      variant={selectedGroupIds.has(g.id) || isInheritedOnly ? 'filled' : 'outlined'}
+                      variant={isActive ? 'filled' : 'outlined'}
                       onClick={disabled ? undefined : () => toggleGroup(g.id)}
                       disabled={disabled}
-                      sx={isInheritedOnly ? { opacity: 0.5 } : undefined}
+                      sx={
+                        isActive
+                          ? {
+                              bgcolor: isSelected ? groupColors.solidBg : groupColors.subtleBg,
+                              color: isSelected ? groupColors.solidText : groupColors.subtleText,
+                              '& .MuiChip-label': {
+                                color: isSelected ? groupColors.solidText : groupColors.subtleText,
+                              },
+                            }
+                          : undefined
+                      }
                     />
                   )
                 })}
