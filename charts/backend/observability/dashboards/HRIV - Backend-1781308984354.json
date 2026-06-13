@@ -416,7 +416,7 @@
       },
       "gridPos": {
         "h": 3,
-        "w": 3,
+        "w": 4,
         "x": 0,
         "y": 15
       },
@@ -481,7 +481,7 @@
       "gridPos": {
         "h": 3,
         "w": 3,
-        "x": 3,
+        "x": 4,
         "y": 15
       },
       "id": 3,
@@ -544,8 +544,8 @@
       },
       "gridPos": {
         "h": 3,
-        "w": 3,
-        "x": 6,
+        "w": 4,
+        "x": 7,
         "y": 15
       },
       "id": 9,
@@ -826,7 +826,7 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "orientation": "auto",
+        "orientation": "horizontal",
         "showValue": "auto",
         "stacking": "none",
         "tooltip": {
@@ -1089,7 +1089,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "HRIV",
+  "title": "HRIV - Backend",
   "uid": "adsrt5x",
-  "version": 23
+  "version": 26
 }
