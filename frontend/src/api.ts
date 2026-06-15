@@ -244,7 +244,7 @@ export function updateCategory(
 ): Promise<ApiCategory> {
   const headers: Record<string, string> = {}
   if (version !== undefined) {
-    headers['If-Match'] = String(version)
+    headers['If-Match'] = `"${version}"`
   }
   return request(`/categories/${id}`, {
     method: 'PATCH',
@@ -308,7 +308,7 @@ export function updateImage(
 ): Promise<ApiImage> {
   const headers: Record<string, string> = {}
   if (version !== undefined) {
-    headers['If-Match'] = String(version)
+    headers['If-Match'] = `"${version}"`
   }
   return request(`/images/${id}`, {
     method: 'PATCH',

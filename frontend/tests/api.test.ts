@@ -417,7 +417,7 @@ describe('Category API', () => {
     mockFetch.mockReturnValueOnce(jsonResponse(CATEGORY_FIXTURE))
     await updateCategory(1, { label: 'New Label' }, 5)
     const [, init] = mockFetch.mock.calls[0]
-    expect(init.headers['If-Match']).toBe('5')
+    expect(init.headers['If-Match']).toBe('"5"')
   })
 
   it('updateCategory omits If-Match header when version is undefined', async () => {
@@ -490,7 +490,7 @@ describe('Image API', () => {
     mockFetch.mockReturnValueOnce(jsonResponse(IMAGE_FIXTURE))
     await updateImage(1, { name: 'renamed.jpg' }, 3)
     const [, init] = mockFetch.mock.calls[0]
-    expect(init.headers['If-Match']).toBe('3')
+    expect(init.headers['If-Match']).toBe('"3"')
   })
 
   it('updateImage omits If-Match header when version is undefined', async () => {
