@@ -172,7 +172,6 @@ async def test_process_source_image_success() -> None:
         copyright="CC",
         note="a note",
         active=True,
-        program=None,
         image_id=None,
         file_size=5242880,
     )
@@ -206,7 +205,6 @@ async def test_process_source_image_failure() -> None:
         copyright=None,
         note=None,
         active=True,
-        program=None,
         image_id=None,
     )
 
@@ -545,7 +543,6 @@ async def test_process_source_image_with_pyramid_metadata() -> None:
         copyright=None,
         note=None,
         active=True,
-        program=None,
         image_id=None,
         file_size=2147483648,
     )
