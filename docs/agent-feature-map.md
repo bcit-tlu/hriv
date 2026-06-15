@@ -24,7 +24,7 @@ Frontend hooks/components live under `frontend/src/` (e.g. `useImageActions.ts`,
 | Deployment / Helm | N/A | N/A | `helm-lint` CI job | [`docs/RELEASE_AND_DEPLOY_FLOW.md`](RELEASE_AND_DEPLOY_FLOW.md), chart READMEs |
 | Canvas annotations | `useCanvasAnnotations.ts`, `components/ImageViewer.tsx` (Fabric.js) | `routers/images.py` (metadata merge) | `useCanvasAnnotations.test.ts`, `test_router_images.py` | — |
 | Backup | N/A | `backup/` service | — | [`.agents/skills/testing-backup-service/SKILL.md`](../.agents/skills/testing-backup-service/SKILL.md) |
-| Observability (OTel) | N/A | `otel_bootstrap.py`, `tracing.py` | `test_tracing.py` | [`docs/observability-conventions.md`](observability-conventions.md) |
+| Observability (OTel) | N/A | `otel_bootstrap.py`, `tracing.py` | `test_otel_bootstrap.py`, `test_tracing.py` | [`docs/observability-conventions.md`](observability-conventions.md) |
 
 ## Notes
 
