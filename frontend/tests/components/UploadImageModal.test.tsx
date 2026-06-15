@@ -25,6 +25,8 @@ const categories: Category[] = [
     parentId: null,
     children: [],
     images: [],
+    programIds: [],
+    groupIds: [],
     sortOrder: 0,
     version: 1,
     cardImageId: null,

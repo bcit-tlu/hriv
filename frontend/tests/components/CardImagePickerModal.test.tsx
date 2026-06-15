@@ -26,6 +26,8 @@ const category: Category = {
           version: 1,
         },
       ],
+      programIds: [],
+      groupIds: [],
       sortOrder: 0,
       version: 1,
     },
@@ -42,6 +44,8 @@ const category: Category = {
       version: 1,
     },
   ],
+  programIds: [],
+  groupIds: [],
   sortOrder: 0,
   version: 1,
 }
@@ -52,6 +56,8 @@ const emptyCategory: Category = {
   parentId: null,
   children: [],
   images: [],
+  programIds: [],
+  groupIds: [],
   sortOrder: 0,
   version: 1,
 }
