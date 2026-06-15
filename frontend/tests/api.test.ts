@@ -310,8 +310,8 @@ describe('request helper (via wrapper functions)', () => {
   afterEach(() => setToken(null))
 
   it('sends auth + session headers on every request', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse({ maintenance: false, version: '1.0' }))
-    await fetchStatus()
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await fetchCategoryTree()
 
     const [, init] = mockFetch.mock.calls[0]
     expect(init.headers['Authorization']).toBe('Bearer test-jwt')
@@ -321,8 +321,8 @@ describe('request helper (via wrapper functions)', () => {
 
   it('omits Authorization header when no token is set', async () => {
     setToken(null)
-    mockFetch.mockReturnValueOnce(jsonResponse({ maintenance: false, version: '1.0' }))
-    await fetchStatus()
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await fetchCategoryTree()
 
     const [, init] = mockFetch.mock.calls[0]
     expect(init.headers['Authorization']).toBeUndefined()
@@ -331,13 +331,13 @@ describe('request helper (via wrapper functions)', () => {
 
   it('throws ApiError on non-OK response', async () => {
     mockFetch.mockReturnValueOnce(errorResponse(403, 'Forbidden'))
-    await expect(fetchStatus()).rejects.toThrow(ApiError)
+    await expect(fetchCategoryTree()).rejects.toThrow(ApiError)
   })
 
   it('throws ApiError with correct status code', async () => {
     mockFetch.mockReturnValueOnce(errorResponse(422, 'Validation Error'))
     try {
-      await fetchStatus()
+      await fetchCategoryTree()
       expect.fail('should have thrown')
     } catch (e) {
       expect(e).toBeInstanceOf(ApiError)
@@ -357,7 +357,7 @@ describe('request helper (via wrapper functions)', () => {
       }),
     )
     try {
-      await fetchStatus()
+      await fetchCategoryTree()
       expect.fail('should have thrown')
     } catch (e) {
       expect(e).toBeInstanceOf(ApiError)
@@ -373,11 +373,17 @@ describe('fetchStatus', () => {
   beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
   afterEach(() => setToken(null))
 
-  it('sends GET to /api/status', async () => {
+  it('sends GET to /api/status without auth or Content-Type headers', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse({ maintenance: false, version: '1.0.0' }))
     const result = await fetchStatus()
     expect(mockFetch.mock.calls[0][0]).toBe('/api/status')
+    expect(mockFetch.mock.calls[0][1]).toBeUndefined()
     expect(result).toEqual({ maintenance: false, version: '1.0.0' })
+  })
+
+  it('throws ApiError on non-OK response', async () => {
+    mockFetch.mockReturnValueOnce(errorResponse(503, 'Service Unavailable'))
+    await expect(fetchStatus()).rejects.toThrow(ApiError)
   })
 })
 
