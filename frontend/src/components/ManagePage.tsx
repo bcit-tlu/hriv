@@ -282,7 +282,9 @@ export default function ManagePage({
   const [currentPage, setCurrentPage] = useState(0)
 
   // Apply initial program filter from external navigation (e.g. search)
-  useEffect(() => {
+  const [prevInitialProgramFilter, setPrevInitialProgramFilter] = useState(initialProgramFilter)
+  if (initialProgramFilter !== prevInitialProgramFilter) {
+    setPrevInitialProgramFilter(initialProgramFilter)
     if (initialProgramFilter) {
       setFilters((prev) => ({ ...prev, program: initialProgramFilter }))
       setColumnVisible('program', true)
@@ -290,7 +292,7 @@ export default function ManagePage({
       setCurrentPage(0)
       onInitialProgramFilterConsumed?.()
     }
-  }, [initialProgramFilter, onInitialProgramFilterConsumed, setColumnVisible])
+  }
 
   // Action menu state
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
@@ -314,7 +316,7 @@ export default function ManagePage({
   }, [])
 
   useEffect(() => {
-    loadImages()
+    loadImages() // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on dependency change
   }, [loadImages, imagesVersion])
 
   // Sort handler
@@ -432,12 +434,10 @@ export default function ManagePage({
   }, [filteredImages, sortColumn, sortDirection, getCategoryLabel, getProgramNames, getGroupNames])
 
   // Auto-correct currentPage when dataset shrinks (e.g. after delete/bulk-delete)
-  useEffect(() => {
-    const maxPage = Math.max(0, Math.ceil(sortedImages.length / rowsPerPage) - 1)
-    if (currentPage > maxPage) {
-      setCurrentPage(maxPage)
-    }
-  }, [sortedImages.length, rowsPerPage, currentPage])
+  const maxPage = Math.max(0, Math.ceil(sortedImages.length / rowsPerPage) - 1)
+  if (currentPage > maxPage) {
+    setCurrentPage(maxPage)
+  }
 
   const handleFilterChange = (column: string, value: string) => {
     setFilters((prev) => ({ ...prev, [column]: value }))

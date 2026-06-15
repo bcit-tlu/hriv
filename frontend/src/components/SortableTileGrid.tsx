@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
@@ -240,15 +240,21 @@ export default function SortableTileGrid({
     const [items, setItems] = useState<TileItem[]>([]);
     const [activeItem, setActiveItem] = useState<TileItem | null>(null);
     const reorderInFlightRef = useRef(false);
-    const prevCatsRef = useRef<Category[] | null>(null);
-    const prevImgsRef = useRef<ImageItem[] | null>(null);
+    const [prevCats, setPrevCats] = useState<Category[] | null>(null);
+    const [prevImgs, setPrevImgs] = useState<ImageItem[] | null>(null);
+    // Refs for async callback access (always reflect latest props)
+    const currentCategoriesRef = useRef(currentCategories);
+    useEffect(() => { currentCategoriesRef.current = currentCategories; });
+    const visibleImagesRef = useRef(visibleImages);
+    useEffect(() => { visibleImagesRef.current = visibleImages; });
 
     if (
-        prevCatsRef.current !== currentCategories ||
-        prevImgsRef.current !== visibleImages
+        prevCats !== currentCategories ||
+        prevImgs !== visibleImages
     ) {
-        prevCatsRef.current = currentCategories;
-        prevImgsRef.current = visibleImages;
+        setPrevCats(currentCategories);
+        setPrevImgs(visibleImages);
+        // eslint-disable-next-line react-hooks/refs -- guard ref prevents item rebuild during active reorder
         if (!reorderInFlightRef.current) {
             setItems(buildTileItems(currentCategories, visibleImages));
         }
@@ -388,11 +394,11 @@ export default function SortableTileGrid({
                 reorderInFlightRef.current = false;
                 // The render-time guard ran while the flag was raised
                 // and skipped setItems, so rebuild from fresh data now.
-                if (prevCatsRef.current && prevImgsRef.current) {
+                if (currentCategoriesRef.current && visibleImagesRef.current) {
                     setItems(
                         buildTileItems(
-                            prevCatsRef.current,
-                            prevImgsRef.current,
+                            currentCategoriesRef.current,
+                            visibleImagesRef.current,
                         ),
                     );
                 }

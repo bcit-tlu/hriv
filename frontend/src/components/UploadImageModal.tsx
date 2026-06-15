@@ -110,7 +110,7 @@ export default function UploadImageModal({
   // Sync categoryId state when the dialog opens with a new prop value
   useEffect(() => {
     if (open) {
-      setCategoryId(initialCategoryId ?? null)
+      setCategoryId(initialCategoryId ?? null) // eslint-disable-line react-hooks/set-state-in-effect -- sync prop→state on dialog open
     }
   }, [open, initialCategoryId])
 
@@ -119,7 +119,7 @@ export default function UploadImageModal({
     if (open && initialFiles && initialFiles.length > 0) {
       const accepted = initialFiles.filter(isAcceptedFile)
       if (accepted.length === 0) return
-      setFiles(accepted)
+      setFiles(accepted) // eslint-disable-line react-hooks/set-state-in-effect -- sync prop→state on dialog open
       if (accepted.length === 1 && isImageFile(accepted[0])) {
         setName(accepted[0].name.replace(/\.[^.]+$/, ''))
       }

@@ -110,7 +110,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       // If we just got an OIDC token but have no stored user yet, still
       // attempt validation so the session is bootstrapped.
       if (!token) {
-        setLoading(false)
+        setLoading(false) // eslint-disable-line react-hooks/set-state-in-effect -- early-return in mount-only validation effect
         return
       }
     }
@@ -165,7 +165,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   // Load users list when an admin is authenticated
   useEffect(() => {
     if (currentUser?.role === 'admin') {
-      loadUsers()
+      loadUsers() // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on auth state change
     }
   }, [currentUser, loadUsers])
 

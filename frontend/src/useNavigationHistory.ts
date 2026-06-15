@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 /** Navigation state stored in `history.state` for back/forward support. */
 export interface NavHistoryState {
@@ -40,7 +40,7 @@ export function useNavigationHistory(
     ) => void,
 ) {
     const callbackRef = useRef(onPopState);
-    callbackRef.current = onPopState;
+    useEffect(() => { callbackRef.current = onPopState; });
 
     useEffect(() => {
         const handler = (event: PopStateEvent) => {

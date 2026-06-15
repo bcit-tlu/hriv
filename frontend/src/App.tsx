@@ -107,10 +107,10 @@ export default function App() {
     });
     const [path, setPath] = useState<Category[]>([]);
     const pathRef = useRef(path);
-    pathRef.current = path;
+    useEffect(() => { pathRef.current = path; });
     const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
     const selectedImageRef = useRef<ImageItem | null>(null);
-    selectedImageRef.current = selectedImage;
+    useEffect(() => { selectedImageRef.current = selectedImage; });
     const inactiveViewerActionSx = useMemo(
         () =>
             selectedImage?.active
@@ -269,13 +269,13 @@ export default function App() {
     // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
     const [canvasEditActive, setCanvasEditActive] = useState(false);
     const [imagesVersion, setImagesVersion] = useState(0);
-    setImagesVersionRef.current = setImagesVersion;
+    useEffect(() => { setImagesVersionRef.current = setImagesVersion; }, [setImagesVersion]);
 
     // Refs for the popstate handler (always reflect latest state)
     const categoriesRef = useRef(categories);
-    categoriesRef.current = categories;
+    useEffect(() => { categoriesRef.current = categories; });
     const uncategorizedImagesRef = useRef(uncategorizedImages);
-    uncategorizedImagesRef.current = uncategorizedImages;
+    useEffect(() => { uncategorizedImagesRef.current = uncategorizedImages; });
 
     // Browser history integration for back/forward navigation
     const handlePopState = useCallback(
@@ -429,12 +429,14 @@ export default function App() {
             );
         }
 
+        /* eslint-disable react-hooks/set-state-in-effect -- unconditional UI cleanup on auth state change */
         setProfileOpen(false);
         setEditModalOpen(false);
         setImageEditOpen(false);
         setBrowseEditImage(null);
         setSearchOpen(false);
         setSearchUsers([]);
+        /* eslint-enable react-hooks/set-state-in-effect */
         resetProcessingJobs();
     }, [currentUser, resetProcessingJobs, setViewportState, setOverlays, clearPending, setImageEditOpen, setBrowseEditImage, setEditModalOpen, setProfileOpen]);
 
@@ -476,9 +478,11 @@ export default function App() {
     // information leak.
     useEffect(() => {
         if (!canManageUsers) {
+            /* eslint-disable react-hooks/set-state-in-effect -- early-return cleanup in conditional fetch effect */
             setBackendVersion(null);
             setBackupVersion(null);
             setFrontendVersion(null);
+            /* eslint-enable react-hooks/set-state-in-effect */
             return;
         }
         fetchVersions()

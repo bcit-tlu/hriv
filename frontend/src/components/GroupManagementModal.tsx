@@ -126,20 +126,24 @@ export default function GroupManagementModal({
   )
   const selectedGroupIdForFetch = selectedGroup?.id ?? null
 
-  useEffect(() => {
-    setOptimisticGroups((prev) => (prev.size === 0 ? prev : new Map()))
-  }, [groups])
+  // Reset optimistic state when server groups change (render-time adjustment)
+  const [prevGroups, setPrevGroups] = useState(groups)
+  if (groups !== prevGroups) {
+    setPrevGroups(groups)
+    setOptimisticGroups(new Map())
+  }
 
-  useEffect(() => {
-    if (!open) return
-    if (displayGroups.length === 0) {
+  // Ensure selectedGroupId stays valid when displayGroups changes
+  if (open) {
+    if (displayGroups.length === 0 && selectedGroupId !== null) {
       setSelectedGroupId(null)
-      return
-    }
-    if (selectedGroupId == null || !displayGroups.some((group) => group.id === selectedGroupId)) {
+    } else if (
+      displayGroups.length > 0 &&
+      (selectedGroupId == null || !displayGroups.some((group) => group.id === selectedGroupId))
+    ) {
       setSelectedGroupId(displayGroups[0].id)
     }
-  }, [displayGroups, open, selectedGroupId])
+  }
 
   useEffect(() => {
     if (!open) return
@@ -161,12 +165,19 @@ export default function GroupManagementModal({
     return () => clearTimeout(timer)
   }, [searchInput])
 
-  useEffect(() => {
+  // Reset pagination when filters change (render-time adjustment)
+  const filterKey = JSON.stringify([tab, q, selectedProgramIds, selectedGroupId, pageSize])
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey)
     setPage(0)
     setSelectedUserIds(new Set())
-  }, [tab, q, selectedProgramIds, selectedGroupId, pageSize])
+  }
 
-  useEffect(() => {
+  // Reset all local state when modal closes (render-time adjustment)
+  const [prevOpen, setPrevOpen] = useState(open)
+  if (open !== prevOpen) {
+    setPrevOpen(open)
     if (!open) {
       setMobileDetailOpen(false)
       setGroupDialogMode(null)
@@ -188,14 +199,14 @@ export default function GroupManagementModal({
       setGroupActionError(null)
       setOptimisticGroups(new Map())
     }
-  }, [open])
+  }
 
   useEffect(() => {
     if (!open || selectedGroupIdForFetch == null) {
       return undefined
     }
     let cancelled = false
-    setLoading(true)
+    setLoading(true) // eslint-disable-line react-hooks/set-state-in-effect -- loading indicator at effect start is standard fetch pattern
     setMemberError(null)
     fetchUsersPaged({
       role: tab === 'students' ? 'student' : 'instructor',

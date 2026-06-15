@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from "react";
+import { useState, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from "react";
 import Alert from "@mui/material/Alert";
 import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
@@ -95,15 +95,16 @@ export default function AppShell(props: AppShellProps) {
         useState<HTMLElement | null>(null);
     const [viewAnnOpen, setViewAnnOpen] = useState(false);
     const [annCollapsed, setAnnCollapsed] = useState(false);
+    const [prevAnnouncement, setPrevAnnouncement] = useState(announcement);
+    if (announcement !== prevAnnouncement) {
+        setPrevAnnouncement(announcement);
+        if (announcement) setAnnCollapsed(false);
+    }
     const showViewAnnLink = annEnabled && !announcement;
     const contentBg =
         page === "people" || page === "admin"
             ? getSurfaceVariant(mode)
             : undefined;
-
-    useEffect(() => {
-        if (announcement) setAnnCollapsed(false);
-    }, [announcement]);
 
     return (
         <Box
@@ -255,6 +256,7 @@ export default function AppShell(props: AppShellProps) {
                         </IconButton>
                         <Popover
                             open={profileOpen}
+                            // eslint-disable-next-line react-hooks/refs -- MUI Popover requires DOM element; ref is always populated before open=true
                             anchorEl={avatarRef.current}
                             onClose={() => setProfileOpen(false)}
                             anchorOrigin={{

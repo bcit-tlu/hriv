@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
     fetchCategoryTree,
     fetchUncategorizedImages,
@@ -176,7 +176,7 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
         backgroundRefresh,
         currentUser != null,
     );
-    invalidateRef.current = invalidateBackground;
+    useEffect(() => { invalidateRef.current = invalidateBackground; });
 
     // Resolve the live children/images from the categories state tree
     // so newly added categories appear immediately.
