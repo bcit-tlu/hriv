@@ -34,7 +34,6 @@ interface FieldMatch {
 
 interface SearchResult {
   kind: ResultKind
-  id: number
   /** Real entity identifier for deduplication (e.g. cat.id, img.id, user.id) */
   entityId: number
   /** Primary label shown in bold */
@@ -209,7 +208,6 @@ function collectCategoryResults(
     if (m) {
       results.push({
         kind: 'category',
-        id: cat.id,
         entityId: cat.id,
         label: cat.label,
         field: 'Name',
@@ -219,14 +217,13 @@ function collectCategoryResults(
         payload: { kind: 'category', categoryPath: currentPath },
       })
     }
-    for (const pid of cat.programIds) {
-      const pName = programMap.get(pid)
+    for (let pi = 0; pi < cat.programIds.length; pi++) {
+      const pName = programMap.get(cat.programIds[pi])
       if (!pName) continue
       const pm = findFirstTermMatch(pName, terms)
       if (pm) {
         results.push({
           kind: 'category',
-          id: cat.id * 1000 + pid,
           entityId: cat.id,
           label: cat.label,
           field: 'Program',
@@ -287,7 +284,6 @@ function addImageMatches(
     if (m) {
       results.push({
         kind: 'image',
-        id: img.id * 1000 + fi,
         entityId: img.id,
         label: img.name,
         field,
@@ -415,7 +411,6 @@ export default function SearchModal({
           if (m) {
             results.push({
               kind: 'program',
-              id: prog.id,
               entityId: prog.id,
               label: prog.name,
               field: 'Name',
@@ -445,7 +440,6 @@ export default function SearchModal({
             if (m) {
               results.push({
                 kind: 'user',
-                id: user.id * 1000 + fi,
                 entityId: user.id,
                 label: user.name,
                 field,
