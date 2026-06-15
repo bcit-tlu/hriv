@@ -9,7 +9,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
-from opentelemetry.trace import StatusCode
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +18,7 @@ from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import SourceImage, User
 from ..processing import process_source_image
 from ..schemas import SourceImageOut
+from ..tracing import record_exception_if_server_error
 from ..worker import enqueue_process_source_image
 
 logger = logging.getLogger(__name__)
@@ -124,8 +124,7 @@ async def upload_source_image(
 
             return src
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             raise
 
 

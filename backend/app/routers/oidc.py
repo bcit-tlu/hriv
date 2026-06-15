@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from ..auth import create_access_token
+from ..tracing import record_exception_if_server_error
 from ..database import get_db, settings as _settings
 from ..models import Program, User
 
@@ -510,6 +511,5 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                 frontend_origin, f"oidc_token={jwt_token}"
             )
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             raise

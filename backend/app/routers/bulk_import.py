@@ -18,7 +18,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
-from opentelemetry.trace import StatusCode
 from sqlalchemy import cast, select, update
 from sqlalchemy.dialects.postgresql import JSONB as JSONB_type
 from sqlalchemy.sql import func
@@ -30,6 +29,7 @@ from ..image_validation import IMAGE_EXTENSIONS, UPLOAD_CHUNK_SIZE
 from ..models import BulkImportJob, Category, SourceImage, User
 from ..processing import process_source_image
 from ..schemas import BulkImportJobOut
+from ..tracing import record_exception_if_server_error
 from ..worker import enqueue_bulk_import
 
 router = APIRouter(prefix="/admin/bulk-import", tags=["admin"])
@@ -95,8 +95,7 @@ async def _process_bulk_import(
                     await process_source_image(src.id)
                 except Exception as exc:
                     span = trace.get_current_span()
-                    span.record_exception(exc)
-                    span.set_status(StatusCode.ERROR, str(exc))
+                    record_exception_if_server_error(span, exc)
                     logger.exception(
                         "Bulk import: image processing failed",
                         extra={
@@ -145,8 +144,7 @@ async def _process_bulk_import(
             # failure so that gather(return_exceptions=True) doesn't silently
             # swallow them without updating job counters.
             span = trace.get_current_span()
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             logger.exception(
                 "Bulk import: unexpected error",
                 extra={
@@ -422,8 +420,7 @@ async def bulk_import_images(
 
             return job
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             raise
 
 
