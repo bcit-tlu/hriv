@@ -15,7 +15,7 @@ import { move } from "@dnd-kit/helpers";
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { PointerActivationConstraints } from "@dnd-kit/dom";
 import type { Draggable } from "@dnd-kit/abstract";
-import type { DragEndEvent } from "@dnd-kit/react";
+import type { DragEndEvent, DragStartEvent } from "@dnd-kit/react";
 
 import type { Category, Group, ImageItem, Program } from "../types";
 import CategoryTile from "./CategoryTile";
@@ -267,6 +267,15 @@ export default function SortableTileGrid({
         return map;
     }, [allCategories, currentCategories]);
 
+    const handleDragStart = useCallback(
+        (event: DragStartEvent) => {
+            const sourceId = String(event.operation.source?.id);
+            const item = items.find((i) => tileId(i) === sourceId);
+            setActiveItem(item ?? null);
+        },
+        [items],
+    );
+
     const handleDragEnd = useCallback(
         async (event: DragEndEvent) => {
             setActiveItem(null);
@@ -480,11 +489,7 @@ export default function SortableTileGrid({
     return (
         <DragDropProvider
             sensors={sensors}
-            onDragStart={(event) => {
-                const sourceId = String(event.operation.source?.id);
-                const item = items.find((i) => tileId(i) === sourceId);
-                setActiveItem(item ?? null);
-            }}
+            onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
         >
             <Box

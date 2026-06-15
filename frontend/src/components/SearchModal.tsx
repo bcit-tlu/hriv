@@ -219,14 +219,14 @@ function collectCategoryResults(
         payload: { kind: 'category', categoryPath: currentPath },
       })
     }
-    for (const pid of cat.programIds) {
-      const pName = programMap.get(pid)
+    for (let pi = 0; pi < cat.programIds.length; pi++) {
+      const pName = programMap.get(cat.programIds[pi])
       if (!pName) continue
       const pm = findFirstTermMatch(pName, terms)
       if (pm) {
         results.push({
           kind: 'category',
-          id: cat.id * 1000 + pid,
+          id: cat.id * 1000 + pi,
           entityId: cat.id,
           label: cat.label,
           field: 'Program',
