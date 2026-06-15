@@ -2,22 +2,33 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import FooterBar from '../../src/components/FooterBar'
+import { ColorModeContext } from '../../src/colorModeContext'
+import type { ColorModeContextValue } from '../../src/colorModeContext'
 
 function renderFooter(
   overrides: Partial<Parameters<typeof FooterBar>[0]> = {},
+  colorMode?: Partial<ColorModeContextValue>,
 ) {
   const setReportIssueOpen =
     overrides.setReportIssueOpen ?? vi.fn()
+  const modeValue: ColorModeContextValue = {
+    mode: colorMode?.mode ?? 'light',
+    preference: colorMode?.preference ?? 'auto',
+    setPreference: colorMode?.setPreference ?? vi.fn(),
+    toggleMode: colorMode?.toggleMode ?? vi.fn(),
+  }
   return {
     setReportIssueOpen,
     ...render(
-      <FooterBar
-        canManageUsers={overrides.canManageUsers ?? false}
-        frontendVersion={overrides.frontendVersion}
-        backendVersion={overrides.backendVersion}
-        backupVersion={overrides.backupVersion}
-        setReportIssueOpen={setReportIssueOpen}
-      />,
+      <ColorModeContext.Provider value={modeValue}>
+        <FooterBar
+          canManageUsers={overrides.canManageUsers ?? false}
+          frontendVersion={overrides.frontendVersion}
+          backendVersion={overrides.backendVersion}
+          backupVersion={overrides.backupVersion}
+          setReportIssueOpen={setReportIssueOpen}
+        />
+      </ColorModeContext.Provider>,
     ),
   }
 }
@@ -95,5 +106,11 @@ describe('FooterBar', () => {
       'href',
       'https://github.com/bcit-tlu/hriv',
     )
+  })
+
+  it('renders in dark mode without errors', () => {
+    renderFooter({ canManageUsers: true, frontendVersion: '1.0.0' }, { mode: 'dark' })
+    expect(screen.getByText('Frontend:')).toBeInTheDocument()
+    expect(screen.getByText('1.0.0')).toBeInTheDocument()
   })
 })

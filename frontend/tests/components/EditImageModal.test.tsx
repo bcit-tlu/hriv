@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import EditImageModal from '../../src/components/EditImageModal'
 import type { ApiImage } from '../../src/api'
@@ -413,10 +413,9 @@ describe('EditImageModal – View Image', () => {
     await user.click(screen.getByRole('button', { name: /view image/i }))
     expect(screen.getByText(/unsaved changes/i)).toBeInTheDocument()
 
-    // Click the Cancel button within the warning bar (first Cancel since it appears above the dialog actions)
-    const cancelButtons = screen.getAllByRole('button', { name: /cancel/i })
-    // The warning bar Cancel is the last one added to the DOM
-    await user.click(cancelButtons[0])
+    // Scope to the warning bar so we click its Cancel, not the dialog-actions Cancel
+    const warningBar = screen.getByText(/unsaved changes/i).closest('div[class*="MuiBox"]')!
+    await user.click(within(warningBar as HTMLElement).getByRole('button', { name: /cancel/i }))
 
     await waitFor(() => {
       expect(screen.queryByText(/unsaved changes/i)).not.toBeInTheDocument()
