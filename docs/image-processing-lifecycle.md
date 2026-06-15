@@ -143,7 +143,7 @@ production, nginx or a CDN should serve these directly from the PVC.
 
 ## Stale SourceImage reconciliation
 
-`reconcile_stale_source_images()` runs on worker startup and marks
+`reconcile_stale_source_images()` runs on **backend (API pod) startup** and marks
 SourceImages as `failed` if they have been stuck in `pending` or
 `processing` for longer than a threshold (default: `job_timeout` plus
 a buffer).  This handles cases where the worker crashed mid-processing.

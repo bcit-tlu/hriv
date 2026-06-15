@@ -87,12 +87,12 @@ When a source image is replaced (`process_replace_image`):
 |------------------------|-------------------------------------------------|
 | `canvas_annotations`   | **Cleared** — coordinates reference old geometry |
 | `locked_overlays`      | **Cleared** — coordinates reference old geometry |
-| `measurement_scale`    | **Preserved** if new file is also pyramidal      |
-| `measurement_unit`     | **Preserved** if new file is also pyramidal      |
-| `objective_power`      | **Preserved** if new file is also pyramidal      |
-| `mpp_x`, `mpp_y`      | **Preserved** if new file is also pyramidal      |
-| `pyramid_detected`     | Re-derived from the new file                     |
-| `pyramid_level_count`  | Re-derived from the new file                     |
+| `measurement_scale`    | **Re-derived** from new file if also pyramidal; cleared otherwise |
+| `measurement_unit`     | **Re-derived** from new file if also pyramidal; cleared otherwise |
+| `objective_power`      | **Re-derived** from new file if also pyramidal; cleared otherwise |
+| `mpp_x`, `mpp_y`      | **Re-derived** from new file if also pyramidal; cleared otherwise |
+| `pyramid_detected`     | **Re-derived** from new file if also pyramidal; cleared otherwise |
+| `pyramid_level_count`  | **Re-derived** from new file if also pyramidal; cleared otherwise |
 
 All pyramid-related keys are cleared first, then re-populated if the
 replacement file is also pyramidal.  Version is bumped unconditionally.
