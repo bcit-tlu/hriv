@@ -206,8 +206,13 @@ export interface ApiStatus {
   version: string
 }
 
-export function fetchStatus(): Promise<ApiStatus> {
-  return request('/status')
+export async function fetchStatus(): Promise<ApiStatus> {
+  const res = await fetch(`${BASE}/api/status`)
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new ApiError(res.status, parseErrorDetail(text))
+  }
+  return res.json() as Promise<ApiStatus>
 }
 
 // ── Categories ───────────────────────────────────────────
