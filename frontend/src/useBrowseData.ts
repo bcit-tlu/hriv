@@ -44,6 +44,7 @@ export function apiTreeToCategory(node: ApiCategoryTree): Category {
         groupIds: node.group_ids ?? [],
         status: node.status,
         sortOrder: node.sort_order,
+        version: node.version,
         cardImageId:
             typeof meta?.card_image_id === "number" ? meta.card_image_id : null,
         metadataExtra: meta ?? null,

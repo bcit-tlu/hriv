@@ -47,6 +47,7 @@ function makeApiTree(overrides: Partial<ApiCategoryTree> = {}): ApiCategoryTree 
         group_ids: [],
         status: null,
         sort_order: 0,
+        version: 1,
         metadata_extra: null,
         created_at: "2026-01-01",
         updated_at: "2026-01-01",
@@ -407,6 +408,7 @@ describe("useBrowseData", () => {
                 programIds: [],
                 status: null,
                 sortOrder: 0,
+                version: 1,
                 cardImageId: null,
                 metadataExtra: null,
             };

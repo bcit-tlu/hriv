@@ -55,6 +55,7 @@ const mockCategories = [
     groupIds: [10],
     status: 'active',
     sortOrder: 0,
+    version: 1,
     cardImageId: null,
     metadataExtra: null,
   },

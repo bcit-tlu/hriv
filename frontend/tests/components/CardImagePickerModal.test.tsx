@@ -27,6 +27,7 @@ const category: Category = {
         },
       ],
       sortOrder: 0,
+      version: 1,
     },
   ],
   images: [
@@ -42,6 +43,7 @@ const category: Category = {
     },
   ],
   sortOrder: 0,
+  version: 1,
 }
 
 const emptyCategory: Category = {
@@ -51,6 +53,7 @@ const emptyCategory: Category = {
   children: [],
   images: [],
   sortOrder: 0,
+  version: 1,
 }
 
 describe('CardImagePickerModal', () => {
