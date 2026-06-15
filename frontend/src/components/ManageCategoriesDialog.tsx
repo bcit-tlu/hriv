@@ -388,8 +388,10 @@ export default function ManageCategoriesDialog({
 
   // Compute the Y position and indentation for the drop indicator line
   const dropIndicatorStyle = useMemo(() => {
+    // eslint-disable-next-line react-hooks/refs -- DOM measurement needed for drop indicator positioning during active drag
     if (dropTarget == null || dragId == null || !listRef.current) return null
     const descendantIds = getDescendantIds(options, dragId)
+    // eslint-disable-next-line react-hooks/refs -- DOM measurement needed for drop indicator positioning during active drag
     const listItems = Array.from(listRef.current.querySelectorAll<HTMLElement>('[data-category-id]'))
 
     const visibleElements = listItems.filter((el) => {
@@ -408,6 +410,7 @@ export default function ManageCategoriesDialog({
       }
     }
 
+    // eslint-disable-next-line react-hooks/refs -- DOM measurement needed for drop indicator positioning during active drag
     const listRect = listRef.current.getBoundingClientRect()
     let topPos: number
 

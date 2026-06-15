@@ -53,6 +53,14 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         (annotations: CanvasAnnotation[]) => Promise<void>
     >(async () => {});
 
+    // --- State ---
+
+    // Local override for canvas annotations so view mode reflects edits immediately
+    // (selectedImage is intentionally NOT updated after saves to avoid viewer remount)
+    const [localCanvasAnnotations, setLocalCanvasAnnotations] = useState<
+        CanvasAnnotation[] | null
+    >(null);
+
     // Synchronously clear race-sensitive refs during render when the image
     // changes.  The useEffect below runs as a passive effect (deferred), so
     // there is a window between re-render and effect execution where an
@@ -64,26 +72,21 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
     const currentImageId = selectedImage?.id ?? null;
     if (currentImageId !== prevSelectedImageIdRef.current) {
         prevSelectedImageIdRef.current = currentImageId;
+        // eslint-disable-next-line react-hooks/refs -- synchronous clearing required to prevent race; see comment above
         pendingCanvasAnnotationsRef.current = null;
+        // eslint-disable-next-line react-hooks/refs -- synchronous clearing required to prevent race; see comment above
         saveTargetImageIdRef.current = null;
+        // eslint-disable-next-line react-hooks/refs -- synchronous clearing required to prevent race; see comment above
         canvasSaveInFlightRef.current = false;
+        setLocalCanvasAnnotations(null);
     }
-
-    // --- State ---
-
-    // Local override for canvas annotations so view mode reflects edits immediately
-    // (selectedImage is intentionally NOT updated after saves to avoid viewer remount)
-    const [localCanvasAnnotations, setLocalCanvasAnnotations] = useState<
-        CanvasAnnotation[] | null
-    >(null);
 
     // --- Effects ---
 
-    // Reset version ref when a different image is selected
+    // Reset version ref when the selected image changes
     useEffect(() => {
         latestVersionRef.current = selectedImage?.version ?? 0;
         latestMetadataRef.current = undefined; // reset to 'uninitialised' so first read falls back to selectedImage
-        setLocalCanvasAnnotations(null); // fall back to server-derived data for new image
         // Clear any pending canvas annotation saves for the previous image
         if (canvasSaveTimerRef.current) {
             clearTimeout(canvasSaveTimerRef.current);
@@ -153,6 +156,7 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
         },
         [selectedImage, loadCategories, loadUncategorizedImages, setErrorSnack],
     );
+    // eslint-disable-next-line react-hooks/refs -- must stay synchronous; read by in-flight save's finally block
     saveCanvasAnnotationsRef.current = saveCanvasAnnotations;
 
     // Save canvas annotations to image metadata_extra (debounced).

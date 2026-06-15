@@ -156,14 +156,14 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
   }, [])
 
   useEffect(() => {
-    loadData()
+    loadData() // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on dependency change
   }, [loadData])
 
   useEffect(() => {
     if (initialEditUserId != null && !loading && users.length > 0) {
       const target = users.find((u) => u.id === initialEditUserId)
       if (target) {
-        setEditingUser(target)
+        setEditingUser(target) // eslint-disable-line react-hooks/set-state-in-effect -- conditional on async data availability
         setAddEditOpen(true)
       } else {
         console.warn(`User ${initialEditUserId} not found in loaded users`)
@@ -237,12 +237,10 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
   }, [filteredUsers, sortColumn, sortDirection])
 
   // Auto-correct currentPage when dataset shrinks
-  useEffect(() => {
-    const maxPage = Math.max(0, Math.ceil(sortedUsers.length / rowsPerPage) - 1)
-    if (currentPage > maxPage) {
-      setCurrentPage(maxPage)
-    }
-  }, [sortedUsers.length, rowsPerPage, currentPage])
+  const maxPage = Math.max(0, Math.ceil(sortedUsers.length / rowsPerPage) - 1)
+  if (currentPage > maxPage) {
+    setCurrentPage(maxPage)
+  }
 
   const handleFilterChange = (column: string, value: string) => {
     setFilters((prev) => ({ ...prev, [column]: value }))

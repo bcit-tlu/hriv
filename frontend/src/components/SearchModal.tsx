@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
@@ -337,26 +337,24 @@ export default function SearchModal({
 
   const programMap = useMemo(() => new Map(programs.map((p) => [p.id, p.name])), [programs])
 
-  // Apply initial values when the modal opens with them
-  const prevOpenRef = useRef(false)
-  const wasSeededRef = useRef(false)
-  useEffect(() => {
-    if (open && !prevOpenRef.current) {
-      if (initialQuery != null || initialTypeFilter != null) {
-        if (initialQuery != null) setQuery(initialQuery)
-        if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
-        setFieldFilters(new Set())
-        wasSeededRef.current = true
-      }
-    }
-    if (!open && prevOpenRef.current && wasSeededRef.current) {
-      setQuery('')
-      setTypeFilters(new Set())
+  // Apply initial values when the modal opens with them (render-time adjustment)
+  const [prevSearchOpen, setPrevSearchOpen] = useState(open)
+  const [wasSeeded, setWasSeeded] = useState(false)
+  if (open && !prevSearchOpen) {
+    if (initialQuery != null || initialTypeFilter != null) {
+      if (initialQuery != null) setQuery(initialQuery)
+      if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
       setFieldFilters(new Set())
-      wasSeededRef.current = false
+      setWasSeeded(true)
     }
-    prevOpenRef.current = open
-  }, [open, initialQuery, initialTypeFilter])
+  }
+  if (!open && prevSearchOpen && wasSeeded) {
+    setQuery('')
+    setTypeFilters(new Set())
+    setFieldFilters(new Set())
+    setWasSeeded(false)
+  }
+  if (open !== prevSearchOpen) setPrevSearchOpen(open)
 
   const toggleTypeFilter = useCallback((key: TypeFilter) => {
     setTypeFilters((prev) => {
