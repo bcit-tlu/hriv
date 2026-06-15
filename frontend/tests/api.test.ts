@@ -413,6 +413,20 @@ describe('Category API', () => {
     expect(JSON.parse(init.body)).toEqual({ label: 'New Label' })
   })
 
+  it('updateCategory sends If-Match header when version is provided', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(CATEGORY_FIXTURE))
+    await updateCategory(1, { label: 'New Label' }, 5)
+    const [, init] = mockFetch.mock.calls[0]
+    expect(init.headers['If-Match']).toBe('5')
+  })
+
+  it('updateCategory omits If-Match header when version is undefined', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(CATEGORY_FIXTURE))
+    await updateCategory(1, { label: 'New Label' })
+    const [, init] = mockFetch.mock.calls[0]
+    expect(init.headers['If-Match']).toBeUndefined()
+  })
+
   it('deleteCategory sends DELETE', async () => {
     mockFetch.mockReturnValueOnce(noContentResponse())
     await deleteCategory(1)
