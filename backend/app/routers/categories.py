@@ -4,7 +4,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from opentelemetry import trace
-from opentelemetry.trace import StatusCode
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +13,7 @@ from ..authz import (
     can_attach_program_to_category,
 )
 from ..database import get_db
+from ..tracing import record_exception_if_server_error
 from ..models import Category, Group, Image, Program, User
 from ..schemas import (
     CategoryCreate,
@@ -440,8 +440,7 @@ async def reorder_categories(
             await db.commit()
             return {"status": "ok"}
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             raise
 
 
