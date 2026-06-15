@@ -18,7 +18,10 @@ vi.mock('../../src/api', async (importOriginal) => {
 
 import {
   fetchUsers,
+  createUser,
+  updateUser,
   deleteUser,
+  bulkUpdateUserProgram,
   bulkUpdateUserRole,
   bulkDeleteUsers,
 } from '../../src/api'
@@ -358,5 +361,191 @@ describe('PeoplePage', () => {
     // After toggle: aria-label changes to "Hide filters"
     expect(screen.getByLabelText('Hide filters')).toBeInTheDocument()
     expect(screen.queryByLabelText('Show filters')).not.toBeInTheDocument()
+  })
+
+  it('sorts by name column when header is clicked', async () => {
+    const user = userEvent.setup()
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    // Default sort is name asc: Admin User then Test Student
+    const rows = screen.getAllByRole('row')
+    const firstDataRow = rows[1] // skip header
+    expect(within(firstDataRow).getByText('Admin User')).toBeInTheDocument()
+
+    // Click Name header again to toggle to desc
+    await user.click(screen.getByText('Name'))
+
+    const rowsAfter = screen.getAllByRole('row')
+    const firstDataRowAfter = rowsAfter[1]
+    expect(within(firstDataRowAfter).getByText('Test Student')).toBeInTheDocument()
+  })
+
+  it('sorts by email column when header is clicked', async () => {
+    const user = userEvent.setup()
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByText('Email'))
+
+    const rows = screen.getAllByRole('row')
+    const firstDataRow = rows[1]
+    expect(within(firstDataRow).getByText('admin@example.ca')).toBeInTheDocument()
+  })
+
+  it('filters users by name when filter text is entered', async () => {
+    const user = userEvent.setup()
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    // Open filter row
+    await user.click(screen.getByLabelText('Show filters'))
+
+    // Type in the name filter
+    const filterInputs = screen.getAllByRole('textbox')
+    // First filter input is for name column
+    await user.type(filterInputs[0], 'Student')
+
+    // Only Test Student should be visible
+    expect(screen.queryByText('Admin User')).not.toBeInTheDocument()
+    expect(screen.getByText('Test Student')).toBeInTheDocument()
+  })
+
+  it('clears filters when clear button is clicked', async () => {
+    const user = userEvent.setup()
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    // Open filter row and filter
+    await user.click(screen.getByLabelText('Show filters'))
+    const filterInputs = screen.getAllByRole('textbox')
+    await user.type(filterInputs[0], 'Student')
+
+    expect(screen.queryByText('Admin User')).not.toBeInTheDocument()
+
+    // Clear filters
+    const clearBtn = screen.getByTitle('Clear all filters')
+    await user.click(clearBtn)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+    expect(screen.getByText('Test Student')).toBeInTheDocument()
+  })
+
+  it('opens bulk programs dialog and calls API', async () => {
+    const user = userEvent.setup()
+    vi.mocked(bulkUpdateUserProgram).mockResolvedValue(USERS)
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    // Select first user
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    // Open bulk programs dialog
+    await user.click(screen.getByText('Bulk Programs (1)'))
+    expect(screen.getByText('Bulk Edit Programs')).toBeInTheDocument()
+  })
+
+  it('select-all checkbox selects all page users', async () => {
+    const user = userEvent.setup()
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    // Click select-all (first checkbox)
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[0])
+
+    // Bulk action buttons should show count for all users
+    expect(screen.getByText('Delete (2)')).toBeInTheDocument()
+  })
+
+  it('creates a new user when Add Person is submitted', async () => {
+    const user = userEvent.setup()
+    vi.mocked(createUser).mockResolvedValue({
+      ...USERS[0],
+      id: 99,
+      name: 'New Person',
+      email: 'new@example.ca',
+      role: 'student',
+    })
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('button', { name: /add person/i }))
+    expect(screen.getByRole('heading', { name: 'Add Person' })).toBeInTheDocument()
+
+    // Fill in required fields
+    const nameInput = screen.getByLabelText('Full name')
+    const emailInput = screen.getByLabelText('Email')
+    const passwordInput = screen.getByLabelText('Password')
+
+    await user.type(nameInput, 'New Person')
+    await user.type(emailInput, 'new@example.ca')
+    await user.type(passwordInput, 'secret123')
+
+    await user.click(screen.getByRole('button', { name: /^add$/i }))
+
+    await waitFor(() => {
+      expect(createUser).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('updates an existing user when Edit Person is submitted', async () => {
+    const user = userEvent.setup()
+    vi.mocked(updateUser).mockResolvedValue(USERS[0])
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    // Click row to open edit
+    await user.click(screen.getByText('Admin User'))
+    expect(screen.getByText('Edit Person')).toBeInTheDocument()
+
+    // Modify name
+    const nameInput = screen.getByDisplayValue('Admin User')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Updated Admin')
+
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    await waitFor(() => {
+      expect(updateUser).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('displays group names as chips', async () => {
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Lab A2')).toBeInTheDocument()
+    })
+
+    const chip = screen.getByText('Lab A2').closest('.MuiChip-root')
+    expect(chip).toBeInTheDocument()
   })
 })
