@@ -133,6 +133,7 @@ const CATEGORY_FIXTURE: ApiCategory = {
   group_ids: [],
   status: null,
   sort_order: 0,
+  version: 1,
   metadata_extra: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
