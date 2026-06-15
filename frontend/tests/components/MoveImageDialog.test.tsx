@@ -28,7 +28,6 @@ const image: ApiImage = {
   category_id: 5,
   copyright: null,
   note: null,
-  program_ids: [],
   active: true,
   sort_order: 0,
   metadata_extra: null,
