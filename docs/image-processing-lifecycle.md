@@ -163,4 +163,4 @@ a buffer).  This handles cases where the worker crashed mid-processing.
 
 ## Related skills
 
-- [Testing Image Processing](.agents/skills/testing-image-processing/SKILL.md) — hands-on testing guide
+- [Testing Image Processing](../.agents/skills/testing-image-processing/SKILL.md) — hands-on testing guide
