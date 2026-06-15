@@ -282,6 +282,7 @@ describe('resolvePathNode', () => {
     programIds: [],
     groupIds: [],
     sortOrder: 0,
+    version: 1,
   })
 
   const leaf = cat(3, [], [img(10), img(11)])

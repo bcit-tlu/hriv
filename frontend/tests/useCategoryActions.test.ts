@@ -67,6 +67,7 @@ describe("useCategoryActions", () => {
                 group_ids: [],
                 status: null,
                 sort_order: 0,
+                version: 1,
                 metadata_extra: null,
                 created_at: "",
                 updated_at: "",
@@ -97,6 +98,7 @@ describe("useCategoryActions", () => {
                 group_ids: [],
                 status: null,
                 sort_order: 0,
+                version: 1,
                 metadata_extra: null,
                 created_at: "",
                 updated_at: "",
@@ -124,6 +126,7 @@ describe("useCategoryActions", () => {
                 group_ids: [7, 8],
                 status: null,
                 sort_order: 0,
+                version: 1,
                 metadata_extra: null,
                 created_at: "",
                 updated_at: "",
@@ -152,6 +155,7 @@ describe("useCategoryActions", () => {
                 group_ids: [7],
                 status: null,
                 sort_order: 0,
+                version: 1,
                 metadata_extra: null,
                 created_at: "",
                 updated_at: "",
@@ -225,6 +229,7 @@ describe("useCategoryActions", () => {
                 group_ids: [],
                 status: null,
                 sort_order: 0,
+                version: 2,
                 metadata_extra: null,
                 created_at: "",
                 updated_at: "",
@@ -235,7 +240,7 @@ describe("useCategoryActions", () => {
                 await result.current.editCategoryInline(3, "Renamed");
             });
 
-            expect(mockUpdateCategory).toHaveBeenCalledWith(3, { label: "Renamed" });
+            expect(mockUpdateCategory).toHaveBeenCalledWith(3, { label: "Renamed" }, undefined);
             expect(deps.loadCategories).toHaveBeenCalled();
         });
 
@@ -249,6 +254,7 @@ describe("useCategoryActions", () => {
                 group_ids: [],
                 status: null,
                 sort_order: 0,
+                version: 2,
                 metadata_extra: null,
                 created_at: "",
                 updated_at: "",
@@ -262,7 +268,7 @@ describe("useCategoryActions", () => {
             expect(mockUpdateCategory).toHaveBeenCalledWith(3, {
                 label: "Renamed",
                 program_ids: [1],
-            });
+            }, undefined);
         });
     });
 
@@ -278,6 +284,7 @@ describe("useCategoryActions", () => {
                 group_ids: [],
                 status: "hidden",
                 sort_order: 0,
+                version: 2,
                 metadata_extra: null,
                 created_at: "",
                 updated_at: "",
@@ -288,7 +295,7 @@ describe("useCategoryActions", () => {
                 await result.current.toggleCategoryVisibility(5);
             });
 
-            expect(mockUpdateCategory).toHaveBeenCalledWith(5, { status: "hidden" });
+            expect(mockUpdateCategory).toHaveBeenCalledWith(5, { status: "hidden" }, 1);
             expect(deps.loadCategories).toHaveBeenCalled();
         });
 
@@ -303,6 +310,7 @@ describe("useCategoryActions", () => {
                 group_ids: [],
                 status: "active",
                 sort_order: 0,
+                version: 2,
                 metadata_extra: null,
                 created_at: "",
                 updated_at: "",
@@ -313,7 +321,7 @@ describe("useCategoryActions", () => {
                 await result.current.toggleCategoryVisibility(5);
             });
 
-            expect(mockUpdateCategory).toHaveBeenCalledWith(5, { status: "active" });
+            expect(mockUpdateCategory).toHaveBeenCalledWith(5, { status: "active" }, 1);
         });
 
         it("shows error snack on failure", async () => {
@@ -401,6 +409,7 @@ describe("useCategoryActions", () => {
                 group_ids: [],
                 status: null,
                 sort_order: 0,
+                version: 2,
                 metadata_extra: null,
                 created_at: "",
                 updated_at: "",
@@ -418,7 +427,7 @@ describe("useCategoryActions", () => {
                 await result.current.handleMoveCategory(3, 10);
             });
 
-            expect(mockUpdateCategory).toHaveBeenCalledWith(3, { parent_id: 10 });
+            expect(mockUpdateCategory).toHaveBeenCalledWith(3, { parent_id: 10 }, undefined);
             expect(result.current.moveCatOpen).toBe(false);
             expect(result.current.movingCategory).toBeNull();
             expect(deps.loadCategories).toHaveBeenCalled();
@@ -674,6 +683,7 @@ describe("useCategoryActions", () => {
                 group_ids: [],
                 status: null,
                 sort_order: 0,
+                version: 2,
                 metadata_extra: null,
                 created_at: "",
                 updated_at: "",
@@ -684,7 +694,7 @@ describe("useCategoryActions", () => {
                 await result.current.handleDropCategoryOnCategory(3, 2);
             });
 
-            expect(mockUpdateCategory).toHaveBeenCalledWith(3, { parent_id: 2 });
+            expect(mockUpdateCategory).toHaveBeenCalledWith(3, { parent_id: 2 }, 1);
             expect(deps.loadCategories).toHaveBeenCalled();
             expect(deps.setMoveSnack).toHaveBeenCalledWith(
                 expect.objectContaining({
@@ -706,6 +716,7 @@ describe("useCategoryActions", () => {
                 group_ids: [],
                 status: null,
                 sort_order: 0,
+                version: 2,
                 metadata_extra: null,
                 created_at: "",
                 updated_at: "",
@@ -729,6 +740,7 @@ describe("useCategoryActions", () => {
                 group_ids: [],
                 status: null,
                 sort_order: 0,
+                version: 3,
                 metadata_extra: null,
                 created_at: "",
                 updated_at: "",
@@ -739,7 +751,7 @@ describe("useCategoryActions", () => {
             });
 
             expect(deps.setMoveSnack).toHaveBeenCalledWith(null);
-            expect(mockUpdateCategory).toHaveBeenCalledWith(3, { parent_id: 1 });
+            expect(mockUpdateCategory).toHaveBeenCalledWith(3, { parent_id: 1 }, 2);
             expect(deps.loadCategories).toHaveBeenCalledTimes(2);
         });
 
@@ -756,6 +768,7 @@ describe("useCategoryActions", () => {
                 group_ids: [],
                 status: null,
                 sort_order: 0,
+                version: 2,
                 metadata_extra: null,
                 created_at: "",
                 updated_at: "",
@@ -806,6 +819,7 @@ describe("useCategoryActions", () => {
                 group_ids: [],
                 status: null,
                 sort_order: 0,
+                version: 2,
                 metadata_extra: { foo: "bar", card_image_id: 42 },
                 created_at: "",
                 updated_at: "",
@@ -818,7 +832,7 @@ describe("useCategoryActions", () => {
 
             expect(mockUpdateCategory).toHaveBeenCalledWith(5, {
                 metadata_extra: { foo: "bar", card_image_id: 42 },
-            });
+            }, 1);
             expect(deps.loadCategories).toHaveBeenCalled();
         });
 
@@ -833,6 +847,7 @@ describe("useCategoryActions", () => {
                 group_ids: [],
                 status: null,
                 sort_order: 0,
+                version: 2,
                 metadata_extra: { card_image_id: null },
                 created_at: "",
                 updated_at: "",
@@ -845,7 +860,7 @@ describe("useCategoryActions", () => {
 
             expect(mockUpdateCategory).toHaveBeenCalledWith(5, {
                 metadata_extra: { card_image_id: null },
-            });
+            }, 1);
         });
 
         it("shows error snack on failure", async () => {

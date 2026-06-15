@@ -59,6 +59,7 @@ const testCategory: Category = {
     groupIds: [],
     status: null,
     sortOrder: 0,
+    version: 1,
     cardImageId: null,
     metadataExtra: null,
 };

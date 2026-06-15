@@ -295,10 +295,10 @@ export default function App() {
                 return;
             }
 
-            // Fetch fresh categories so sort_order changes (from a recent
-            // reorder) are reflected when the user navigates back to browse
-            // via the browser back/forward buttons.
-            loadCategories({ silent: true });
+            // Force-bypass the browser HTTP cache so sort_order changes
+            // (from a recent reorder) are always reflected when the user
+            // navigates back to browse via the browser back/forward buttons.
+            refreshCategories();
 
             const catPath = resolveCategoryPath(
                 categoriesRef.current,
@@ -327,7 +327,7 @@ export default function App() {
             setViewportState(undefined);
             setOverlays([]);
         },
-        [setViewportState, setOverlays, loadCategories],
+        [setViewportState, setOverlays, refreshCategories],
     );
 
     const { pushNavState } = useNavigationHistory(handlePopState);

@@ -204,6 +204,7 @@ class CategoryReorderRequest(BaseModel):
 
 class CategoryOut(CategoryBase):
     id: int
+    version: int = 1
     created_at: datetime
     updated_at: datetime
     warnings: list[CategoryWarning] = []
@@ -226,6 +227,7 @@ class CategoryOut(CategoryBase):
                 sort_order=data.sort_order,
                 metadata_=data.metadata_,
                 id=data.id,
+                version=data.version,
                 created_at=data.created_at,
                 updated_at=data.updated_at,
                 warnings=getattr(data, "_category_warnings", []),

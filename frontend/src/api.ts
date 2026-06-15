@@ -125,6 +125,7 @@ export interface ApiCategory {
   group_ids: number[]
   status: string | null
   sort_order: number
+  version: number
   metadata_extra: Record<string, unknown> | null
   created_at: string
   updated_at: string
@@ -238,10 +239,17 @@ export function updateCategory(
     status?: string
     metadata_extra?: Record<string, unknown>
   },
+  /** Pass the current category version for optimistic concurrency control */
+  version?: number,
 ): Promise<ApiCategory> {
+  const headers: Record<string, string> = {}
+  if (version !== undefined) {
+    headers['If-Match'] = `"${version}"`
+  }
   return request(`/categories/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(body),
+    headers,
   })
 }
 
@@ -300,7 +308,7 @@ export function updateImage(
 ): Promise<ApiImage> {
   const headers: Record<string, string> = {}
   if (version !== undefined) {
-    headers['If-Match'] = String(version)
+    headers['If-Match'] = `"${version}"`
   }
   return request(`/images/${id}`, {
     method: 'PATCH',

@@ -151,13 +151,15 @@ export function useCategoryActions({
             };
             if (programIds !== undefined) body.program_ids = programIds;
             if (groupIds !== undefined) body.group_ids = groupIds;
-            const updated = await apiUpdateCategory(categoryId, body);
+            const catPath = findCategoryPath(categories, categoryId);
+            const version = catPath?.at(-1)?.version;
+            const updated = await apiUpdateCategory(categoryId, body, version);
             if (updated.warnings?.length && setWarningSnack) {
                 setWarningSnack(updated.warnings.map((w) => w.message).join(" "));
             }
             await loadCategories();
         },
-        [loadCategories, setWarningSnack],
+        [categories, loadCategories, setWarningSnack],
     );
 
     const toggleCategoryVisibility = useCallback(
@@ -168,7 +170,7 @@ export function useCategoryActions({
                 await apiUpdateCategory(categoryId, {
                     status:
                         current?.status === "hidden" ? "active" : "hidden",
-                });
+                }, current?.version);
                 await loadCategories();
             } catch (err) {
                 console.error("Failed to toggle category visibility", err);
@@ -213,7 +215,9 @@ export function useCategoryActions({
     const handleMoveCategory = useCallback(
         async (categoryId: number, newParentId: number | null) => {
             try {
-                await apiUpdateCategory(categoryId, { parent_id: newParentId });
+                const catPath = findCategoryPath(categories, categoryId);
+                const version = catPath?.at(-1)?.version;
+                await apiUpdateCategory(categoryId, { parent_id: newParentId }, version);
                 setMoveCatOpen(false);
                 setMovingCategory(null);
                 await loadCategories();
@@ -222,7 +226,7 @@ export function useCategoryActions({
                 setErrorSnack(userMessage(err, "Failed to move category."));
             }
         },
-        [loadCategories, setErrorSnack],
+        [categories, loadCategories, setErrorSnack],
     );
 
     const handleRequestMoveCategory = useCallback((cat: Category) => {
@@ -298,9 +302,10 @@ export function useCategoryActions({
                 const targetName =
                     findCategoryPath(categories, targetCategoryId)
                         ?.at(-1)?.label ?? "category";
-                await apiUpdateCategory(draggedCategoryId, {
+                const draggedVersion = draggedPath?.at(-1)?.version;
+                const resp = await apiUpdateCategory(draggedCategoryId, {
                     parent_id: targetCategoryId,
-                });
+                }, draggedVersion);
                 await loadCategories();
                 setMoveSnack({
                     message: `Moved \u201c${draggedName}\u201d into \u201c${targetName}\u201d`,
@@ -309,7 +314,7 @@ export function useCategoryActions({
                             setMoveSnack(null);
                             await apiUpdateCategory(draggedCategoryId, {
                                 parent_id: prevParentId,
-                            });
+                            }, resp.version);
                             await loadCategories();
                         } catch (undoErr) {
                             setErrorSnack(
@@ -345,10 +350,11 @@ export function useCategoryActions({
                     }
                     return null;
                 };
-                const existing = findCat(categories)?.metadataExtra ?? {};
+                const cat = findCat(categories);
+                const existing = cat?.metadataExtra ?? {};
                 await apiUpdateCategory(categoryId, {
                     metadata_extra: { ...existing, card_image_id: imageId },
-                });
+                }, cat?.version);
                 await loadCategories();
             } catch (err) {
                 console.error("Failed to set card image", err);

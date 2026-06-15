@@ -133,6 +133,7 @@ const CATEGORY_FIXTURE: ApiCategory = {
   group_ids: [],
   status: null,
   sort_order: 0,
+  version: 1,
   metadata_extra: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
@@ -412,6 +413,20 @@ describe('Category API', () => {
     expect(JSON.parse(init.body)).toEqual({ label: 'New Label' })
   })
 
+  it('updateCategory sends If-Match header when version is provided', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(CATEGORY_FIXTURE))
+    await updateCategory(1, { label: 'New Label' }, 5)
+    const [, init] = mockFetch.mock.calls[0]
+    expect(init.headers['If-Match']).toBe('"5"')
+  })
+
+  it('updateCategory omits If-Match header when version is undefined', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(CATEGORY_FIXTURE))
+    await updateCategory(1, { label: 'New Label' })
+    const [, init] = mockFetch.mock.calls[0]
+    expect(init.headers['If-Match']).toBeUndefined()
+  })
+
   it('deleteCategory sends DELETE', async () => {
     mockFetch.mockReturnValueOnce(noContentResponse())
     await deleteCategory(1)
@@ -475,7 +490,7 @@ describe('Image API', () => {
     mockFetch.mockReturnValueOnce(jsonResponse(IMAGE_FIXTURE))
     await updateImage(1, { name: 'renamed.jpg' }, 3)
     const [, init] = mockFetch.mock.calls[0]
-    expect(init.headers['If-Match']).toBe('3')
+    expect(init.headers['If-Match']).toBe('"3"')
   })
 
   it('updateImage omits If-Match header when version is undefined', async () => {
