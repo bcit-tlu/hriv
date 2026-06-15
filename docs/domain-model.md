@@ -42,8 +42,9 @@ the schema** — change the model *and* generate a migration in the same PR (see
 ### Category
 - **Purpose:** hierarchical folder structure for organising images.
 - **Key fields:** `label`; `parent_id` (nullable self-FK, `CASCADE`); `status`
-  (`"active"` / `"hidden"`, default `active`); `sort_order`; `metadata_` (JSONB,
-  DB column `metadata`).
+  (`"active"` / `"hidden"`, default `active`); `sort_order`; `version` (integer,
+  starts at 1, used for optimistic concurrency); `metadata_` (JSONB, DB column
+  `metadata`).
 - **Relationships:** `children` (self-referential, `cascade="all, delete-orphan"`);
   `parent`; `images`; `programs` (M2M via `category_programs`, eager `selectin`);
   `groups` (M2M via `category_groups`, eager `selectin`). Programs and groups are

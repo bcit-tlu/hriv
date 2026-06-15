@@ -188,6 +188,7 @@ async def _load_tree(
                 group_ids=[g.id for g in cat.groups],
                 status=cat.status,
                 sort_order=cat.sort_order,
+                version=cat.version,
                 metadata_extra=cat.metadata_,
                 created_at=cat.created_at,
                 updated_at=cat.updated_at,

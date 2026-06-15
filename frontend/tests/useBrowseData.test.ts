@@ -406,6 +406,7 @@ describe("useBrowseData", () => {
                 children: [],
                 images: [],
                 programIds: [],
+                groupIds: [],
                 status: null,
                 sortOrder: 0,
                 version: 1,

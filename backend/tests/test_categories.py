@@ -223,6 +223,16 @@ async def test_load_tree_uses_exactly_two_queries() -> None:
     assert db.execute.await_count == 2
 
 
+async def test_load_tree_preserves_category_version() -> None:
+    """Tree endpoint must propagate actual version, not the schema default."""
+    cats = [_make_category(1, "Edited", version=7)]
+    db = _mock_db(cats, [])
+
+    tree = await _load_tree(db, None, user_role="admin")
+
+    assert tree[0].version == 7
+
+
 # ── CRUD endpoint tests ──────────────────────────────────────
 
 
