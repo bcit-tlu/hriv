@@ -16,9 +16,11 @@ interface ImageTileProps {
   image: ImageItem
   onClick: (image: ImageItem) => void
   onEditDetails?: (image: ImageItem) => void
+  /** When true the parent category is hidden, so this tile is desaturated. */
+  categoryHidden?: boolean
 }
 
-export default function ImageTile({ image, onClick, onEditDetails }: ImageTileProps) {
+export default function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: ImageTileProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
   return (
@@ -27,7 +29,7 @@ export default function ImageTile({ image, onClick, onEditDetails }: ImageTilePr
       sx={{ width: '100%', maxWidth: 300, position: 'relative' }}
     >
       
-      <CardActionArea onClick={() => onClick(image)} sx={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'stretch', filter: !image.active ? 'grayscale(100%)' : 'none' }}>
+      <CardActionArea onClick={() => onClick(image)} sx={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'stretch', filter: (categoryHidden || !image.active) ? 'grayscale(100%)' : 'none' }}>
         <CardMedia
           component="img"
           height="160"

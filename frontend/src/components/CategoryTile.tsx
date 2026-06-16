@@ -58,11 +58,13 @@ interface CategoryTileProps {
   onEditName?: (category: Category) => void
   programs: Program[]
   groups?: Group[]
+  /** When true the parent category (or an ancestor) is hidden, so this tile is desaturated. */
+  parentHidden?: boolean
   /** Called when native files are dropped onto this category tile. */
   onDropFiles?: (categoryId: number, files: File[]) => void
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onEditName, programs, groups = [], onDropFiles }: CategoryTileProps) {
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onEditName, programs, groups = [], parentHidden = false, onDropFiles }: CategoryTileProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -186,7 +188,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             </Typography>
           </Box>
         )}
-        <CardActionArea onClick={() => onClick(category)} sx={{ filter: category.status === 'hidden' ? 'grayscale(100%)' : 'none' }}>
+        <CardActionArea onClick={() => onClick(category)} sx={{ filter: (parentHidden || category.status === 'hidden') ? 'grayscale(100%)' : 'none' }}>
           {cardImage ? (
             <CardMedia
               component="img"

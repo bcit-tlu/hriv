@@ -1967,7 +1967,10 @@ export default function App() {
                                         );
                                     })()}
                                 </Box>
-                                {canEditContent && (
+                                {canEditContent && (() => {
+                                    const anyPathHidden = path.some((p) => p.status === "hidden");
+                                    const desaturateSx = anyPathHidden ? { filter: "grayscale(100%)" } : undefined;
+                                    return (
                                     <Box
                                         sx={{
                                             display: "flex",
@@ -2028,6 +2031,7 @@ export default function App() {
                                                 onClick={() =>
                                                     setAddCatOpen(true)
                                                 }
+                                                sx={desaturateSx}
                                             >
                                                 Add Category
                                             </Button>
@@ -2038,11 +2042,13 @@ export default function App() {
                                                 <AddPhotoAlternateIcon />
                                             }
                                             onClick={() => setUploadOpen(true)}
+                                            sx={desaturateSx}
                                         >
                                             Add Images
                                         </Button>
                                     </Box>
-                                )}
+                                    );
+                                })()}
                             </Box>
 
                             {/* Tile grid */}

@@ -232,6 +232,11 @@ export default function SortableTileGrid({
         [path.length, uncategorizedImages, currentImages],
     );
 
+    const anyPathHidden = useMemo(
+        () => path.some((p) => p.status === "hidden"),
+        [path],
+    );
+
     const [items, setItems] = useState<TileItem[]>([]);
     const [activeItem, setActiveItem] = useState<TileItem | null>(null);
     const reorderInFlightRef = useRef(false);
@@ -427,6 +432,7 @@ export default function SortableTileGrid({
                 onEditName={canEditContent ? onEditCategoryName : undefined}
                 programs={programs}
                 groups={groups}
+                parentHidden={anyPathHidden}
                 onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
             />
         );
@@ -449,6 +455,7 @@ export default function SortableTileGrid({
             image={img}
             onClick={onImageClick}
             onEditDetails={canEditContent ? onEditImageDetails : undefined}
+            categoryHidden={anyPathHidden}
         />
     );
 
