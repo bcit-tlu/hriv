@@ -510,18 +510,16 @@ export default function ManageCategoriesDialog({
                           return (
                             <Tooltip title="Hidden by parent category">
                               <span>
-                                <IconButton
-                                  edge="end"
-                                  size="small"
-                                  disabled
-                                  aria-label="Visibility: Hidden by parent category"
-                                >
-                                  <VisibilityOff
-                                    fontSize="small"
-                                    sx={{ color: visColors.inactive }}
-                                  />
-                                </IconButton>
+                                <Tooltip title="Hidden by parent category">
+                                  <span role="img" aria-label="Visibility: Hidden by parent category">
+                                    <VisibilityOff
+                                      fontSize="small"
+                                      sx={{ color: visColors.inactive, opacity: 0.5 }}
+                                    />
+                                  </span>
+                                </Tooltip>
                               </span>
+
                             </Tooltip>
                           )
                         }
