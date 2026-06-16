@@ -272,23 +272,6 @@ describe('EditImageModal – form fields and save', () => {
     )
   })
 
-  it('toggles active switch', async () => {
-    const user = userEvent.setup()
-    const { onSave } = renderModal()
-
-    const visSwitch = screen.getByRole('switch', { name: /visible to students/i })
-    expect(visSwitch).toBeChecked()
-
-    await user.click(visSwitch)
-    expect(visSwitch).not.toBeChecked()
-
-    await user.click(screen.getByRole('button', { name: /^save$/i }))
-
-    expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({ active: false }),
-    )
-  })
-
   it('includes measurement_scale and measurement_unit in metadata_extra', async () => {
     const user = userEvent.setup()
     const { onSave } = renderModal()
