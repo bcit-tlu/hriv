@@ -121,7 +121,14 @@ function CategoryBreadcrumb({
   )
 }
 
-type SortableColumn = 'id' | 'name' | 'category' | 'copyright' | 'note' | 'program' | 'group' | 'active' | 'updated_at'
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
+}
+
+type SortableColumn = 'id' | 'name' | 'category' | 'copyright' | 'note' | 'program' | 'group' | 'active' | 'updated_at' | 'created_at' | 'dimensions' | 'file_size'
 type SortDirection = 'asc' | 'desc'
 type ManageTableColumn =
   | 'thumbnail'
@@ -134,6 +141,10 @@ type ManageTableColumn =
   | 'group'
   | 'active'
   | 'updated_at'
+  | 'created_at'
+  | 'dimensions'
+  | 'file_size'
+  | 'measurement'
 
 const MANAGE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageTableColumn>[] = [
   { key: 'thumbnail', label: 'Thumbnail' },
@@ -146,6 +157,10 @@ const MANAGE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageTableColumn>[
   { key: 'group', label: 'Groups' },
   { key: 'active', label: 'Visibility' },
   { key: 'updated_at', label: 'Modified' },
+  { key: 'created_at', label: 'Created' },
+  { key: 'dimensions', label: 'Dimensions' },
+  { key: 'file_size', label: 'File Size' },
+  { key: 'measurement', label: 'Measurement' },
 ]
 
 const MANAGE_DEFAULT_VISIBLE_COLUMNS: readonly ManageTableColumn[] = [
@@ -426,6 +441,15 @@ export default function ManagePage({
           break
         case 'updated_at':
           cmp = new Date(a.updated_at).getTime() - new Date(b.updated_at).getTime()
+          break
+        case 'created_at':
+          cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          break
+        case 'dimensions':
+          cmp = ((a.width ?? 0) * (a.height ?? 0)) - ((b.width ?? 0) * (b.height ?? 0))
+          break
+        case 'file_size':
+          cmp = (a.file_size ?? 0) - (b.file_size ?? 0)
           break
       }
       return sortDirection === 'asc' ? cmp : -cmp
@@ -843,6 +867,34 @@ export default function ManagePage({
                     Modified
                   </TableSortLabel>
                 </TableCell>}
+                {isColumnVisible('created_at') && <TableCell sortDirection={sortColumn === 'created_at' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'created_at'}
+                    direction={sortColumn === 'created_at' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('created_at')}
+                  >
+                    Created
+                  </TableSortLabel>
+                </TableCell>}
+                {isColumnVisible('dimensions') && <TableCell sortDirection={sortColumn === 'dimensions' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'dimensions'}
+                    direction={sortColumn === 'dimensions' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('dimensions')}
+                  >
+                    Dimensions
+                  </TableSortLabel>
+                </TableCell>}
+                {isColumnVisible('file_size') && <TableCell sortDirection={sortColumn === 'file_size' ? sortDirection : false}>
+                  <TableSortLabel
+                    active={sortColumn === 'file_size'}
+                    direction={sortColumn === 'file_size' ? sortDirection : 'asc'}
+                    onClick={() => handleSort('file_size')}
+                  >
+                    File Size
+                  </TableSortLabel>
+                </TableCell>}
+                {isColumnVisible('measurement') && <TableCell>Measurement</TableCell>}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
               {showFilters && (
@@ -947,6 +999,10 @@ export default function ManagePage({
                   </FormControl>
                 </TableCell>}
                 {isColumnVisible('updated_at') && <TableCell />}
+                {isColumnVisible('created_at') && <TableCell />}
+                {isColumnVisible('dimensions') && <TableCell />}
+                {isColumnVisible('file_size') && <TableCell />}
+                {isColumnVisible('measurement') && <TableCell />}
                 <TableCell />
               </TableRow>
               )}
@@ -1133,6 +1189,26 @@ export default function ManagePage({
                   </TableCell>}
                   {isColumnVisible('updated_at') && <TableCell>
                     {new Date(img.updated_at).toLocaleDateString()}
+                  </TableCell>}
+                  {isColumnVisible('created_at') && <TableCell>
+                    {new Date(img.created_at).toLocaleDateString()}
+                  </TableCell>}
+                  {isColumnVisible('dimensions') && <TableCell>
+                    {img.width != null && img.height != null
+                      ? `${img.width} × ${img.height}`
+                      : '—'}
+                  </TableCell>}
+                  {isColumnVisible('file_size') && <TableCell>
+                    {img.file_size != null ? formatFileSize(img.file_size) : '—'}
+                  </TableCell>}
+                  {isColumnVisible('measurement') && <TableCell>
+                    {(() => {
+                      const meta = img.metadata_extra
+                      const scale = meta?.measurement_scale
+                      const unit = meta?.measurement_unit
+                      if (scale == null) return '—'
+                      return unit ? `${scale} px/${unit}` : `${scale} px`
+                    })()}
                   </TableCell>}
                   <TableCell
                     data-interactive="true"
