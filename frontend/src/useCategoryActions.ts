@@ -152,7 +152,7 @@ export function useCategoryActions({
             };
             if (programIds !== undefined) body.program_ids = programIds;
             if (groupIds !== undefined) body.group_ids = groupIds;
-            if (status !== undefined) body.status = status;
+            if (status != null) body.status = status;
             const catPath = findCategoryPath(categories, categoryId);
             const version = catPath?.at(-1)?.version;
             const updated = await apiUpdateCategory(categoryId, body, version);
