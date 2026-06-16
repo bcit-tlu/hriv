@@ -89,6 +89,10 @@ describe('ManagePage', () => {
     expect(screen.queryByRole('columnheader', { name: 'Program' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Copyright' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Note' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Created' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Dimensions' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'File Size' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Measurement' })).not.toBeInTheDocument()
   })
 
   it('greyscales the thumbnail when an image is inactive', async () => {
