@@ -1190,6 +1190,10 @@ export interface FrontendVersionResponse {
 }
 
 export async function fetchFrontendVersion(): Promise<FrontendVersionResponse> {
+    if (import.meta.env.MODE === "development") {
+        return { frontend: "dev" };
+    }
+
     // NB: absolute path, not ``${BASE}/version``. ``BASE`` is
     // ``VITE_API_URL`` (the *backend* base), so if it's ever set to a
     // cross-origin URL (e.g. ``https://api.example.com``) the fetch would

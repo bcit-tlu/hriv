@@ -57,9 +57,7 @@ describe("ImageTile", () => {
                     onClick={vi.fn()}
                 />,
             );
-            expect(
-                screen.getByTestId("VisibilityOffIcon"),
-            ).toBeInTheDocument();
+            expect(screen.getByTestId("VisibilityOffIcon")).toBeInTheDocument();
         });
 
         it("renders the card in greyscale when image is inactive", () => {
@@ -158,6 +156,19 @@ describe("ImageTile", () => {
             expect(onEditDetails).toHaveBeenCalledWith(image);
         });
 
+        it("does not nest the edit button inside the card button", () => {
+            const { container } = render(
+                <ImageTile
+                    image={makeImage()}
+                    onClick={vi.fn()}
+                    onEditDetails={vi.fn()}
+                    onToggleVisibility={vi.fn()}
+                />,
+            );
+
+            expect(container.querySelector("button button")).toBeNull();
+        });
+
         it("does not render the edit button when onEditDetails is not provided", () => {
             render(<ImageTile image={makeImage()} onClick={vi.fn()} />);
             expect(
@@ -191,9 +202,7 @@ describe("ImageTile", () => {
                     onToggleVisibility={vi.fn()}
                 />,
             );
-            expect(
-                screen.getByTestId("VisibilityOffIcon"),
-            ).toBeInTheDocument();
+            expect(screen.getByTestId("VisibilityOffIcon")).toBeInTheDocument();
             expect(
                 screen.queryByTestId("VisibilityIcon"),
             ).not.toBeInTheDocument();
@@ -210,7 +219,9 @@ describe("ImageTile", () => {
                 />,
             );
 
-            await user.click(screen.getByLabelText("Visibility: Hide from students"));
+            await user.click(
+                screen.getByLabelText("Visibility: Hide from students"),
+            );
             expect(onToggle).toHaveBeenCalledWith(42);
         });
 
@@ -222,7 +233,9 @@ describe("ImageTile", () => {
                 />,
             );
             expect(
-                screen.queryByLabelText(/Visibility: (Hide|Show) from students/),
+                screen.queryByLabelText(
+                    /Visibility: (Hide|Show) from students/,
+                ),
             ).not.toBeInTheDocument();
         });
 
@@ -239,5 +252,4 @@ describe("ImageTile", () => {
             expect(icons).toHaveLength(1);
         });
     });
-
 });

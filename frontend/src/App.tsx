@@ -44,7 +44,11 @@ import GroupManagementModal from "./components/GroupManagementModal";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
 import type { TypeFilter } from "./components/SearchModal";
-import { findImageInTree, findCategoryPath, resolveCategoryPath } from "./treeUtils";
+import {
+    findImageInTree,
+    findCategoryPath,
+    resolveCategoryPath,
+} from "./treeUtils";
 import UploadImageModal from "./components/UploadImageModal";
 import { isAcceptedFile } from "./fileUtils";
 import { useAuth } from "./useAuth";
@@ -55,7 +59,6 @@ import {
     fetchVersions,
     fetchFrontendVersion,
     fetchUsers,
-
     createProgram,
     updateProgram,
     deleteProgram,
@@ -64,9 +67,7 @@ import {
     deleteGroup,
     userMessage,
 } from "./api";
-import type {
-    ApiUser,
-} from "./api";
+import type { ApiUser } from "./api";
 import MoveCategoryDialog from "./components/MoveCategoryDialog";
 import { useProcessingJobs } from "./useProcessingJobs";
 import type { Category, Group, ImageItem, Program } from "./types";
@@ -88,6 +89,12 @@ import { useImageActions } from "./useImageActions";
 import { useAnnouncementModal } from "./useAnnouncementModal";
 import { useUserProfile } from "./useUserProfile";
 
+function blurActiveElement(): void {
+    if (document.activeElement instanceof HTMLElement) {
+        document.activeElement.blur();
+    }
+}
+
 export default function App() {
     const {
         currentUser,
@@ -107,10 +114,14 @@ export default function App() {
     });
     const [path, setPath] = useState<Category[]>([]);
     const pathRef = useRef(path);
-    useEffect(() => { pathRef.current = path; });
+    useEffect(() => {
+        pathRef.current = path;
+    });
     const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
     const selectedImageRef = useRef<ImageItem | null>(null);
-    useEffect(() => { selectedImageRef.current = selectedImage; });
+    useEffect(() => {
+        selectedImageRef.current = selectedImage;
+    });
     const inactiveViewerActionSx = useMemo(
         () =>
             selectedImage?.active
@@ -122,9 +133,13 @@ export default function App() {
     );
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
-    const [fileDropCategoryId, setFileDropCategoryId] = useState<
-        number | null
-    >(null);
+    const openUploadModal = useCallback(() => {
+        blurActiveElement();
+        setUploadOpen(true);
+    }, []);
+    const [fileDropCategoryId, setFileDropCategoryId] = useState<number | null>(
+        null,
+    );
     const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
     const [fileDragActive, setFileDragActive] = useState(false);
     const fileDragCounter = useRef(0);
@@ -134,7 +149,9 @@ export default function App() {
         useState<HTMLElement | null>(null);
     const [groupsPopoverAnchor, setGroupsPopoverAnchor] =
         useState<HTMLElement | null>(null);
-    const [editNameCategory, setEditNameCategory] = useState<Category | null>(null);
+    const [editNameCategory, setEditNameCategory] = useState<Category | null>(
+        null,
+    );
 
     const [errorSnack, setErrorSnack] = useState<string | null>(null);
     const [warnSnack, setWarnSnack] = useState<string | null>(null);
@@ -183,10 +200,12 @@ export default function App() {
     } = useBrowseData({ path, currentUser });
 
     // Image processing jobs (extracted to useProcessingJobs hook)
-    const setImagesVersionRef = useRef<React.Dispatch<React.SetStateAction<number>>>(() => {});
-    const stableSetImagesVersion = useCallback<React.Dispatch<React.SetStateAction<number>>>(
-        (v) => setImagesVersionRef.current(v), [],
-    );
+    const setImagesVersionRef = useRef<
+        React.Dispatch<React.SetStateAction<number>>
+    >(() => {});
+    const stableSetImagesVersion = useCallback<
+        React.Dispatch<React.SetStateAction<number>>
+    >((v) => setImagesVersionRef.current(v), []);
     const processingJobsHook = useProcessingJobs({
         fetchSourceImage,
         fetchBulkImportJob,
@@ -249,12 +268,21 @@ export default function App() {
     // Search modal state
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchUsers, setSearchUsers] = useState<ApiUser[]>([]);
-    const [searchInitialQuery, setSearchInitialQuery] = useState<string | undefined>(undefined);
-    const [searchInitialTypeFilter, setSearchInitialTypeFilter] = useState<string | undefined>(undefined);
+    const [searchInitialQuery, setSearchInitialQuery] = useState<
+        string | undefined
+    >(undefined);
+    const [searchInitialTypeFilter, setSearchInitialTypeFilter] = useState<
+        string | undefined
+    >(undefined);
 
     // Initial program filter for ManagePage (set when navigating from search)
-    const [manageProgramFilter, setManageProgramFilter] = useState<string | undefined>(undefined);
-    const clearManageProgramFilter = useCallback(() => setManageProgramFilter(undefined), []);
+    const [manageProgramFilter, setManageProgramFilter] = useState<
+        string | undefined
+    >(undefined);
+    const clearManageProgramFilter = useCallback(
+        () => setManageProgramFilter(undefined),
+        [],
+    );
 
     // Initial user to edit on PeoplePage (set when navigating from search)
     const [editUserId, setEditUserId] = useState<number | null>(null);
@@ -269,13 +297,19 @@ export default function App() {
     // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
     const [canvasEditActive, setCanvasEditActive] = useState(false);
     const [imagesVersion, setImagesVersion] = useState(0);
-    useEffect(() => { setImagesVersionRef.current = setImagesVersion; }, [setImagesVersion]);
+    useEffect(() => {
+        setImagesVersionRef.current = setImagesVersion;
+    }, [setImagesVersion]);
 
     // Refs for the popstate handler (always reflect latest state)
     const categoriesRef = useRef(categories);
-    useEffect(() => { categoriesRef.current = categories; });
+    useEffect(() => {
+        categoriesRef.current = categories;
+    });
     const uncategorizedImagesRef = useRef(uncategorizedImages);
-    useEffect(() => { uncategorizedImagesRef.current = uncategorizedImages; });
+    useEffect(() => {
+        uncategorizedImagesRef.current = uncategorizedImages;
+    });
 
     // Browser history integration for back/forward navigation
     const handlePopState = useCallback(
@@ -300,17 +334,11 @@ export default function App() {
             // navigates back to browse via the browser back/forward buttons.
             refreshCategories();
 
-            const catPath = resolveCategoryPath(
-                categoriesRef.current,
-                catIds,
-            );
+            const catPath = resolveCategoryPath(categoriesRef.current, catIds);
             setPath(catPath);
 
             if (imageId != null) {
-                const result = findImageInTree(
-                    categoriesRef.current,
-                    imageId,
-                );
+                const result = findImageInTree(categoriesRef.current, imageId);
                 if (result) {
                     setSelectedImage(result.image);
                     setPath(result.path);
@@ -438,7 +466,17 @@ export default function App() {
         setSearchUsers([]);
         /* eslint-enable react-hooks/set-state-in-effect */
         resetProcessingJobs();
-    }, [currentUser, resetProcessingJobs, setViewportState, setOverlays, clearPending, setImageEditOpen, setBrowseEditImage, setEditModalOpen, setProfileOpen]);
+    }, [
+        currentUser,
+        resetProcessingJobs,
+        setViewportState,
+        setOverlays,
+        clearPending,
+        setImageEditOpen,
+        setBrowseEditImage,
+        setEditModalOpen,
+        setProfileOpen,
+    ]);
 
     // Initial data load — kept in this component (rather than inside
     // useBrowseData) and declared after the reset effect above. React
@@ -451,12 +489,22 @@ export default function App() {
             loadCategories();
             loadUncategorizedImages();
             loadPrograms();
-            if (currentUser.role === "admin" || currentUser.role === "instructor") {
+            if (
+                currentUser.role === "admin" ||
+                currentUser.role === "instructor"
+            ) {
                 loadGroups();
             }
         }
         loadAnnouncement();
-    }, [currentUser, loadCategories, loadUncategorizedImages, loadPrograms, loadGroups, loadAnnouncement]);
+    }, [
+        currentUser,
+        loadCategories,
+        loadUncategorizedImages,
+        loadPrograms,
+        loadGroups,
+        loadAnnouncement,
+    ]);
 
     // Load users for search when modal opens (admin/instructor only)
     useEffect(() => {
@@ -707,10 +755,7 @@ export default function App() {
     const handleCategoryTileClick = useCallback(
         (cat: Category) => {
             navigateToCategory(cat);
-            pushNavState(
-                "browse",
-                [...path.map((c) => c.id), cat.id],
-            );
+            pushNavState("browse", [...path.map((c) => c.id), cat.id]);
         },
         [navigateToCategory, path, pushNavState],
     );
@@ -726,10 +771,10 @@ export default function App() {
             }
             if (accepted.length > 0) {
                 setDroppedFiles(accepted);
-                setUploadOpen(true);
+                openUploadModal();
             }
         },
-        [],
+        [openUploadModal],
     );
 
     const handleFilesDropOnCategory = useCallback(
@@ -744,10 +789,10 @@ export default function App() {
             if (accepted.length > 0) {
                 setFileDropCategoryId(categoryId);
                 setDroppedFiles(accepted);
-                setUploadOpen(true);
+                openUploadModal();
             }
         },
-        [],
+        [openUploadModal],
     );
 
     const handleReorderComplete = useCallback(async () => {
@@ -763,12 +808,9 @@ export default function App() {
         }
     }, [refreshCategories, refreshUncategorizedImages]);
 
-    const handleReorderError = useCallback(
-        (err: unknown) => {
-            setErrorSnack(userMessage(err, "Failed to reorder tiles."));
-        },
-        [],
-    );
+    const handleReorderError = useCallback((err: unknown) => {
+        setErrorSnack(userMessage(err, "Failed to reorder tiles."));
+    }, []);
 
     const navigateToDepth = (depth: number) => {
         setPath((prev) => prev.slice(0, depth));
@@ -905,7 +947,11 @@ export default function App() {
                     {page === "admin" && canManageUsers ? (
                         <AdminPage />
                     ) : page === "people" && canManageUsers ? (
-                        <PeoplePage programs={programs} initialEditUserId={editUserId} onEditUserHandled={clearEditUserId} />
+                        <PeoplePage
+                            programs={programs}
+                            initialEditUserId={editUserId}
+                            onEditUserHandled={clearEditUserId}
+                        />
                     ) : page === "manage" && canEditContent ? (
                         <ManagePage
                             categories={categories}
@@ -970,11 +1016,13 @@ export default function App() {
                             onUploadOpenChange={setManageUploadOpen}
                             onSearchProgram={(programName) => {
                                 setSearchInitialQuery(programName);
-                                setSearchInitialTypeFilter('program');
+                                setSearchInitialTypeFilter("program");
                                 setSearchOpen(true);
                             }}
                             initialProgramFilter={manageProgramFilter}
-                            onInitialProgramFilterConsumed={clearManageProgramFilter}
+                            onInitialProgramFilterConsumed={
+                                clearManageProgramFilter
+                            }
                         />
                     ) : selectedImage ? (
                         /* ---- Viewer mode ---- */
@@ -1004,11 +1052,12 @@ export default function App() {
                                             "& .MuiBreadcrumbs-ol": {
                                                 flexWrap: "nowrap",
                                             },
-                                            "& .MuiBreadcrumbs-li:last-of-type": {
-                                                overflow: "hidden",
-                                                textOverflow: "ellipsis",
-                                                whiteSpace: "nowrap",
-                                            },
+                                            "& .MuiBreadcrumbs-li:last-of-type":
+                                                {
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap",
+                                                },
                                         }}
                                     >
                                         <Link
@@ -1061,27 +1110,19 @@ export default function App() {
                                         </Typography>
                                     </MuiBreadcrumbs>
                                     {(() => {
-                                        const resolved =
-                                            ancestorProgramIds
-                                                .map((pid) =>
-                                                    programs.find(
-                                                        (p) =>
-                                                            p.id === pid,
-                                                    ),
-                                                )
-                                                .filter(
-                                                    (
-                                                        p,
-                                                    ): p is Program =>
-                                                        p != null,
-                                                )
-                                                .sort((a, b) =>
-                                                    a.name.localeCompare(
-                                                        b.name,
-                                                    ),
-                                                );
-                                        if (resolved.length === 0)
-                                            return null;
+                                        const resolved = ancestorProgramIds
+                                            .map((pid) =>
+                                                programs.find(
+                                                    (p) => p.id === pid,
+                                                ),
+                                            )
+                                            .filter(
+                                                (p): p is Program => p != null,
+                                            )
+                                            .sort((a, b) =>
+                                                a.name.localeCompare(b.name),
+                                            );
+                                        if (resolved.length === 0) return null;
                                         const MAX_INLINE = 2;
                                         const inline = resolved.slice(
                                             0,
@@ -1113,9 +1154,7 @@ export default function App() {
                                                             size="small"
                                                             color="primary"
                                                             variant="outlined"
-                                                            onClick={(
-                                                                e,
-                                                            ) =>
+                                                            onClick={(e) =>
                                                                 setProgramsPopoverAnchor(
                                                                     e.currentTarget,
                                                                 )
@@ -1161,9 +1200,7 @@ export default function App() {
                                                                 }}
                                                             >
                                                                 {resolved.map(
-                                                                    (
-                                                                        p,
-                                                                    ) => (
+                                                                    (p) => (
                                                                         <Chip
                                                                             key={
                                                                                 p.id
@@ -1191,27 +1228,19 @@ export default function App() {
                                         );
                                     })()}
                                     {(() => {
-                                        const resolved =
-                                            ancestorGroupIds
-                                                .map((gid) =>
-                                                    groups.find(
-                                                        (g) =>
-                                                            g.id === gid,
-                                                    ),
-                                                )
-                                                .filter(
-                                                    (
-                                                        g,
-                                                    ): g is Group =>
-                                                        g != null,
-                                                )
-                                                .sort((a, b) =>
-                                                    a.name.localeCompare(
-                                                        b.name,
-                                                    ),
-                                                );
-                                        if (resolved.length === 0)
-                                            return null;
+                                        const resolved = ancestorGroupIds
+                                            .map((gid) =>
+                                                groups.find(
+                                                    (g) => g.id === gid,
+                                                ),
+                                            )
+                                            .filter(
+                                                (g): g is Group => g != null,
+                                            )
+                                            .sort((a, b) =>
+                                                a.name.localeCompare(b.name),
+                                            );
+                                        if (resolved.length === 0) return null;
                                         const MAX_INLINE = 2;
                                         const inline = resolved.slice(
                                             0,
@@ -1243,9 +1272,7 @@ export default function App() {
                                                             size="small"
                                                             color="secondary"
                                                             variant="outlined"
-                                                            onClick={(
-                                                                e,
-                                                            ) =>
+                                                            onClick={(e) =>
                                                                 setGroupsPopoverAnchor(
                                                                     e.currentTarget,
                                                                 )
@@ -1291,9 +1318,7 @@ export default function App() {
                                                                 }}
                                                             >
                                                                 {resolved.map(
-                                                                    (
-                                                                        g,
-                                                                    ) => (
+                                                                    (g) => (
                                                                         <Chip
                                                                             key={
                                                                                 g.id
@@ -1330,19 +1355,39 @@ export default function App() {
                                     }}
                                 >
                                     {canEditContent && (
-                                        <Tooltip title={selectedImage.active ? "Visibility: Hide from students" : "Visibility: Show to students"}>
+                                        <Tooltip
+                                            title={
+                                                selectedImage.active
+                                                    ? "Visibility: Hide from students"
+                                                    : "Visibility: Show to students"
+                                            }
+                                        >
                                             <IconButton
                                                 size="small"
-                                                onClick={() => toggleImageVisibility(selectedImage.id)}
-                                                aria-label={selectedImage.active ? "Visibility: Hide from students" : "Visibility: Show to students"}
+                                                onClick={() =>
+                                                    toggleImageVisibility(
+                                                        selectedImage.id,
+                                                    )
+                                                }
+                                                aria-label={
+                                                    selectedImage.active
+                                                        ? "Visibility: Hide from students"
+                                                        : "Visibility: Show to students"
+                                                }
                                             >
                                                 {selectedImage.active ? (
                                                     <Visibility
-                                                        sx={{ fontSize: 28, color: visColors.active }}
+                                                        sx={{
+                                                            fontSize: 28,
+                                                            color: visColors.active,
+                                                        }}
                                                     />
                                                 ) : (
                                                     <VisibilityOff
-                                                        sx={{ fontSize: 28, color: visColors.inactive }}
+                                                        sx={{
+                                                            fontSize: 28,
+                                                            color: visColors.inactive,
+                                                        }}
                                                     />
                                                 )}
                                             </IconButton>
@@ -1533,16 +1578,16 @@ export default function App() {
                                 )}
                                 {selectedImage.width != null &&
                                     selectedImage.height != null && (
-                                    <Typography
-                                        variant="body2"
-                                        color="text.secondary"
-                                        component="span"
-                                    >
-                                        <strong>Dimensions:</strong>{" "}
-                                        {selectedImage.width} &times;{" "}
-                                        {selectedImage.height}
-                                    </Typography>
-                                )}
+                                        <Typography
+                                            variant="body2"
+                                            color="text.secondary"
+                                            component="span"
+                                        >
+                                            <strong>Dimensions:</strong>{" "}
+                                            {selectedImage.width} &times;{" "}
+                                            {selectedImage.height}
+                                        </Typography>
+                                    )}
                                 {selectedImage.fileSize != null && (
                                     <Typography
                                         variant="body2"
@@ -1565,7 +1610,8 @@ export default function App() {
                                             ? `${selectedImageMeasurement.scale} px/${selectedImageMeasurement.unit}`
                                             : selectedImageMeasurement.scale
                                               ? `${selectedImageMeasurement.scale} px`
-                                              : selectedImageMeasurement.unit ?? ""}
+                                              : (selectedImageMeasurement.unit ??
+                                                "")}
                                     </Typography>
                                 )}
                             </Box>
@@ -1637,8 +1683,7 @@ export default function App() {
                                                     key={cat.id}
                                                     sx={{
                                                         display: "flex",
-                                                        alignItems:
-                                                            "center",
+                                                        alignItems: "center",
                                                         gap: 0.25,
                                                         minWidth: 0,
                                                     }}
@@ -1723,27 +1768,19 @@ export default function App() {
                                         })}
                                     </MuiBreadcrumbs>
                                     {(() => {
-                                        const resolved =
-                                            ancestorProgramIds
-                                                .map((pid) =>
-                                                    programs.find(
-                                                        (p) =>
-                                                            p.id === pid,
-                                                    ),
-                                                )
-                                                .filter(
-                                                    (
-                                                        p,
-                                                    ): p is Program =>
-                                                        p != null,
-                                                )
-                                                .sort((a, b) =>
-                                                    a.name.localeCompare(
-                                                        b.name,
-                                                    ),
-                                                );
-                                        if (resolved.length === 0)
-                                            return null;
+                                        const resolved = ancestorProgramIds
+                                            .map((pid) =>
+                                                programs.find(
+                                                    (p) => p.id === pid,
+                                                ),
+                                            )
+                                            .filter(
+                                                (p): p is Program => p != null,
+                                            )
+                                            .sort((a, b) =>
+                                                a.name.localeCompare(b.name),
+                                            );
+                                        if (resolved.length === 0) return null;
                                         const MAX_INLINE = 2;
                                         const inline = resolved.slice(
                                             0,
@@ -1768,9 +1805,7 @@ export default function App() {
                                                             size="small"
                                                             color="primary"
                                                             variant="outlined"
-                                                            onClick={(
-                                                                e,
-                                                            ) =>
+                                                            onClick={(e) =>
                                                                 setProgramsPopoverAnchor(
                                                                     e.currentTarget,
                                                                 )
@@ -1811,9 +1846,7 @@ export default function App() {
                                                                 }}
                                                             >
                                                                 {resolved.map(
-                                                                    (
-                                                                        p,
-                                                                    ) => (
+                                                                    (p) => (
                                                                         <Chip
                                                                             key={
                                                                                 p.id
@@ -1834,27 +1867,19 @@ export default function App() {
                                         );
                                     })()}
                                     {(() => {
-                                        const resolved =
-                                            ancestorGroupIds
-                                                .map((gid) =>
-                                                    groups.find(
-                                                        (g) =>
-                                                            g.id === gid,
-                                                    ),
-                                                )
-                                                .filter(
-                                                    (
-                                                        g,
-                                                    ): g is Group =>
-                                                        g != null,
-                                                )
-                                                .sort((a, b) =>
-                                                    a.name.localeCompare(
-                                                        b.name,
-                                                    ),
-                                                );
-                                        if (resolved.length === 0)
-                                            return null;
+                                        const resolved = ancestorGroupIds
+                                            .map((gid) =>
+                                                groups.find(
+                                                    (g) => g.id === gid,
+                                                ),
+                                            )
+                                            .filter(
+                                                (g): g is Group => g != null,
+                                            )
+                                            .sort((a, b) =>
+                                                a.name.localeCompare(b.name),
+                                            );
+                                        if (resolved.length === 0) return null;
                                         const MAX_INLINE = 2;
                                         const inline = resolved.slice(
                                             0,
@@ -1879,9 +1904,7 @@ export default function App() {
                                                             size="small"
                                                             color="secondary"
                                                             variant="outlined"
-                                                            onClick={(
-                                                                e,
-                                                            ) =>
+                                                            onClick={(e) =>
                                                                 setGroupsPopoverAnchor(
                                                                     e.currentTarget,
                                                                 )
@@ -1922,9 +1945,7 @@ export default function App() {
                                                                 }}
                                                             >
                                                                 {resolved.map(
-                                                                    (
-                                                                        g,
-                                                                    ) => (
+                                                                    (g) => (
                                                                         <Chip
                                                                             key={
                                                                                 g.id
@@ -1971,7 +1992,7 @@ export default function App() {
                                             startIcon={
                                                 <AddPhotoAlternateIcon />
                                             }
-                                            onClick={() => setUploadOpen(true)}
+                                            onClick={openUploadModal}
                                         >
                                             Add Images
                                         </Button>
@@ -2008,9 +2029,7 @@ export default function App() {
                                 }
                                 onImageClick={handleImageClick}
                                 onEditImageDetails={setBrowseEditImage}
-                                onToggleImageVisibility={
-                                    toggleImageVisibility
-                                }
+                                onToggleImageVisibility={toggleImageVisibility}
                                 onFilesDrop={handleFilesDropOnGrid}
                                 onGridDragOver={
                                     canEditContent
@@ -2188,7 +2207,10 @@ export default function App() {
                 onUploadFailed={handleUploadFailed}
                 onProcessingStarted={handleProcessingStarted}
                 onBulkImportStarted={handleBulkImportStarted}
-                categoryId={fileDropCategoryId ?? (path.length > 0 ? path[path.length - 1].id : null)}
+                categoryId={
+                    fileDropCategoryId ??
+                    (path.length > 0 ? path[path.length - 1].id : null)
+                }
                 categories={categories}
                 programs={programs}
                 groups={groups}
@@ -2204,14 +2226,14 @@ export default function App() {
                 onAdd={async (label, programIds, groupIds) => {
                     await addCategoryInline(
                         label,
-                        path.length > 0
-                            ? path[path.length - 1].id
-                            : null,
+                        path.length > 0 ? path[path.length - 1].id : null,
                         programIds,
                         groupIds,
                     );
                 }}
-                parentLabel={path.length > 0 ? path[path.length - 1].label : undefined}
+                parentLabel={
+                    path.length > 0 ? path[path.length - 1].label : undefined
+                }
                 siblingNames={currentCategories.map((c) => c.label)}
                 programs={programs}
                 inheritedProgramIds={ancestorProgramIds}
@@ -2238,7 +2260,8 @@ export default function App() {
                                     ? {
                                           ...p,
                                           label: newLabel,
-                                          programIds: programIds ?? p.programIds,
+                                          programIds:
+                                              programIds ?? p.programIds,
                                           groupIds: groupIds ?? p.groupIds,
                                       }
                                     : p,
@@ -2362,7 +2385,9 @@ export default function App() {
                     setSearchInitialTypeFilter(undefined);
                 }}
                 initialQuery={searchInitialQuery}
-                initialTypeFilter={searchInitialTypeFilter as TypeFilter | undefined}
+                initialTypeFilter={
+                    searchInitialTypeFilter as TypeFilter | undefined
+                }
                 categories={categories}
                 uncategorizedImages={uncategorizedImages}
                 programs={programs}
@@ -2488,8 +2513,8 @@ export default function App() {
             {visibleJobs.map((job, index) => {
                 const uploadFraction =
                     job.status === "uploading" && job.uploadId != null
-                        ? (getUploadProgress(job.uploadId) ||
-                          (job.uploadProgress ?? 0))
+                        ? getUploadProgress(job.uploadId) ||
+                          (job.uploadProgress ?? 0)
                         : 0;
                 const displayProgress = getDisplayProgress(job);
                 const statusMsg = getStatusMessage(job);
@@ -2553,9 +2578,7 @@ export default function App() {
                                     </Typography>
                                     <LinearProgress
                                         variant="determinate"
-                                        value={Math.round(
-                                            uploadFraction * 100,
-                                        )}
+                                        value={Math.round(uploadFraction * 100)}
                                         sx={{
                                             height: 6,
                                             borderRadius: 1,
