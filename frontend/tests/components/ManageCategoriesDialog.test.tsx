@@ -304,7 +304,7 @@ describe('ManageCategoriesDialog — visibility toggle', () => {
     const categories = [makeCategory({ id: 1, label: 'Active Cat' })]
     renderDialog({ categories, onToggleVisibility: vi.fn() })
     expect(
-      screen.getByLabelText('Visibility: Hide from students'),
+      screen.getByLabelText('Visibility: Hide category'),
     ).toBeInTheDocument()
   })
 
@@ -314,23 +314,43 @@ describe('ManageCategoriesDialog — visibility toggle', () => {
     const categories = [makeCategory({ id: 7, label: 'Cat' })]
     renderDialog({ categories, onToggleVisibility })
 
-    await user.click(screen.getByLabelText('Visibility: Hide from students'))
+    await user.click(screen.getByLabelText('Visibility: Hide category'))
     expect(onToggleVisibility).toHaveBeenCalledWith(7)
   })
 
-  it('renders "Show to students" for hidden categories', () => {
+  it('renders "Show category" for hidden categories', () => {
     const categories = [makeCategory({ id: 1, label: 'Hidden', status: 'hidden' })]
     renderDialog({ categories, onToggleVisibility: vi.fn() })
     expect(
-      screen.getByLabelText('Visibility: Show to students'),
+      screen.getByLabelText('Visibility: Show category'),
     ).toBeInTheDocument()
+  })
+
+  it('dims inherited-hidden child rows and shows the inherited hidden icon', () => {
+    const categories = [
+      makeCategory({
+        id: 1,
+        label: 'Parent',
+        status: 'hidden',
+        children: [
+          makeCategory({ id: 2, label: 'Child', parentId: 1 }),
+        ],
+      }),
+    ]
+    renderDialog({ categories, onToggleVisibility: vi.fn() })
+
+    const childRow = screen.getByText('Child').closest('li')
+    const inheritedButton = screen.getByLabelText('Visibility: Hidden by parent category')
+
+    expect(childRow).toHaveStyle({ opacity: '0.5' })
+    expect(inheritedButton.querySelector('[data-testid="VisibilityOffIcon"]')).toBeInTheDocument()
   })
 
   it('does not render visibility buttons when onToggleVisibility is omitted', () => {
     const categories = [makeCategory({ id: 1, label: 'Cat' })]
     renderDialog({ categories })
     expect(
-      screen.queryByLabelText('Visibility: Hide from students'),
+      screen.queryByLabelText('Visibility: Hide category'),
     ).not.toBeInTheDocument()
   })
 })

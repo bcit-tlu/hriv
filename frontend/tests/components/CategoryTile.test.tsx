@@ -64,18 +64,6 @@ describe('CategoryTile', () => {
   // ─── Hidden indicator ─────────────────────────────────────────────
 
   describe('hidden indicator', () => {
-    it('shows the hidden icon when category status is hidden and toggle provided', () => {
-      render(
-        <CategoryTile
-          category={makeCategory({ status: 'hidden' })}
-          onClick={vi.fn()}
-          programs={[]}
-          onToggleVisibility={vi.fn()}
-        />,
-      )
-      expect(screen.getByTestId('VisibilityOffIcon')).toBeInTheDocument()
-    })
-
     it('renders the card in greyscale when category is hidden', () => {
       render(
         <CategoryTile
@@ -88,20 +76,7 @@ describe('CategoryTile', () => {
       expect(title.closest('.MuiCardActionArea-root')).toHaveStyle({ filter: 'grayscale(100%)' })
     })
 
-    it('shows the visible icon when category is active and toggle provided', () => {
-      render(
-        <CategoryTile
-          category={makeCategory({ status: null })}
-          onClick={vi.fn()}
-          programs={[]}
-          onToggleVisibility={vi.fn()}
-        />,
-      )
-      expect(screen.queryByTestId('VisibilityOffIcon')).not.toBeInTheDocument()
-      expect(screen.getByTestId('VisibilityIcon')).toBeInTheDocument()
-    })
-
-    it('does not show visibility icons when toggle is not provided', () => {
+    it('shows the hidden icon when category is directly hidden', () => {
       render(
         <CategoryTile
           category={makeCategory({ status: 'hidden' })}
@@ -109,7 +84,7 @@ describe('CategoryTile', () => {
           programs={[]}
         />,
       )
-      expect(screen.queryByTestId('VisibilityOffIcon')).not.toBeInTheDocument()
+      expect(screen.getByTestId('VisibilityOffIcon')).toBeInTheDocument()
       expect(screen.queryByTestId('VisibilityIcon')).not.toBeInTheDocument()
     })
 
@@ -123,6 +98,27 @@ describe('CategoryTile', () => {
       )
       const title = screen.getByText('Visible Cat')
       expect(title.closest('.MuiCardActionArea-root')).toHaveStyle({ filter: 'none' })
+    })
+
+    it('reduces tile opacity when hidden state is inherited from a parent page', () => {
+      render(
+        <CategoryTile
+          category={makeCategory({
+            label: 'Inherited Hidden Cat',
+            programIds: [10],
+          })}
+          onClick={vi.fn()}
+          programs={samplePrograms}
+          parentHidden
+          inheritedHidden
+        />,
+      )
+      const title = screen.getByText('Inherited Hidden Cat')
+      const card = title.closest('.MuiCard-root')
+      const actionArea = title.closest('.MuiCardActionArea-root')
+
+      expect(card).toHaveStyle({ opacity: '0.5' })
+      expect(actionArea).toHaveStyle({ filter: 'grayscale(100%)' })
     })
   })
 

@@ -19,6 +19,7 @@ import CategoryPickerSelect from './CategoryPickerSelect'
 import ImageMetadataFields from './ImageMetadataFields'
 import type { ImageMetadataValues } from './ImageMetadataFields'
 import type { Category, Group, Program } from '../types'
+import { isCategoryHiddenInTree } from '../treeUtils'
 
 /**
  * File-picker ``accept`` list. We list explicit MIME types instead of the
@@ -415,6 +416,7 @@ export default function UploadImageModal({
               values={metadata}
               onChange={setMetadata}
               idPrefix="upload"
+              categoryHidden={isCategoryHiddenInTree(categories, categoryId)}
             />
             {uploading && uploadProgress !== null && (
               <Box sx={{ width: '100%' }}>

@@ -44,7 +44,7 @@ import GroupManagementModal from "./components/GroupManagementModal";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
 import type { TypeFilter } from "./components/SearchModal";
-import { findImageInTree, findCategoryPath, resolveCategoryPath } from "./treeUtils";
+import { findImageInTree, findCategoryPath, getCategoryHiddenStateFromPath, getCategoryHiddenStateInTree, isCategoryHiddenInTree, resolveCategoryPath } from "./treeUtils";
 import UploadImageModal from "./components/UploadImageModal";
 import { isAcceptedFile } from "./fileUtils";
 import { useAuth } from "./useAuth";
@@ -111,15 +111,6 @@ export default function App() {
     const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
     const selectedImageRef = useRef<ImageItem | null>(null);
     useEffect(() => { selectedImageRef.current = selectedImage; });
-    const inactiveViewerActionSx = useMemo(
-        () =>
-            selectedImage?.active
-                ? undefined
-                : {
-                      filter: "grayscale(100%)",
-                  },
-        [selectedImage?.active],
-    );
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [fileDropCategoryId, setFileDropCategoryId] = useState<
@@ -181,6 +172,64 @@ export default function App() {
         ancestorGroupIds,
         currentCategories,
     } = useBrowseData({ path, currentUser });
+
+    const selectedImageCategoryHidden = useMemo(
+        () => getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
+        [categories, selectedImage?.categoryId],
+    );
+    const currentCategoryHiddenState = useMemo(
+        () => getCategoryHiddenStateFromPath(path),
+        [path],
+    );
+    const currentCategoryInheritedHidden =
+        currentCategoryHiddenState.hiddenByAncestor &&
+        !currentCategoryHiddenState.directlyHidden;
+    const imageViewerHiddenByCategory = useMemo(
+        () =>
+            selectedImageCategoryHidden.hidden ||
+            currentCategoryHiddenState.hidden,
+        [
+            selectedImageCategoryHidden.hidden,
+            currentCategoryHiddenState.hidden,
+        ],
+    );
+    const categoryPageHiddenSx = useMemo(
+        () =>
+            currentCategoryHiddenState.hidden
+                ? {
+                      filter: "grayscale(100%)",
+                      ...(currentCategoryInheritedHidden ? { opacity: 0.5 } : {}),
+                  }
+                : undefined,
+        [currentCategoryHiddenState.hidden, currentCategoryInheritedHidden],
+    );
+    const inactiveViewerActionSx = useMemo(
+        () =>
+            selectedImage?.active && !imageViewerHiddenByCategory
+                ? undefined
+                : {
+                      filter: "grayscale(100%)",
+                      ...(imageViewerHiddenByCategory
+                          ? { opacity: 0.5 }
+                          : {}),
+                  },
+        [
+            selectedImage?.active,
+            imageViewerHiddenByCategory,
+        ],
+    );
+    const imageViewerCategoryHiddenSx = useMemo(
+        () =>
+            imageViewerHiddenByCategory
+                ? {
+                      filter: "grayscale(100%)",
+                      opacity: 0.5,
+                  }
+                : undefined,
+        [
+            imageViewerHiddenByCategory,
+        ],
+    );
 
     // Image processing jobs (extracted to useProcessingJobs hook)
     const setImagesVersionRef = useRef<React.Dispatch<React.SetStateAction<number>>>(() => {});
@@ -1099,10 +1148,8 @@ export default function App() {
                                                         color="primary"
                                                         sx={
                                                             selectedImage.active
-                                                                ? undefined
-                                                                : {
-                                                                      filter: "grayscale(100%)",
-                                                                  }
+                                                                ? imageViewerCategoryHiddenSx
+                                                                : inactiveViewerActionSx
                                                         }
                                                     />
                                                 ))}
@@ -1124,10 +1171,8 @@ export default function App() {
                                                             sx={{
                                                                 cursor: "pointer",
                                                                 ...(selectedImage.active
-                                                                    ? {}
-                                                                    : {
-                                                                          filter: "grayscale(100%)",
-                                                                      }),
+                                                                    ? imageViewerCategoryHiddenSx ?? {}
+                                                                    : inactiveViewerActionSx ?? {}),
                                                             }}
                                                         />
                                                         <Popover
@@ -1175,10 +1220,8 @@ export default function App() {
                                                                             color="primary"
                                                                             sx={
                                                                                 selectedImage.active
-                                                                                    ? undefined
-                                                                                    : {
-                                                                                          filter: "grayscale(100%)",
-                                                                                      }
+                                                                                    ? imageViewerCategoryHiddenSx
+                                                                                    : inactiveViewerActionSx
                                                                             }
                                                                         />
                                                                     ),
@@ -1229,10 +1272,8 @@ export default function App() {
                                                         color="secondary"
                                                         sx={
                                                             selectedImage.active
-                                                                ? undefined
-                                                                : {
-                                                                      filter: "grayscale(100%)",
-                                                                  }
+                                                                ? imageViewerCategoryHiddenSx
+                                                                : inactiveViewerActionSx
                                                         }
                                                     />
                                                 ))}
@@ -1254,10 +1295,8 @@ export default function App() {
                                                             sx={{
                                                                 cursor: "pointer",
                                                                 ...(selectedImage.active
-                                                                    ? {}
-                                                                    : {
-                                                                          filter: "grayscale(100%)",
-                                                                      }),
+                                                                    ? imageViewerCategoryHiddenSx ?? {}
+                                                                    : inactiveViewerActionSx ?? {}),
                                                             }}
                                                         />
                                                         <Popover
@@ -1305,10 +1344,8 @@ export default function App() {
                                                                             color="secondary"
                                                                             sx={
                                                                                 selectedImage.active
-                                                                                    ? undefined
-                                                                                    : {
-                                                                                          filter: "grayscale(100%)",
-                                                                                      }
+                                                                                    ? imageViewerCategoryHiddenSx
+                                                                                    : inactiveViewerActionSx
                                                                             }
                                                                         />
                                                                     ),
@@ -1329,25 +1366,49 @@ export default function App() {
                                         alignItems: "center",
                                     }}
                                 >
-                                    {canEditContent && (
-                                        <Tooltip title={selectedImage.active ? "Visibility: Hide from students" : "Visibility: Show to students"}>
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => toggleImageVisibility(selectedImage.id)}
-                                                aria-label={selectedImage.active ? "Visibility: Hide from students" : "Visibility: Show to students"}
+                                    {canEditContent && (() => {
+                                        const categoryHidden = imageViewerHiddenByCategory;
+                                        if (categoryHidden) {
+                                            return (
+                                                <Button
+                                                    variant="text"
+                                                    startIcon={<VisibilityOff />}
+                                                    disabled
+                                                    aria-label="Visibility: Hidden by category"
+                                                    sx={{
+                                                        "&.Mui-disabled": { color: visColors.inactive },
+                                                        ...imageViewerCategoryHiddenSx,
+                                                    }}
+                                                >
+                                                    Hidden by Category
+                                                </Button>
+                                            );
+                                        }
+                                        if (!selectedImage.active) {
+                                            return (
+                                                <Button
+                                                    variant="text"
+                                                    startIcon={<VisibilityOff />}
+                                                    onClick={() => { toggleImageVisibility(selectedImage.id).catch(() => {}) }}
+                                                    aria-label="Visibility: Show to students"
+                                                    sx={{ color: visColors.inactive, filter: "grayscale(100%)" }}
+                                                >
+                                                    Show Image
+                                                </Button>
+                                            );
+                                        }
+                                        return (
+                                            <Button
+                                                variant="text"
+                                                startIcon={<Visibility />}
+                                                onClick={() => { toggleImageVisibility(selectedImage.id).catch(() => {}) }}
+                                                aria-label="Visibility: Hide from students"
+                                                color="primary"
                                             >
-                                                {selectedImage.active ? (
-                                                    <Visibility
-                                                        sx={{ fontSize: 28, color: visColors.active }}
-                                                    />
-                                                ) : (
-                                                    <VisibilityOff
-                                                        sx={{ fontSize: 28, color: visColors.inactive }}
-                                                    />
-                                                )}
-                                            </IconButton>
-                                        </Tooltip>
-                                    )}
+                                                Hide Image
+                                            </Button>
+                                        );
+                                    })()}
                                     {canEditContent && (
                                         <Tooltip
                                             title={
@@ -1722,6 +1783,7 @@ export default function App() {
                                             );
                                         })}
                                     </MuiBreadcrumbs>
+                                    
                                     {(() => {
                                         const resolved =
                                             ancestorProgramIds
@@ -1759,6 +1821,7 @@ export default function App() {
                                                         label={p.name}
                                                         size="small"
                                                         color="primary"
+                                                        sx={categoryPageHiddenSx}
                                                     />
                                                 ))}
                                                 {overflow > 0 && (
@@ -1778,6 +1841,7 @@ export default function App() {
                                                             aria-label={`${overflow} more programs`}
                                                             sx={{
                                                                 cursor: "pointer",
+                                                                ...categoryPageHiddenSx,
                                                             }}
                                                         />
                                                         <Popover
@@ -1823,6 +1887,7 @@ export default function App() {
                                                                             }
                                                                             size="small"
                                                                             color="primary"
+                                                                            sx={categoryPageHiddenSx}
                                                                         />
                                                                     ),
                                                                 )}
@@ -1870,6 +1935,7 @@ export default function App() {
                                                         label={g.name}
                                                         size="small"
                                                         color="secondary"
+                                                        sx={categoryPageHiddenSx}
                                                     />
                                                 ))}
                                                 {overflow > 0 && (
@@ -1889,6 +1955,7 @@ export default function App() {
                                                             aria-label={`${overflow} more groups`}
                                                             sx={{
                                                                 cursor: "pointer",
+                                                                ...categoryPageHiddenSx,
                                                             }}
                                                         />
                                                         <Popover
@@ -1934,6 +2001,7 @@ export default function App() {
                                                                             }
                                                                             size="small"
                                                                             color="secondary"
+                                                                            sx={categoryPageHiddenSx}
                                                                         />
                                                                     ),
                                                                 )}
@@ -1945,14 +2013,62 @@ export default function App() {
                                         );
                                     })()}
                                 </Box>
-                                {canEditContent && (
+                                {canEditContent && (() => {
+                                    return (
                                     <Box
                                         sx={{
                                             display: "flex",
                                             gap: 2,
                                             flexShrink: 0,
+                                            alignItems: "center",
                                         }}
                                     >
+                                        {path.length > 0 && (() => {
+                                            const current = path[path.length - 1];
+                                            const isDirectlyHidden = current.status === "hidden";
+                                            const ancestorHidden = path.slice(0, -1).some((p) => p.status === "hidden");
+                                            const inheritedHidden = !isDirectlyHidden && ancestorHidden;
+                                            if (inheritedHidden) {
+                                                return (
+                                                    <Button
+                                                        variant="text"
+                                                        startIcon={<VisibilityOff />}
+                                                        disabled
+                                                        aria-label="Visibility: Hidden by parent category"
+                                                        sx={{
+                                                            "&.Mui-disabled": { color: visColors.inactive },
+                                                            ...categoryPageHiddenSx,
+                                                        }}
+                                                    >
+                                                        Hidden by Parent
+                                                    </Button>
+                                                );
+                                            }
+                                            if (isDirectlyHidden) {
+                                                return (
+                                                    <Button
+                                                        variant="text"
+                                                        startIcon={<VisibilityOff />}
+                                                        onClick={() => toggleCategoryVisibility(current.id)}
+                                                        aria-label="Visibility: Show category"
+                                                        sx={{ color: visColors.inactive, filter: "grayscale(100%)" }}
+                                                    >
+                                                        Show Category
+                                                    </Button>
+                                                );
+                                            }
+                                            return (
+                                                    <Button
+                                                        variant="text"
+                                                        startIcon={<Visibility />}
+                                                        onClick={() => toggleCategoryVisibility(current.id)}
+                                                        aria-label="Visibility: Hide category"
+                                                        color="primary"
+                                                    >
+                                                        Hide Category
+                                                </Button>
+                                            );
+                                        })()}
                                         {path.length < MAX_DEPTH && (
                                             <Button
                                                 variant="outlined"
@@ -1962,6 +2078,7 @@ export default function App() {
                                                 onClick={() =>
                                                     setAddCatOpen(true)
                                                 }
+                                                sx={categoryPageHiddenSx}
                                             >
                                                 Add Category
                                             </Button>
@@ -1972,11 +2089,13 @@ export default function App() {
                                                 <AddPhotoAlternateIcon />
                                             }
                                             onClick={() => setUploadOpen(true)}
+                                            sx={categoryPageHiddenSx}
                                         >
                                             Add Images
                                         </Button>
                                     </Box>
-                                )}
+                                    );
+                                })()}
                             </Box>
 
                             {/* Tile grid */}
@@ -1993,9 +2112,6 @@ export default function App() {
                                 onCategoryClick={handleCategoryTileClick}
                                 onMoveCategory={handleRequestMoveCategory}
                                 onSetCardImage={handleSetCardImage}
-                                onToggleCategoryVisibility={
-                                    toggleCategoryVisibility
-                                }
                                 onEditCategoryName={setEditNameCategory}
                                 onDropImageOnCategory={
                                     handleDropImageOnCategory
@@ -2008,9 +2124,6 @@ export default function App() {
                                 }
                                 onImageClick={handleImageClick}
                                 onEditImageDetails={setBrowseEditImage}
-                                onToggleImageVisibility={
-                                    toggleImageVisibility
-                                }
                                 onFilesDrop={handleFilesDropOnGrid}
                                 onGridDragOver={
                                     canEditContent
@@ -2223,13 +2336,14 @@ export default function App() {
             <EditCategoryDialog
                 open={editNameCategory != null}
                 onClose={() => setEditNameCategory(null)}
-                onSave={async (newLabel, programIds, groupIds) => {
+                onSave={async (newLabel, programIds, groupIds, status) => {
                     if (!editNameCategory) return;
                     await editCategoryInline(
                         editNameCategory.id,
                         newLabel,
                         programIds,
                         groupIds,
+                        status,
                     );
                     if (path.some((p) => p.id === editNameCategory.id)) {
                         setPath((prev) =>
@@ -2240,6 +2354,7 @@ export default function App() {
                                           label: newLabel,
                                           programIds: programIds ?? p.programIds,
                                           groupIds: groupIds ?? p.groupIds,
+                                          ...(status !== undefined ? { status } : {}),
                                       }
                                     : p,
                             ),
@@ -2254,6 +2369,9 @@ export default function App() {
                 groups={groups}
                 currentGroupIds={editCategoryContext.freshGroupIds}
                 inheritedGroupIds={editCategoryContext.inheritedGroupIds}
+                categoryStatus={editNameCategory?.status}
+                ancestorHidden={isCategoryHiddenInTree(categories, editNameCategory?.parentId)}
+                categoryId={editNameCategory?.id}
             />
 
             {/* Self-edit profile modal */}

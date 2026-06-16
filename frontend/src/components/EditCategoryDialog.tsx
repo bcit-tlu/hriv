@@ -15,8 +15,11 @@ import RadioGroup from '@mui/material/RadioGroup'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useTheme } from '@mui/material/styles'
+import Visibility from '@mui/icons-material/Visibility'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import type { Group, Program } from '../types'
-import { getGroupChipColors } from '../theme'
+import { getGroupChipColors, getVisibilityColors } from '../theme'
+import { useColorMode } from '../useColorMode'
 
 const filter = createFilterOptions<string>()
 
@@ -27,6 +30,7 @@ interface EditCategoryDialogProps {
     newLabel: string,
     programIds?: number[],
     groupIds?: number[],
+    status?: 'active' | 'hidden',
   ) => void | Promise<void>
   currentLabel: string
   siblingNames?: string[]
@@ -38,6 +42,12 @@ interface EditCategoryDialogProps {
   currentGroupIds?: number[]
   /** Group IDs inherited from ancestor categories (read-only display). */
   inheritedGroupIds?: number[]
+  /** Current visibility status of the category being edited. */
+  categoryStatus?: string | null
+  /** Whether an ancestor category is hidden (inherited hidden state). */
+  ancestorHidden?: boolean
+  /** The ID of the category being edited. */
+  categoryId?: number
 }
 
 export default function EditCategoryDialog({
@@ -52,8 +62,13 @@ export default function EditCategoryDialog({
   groups = [],
   currentGroupIds = [],
   inheritedGroupIds = [],
+  categoryStatus,
+  ancestorHidden = false,
+  categoryId,
 }: EditCategoryDialogProps) {
   const theme = useTheme()
+  const { mode } = useColorMode()
+  const visColors = getVisibilityColors(mode)
   const groupColors = getGroupChipColors(theme.palette.mode)
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -62,6 +77,7 @@ export default function EditCategoryDialog({
   const [selectedProgramIds, setSelectedProgramIds] = useState<Set<number>>(new Set())
   const [groupVisibility, setGroupVisibility] = useState<'all' | 'specific'>('all')
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(new Set())
+  const [statusHidden, setStatusHidden] = useState(false)
 
   // Populate state from props when dialog opens (false → true transition only)
   const prevOpen = useRef(false)
@@ -81,9 +97,10 @@ export default function EditCategoryDialog({
         ? currentGroupIds.filter((id) => inheritedGroupIds.includes(id))
         : currentGroupIds
       setSelectedGroupIds(new Set(validGroupIds))
+      setStatusHidden(categoryStatus === 'hidden')
     }
     prevOpen.current = open
-  }, [open, currentLabel, currentProgramIds, inheritedProgramIds, currentGroupIds, inheritedGroupIds])
+  }, [open, currentLabel, currentProgramIds, inheritedProgramIds, currentGroupIds, inheritedGroupIds, categoryStatus])
 
   const exactMatch = useMemo(
     () =>
@@ -99,6 +116,7 @@ export default function EditCategoryDialog({
     setSelectedProgramIds(new Set())
     setGroupVisibility('all')
     setSelectedGroupIds(new Set())
+    setStatusHidden(false)
     onClose()
   }
 
@@ -154,6 +172,8 @@ export default function EditCategoryDialog({
     return false
   }, [currentGroupIds, inheritedGroupIds, selectedGroupIds, groupVisibility])
 
+  const statusChanged = statusHidden !== (categoryStatus === 'hidden')
+
   const programRestricted = visibility === 'specific' && selectedProgramIds.size > 0
   const groupRestricted = groupVisibility === 'specific' && selectedGroupIds.size > 0
 
@@ -161,22 +181,24 @@ export default function EditCategoryDialog({
     const trimmed = label.trim()
     if (!trimmed) return
     const labelChanged = trimmed !== currentLabel
-    if (!labelChanged && !programsChanged && !groupsChanged) return
+    if (!labelChanged && !programsChanged && !groupsChanged && !statusChanged) return
     const programIds = programs.length > 0
       ? (visibility === 'specific' ? Array.from(selectedProgramIds) : [])
       : undefined
     const groupIds = groups.length > 0
       ? (groupVisibility === 'specific' ? Array.from(selectedGroupIds) : [])
       : undefined
+    const status = statusChanged ? (statusHidden ? 'hidden' : 'active') : undefined
     setSaving(true)
     setError(null)
     try {
-      await onSave(trimmed, programIds, groupIds)
+      await onSave(trimmed, programIds, groupIds, status)
       setLabel('')
       setVisibility('all')
       setSelectedProgramIds(new Set())
       setGroupVisibility('all')
       setSelectedGroupIds(new Set())
+      setStatusHidden(false)
       onClose()
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -193,7 +215,51 @@ export default function EditCategoryDialog({
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Edit Category</DialogTitle>
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        Edit Category
+        {categoryId != null && (() => {
+          if (ancestorHidden) {
+            return (
+              <Button
+                variant="text"
+                size="small"
+                startIcon={<VisibilityOff />}
+                disabled
+                aria-label="Visibility: Hidden by parent category"
+                sx={{ '&.Mui-disabled': { color: visColors.inactive }, filter: 'grayscale(100%)' }}
+              >
+                Hidden by Parent
+              </Button>
+            )
+          }
+          if (statusHidden) {
+            return (
+              <Button
+                variant="text"
+                size="small"
+                startIcon={<VisibilityOff />}
+                onClick={() => setStatusHidden(false)}
+                aria-label="Visibility: Show category"
+                sx={{ color: visColors.inactive, filter: 'grayscale(100%)' }}
+              >
+                Show Category
+              </Button>
+            )
+          }
+          return (
+            <Button
+              variant="text"
+              size="small"
+              startIcon={<Visibility />}
+              onClick={() => setStatusHidden(true)}
+              aria-label="Visibility: Hide category"
+              color="primary"
+            >
+              Hide Category
+            </Button>
+          )
+        })()}
+      </DialogTitle>
       <DialogContent>
         <Autocomplete
           freeSolo
@@ -232,13 +298,13 @@ export default function EditCategoryDialog({
         {programs.length > 0 && (
           <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle2" gutterBottom>
-              Visible to
+              Restrict access by program
             </Typography>
             <RadioGroup
               value={visibility}
               onChange={(e) => setVisibility(e.target.value as 'all' | 'specific')}
             >
-              <FormControlLabel value="all" control={<Radio size="small" />} label="All students" />
+              <FormControlLabel value="all" control={<Radio size="small" />} label="All programs" />
               <FormControlLabel value="specific" control={<Radio size="small" />} label="Specific programs" />
             </RadioGroup>
             {visibility === 'specific' && (
@@ -337,7 +403,7 @@ export default function EditCategoryDialog({
         <Button
           onClick={handleSubmit}
           variant="contained"
-          disabled={!label.trim() || (!labelChanged && !programsChanged && !groupsChanged) || (visibility === 'specific' && selectedProgramIds.size === 0 && programs.length > 0 && inheritedProgramIds.length === 0) || (groupVisibility === 'specific' && selectedGroupIds.size === 0 && groups.length > 0 && inheritedGroupIds.length === 0) || saving}
+          disabled={!label.trim() || (!labelChanged && !programsChanged && !groupsChanged && !statusChanged) || (visibility === 'specific' && selectedProgramIds.size === 0 && programs.length > 0 && inheritedProgramIds.length === 0) || (groupVisibility === 'specific' && selectedGroupIds.size === 0 && groups.length > 0 && inheritedGroupIds.length === 0) || saving}
         >
           Save
         </Button>

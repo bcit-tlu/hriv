@@ -383,12 +383,12 @@ describe('CategoryPickerSelect — action buttons', () => {
       />,
     )
     await user.click(screen.getByRole('combobox'))
-    const visBtn = screen.getByLabelText('Visibility: Hide from students')
+    const visBtn = screen.getByLabelText('Visibility: Hide category')
     await user.click(visBtn)
     expect(onToggleVisibility).toHaveBeenCalledWith(7)
   })
 
-  it('shows "Show to students" label for hidden categories', async () => {
+  it('shows "Show category" label for hidden categories', async () => {
     const user = userEvent.setup()
     const categories = [makeCategory({ id: 1, label: 'Hidden', status: 'hidden' })]
     render(
@@ -400,7 +400,7 @@ describe('CategoryPickerSelect — action buttons', () => {
       />,
     )
     await user.click(screen.getByRole('combobox'))
-    expect(screen.getByLabelText('Visibility: Show to students')).toBeInTheDocument()
+    expect(screen.getByLabelText('Visibility: Show category')).toBeInTheDocument()
   })
 
   it('renders image count next to category name', async () => {

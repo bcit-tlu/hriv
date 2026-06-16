@@ -191,4 +191,36 @@ describe('ManagePage', () => {
     await screen.findByText('Blood Smear')
     expect(screen.getByRole('columnheader', { name: 'Program' })).toBeInTheDocument()
   })
+
+  it('shows hidden-by-category tooltips for inherited hidden row indicators', async () => {
+    const inheritedHiddenCategories = [
+      makeCategory({
+        id: 1,
+        label: 'Parent',
+        status: 'hidden',
+        children: [
+          makeCategory({
+            id: 10,
+            label: 'Microscopy',
+            parentId: 1,
+            programIds: [1],
+            groupIds: [7],
+          }),
+        ],
+      }),
+    ]
+
+    render(<ManagePage categories={inheritedHiddenCategories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+
+    const breadcrumbIcon = screen.getByLabelText('Category hidden from students by ancestor')
+    fireEvent.mouseOver(breadcrumbIcon)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Hidden by category')
+
+    const visibilitySwitch = screen.getByRole('switch')
+    expect(visibilitySwitch).toBeDisabled()
+    fireEvent.mouseOver(visibilitySwitch.closest('span') as HTMLElement)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Hidden by category')
+  })
 })

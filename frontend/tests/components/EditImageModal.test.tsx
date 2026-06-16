@@ -272,23 +272,6 @@ describe('EditImageModal – form fields and save', () => {
     )
   })
 
-  it('toggles active switch', async () => {
-    const user = userEvent.setup()
-    const { onSave } = renderModal()
-
-    const visSwitch = screen.getByRole('switch', { name: /visible to students/i })
-    expect(visSwitch).toBeChecked()
-
-    await user.click(visSwitch)
-    expect(visSwitch).not.toBeChecked()
-
-    await user.click(screen.getByRole('button', { name: /^save$/i }))
-
-    expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({ active: false }),
-    )
-  })
-
   it('includes measurement_scale and measurement_unit in metadata_extra', async () => {
     const user = userEvent.setup()
     const { onSave } = renderModal()
@@ -491,5 +474,140 @@ describe('EditImageModal – dialog behavior', () => {
   it('does not render form when open is false', () => {
     renderModal({ open: false })
     expect(screen.queryByText('Edit Details')).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Tests — 3-state visibility button
+// ---------------------------------------------------------------------------
+
+describe('EditImageModal – visibility button states', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  const hiddenCategory = {
+    id: 10,
+    label: 'Hidden Cat',
+    parentId: null,
+    status: 'hidden' as const,
+    sortOrder: 0,
+    version: 1,
+    programIds: [] as number[],
+    groupIds: [] as number[],
+    children: [],
+    images: [],
+  }
+
+  const visibleCategory = {
+    id: 20,
+    label: 'Visible Cat',
+    parentId: null,
+    status: null,
+    sortOrder: 0,
+    version: 1,
+    programIds: [] as number[],
+    groupIds: [] as number[],
+    children: [],
+    images: [],
+  }
+
+  it('shows "Hide Image" button when image is active and category is visible', () => {
+    renderModal({
+      image: { ...baseImage, active: true, category_id: 20 },
+      categories: [visibleCategory],
+    })
+
+    const btn = screen.getByRole('button', { name: /hide from students/i })
+    expect(btn).toBeEnabled()
+    expect(btn).toHaveTextContent('Hide Image')
+  })
+
+  it('shows "Show Image" button when image is directly hidden', () => {
+    renderModal({
+      image: { ...baseImage, active: false, category_id: 20 },
+      categories: [visibleCategory],
+    })
+
+    const btn = screen.getByRole('button', { name: /show to students/i })
+    expect(btn).toBeEnabled()
+    expect(btn).toHaveTextContent('Show Image')
+  })
+
+  it('shows disabled "Hidden by Category" when image category is hidden', () => {
+    renderModal({
+      image: { ...baseImage, active: true, category_id: 10 },
+      categories: [hiddenCategory],
+    })
+
+    const btn = screen.getByRole('button', { name: /hidden by category/i })
+    expect(btn).toBeDisabled()
+    expect(btn).toHaveTextContent('Hidden by Category')
+  })
+
+  it('toggles local active state without calling API — committed on Save', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    renderModal({
+      onSave,
+      image: { ...baseImage, active: true, category_id: 20 },
+      categories: [visibleCategory],
+    })
+
+    // Click "Hide Image" — should flip to "Show Image" locally
+    await user.click(screen.getByRole('button', { name: /hide from students/i }))
+    expect(screen.getByRole('button', { name: /show to students/i })).toBeInTheDocument()
+
+    // Click Save — onSave should receive active: false
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ active: false }),
+    )
+  })
+
+  it('toggling visibility twice reverts to original active value on save', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    renderModal({
+      onSave,
+      image: { ...baseImage, active: true, category_id: 20 },
+      categories: [visibleCategory],
+    })
+
+    // Toggle off then back on
+    await user.click(screen.getByRole('button', { name: /hide from students/i }))
+    await user.click(screen.getByRole('button', { name: /show to students/i }))
+
+    await user.click(screen.getByRole('button', { name: /^save$/i }))
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ active: true }),
+    )
+  })
+
+  it('shows "Hidden by Category" when image is in a child of a hidden ancestor', () => {
+    const parentHidden = {
+      ...hiddenCategory,
+      id: 10,
+      label: 'Hidden Parent',
+      children: [{
+        id: 30,
+        label: 'Child Cat',
+        parentId: 10,
+        status: null,
+        sortOrder: 0,
+        version: 1,
+        programIds: [] as number[],
+        groupIds: [] as number[],
+        children: [],
+        images: [],
+      }],
+    }
+    renderModal({
+      image: { ...baseImage, active: true, category_id: 30 },
+      categories: [parentHidden],
+    })
+
+    const btn = screen.getByRole('button', { name: /hidden by category/i })
+    expect(btn).toBeDisabled()
   })
 })
