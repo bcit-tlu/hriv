@@ -1288,7 +1288,6 @@ export default function ManagePage({
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
-        categoryHidden={editingImage ? isImageCategoryHidden(editingImage) : false}
         onViewImage={editingImage && onViewImage ? () => {
           const img = editingImage
           setEditOpen(false)

@@ -204,6 +204,19 @@ export default function CategoryPickerSelect({
     return false
   }, [editingOpt, options])
 
+  const ancestorHiddenIds = useMemo(() => {
+    const ids = new Set<number>()
+    const hiddenAtDepth = new Map<number, boolean>()
+    for (const opt of options) {
+      const parentHidden = opt.depth > 0 && (hiddenAtDepth.get(opt.depth - 1) ?? false)
+      const selfHidden = opt.status === 'hidden'
+      if (parentHidden) ids.add(opt.id)
+      hiddenAtDepth.set(opt.depth, parentHidden || selfHidden)
+      for (const [d] of hiddenAtDepth) { if (d > opt.depth) hiddenAtDepth.delete(d) }
+    }
+    return ids
+  }, [options])
+
   const selectValue = value == null
     ? (placeholder ? '' : (includeRoot ? ROOT_VALUE : ''))
     : String(value)
@@ -317,7 +330,7 @@ export default function CategoryPickerSelect({
                 }}
               >
                 <ListItemText>
-                  {opt.depth > 0 ? '\u2514 ' : ''}<Box component="span" sx={{ color: opt.status === 'hidden' ? visColors.inactive : undefined }}>{opt.label}</Box>
+                  {opt.depth > 0 ? '\u2514 ' : ''}<Box component="span" sx={{ color: (opt.status === 'hidden' || ancestorHiddenIds.has(opt.id)) ? visColors.inactive : undefined }}>{opt.label}</Box>
                   <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
                     ({opt.imageCount})
                   </Typography>
@@ -329,27 +342,39 @@ export default function CategoryPickerSelect({
                     hidden={opt.status === 'hidden'}
                   />
                 </ListItemText>
-                {onToggleVisibility && (
-                  <Tooltip title={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}>
-                    <IconButton
-                      size="small"
-                      aria-label={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        e.preventDefault()
-                        onToggleVisibility(opt.id)
-                      }}
-                      sx={{ p: 0.5 }}
-                    >
-                      {opt.status === 'hidden' ? (
-                        <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
-                      ) : (
-                        <Visibility fontSize="small" sx={{ color: visColors.active }} />
-                      )}
-                    </IconButton>
-                  </Tooltip>
-                )}
+                {onToggleVisibility && (() => {
+                  const inheritedHidden = ancestorHiddenIds.has(opt.id)
+                  if (inheritedHidden) {
+                    return (
+                      <Tooltip title="Hidden by parent category">
+                        <span role="img" aria-label="Hidden by parent category">
+                          <VisibilityOff fontSize="small" sx={{ color: visColors.inactive, opacity: 0.5 }} />
+                        </span>
+                      </Tooltip>
+                    )
+                  }
+                  return (
+                    <Tooltip title={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}>
+                      <IconButton
+                        size="small"
+                        aria-label={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          e.preventDefault()
+                          onToggleVisibility(opt.id)
+                        }}
+                        sx={{ p: 0.5 }}
+                      >
+                        {opt.status === 'hidden' ? (
+                          <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
+                        ) : (
+                          <Visibility fontSize="small" sx={{ color: visColors.active }} />
+                        )}
+                      </IconButton>
+                    </Tooltip>
+                  )
+                })()}
                 {onEditCategory && (
                   <Tooltip title="Edit category">
                     <IconButton
@@ -386,7 +411,7 @@ export default function CategoryPickerSelect({
                       }}
                       sx={{ p: 0.5 }}
                     >
-                      <DeleteIcon fontSize="small" sx={{ color: opt.status === 'hidden' ? visColors.inactive : 'primary.main' }} />
+                      <DeleteIcon fontSize="small" sx={{ color: (opt.status === 'hidden' || ancestorHiddenIds.has(opt.id)) ? visColors.inactive : 'primary.main' }} />
                     </IconButton>
                   </Tooltip>
                 )}

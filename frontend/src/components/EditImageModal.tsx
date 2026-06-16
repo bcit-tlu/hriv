@@ -18,6 +18,7 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import type { ApiImage } from '../api'
 import type { Category, Group, Program } from '../types'
 import { getVisibilityColors } from '../theme'
+import { isCategoryHiddenInTree } from '../treeUtils'
 import { useColorMode } from '../useColorMode'
 import CategoryPickerSelect from './CategoryPickerSelect'
 
@@ -77,8 +78,6 @@ interface EditImageModalProps {
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onViewImage?: () => void
-  /** Whether the image's parent category (or an ancestor) is hidden. */
-  categoryHidden?: boolean
 }
 
 function EditImageForm({
@@ -96,7 +95,6 @@ function EditImageForm({
   onEditCategory,
   onToggleVisibility,
   onViewImage,
-  categoryHidden = false,
 }: Omit<EditImageModalProps, 'open'>) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
@@ -107,6 +105,7 @@ function EditImageForm({
   const [copyright, setCopyright] = useState(image?.copyright ?? '')
   const [note, setNote] = useState(image?.note ?? '')
   const [active, setActive] = useState(image?.active ?? true)
+  const categoryHidden = isCategoryHiddenInTree(categories, categoryId)
   const meta = image?.metadata_extra as Record<string, unknown> | null
   const [measurementScale, setMeasurementScale] = useState<string>(
     meta?.measurement_scale != null ? String(meta.measurement_scale) : '',
@@ -601,7 +600,6 @@ export default function EditImageModal({
   onEditCategory,
   onToggleVisibility,
   onViewImage,
-  categoryHidden,
 }: EditImageModalProps) {
   const formKey = image ? `edit-${image.id}` : 'closed'
 
@@ -624,7 +622,6 @@ export default function EditImageModal({
           onEditCategory={onEditCategory}
           onToggleVisibility={onToggleVisibility}
           onViewImage={onViewImage}
-          categoryHidden={categoryHidden}
         />
       )}
     </Dialog>
