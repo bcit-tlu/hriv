@@ -8,9 +8,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import LinearProgress from '@mui/material/LinearProgress'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import Snackbar from '@mui/material/Snackbar'
-import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import ImageIcon from '@mui/icons-material/Image'
@@ -462,16 +460,6 @@ function EditImageForm({
           variant="outlined"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-        />
-        <FormControlLabel
-          control={
-            <Switch
-              checked={active}
-              onChange={(e) => setActive(e.target.checked)}
-              disabled={categoryHidden}
-            />
-          }
-          label={categoryHidden ? "Visibility (hidden by category)" : "Visibility (visible to students)"}
         />
         <Typography variant="subtitle2" sx={{ mt: 1 }}>
           Measurement Settings

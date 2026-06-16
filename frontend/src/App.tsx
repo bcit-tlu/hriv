@@ -2318,6 +2318,10 @@ export default function App() {
                 groups={groups}
                 currentGroupIds={editCategoryContext.freshGroupIds}
                 inheritedGroupIds={editCategoryContext.inheritedGroupIds}
+                categoryStatus={editNameCategory?.status}
+                ancestorHidden={isCategoryHiddenInTree(categories, editNameCategory?.parentId)}
+                onToggleVisibility={toggleCategoryVisibility}
+                categoryId={editNameCategory?.id}
             />
 
             {/* Self-edit profile modal */}
