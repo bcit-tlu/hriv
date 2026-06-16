@@ -1967,7 +1967,7 @@ export default function App() {
                                                         startIcon={<VisibilityOff />}
                                                         disabled
                                                         aria-label="Visibility: Hidden by parent category"
-                                                        sx={{ color: visColors.inactive, filter: "grayscale(100%)" }}
+                                                        sx={{ "&.Mui-disabled": { color: visColors.inactive }, filter: "grayscale(100%)" }}
                                                     >
                                                         Hidden by Parent
                                                     </Button>
