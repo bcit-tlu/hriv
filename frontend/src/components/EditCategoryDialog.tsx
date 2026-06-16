@@ -287,17 +287,29 @@ export default function EditCategoryDialog({
                       key={g.id}
                       label={g.name}
                       size="small"
+                      color={isSelected ? 'secondary' : undefined}
                       variant={isActive ? 'filled' : 'outlined'}
                       onClick={disabled ? undefined : () => toggleGroup(g.id)}
                       disabled={disabled}
                       sx={
-                        isActive
+                        isInheritedOnly
                           ? {
-                              bgcolor: isSelected ? groupColors.solidBg : groupColors.subtleBg,
-                              color: isSelected ? groupColors.solidText : groupColors.subtleText,
-                              '& .MuiChip-label': {
-                                color: isSelected ? groupColors.solidText : groupColors.subtleText,
-                              },
+                              ...(disabled
+                                ? {
+                                    bgcolor: theme.palette.action.disabledBackground,
+                                    color: theme.palette.text.disabled,
+                                    opacity: 1,
+                                    '& .MuiChip-label': {
+                                      color: theme.palette.text.disabled,
+                                    },
+                                  }
+                                : {
+                                    bgcolor: groupColors.subtleBg,
+                                    color: groupColors.subtleText,
+                                    '& .MuiChip-label': {
+                                      color: groupColors.subtleText,
+                                    },
+                                  }),
                             }
                           : undefined
                       }

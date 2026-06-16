@@ -64,6 +64,27 @@ All seed users share the password `password`.
 
 ---
 
+## Test Case 3b: Table Column Preference Persistence Per User
+
+**Purpose:** Verify that table column visibility preferences persist across logout/login for the same user without leaking to other users.
+
+1. Login as `admin@example.ca` / `password`.
+2. Open the `Images` tab.
+3. Open the column chooser and enable the `Program` column.
+4. **Assert:** The Images table now shows the `Program` column.
+5. Click Logout.
+6. Login again as `admin@example.ca` / `password`.
+7. Open the `Images` tab.
+8. **Assert:** The `Program` column is still visible.
+9. Click Logout.
+10. Login as `student@example.ca` / `password`, then logout again.
+11. Login as `admin@example.ca` / `password`.
+12. **Assert:** The `Program` column preference is still preserved for the admin user.
+13. Open the `People` tab.
+14. **Assert:** The default visible columns are `Name`, `Email`, `Role`, `Program`, and `Last Accessed`.
+
+---
+
 ## Test Case 4: CLI Access via curl — Authentication and RBAC Enforcement
 
 **Purpose:** Verify API authentication and role-based access control work via command-line HTTP requests.

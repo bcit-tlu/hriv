@@ -27,6 +27,7 @@ export interface Category {
   groupIds: number[]
   status?: string | null
   sortOrder: number
+  version: number
   cardImageId?: number | null
   metadataExtra?: Record<string, unknown> | null
 }

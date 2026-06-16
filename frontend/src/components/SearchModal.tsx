@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import Box from '@mui/material/Box'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
@@ -34,7 +34,6 @@ interface FieldMatch {
 
 interface SearchResult {
   kind: ResultKind
-  id: number
   /** Real entity identifier for deduplication (e.g. cat.id, img.id, user.id) */
   entityId: number
   /** Primary label shown in bold */
@@ -209,7 +208,6 @@ function collectCategoryResults(
     if (m) {
       results.push({
         kind: 'category',
-        id: cat.id,
         entityId: cat.id,
         label: cat.label,
         field: 'Name',
@@ -219,14 +217,13 @@ function collectCategoryResults(
         payload: { kind: 'category', categoryPath: currentPath },
       })
     }
-    for (const pid of cat.programIds) {
-      const pName = programMap.get(pid)
+    for (let pi = 0; pi < cat.programIds.length; pi++) {
+      const pName = programMap.get(cat.programIds[pi])
       if (!pName) continue
       const pm = findFirstTermMatch(pName, terms)
       if (pm) {
         results.push({
           kind: 'category',
-          id: cat.id * 1000 + pid,
           entityId: cat.id,
           label: cat.label,
           field: 'Program',
@@ -287,7 +284,6 @@ function addImageMatches(
     if (m) {
       results.push({
         kind: 'image',
-        id: img.id * 1000 + fi,
         entityId: img.id,
         label: img.name,
         field,
@@ -341,26 +337,24 @@ export default function SearchModal({
 
   const programMap = useMemo(() => new Map(programs.map((p) => [p.id, p.name])), [programs])
 
-  // Apply initial values when the modal opens with them
-  const prevOpenRef = useRef(false)
-  const wasSeededRef = useRef(false)
-  useEffect(() => {
-    if (open && !prevOpenRef.current) {
-      if (initialQuery != null || initialTypeFilter != null) {
-        if (initialQuery != null) setQuery(initialQuery)
-        if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
-        setFieldFilters(new Set())
-        wasSeededRef.current = true
-      }
-    }
-    if (!open && prevOpenRef.current && wasSeededRef.current) {
-      setQuery('')
-      setTypeFilters(new Set())
+  // Apply initial values when the modal opens with them (render-time adjustment)
+  const [prevSearchOpen, setPrevSearchOpen] = useState(open)
+  const [wasSeeded, setWasSeeded] = useState(false)
+  if (open && !prevSearchOpen) {
+    if (initialQuery != null || initialTypeFilter != null) {
+      if (initialQuery != null) setQuery(initialQuery)
+      if (initialTypeFilter != null) setTypeFilters(new Set([initialTypeFilter]))
       setFieldFilters(new Set())
-      wasSeededRef.current = false
+      setWasSeeded(true)
     }
-    prevOpenRef.current = open
-  }, [open, initialQuery, initialTypeFilter])
+  }
+  if (!open && prevSearchOpen && wasSeeded) {
+    setQuery('')
+    setTypeFilters(new Set())
+    setFieldFilters(new Set())
+    setWasSeeded(false)
+  }
+  if (open !== prevSearchOpen) setPrevSearchOpen(open)
 
   const toggleTypeFilter = useCallback((key: TypeFilter) => {
     setTypeFilters((prev) => {
@@ -415,7 +409,6 @@ export default function SearchModal({
           if (m) {
             results.push({
               kind: 'program',
-              id: prog.id,
               entityId: prog.id,
               label: prog.name,
               field: 'Name',
@@ -445,7 +438,6 @@ export default function SearchModal({
             if (m) {
               results.push({
                 kind: 'user',
-                id: user.id * 1000 + fi,
                 entityId: user.id,
                 label: user.name,
                 field,

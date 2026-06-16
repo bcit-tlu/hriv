@@ -171,15 +171,15 @@ export function useShareableImageState(
     // Parse URL synchronously during the first render so that pending refs
     // are populated before any effects run.  This removes the implicit
     // dependency on effect execution order between this hook and App.tsx.
-    const initialUrl = useRef(parseShareableUrlParams());
-    const pendingImageId = useRef<number | null>(initialUrl.current.imageId);
+    const [initialUrl] = useState(parseShareableUrlParams);
+    const pendingImageId = useRef<number | null>(initialUrl.imageId);
     const pendingViewport = useRef<ViewportState | undefined>(
-        initialUrl.current.viewport,
+        initialUrl.viewport,
     );
     const pendingOverlays = useRef<OverlayRect[] | undefined>(
-        initialUrl.current.overlays,
+        initialUrl.overlays,
     );
-    const pendingCatIds = useRef<number[] | null>(initialUrl.current.catIds);
+    const pendingCatIds = useRef<number[] | null>(initialUrl.catIds);
 
     // Once categories are loaded, restore a pending shared-link image
     useEffect(() => {
@@ -335,10 +335,14 @@ export function useShareableImageState(
     const hasLockedOverlays =
         lockedOverlays !== undefined && lockedOverlays.length > 0;
 
-    // Auto-engage lock when image has persisted overlays
-    useEffect(() => {
+    // Auto-engage lock when image has persisted overlays (render-time adjustment)
+    const [prevHasLockedOverlays, setPrevHasLockedOverlays] = useState<
+        boolean | null
+    >(null);
+    if (hasLockedOverlays !== prevHasLockedOverlays) {
+        setPrevHasLockedOverlays(hasLockedOverlays);
         setLockEngaged(hasLockedOverlays);
-    }, [hasLockedOverlays]);
+    }
 
     // Memoize initialOverlays: use locked overlays on initial load if no URL overlays.
     // Keyed on image ID so metadata-only updates do not re-create the viewer.

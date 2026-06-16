@@ -23,11 +23,14 @@ function makeFlatOption(overrides: Partial<FlatOption> = {}): FlatOption {
         id: 1,
         label: 'Cat',
         depth: 0,
+        imageCount: 0,
         childCount: 0,
         status: null,
         parentId: null,
         programIds: [],
-        inheritedRestriction: false,
+        groupIds: [],
+        inheritedProgramRestriction: false,
+        inheritedGroupRestriction: false,
         ...overrides,
     }
 }

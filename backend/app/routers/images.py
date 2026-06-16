@@ -8,7 +8,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from opentelemetry import trace
-from opentelemetry.trace import StatusCode
 from sqlalchemy import select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,6 +16,7 @@ from ..database import get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import Category, Image, SourceImage, User
 from ..schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageReorderRequest, ImageOut, SourceImageOut
+from ..tracing import record_exception_if_server_error
 from ..visibility import get_student_excluded_category_ids, is_category_visible_to_student
 
 logger = logging.getLogger(__name__)
@@ -103,8 +103,7 @@ async def create_image(
             span.set_attribute("image.category_id", body.category_id or 0)
             return img
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             raise
 
 
@@ -134,8 +133,7 @@ async def bulk_update_images(
             result = await db.execute(stmt)
             return result.scalars().all()
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             raise
 
 
@@ -214,8 +212,7 @@ async def update_image(
             response.headers["ETag"] = f'"{img.version}"'
             return response
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             raise
 
 
@@ -362,8 +359,7 @@ async def replace_image(
 
             return src
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             raise
 
 
@@ -386,8 +382,7 @@ async def bulk_delete_images(
                 await db.delete(img)
             await db.commit()
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             raise
 
 
@@ -408,8 +403,7 @@ async def reorder_images(
             await db.commit()
             return {"status": "ok"}
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             raise
 
 
@@ -428,6 +422,5 @@ async def delete_image(
             await db.delete(img)
             await db.commit()
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             raise

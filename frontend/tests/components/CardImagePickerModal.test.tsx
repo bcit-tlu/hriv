@@ -20,13 +20,15 @@ const category: Category = {
           name: 'nested-img.jpg',
           thumb: '/t/20',
           tileSources: '/tiles/20',
-          programIds: [],
           active: true,
           sortOrder: 0,
           version: 1,
         },
       ],
+      programIds: [],
+      groupIds: [],
       sortOrder: 0,
+      version: 1,
     },
   ],
   images: [
@@ -35,13 +37,15 @@ const category: Category = {
       name: 'root-img.jpg',
       thumb: '/t/10',
       tileSources: '/tiles/10',
-      programIds: [],
       active: true,
       sortOrder: 0,
       version: 1,
     },
   ],
+  programIds: [],
+  groupIds: [],
   sortOrder: 0,
+  version: 1,
 }
 
 const emptyCategory: Category = {
@@ -50,7 +54,10 @@ const emptyCategory: Category = {
   parentId: null,
   children: [],
   images: [],
+  programIds: [],
+  groupIds: [],
   sortOrder: 0,
+  version: 1,
 }
 
 describe('CardImagePickerModal', () => {

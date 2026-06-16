@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { findImageInTree, findCategoryPath, resolveCategoryPath } from "../src/treeUtils";
+import {
+    findImageInTree,
+    findCategoryPath,
+    resolveCategoryPath,
+    updateImageInTree,
+} from "../src/treeUtils";
 import { makeCategory, makeImage } from "./helpers/fixtures";
 
 describe("findImageInTree", () => {
@@ -99,5 +104,87 @@ describe("resolveCategoryPath", () => {
     it("returns empty when first ID does not match", () => {
         const cat = makeCategory({ id: 1, label: "Root" });
         expect(resolveCategoryPath([cat], [999])).toEqual([]);
+    });
+});
+
+describe("updateImageInTree", () => {
+    it("updates an image at the root level", () => {
+        const rootImage = makeImage({ id: 42, name: "Before" });
+        const tree = [
+            makeCategory({ id: 1, label: "Root", images: [rootImage] }),
+        ];
+
+        const updated = updateImageInTree(tree, 42, (image) => ({
+            ...image,
+            name: "After",
+        }));
+
+        expect(updated[0].images[0].name).toBe("After");
+        expect(tree[0].images[0].name).toBe("Before");
+    });
+
+    it("updates an image in a nested category", () => {
+        const nestedImage = makeImage({ id: 99, active: true });
+        const tree = [
+            makeCategory({
+                id: 1,
+                label: "Root",
+                children: [
+                    makeCategory({
+                        id: 2,
+                        label: "Child",
+                        images: [nestedImage],
+                    }),
+                ],
+            }),
+        ];
+
+        const updated = updateImageInTree(tree, 99, (image) => ({
+            ...image,
+            active: false,
+        }));
+
+        expect(updated[0].children[0].images[0].active).toBe(false);
+        expect(tree[0].children[0].images[0].active).toBe(true);
+    });
+
+    it("returns an unchanged tree when the image ID does not exist", () => {
+        const tree = [
+            makeCategory({
+                id: 1,
+                images: [makeImage({ id: 10, name: "Only Image" })],
+            }),
+        ];
+
+        const updated = updateImageInTree(tree, 999, (image) => ({
+            ...image,
+            name: "Updated",
+        }));
+
+        expect(updated).toEqual(tree);
+        expect(updated).toBe(tree);
+    });
+
+    it("only updates the matching image when multiple images exist", () => {
+        const firstImage = makeImage({ id: 1, name: "First" });
+        const secondImage = makeImage({ id: 2, name: "Second" });
+        const thirdImage = makeImage({ id: 3, name: "Third" });
+        const tree = [
+            makeCategory({
+                id: 1,
+                images: [firstImage, secondImage, thirdImage],
+            }),
+        ];
+
+        const updated = updateImageInTree(tree, 2, (image) => ({
+            ...image,
+            name: "Second Updated",
+        }));
+
+        expect(updated[0].images.map((image) => image.name)).toEqual([
+            "First",
+            "Second Updated",
+            "Third",
+        ]);
     });
 });

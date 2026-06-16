@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Chip from "@mui/material/Chip";
@@ -107,10 +107,19 @@ export default function App() {
     });
     const [path, setPath] = useState<Category[]>([]);
     const pathRef = useRef(path);
-    pathRef.current = path;
+    useEffect(() => { pathRef.current = path; });
     const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
     const selectedImageRef = useRef<ImageItem | null>(null);
-    selectedImageRef.current = selectedImage;
+    useEffect(() => { selectedImageRef.current = selectedImage; });
+    const inactiveViewerActionSx = useMemo(
+        () =>
+            selectedImage?.active
+                ? undefined
+                : {
+                      filter: "grayscale(100%)",
+                  },
+        [selectedImage?.active],
+    );
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [fileDropCategoryId, setFileDropCategoryId] = useState<
@@ -122,6 +131,8 @@ export default function App() {
     const [manageUploadOpen, setManageUploadOpen] = useState(false);
     const [addCatOpen, setAddCatOpen] = useState(false);
     const [programsPopoverAnchor, setProgramsPopoverAnchor] =
+        useState<HTMLElement | null>(null);
+    const [groupsPopoverAnchor, setGroupsPopoverAnchor] =
         useState<HTMLElement | null>(null);
     const [editNameCategory, setEditNameCategory] = useState<Category | null>(null);
 
@@ -150,8 +161,10 @@ export default function App() {
     const {
         categories,
         categoriesLoading,
+        setCategories,
         uncategorizedImages,
         uncategorizedLoaded,
+        setUncategorizedImages,
         programs,
         groups,
         setGroups,
@@ -256,13 +269,13 @@ export default function App() {
     // Canvas edit mode — tracked here so we can disable conflicting UI (e.g. Edit Details)
     const [canvasEditActive, setCanvasEditActive] = useState(false);
     const [imagesVersion, setImagesVersion] = useState(0);
-    setImagesVersionRef.current = setImagesVersion;
+    useEffect(() => { setImagesVersionRef.current = setImagesVersion; }, [setImagesVersion]);
 
     // Refs for the popstate handler (always reflect latest state)
     const categoriesRef = useRef(categories);
-    categoriesRef.current = categories;
+    useEffect(() => { categoriesRef.current = categories; });
     const uncategorizedImagesRef = useRef(uncategorizedImages);
-    uncategorizedImagesRef.current = uncategorizedImages;
+    useEffect(() => { uncategorizedImagesRef.current = uncategorizedImages; });
 
     // Browser history integration for back/forward navigation
     const handlePopState = useCallback(
@@ -282,10 +295,10 @@ export default function App() {
                 return;
             }
 
-            // Fetch fresh categories so sort_order changes (from a recent
-            // reorder) are reflected when the user navigates back to browse
-            // via the browser back/forward buttons.
-            loadCategories({ silent: true });
+            // Force-bypass the browser HTTP cache so sort_order changes
+            // (from a recent reorder) are always reflected when the user
+            // navigates back to browse via the browser back/forward buttons.
+            refreshCategories();
 
             const catPath = resolveCategoryPath(
                 categoriesRef.current,
@@ -314,7 +327,7 @@ export default function App() {
             setViewportState(undefined);
             setOverlays([]);
         },
-        [setViewportState, setOverlays, loadCategories],
+        [setViewportState, setOverlays, refreshCategories],
     );
 
     const { pushNavState } = useNavigationHistory(handlePopState);
@@ -372,7 +385,9 @@ export default function App() {
         handleDeleteBrowseImage,
     } = useImageActions({
         categories,
+        setCategories,
         uncategorizedImages,
+        setUncategorizedImages,
         selectedImage,
         setSelectedImage,
         setPath,
@@ -414,12 +429,14 @@ export default function App() {
             );
         }
 
+        /* eslint-disable react-hooks/set-state-in-effect -- unconditional UI cleanup on auth state change */
         setProfileOpen(false);
         setEditModalOpen(false);
         setImageEditOpen(false);
         setBrowseEditImage(null);
         setSearchOpen(false);
         setSearchUsers([]);
+        /* eslint-enable react-hooks/set-state-in-effect */
         resetProcessingJobs();
     }, [currentUser, resetProcessingJobs, setViewportState, setOverlays, clearPending, setImageEditOpen, setBrowseEditImage, setEditModalOpen, setProfileOpen]);
 
@@ -461,9 +478,11 @@ export default function App() {
     // information leak.
     useEffect(() => {
         if (!canManageUsers) {
+            /* eslint-disable react-hooks/set-state-in-effect -- early-return cleanup in conditional fetch effect */
             setBackendVersion(null);
             setBackupVersion(null);
             setFrontendVersion(null);
+            /* eslint-enable react-hooks/set-state-in-effect */
             return;
         }
         fetchVersions()
@@ -891,6 +910,7 @@ export default function App() {
                         <ManagePage
                             categories={categories}
                             programs={programs}
+                            groups={groups}
                             imagesVersion={imagesVersion}
                             onEditCategory={editCategoryInline}
                             onToggleVisibility={toggleCategoryVisibility}
@@ -969,69 +989,338 @@ export default function App() {
                                     gap: 1,
                                 }}
                             >
-                                <MuiBreadcrumbs
-                                    aria-label="image breadcrumb"
+                                <Box
                                     sx={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: 1,
                                         minWidth: 0,
-                                        "& .MuiBreadcrumbs-ol": {
-                                            flexWrap: "nowrap",
-                                        },
-                                        "& .MuiBreadcrumbs-li:last-of-type": {
-                                            overflow: "hidden",
-                                            textOverflow: "ellipsis",
-                                            whiteSpace: "nowrap",
-                                        },
                                     }}
                                 >
-                                    <Link
-                                        component="button"
-                                        variant="body2"
-                                        underline="hover"
-                                        color="inherit"
-                                        onClick={() => {
-                                            clearImage();
-                                            navigateToDepth(0);
-                                            pushNavState("browse");
-                                        }}
+                                    <MuiBreadcrumbs
+                                        aria-label="image breadcrumb"
                                         sx={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: 0.5,
-                                            cursor: "pointer",
+                                            minWidth: 0,
+                                            "& .MuiBreadcrumbs-ol": {
+                                                flexWrap: "nowrap",
+                                            },
+                                            "& .MuiBreadcrumbs-li:last-of-type": {
+                                                overflow: "hidden",
+                                                textOverflow: "ellipsis",
+                                                whiteSpace: "nowrap",
+                                            },
                                         }}
                                     >
-                                        <HomeIcon fontSize="small" />
-                                        Home
-                                    </Link>
-                                    {path.map((cat, i) => (
                                         <Link
-                                            key={cat.id}
                                             component="button"
                                             variant="body2"
                                             underline="hover"
                                             color="inherit"
                                             onClick={() => {
                                                 clearImage();
-                                                navigateToDepth(i + 1);
-                                                pushNavState(
-                                                    "browse",
-                                                    path
-                                                        .slice(0, i + 1)
-                                                        .map((c) => c.id),
-                                                );
+                                                navigateToDepth(0);
+                                                pushNavState("browse");
                                             }}
-                                            sx={{ cursor: "pointer" }}
+                                            sx={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                gap: 0.5,
+                                                cursor: "pointer",
+                                            }}
                                         >
-                                            {cat.label}
+                                            <HomeIcon fontSize="small" />
+                                            Home
                                         </Link>
-                                    ))}
-                                    <Typography
-                                        variant="body2"
-                                        color="text.primary"
-                                    >
-                                        {selectedImage.name}
-                                    </Typography>
-                                </MuiBreadcrumbs>
+                                        {path.map((cat, i) => (
+                                            <Link
+                                                key={cat.id}
+                                                component="button"
+                                                variant="body2"
+                                                underline="hover"
+                                                color="inherit"
+                                                onClick={() => {
+                                                    clearImage();
+                                                    navigateToDepth(i + 1);
+                                                    pushNavState(
+                                                        "browse",
+                                                        path
+                                                            .slice(0, i + 1)
+                                                            .map((c) => c.id),
+                                                    );
+                                                }}
+                                                sx={{ cursor: "pointer" }}
+                                            >
+                                                {cat.label}
+                                            </Link>
+                                        ))}
+                                        <Typography
+                                            variant="body2"
+                                            color="text.primary"
+                                        >
+                                            {selectedImage.name}
+                                        </Typography>
+                                    </MuiBreadcrumbs>
+                                    {(() => {
+                                        const resolved =
+                                            ancestorProgramIds
+                                                .map((pid) =>
+                                                    programs.find(
+                                                        (p) =>
+                                                            p.id === pid,
+                                                    ),
+                                                )
+                                                .filter(
+                                                    (
+                                                        p,
+                                                    ): p is Program =>
+                                                        p != null,
+                                                )
+                                                .sort((a, b) =>
+                                                    a.name.localeCompare(
+                                                        b.name,
+                                                    ),
+                                                );
+                                        if (resolved.length === 0)
+                                            return null;
+                                        const MAX_INLINE = 2;
+                                        const inline = resolved.slice(
+                                            0,
+                                            MAX_INLINE,
+                                        );
+                                        const overflow =
+                                            resolved.length - MAX_INLINE;
+                                        return (
+                                            <>
+                                                {inline.map((p) => (
+                                                    <Chip
+                                                        key={p.id}
+                                                        label={p.name}
+                                                        size="small"
+                                                        color="primary"
+                                                        sx={
+                                                            selectedImage.active
+                                                                ? undefined
+                                                                : {
+                                                                      filter: "grayscale(100%)",
+                                                                  }
+                                                        }
+                                                    />
+                                                ))}
+                                                {overflow > 0 && (
+                                                    <>
+                                                        <Chip
+                                                            label={`+${overflow}`}
+                                                            size="small"
+                                                            color="primary"
+                                                            variant="outlined"
+                                                            onClick={(
+                                                                e,
+                                                            ) =>
+                                                                setProgramsPopoverAnchor(
+                                                                    e.currentTarget,
+                                                                )
+                                                            }
+                                                            aria-label={`${overflow} more programs`}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                                ...(selectedImage.active
+                                                                    ? {}
+                                                                    : {
+                                                                          filter: "grayscale(100%)",
+                                                                      }),
+                                                            }}
+                                                        />
+                                                        <Popover
+                                                            open={
+                                                                programsPopoverAnchor !=
+                                                                null
+                                                            }
+                                                            anchorEl={
+                                                                programsPopoverAnchor
+                                                            }
+                                                            onClose={() =>
+                                                                setProgramsPopoverAnchor(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            anchorOrigin={{
+                                                                vertical:
+                                                                    "bottom",
+                                                                horizontal:
+                                                                    "left",
+                                                            }}
+                                                        >
+                                                            <Box
+                                                                sx={{
+                                                                    p: 1.5,
+                                                                    display:
+                                                                        "flex",
+                                                                    flexDirection:
+                                                                        "column",
+                                                                    gap: 0.5,
+                                                                }}
+                                                            >
+                                                                {resolved.map(
+                                                                    (
+                                                                        p,
+                                                                    ) => (
+                                                                        <Chip
+                                                                            key={
+                                                                                p.id
+                                                                            }
+                                                                            label={
+                                                                                p.name
+                                                                            }
+                                                                            size="small"
+                                                                            color="primary"
+                                                                            sx={
+                                                                                selectedImage.active
+                                                                                    ? undefined
+                                                                                    : {
+                                                                                          filter: "grayscale(100%)",
+                                                                                      }
+                                                                            }
+                                                                        />
+                                                                    ),
+                                                                )}
+                                                            </Box>
+                                                        </Popover>
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                    {(() => {
+                                        const resolved =
+                                            ancestorGroupIds
+                                                .map((gid) =>
+                                                    groups.find(
+                                                        (g) =>
+                                                            g.id === gid,
+                                                    ),
+                                                )
+                                                .filter(
+                                                    (
+                                                        g,
+                                                    ): g is Group =>
+                                                        g != null,
+                                                )
+                                                .sort((a, b) =>
+                                                    a.name.localeCompare(
+                                                        b.name,
+                                                    ),
+                                                );
+                                        if (resolved.length === 0)
+                                            return null;
+                                        const MAX_INLINE = 2;
+                                        const inline = resolved.slice(
+                                            0,
+                                            MAX_INLINE,
+                                        );
+                                        const overflow =
+                                            resolved.length - MAX_INLINE;
+                                        return (
+                                            <>
+                                                {inline.map((g) => (
+                                                    <Chip
+                                                        key={g.id}
+                                                        label={g.name}
+                                                        size="small"
+                                                        color="secondary"
+                                                        sx={
+                                                            selectedImage.active
+                                                                ? undefined
+                                                                : {
+                                                                      filter: "grayscale(100%)",
+                                                                  }
+                                                        }
+                                                    />
+                                                ))}
+                                                {overflow > 0 && (
+                                                    <>
+                                                        <Chip
+                                                            label={`+${overflow}`}
+                                                            size="small"
+                                                            color="secondary"
+                                                            variant="outlined"
+                                                            onClick={(
+                                                                e,
+                                                            ) =>
+                                                                setGroupsPopoverAnchor(
+                                                                    e.currentTarget,
+                                                                )
+                                                            }
+                                                            aria-label={`${overflow} more groups`}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                                ...(selectedImage.active
+                                                                    ? {}
+                                                                    : {
+                                                                          filter: "grayscale(100%)",
+                                                                      }),
+                                                            }}
+                                                        />
+                                                        <Popover
+                                                            open={
+                                                                groupsPopoverAnchor !=
+                                                                null
+                                                            }
+                                                            anchorEl={
+                                                                groupsPopoverAnchor
+                                                            }
+                                                            onClose={() =>
+                                                                setGroupsPopoverAnchor(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            anchorOrigin={{
+                                                                vertical:
+                                                                    "bottom",
+                                                                horizontal:
+                                                                    "left",
+                                                            }}
+                                                        >
+                                                            <Box
+                                                                sx={{
+                                                                    p: 1.5,
+                                                                    display:
+                                                                        "flex",
+                                                                    flexDirection:
+                                                                        "column",
+                                                                    gap: 0.5,
+                                                                }}
+                                                            >
+                                                                {resolved.map(
+                                                                    (
+                                                                        g,
+                                                                    ) => (
+                                                                        <Chip
+                                                                            key={
+                                                                                g.id
+                                                                            }
+                                                                            label={
+                                                                                g.name
+                                                                            }
+                                                                            size="small"
+                                                                            color="secondary"
+                                                                            sx={
+                                                                                selectedImage.active
+                                                                                    ? undefined
+                                                                                    : {
+                                                                                          filter: "grayscale(100%)",
+                                                                                      }
+                                                                            }
+                                                                        />
+                                                                    ),
+                                                                )}
+                                                            </Box>
+                                                        </Popover>
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                </Box>
                                 <Box
                                     sx={{
                                         display: "flex",
@@ -1075,6 +1364,7 @@ export default function App() {
                                                         setImageEditOpen(true)
                                                     }
                                                     disabled={canvasEditActive}
+                                                    sx={inactiveViewerActionSx}
                                                 >
                                                     Edit Details
                                                 </Button>
@@ -1086,6 +1376,7 @@ export default function App() {
                                             variant="outlined"
                                             startIcon={<LinkIcon />}
                                             onClick={copyShareLink}
+                                            sx={inactiveViewerActionSx}
                                         >
                                             Share View
                                         </Button>
@@ -1179,6 +1470,29 @@ export default function App() {
                                                     programs.find(
                                                         (p) => p.id === pid,
                                                     )?.name ?? pid,
+                                            )
+                                            .join(", ")}
+                                    </Typography>
+                                )}
+                                {ancestorGroupIds.length > 0 && (
+                                    <Typography
+                                        variant="body2"
+                                        color="text.secondary"
+                                        component="span"
+                                    >
+                                        <strong>
+                                            Group
+                                            {ancestorGroupIds.length > 1
+                                                ? "s"
+                                                : ""}
+                                            :
+                                        </strong>{" "}
+                                        {ancestorGroupIds
+                                            .map(
+                                                (gid) =>
+                                                    groups.find(
+                                                        (g) => g.id === gid,
+                                                    )?.name ?? gid,
                                             )
                                             .join(", ")}
                                     </Typography>
@@ -1519,6 +1833,117 @@ export default function App() {
                                             </>
                                         );
                                     })()}
+                                    {(() => {
+                                        const resolved =
+                                            ancestorGroupIds
+                                                .map((gid) =>
+                                                    groups.find(
+                                                        (g) =>
+                                                            g.id === gid,
+                                                    ),
+                                                )
+                                                .filter(
+                                                    (
+                                                        g,
+                                                    ): g is Group =>
+                                                        g != null,
+                                                )
+                                                .sort((a, b) =>
+                                                    a.name.localeCompare(
+                                                        b.name,
+                                                    ),
+                                                );
+                                        if (resolved.length === 0)
+                                            return null;
+                                        const MAX_INLINE = 2;
+                                        const inline = resolved.slice(
+                                            0,
+                                            MAX_INLINE,
+                                        );
+                                        const overflow =
+                                            resolved.length - MAX_INLINE;
+                                        return (
+                                            <>
+                                                {inline.map((g) => (
+                                                    <Chip
+                                                        key={g.id}
+                                                        label={g.name}
+                                                        size="small"
+                                                        color="secondary"
+                                                    />
+                                                ))}
+                                                {overflow > 0 && (
+                                                    <>
+                                                        <Chip
+                                                            label={`+${overflow}`}
+                                                            size="small"
+                                                            color="secondary"
+                                                            variant="outlined"
+                                                            onClick={(
+                                                                e,
+                                                            ) =>
+                                                                setGroupsPopoverAnchor(
+                                                                    e.currentTarget,
+                                                                )
+                                                            }
+                                                            aria-label={`${overflow} more groups`}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                            }}
+                                                        />
+                                                        <Popover
+                                                            open={
+                                                                groupsPopoverAnchor !=
+                                                                null
+                                                            }
+                                                            anchorEl={
+                                                                groupsPopoverAnchor
+                                                            }
+                                                            onClose={() =>
+                                                                setGroupsPopoverAnchor(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            anchorOrigin={{
+                                                                vertical:
+                                                                    "bottom",
+                                                                horizontal:
+                                                                    "left",
+                                                            }}
+                                                        >
+                                                            <Box
+                                                                sx={{
+                                                                    p: 1.5,
+                                                                    display:
+                                                                        "flex",
+                                                                    flexDirection:
+                                                                        "column",
+                                                                    gap: 0.5,
+                                                                }}
+                                                            >
+                                                                {resolved.map(
+                                                                    (
+                                                                        g,
+                                                                    ) => (
+                                                                        <Chip
+                                                                            key={
+                                                                                g.id
+                                                                            }
+                                                                            label={
+                                                                                g.name
+                                                                            }
+                                                                            size="small"
+                                                                            color="secondary"
+                                                                        />
+                                                                    ),
+                                                                )}
+                                                            </Box>
+                                                        </Popover>
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
                                 </Box>
                                 {canEditContent && (
                                     <Box
@@ -1564,6 +1989,7 @@ export default function App() {
                                 canEditContent={canEditContent}
                                 fileDragActive={fileDragActive}
                                 programs={programs}
+                                groups={groups}
                                 onCategoryClick={handleCategoryTileClick}
                                 onMoveCategory={handleRequestMoveCategory}
                                 onSetCardImage={handleSetCardImage}
@@ -1667,6 +2093,7 @@ export default function App() {
                 onReorderImages={reorderImagesInline}
                 onReorderComplete={handleReorderComplete}
                 programs={programs}
+                groups={groups}
             />
 
             {/* Move category dialog */}
@@ -1683,6 +2110,7 @@ export default function App() {
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
                 programs={programs}
+                groups={groups}
             />
 
             {/* Image edit modal (viewer page) — no View Image button since we're already viewing */}
@@ -1697,6 +2125,7 @@ export default function App() {
                 image={selectedApiImage}
                 categories={categories}
                 programs={programs}
+                groups={groups}
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
@@ -1714,6 +2143,7 @@ export default function App() {
                 image={browseApiImage}
                 categories={categories}
                 programs={programs}
+                groups={groups}
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
@@ -1761,6 +2191,7 @@ export default function App() {
                 categoryId={fileDropCategoryId ?? (path.length > 0 ? path[path.length - 1].id : null)}
                 categories={categories}
                 programs={programs}
+                groups={groups}
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}

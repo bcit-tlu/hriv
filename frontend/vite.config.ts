@@ -33,14 +33,13 @@ export default defineConfig({
         'src/vite-env.d.ts',
         'src/test/**',
       ],
-      // Floor — not target.  The bulk of `src/components/**` and
-      // `App.tsx` still have 0% coverage; these numbers guard against
-      // regressions while component-level tests are filled in.
+      // Floor — not target.  Ratchet upward as component-level tests
+      // are filled in.  The >80 % AGENTS.md target is the goal.
       thresholds: {
-        lines: 30,
-        statements: 29,
-        functions: 30,
-        branches: 25,
+        lines: 62,
+        statements: 60,
+        functions: 58,
+        branches: 55,
       },
     },
   },

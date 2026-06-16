@@ -133,6 +133,7 @@ const CATEGORY_FIXTURE: ApiCategory = {
   group_ids: [],
   status: null,
   sort_order: 0,
+  version: 1,
   metadata_extra: null,
   created_at: '2026-01-01T00:00:00Z',
   updated_at: '2026-01-01T00:00:00Z',
@@ -152,7 +153,6 @@ const IMAGE_FIXTURE: ApiImage = {
   category_id: 1,
   copyright: null,
   note: null,
-  program_ids: [],
   active: true,
   sort_order: 0,
   metadata_extra: null,
@@ -309,8 +309,8 @@ describe('request helper (via wrapper functions)', () => {
   afterEach(() => setToken(null))
 
   it('sends auth + session headers on every request', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse({ maintenance: false, version: '1.0' }))
-    await fetchStatus()
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await fetchCategoryTree()
 
     const [, init] = mockFetch.mock.calls[0]
     expect(init.headers['Authorization']).toBe('Bearer test-jwt')
@@ -320,8 +320,8 @@ describe('request helper (via wrapper functions)', () => {
 
   it('omits Authorization header when no token is set', async () => {
     setToken(null)
-    mockFetch.mockReturnValueOnce(jsonResponse({ maintenance: false, version: '1.0' }))
-    await fetchStatus()
+    mockFetch.mockReturnValueOnce(jsonResponse([]))
+    await fetchCategoryTree()
 
     const [, init] = mockFetch.mock.calls[0]
     expect(init.headers['Authorization']).toBeUndefined()
@@ -330,13 +330,13 @@ describe('request helper (via wrapper functions)', () => {
 
   it('throws ApiError on non-OK response', async () => {
     mockFetch.mockReturnValueOnce(errorResponse(403, 'Forbidden'))
-    await expect(fetchStatus()).rejects.toThrow(ApiError)
+    await expect(fetchCategoryTree()).rejects.toThrow(ApiError)
   })
 
   it('throws ApiError with correct status code', async () => {
     mockFetch.mockReturnValueOnce(errorResponse(422, 'Validation Error'))
     try {
-      await fetchStatus()
+      await fetchCategoryTree()
       expect.fail('should have thrown')
     } catch (e) {
       expect(e).toBeInstanceOf(ApiError)
@@ -356,7 +356,7 @@ describe('request helper (via wrapper functions)', () => {
       }),
     )
     try {
-      await fetchStatus()
+      await fetchCategoryTree()
       expect.fail('should have thrown')
     } catch (e) {
       expect(e).toBeInstanceOf(ApiError)
@@ -372,11 +372,17 @@ describe('fetchStatus', () => {
   beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
   afterEach(() => setToken(null))
 
-  it('sends GET to /api/status', async () => {
+  it('sends GET to /api/status without auth or Content-Type headers', async () => {
     mockFetch.mockReturnValueOnce(jsonResponse({ maintenance: false, version: '1.0.0' }))
     const result = await fetchStatus()
     expect(mockFetch.mock.calls[0][0]).toBe('/api/status')
+    expect(mockFetch.mock.calls[0][1]).toBeUndefined()
     expect(result).toEqual({ maintenance: false, version: '1.0.0' })
+  })
+
+  it('throws ApiError on non-OK response', async () => {
+    mockFetch.mockReturnValueOnce(errorResponse(503, 'Service Unavailable'))
+    await expect(fetchStatus()).rejects.toThrow(ApiError)
   })
 })
 
@@ -410,6 +416,20 @@ describe('Category API', () => {
     expect(url).toBe('/api/categories/1')
     expect(init.method).toBe('PATCH')
     expect(JSON.parse(init.body)).toEqual({ label: 'New Label' })
+  })
+
+  it('updateCategory sends If-Match header when version is provided', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(CATEGORY_FIXTURE))
+    await updateCategory(1, { label: 'New Label' }, 5)
+    const [, init] = mockFetch.mock.calls[0]
+    expect(init.headers['If-Match']).toBe('"5"')
+  })
+
+  it('updateCategory omits If-Match header when version is undefined', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(CATEGORY_FIXTURE))
+    await updateCategory(1, { label: 'New Label' })
+    const [, init] = mockFetch.mock.calls[0]
+    expect(init.headers['If-Match']).toBeUndefined()
   })
 
   it('deleteCategory sends DELETE', async () => {
@@ -475,7 +495,7 @@ describe('Image API', () => {
     mockFetch.mockReturnValueOnce(jsonResponse(IMAGE_FIXTURE))
     await updateImage(1, { name: 'renamed.jpg' }, 3)
     const [, init] = mockFetch.mock.calls[0]
-    expect(init.headers['If-Match']).toBe('3')
+    expect(init.headers['If-Match']).toBe('"3"')
   })
 
   it('updateImage omits If-Match header when version is undefined', async () => {
@@ -777,7 +797,6 @@ describe('Source Image API', () => {
       copyright: null,
       note: null,
       active: true,
-      program_ids: [],
       image_id: 10,
       file_size: 5000,
       created_at: '2026-01-01T00:00:00Z',

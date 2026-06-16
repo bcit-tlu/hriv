@@ -24,6 +24,10 @@ export function getToken(): string | null {
  * Remove all HRIV-scoped localStorage keys (`hriv_*` and `hriv-*`).
  * Called on logout and when a different user logs in to prevent
  * cross-account state leakage on shared browsers.
+ *
+ * Deliberately excludes `hrivpref:` UI preference keys because those are
+ * already user-scoped (for example, persisted table column selections) and
+ * should survive logout/login cycles for the same browser profile.
  */
 export function clearUserStorage(): void {
   const keysToRemove: string[] = []
@@ -121,6 +125,7 @@ export interface ApiCategory {
   group_ids: number[]
   status: string | null
   sort_order: number
+  version: number
   metadata_extra: Record<string, unknown> | null
   created_at: string
   updated_at: string
@@ -201,8 +206,13 @@ export interface ApiStatus {
   version: string
 }
 
-export function fetchStatus(): Promise<ApiStatus> {
-  return request('/status')
+export async function fetchStatus(): Promise<ApiStatus> {
+  const res = await fetch(`${BASE}/api/status`)
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new ApiError(res.status, parseErrorDetail(text))
+  }
+  return res.json() as Promise<ApiStatus>
 }
 
 // ── Categories ───────────────────────────────────────────
@@ -234,10 +244,17 @@ export function updateCategory(
     status?: string
     metadata_extra?: Record<string, unknown>
   },
+  /** Pass the current category version for optimistic concurrency control */
+  version?: number,
 ): Promise<ApiCategory> {
+  const headers: Record<string, string> = {}
+  if (version !== undefined) {
+    headers['If-Match'] = `"${version}"`
+  }
   return request(`/categories/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(body),
+    headers,
   })
 }
 
@@ -296,7 +313,7 @@ export function updateImage(
 ): Promise<ApiImage> {
   const headers: Record<string, string> = {}
   if (version !== undefined) {
-    headers['If-Match'] = String(version)
+    headers['If-Match'] = `"${version}"`
   }
   return request(`/images/${id}`, {
     method: 'PATCH',

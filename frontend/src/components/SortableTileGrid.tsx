@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
@@ -15,9 +15,9 @@ import { move } from "@dnd-kit/helpers";
 import { CollisionPriority } from "@dnd-kit/abstract";
 import { PointerActivationConstraints } from "@dnd-kit/dom";
 import type { Draggable } from "@dnd-kit/abstract";
-import type { DragEndEvent } from "@dnd-kit/react";
+import type { DragEndEvent, DragStartEvent } from "@dnd-kit/react";
 
-import type { Category, ImageItem, Program } from "../types";
+import type { Category, Group, ImageItem, Program } from "../types";
 import CategoryTile from "./CategoryTile";
 import ImageTile from "./ImageTile";
 import FileDropZone from "./FileDropZone";
@@ -177,6 +177,7 @@ export interface SortableTileGridProps {
     canEditContent: boolean;
     fileDragActive: boolean;
     programs: Program[];
+    groups?: Group[];
 
     onCategoryClick: (cat: Category) => void;
     onMoveCategory?: (cat: Category) => void;
@@ -210,6 +211,7 @@ export default function SortableTileGrid({
     canEditContent,
     fileDragActive,
     programs,
+    groups = [],
     onCategoryClick,
     onMoveCategory,
     onSetCardImage,
@@ -238,15 +240,21 @@ export default function SortableTileGrid({
     const [items, setItems] = useState<TileItem[]>([]);
     const [activeItem, setActiveItem] = useState<TileItem | null>(null);
     const reorderInFlightRef = useRef(false);
-    const prevCatsRef = useRef<Category[] | null>(null);
-    const prevImgsRef = useRef<ImageItem[] | null>(null);
+    const [prevCats, setPrevCats] = useState<Category[] | null>(null);
+    const [prevImgs, setPrevImgs] = useState<ImageItem[] | null>(null);
+    // Refs for async callback access (always reflect latest props)
+    const currentCategoriesRef = useRef(currentCategories);
+    useEffect(() => { currentCategoriesRef.current = currentCategories; });
+    const visibleImagesRef = useRef(visibleImages);
+    useEffect(() => { visibleImagesRef.current = visibleImages; });
 
     if (
-        prevCatsRef.current !== currentCategories ||
-        prevImgsRef.current !== visibleImages
+        prevCats !== currentCategories ||
+        prevImgs !== visibleImages
     ) {
-        prevCatsRef.current = currentCategories;
-        prevImgsRef.current = visibleImages;
+        setPrevCats(currentCategories);
+        setPrevImgs(visibleImages);
+        // eslint-disable-next-line react-hooks/refs -- guard ref prevents item rebuild during active reorder
         if (!reorderInFlightRef.current) {
             setItems(buildTileItems(currentCategories, visibleImages));
         }
@@ -264,6 +272,15 @@ export default function SortableTileGrid({
         }
         return map;
     }, [allCategories, currentCategories]);
+
+    const handleDragStart = useCallback(
+        (event: DragStartEvent) => {
+            const sourceId = String(event.operation.source?.id);
+            const item = items.find((i) => tileId(i) === sourceId);
+            setActiveItem(item ?? null);
+        },
+        [items],
+    );
 
     const handleDragEnd = useCallback(
         async (event: DragEndEvent) => {
@@ -377,11 +394,11 @@ export default function SortableTileGrid({
                 reorderInFlightRef.current = false;
                 // The render-time guard ran while the flag was raised
                 // and skipped setItems, so rebuild from fresh data now.
-                if (prevCatsRef.current && prevImgsRef.current) {
+                if (currentCategoriesRef.current && visibleImagesRef.current) {
                     setItems(
                         buildTileItems(
-                            prevCatsRef.current,
-                            prevImgsRef.current,
+                            currentCategoriesRef.current,
+                            visibleImagesRef.current,
                         ),
                     );
                 }
@@ -417,6 +434,7 @@ export default function SortableTileGrid({
                 }
                 onEditName={canEditContent ? onEditCategoryName : undefined}
                 programs={programs}
+                groups={groups}
                 onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
             />
         );
@@ -477,11 +495,7 @@ export default function SortableTileGrid({
     return (
         <DragDropProvider
             sensors={sensors}
-            onDragStart={(event) => {
-                const sourceId = String(event.operation.source?.id);
-                const item = items.find((i) => tileId(i) === sourceId);
-                setActiveItem(item ?? null);
-            }}
+            onDragStart={handleDragStart}
             onDragEnd={handleDragEnd}
         >
             <Box

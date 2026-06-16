@@ -33,6 +33,7 @@ import FooterBar from "./FooterBar";
 import { getGroupChipColors } from "../theme";
 import AnnouncementBanner from "./AnnouncementBanner";
 import type { Role } from "../types";
+import { getSurfaceVariant } from "../theme";
 
 export type Page = "browse" | "manage" | "people" | "admin";
 
@@ -105,17 +106,20 @@ export default function AppShell(props: AppShellProps) {
         onReportIssue,
         children,
     } = props;
-    const groupColors = getGroupChipColors(mode);
-
     const [manageMenuAnchor, setManageMenuAnchor] =
         useState<HTMLElement | null>(null);
     const [viewAnnOpen, setViewAnnOpen] = useState(false);
     const [annCollapsed, setAnnCollapsed] = useState(false);
-    const showViewAnnLink = annEnabled && !announcement;
-
-    useEffect(() => {
+    const [prevAnnouncement, setPrevAnnouncement] = useState(announcement);
+    if (announcement !== prevAnnouncement) {
+        setPrevAnnouncement(announcement);
         if (announcement) setAnnCollapsed(false);
-    }, [announcement]);
+    }
+    const showViewAnnLink = annEnabled && !announcement;
+    const contentBg =
+        page === "people" || page === "admin"
+            ? getSurfaceVariant(mode)
+            : undefined;
 
     return (
         <Box
@@ -267,6 +271,7 @@ export default function AppShell(props: AppShellProps) {
                         </IconButton>
                         <Popover
                             open={profileOpen}
+                            // eslint-disable-next-line react-hooks/refs -- MUI Popover requires DOM element; ref is always populated before open=true
                             anchorEl={avatarRef.current}
                             onClose={() => setProfileOpen(false)}
                             anchorOrigin={{

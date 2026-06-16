@@ -30,6 +30,7 @@ from ..image_validation import IMAGE_EXTENSIONS, UPLOAD_CHUNK_SIZE
 from ..models import BulkImportJob, Category, SourceImage, User
 from ..processing import process_source_image
 from ..schemas import BulkImportJobOut
+from ..tracing import record_exception_if_server_error
 from ..worker import enqueue_bulk_import
 
 router = APIRouter(prefix="/admin/bulk-import", tags=["admin"])
@@ -422,8 +423,7 @@ async def bulk_import_images(
 
             return job
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             raise
 
 

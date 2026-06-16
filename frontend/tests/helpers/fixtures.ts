@@ -19,6 +19,7 @@ export function makeCategory(overrides: Partial<Category> = {}): Category {
         groupIds: [],
         status: null,
         sortOrder: 0,
+        version: 1,
         cardImageId: null,
         ...overrides,
     };

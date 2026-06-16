@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
+import { useState, useRef, useCallback, useMemo } from 'react'
 import Alert from '@mui/material/Alert'
 import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
@@ -61,30 +61,28 @@ export default function AddCategoryDialog({
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(new Set())
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Pre-populate with parent restrictions when dialog opens
-  const prevOpen = useRef(false)
-  useEffect(() => {
-    if (open && !prevOpen.current) {
-      setLabel('')
-      setError(null)
-      setSaving(false)
-      if (inheritedProgramIds.length > 0) {
-        setVisibility('specific')
-        setSelectedProgramIds(new Set(inheritedProgramIds))
-      } else {
-        setVisibility('all')
-        setSelectedProgramIds(new Set())
-      }
-      if (inheritedGroupIds.length > 0) {
-        setGroupVisibility('specific')
-        setSelectedGroupIds(new Set(inheritedGroupIds))
-      } else {
-        setGroupVisibility('all')
-        setSelectedGroupIds(new Set())
-      }
+  // Pre-populate with parent restrictions when dialog opens (render-time adjustment)
+  const [prevDialogOpen, setPrevDialogOpen] = useState(false)
+  if (open && !prevDialogOpen) {
+    setLabel('')
+    setError(null)
+    setSaving(false)
+    if (inheritedProgramIds.length > 0) {
+      setVisibility('specific')
+      setSelectedProgramIds(new Set(inheritedProgramIds))
+    } else {
+      setVisibility('all')
+      setSelectedProgramIds(new Set())
     }
-    prevOpen.current = open
-  }, [open, inheritedProgramIds, inheritedGroupIds])
+    if (inheritedGroupIds.length > 0) {
+      setGroupVisibility('specific')
+      setSelectedGroupIds(new Set(inheritedGroupIds))
+    } else {
+      setGroupVisibility('all')
+      setSelectedGroupIds(new Set())
+    }
+  }
+  if (open !== prevDialogOpen) setPrevDialogOpen(open)
 
   const exactMatch = useMemo(
     () => siblingNames.some((s) => s.toLowerCase() === label.trim().toLowerCase()),
@@ -253,17 +251,29 @@ export default function AddCategoryDialog({
                       key={g.id}
                       label={g.name}
                       size="small"
+                      color={isSelected ? 'secondary' : undefined}
                       variant={isActive ? 'filled' : 'outlined'}
                       onClick={disabled ? undefined : () => toggleGroup(g.id)}
                       disabled={disabled}
                       sx={
-                        isActive
+                        isInheritedOnly
                           ? {
-                              bgcolor: isSelected ? groupColors.solidBg : groupColors.subtleBg,
-                              color: isSelected ? groupColors.solidText : groupColors.subtleText,
-                              '& .MuiChip-label': {
-                                color: isSelected ? groupColors.solidText : groupColors.subtleText,
-                              },
+                              ...(disabled
+                                ? {
+                                    bgcolor: theme.palette.action.disabledBackground,
+                                    color: theme.palette.text.disabled,
+                                    opacity: 1,
+                                    '& .MuiChip-label': {
+                                      color: theme.palette.text.disabled,
+                                    },
+                                  }
+                                : {
+                                    bgcolor: groupColors.subtleBg,
+                                    color: groupColors.subtleText,
+                                    '& .MuiChip-label': {
+                                      color: groupColors.subtleText,
+                                    },
+                                  }),
                             }
                           : undefined
                       }

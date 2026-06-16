@@ -28,7 +28,6 @@ const image: ApiImage = {
   category_id: 5,
   copyright: null,
   note: null,
-  program_ids: [],
   active: true,
   sort_order: 0,
   metadata_extra: null,
@@ -41,7 +40,7 @@ const image: ApiImage = {
 }
 
 const categories: Category[] = [
-  { id: 5, label: 'Architecture', parentId: null, children: [], images: [], sortOrder: 0 },
+  { id: 5, label: 'Architecture', parentId: null, children: [], images: [], programIds: [], groupIds: [], sortOrder: 0, version: 1 },
 ]
 
 describe('MoveImageDialog', () => {

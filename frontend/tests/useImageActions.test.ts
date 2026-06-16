@@ -22,7 +22,9 @@ const mockReplaceImage = vi.mocked(api.replaceImage);
 function makeDeps(overrides: Partial<UseImageActionsDeps> = {}): UseImageActionsDeps {
     return {
         categories: [],
+        setCategories: vi.fn(),
         uncategorizedImages: [],
+        setUncategorizedImages: vi.fn(),
         selectedImage: null,
         setSelectedImage: vi.fn(),
         setPath: vi.fn(),
@@ -152,7 +154,7 @@ describe("useImageActions", () => {
     });
 
     describe("toggleImageVisibility", () => {
-        it("toggles active flag and reloads", async () => {
+        it("toggles active flag locally without reloading", async () => {
             const img = makeImage({ id: 10, active: true, version: 2 });
             const catA = makeCategory({ id: 1, images: [img] });
             const deps = makeDeps({ categories: [catA] });
@@ -181,8 +183,10 @@ describe("useImageActions", () => {
             });
 
             expect(mockUpdateImage).toHaveBeenCalledWith(10, { active: false }, 2);
-            expect(deps.loadCategories).toHaveBeenCalled();
-            expect(deps.loadUncategorizedImages).toHaveBeenCalled();
+            expect(deps.setCategories).toHaveBeenCalled();
+            expect(deps.setUncategorizedImages).toHaveBeenCalled();
+            expect(deps.loadCategories).not.toHaveBeenCalled();
+            expect(deps.loadUncategorizedImages).not.toHaveBeenCalled();
         });
 
         it("finds image in uncategorized when not in tree", async () => {

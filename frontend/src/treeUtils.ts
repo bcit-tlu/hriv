@@ -32,6 +32,40 @@ export function findCategoryPath(
     return null;
 }
 
+/** Return a new tree with a single image updated by ID. */
+export function updateImageInTree(
+    tree: Category[],
+    imageId: number,
+    updater: (image: ImageItem) => ImageItem,
+): Category[] {
+    let changed = false;
+    const nextTree = tree.map((category) => {
+        let categoryChanged = false;
+
+        const nextImages = category.images.map((image) => {
+            if (image.id !== imageId) return image;
+            categoryChanged = true;
+            return updater(image);
+        });
+
+        const nextChildren = updateImageInTree(category.children, imageId, updater);
+        if (nextChildren !== category.children) {
+            categoryChanged = true;
+        }
+
+        if (!categoryChanged) return category;
+
+        changed = true;
+        return {
+            ...category,
+            images: nextImages,
+            children: nextChildren,
+        };
+    });
+
+    return changed ? nextTree : tree;
+}
+
 /** Walk the category tree following an ordered list of IDs to reconstruct a path. */
 export function resolveCategoryPath(tree: Category[], ids: number[]): Category[] {
     const result: Category[] = [];

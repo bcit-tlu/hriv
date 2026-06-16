@@ -26,7 +26,7 @@ export function useBackgroundRefresh(
   enabled: boolean,
 ): () => void {
   const refreshRef = useRef(refresh)
-  refreshRef.current = refresh
+  useEffect(() => { refreshRef.current = refresh })
 
   const abortRef = useRef<AbortController | null>(null)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)

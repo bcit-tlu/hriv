@@ -15,7 +15,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CategoryTile from '../../src/components/CategoryTile'
-import type { Program } from '../../src/types'
+import type { Group, Program } from '../../src/types'
 import { makeCategory } from '../helpers/fixtures'
 
 // ---------------------------------------------------------------------------
@@ -25,6 +25,11 @@ import { makeCategory } from '../helpers/fixtures'
 const samplePrograms: Program[] = [
   { id: 10, name: 'Pathology', oidc_group: null, created_at: '2024-01-01', updated_at: '2024-01-01' },
   { id: 20, name: 'Radiology', oidc_group: null, created_at: '2024-01-01', updated_at: '2024-01-01' },
+]
+
+const sampleGroups: Group[] = [
+  { id: 30, name: 'Lab A2', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '2024-01-01', updatedAt: '2024-01-01' },
+  { id: 40, name: 'Seminar B', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '2024-01-01', updatedAt: '2024-01-01' },
 ]
 
 // ---------------------------------------------------------------------------
@@ -183,9 +188,9 @@ describe('CategoryTile', () => {
         <CategoryTile
           category={makeCategory({
             images: [
-              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
-              { id: 2, name: 'Img2', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
-              { id: 3, name: 'Img3', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
+              { id: 1, name: 'Img1', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
+              { id: 2, name: 'Img2', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
+              { id: 3, name: 'Img3', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
             ],
           })}
           onClick={vi.fn()}
@@ -200,7 +205,7 @@ describe('CategoryTile', () => {
         <CategoryTile
           category={makeCategory({
             images: [
-              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
+              { id: 1, name: 'Img1', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
             ],
           })}
           onClick={vi.fn()}
@@ -215,15 +220,15 @@ describe('CategoryTile', () => {
         <CategoryTile
           category={makeCategory({
             images: [
-              { id: 1, name: 'Img1', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
+              { id: 1, name: 'Img1', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
             ],
             children: [
               makeCategory({
                 id: 2,
                 label: 'Child',
                 images: [
-                  { id: 2, name: 'Img2', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
-                  { id: 3, name: 'Img3', thumb: '', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
+                  { id: 2, name: 'Img2', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
+                  { id: 3, name: 'Img3', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
                 ],
               }),
             ],
@@ -264,6 +269,21 @@ describe('CategoryTile', () => {
     })
   })
 
+  describe('group chips', () => {
+    it('renders group chips from category own groupIds', () => {
+      render(
+        <CategoryTile
+          category={makeCategory({ groupIds: [30, 40] })}
+          onClick={vi.fn()}
+          programs={samplePrograms}
+          groups={sampleGroups}
+        />,
+      )
+      expect(screen.getByText('Lab A2')).toBeInTheDocument()
+      expect(screen.getByText('Seminar B')).toBeInTheDocument()
+    })
+  })
+
   // ─── Card image ───────────────────────────────────────────────────
 
   describe('card image', () => {
@@ -284,7 +304,7 @@ describe('CategoryTile', () => {
           category={makeCategory({
             cardImageId: 5,
             images: [
-              { id: 5, name: 'Card Img', thumb: '/thumbs/card.jpg', tileSources: '', programIds: [], active: true, sortOrder: 0, version: 1 },
+              { id: 5, name: 'Card Img', thumb: '/thumbs/card.jpg', tileSources: '', active: true, sortOrder: 0, version: 1 },
             ],
           })}
           onClick={vi.fn()}

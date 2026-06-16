@@ -3,6 +3,7 @@ import {
   narrowGroupIds,
   narrowProgramIds,
   resolvePathNode,
+  splitDirectAncestorGroupIds,
   splitDirectAncestorProgramIds,
 } from '../src/categoryUtils'
 import type { Category, ImageItem } from '../src/types'
@@ -222,6 +223,41 @@ describe('narrowGroupIds', () => {
   })
 })
 
+describe('splitDirectAncestorGroupIds', () => {
+  it('returns empty direct and ancestor for empty path', () => {
+    expect(splitDirectAncestorGroupIds([])).toEqual({ direct: [], ancestor: [] })
+  })
+
+  it('returns all as direct when leaf has all effective groups', () => {
+    const path = [{ groupIds: [10, 20] }]
+    expect(splitDirectAncestorGroupIds(path)).toEqual({ direct: [10, 20], ancestor: [] })
+  })
+
+  it('classifies ancestor-only groups as ancestor', () => {
+    const path = [
+      { groupIds: [10, 20, 30] },
+      { groupIds: [] },
+    ]
+    expect(splitDirectAncestorGroupIds(path)).toEqual({ direct: [], ancestor: [10, 20, 30] })
+  })
+
+  it('splits a narrowed set into direct and inherited groups', () => {
+    const path = [
+      { groupIds: [10, 20, 30] },
+      { groupIds: [20, 30] },
+    ]
+    expect(splitDirectAncestorGroupIds(path)).toEqual({ direct: [20, 30], ancestor: [] })
+  })
+
+  it('returns empty arrays when narrowing removes every group', () => {
+    const path = [
+      { groupIds: [10, 20] },
+      { groupIds: [30, 40] },
+    ]
+    expect(splitDirectAncestorGroupIds(path)).toEqual({ direct: [], ancestor: [] })
+  })
+})
+
 describe('resolvePathNode', () => {
   const img = (id: number): ImageItem => ({
     id,
@@ -246,6 +282,7 @@ describe('resolvePathNode', () => {
     programIds: [],
     groupIds: [],
     sortOrder: 0,
+    version: 1,
   })
 
   const leaf = cat(3, [], [img(10), img(11)])

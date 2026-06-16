@@ -18,7 +18,7 @@ import { isImageFile, isZipFile, isAcceptedFile } from '../fileUtils'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import ImageMetadataFields from './ImageMetadataFields'
 import type { ImageMetadataValues } from './ImageMetadataFields'
-import type { Category, Program } from '../types'
+import type { Category, Group, Program } from '../types'
 
 /**
  * File-picker ``accept`` list. We list explicit MIME types instead of the
@@ -67,8 +67,9 @@ interface UploadImageModalProps {
   categoryId?: number | null
   categories: Category[]
   programs?: Program[]
-  onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
+  groups?: Group[]
+  onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
 }
 
@@ -81,6 +82,7 @@ export default function UploadImageModal({
   categoryId: initialCategoryId,
   categories,
   programs,
+  groups,
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
@@ -108,7 +110,7 @@ export default function UploadImageModal({
   // Sync categoryId state when the dialog opens with a new prop value
   useEffect(() => {
     if (open) {
-      setCategoryId(initialCategoryId ?? null)
+      setCategoryId(initialCategoryId ?? null) // eslint-disable-line react-hooks/set-state-in-effect -- sync prop→state on dialog open
     }
   }, [open, initialCategoryId])
 
@@ -117,7 +119,7 @@ export default function UploadImageModal({
     if (open && initialFiles && initialFiles.length > 0) {
       const accepted = initialFiles.filter(isAcceptedFile)
       if (accepted.length === 0) return
-      setFiles(accepted)
+      setFiles(accepted) // eslint-disable-line react-hooks/set-state-in-effect -- sync prop→state on dialog open
       if (accepted.length === 1 && isImageFile(accepted[0])) {
         setName(accepted[0].name.replace(/\.[^.]+$/, ''))
       }
@@ -406,6 +408,7 @@ export default function UploadImageModal({
                 onEditCategory={onEditCategory}
                 onToggleVisibility={onToggleVisibility}
                 programs={programs}
+                groups={groups}
               />
             </Box>
             <ImageMetadataFields

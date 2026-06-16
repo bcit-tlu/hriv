@@ -19,12 +19,6 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
-    rules: {
-      // React Compiler rules (enabled by default in eslint-plugin-react-hooks
-      // v7 "recommended" config). Disabled until the codebase is refactored to
-      // comply — re-enable incrementally per #223.
-      'react-hooks/set-state-in-effect': 'off',
-      'react-hooks/refs': 'off',
-    },
+    rules: {},
   },
 ])

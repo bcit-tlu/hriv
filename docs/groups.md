@@ -154,6 +154,9 @@ same way regardless of which dimension was added last.
 | Manage → **Groups** entry (admin + instructor only) | `components/AppShell.tsx` |
 | Group list / create / rename / delete and member management modal | `components/GroupManagementModal.tsx` |
 | Group restriction section on category dialogs | `components/AddCategoryDialog.tsx`, `components/EditCategoryDialog.tsx` |
+| Group chips on category tiles | `components/CategoryTile.tsx` |
+| Group chips in the Images table | `components/ManagePage.tsx` |
+| Group chips in the People table | `components/PeoplePage.tsx` |
 | Read-only group chips in the profile menu | `components/AppShell.tsx` |
 | Group API wrappers / types (`ApiGroup`, `fetchUsersPaged`, `addGroupMembersBulk`, …) | `api.ts` |
 | Group chip colours | `theme.ts` (`getGroupChipColors`) |
@@ -187,10 +190,11 @@ reference.
 
 Groups now use the app's **secondary** palette as their shared visual identity
 (`theme.ts::getGroupChipColors`). The full-strength variant is used for primary
-group affordances (for example, the selected group in the Manage Groups list and
-the read-only group chips in the profile menu). The subtle variant is used for
-lower-emphasis inherited/read-only states in the category dialogs, and keeps
-text contrast at WCAG-AA without dimming the entire chip:
+group affordances (for example, the action buttons in the Manage Groups modal
+and the read-only group chips in the profile menu). The subtle variant is used
+for the selected group highlight in the Manage Groups list, lower-emphasis
+inherited/read-only states in the category dialogs, and keeps text contrast at
+WCAG-AA without dimming the entire chip:
 
 | Mode | Full-strength background | Full-strength text | Subtle background | Subtle text |
 |------|--------------------------|--------------------|------------------|-------------|

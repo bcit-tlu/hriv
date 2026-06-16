@@ -4,8 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from opentelemetry import trace
-from opentelemetry.trace import StatusCode
-from sqlalchemy import and_, select
+from sqlalchemy import and_, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user, require_role
@@ -14,6 +13,7 @@ from ..authz import (
     can_attach_program_to_category,
 )
 from ..database import get_db
+from ..tracing import record_exception_if_server_error
 from ..models import Category, Group, Image, Program, User
 from ..schemas import (
     CategoryCreate,
@@ -188,6 +188,7 @@ async def _load_tree(
                 group_ids=[g.id for g in cat.groups],
                 status=cat.status,
                 sort_order=cat.sort_order,
+                version=cat.version,
                 metadata_extra=cat.metadata_,
                 created_at=cat.created_at,
                 updated_at=cat.updated_at,
@@ -332,12 +333,35 @@ async def create_category(
 async def update_category(
     category_id: int,
     body: CategoryUpdate,
+    request: Request,
     _user: Annotated[User, Depends(require_role("admin", "instructor"))],
     db: AsyncSession = Depends(get_db),
 ):
     cat = await db.get(Category, category_id)
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
+
+    # Optimistic concurrency: same CAS pattern as image updates.
+    if_match = request.headers.get("If-Match")
+    if if_match is not None:
+        try:
+            client_version = int(if_match.strip('"'))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid If-Match header")
+        cas = await db.execute(
+            sql_update(Category)
+            .where(Category.id == category_id, Category.version == client_version)
+            .values(version=Category.version + 1)
+        )
+        if cas.rowcount == 0:
+            raise HTTPException(
+                status_code=409,
+                detail="Resource has been modified by another client",
+            )
+        cat.version = client_version + 1
+    else:
+        cat.version = cat.version + 1
+
     update_data = body.model_dump(exclude_unset=True)
     if "parent_id" in update_data:
         new_parent_id = update_data["parent_id"]
@@ -394,7 +418,12 @@ async def update_category(
     cat._category_warnings = _intersection_warnings(
         list(cat.programs), list(cat.groups)
     )
-    return cat
+    response = Response(
+        content=CategoryOut.model_validate(cat).model_dump_json(),
+        media_type="application/json",
+    )
+    response.headers["ETag"] = f'"{cat.version}"'
+    return response
 
 
 @router.put("/reorder", status_code=200)
@@ -440,8 +469,7 @@ async def reorder_categories(
             await db.commit()
             return {"status": "ok"}
         except Exception as exc:
-            span.record_exception(exc)
-            span.set_status(StatusCode.ERROR, str(exc))
+            record_exception_if_server_error(span, exc)
             raise
 
 

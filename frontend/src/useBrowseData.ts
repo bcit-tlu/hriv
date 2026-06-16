@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
     fetchCategoryTree,
     fetchUncategorizedImages,
@@ -44,6 +44,7 @@ export function apiTreeToCategory(node: ApiCategoryTree): Category {
         groupIds: node.group_ids ?? [],
         status: node.status,
         sortOrder: node.sort_order,
+        version: node.version,
         cardImageId:
             typeof meta?.card_image_id === "number" ? meta.card_image_id : null,
         metadataExtra: meta ?? null,
@@ -175,7 +176,7 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
         backgroundRefresh,
         currentUser != null,
     );
-    invalidateRef.current = invalidateBackground;
+    useEffect(() => { invalidateRef.current = invalidateBackground; });
 
     // Resolve the live children/images from the categories state tree
     // so newly added categories appear immediately.
@@ -244,8 +245,10 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     return {
         categories,
         categoriesLoading,
+        setCategories,
         uncategorizedImages,
         uncategorizedLoaded,
+        setUncategorizedImages,
         programs,
         groups,
         setGroups,

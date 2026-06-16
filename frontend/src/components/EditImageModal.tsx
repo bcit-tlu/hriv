@@ -16,7 +16,7 @@ import Typography from '@mui/material/Typography'
 import VisibilityIcon from '@mui/icons-material/Visibility'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import type { ApiImage } from '../api'
-import type { Category, Program } from '../types'
+import type { Category, Group, Program } from '../types'
 import CategoryPickerSelect from './CategoryPickerSelect'
 
 export interface ImageFormData {
@@ -70,8 +70,9 @@ interface EditImageModalProps {
   image: ApiImage | null
   categories: Category[]
   programs: Program[]
-  onAddCategory?: (label: string, parentId: number | null, programIds?: number[]) => Promise<number | void>
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[]) => Promise<void>
+  groups?: Group[]
+  onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onViewImage?: () => void
 }
@@ -86,6 +87,7 @@ function EditImageForm({
   image,
   categories,
   programs,
+  groups,
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
@@ -382,6 +384,7 @@ function EditImageForm({
             onEditCategory={onEditCategory}
             onToggleVisibility={onToggleVisibility}
             programs={programs}
+            groups={groups}
           />
         </Box>
         <TextField
@@ -549,6 +552,7 @@ export default function EditImageModal({
   image,
   categories,
   programs,
+  groups,
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
@@ -570,6 +574,7 @@ export default function EditImageModal({
           image={image}
           categories={categories}
           programs={programs}
+          groups={groups}
           onAddCategory={onAddCategory}
           onEditCategory={onEditCategory}
           onToggleVisibility={onToggleVisibility}
