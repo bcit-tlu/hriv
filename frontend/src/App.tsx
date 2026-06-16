@@ -2201,7 +2201,6 @@ export default function App() {
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
                 categoryHidden={isCategoryHiddenInTree(categories, selectedImage?.categoryId)}
-                onToggleImageVisibility={toggleImageVisibility}
             />
 
             {/* Browse-view image edit modal */}
@@ -2221,7 +2220,6 @@ export default function App() {
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
                 categoryHidden={isCategoryHiddenInTree(categories, browseEditImage?.categoryId)}
-                onToggleImageVisibility={toggleImageVisibility}
                 onViewImage={
                     browseEditImage
                         ? () => {

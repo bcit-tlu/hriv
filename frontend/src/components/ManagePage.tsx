@@ -1289,10 +1289,6 @@ export default function ManagePage({
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
         categoryHidden={editingImage ? isImageCategoryHidden(editingImage) : false}
-        onToggleImageVisibility={async (imageId) => {
-          const img = images.find((i) => i.id === imageId)
-          if (img) await handleToggleActive(img)
-        }}
         onViewImage={editingImage && onViewImage ? () => {
           const img = editingImage
           setEditOpen(false)

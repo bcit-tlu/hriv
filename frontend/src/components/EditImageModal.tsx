@@ -79,8 +79,6 @@ interface EditImageModalProps {
   onViewImage?: () => void
   /** Whether the image's parent category (or an ancestor) is hidden. */
   categoryHidden?: boolean
-  /** Callback to toggle the image's own visibility. */
-  onToggleImageVisibility?: (imageId: number) => Promise<void>
 }
 
 function EditImageForm({
@@ -99,7 +97,6 @@ function EditImageForm({
   onToggleVisibility,
   onViewImage,
   categoryHidden = false,
-  onToggleImageVisibility,
 }: Omit<EditImageModalProps, 'open'>) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
@@ -129,12 +126,15 @@ function EditImageForm({
   const [replacing, setReplacing] = useState(false)
   const [replaceError, setReplaceError] = useState<string | null>(null)
 
+  const activeChanged = active !== (image?.active ?? true)
+
   // Track whether the form has been modified from its initial values
   const isDirty =
     name !== (image?.name ?? '') ||
     categoryId !== (image?.category_id ?? null) ||
     copyright !== (image?.copyright ?? '') ||
     note !== (image?.note ?? '') ||
+    activeChanged ||
     measurementScale !== (meta?.measurement_scale != null ? String(meta.measurement_scale) : '') ||
     measurementUnit !== (typeof meta?.measurement_unit === 'string' ? meta.measurement_unit : '')
 
@@ -257,7 +257,7 @@ function EditImageForm({
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         Edit Details
         <Box sx={{ display: 'flex', gap: 1 }}>
-          {onToggleImageVisibility && image && (() => {
+          {image && (() => {
             if (categoryHidden) {
               return (
                 <Button
@@ -278,10 +278,7 @@ function EditImageForm({
                   size="small"
                   variant="text"
                   startIcon={<VisibilityOff />}
-                  onClick={async () => {
-                    setActive(true)
-                    try { await onToggleImageVisibility(image.id) } catch { setActive(false) }
-                  }}
+                  onClick={() => setActive(true)}
                   aria-label="Visibility: Show to students"
                   sx={{ color: visColors.inactive, filter: 'grayscale(100%)' }}
                 >
@@ -294,10 +291,7 @@ function EditImageForm({
                 size="small"
                 variant="text"
                 startIcon={<Visibility />}
-                onClick={async () => {
-                  setActive(false)
-                  try { await onToggleImageVisibility(image.id) } catch { setActive(true) }
-                }}
+                onClick={() => setActive(false)}
                 aria-label="Visibility: Hide from students"
                 color="primary"
               >
@@ -608,7 +602,6 @@ export default function EditImageModal({
   onToggleVisibility,
   onViewImage,
   categoryHidden,
-  onToggleImageVisibility,
 }: EditImageModalProps) {
   const formKey = image ? `edit-${image.id}` : 'closed'
 
@@ -632,7 +625,6 @@ export default function EditImageModal({
           onToggleVisibility={onToggleVisibility}
           onViewImage={onViewImage}
           categoryHidden={categoryHidden}
-          onToggleImageVisibility={onToggleImageVisibility}
         />
       )}
     </Dialog>
