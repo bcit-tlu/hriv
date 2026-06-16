@@ -42,10 +42,10 @@ export default defineConfig({
             // `App.tsx` still have 0% coverage; these numbers guard against
             // regressions while component-level tests are filled in.
             thresholds: {
-                lines: 30,
-                statements: 29,
-                functions: 30,
-                branches: 25,
+                lines: 62,
+                statements: 60,
+                functions: 58,
+                branches: 55,
             },
         },
     },
