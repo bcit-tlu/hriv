@@ -603,6 +603,7 @@ export default function EditImageModal({
   image,
   categories,
   programs,
+  groups,
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
@@ -626,6 +627,7 @@ export default function EditImageModal({
           image={image}
           categories={categories}
           programs={programs}
+          groups={groups}
           onAddCategory={onAddCategory}
           onEditCategory={onEditCategory}
           onToggleVisibility={onToggleVisibility}
