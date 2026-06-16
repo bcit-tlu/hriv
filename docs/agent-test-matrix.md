@@ -77,6 +77,13 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 - Apply locally: `DATABASE_URL=... poetry run python -m app.migrations_bootstrap`.
 - See `backend/README.md` (Database migrations).
 
+### Changed observability / tracing (OTel)
+- backend: `poetry run pytest tests/test_otel_bootstrap.py tests/test_tracing.py`
+- If changing span attribute conventions or error recording in routers, also run
+  the relevant router test (e.g. `tests/test_router_bulk_import.py` for bulk
+  import spans, `tests/test_router_images.py` for image spans).
+- See [observability-conventions.md](observability-conventions.md).
+
 ### Changed Helm charts
 - lint: `for chart in charts/*/; do helm lint "$chart"; done`
 - validate: `for chart in charts/*/; do helm template test "$chart" | kubeconform -strict -summary -schema-location default -ignore-missing-schemas; done`
