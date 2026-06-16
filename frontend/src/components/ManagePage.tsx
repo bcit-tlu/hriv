@@ -47,6 +47,7 @@ import { fetchImages, updateImage, deleteImage, replaceImage, bulkUpdateImages, 
 import type { ApiBulkImportJob, ApiImage } from '../api'
 import type { Category, Group, Program } from '../types'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from '../categoryUtils'
+import { formatFileSize } from '../formatUtils'
 import { getGroupChipColors, getVisibilityColors } from '../theme'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import { useColorMode } from '../useColorMode'
@@ -119,13 +120,6 @@ function CategoryBreadcrumb({
       ))}
     </Box>
   )
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
 }
 
 type SortableColumn = 'id' | 'name' | 'category' | 'copyright' | 'note' | 'program' | 'group' | 'active' | 'updated_at' | 'created_at' | 'dimensions' | 'file_size'
