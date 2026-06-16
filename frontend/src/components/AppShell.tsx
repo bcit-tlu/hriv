@@ -29,7 +29,6 @@ import Typography from "@mui/material/Typography";
 import SearchIcon from "@mui/icons-material/Search";
 import ColorModeToggle from "./ColorModeToggle";
 import FooterBar from "./FooterBar";
-import { getGroupChipColors } from "../theme";
 import AnnouncementBanner from "./AnnouncementBanner";
 import type { Role } from "../types";
 
