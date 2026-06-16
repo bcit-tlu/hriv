@@ -176,6 +176,21 @@ export default function ManageCategoriesDialog({
 
   const options = useMemo(() => flattenCategoryOptions(categories) as FlatOption[], [categories])
 
+  /** Set of category IDs whose ancestor is hidden (for cascading visibility). */
+  const ancestorHiddenIds = useMemo(() => {
+    const ids = new Set<number>()
+    const hiddenAtDepth = new Map<number, boolean>()
+    for (const opt of options) {
+      const parentHidden = opt.depth > 0 && (hiddenAtDepth.get(opt.depth - 1) ?? false)
+      const selfHidden = opt.status === 'hidden'
+      if (parentHidden) ids.add(opt.id)
+      hiddenAtDepth.set(opt.depth, parentHidden || selfHidden)
+      // Clear deeper entries when we move back up
+      for (const [d] of hiddenAtDepth) { if (d > opt.depth) hiddenAtDepth.delete(d) }
+    }
+    return ids
+  }, [options])
+
   const addSiblingNames = useMemo(
     () => options.filter((o) => o.parentId === addParentId).map((o) => o.label),
     [options, addParentId],
@@ -480,7 +495,10 @@ export default function ManageCategoriesDialog({
               />
             </ListItem>
 
-            {options.map((opt) => (
+            {options.map((opt) => {
+              const inheritedHidden = ancestorHiddenIds.has(opt.id)
+              const effectivelyHidden = opt.status === 'hidden' || inheritedHidden
+              return (
               <ListItem
                 key={opt.id}
                 data-category-id={opt.id}
@@ -495,22 +513,40 @@ export default function ManageCategoriesDialog({
                 }}
                 secondaryAction={
                     <Box sx={{ display: 'flex', gap: 0.5 }}>
-                      {onToggleVisibility && (
-                        <Tooltip title={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}>
-                          <IconButton
-                            edge="end"
-                            size="small"
-                            aria-label={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}
-                            onClick={() => onToggleVisibility(opt.id)}
-                          >
-                            {opt.status === 'hidden' ? (
-                              <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
-                            ) : (
-                              <Visibility fontSize="small" sx={{ color: visColors.active }} />
-                            )}
-                          </IconButton>
-                        </Tooltip>
-                      )}
+                      {onToggleVisibility && (() => {
+                        if (inheritedHidden) {
+                          return (
+                            <Tooltip title="Hidden by parent category">
+                              <span>
+                                <IconButton
+                                  edge="end"
+                                  size="small"
+                                  disabled
+                                  aria-label="Visibility: Hidden by parent category"
+                                >
+                                  <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          )
+                        }
+                        return (
+                          <Tooltip title={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}>
+                            <IconButton
+                              edge="end"
+                              size="small"
+                              aria-label={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}
+                              onClick={() => onToggleVisibility(opt.id)}
+                            >
+                              {opt.status === 'hidden' ? (
+                                <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
+                              ) : (
+                                <Visibility fontSize="small" sx={{ color: visColors.active }} />
+                              )}
+                            </IconButton>
+                          </Tooltip>
+                        )
+                      })()}
                       {onEditCategory && (
                         <Tooltip title="Edit category">
                           <IconButton
@@ -539,7 +575,7 @@ export default function ManageCategoriesDialog({
                         size="small"
                         onClick={() => handleDeleteClick(opt)}
                       >
-                        <DeleteIcon fontSize="small" sx={{ color: opt.status === 'hidden' ? visColors.inactive : 'primary.main' }} />
+                        <DeleteIcon fontSize="small" sx={{ color: effectivelyHidden ? visColors.inactive : 'primary.main' }} />
                       </IconButton>
                     </Tooltip>
                   </Box>
@@ -559,7 +595,7 @@ export default function ManageCategoriesDialog({
                           {'\u2514 '}
                         </Typography>
                       )}
-                      <Typography component="span" sx={{ color: opt.status === 'hidden' ? visColors.inactive : undefined }}>
+                      <Typography component="span" sx={{ color: effectivelyHidden ? visColors.inactive : undefined }}>
                         {opt.label}
                       </Typography>
                       <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
@@ -570,7 +606,7 @@ export default function ManageCategoriesDialog({
                         inheritedProgramRestriction={opt.inheritedProgramRestriction}
                         hasGroupRestriction={opt.groupIds.length > 0 || opt.inheritedGroupRestriction}
                         inheritedGroupRestriction={opt.inheritedGroupRestriction}
-                        hidden={opt.status === 'hidden'}
+                        hidden={effectivelyHidden}
                         onProgramClick={onEditCategory ? () => handleEditClick(opt) : undefined}
                         onGroupClick={onEditCategory ? () => handleEditClick(opt) : undefined}
                       />
@@ -578,7 +614,8 @@ export default function ManageCategoriesDialog({
                   }
                 />
               </ListItem>
-            ))}
+              )
+            })}
 
             {options.length === 0 && (
               <ListItem>
