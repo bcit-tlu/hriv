@@ -1,4 +1,4 @@
-import type { Category } from '../types'
+import { type Category } from '../types'
 
 export interface FlatCategoryOption {
   id: number
@@ -14,12 +14,9 @@ export interface FlatCategoryOption {
   inheritedGroupRestriction: boolean
 }
 
-/**
- * Returns category IDs whose parent (or any higher ancestor) is hidden in the
- * pre-order flattened output from flattenCategoryOptions().
- * Note: includes IDs even if the category itself is also directly hidden.
- */
- */
+// Returns category IDs whose parent (or any higher ancestor) is hidden in the
+// pre-order flattened output from flattenCategoryOptions().
+// Includes IDs even if the category itself is also directly hidden.
 export function getAncestorHiddenIds(options: FlatCategoryOption[]): Set<number> {
   const ids = new Set<number>()
   const hiddenAtDepth: boolean[] = []
