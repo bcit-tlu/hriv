@@ -111,15 +111,6 @@ export default function App() {
     const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null);
     const selectedImageRef = useRef<ImageItem | null>(null);
     useEffect(() => { selectedImageRef.current = selectedImage; });
-    const inactiveViewerActionSx = useMemo(
-        () =>
-            selectedImage?.active
-                ? undefined
-                : {
-                      filter: "grayscale(100%)",
-                  },
-        [selectedImage?.active],
-    );
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [fileDropCategoryId, setFileDropCategoryId] = useState<
@@ -181,6 +172,20 @@ export default function App() {
         ancestorGroupIds,
         currentCategories,
     } = useBrowseData({ path, currentUser });
+
+    const selectedImageCategoryHidden = useMemo(
+        () => isCategoryHiddenInTree(categories, selectedImage?.categoryId),
+        [categories, selectedImage?.categoryId],
+    );
+    const inactiveViewerActionSx = useMemo(
+        () =>
+            selectedImage?.active && !selectedImageCategoryHidden
+                ? undefined
+                : {
+                      filter: "grayscale(100%)",
+                  },
+        [selectedImage?.active, selectedImageCategoryHidden],
+    );
 
     // Image processing jobs (extracted to useProcessingJobs hook)
     const setImagesVersionRef = useRef<React.Dispatch<React.SetStateAction<number>>>(() => {});
@@ -1349,7 +1354,7 @@ export default function App() {
                                                 <Button
                                                     variant="text"
                                                     startIcon={<VisibilityOff />}
-                                                    onClick={() => toggleImageVisibility(selectedImage.id)}
+                                                    onClick={() => { toggleImageVisibility(selectedImage.id).catch(() => {}) }}
                                                     aria-label="Visibility: Show to students"
                                                     sx={{ color: visColors.inactive, filter: "grayscale(100%)" }}
                                                 >
@@ -1361,7 +1366,7 @@ export default function App() {
                                             <Button
                                                 variant="text"
                                                 startIcon={<Visibility />}
-                                                onClick={() => toggleImageVisibility(selectedImage.id)}
+                                                onClick={() => { toggleImageVisibility(selectedImage.id).catch(() => {}) }}
                                                 aria-label="Visibility: Hide from students"
                                                 color="primary"
                                             >

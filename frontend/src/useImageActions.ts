@@ -104,6 +104,7 @@ export function useImageActions(deps: UseImageActionsDeps) {
                 }));
                 console.error("Failed to toggle image visibility", err);
                 setErrorSnack(userMessage(err, "Failed to toggle image visibility."));
+                throw err;
             }
         },
         [

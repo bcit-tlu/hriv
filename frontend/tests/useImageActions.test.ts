@@ -226,7 +226,7 @@ describe("useImageActions", () => {
             const { result } = renderHook(() => useImageActions(deps));
 
             await act(async () => {
-                await result.current.toggleImageVisibility(30);
+                await expect(result.current.toggleImageVisibility(30)).rejects.toThrow("Network error");
             });
 
             expect(deps.setErrorSnack).toHaveBeenCalled();

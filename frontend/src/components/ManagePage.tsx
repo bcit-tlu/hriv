@@ -593,6 +593,7 @@ export default function ManagePage({
         ),
       )
       console.error('Failed to toggle image status', err)
+      throw err
     }
   }
 
@@ -1146,7 +1147,7 @@ export default function ManagePage({
                     <Switch
                       size="small"
                       checked={img.active}
-                      onChange={() => handleToggleActive(img)}
+                      onChange={() => { handleToggleActive(img).catch(() => {}) }}
                       disabled={isImageCategoryHidden(img)}
                     />
                   </TableCell>}
