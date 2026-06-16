@@ -1722,6 +1722,36 @@ export default function App() {
                                             );
                                         })}
                                     </MuiBreadcrumbs>
+                                    {canEditContent && path.length > 0 && (() => {
+                                        const current = path[path.length - 1];
+                                        const isDirectlyHidden = current.status === "hidden";
+                                        const ancestorHidden = path.slice(0, -1).some((p) => p.status === "hidden");
+                                        const inheritedHidden = !isDirectlyHidden && ancestorHidden;
+                                        return (
+                                            <Tooltip title={isDirectlyHidden ? "Visibility: Show to students" : inheritedHidden ? "Visibility: Hidden by parent category" : "Visibility: Hide from students"}>
+                                                <IconButton
+                                                    size="small"
+                                                    onClick={() => toggleCategoryVisibility(current.id)}
+                                                    aria-label={isDirectlyHidden ? "Visibility: Show to students" : inheritedHidden ? "Visibility: Hidden by parent category" : "Visibility: Hide from students"}
+                                                    sx={{ ml: 0.25 }}
+                                                >
+                                                    {isDirectlyHidden ? (
+                                                        <VisibilityOff
+                                                            sx={{ fontSize: 16, color: visColors.inactive }}
+                                                        />
+                                                    ) : inheritedHidden ? (
+                                                        <VisibilityOff
+                                                            sx={{ fontSize: 16, color: visColors.inactive, opacity: 0.5 }}
+                                                        />
+                                                    ) : (
+                                                        <Visibility
+                                                            sx={{ fontSize: 16, color: visColors.active }}
+                                                        />
+                                                    )}
+                                                </IconButton>
+                                            </Tooltip>
+                                        );
+                                    })()}
                                     {(() => {
                                         const resolved =
                                             ancestorProgramIds
@@ -1759,6 +1789,9 @@ export default function App() {
                                                         label={p.name}
                                                         size="small"
                                                         color="primary"
+                                                        sx={path.length > 0 && path.some((c) => c.status === "hidden")
+                                                            ? { filter: "grayscale(100%)" }
+                                                            : undefined}
                                                     />
                                                 ))}
                                                 {overflow > 0 && (
@@ -1778,6 +1811,9 @@ export default function App() {
                                                             aria-label={`${overflow} more programs`}
                                                             sx={{
                                                                 cursor: "pointer",
+                                                                ...(path.length > 0 && path.some((c) => c.status === "hidden")
+                                                                    ? { filter: "grayscale(100%)" }
+                                                                    : {}),
                                                             }}
                                                         />
                                                         <Popover
@@ -1870,6 +1906,9 @@ export default function App() {
                                                         label={g.name}
                                                         size="small"
                                                         color="secondary"
+                                                        sx={path.length > 0 && path.some((c) => c.status === "hidden")
+                                                            ? { filter: "grayscale(100%)" }
+                                                            : undefined}
                                                     />
                                                 ))}
                                                 {overflow > 0 && (
@@ -1889,6 +1928,9 @@ export default function App() {
                                                             aria-label={`${overflow} more groups`}
                                                             sx={{
                                                                 cursor: "pointer",
+                                                                ...(path.length > 0 && path.some((c) => c.status === "hidden")
+                                                                    ? { filter: "grayscale(100%)" }
+                                                                    : {}),
                                                             }}
                                                         />
                                                         <Popover
@@ -1952,37 +1994,11 @@ export default function App() {
                                             gap: 2,
                                             flexShrink: 0,
                                             alignItems: "center",
+                                            ...(path.length > 0 && path.some((p) => p.status === "hidden")
+                                                ? { filter: "grayscale(100%)" }
+                                                : {}),
                                         }}
                                     >
-                                        {path.length > 0 && (() => {
-                                            const current = path[path.length - 1];
-                                            const isDirectlyHidden = current.status === "hidden";
-                                            const ancestorHidden = path.slice(0, -1).some((p) => p.status === "hidden");
-                                            const inheritedHidden = !isDirectlyHidden && ancestorHidden;
-                                            return (
-                                                <Tooltip title={isDirectlyHidden ? "Visibility: Show to students" : inheritedHidden ? "Visibility: Hidden by parent category" : "Visibility: Hide from students"}>
-                                                    <IconButton
-                                                        size="small"
-                                                        onClick={() => toggleCategoryVisibility(current.id)}
-                                                        aria-label={isDirectlyHidden ? "Visibility: Show to students" : inheritedHidden ? "Visibility: Hidden by parent category" : "Visibility: Hide from students"}
-                                                    >
-                                                        {isDirectlyHidden ? (
-                                                            <VisibilityOff
-                                                                sx={{ fontSize: 28, color: visColors.inactive }}
-                                                            />
-                                                        ) : inheritedHidden ? (
-                                                            <VisibilityOff
-                                                                sx={{ fontSize: 28, color: visColors.inactive, opacity: 0.5 }}
-                                                            />
-                                                        ) : (
-                                                            <Visibility
-                                                                sx={{ fontSize: 28, color: visColors.active }}
-                                                            />
-                                                        )}
-                                                    </IconButton>
-                                                </Tooltip>
-                                            );
-                                        })()}
                                         {path.length < MAX_DEPTH && (
                                             <Button
                                                 variant="outlined"
@@ -1992,9 +2008,6 @@ export default function App() {
                                                 onClick={() =>
                                                     setAddCatOpen(true)
                                                 }
-                                                sx={path.length > 0 && path.some((p) => p.status === "hidden")
-                                                    ? { filter: "grayscale(100%)" }
-                                                    : undefined}
                                             >
                                                 Add Category
                                             </Button>
@@ -2005,9 +2018,6 @@ export default function App() {
                                                 <AddPhotoAlternateIcon />
                                             }
                                             onClick={() => setUploadOpen(true)}
-                                            sx={path.length > 0 && path.some((p) => p.status === "hidden")
-                                                ? { filter: "grayscale(100%)" }
-                                                : undefined}
                                         >
                                             Add Images
                                         </Button>
