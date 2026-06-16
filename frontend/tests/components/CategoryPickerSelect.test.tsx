@@ -11,7 +11,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CategoryPickerSelect from '../../src/components/CategoryPickerSelect'
-import { makeCategory } from '../helpers/fixtures'
+import { makeCategory, makeImage } from '../helpers/fixtures'
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -223,5 +223,201 @@ describe('CategoryPickerSelect — LockIcon', () => {
     await user.click(screen.getByRole('combobox'))
     expect(screen.getByLabelText('Restricted to specific groups')).toBeInTheDocument()
     expect(screen.getByLabelText('Group restriction inherited from parent')).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Tests — onChange behavior
+// ---------------------------------------------------------------------------
+
+describe('CategoryPickerSelect — onChange', () => {
+  it('fires onChange with category id when a category is selected', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const categories = [makeCategory({ id: 5, label: 'Histology' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={onChange}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByText('Histology'))
+    expect(onChange).toHaveBeenCalledWith(5)
+  })
+
+  it('fires onChange with null when root option is selected', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const categories = [makeCategory({ id: 5, label: 'Histology' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={5}
+        onChange={onChange}
+        includeRoot
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByText('None (root level)'))
+    expect(onChange).toHaveBeenCalledWith(null)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Tests — includeRoot=false
+// ---------------------------------------------------------------------------
+
+describe('CategoryPickerSelect — includeRoot=false', () => {
+  it('does not show "None (root level)" option when includeRoot is false', async () => {
+    const user = userEvent.setup()
+    const categories = [makeCategory({ id: 1, label: 'Test' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        includeRoot={false}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.queryByText('None (root level)')).not.toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Tests — Empty categories
+// ---------------------------------------------------------------------------
+
+describe('CategoryPickerSelect — empty state', () => {
+  it('shows "No other categories available" when excludeCategoryId filters everything', async () => {
+    const user = userEvent.setup()
+    const categories = [makeCategory({ id: 1, label: 'Only' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        excludeCategoryId={1}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.getByText('No other categories available')).toBeInTheDocument()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Tests — action buttons (add, edit, delete, toggle visibility)
+// ---------------------------------------------------------------------------
+
+describe('CategoryPickerSelect — action buttons', () => {
+  it('renders add button on category items when onAddCategory is provided', async () => {
+    const user = userEvent.setup()
+    const categories = [makeCategory({ id: 1, label: 'Cat1' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        onAddCategory={vi.fn()}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    const addButtons = screen.getAllByRole('button').filter(
+      (btn) => btn.querySelector('svg[data-testid="AddIcon"]'),
+    )
+    expect(addButtons.length).toBeGreaterThanOrEqual(1)
+  })
+
+  it('renders edit button on category items when onEditCategory is provided', async () => {
+    const user = userEvent.setup()
+    const categories = [makeCategory({ id: 1, label: 'Cat1' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        onEditCategory={vi.fn()}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    expect(
+      screen.getAllByRole('button').some(
+        (btn) => btn.querySelector('svg[data-testid="EditIcon"]'),
+      ),
+    ).toBe(true)
+  })
+
+  it('renders delete button on category items when onDeleteCategory is provided', async () => {
+    const user = userEvent.setup()
+    const onDeleteCategory = vi.fn().mockResolvedValue(undefined)
+    const categories = [makeCategory({ id: 42, label: 'Cat1' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        onDeleteCategory={onDeleteCategory}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    const deleteBtn = screen.getAllByRole('button').find(
+      (btn) => btn.querySelector('svg[data-testid="DeleteIcon"]'),
+    )
+    expect(deleteBtn).toBeDefined()
+    await user.click(deleteBtn!)
+    expect(onDeleteCategory).toHaveBeenCalledWith(42)
+  })
+
+  it('renders visibility toggle when onToggleVisibility is provided', async () => {
+    const user = userEvent.setup()
+    const onToggleVisibility = vi.fn().mockResolvedValue(undefined)
+    const categories = [makeCategory({ id: 7, label: 'Cat1' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        onToggleVisibility={onToggleVisibility}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    const visBtn = screen.getByLabelText('Visibility: Hide from students')
+    await user.click(visBtn)
+    expect(onToggleVisibility).toHaveBeenCalledWith(7)
+  })
+
+  it('shows "Show to students" label for hidden categories', async () => {
+    const user = userEvent.setup()
+    const categories = [makeCategory({ id: 1, label: 'Hidden', status: 'hidden' })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+        onToggleVisibility={vi.fn()}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.getByLabelText('Visibility: Show to students')).toBeInTheDocument()
+  })
+
+  it('renders image count next to category name', async () => {
+    const user = userEvent.setup()
+    const categories = [makeCategory({
+      id: 1,
+      label: 'Cat1',
+      images: [makeImage({ id: 1 }), makeImage({ id: 2 }), makeImage({ id: 3 })],
+    })]
+    render(
+      <CategoryPickerSelect
+        categories={categories}
+        value={null}
+        onChange={vi.fn()}
+      />,
+    )
+    await user.click(screen.getByRole('combobox'))
+    expect(screen.getByText('(3)')).toBeInTheDocument()
   })
 })
