@@ -15,8 +15,10 @@ export interface FlatCategoryOption {
 }
 
 /**
- * Returns category IDs that are hidden only through an ancestor in the
+ * Returns category IDs whose parent (or any higher ancestor) is hidden in the
  * pre-order flattened output from flattenCategoryOptions().
+ * Note: includes IDs even if the category itself is also directly hidden.
+ */
  */
 export function getAncestorHiddenIds(options: FlatCategoryOption[]): Set<number> {
   const ids = new Set<number>()
