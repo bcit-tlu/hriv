@@ -1,5 +1,4 @@
 import {
-    useEffect,
     useState,
     type Dispatch,
     type ReactNode,
@@ -33,7 +32,6 @@ import FooterBar from "./FooterBar";
 import { getGroupChipColors } from "../theme";
 import AnnouncementBanner from "./AnnouncementBanner";
 import type { Role } from "../types";
-import { getSurfaceVariant } from "../theme";
 
 export type Page = "browse" | "manage" | "people" | "admin";
 
@@ -116,10 +114,7 @@ export default function AppShell(props: AppShellProps) {
         if (announcement) setAnnCollapsed(false);
     }
     const showViewAnnLink = annEnabled && !announcement;
-    const contentBg =
-        page === "people" || page === "admin"
-            ? getSurfaceVariant(mode)
-            : undefined;
+    const groupColors = getGroupChipColors(mode);
 
     return (
         <Box
@@ -341,7 +336,8 @@ export default function AppShell(props: AppShellProps) {
                                                         label={name}
                                                         size="small"
                                                         sx={{
-                                                            bgcolor: groupColors.solidBg,
+                                                            bgcolor:
+                                                                groupColors.solidBg,
                                                             color: groupColors.solidText,
                                                         }}
                                                     />
