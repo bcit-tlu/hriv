@@ -182,7 +182,6 @@ export interface SortableTileGridProps {
     onCategoryClick: (cat: Category) => void;
     onMoveCategory?: (cat: Category) => void;
     onSetCardImage?: (categoryId: number, imageId: number | null) => void;
-    onToggleCategoryVisibility?: (categoryId: number) => Promise<void>;
     onEditCategoryName?: (cat: Category) => void;
     onDropImageOnCategory?: (imageId: number, categoryId: number) => void;
     onDropCategoryOnCategory?: (
@@ -193,8 +192,6 @@ export interface SortableTileGridProps {
 
     onImageClick: (img: ImageItem) => void;
     onEditImageDetails?: (img: ImageItem) => void;
-    onToggleImageVisibility?: (imageId: number) => Promise<void>;
-
     onFilesDrop: (files: File[]) => void;
     onGridDragOver?: React.DragEventHandler;
     onGridDrop?: React.DragEventHandler;
@@ -215,14 +212,12 @@ export default function SortableTileGrid({
     onCategoryClick,
     onMoveCategory,
     onSetCardImage,
-    onToggleCategoryVisibility,
     onEditCategoryName,
     onDropImageOnCategory,
     onDropCategoryOnCategory,
     onDropFilesOnCategory,
     onImageClick,
     onEditImageDetails,
-    onToggleImageVisibility,
     onFilesDrop,
     onGridDragOver,
     onGridDrop,
@@ -429,9 +424,6 @@ export default function SortableTileGrid({
                 onClick={onCategoryClick}
                 onMove={canEditContent ? onMoveCategory : undefined}
                 onSetCardImage={canEditContent ? onSetCardImage : undefined}
-                onToggleVisibility={
-                    canEditContent ? onToggleCategoryVisibility : undefined
-                }
                 onEditName={canEditContent ? onEditCategoryName : undefined}
                 programs={programs}
                 groups={groups}
@@ -457,9 +449,6 @@ export default function SortableTileGrid({
             image={img}
             onClick={onImageClick}
             onEditDetails={canEditContent ? onEditImageDetails : undefined}
-            onToggleVisibility={
-                canEditContent ? onToggleImageVisibility : undefined
-            }
         />
     );
 

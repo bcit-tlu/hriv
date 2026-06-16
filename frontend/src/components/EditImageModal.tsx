@@ -13,10 +13,14 @@ import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import VisibilityIcon from '@mui/icons-material/Visibility'
+import ImageIcon from '@mui/icons-material/Image'
+import Visibility from '@mui/icons-material/Visibility'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import type { ApiImage } from '../api'
 import type { Category, Group, Program } from '../types'
+import { getVisibilityColors } from '../theme'
+import { useColorMode } from '../useColorMode'
 import CategoryPickerSelect from './CategoryPickerSelect'
 
 export interface ImageFormData {
@@ -75,6 +79,10 @@ interface EditImageModalProps {
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onViewImage?: () => void
+  /** Whether the image's parent category (or an ancestor) is hidden. */
+  categoryHidden?: boolean
+  /** Callback to toggle the image's own visibility. */
+  onToggleImageVisibility?: (imageId: number) => Promise<void>
 }
 
 function EditImageForm({
@@ -92,7 +100,11 @@ function EditImageForm({
   onEditCategory,
   onToggleVisibility,
   onViewImage,
+  categoryHidden = false,
+  onToggleImageVisibility,
 }: Omit<EditImageModalProps, 'open'>) {
+  const { mode } = useColorMode()
+  const visColors = getVisibilityColors(mode)
   const uploadInProgress = replaceUploadProgress !== undefined
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState(image?.name ?? '')
@@ -247,22 +259,72 @@ function EditImageForm({
     <>
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         Edit Details
-        {onViewImage && (
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<VisibilityIcon />}
-            onClick={() => {
-              if (isDirty) {
-                setConfirmViewImage(true)
-              } else {
-                onViewImage()
-              }
-            }}
-          >
-            View Image
-          </Button>
-        )}
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          {onToggleImageVisibility && image && (() => {
+            if (categoryHidden) {
+              return (
+                <Button
+                  size="small"
+                  variant="text"
+                  startIcon={<VisibilityOff />}
+                  disabled
+                  aria-label="Visibility: Hidden by category"
+                  sx={{ '&.Mui-disabled': { color: visColors.inactive }, filter: 'grayscale(100%)' }}
+                >
+                  Hidden by Category
+                </Button>
+              )
+            }
+            if (!active) {
+              return (
+                <Button
+                  size="small"
+                  variant="text"
+                  startIcon={<VisibilityOff />}
+                  onClick={() => {
+                    setActive(true)
+                    onToggleImageVisibility(image.id)
+                  }}
+                  aria-label="Visibility: Show to students"
+                  sx={{ color: visColors.inactive, filter: 'grayscale(100%)' }}
+                >
+                  Show Image
+                </Button>
+              )
+            }
+            return (
+              <Button
+                size="small"
+                variant="text"
+                startIcon={<Visibility />}
+                onClick={() => {
+                  setActive(false)
+                  onToggleImageVisibility(image.id)
+                }}
+                aria-label="Visibility: Hide from students"
+                color="primary"
+              >
+                Hide Image
+              </Button>
+            )
+          })()}
+          {onViewImage && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<ImageIcon />}
+              onClick={() => {
+                if (isDirty) {
+                  setConfirmViewImage(true)
+                } else {
+                  onViewImage()
+                }
+              }}
+            >
+              View Image
+            </Button>
+          )}
+        </Box>
       </DialogTitle>
       <DialogContent
         sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
@@ -406,9 +468,10 @@ function EditImageForm({
             <Switch
               checked={active}
               onChange={(e) => setActive(e.target.checked)}
+              disabled={categoryHidden}
             />
           }
-          label="Visibility (visible to students)"
+          label={categoryHidden ? "Visibility (hidden by category)" : "Visibility (visible to students)"}
         />
         <Typography variant="subtitle2" sx={{ mt: 1 }}>
           Measurement Settings
@@ -556,6 +619,8 @@ export default function EditImageModal({
   onEditCategory,
   onToggleVisibility,
   onViewImage,
+  categoryHidden,
+  onToggleImageVisibility,
 }: EditImageModalProps) {
   const formKey = image ? `edit-${image.id}` : 'closed'
 
@@ -577,6 +642,8 @@ export default function EditImageModal({
           onEditCategory={onEditCategory}
           onToggleVisibility={onToggleVisibility}
           onViewImage={onViewImage}
+          categoryHidden={categoryHidden}
+          onToggleImageVisibility={onToggleImageVisibility}
         />
       )}
     </Dialog>

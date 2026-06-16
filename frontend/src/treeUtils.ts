@@ -32,6 +32,16 @@ export function findCategoryPath(
     return null;
 }
 
+/** Check if a category (or any ancestor) is hidden in the tree. */
+export function isCategoryHiddenInTree(
+    tree: Category[],
+    categoryId: number | null | undefined,
+): boolean {
+    if (categoryId == null) return false;
+    const path = findCategoryPath(tree, categoryId);
+    return path != null && path.some((c) => c.status === "hidden");
+}
+
 /** Return a new tree with a single image updated by ID. */
 export function updateImageInTree(
     tree: Category[],

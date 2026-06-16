@@ -15,6 +15,8 @@ interface ImageMetadataFieldsProps {
   idPrefix?: string
   copyrightPlaceholder?: string
   notePlaceholder?: string
+  /** When true the visibility switch is disabled (image inherits hidden from category). */
+  categoryHidden?: boolean
 }
 
 export default function ImageMetadataFields({
@@ -22,6 +24,7 @@ export default function ImageMetadataFields({
   onChange,
   copyrightPlaceholder = 'e.g. 2026 BCIT',
   notePlaceholder = 'Image note',
+  categoryHidden = false,
 }: ImageMetadataFieldsProps) {
   return (
     <>
@@ -46,9 +49,10 @@ export default function ImageMetadataFields({
           <Switch
             checked={values.active}
             onChange={(e) => onChange({ ...values, active: e.target.checked })}
+            disabled={categoryHidden}
           />
         }
-        label="Visibility (visible to students)"
+        label={categoryHidden ? "Visibility (hidden by category)" : "Visibility (visible to students)"}
       />
     </>
   )

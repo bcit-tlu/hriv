@@ -15,8 +15,11 @@ import RadioGroup from '@mui/material/RadioGroup'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { useTheme } from '@mui/material/styles'
+import Visibility from '@mui/icons-material/Visibility'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import type { Group, Program } from '../types'
-import { getGroupChipColors } from '../theme'
+import { getGroupChipColors, getVisibilityColors } from '../theme'
+import { useColorMode } from '../useColorMode'
 
 const filter = createFilterOptions<string>()
 
@@ -38,6 +41,14 @@ interface EditCategoryDialogProps {
   currentGroupIds?: number[]
   /** Group IDs inherited from ancestor categories (read-only display). */
   inheritedGroupIds?: number[]
+  /** Current visibility status of the category being edited. */
+  categoryStatus?: string | null
+  /** Whether an ancestor category is hidden (inherited hidden state). */
+  ancestorHidden?: boolean
+  /** Callback to toggle category visibility. */
+  onToggleVisibility?: (categoryId: number) => Promise<void>
+  /** The ID of the category being edited (needed for toggle callback). */
+  categoryId?: number
 }
 
 export default function EditCategoryDialog({
@@ -52,8 +63,14 @@ export default function EditCategoryDialog({
   groups = [],
   currentGroupIds = [],
   inheritedGroupIds = [],
+  categoryStatus,
+  ancestorHidden = false,
+  onToggleVisibility,
+  categoryId,
 }: EditCategoryDialogProps) {
   const theme = useTheme()
+  const { mode } = useColorMode()
+  const visColors = getVisibilityColors(mode)
   const groupColors = getGroupChipColors(theme.palette.mode)
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -193,7 +210,53 @@ export default function EditCategoryDialog({
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
-      <DialogTitle>Edit Category</DialogTitle>
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        Edit Category
+        {onToggleVisibility && categoryId != null && (() => {
+          const isDirectlyHidden = categoryStatus === 'hidden'
+          const inheritedHidden = !isDirectlyHidden && ancestorHidden
+          if (inheritedHidden) {
+            return (
+              <Button
+                variant="text"
+                size="small"
+                startIcon={<VisibilityOff />}
+                disabled
+                aria-label="Visibility: Hidden by parent category"
+                sx={{ '&.Mui-disabled': { color: visColors.inactive }, filter: 'grayscale(100%)' }}
+              >
+                Hidden by Parent
+              </Button>
+            )
+          }
+          if (isDirectlyHidden) {
+            return (
+              <Button
+                variant="text"
+                size="small"
+                startIcon={<VisibilityOff />}
+                onClick={() => onToggleVisibility(categoryId)}
+                aria-label="Visibility: Show to students"
+                sx={{ color: visColors.inactive, filter: 'grayscale(100%)' }}
+              >
+                Show Category
+              </Button>
+            )
+          }
+          return (
+            <Button
+              variant="text"
+              size="small"
+              startIcon={<Visibility />}
+              onClick={() => onToggleVisibility(categoryId)}
+              aria-label="Visibility: Hide from students"
+              color="primary"
+            >
+              Hide Category
+            </Button>
+          )
+        })()}
+      </DialogTitle>
       <DialogContent>
         <Autocomplete
           freeSolo

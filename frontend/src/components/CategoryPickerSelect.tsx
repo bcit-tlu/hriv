@@ -192,6 +192,17 @@ export default function CategoryPickerSelect({
     [editingOpt?.groupIds],
   )
 
+  const editAncestorHidden = useMemo(() => {
+    if (!editingOpt) return false
+    let curParentId: number | null = editingOpt.parentId
+    while (curParentId != null) {
+      const ancestor = options.find((o) => o.id === curParentId)
+      if (!ancestor) break
+      if (ancestor.status === 'hidden') return true
+      curParentId = ancestor.parentId
+    }
+    return false
+  }, [editingOpt, options])
 
   const selectValue = value == null
     ? (placeholder ? '' : (includeRoot ? ROOT_VALUE : ''))
@@ -415,6 +426,10 @@ export default function CategoryPickerSelect({
           groups={groups}
           currentGroupIds={currentGroupIds}
           inheritedGroupIds={inheritedGroupIds}
+          categoryId={editingOpt?.id}
+          categoryStatus={editingOpt?.status}
+          ancestorHidden={editAncestorHidden}
+          onToggleVisibility={onToggleVisibility}
         />
       )}
     </>

@@ -32,6 +32,8 @@ interface BulkEditImagesModalProps {
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
+  /** True when ALL selected images are in hidden categories (disables visibility switch). */
+  allCategoryHidden?: boolean
 }
 
 export default function BulkEditImagesModal({
@@ -46,6 +48,7 @@ export default function BulkEditImagesModal({
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
+  allCategoryHidden = false,
 }: BulkEditImagesModalProps) {
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [categoryChanged, setCategoryChanged] = useState(false)
@@ -175,9 +178,10 @@ export default function BulkEditImagesModal({
                 setActive(e.target.checked)
                 setActiveChanged(true)
               }}
+              disabled={allCategoryHidden}
             />
           }
-          label="Visibility (visible to students)"
+          label={allCategoryHidden ? "Visibility (hidden by category)" : "Visibility (visible to students)"}
         />
 
         <Divider />

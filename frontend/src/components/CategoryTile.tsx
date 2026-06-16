@@ -15,7 +15,6 @@ import FolderIcon from '@mui/icons-material/Folder'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import ImageIcon from '@mui/icons-material/Image'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
-import Visibility from '@mui/icons-material/Visibility'
 import type { Category, Group, ImageItem, Program } from '../types'
 import { useColorMode } from '../useColorMode'
 import { getVisibilityColors } from '../theme'
@@ -56,7 +55,6 @@ interface CategoryTileProps {
   onClick: (category: Category) => void
   onMove?: (category: Category) => void
   onSetCardImage?: (categoryId: number, imageId: number | null) => void
-  onToggleVisibility?: (categoryId: number) => Promise<void>
   onEditName?: (category: Category) => void
   programs: Program[]
   groups?: Group[]
@@ -64,7 +62,7 @@ interface CategoryTileProps {
   onDropFiles?: (categoryId: number, files: File[]) => void
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, groups = [], onDropFiles }: CategoryTileProps) {
+export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onEditName, programs, groups = [], onDropFiles }: CategoryTileProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -266,30 +264,6 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             gap: 0.5,
           }}
         >
-          {onToggleVisibility && (
-            <Tooltip title={category.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}>
-              <IconButton
-                size="small"
-                sx={{
-                  color: 'white',
-                  bgcolor: 'rgba(0,0,0,0.25)',
-                  '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                  onToggleVisibility(category.id)
-                }}
-                aria-label={category.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}
-              >
-                {category.status === 'hidden' ? (
-                  <VisibilityOff fontSize="small" />
-                ) : (
-                  <Visibility fontSize="small" />
-                )}
-              </IconButton>
-            </Tooltip>
-          )}
           {onSetCardImage && (
             <Tooltip title="Set card image">
               <IconButton

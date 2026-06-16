@@ -556,6 +556,14 @@ export default function ManagePage({
     }
   }
 
+  const isImageCategoryHidden = useCallback((img: ApiImage): boolean => {
+    if (img.category_id == null) return false
+    const seg = categoryPaths.get(img.category_id)
+    if (!seg) return false
+    const fullPath = [...seg.ancestors, seg.category]
+    return fullPath.some((c) => c.status === 'hidden')
+  }, [categoryPaths])
+
   // Toggle active status via switch
   const handleToggleActive = async (image: ApiImage) => {
     const nextActive = !image.active
@@ -1139,6 +1147,7 @@ export default function ManagePage({
                       size="small"
                       checked={img.active}
                       onChange={() => handleToggleActive(img)}
+                      disabled={isImageCategoryHidden(img)}
                     />
                   </TableCell>}
                   {isColumnVisible('updated_at') && <TableCell>
@@ -1278,6 +1287,11 @@ export default function ManagePage({
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
+        categoryHidden={editingImage ? isImageCategoryHidden(editingImage) : false}
+        onToggleImageVisibility={async (imageId) => {
+          const img = images.find((i) => i.id === imageId)
+          if (img) await handleToggleActive(img)
+        }}
         onViewImage={editingImage && onViewImage ? () => {
           const img = editingImage
           setEditOpen(false)
@@ -1320,6 +1334,10 @@ export default function ManagePage({
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
+        allCategoryHidden={selected.size > 0 && [...selected].every((id) => {
+          const img = images.find((i) => i.id === id)
+          return img != null && isImageCategoryHidden(img)
+        })}
       />
 
       {/* Delete confirmation dialog */}

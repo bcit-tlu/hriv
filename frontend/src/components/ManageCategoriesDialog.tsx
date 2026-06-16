@@ -263,6 +263,17 @@ export default function ManageCategoriesDialog({
     [editingCategory?.groupIds],
   )
 
+  const editAncestorHidden = useMemo(() => {
+    if (!editingCategory) return false
+    let curParentId: number | null = editingCategory.parentId
+    while (curParentId != null) {
+      const ancestor = options.find((o) => o.id === curParentId)
+      if (!ancestor) break
+      if (ancestor.status === 'hidden') return true
+      curParentId = ancestor.parentId
+    }
+    return false
+  }, [editingCategory, options])
 
   const handleAddClick = (parentId: number | null, parentLabel?: string) => {
     setAddParentId(parentId)
@@ -639,6 +650,10 @@ export default function ManageCategoriesDialog({
           groups={groups}
           currentGroupIds={currentGroupIds}
           inheritedGroupIds={inheritedGroupIds}
+          categoryId={editingCategory?.id}
+          categoryStatus={editingCategory?.status}
+          ancestorHidden={editAncestorHidden}
+          onToggleVisibility={onToggleVisibility}
         />
       )}
 

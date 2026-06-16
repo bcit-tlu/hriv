@@ -64,18 +64,6 @@ describe('CategoryTile', () => {
   // ─── Hidden indicator ─────────────────────────────────────────────
 
   describe('hidden indicator', () => {
-    it('shows the hidden icon when category status is hidden and toggle provided', () => {
-      render(
-        <CategoryTile
-          category={makeCategory({ status: 'hidden' })}
-          onClick={vi.fn()}
-          programs={[]}
-          onToggleVisibility={vi.fn()}
-        />,
-      )
-      expect(screen.getByTestId('VisibilityOffIcon')).toBeInTheDocument()
-    })
-
     it('renders the card in greyscale when category is hidden', () => {
       render(
         <CategoryTile
@@ -88,20 +76,7 @@ describe('CategoryTile', () => {
       expect(title.closest('.MuiCardActionArea-root')).toHaveStyle({ filter: 'grayscale(100%)' })
     })
 
-    it('shows the visible icon when category is active and toggle provided', () => {
-      render(
-        <CategoryTile
-          category={makeCategory({ status: null })}
-          onClick={vi.fn()}
-          programs={[]}
-          onToggleVisibility={vi.fn()}
-        />,
-      )
-      expect(screen.queryByTestId('VisibilityOffIcon')).not.toBeInTheDocument()
-      expect(screen.getByTestId('VisibilityIcon')).toBeInTheDocument()
-    })
-
-    it('does not show visibility icons when toggle is not provided', () => {
+    it('does not show visibility icons on the tile', () => {
       render(
         <CategoryTile
           category={makeCategory({ status: 'hidden' })}

@@ -44,7 +44,7 @@ import GroupManagementModal from "./components/GroupManagementModal";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
 import type { TypeFilter } from "./components/SearchModal";
-import { findImageInTree, findCategoryPath, resolveCategoryPath } from "./treeUtils";
+import { findImageInTree, findCategoryPath, isCategoryHiddenInTree, resolveCategoryPath } from "./treeUtils";
 import UploadImageModal from "./components/UploadImageModal";
 import { isAcceptedFile } from "./fileUtils";
 import { useAuth } from "./useAuth";
@@ -1329,25 +1329,46 @@ export default function App() {
                                         alignItems: "center",
                                     }}
                                 >
-                                    {canEditContent && (
-                                        <Tooltip title={selectedImage.active ? "Visibility: Hide from students" : "Visibility: Show to students"}>
-                                            <IconButton
-                                                size="small"
+                                    {canEditContent && (() => {
+                                        const categoryHidden = path.some((p) => p.status === "hidden");
+                                        if (categoryHidden) {
+                                            return (
+                                                <Button
+                                                    variant="text"
+                                                    startIcon={<VisibilityOff />}
+                                                    disabled
+                                                    aria-label="Visibility: Hidden by category"
+                                                    sx={{ "&.Mui-disabled": { color: visColors.inactive }, filter: "grayscale(100%)" }}
+                                                >
+                                                    Hidden by Category
+                                                </Button>
+                                            );
+                                        }
+                                        if (!selectedImage.active) {
+                                            return (
+                                                <Button
+                                                    variant="text"
+                                                    startIcon={<VisibilityOff />}
+                                                    onClick={() => toggleImageVisibility(selectedImage.id)}
+                                                    aria-label="Visibility: Show to students"
+                                                    sx={{ color: visColors.inactive, filter: "grayscale(100%)" }}
+                                                >
+                                                    Show Image
+                                                </Button>
+                                            );
+                                        }
+                                        return (
+                                            <Button
+                                                variant="text"
+                                                startIcon={<Visibility />}
                                                 onClick={() => toggleImageVisibility(selectedImage.id)}
-                                                aria-label={selectedImage.active ? "Visibility: Hide from students" : "Visibility: Show to students"}
+                                                aria-label="Visibility: Hide from students"
+                                                color="primary"
                                             >
-                                                {selectedImage.active ? (
-                                                    <Visibility
-                                                        sx={{ fontSize: 28, color: visColors.active }}
-                                                    />
-                                                ) : (
-                                                    <VisibilityOff
-                                                        sx={{ fontSize: 28, color: visColors.inactive }}
-                                                    />
-                                                )}
-                                            </IconButton>
-                                        </Tooltip>
-                                    )}
+                                                Hide Image
+                                            </Button>
+                                        );
+                                    })()}
                                     {canEditContent && (
                                         <Tooltip
                                             title={
@@ -2038,9 +2059,6 @@ export default function App() {
                                 onCategoryClick={handleCategoryTileClick}
                                 onMoveCategory={handleRequestMoveCategory}
                                 onSetCardImage={handleSetCardImage}
-                                onToggleCategoryVisibility={
-                                    toggleCategoryVisibility
-                                }
                                 onEditCategoryName={setEditNameCategory}
                                 onDropImageOnCategory={
                                     handleDropImageOnCategory
@@ -2053,9 +2071,6 @@ export default function App() {
                                 }
                                 onImageClick={handleImageClick}
                                 onEditImageDetails={setBrowseEditImage}
-                                onToggleImageVisibility={
-                                    toggleImageVisibility
-                                }
                                 onFilesDrop={handleFilesDropOnGrid}
                                 onGridDragOver={
                                     canEditContent
@@ -2174,6 +2189,8 @@ export default function App() {
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
+                categoryHidden={isCategoryHiddenInTree(categories, selectedImage?.categoryId)}
+                onToggleImageVisibility={toggleImageVisibility}
             />
 
             {/* Browse-view image edit modal */}
@@ -2192,6 +2209,8 @@ export default function App() {
                 onAddCategory={addCategoryInline}
                 onEditCategory={editCategoryInline}
                 onToggleVisibility={toggleCategoryVisibility}
+                categoryHidden={isCategoryHiddenInTree(categories, browseEditImage?.categoryId)}
+                onToggleImageVisibility={toggleImageVisibility}
                 onViewImage={
                     browseEditImage
                         ? () => {
