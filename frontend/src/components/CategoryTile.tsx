@@ -14,7 +14,7 @@ import EditIcon from '@mui/icons-material/Edit'
 import FolderIcon from '@mui/icons-material/Folder'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import ImageIcon from '@mui/icons-material/Image'
-import VisibilityOff from '@mui/icons-material/VisibilityOff'
+
 import type { Category, Group, ImageItem, Program } from '../types'
 import { useColorMode } from '../useColorMode'
 import { getVisibilityColors } from '../theme'
