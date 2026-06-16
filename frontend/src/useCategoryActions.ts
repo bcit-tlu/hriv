@@ -167,17 +167,23 @@ export function useCategoryActions({
             try {
                 const catPath = findCategoryPath(categories, categoryId);
                 const current = catPath?.[catPath.length - 1];
+                const newStatus =
+                    current?.status === "hidden" ? "active" : "hidden";
                 await apiUpdateCategory(categoryId, {
-                    status:
-                        current?.status === "hidden" ? "active" : "hidden",
+                    status: newStatus,
                 }, current?.version);
                 await loadCategories();
+                setPath((prev) =>
+                    prev.map((p) =>
+                        p.id === categoryId ? { ...p, status: newStatus } : p,
+                    ),
+                );
             } catch (err) {
                 console.error("Failed to toggle category visibility", err);
                 setErrorSnack(userMessage(err, "Failed to toggle category visibility."));
             }
         },
-        [categories, loadCategories, setErrorSnack],
+        [categories, loadCategories, setErrorSnack, setPath],
     );
 
     const reorderCategoriesInline = useCallback(
