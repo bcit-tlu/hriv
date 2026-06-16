@@ -12,6 +12,7 @@ import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { isCategoryHiddenInTree } from '../treeUtils'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import type { Category, Group, Program } from '../types'
 
@@ -60,6 +61,13 @@ export default function BulkEditImagesModal({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const nextCategoryHidden = categoryChanged && categoryId != null
+    ? isCategoryHiddenInTree(categories, categoryId)
+    : false
+  const visibilityDisabled = categoryChanged ? nextCategoryHidden : allCategoryHidden
+  const visibilityLabel = visibilityDisabled
+    ? 'Visibility (hidden by category)'
+    : 'Visibility (visible to students)'
 
   const resetForm = useCallback(() => {
     setCategoryId(null)
@@ -178,10 +186,10 @@ export default function BulkEditImagesModal({
                 setActive(e.target.checked)
                 setActiveChanged(true)
               }}
-              disabled={allCategoryHidden}
+              disabled={visibilityDisabled}
             />
           }
-          label={allCategoryHidden ? "Visibility (hidden by category)" : "Visibility (visible to students)"}
+          label={visibilityLabel}
         />
 
         <Divider />

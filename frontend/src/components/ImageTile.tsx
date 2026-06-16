@@ -26,7 +26,7 @@ export default function ImageTile({ image, onClick, onEditDetails, categoryHidde
   return (
     <Card
       elevation={2}
-      sx={{ width: '100%', maxWidth: 300, position: 'relative' }}
+      sx={{ width: '100%', maxWidth: 300, position: 'relative', opacity: categoryHidden ? 0.5 : 1 }}
     >
       
       <CardActionArea onClick={() => onClick(image)} sx={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'stretch', filter: (categoryHidden || !image.active) ? 'grayscale(100%)' : 'none' }}>

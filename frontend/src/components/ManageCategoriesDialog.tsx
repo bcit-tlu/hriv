@@ -26,7 +26,11 @@ import { useColorMode } from '../useColorMode'
 import AddCategoryDialog from './AddCategoryDialog'
 import CategoryRestrictionIcons from './CategoryRestrictionIcons'
 import EditCategoryDialog from './EditCategoryDialog'
-import { flattenCategoryOptions, type FlatCategoryOption } from './categoryOptionUtils'
+import {
+  flattenCategoryOptions,
+  getAncestorHiddenIds,
+  type FlatCategoryOption,
+} from './categoryOptionUtils'
 import { collectImagesByParent, interleavedSortOrders } from './manageCategoriesDialogUtils'
 import type { FlatOption } from './manageCategoriesDialogUtils'
 
@@ -133,7 +137,7 @@ interface ManageCategoriesDialogProps {
   uncategorizedImages?: ImageItem[]
   onAddCategory: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
   onDeleteCategory: (categoryId: number) => Promise<void>
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[], status?: string | null) => Promise<void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[], status?: 'active' | 'hidden') => Promise<void>
   programs?: Program[]
   groups?: Group[]
   onToggleVisibility?: (categoryId: number) => Promise<void>
@@ -177,19 +181,7 @@ export default function ManageCategoriesDialog({
   const options = useMemo(() => flattenCategoryOptions(categories) as FlatOption[], [categories])
 
   /** Set of category IDs whose ancestor is hidden (for cascading visibility). */
-  const ancestorHiddenIds = useMemo(() => {
-    const ids = new Set<number>()
-    const hiddenAtDepth = new Map<number, boolean>()
-    for (const opt of options) {
-      const parentHidden = opt.depth > 0 && (hiddenAtDepth.get(opt.depth - 1) ?? false)
-      const selfHidden = opt.status === 'hidden'
-      if (parentHidden) ids.add(opt.id)
-      hiddenAtDepth.set(opt.depth, parentHidden || selfHidden)
-      // Clear deeper entries when we move back up
-      for (const [d] of hiddenAtDepth) { if (d > opt.depth) hiddenAtDepth.delete(d) }
-    }
-    return ids
-  }, [options])
+  const ancestorHiddenIds = useMemo(() => getAncestorHiddenIds(options), [options])
 
   const addSiblingNames = useMemo(
     () => options.filter((o) => o.parentId === addParentId).map((o) => o.label),
@@ -323,7 +315,7 @@ export default function ManageCategoriesDialog({
     setEditDialogOpen(true)
   }, [])
 
-  const handleEditSave = useCallback(async (newLabel: string, programIds?: number[], groupIds?: number[], status?: string | null) => {
+  const handleEditSave = useCallback(async (newLabel: string, programIds?: number[], groupIds?: number[], status?: 'active' | 'hidden') => {
     if (editingCategory && onEditCategory) {
       await onEditCategory(editingCategory.id, newLabel, programIds, groupIds, status)
     }
@@ -508,7 +500,7 @@ export default function ManageCategoriesDialog({
                 sx={{
                   pl: 2 + opt.depth * 3,
                   pr: 18,
-                  opacity: dragId === opt.id ? 0.4 : 1,
+                  opacity: dragId === opt.id ? 0.4 : inheritedHidden ? 0.5 : 1,
                   transition: 'opacity 0.15s',
                 }}
                 secondaryAction={
@@ -524,18 +516,21 @@ export default function ManageCategoriesDialog({
                                   disabled
                                   aria-label="Visibility: Hidden by parent category"
                                 >
-                                  <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
+                                  <VisibilityOff
+                                    fontSize="small"
+                                    sx={{ color: visColors.inactive }}
+                                  />
                                 </IconButton>
                               </span>
                             </Tooltip>
                           )
                         }
                         return (
-                          <Tooltip title={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}>
+                          <Tooltip title={opt.status === 'hidden' ? 'Visibility: Show category' : 'Visibility: Hide category'}>
                             <IconButton
                               edge="end"
                               size="small"
-                              aria-label={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}
+                              aria-label={opt.status === 'hidden' ? 'Visibility: Show category' : 'Visibility: Hide category'}
                               onClick={() => onToggleVisibility(opt.id)}
                             >
                               {opt.status === 'hidden' ? (

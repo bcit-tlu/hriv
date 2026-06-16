@@ -304,6 +304,21 @@ vi.mock('../src/useCategoryActions', () => ({
 describe('App breadcrumbs', () => {
   beforeEach(() => {
     mockImage.active = true
+    mockImage.categoryId = 1
+    mockCategories.splice(0, mockCategories.length, {
+      id: 1,
+      label: 'Slides',
+      parentId: null,
+      children: [],
+      images: [],
+      programIds: [1],
+      groupIds: [10],
+      status: 'active',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    })
   })
 
   it('renders program and group chips in both browse and image breadcrumb rows', () => {
@@ -340,5 +355,61 @@ describe('App breadcrumbs', () => {
     expect(groupChip).toHaveStyle({ filter: 'grayscale(100%)' })
     expect(editButton).toHaveStyle({ filter: 'grayscale(100%)' })
     expect(shareButton).toHaveStyle({ filter: 'grayscale(100%)' })
+  })
+
+  it('reduces opacity for image-view controls when category hidden state is inherited', () => {
+    mockCategories.splice(0, mockCategories.length, {
+      id: 1,
+      label: 'Italian',
+      parentId: null,
+      children: [
+        {
+          id: 2,
+          label: 'Gothic',
+          parentId: 1,
+          children: [],
+          images: [],
+          programIds: [],
+          groupIds: [],
+          status: 'active',
+          sortOrder: 0,
+          version: 1,
+          cardImageId: null,
+          metadataExtra: null,
+        },
+      ],
+      images: [],
+      programIds: [1],
+      groupIds: [10],
+      status: 'hidden',
+      sortOrder: 0,
+      version: 1,
+      cardImageId: null,
+      metadataExtra: null,
+    })
+    mockImage.categoryId = 2
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
+    expect(imageBreadcrumb).not.toBeNull()
+
+    const programChip = within(imageBreadcrumb as HTMLElement).getByText('Pathology').closest('.MuiChip-root')
+    const groupChip = within(imageBreadcrumb as HTMLElement).getByText('Lab A2').closest('.MuiChip-root')
+    const hiddenButton = screen.getByRole('button', { name: 'Visibility: Hidden by category' })
+    const editButton = screen.getByRole('button', { name: 'Edit Details' })
+    const shareButton = screen.getByText('Share View').closest('button')
+
+    expect(programChip).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(programChip).toHaveStyle({ opacity: '0.5' })
+    expect(groupChip).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(groupChip).toHaveStyle({ opacity: '0.5' })
+    expect(hiddenButton).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(hiddenButton).toHaveStyle({ opacity: '0.5' })
+    expect(editButton).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(editButton).toHaveStyle({ opacity: '0.5' })
+    expect(shareButton).toHaveStyle({ filter: 'grayscale(100%)' })
+    expect(shareButton).toHaveStyle({ opacity: '0.5' })
   })
 })

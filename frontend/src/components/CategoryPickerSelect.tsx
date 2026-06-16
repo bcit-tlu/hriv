@@ -22,7 +22,11 @@ import { useColorMode } from '../useColorMode'
 import AddCategoryDialog from './AddCategoryDialog'
 import CategoryRestrictionIcons from './CategoryRestrictionIcons'
 import EditCategoryDialog from './EditCategoryDialog'
-import { flattenCategoryOptions, type FlatCategoryOption } from './categoryOptionUtils'
+import {
+  flattenCategoryOptions,
+  getAncestorHiddenIds,
+  type FlatCategoryOption,
+} from './categoryOptionUtils'
 
 function collectDescendantIds(node: Category): Set<number> {
   const ids = new Set<number>([node.id])
@@ -60,7 +64,7 @@ interface CategoryPickerSelectProps {
   /** When provided, a delete button appears on each menu item to delete that category. */
   onDeleteCategory?: (categoryId: number) => Promise<void>
   /** When provided, a pencil button appears on each menu item to rename that category. */
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[], status?: string | null) => Promise<void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[], status?: 'active' | 'hidden') => Promise<void>
   /** When provided, a visibility toggle appears on each menu item. */
   onToggleVisibility?: (categoryId: number) => Promise<void>
   /** Available programs for the add/edit category dialogs. */
@@ -204,18 +208,7 @@ export default function CategoryPickerSelect({
     return false
   }, [editingOpt, options])
 
-  const ancestorHiddenIds = useMemo(() => {
-    const ids = new Set<number>()
-    const hiddenAtDepth = new Map<number, boolean>()
-    for (const opt of options) {
-      const parentHidden = opt.depth > 0 && (hiddenAtDepth.get(opt.depth - 1) ?? false)
-      const selfHidden = opt.status === 'hidden'
-      if (parentHidden) ids.add(opt.id)
-      hiddenAtDepth.set(opt.depth, parentHidden || selfHidden)
-      for (const [d] of hiddenAtDepth) { if (d > opt.depth) hiddenAtDepth.delete(d) }
-    }
-    return ids
-  }, [options])
+  const ancestorHiddenIds = useMemo(() => getAncestorHiddenIds(options), [options])
 
   const selectValue = value == null
     ? (placeholder ? '' : (includeRoot ? ROOT_VALUE : ''))
@@ -257,7 +250,7 @@ export default function CategoryPickerSelect({
     setEditDialogOpen(true)
   }
 
-  const handleEditSave = async (newLabel: string, programIds?: number[], groupIds?: number[], status?: string | null) => {
+  const handleEditSave = async (newLabel: string, programIds?: number[], groupIds?: number[], status?: 'active' | 'hidden') => {
     if (editingOpt && onEditCategory) {
       await onEditCategory(editingOpt.id, newLabel, programIds, groupIds, status)
     }
@@ -354,10 +347,10 @@ export default function CategoryPickerSelect({
                     )
                   }
                   return (
-                    <Tooltip title={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}>
+                    <Tooltip title={opt.status === 'hidden' ? 'Visibility: Show category' : 'Visibility: Hide category'}>
                       <IconButton
                         size="small"
-                        aria-label={opt.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}
+                        aria-label={opt.status === 'hidden' ? 'Visibility: Show category' : 'Visibility: Hide category'}
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => {
                           e.stopPropagation()

@@ -99,6 +99,22 @@ describe("ImageTile", () => {
                 filter: "none",
             });
         });
+
+        it("reduces tile opacity when visibility is inherited from category state", () => {
+            render(
+                <ImageTile
+                    image={makeImage({ active: true, name: "Inherited Hidden Image" })}
+                    onClick={vi.fn()}
+                    categoryHidden
+                />,
+            );
+            const title = screen.getByText("Inherited Hidden Image");
+            const card = title.closest(".MuiCard-root");
+            const actionArea = title.closest(".MuiCardActionArea-root");
+
+            expect(card).toHaveStyle({ opacity: "0.5" });
+            expect(actionArea).toHaveStyle({ filter: "grayscale(100%)" });
+        });
     });
 
     // ─── Copyright ────────────────────────────────────────────────────

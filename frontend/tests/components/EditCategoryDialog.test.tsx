@@ -20,6 +20,24 @@ describe('EditCategoryDialog', () => {
     expect(screen.getByDisplayValue('Architecture')).toBeInTheDocument()
   })
 
+  it('uses program-focused wording for access restrictions', () => {
+    render(
+      <EditCategoryDialog
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        currentLabel="Architecture"
+        programs={[
+          { id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('Restrict access by program')).toBeInTheDocument()
+    expect(screen.getByLabelText('All programs')).toBeInTheDocument()
+    expect(screen.getByLabelText('Specific programs')).toBeInTheDocument()
+  })
+
   it('Save button is disabled when label is unchanged', () => {
     render(
       <EditCategoryDialog

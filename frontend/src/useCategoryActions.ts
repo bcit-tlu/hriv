@@ -32,6 +32,8 @@ export interface UseCategoryActionsDeps {
     >;
 }
 
+type CategoryStatusUpdate = "active" | "hidden";
+
 export function useCategoryActions({
     categories,
     uncategorizedImages,
@@ -145,14 +147,14 @@ export function useCategoryActions({
             newLabel: string,
             programIds?: number[],
             groupIds?: number[],
-            status?: string | null,
+            status?: CategoryStatusUpdate,
         ) => {
             const body: Parameters<typeof apiUpdateCategory>[1] = {
                 label: newLabel,
             };
             if (programIds !== undefined) body.program_ids = programIds;
             if (groupIds !== undefined) body.group_ids = groupIds;
-            if (status != null) body.status = status;
+            if (status !== undefined) body.status = status;
             const catPath = findCategoryPath(categories, categoryId);
             const version = catPath?.at(-1)?.version;
             const updated = await apiUpdateCategory(categoryId, body, version);
@@ -169,15 +171,21 @@ export function useCategoryActions({
             try {
                 const catPath = findCategoryPath(categories, categoryId);
                 const current = catPath?.[catPath.length - 1];
-                const newStatus =
+                const newStatus: CategoryStatusUpdate =
                     current?.status === "hidden" ? "active" : "hidden";
-                await apiUpdateCategory(categoryId, {
+                const updated = await apiUpdateCategory(categoryId, {
                     status: newStatus,
                 }, current?.version);
                 await loadCategories();
                 setPath((prev) =>
                     prev.map((p) =>
-                        p.id === categoryId ? { ...p, status: newStatus } : p,
+                        p.id === categoryId
+                            ? {
+                                  ...p,
+                                  status: updated.status ?? newStatus,
+                                  version: updated.version,
+                              }
+                            : p,
                     ),
                 );
             } catch (err) {

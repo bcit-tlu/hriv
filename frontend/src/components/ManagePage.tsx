@@ -30,6 +30,7 @@ import TableSortLabel from '@mui/material/TableSortLabel'
 import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
+import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
@@ -49,6 +50,7 @@ import type { ApiBulkImportJob, ApiImage } from '../api'
 import type { Category, Group, Program } from '../types'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from '../categoryUtils'
 import { getGroupChipColors, getVisibilityColors } from '../theme'
+import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import { useColorMode } from '../useColorMode'
 import BulkEditImagesModal from './BulkEditImagesModal'
@@ -94,7 +96,7 @@ function CategoryBreadcrumb({
   if (!seg) return <>{categoryId}</>
 
   const fullPath = [...seg.ancestors, seg.category]
-  const hasHidden = fullPath.some((cat) => cat.status === 'hidden')
+  const hiddenState = getCategoryHiddenStateFromPath(fullPath)
 
   return (
     <Box component="span" sx={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -121,10 +123,24 @@ function CategoryBreadcrumb({
           </Link>
         </Box>
       ))}
-      {hasHidden && hiddenColor && (
-        <span role="img" aria-label="Category hidden from students" style={{ display: 'inline-flex', marginLeft: 4, verticalAlign: 'middle' }}>
-          <VisibilityOffIcon sx={{ fontSize: 14, color: hiddenColor }} />
-        </span>
+      {hiddenState.hidden && hiddenColor && (
+        <Tooltip title="Hidden by category">
+          <span
+            role="img"
+            aria-label={hiddenState.hiddenByAncestor && !hiddenState.directlyHidden
+              ? 'Category hidden from students by ancestor'
+              : 'Category hidden from students'}
+            style={{ display: 'inline-flex', marginLeft: 4, verticalAlign: 'middle' }}
+          >
+            <VisibilityOffIcon
+              sx={{
+                fontSize: 14,
+                color: hiddenColor,
+                opacity: hiddenState.hiddenByAncestor && !hiddenState.directlyHidden ? 0.55 : 1,
+              }}
+            />
+          </span>
+        </Tooltip>
       )}
     </Box>
   )
@@ -560,8 +576,7 @@ export default function ManagePage({
     if (img.category_id == null) return false
     const seg = categoryPaths.get(img.category_id)
     if (!seg) return false
-    const fullPath = [...seg.ancestors, seg.category]
-    return fullPath.some((c) => c.status === 'hidden')
+    return getCategoryHiddenStateFromPath([...seg.ancestors, seg.category]).hidden
   }, [categoryPaths])
 
   // Toggle active status via switch
@@ -970,12 +985,14 @@ export default function ManagePage({
               )}
             </TableHead>
             <TableBody>
-              {sortedImages.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage).map((img) => (
+              {sortedImages.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage).map((img) => {
+                const categoryHidden = isImageCategoryHidden(img)
+                return (
                 <TableRow
                   key={img.id}
                   hover
                   selected={selected.has(img.id)}
-                  {...((!img.active || isImageCategoryHidden(img)) && { 'data-dimmed': true })}
+                  {...((!img.active || categoryHidden) && { 'data-dimmed': true })}
                   sx={{
                     cursor: 'pointer',
                     '&[data-dimmed] .MuiTableCell-body:not([data-interactive])': { color: visColors.inactive },
@@ -1016,7 +1033,7 @@ export default function ManagePage({
                         borderRadius: 0.5,
                         display: 'block',
                         cursor: onViewImage ? 'pointer' : 'default',
-                        ...(!img.active || isImageCategoryHidden(img) ? { filter: 'grayscale(100%)' } : {}),
+                        ...(!img.active || categoryHidden ? { filter: 'grayscale(100%)' } : {}),
                       }}
                     />
                   </TableCell>}
@@ -1144,12 +1161,16 @@ export default function ManagePage({
                     data-interactive="true"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <Switch
-                      size="small"
-                      checked={img.active}
-                      onChange={() => { handleToggleActive(img).catch(() => {}) }}
-                      disabled={isImageCategoryHidden(img)}
-                    />
+                    <Tooltip title={categoryHidden ? 'Hidden by category' : ''} disableHoverListener={!categoryHidden}>
+                      <span>
+                        <Switch
+                          size="small"
+                          checked={img.active}
+                          onChange={() => { handleToggleActive(img).catch(() => {}) }}
+                          disabled={categoryHidden}
+                        />
+                      </span>
+                    </Tooltip>
                   </TableCell>}
                   {isColumnVisible('updated_at') && <TableCell>
                     {new Date(img.updated_at).toLocaleDateString()}
@@ -1168,7 +1189,8 @@ export default function ManagePage({
                     </IconButton>
                   </TableCell>
                 </TableRow>
-              ))}
+                )
+              })}
             </TableBody>
           </Table>
           <TablePagination

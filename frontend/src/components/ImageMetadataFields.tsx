@@ -26,6 +26,12 @@ export default function ImageMetadataFields({
   notePlaceholder = 'Image note',
   categoryHidden = false,
 }: ImageMetadataFieldsProps) {
+  const visibilityLabel = categoryHidden
+    ? 'Visibility (hidden by category)'
+    : values.active
+      ? 'Visibility (show image)'
+      : 'Visibility (hide image)'
+
   return (
     <>
       <TextField
@@ -52,7 +58,7 @@ export default function ImageMetadataFields({
             disabled={categoryHidden}
           />
         }
-        label={categoryHidden ? "Visibility (hidden by category)" : "Visibility (visible to students)"}
+        label={visibilityLabel}
       />
     </>
   )

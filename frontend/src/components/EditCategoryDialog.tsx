@@ -30,7 +30,7 @@ interface EditCategoryDialogProps {
     newLabel: string,
     programIds?: number[],
     groupIds?: number[],
-    status?: string | null,
+    status?: 'active' | 'hidden',
   ) => void | Promise<void>
   currentLabel: string
   siblingNames?: string[]
@@ -239,7 +239,7 @@ export default function EditCategoryDialog({
                 size="small"
                 startIcon={<VisibilityOff />}
                 onClick={() => setStatusHidden(false)}
-                aria-label="Visibility: Show to students"
+                aria-label="Visibility: Show category"
                 sx={{ color: visColors.inactive, filter: 'grayscale(100%)' }}
               >
                 Show Category
@@ -252,7 +252,7 @@ export default function EditCategoryDialog({
               size="small"
               startIcon={<Visibility />}
               onClick={() => setStatusHidden(true)}
-              aria-label="Visibility: Hide from students"
+              aria-label="Visibility: Hide category"
               color="primary"
             >
               Hide Category
@@ -298,13 +298,13 @@ export default function EditCategoryDialog({
         {programs.length > 0 && (
           <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle2" gutterBottom>
-              Visible to
+              Restrict access by program
             </Typography>
             <RadioGroup
               value={visibility}
               onChange={(e) => setVisibility(e.target.value as 'all' | 'specific')}
             >
-              <FormControlLabel value="all" control={<Radio size="small" />} label="All students" />
+              <FormControlLabel value="all" control={<Radio size="small" />} label="All programs" />
               <FormControlLabel value="specific" control={<Radio size="small" />} label="Specific programs" />
             </RadioGroup>
             {visibility === 'specific' && (

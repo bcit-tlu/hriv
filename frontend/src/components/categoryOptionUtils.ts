@@ -14,6 +14,24 @@ export interface FlatCategoryOption {
   inheritedGroupRestriction: boolean
 }
 
+/**
+ * Returns category IDs that are hidden only through an ancestor in the
+ * pre-order flattened output from flattenCategoryOptions().
+ */
+export function getAncestorHiddenIds(options: FlatCategoryOption[]): Set<number> {
+  const ids = new Set<number>()
+  const hiddenAtDepth: boolean[] = []
+
+  for (const opt of options) {
+    hiddenAtDepth.length = opt.depth
+    const parentHidden = opt.depth > 0 ? (hiddenAtDepth[opt.depth - 1] ?? false) : false
+    if (parentHidden) ids.add(opt.id)
+    hiddenAtDepth[opt.depth] = parentHidden || opt.status === 'hidden'
+  }
+
+  return ids
+}
+
 function countDescendants(node: Category): number {
   let count = node.children.length
   for (const child of node.children) {
