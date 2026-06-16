@@ -135,7 +135,6 @@ function EditImageForm({
     categoryId !== (image?.category_id ?? null) ||
     copyright !== (image?.copyright ?? '') ||
     note !== (image?.note ?? '') ||
-    active !== (image?.active ?? true) ||
     measurementScale !== (meta?.measurement_scale != null ? String(meta.measurement_scale) : '') ||
     measurementUnit !== (typeof meta?.measurement_unit === 'string' ? meta.measurement_unit : '')
 
@@ -279,9 +278,9 @@ function EditImageForm({
                   size="small"
                   variant="text"
                   startIcon={<VisibilityOff />}
-                  onClick={() => {
+                  onClick={async () => {
                     setActive(true)
-                    onToggleImageVisibility(image.id)
+                    try { await onToggleImageVisibility(image.id) } catch { setActive(false) }
                   }}
                   aria-label="Visibility: Show to students"
                   sx={{ color: visColors.inactive, filter: 'grayscale(100%)' }}
@@ -295,9 +294,9 @@ function EditImageForm({
                 size="small"
                 variant="text"
                 startIcon={<Visibility />}
-                onClick={() => {
+                onClick={async () => {
                   setActive(false)
-                  onToggleImageVisibility(image.id)
+                  try { await onToggleImageVisibility(image.id) } catch { setActive(true) }
                 }}
                 aria-label="Visibility: Hide from students"
                 color="primary"

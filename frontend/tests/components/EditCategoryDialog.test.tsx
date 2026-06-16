@@ -67,7 +67,7 @@ describe('EditCategoryDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith('New Name', undefined, undefined)
+      expect(onSave).toHaveBeenCalledWith('New Name', undefined, undefined, undefined)
     })
     expect(onClose).toHaveBeenCalled()
   })
@@ -96,7 +96,7 @@ describe('EditCategoryDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith('New Name', [2], undefined)
+      expect(onSave).toHaveBeenCalledWith('New Name', [2], undefined, undefined)
     })
   })
 
@@ -354,7 +354,7 @@ describe('EditCategoryDialog', () => {
 
       await waitFor(() => {
         // Should save [1] only — Program C (id=3) was filtered out on open
-        expect(onSave).toHaveBeenCalledWith('Updated Child', [1], undefined)
+        expect(onSave).toHaveBeenCalledWith('Updated Child', [1], undefined, undefined)
       })
     })
 
@@ -428,7 +428,7 @@ describe('EditCategoryDialog', () => {
       expect(saveBtn).not.toBeDisabled()
       await user.click(saveBtn)
       await waitFor(() => {
-        expect(onSave).toHaveBeenCalledWith('Renamed Child', [], undefined)
+        expect(onSave).toHaveBeenCalledWith('Renamed Child', [], undefined, undefined)
       })
     })
   })
@@ -498,6 +498,7 @@ describe('EditCategoryDialog', () => {
           'Child',
           undefined,
           expect.arrayContaining([10, 11]),
+          undefined,
         ),
       )
     })

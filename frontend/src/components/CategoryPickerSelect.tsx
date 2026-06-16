@@ -60,7 +60,7 @@ interface CategoryPickerSelectProps {
   /** When provided, a delete button appears on each menu item to delete that category. */
   onDeleteCategory?: (categoryId: number) => Promise<void>
   /** When provided, a pencil button appears on each menu item to rename that category. */
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[], status?: string | null) => Promise<void>
   /** When provided, a visibility toggle appears on each menu item. */
   onToggleVisibility?: (categoryId: number) => Promise<void>
   /** Available programs for the add/edit category dialogs. */
@@ -244,9 +244,9 @@ export default function CategoryPickerSelect({
     setEditDialogOpen(true)
   }
 
-  const handleEditSave = async (newLabel: string, programIds?: number[], groupIds?: number[]) => {
+  const handleEditSave = async (newLabel: string, programIds?: number[], groupIds?: number[], status?: string | null) => {
     if (editingOpt && onEditCategory) {
-      await onEditCategory(editingOpt.id, newLabel, programIds, groupIds)
+      await onEditCategory(editingOpt.id, newLabel, programIds, groupIds, status)
     }
   }
 
@@ -429,7 +429,6 @@ export default function CategoryPickerSelect({
           categoryId={editingOpt?.id}
           categoryStatus={editingOpt?.status}
           ancestorHidden={editAncestorHidden}
-          onToggleVisibility={onToggleVisibility}
         />
       )}
     </>

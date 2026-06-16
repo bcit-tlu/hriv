@@ -145,12 +145,14 @@ export function useCategoryActions({
             newLabel: string,
             programIds?: number[],
             groupIds?: number[],
+            status?: string | null,
         ) => {
             const body: Parameters<typeof apiUpdateCategory>[1] = {
                 label: newLabel,
             };
             if (programIds !== undefined) body.program_ids = programIds;
             if (groupIds !== undefined) body.group_ids = groupIds;
+            if (status !== undefined) body.status = status;
             const catPath = findCategoryPath(categories, categoryId);
             const version = catPath?.at(-1)?.version;
             const updated = await apiUpdateCategory(categoryId, body, version);

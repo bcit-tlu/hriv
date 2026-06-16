@@ -133,7 +133,7 @@ interface ManageCategoriesDialogProps {
   uncategorizedImages?: ImageItem[]
   onAddCategory: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
   onDeleteCategory: (categoryId: number) => Promise<void>
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
+  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[], status?: string | null) => Promise<void>
   programs?: Program[]
   groups?: Group[]
   onToggleVisibility?: (categoryId: number) => Promise<void>
@@ -308,9 +308,9 @@ export default function ManageCategoriesDialog({
     setEditDialogOpen(true)
   }, [])
 
-  const handleEditSave = useCallback(async (newLabel: string, programIds?: number[], groupIds?: number[]) => {
+  const handleEditSave = useCallback(async (newLabel: string, programIds?: number[], groupIds?: number[], status?: string | null) => {
     if (editingCategory && onEditCategory) {
-      await onEditCategory(editingCategory.id, newLabel, programIds, groupIds)
+      await onEditCategory(editingCategory.id, newLabel, programIds, groupIds, status)
     }
   }, [editingCategory, onEditCategory])
 
@@ -653,7 +653,6 @@ export default function ManageCategoriesDialog({
           categoryId={editingCategory?.id}
           categoryStatus={editingCategory?.status}
           ancestorHidden={editAncestorHidden}
-          onToggleVisibility={onToggleVisibility}
         />
       )}
 

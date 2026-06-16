@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
     findImageInTree,
     findCategoryPath,
+    isCategoryHiddenInTree,
     resolveCategoryPath,
     updateImageInTree,
 } from "../src/treeUtils";
@@ -104,6 +105,39 @@ describe("resolveCategoryPath", () => {
     it("returns empty when first ID does not match", () => {
         const cat = makeCategory({ id: 1, label: "Root" });
         expect(resolveCategoryPath([cat], [999])).toEqual([]);
+    });
+});
+
+describe("isCategoryHiddenInTree", () => {
+    it("returns false for null categoryId", () => {
+        const cat = makeCategory({ id: 1, label: "Root" });
+        expect(isCategoryHiddenInTree([cat], null)).toBe(false);
+    });
+
+    it("returns false for undefined categoryId", () => {
+        const cat = makeCategory({ id: 1, label: "Root" });
+        expect(isCategoryHiddenInTree([cat], undefined)).toBe(false);
+    });
+
+    it("returns false when category exists and is not hidden", () => {
+        const cat = makeCategory({ id: 1, label: "Root", status: "active" });
+        expect(isCategoryHiddenInTree([cat], 1)).toBe(false);
+    });
+
+    it("returns true when category itself is hidden", () => {
+        const cat = makeCategory({ id: 1, label: "Root", status: "hidden" });
+        expect(isCategoryHiddenInTree([cat], 1)).toBe(true);
+    });
+
+    it("returns true when an ancestor is hidden", () => {
+        const child = makeCategory({ id: 2, label: "Child", status: "active" });
+        const root = makeCategory({ id: 1, label: "Root", status: "hidden", children: [child] });
+        expect(isCategoryHiddenInTree([root], 2)).toBe(true);
+    });
+
+    it("returns false when categoryId does not exist in the tree", () => {
+        const cat = makeCategory({ id: 1, label: "Root" });
+        expect(isCategoryHiddenInTree([cat], 999)).toBe(false);
     });
 });
 

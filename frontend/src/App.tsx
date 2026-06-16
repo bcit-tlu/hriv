@@ -2287,13 +2287,14 @@ export default function App() {
             <EditCategoryDialog
                 open={editNameCategory != null}
                 onClose={() => setEditNameCategory(null)}
-                onSave={async (newLabel, programIds, groupIds) => {
+                onSave={async (newLabel, programIds, groupIds, status) => {
                     if (!editNameCategory) return;
                     await editCategoryInline(
                         editNameCategory.id,
                         newLabel,
                         programIds,
                         groupIds,
+                        status,
                     );
                     if (path.some((p) => p.id === editNameCategory.id)) {
                         setPath((prev) =>
@@ -2304,6 +2305,7 @@ export default function App() {
                                           label: newLabel,
                                           programIds: programIds ?? p.programIds,
                                           groupIds: groupIds ?? p.groupIds,
+                                          ...(status !== undefined ? { status } : {}),
                                       }
                                     : p,
                             ),
@@ -2320,7 +2322,6 @@ export default function App() {
                 inheritedGroupIds={editCategoryContext.inheritedGroupIds}
                 categoryStatus={editNameCategory?.status}
                 ancestorHidden={isCategoryHiddenInTree(categories, editNameCategory?.parentId)}
-                onToggleVisibility={toggleCategoryVisibility}
                 categoryId={editNameCategory?.id}
             />
 
