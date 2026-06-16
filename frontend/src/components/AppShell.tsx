@@ -31,6 +31,7 @@ import ColorModeToggle from "./ColorModeToggle";
 import FooterBar from "./FooterBar";
 import AnnouncementBanner from "./AnnouncementBanner";
 import type { Role } from "../types";
+import { getGroupChipColors } from "../theme";
 
 export type Page = "browse" | "manage" | "people" | "admin";
 
