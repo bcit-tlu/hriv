@@ -975,7 +975,7 @@ export default function ManagePage({
                   key={img.id}
                   hover
                   selected={selected.has(img.id)}
-                  {...(!img.active && { 'data-dimmed': true })}
+                  {...((!img.active || isImageCategoryHidden(img)) && { 'data-dimmed': true })}
                   sx={{
                     cursor: 'pointer',
                     '&[data-dimmed] .MuiTableCell-body:not([data-interactive])': { color: visColors.inactive },
