@@ -1016,7 +1016,7 @@ export default function ManagePage({
                         borderRadius: 0.5,
                         display: 'block',
                         cursor: onViewImage ? 'pointer' : 'default',
-                        ...(img.active ? {} : { filter: 'grayscale(100%)' }),
+                        ...(!img.active || isImageCategoryHidden(img) ? { filter: 'grayscale(100%)' } : {}),
                       }}
                     />
                   </TableCell>}
