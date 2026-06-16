@@ -31,7 +31,7 @@ import ColorModeToggle from "./ColorModeToggle";
 import FooterBar from "./FooterBar";
 import AnnouncementBanner from "./AnnouncementBanner";
 import type { Role } from "../types";
-import { getGroupChipColors } from "../theme";
+import { getGroupChipColors, getSurfaceVariant } from "../theme";
 
 export type Page = "browse" | "manage" | "people" | "admin";
 
@@ -114,6 +114,10 @@ export default function AppShell(props: AppShellProps) {
         if (announcement) setAnnCollapsed(false);
     }
     const showViewAnnLink = annEnabled && !announcement;
+    const contentBg =
+        page === "people" || page === "admin"
+            ? getSurfaceVariant(mode)
+            : undefined;
     const groupColors = getGroupChipColors(mode);
 
     return (
@@ -405,7 +409,14 @@ export default function AppShell(props: AppShellProps) {
             {/* Announcement banner */}
             {announcement && (
                 <Collapse in={!annCollapsed} onExited={onDismissAnnouncement}>
-                    <Box sx={{ mx: "10%", mt: "20px", mb: 0 }}>
+                    <Box
+                        sx={{
+                            bgcolor: contentBg,
+                            mx: "10%",
+                            mt: "20px",
+                            mb: 0,
+                        }}
+                    >
                         <AnnouncementBanner
                             message={announcement}
                             onDismiss={
