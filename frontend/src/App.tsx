@@ -1945,36 +1945,44 @@ export default function App() {
                                         );
                                     })()}
                                 </Box>
-                                {canEditContent && path.length > 0 && (
-                                    <Tooltip title={path[path.length - 1].status === "hidden" ? "Visibility: Show to students" : "Visibility: Hide from students"}>
-                                        <IconButton
-                                            size="small"
-                                            onClick={() => toggleCategoryVisibility(path[path.length - 1].id)}
-                                            aria-label={path[path.length - 1].status === "hidden" ? "Visibility: Show to students" : "Visibility: Hide from students"}
-                                        >
-                                            {path[path.length - 1].status === "hidden" ? (
-                                                <VisibilityOff
-                                                    sx={{ fontSize: 28, color: visColors.inactive }}
-                                                />
-                                            ) : (
-                                                <Visibility
-                                                    sx={{ fontSize: 28, color: visColors.active }}
-                                                />
-                                            )}
-                                        </IconButton>
-                                    </Tooltip>
-                                )}
                                 {canEditContent && (
                                     <Box
                                         sx={{
                                             display: "flex",
                                             gap: 2,
                                             flexShrink: 0,
-                                            ...(path.length > 0 && path[path.length - 1].status === "hidden"
-                                                ? { filter: "grayscale(100%)" }
-                                                : {}),
+                                            alignItems: "center",
                                         }}
                                     >
+                                        {path.length > 0 && (() => {
+                                            const current = path[path.length - 1];
+                                            const isDirectlyHidden = current.status === "hidden";
+                                            const ancestorHidden = path.slice(0, -1).some((p) => p.status === "hidden");
+                                            const inheritedHidden = !isDirectlyHidden && ancestorHidden;
+                                            return (
+                                                <Tooltip title={isDirectlyHidden ? "Visibility: Show to students" : inheritedHidden ? "Visibility: Hidden by parent category" : "Visibility: Hide from students"}>
+                                                    <IconButton
+                                                        size="small"
+                                                        onClick={() => toggleCategoryVisibility(current.id)}
+                                                        aria-label={isDirectlyHidden ? "Visibility: Show to students" : inheritedHidden ? "Visibility: Hidden by parent category" : "Visibility: Hide from students"}
+                                                    >
+                                                        {isDirectlyHidden ? (
+                                                            <VisibilityOff
+                                                                sx={{ fontSize: 28, color: visColors.inactive }}
+                                                            />
+                                                        ) : inheritedHidden ? (
+                                                            <VisibilityOff
+                                                                sx={{ fontSize: 28, color: visColors.inactive, opacity: 0.5 }}
+                                                            />
+                                                        ) : (
+                                                            <Visibility
+                                                                sx={{ fontSize: 28, color: visColors.active }}
+                                                            />
+                                                        )}
+                                                    </IconButton>
+                                                </Tooltip>
+                                            );
+                                        })()}
                                         {path.length < MAX_DEPTH && (
                                             <Button
                                                 variant="outlined"
@@ -1984,6 +1992,9 @@ export default function App() {
                                                 onClick={() =>
                                                     setAddCatOpen(true)
                                                 }
+                                                sx={path.length > 0 && path.some((p) => p.status === "hidden")
+                                                    ? { filter: "grayscale(100%)" }
+                                                    : undefined}
                                             >
                                                 Add Category
                                             </Button>
@@ -1994,6 +2005,9 @@ export default function App() {
                                                 <AddPhotoAlternateIcon />
                                             }
                                             onClick={() => setUploadOpen(true)}
+                                            sx={path.length > 0 && path.some((p) => p.status === "hidden")
+                                                ? { filter: "grayscale(100%)" }
+                                                : undefined}
                                         >
                                             Add Images
                                         </Button>
