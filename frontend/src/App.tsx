@@ -1945,12 +1945,34 @@ export default function App() {
                                         );
                                     })()}
                                 </Box>
+                                {canEditContent && path.length > 0 && (
+                                    <Tooltip title={path[path.length - 1].status === "hidden" ? "Visibility: Show to students" : "Visibility: Hide from students"}>
+                                        <IconButton
+                                            size="small"
+                                            onClick={() => toggleCategoryVisibility(path[path.length - 1].id)}
+                                            aria-label={path[path.length - 1].status === "hidden" ? "Visibility: Show to students" : "Visibility: Hide from students"}
+                                        >
+                                            {path[path.length - 1].status === "hidden" ? (
+                                                <VisibilityOff
+                                                    sx={{ fontSize: 28, color: visColors.inactive }}
+                                                />
+                                            ) : (
+                                                <Visibility
+                                                    sx={{ fontSize: 28, color: visColors.active }}
+                                                />
+                                            )}
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
                                 {canEditContent && (
                                     <Box
                                         sx={{
                                             display: "flex",
                                             gap: 2,
                                             flexShrink: 0,
+                                            ...(path.length > 0 && path[path.length - 1].status === "hidden"
+                                                ? { filter: "grayscale(100%)" }
+                                                : {}),
                                         }}
                                     >
                                         {path.length < MAX_DEPTH && (

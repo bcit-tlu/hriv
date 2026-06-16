@@ -42,6 +42,7 @@ import FilterListIcon from '@mui/icons-material/FilterList'
 import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityIcon from '@mui/icons-material/Visibility'
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import { fetchImages, updateImage, deleteImage, replaceImage, bulkUpdateImages, bulkDeleteImages } from '../api'
 import type { ApiBulkImportJob, ApiImage } from '../api'
@@ -81,16 +82,19 @@ function CategoryBreadcrumb({
   categoryId,
   categoryPaths,
   onNavigate,
+  hiddenColor,
 }: {
   categoryId: number | null
   categoryPaths: Map<number, CategoryPathSegment>
   onNavigate?: (categoryPath: Category[]) => void
+  hiddenColor?: string
 }) {
   if (categoryId == null) return <>—</>
   const seg = categoryPaths.get(categoryId)
   if (!seg) return <>{categoryId}</>
 
   const fullPath = [...seg.ancestors, seg.category]
+  const hasHidden = fullPath.some((cat) => cat.status === 'hidden')
 
   return (
     <Box component="span" sx={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -117,6 +121,11 @@ function CategoryBreadcrumb({
           </Link>
         </Box>
       ))}
+      {hasHidden && hiddenColor && (
+        <span role="img" aria-label="Category hidden from students" style={{ display: 'inline-flex', marginLeft: 4, verticalAlign: 'middle' }}>
+          <VisibilityOffIcon sx={{ fontSize: 14, color: hiddenColor }} />
+        </span>
+      )}
     </Box>
   )
 }
@@ -1009,6 +1018,7 @@ export default function ManagePage({
                       categoryId={img.category_id}
                       categoryPaths={categoryPaths}
                       onNavigate={onNavigateCategory}
+                      hiddenColor={visColors.inactive}
                     />
                   </TableCell>}
                   {isColumnVisible('copyright') && <TableCell>{img.copyright ?? '—'}</TableCell>}
