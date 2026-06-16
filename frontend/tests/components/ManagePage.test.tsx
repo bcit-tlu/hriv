@@ -166,6 +166,10 @@ describe('ManagePage', () => {
       group: true,
       active: true,
       updated_at: true,
+      created_at: false,
+      dimensions: false,
+      file_size: false,
+      measurement: false,
     }))
 
     const { unmount } = render(<ManagePage categories={categories} programs={programs} groups={groups} />)
