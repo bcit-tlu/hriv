@@ -14,7 +14,7 @@ type Block =
     | { type: "list"; items: string[] }
     | { type: "code"; text: string };
 
-function renderInline(text: string, keyPrefix: string): ReactNode[] {
+export function renderInline(text: string, keyPrefix: string): ReactNode[] {
     const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g);
     return parts.filter(Boolean).map((part, index) => {
         const key = `${keyPrefix}-${index}`;
@@ -31,7 +31,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
     });
 }
 
-function parseMarkdown(markdown: string): Block[] {
+export function parseMarkdown(markdown: string): Block[] {
     const blocks: Block[] = [];
     const lines = markdown.replace(/\r\n/g, "\n").split("\n");
     const paragraphLines: string[] = [];
