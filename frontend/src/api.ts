@@ -636,6 +636,49 @@ export function updateAnnouncement(body: {
   })
 }
 
+// ── Changelog ────────────────────────────────────────────
+
+export interface ApiChangelogEntry {
+  id: number
+  title: string
+  body: string
+  published_at: string
+  created_at: string
+  updated_at: string
+}
+
+export function fetchChangelogEntries(): Promise<ApiChangelogEntry[]> {
+  return request('/changelog/')
+}
+
+export function createChangelogEntry(body: {
+  title: string
+  body: string
+}): Promise<ApiChangelogEntry> {
+  return request('/changelog/', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateChangelogEntry(
+  id: number,
+  body: { title?: string; body?: string },
+): Promise<ApiChangelogEntry> {
+  return request(`/changelog/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteChangelogEntry(id: number): Promise<void> {
+  return request(`/changelog/${id}`, { method: 'DELETE' })
+}
+
+export function markChangelogRead(): Promise<{ changelog_last_read_at: string }> {
+  return request('/changelog/mark-read', { method: 'POST' })
+}
+
 // ── Source Images ───────────────────────────────────────
 
 export interface ApiSourceImage {

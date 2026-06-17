@@ -38,6 +38,7 @@ import type { AdminTask } from '../api'
 import ConfirmImportDialog, {
   type ConfirmImportKind,
 } from './ConfirmImportDialog'
+import ChangelogAdmin from './ChangelogAdmin'
 
 const POLL_INTERVAL = 2000 // ms
 
@@ -644,6 +645,11 @@ export default function AdminPage() {
           </Box>
         </>
       )}
+
+      <Divider sx={{ mb: 4 }} />
+
+      {/* ── Changelog Section ─────────────────────────────── */}
+      <ChangelogAdmin />
 
       {/* ── Snackbar notifications ────────────────────────── */}
       {notifications.map((n, index) => (

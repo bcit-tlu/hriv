@@ -68,6 +68,11 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 - backend: `poetry run pytest tests/test_router_announcement.py`
 - frontend: `npm test -- useAnnouncementModal AnnouncementBanner`
 
+### Changed changelog notifications
+- backend: `poetry run pytest tests/test_router_changelog.py`
+- frontend: `npm test -- NotificationMenu ChangelogAdmin api AppShell`
+- If the migration changed too, also run: `poetry run pytest tests/test_database.py tests/test_migrations_bootstrap.py`
+
 ### Changed maintenance mode / middleware / rate limiting
 - backend: `poetry run pytest tests/test_maintenance.py tests/test_maintenance_middleware.py tests/test_middleware.py tests/test_rate_limit.py`
 - frontend: `npm test -- MaintenanceBanner`

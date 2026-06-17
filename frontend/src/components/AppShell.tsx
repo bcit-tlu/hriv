@@ -58,6 +58,7 @@ export interface AppShellProps {
     backendVersion: string | null;
     backupVersion: string | null;
     onReportIssue: () => void;
+    notificationSlot?: ReactNode;
     // Children (main content)
     children: ReactNode;
 }
@@ -89,6 +90,7 @@ export default function AppShell(props: AppShellProps) {
         backendVersion,
         backupVersion,
         onReportIssue,
+        notificationSlot,
         children,
     } = props;
     const [manageMenuAnchor, setManageMenuAnchor] =
@@ -232,6 +234,7 @@ export default function AppShell(props: AppShellProps) {
                                 <SearchIcon />
                             </IconButton>
                         </Tooltip>
+                        {notificationSlot}
                         <IconButton
                             ref={avatarRef}
                             onClick={() => setProfileOpen(true)}

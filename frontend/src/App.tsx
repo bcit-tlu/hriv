@@ -41,6 +41,7 @@ import LoginScreen from "./components/LoginScreen";
 import EditImageModal from "./components/EditImageModal";
 import ProgramManagementModal from "./components/ProgramManagementModal";
 import GroupManagementModal from "./components/GroupManagementModal";
+import NotificationMenu from "./components/NotificationMenu";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
 import type { TypeFilter } from "./components/SearchModal";
@@ -934,6 +935,17 @@ export default function App() {
             backendVersion={backendVersion}
             backupVersion={backupVersion}
             onReportIssue={() => setReportIssueOpen(true)}
+            notificationSlot={
+                currentUser.role === "admin" ||
+                currentUser.role === "instructor" ? (
+                    <NotificationMenu
+                        userEmail={currentUser.email}
+                        frontendVersion={frontendVersion}
+                        backendVersion={backendVersion}
+                        backupVersion={backupVersion}
+                    />
+                ) : null
+            }
         >
             {/* Main content */}
             <Box
