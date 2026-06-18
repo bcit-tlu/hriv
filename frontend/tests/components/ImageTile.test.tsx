@@ -99,6 +99,22 @@ describe("ImageTile", () => {
                 filter: "none",
             });
         });
+
+        it("reduces tile opacity when visibility is inherited from category state", () => {
+            render(
+                <ImageTile
+                    image={makeImage({ active: true, name: "Inherited Hidden Image" })}
+                    onClick={vi.fn()}
+                    categoryHidden
+                />,
+            );
+            const title = screen.getByText("Inherited Hidden Image");
+            const card = title.closest(".MuiCard-root");
+            const actionArea = title.closest(".MuiCardActionArea-root");
+
+            expect(card).toHaveStyle({ opacity: "0.5" });
+            expect(actionArea).toHaveStyle({ filter: "grayscale(100%)" });
+        });
     });
 
     // ─── Copyright ────────────────────────────────────────────────────
@@ -163,80 +179,6 @@ describe("ImageTile", () => {
             expect(
                 screen.queryByLabelText("Edit image details"),
             ).not.toBeInTheDocument();
-        });
-    });
-
-    // ─── Visibility toggle ────────────────────────────────────────────
-
-    describe("visibility toggle", () => {
-        it("renders the VisibilityIcon when image is active and toggle provided", () => {
-            render(
-                <ImageTile
-                    image={makeImage({ active: true })}
-                    onClick={vi.fn()}
-                    onToggleVisibility={vi.fn()}
-                />,
-            );
-            expect(screen.getByTestId("VisibilityIcon")).toBeInTheDocument();
-            expect(
-                screen.queryByTestId("VisibilityOffIcon"),
-            ).not.toBeInTheDocument();
-        });
-
-        it("renders the VisibilityOffIcon when image is inactive and toggle provided", () => {
-            render(
-                <ImageTile
-                    image={makeImage({ active: false })}
-                    onClick={vi.fn()}
-                    onToggleVisibility={vi.fn()}
-                />,
-            );
-            expect(
-                screen.getByTestId("VisibilityOffIcon"),
-            ).toBeInTheDocument();
-            expect(
-                screen.queryByTestId("VisibilityIcon"),
-            ).not.toBeInTheDocument();
-        });
-
-        it("calls onToggleVisibility with the image id when toggling", async () => {
-            const user = userEvent.setup();
-            const onToggle = vi.fn();
-            render(
-                <ImageTile
-                    image={makeImage({ id: 42, active: true })}
-                    onClick={vi.fn()}
-                    onToggleVisibility={onToggle}
-                />,
-            );
-
-            await user.click(screen.getByLabelText("Visibility: Hide from students"));
-            expect(onToggle).toHaveBeenCalledWith(42);
-        });
-
-        it("does not render the toggle button when onToggleVisibility is not provided", () => {
-            render(
-                <ImageTile
-                    image={makeImage({ active: false })}
-                    onClick={vi.fn()}
-                />,
-            );
-            expect(
-                screen.queryByLabelText(/Visibility: (Hide|Show) from students/),
-            ).not.toBeInTheDocument();
-        });
-
-        it("suppresses inline VisibilityOffIcon when toggle is provided", () => {
-            render(
-                <ImageTile
-                    image={makeImage({ active: false })}
-                    onClick={vi.fn()}
-                    onToggleVisibility={vi.fn()}
-                />,
-            );
-            // Only one VisibilityOffIcon (in the toggle button), not the inline one next to title
-            const icons = screen.getAllByTestId("VisibilityOffIcon");
-            expect(icons).toHaveLength(1);
         });
     });
 

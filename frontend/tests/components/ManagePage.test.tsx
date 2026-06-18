@@ -75,6 +75,47 @@ describe('ManagePage', () => {
     expect(groupChip).toBeInTheDocument()
   })
 
+  it('uses reduced opacity for inherited program and group chips', async () => {
+    const inheritedCategories = [
+      makeCategory({
+        id: 1,
+        label: 'Parent',
+        programIds: [1],
+        groupIds: [7],
+        children: [
+          makeCategory({
+            id: 10,
+            label: 'Microscopy',
+            parentId: 1,
+          }),
+        ],
+      }),
+    ]
+    localStorage.setItem('hrivpref:table-columns:manage-images:user:1', JSON.stringify({
+      thumbnail: true,
+      id: false,
+      name: true,
+      category: true,
+      copyright: false,
+      note: false,
+      program: true,
+      group: true,
+      active: true,
+      updated_at: true,
+      created_at: false,
+      dimensions: false,
+      file_size: false,
+      measurement: false,
+    }))
+
+    render(<ManagePage categories={inheritedCategories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+
+    expect(screen.getByText('Medical Lab').closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' })
+    expect(screen.getByText('Lab A2').closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' })
+  })
+
   it('shows the configured default visible columns', async () => {
     render(<ManagePage categories={categories} programs={programs} groups={groups} />)
 
@@ -190,5 +231,37 @@ describe('ManagePage', () => {
 
     await screen.findByText('Blood Smear')
     expect(screen.getByRole('columnheader', { name: 'Program' })).toBeInTheDocument()
+  })
+
+  it('shows hidden-by-category tooltips for inherited hidden row indicators', async () => {
+    const inheritedHiddenCategories = [
+      makeCategory({
+        id: 1,
+        label: 'Parent',
+        status: 'hidden',
+        children: [
+          makeCategory({
+            id: 10,
+            label: 'Microscopy',
+            parentId: 1,
+            programIds: [1],
+            groupIds: [7],
+          }),
+        ],
+      }),
+    ]
+
+    render(<ManagePage categories={inheritedHiddenCategories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+
+    const breadcrumbIcon = screen.getByLabelText('Category hidden from students by ancestor')
+    fireEvent.mouseOver(breadcrumbIcon)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Hidden by category')
+
+    const visibilitySwitch = screen.getByRole('switch')
+    expect(visibilitySwitch).toBeDisabled()
+    fireEvent.mouseOver(visibilitySwitch.closest('span') as HTMLElement)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent('Hidden by category')
   })
 })

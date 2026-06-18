@@ -130,8 +130,17 @@ The tree endpoint also supports **conditional requests**:
 | Student guards on tree/images | `backend/app/routers/categories.py`, `backend/app/routers/images.py` |
 | Intersection warning | `backend/app/routers/categories.py` (`_intersection_warnings`) |
 | Frontend narrowing | `frontend/src/categoryUtils.ts` |
+| Frontend visibility cascade helpers | `frontend/src/treeUtils.ts` (`isCategoryHiddenInTree`) |
+| Frontend visibility UI (3-state buttons, desaturation) | `frontend/src/App.tsx`, `EditCategoryDialog`, `EditImageModal`, `CategoryPickerSelect`, `ManageCategoriesDialog`, `ManagePage`, `SortableTileGrid` |
 | Tree → camelCase mapping | `frontend/src/useBrowseData.ts` |
-| Tests | `backend/tests/test_visibility.py`, `test_categories.py`, `test_router_groups.py`, `test_router_images.py`; `frontend/tests/.../categoryUtils.test.ts`, `useBrowseData.test.ts` |
+| Tests | `backend/tests/test_visibility.py`, `test_categories.py`, `test_router_groups.py`, `test_router_images.py`; `frontend/tests/.../categoryUtils.test.ts`, `useBrowseData.test.ts`, `EditImageModal.test.tsx`, `EditCategoryDialog.test.tsx` |
+
+Across the frontend, restriction affordances follow a shared emphasis rule:
+program or group restrictions attached **directly** to the current category/path
+segment render at full strength, while restrictions **inherited** from an
+ancestor render using the same visual treatment at **0.6 opacity**. This is
+used in breadcrumb chips, browse tile chips, ManagePage restriction chips,
+inherited-only category dialog chips, and category restriction lock icons.
 
 See also: [Groups](groups.md), [Domain model](domain-model.md),
 [`docs/TESTING.md`](TESTING.md), and the

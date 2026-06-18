@@ -8,15 +8,18 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import LinearProgress from '@mui/material/LinearProgress'
-import FormControlLabel from '@mui/material/FormControlLabel'
 import Snackbar from '@mui/material/Snackbar'
-import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
-import VisibilityIcon from '@mui/icons-material/Visibility'
+import ImageIcon from '@mui/icons-material/Image'
+import Visibility from '@mui/icons-material/Visibility'
+import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import type { ApiImage } from '../api'
 import type { Category, Group, Program } from '../types'
+import { getVisibilityColors } from '../theme'
+import { isCategoryHiddenInTree } from '../treeUtils'
+import { useColorMode } from '../useColorMode'
 import CategoryPickerSelect from './CategoryPickerSelect'
 
 export interface ImageFormData {
@@ -93,6 +96,8 @@ function EditImageForm({
   onToggleVisibility,
   onViewImage,
 }: Omit<EditImageModalProps, 'open'>) {
+  const { mode } = useColorMode()
+  const visColors = getVisibilityColors(mode)
   const uploadInProgress = replaceUploadProgress !== undefined
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState(image?.name ?? '')
@@ -100,6 +105,7 @@ function EditImageForm({
   const [copyright, setCopyright] = useState(image?.copyright ?? '')
   const [note, setNote] = useState(image?.note ?? '')
   const [active, setActive] = useState(image?.active ?? true)
+  const categoryHidden = isCategoryHiddenInTree(categories, categoryId)
   const meta = image?.metadata_extra as Record<string, unknown> | null
   const [measurementScale, setMeasurementScale] = useState<string>(
     meta?.measurement_scale != null ? String(meta.measurement_scale) : '',
@@ -119,13 +125,15 @@ function EditImageForm({
   const [replacing, setReplacing] = useState(false)
   const [replaceError, setReplaceError] = useState<string | null>(null)
 
+  const activeChanged = active !== (image?.active ?? true)
+
   // Track whether the form has been modified from its initial values
   const isDirty =
     name !== (image?.name ?? '') ||
     categoryId !== (image?.category_id ?? null) ||
     copyright !== (image?.copyright ?? '') ||
     note !== (image?.note ?? '') ||
-    active !== (image?.active ?? true) ||
+    activeChanged ||
     measurementScale !== (meta?.measurement_scale != null ? String(meta.measurement_scale) : '') ||
     measurementUnit !== (typeof meta?.measurement_unit === 'string' ? meta.measurement_unit : '')
 
@@ -247,22 +255,66 @@ function EditImageForm({
     <>
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         Edit Details
-        {onViewImage && (
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<VisibilityIcon />}
-            onClick={() => {
-              if (isDirty) {
-                setConfirmViewImage(true)
-              } else {
-                onViewImage()
-              }
-            }}
-          >
-            View Image
-          </Button>
-        )}
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          {image && (() => {
+            if (categoryHidden) {
+              return (
+                <Button
+                  size="small"
+                  variant="text"
+                  startIcon={<VisibilityOff />}
+                  disabled
+                  aria-label="Visibility: Hidden by category"
+                  sx={{ '&.Mui-disabled': { color: visColors.inactive }, filter: 'grayscale(100%)' }}
+                >
+                  Hidden by Category
+                </Button>
+              )
+            }
+            if (!active) {
+              return (
+                <Button
+                  size="small"
+                  variant="text"
+                  startIcon={<VisibilityOff />}
+                  onClick={() => setActive(true)}
+                  aria-label="Visibility: Show to students"
+                  sx={{ color: visColors.inactive, filter: 'grayscale(100%)' }}
+                >
+                  Show Image
+                </Button>
+              )
+            }
+            return (
+              <Button
+                size="small"
+                variant="text"
+                startIcon={<Visibility />}
+                onClick={() => setActive(false)}
+                aria-label="Visibility: Hide from students"
+                color="primary"
+              >
+                Hide Image
+              </Button>
+            )
+          })()}
+          {onViewImage && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<ImageIcon />}
+              onClick={() => {
+                if (isDirty) {
+                  setConfirmViewImage(true)
+                } else {
+                  onViewImage()
+                }
+              }}
+            >
+              View Image
+            </Button>
+          )}
+        </Box>
       </DialogTitle>
       <DialogContent
         sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
@@ -400,15 +452,6 @@ function EditImageForm({
           variant="outlined"
           value={note}
           onChange={(e) => setNote(e.target.value)}
-        />
-        <FormControlLabel
-          control={
-            <Switch
-              checked={active}
-              onChange={(e) => setActive(e.target.checked)}
-            />
-          }
-          label="Visibility (visible to students)"
         />
         <Typography variant="subtitle2" sx={{ mt: 1 }}>
           Measurement Settings

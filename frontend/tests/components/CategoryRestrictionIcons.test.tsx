@@ -20,7 +20,7 @@ describe('CategoryRestrictionIcons', () => {
     expect(programIcon).not.toBeNull()
     expect(groupIcon).not.toBeNull()
     expect(getComputedStyle(programIcon as SVGElement).opacity).toBe('1')
-    expect(getComputedStyle(groupIcon as SVGElement).opacity).toBe('0.5')
+    expect(getComputedStyle(groupIcon as SVGElement).opacity).toBe('0.6')
     expect(getComputedStyle(programIcon as SVGElement).color).toBe(getComputedStyle(groupIcon as SVGElement).color)
   })
 })

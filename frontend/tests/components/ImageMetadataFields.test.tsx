@@ -68,11 +68,22 @@ describe('ImageMetadataFields', () => {
       />,
     )
 
-    const toggle = screen.getByRole('switch', { name: /visibility.*visible to students/i })
+    const toggle = screen.getByRole('switch', { name: /visibility.*show image/i })
     await user.click(toggle)
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({ active: false }),
     )
+  })
+
+  it('shows "hide image" when active is false', () => {
+    render(
+      <ImageMetadataFields
+        values={{ ...defaultValues, active: false }}
+        onChange={vi.fn()}
+      />,
+    )
+
+    expect(screen.getByLabelText(/visibility.*hide image/i)).toBeInTheDocument()
   })
 
   it('shows placeholder text for copyright and note', () => {

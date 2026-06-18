@@ -722,6 +722,24 @@ export function updateAnnouncement(body: {
     });
 }
 
+export function updateChangelogEntry(
+  id: number,
+  body: { title?: string; body?: string },
+): Promise<ApiChangelogEntry> {
+  return request(`/changelog/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteChangelogEntry(id: number): Promise<void> {
+  return request(`/changelog/${id}`, { method: 'DELETE' })
+}
+
+export function markChangelogRead(): Promise<{ changelog_last_read_at: string }> {
+  return request('/changelog/mark-read', { method: 'POST' })
+}
+
 // ── Source Images ───────────────────────────────────────
 
 export interface ApiSourceImage {

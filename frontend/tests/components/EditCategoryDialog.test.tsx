@@ -20,6 +20,24 @@ describe('EditCategoryDialog', () => {
     expect(screen.getByDisplayValue('Architecture')).toBeInTheDocument()
   })
 
+  it('uses program-focused wording for access restrictions', () => {
+    render(
+      <EditCategoryDialog
+        open
+        onClose={vi.fn()}
+        onSave={vi.fn()}
+        currentLabel="Architecture"
+        programs={[
+          { id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' },
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('Restrict access by program')).toBeInTheDocument()
+    expect(screen.getByLabelText('All programs')).toBeInTheDocument()
+    expect(screen.getByLabelText('Specific programs')).toBeInTheDocument()
+  })
+
   it('Save button is disabled when label is unchanged', () => {
     render(
       <EditCategoryDialog
@@ -67,7 +85,7 @@ describe('EditCategoryDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith('New Name', undefined, undefined)
+      expect(onSave).toHaveBeenCalledWith('New Name', undefined, undefined, undefined)
     })
     expect(onClose).toHaveBeenCalled()
   })
@@ -96,7 +114,7 @@ describe('EditCategoryDialog', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
     await waitFor(() => {
-      expect(onSave).toHaveBeenCalledWith('New Name', [2], undefined)
+      expect(onSave).toHaveBeenCalledWith('New Name', [2], undefined, undefined)
     })
   })
 
@@ -354,7 +372,7 @@ describe('EditCategoryDialog', () => {
 
       await waitFor(() => {
         // Should save [1] only — Program C (id=3) was filtered out on open
-        expect(onSave).toHaveBeenCalledWith('Updated Child', [1], undefined)
+        expect(onSave).toHaveBeenCalledWith('Updated Child', [1], undefined, undefined)
       })
     })
 
@@ -396,11 +414,11 @@ describe('EditCategoryDialog', () => {
       // Should auto-select "Specific programs" when inheritedProgramIds exist
       expect(screen.getByLabelText('Specific programs')).toBeChecked()
 
-      // Inherited programs should render at 0.5 opacity (not selected as own)
+      // Inherited programs should render with reduced opacity (not selected as own)
       const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
       const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
-      expect(chipA).toHaveStyle({ opacity: '0.5' })
-      expect(chipB).toHaveStyle({ opacity: '0.5' })
+      expect(chipA).toHaveStyle({ opacity: '0.6' })
+      expect(chipB).toHaveStyle({ opacity: '0.6' })
       // Both should be filled primary
       expect(chipA).toHaveClass('MuiChip-filled')
       expect(chipB).toHaveClass('MuiChip-filled')
@@ -428,7 +446,7 @@ describe('EditCategoryDialog', () => {
       expect(saveBtn).not.toBeDisabled()
       await user.click(saveBtn)
       await waitFor(() => {
-        expect(onSave).toHaveBeenCalledWith('Renamed Child', [], undefined)
+        expect(onSave).toHaveBeenCalledWith('Renamed Child', [], undefined, undefined)
       })
     })
   })
@@ -476,6 +494,21 @@ describe('EditCategoryDialog', () => {
       expect(screen.getByLabelText('Specific groups')).toBeChecked()
     })
 
+    it('renders inherited groups with reduced opacity', () => {
+      render(
+        <EditCategoryDialog
+          open
+          onClose={vi.fn()}
+          onSave={vi.fn()}
+          currentLabel="Child"
+          groups={groups}
+          inheritedGroupIds={[10]}
+        />,
+      )
+
+      expect(screen.getByText('Cohort A').closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' })
+    })
+
     it('saves updated groupIds when a group is toggled', async () => {
       const user = userEvent.setup()
       const onSave = vi.fn().mockResolvedValue(undefined)
@@ -498,6 +531,7 @@ describe('EditCategoryDialog', () => {
           'Child',
           undefined,
           expect.arrayContaining([10, 11]),
+          undefined,
         ),
       )
     })

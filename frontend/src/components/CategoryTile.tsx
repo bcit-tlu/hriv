@@ -15,10 +15,11 @@ import FolderIcon from '@mui/icons-material/Folder'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import ImageIcon from '@mui/icons-material/Image'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
-import Visibility from '@mui/icons-material/Visibility'
+
 import type { Category, Group, ImageItem, Program } from '../types'
 import { useColorMode } from '../useColorMode'
 import { getVisibilityColors } from '../theme'
+import { getInheritedRestrictionSx } from '../restrictionStyles'
 import CardImagePickerModal from './CardImagePickerModal'
 
 function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
@@ -56,15 +57,35 @@ interface CategoryTileProps {
   onClick: (category: Category) => void
   onMove?: (category: Category) => void
   onSetCardImage?: (categoryId: number, imageId: number | null) => void
-  onToggleVisibility?: (categoryId: number) => Promise<void>
   onEditName?: (category: Category) => void
   programs: Program[]
+  /** Effective program restriction inherited from ancestor categories. */
+  inheritedProgramIds?: number[]
   groups?: Group[]
+  /** Effective group restriction inherited from ancestor categories. */
+  inheritedGroupIds?: number[]
+  /** When true the parent category (or an ancestor) is hidden, so this tile is desaturated. */
+  parentHidden?: boolean
+  /** When true the hidden state is inherited from an ancestor, so dim hidden UI. */
+  inheritedHidden?: boolean
   /** Called when native files are dropped onto this category tile. */
   onDropFiles?: (categoryId: number, files: File[]) => void
 }
 
-export default function CategoryTile({ category, onClick, onMove, onSetCardImage, onToggleVisibility, onEditName, programs, groups = [], onDropFiles }: CategoryTileProps) {
+export default function CategoryTile({
+  category,
+  onClick,
+  onMove,
+  onSetCardImage,
+  onEditName,
+  programs,
+  inheritedProgramIds = [],
+  groups = [],
+  inheritedGroupIds = [],
+  parentHidden = false,
+  inheritedHidden = false,
+  onDropFiles,
+}: CategoryTileProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -88,7 +109,19 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
     .filter((p): p is Program => p != null)
     .sort((a, b) => a.name.localeCompare(b.name))
 
+  const inheritedProgramChips = inheritedProgramIds
+    .filter((pid) => !category.programIds.includes(pid))
+    .map((pid) => programs.find((p) => p.id === pid))
+    .filter((p): p is Program => p != null)
+    .sort((a, b) => a.name.localeCompare(b.name))
+
   const groupChips = category.groupIds
+    .map((gid) => groups.find((g) => g.id === gid))
+    .filter((g): g is Group => g != null)
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const inheritedGroupChips = inheritedGroupIds
+    .filter((gid) => !category.groupIds.includes(gid))
     .map((gid) => groups.find((g) => g.id === gid))
     .filter((g): g is Group => g != null)
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -96,6 +129,7 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
   const cardImage = category.cardImageId
     ? findImageInCategory(category, category.cardImageId)
     : null
+  const tileHidden = parentHidden || category.status === 'hidden'
 
   const isDropTarget = onDropFiles != null
 
@@ -145,11 +179,12 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
           width: '100%',
           maxWidth: 300,
           position: 'relative',
-          transition: 'box-shadow 0.15s, outline-color 0.2s, transform 0.15s',
+          transition: 'box-shadow 0.15s, outline-color 0.2s, transform 0.15s, opacity 0.15s',
           outline: '3px dashed',
           outlineColor: dragOver ? 'primary.main' : 'transparent',
           outlineOffset: 3,
           transform: dragOver ? 'scale(1.03)' : 'scale(1)',
+          opacity: inheritedHidden ? 0.5 : 1,
         }}
       >
         {/* Drag-over overlay indicating drop target */}
@@ -188,7 +223,12 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             </Typography>
           </Box>
         )}
-        <CardActionArea onClick={() => onClick(category)} sx={{ filter: category.status === 'hidden' ? 'grayscale(100%)' : 'none' }}>
+        <CardActionArea
+          onClick={() => onClick(category)}
+          sx={{
+            filter: tileHidden ? 'grayscale(100%)' : 'none',
+          }}
+        >
           {cardImage ? (
             <CardMedia
               component="img"
@@ -217,6 +257,13 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
               <Typography variant="h6" noWrap sx={{ color: category.status === 'hidden' ? visColors.inactive : 'primary.main' }}>
                 {category.label}
               </Typography>
+              {category.status === 'hidden' && (
+                <Tooltip title="Visibility: Hidden">
+                  <span role="img" aria-label="Visibility: Hidden" style={{ display: 'inline-flex' }}>
+                    <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
+                  </span>
+                </Tooltip>
+              )}
               {onEditName && (
                 <IconButton
                   component="span"
@@ -239,7 +286,25 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             {programChips.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {programChips.map((p) => (
-                  <Chip key={p.id} label={p.name} size="small" color="primary" />
+                  <Chip
+                    key={p.id}
+                    label={p.name}
+                    size="small"
+                    color="primary"
+                  />
+                ))}
+              </Box>
+            )}
+            {inheritedProgramChips.length > 0 && (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                {inheritedProgramChips.map((p) => (
+                  <Chip
+                    key={p.id}
+                    label={p.name}
+                    size="small"
+                    color="primary"
+                    sx={getInheritedRestrictionSx(true)}
+                  />
                 ))}
               </Box>
             )}
@@ -255,6 +320,19 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
                 ))}
               </Box>
             )}
+            {inheritedGroupChips.length > 0 && (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                {inheritedGroupChips.map((g) => (
+                  <Chip
+                    key={g.id}
+                    label={g.name}
+                    size="small"
+                    color="secondary"
+                    sx={getInheritedRestrictionSx(true)}
+                  />
+                ))}
+              </Box>
+            )}
           </CardContent>
         </CardActionArea>
         <Box
@@ -266,30 +344,6 @@ export default function CategoryTile({ category, onClick, onMove, onSetCardImage
             gap: 0.5,
           }}
         >
-          {onToggleVisibility && (
-            <Tooltip title={category.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}>
-              <IconButton
-                size="small"
-                sx={{
-                  color: 'white',
-                  bgcolor: 'rgba(0,0,0,0.25)',
-                  '&:hover': { bgcolor: 'rgba(0,0,0,0.45)' },
-                }}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  e.preventDefault()
-                  onToggleVisibility(category.id)
-                }}
-                aria-label={category.status === 'hidden' ? 'Visibility: Show to students' : 'Visibility: Hide from students'}
-              >
-                {category.status === 'hidden' ? (
-                  <VisibilityOff fontSize="small" />
-                ) : (
-                  <Visibility fontSize="small" />
-                )}
-              </IconButton>
-            </Tooltip>
-          )}
           {onSetCardImage && (
             <Tooltip title="Set card image">
               <IconButton

@@ -30,6 +30,7 @@ import TableSortLabel from '@mui/material/TableSortLabel'
 import TextField from '@mui/material/TextField'
 import ToggleButton from '@mui/material/ToggleButton'
 import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
+import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
@@ -42,13 +43,16 @@ import FilterListIcon from '@mui/icons-material/FilterList'
 import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityIcon from '@mui/icons-material/Visibility'
+import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import { fetchImages, updateImage, deleteImage, replaceImage, bulkUpdateImages, bulkDeleteImages } from '../api'
 import type { ApiBulkImportJob, ApiImage } from '../api'
 import type { Category, Group, Program } from '../types'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from '../categoryUtils'
 import { formatFileSize } from '../formatUtils'
-import { getGroupChipColors, getVisibilityColors } from '../theme'
+import { getVisibilityColors } from '../theme'
+import { getInheritedRestrictionSx } from '../restrictionStyles'
+import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import { useColorMode } from '../useColorMode'
 import BulkEditImagesModal from './BulkEditImagesModal'
@@ -82,16 +86,19 @@ function CategoryBreadcrumb({
   categoryId,
   categoryPaths,
   onNavigate,
+  hiddenColor,
 }: {
   categoryId: number | null
   categoryPaths: Map<number, CategoryPathSegment>
   onNavigate?: (categoryPath: Category[]) => void
+  hiddenColor?: string
 }) {
   if (categoryId == null) return <>—</>
   const seg = categoryPaths.get(categoryId)
   if (!seg) return <>{categoryId}</>
 
   const fullPath = [...seg.ancestors, seg.category]
+  const hiddenState = getCategoryHiddenStateFromPath(fullPath)
 
   return (
     <Box component="span" sx={{ display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -118,6 +125,25 @@ function CategoryBreadcrumb({
           </Link>
         </Box>
       ))}
+      {hiddenState.hidden && hiddenColor && (
+        <Tooltip title="Hidden by category">
+          <span
+            role="img"
+            aria-label={hiddenState.hiddenByAncestor && !hiddenState.directlyHidden
+              ? 'Category hidden from students by ancestor'
+              : 'Category hidden from students'}
+            style={{ display: 'inline-flex', marginLeft: 4, verticalAlign: 'middle' }}
+          >
+            <VisibilityOffIcon
+              sx={{
+                fontSize: 14,
+                color: hiddenColor,
+                opacity: hiddenState.hiddenByAncestor && !hiddenState.directlyHidden ? 0.55 : 1,
+              }}
+            />
+          </span>
+        </Tooltip>
+      )}
     </Box>
   )
 }
@@ -235,7 +261,6 @@ export default function ManagePage({
 }: ManagePageProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
-  const groupColors = getGroupChipColors(mode)
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -565,6 +590,13 @@ export default function ManagePage({
     }
   }
 
+  const isImageCategoryHidden = useCallback((img: ApiImage): boolean => {
+    if (img.category_id == null) return false
+    const seg = categoryPaths.get(img.category_id)
+    if (!seg) return false
+    return getCategoryHiddenStateFromPath([...seg.ancestors, seg.category]).hidden
+  }, [categoryPaths])
+
   // Toggle active status via switch
   const handleToggleActive = async (image: ApiImage) => {
     const nextActive = !image.active
@@ -594,6 +626,7 @@ export default function ManagePage({
         ),
       )
       console.error('Failed to toggle image status', err)
+      throw err
     }
   }
 
@@ -1002,12 +1035,14 @@ export default function ManagePage({
               )}
             </TableHead>
             <TableBody>
-              {sortedImages.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage).map((img) => (
+              {sortedImages.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage).map((img) => {
+                const categoryHidden = isImageCategoryHidden(img)
+                return (
                 <TableRow
                   key={img.id}
                   hover
                   selected={selected.has(img.id)}
-                  {...(!img.active && { 'data-dimmed': true })}
+                  {...((!img.active || categoryHidden) && { 'data-dimmed': true })}
                   sx={{
                     cursor: 'pointer',
                     '&[data-dimmed] .MuiTableCell-body:not([data-interactive])': { color: visColors.inactive },
@@ -1048,7 +1083,7 @@ export default function ManagePage({
                         borderRadius: 0.5,
                         display: 'block',
                         cursor: onViewImage ? 'pointer' : 'default',
-                        ...(img.active ? {} : { filter: 'grayscale(100%)' }),
+                        ...(!img.active || categoryHidden ? { filter: 'grayscale(100%)' } : {}),
                       }}
                     />
                   </TableCell>}
@@ -1059,6 +1094,7 @@ export default function ManagePage({
                       categoryId={img.category_id}
                       categoryPaths={categoryPaths}
                       onNavigate={onNavigateCategory}
+                      hiddenColor={visColors.inactive}
                     />
                   </TableCell>}
                   {isColumnVisible('copyright') && <TableCell>{img.copyright ?? '—'}</TableCell>}
@@ -1102,8 +1138,8 @@ export default function ManagePage({
                                 size="small"
                                 onClick={() => chipClick(p.name)}
                                 {...(img.active
-                                  ? { color: 'primary', sx: { cursor: 'pointer', opacity: 0.5 } }
-                                  : { sx: { cursor: 'pointer', bgcolor: visColors.inactiveChipBg, color: '#fff', opacity: 0.5 } }
+                                  ? { color: 'primary', sx: getInheritedRestrictionSx(true, { cursor: 'pointer' }) }
+                                  : { sx: getInheritedRestrictionSx(true, { cursor: 'pointer', bgcolor: visColors.inactiveChipBg, color: '#fff' }) }
                                 )}
                               />
                             ))}
@@ -1150,21 +1186,11 @@ export default function ManagePage({
                                 key={g.id}
                                 label={g.name}
                                 size="small"
+                                color="secondary"
                                 onClick={() => chipClick(g.name)}
-                                sx={{
-                                  cursor: 'pointer',
-                                  ...(img.active
-                                    ? {
-                                        bgcolor: groupColors.subtleBg,
-                                        color: groupColors.subtleText,
-                                        opacity: 0.75,
-                                      }
-                                    : {
-                                        bgcolor: visColors.inactiveChipBg,
-                                        color: '#fff',
-                                        opacity: 0.5,
-                                      }),
-                                }}
+                                sx={img.active
+                                  ? getInheritedRestrictionSx(true, { cursor: 'pointer' })
+                                  : getInheritedRestrictionSx(true, { cursor: 'pointer', bgcolor: visColors.inactiveChipBg, color: '#fff' })}
                               />
                             ))}
                         </Box>
@@ -1175,11 +1201,16 @@ export default function ManagePage({
                     data-interactive="true"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <Switch
-                      size="small"
-                      checked={img.active}
-                      onChange={() => handleToggleActive(img)}
-                    />
+                    <Tooltip title={categoryHidden ? 'Hidden by category' : ''} disableHoverListener={!categoryHidden}>
+                      <span>
+                        <Switch
+                          size="small"
+                          checked={img.active}
+                          onChange={() => { handleToggleActive(img).catch(() => {}) }}
+                          disabled={categoryHidden}
+                        />
+                      </span>
+                    </Tooltip>
                   </TableCell>}
                   {isColumnVisible('updated_at') && <TableCell>
                     {new Date(img.updated_at).toLocaleDateString()}
@@ -1218,7 +1249,8 @@ export default function ManagePage({
                     </IconButton>
                   </TableCell>
                 </TableRow>
-              ))}
+                )
+              })}
             </TableBody>
           </Table>
           <TablePagination
@@ -1380,6 +1412,10 @@ export default function ManagePage({
         onAddCategory={onAddCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
+        allCategoryHidden={selected.size > 0 && [...selected].every((id) => {
+          const img = images.find((i) => i.id === id)
+          return img != null && isImageCategoryHidden(img)
+        })}
       />
 
       {/* Delete confirmation dialog */}

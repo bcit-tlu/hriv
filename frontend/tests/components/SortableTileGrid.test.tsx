@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import SortableTileGrid from "../../src/components/SortableTileGrid";
 import type { SortableTileGridProps } from "../../src/components/SortableTileGrid";
-import type { Program } from "../../src/types";
+import type { Group, Program } from "../../src/types";
 import { DROP_PREFIX } from "../../src/components/sortableTileGridUtils";
 import { makeCategory, makeImage } from "../helpers/fixtures";
 
@@ -62,7 +62,27 @@ vi.mock("../../src/api", async () => {
 
 import { reorderCategories, reorderImages } from "../../src/api";
 
-const defaultPrograms: Program[] = [];
+const defaultPrograms: Program[] = [
+    {
+        id: 10,
+        name: "Pathology",
+        oidc_group: null,
+        created_at: "2024-01-01",
+        updated_at: "2024-01-01",
+    },
+];
+const defaultGroups: Group[] = [
+    {
+        id: 30,
+        name: "Lab A2",
+        description: null,
+        createdByUserId: 1,
+        memberIds: [],
+        instructorIds: [1],
+        createdAt: "2024-01-01",
+        updatedAt: "2024-01-01",
+    },
+];
 
 function renderGrid(overrides: Partial<SortableTileGridProps> = {}) {
     const defaults: SortableTileGridProps = {
@@ -105,6 +125,21 @@ describe("SortableTileGrid", () => {
 
         expect(screen.getByText("Architecture")).toBeInTheDocument();
         expect(screen.getByText("Liver Section")).toBeInTheDocument();
+    });
+
+    it("renders inherited program and group chips for categories restricted by an ancestor", () => {
+        renderGrid({
+            path: [makeCategory({ id: 10, label: "Parent", programIds: [10], groupIds: [30] })],
+            currentCategories: [
+                makeCategory({ id: 11, label: "Child", parentId: 10 }),
+            ],
+            programs: defaultPrograms,
+            groups: defaultGroups,
+            canEditContent: false,
+        });
+
+        expect(screen.getByText("Pathology").closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' });
+        expect(screen.getByText("Lab A2").closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' });
     });
 
     it("renders a move zone per category tile", () => {
