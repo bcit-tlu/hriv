@@ -1,4 +1,10 @@
-import { useState, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from "react";
+import {
+    useState,
+    type Dispatch,
+    type ReactNode,
+    type RefObject,
+    type SetStateAction,
+} from "react";
 import Alert from "@mui/material/Alert";
 import AppBar from "@mui/material/AppBar";
 import Avatar from "@mui/material/Avatar";
@@ -22,9 +28,10 @@ import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import SearchIcon from "@mui/icons-material/Search";
 import ColorModeToggle from "./ColorModeToggle";
+import FooterBar from "./FooterBar";
 import AnnouncementBanner from "./AnnouncementBanner";
 import type { Role } from "../types";
-import { getSurfaceVariant } from "../theme";
+import { getGroupChipColors, getSurfaceVariant } from "../theme";
 
 export type Page = "browse" | "manage" | "people" | "admin";
 
@@ -34,7 +41,13 @@ export interface AppShellProps {
     onHomeClick: () => void;
     canEditContent: boolean;
     canManageUsers: boolean;
-    currentUser: { name: string; email: string; role: Role; program_names: string[]; group_names: string[] };
+    currentUser: {
+        name: string;
+        email: string;
+        role: Role;
+        program_names: string[];
+        group_names: string[];
+    };
     announcement: string;
     annMessage: string;
     annEnabled: boolean;
@@ -107,6 +120,7 @@ export default function AppShell(props: AppShellProps) {
         page === "people" || page === "admin"
             ? getSurfaceVariant(mode)
             : undefined;
+    const groupColors = getGroupChipColors(mode);
 
     return (
         <Box
@@ -293,30 +307,59 @@ export default function AppShell(props: AppShellProps) {
                                         {currentUser.role}
                                     </Typography>
                                     {currentUser.program_names.length > 0 && (
-                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                                            {currentUser.program_names.map((name) => (
-                                                <Chip key={name} label={name} size="small" color="primary" />
-                                            ))}
+                                        <Box
+                                            sx={{
+                                                display: "flex",
+                                                flexWrap: "wrap",
+                                                gap: 0.5,
+                                                mt: 0.5,
+                                            }}
+                                        >
+                                            {currentUser.program_names.map(
+                                                (name) => (
+                                                    <Chip
+                                                        key={name}
+                                                        label={name}
+                                                        size="small"
+                                                        color="primary"
+                                                    />
+                                                ),
+                                            )}
                                         </Box>
                                     )}
                                     {currentUser.group_names.length > 0 && (
-                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                                            {currentUser.group_names.map((name) => (
-                                                <Chip
-                                                    key={name}
-                                                    label={name}
-                                                    size="small"
-                                                    color="secondary"
-                                                />
-                                            ))}
+                                        <Box
+                                            sx={{
+                                                display: "flex",
+                                                flexWrap: "wrap",
+                                                gap: 0.5,
+                                                mt: 0.5,
+                                            }}
+                                        >
+                                            {currentUser.group_names.map(
+                                                (name) => (
+                                                    <Chip
+                                                        key={name}
+                                                        label={name}
+                                                        size="small"
+                                                        sx={{
+                                                            bgcolor:
+                                                                groupColors.solidBg,
+                                                            color: groupColors.solidText,
+                                                        }}
+                                                    />
+                                                ),
+                                            )}
                                         </Box>
                                     )}
                                     <Box
                                         sx={{
                                             display: "flex",
-                                            justifyContent: canManageUsers || showViewAnnLink
-                                                ? "space-between"
-                                                : "flex-end",
+                                            justifyContent:
+                                                canManageUsers ||
+                                                showViewAnnLink
+                                                    ? "space-between"
+                                                    : "flex-end",
                                             mt: 2,
                                             gap: 2,
                                             flexWrap: "wrap",
@@ -372,134 +415,48 @@ export default function AppShell(props: AppShellProps) {
                     <Box
                         sx={{
                             bgcolor: contentBg,
-                            pt: "20px",
+                            mx: "10%",
+                            mt: "20px",
+                            mb: 0,
                         }}
                     >
-                        <Box sx={{ mx: "10%", mb: 0 }}>
-                            <AnnouncementBanner
-                                message={announcement}
-                                onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined}
-                            />
-                        </Box>
+                        <AnnouncementBanner
+                            message={announcement}
+                            onDismiss={
+                                onDismissAnnouncement
+                                    ? () => setAnnCollapsed(true)
+                                    : undefined
+                            }
+                        />
                     </Box>
                 </Collapse>
             )}
 
             {/* Read-only announcement dialog (for dismissed announcements) */}
-            <Dialog open={viewAnnOpen} onClose={() => setViewAnnOpen(false)} maxWidth="sm" fullWidth>
+            <Dialog
+                open={viewAnnOpen}
+                onClose={() => setViewAnnOpen(false)}
+                maxWidth="sm"
+                fullWidth
+            >
                 <DialogTitle>Announcement</DialogTitle>
                 <DialogContent>
-                    <Alert severity="info" sx={{ mt: 1 }}>{annMessage}</Alert>
+                    <Alert severity="info" sx={{ mt: 1 }}>
+                        {annMessage}
+                    </Alert>
                 </DialogContent>
             </Dialog>
 
             {/* Main content */}
             {children}
 
-            {/* Footer */}
-            <Box
-                component="footer"
-                sx={{
-                    py: 1,
-                    px: 2,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    bgcolor:
-                        mode === "dark"
-                            ? "background.paper"
-                            : "background.default",
-                    borderTop: 1,
-                    borderColor: "divider",
-                }}
-            >
-                <Typography variant="caption" color="text.secondary">
-                    <Link
-                        href="https://github.com/bcit-tlu/hriv"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        color="text.secondary"
-                        underline="hover"
-                    >
-                        High Resolution Image Viewer
-                    </Link>
-                    {canManageUsers &&
-                        (() => {
-                            const frontendVer = frontendVersion || "dev";
-                            const releasesHref =
-                                "https://github.com/bcit-tlu/hriv/releases";
-                            const repoHref =
-                                "https://github.com/bcit-tlu/hriv";
-                            const hrefFor = (v: string) =>
-                                v && v !== "dev" ? releasesHref : repoHref;
-                            return (
-                                <>
-                                    <Box
-                                        component="span"
-                                        sx={{
-                                            display: "inline-block",
-                                            width: "3ch",
-                                        }}
-                                    />
-                                    <strong>Frontend:</strong>{" "}
-                                    <Link
-                                        href={hrefFor(frontendVer)}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        color="text.secondary"
-                                        underline="hover"
-                                    >
-                                        {frontendVer}
-                                    </Link>
-                                    <Box
-                                        component="span"
-                                        sx={{
-                                            display: "inline-block",
-                                            width: "3ch",
-                                        }}
-                                    />
-                                    <strong>Backend:</strong>{" "}
-                                    <Link
-                                        href={hrefFor(backendVersion ?? "")}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        color="text.secondary"
-                                        underline="hover"
-                                    >
-                                        {backendVersion ?? "…"}
-                                    </Link>
-                                    <Box
-                                        component="span"
-                                        sx={{
-                                            display: "inline-block",
-                                            width: "3ch",
-                                        }}
-                                    />
-                                    <strong>Backup:</strong>{" "}
-                                    <Link
-                                        href={hrefFor(backupVersion ?? "")}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        color="text.secondary"
-                                        underline="hover"
-                                    >
-                                        {backupVersion ?? "…"}
-                                    </Link>
-                                </>
-                            );
-                        })()}
-                </Typography>
-                <Link
-                    component="button"
-                    variant="caption"
-                    color="text.secondary"
-                    underline="hover"
-                    onClick={onReportIssue}
-                    sx={{ cursor: "pointer" }}
-                >
-                    Report issue
-                </Link>
-            </Box>
+            <FooterBar
+                canManageUsers={canManageUsers}
+                frontendVersion={frontendVersion || undefined}
+                backendVersion={backendVersion ?? undefined}
+                backupVersion={backupVersion ?? undefined}
+                onReportIssue={onReportIssue}
+            />
         </Box>
     );
 }
