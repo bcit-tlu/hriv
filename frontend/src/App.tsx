@@ -70,7 +70,7 @@ import type {
 } from "./api";
 import MoveCategoryDialog from "./components/MoveCategoryDialog";
 import { useProcessingJobs } from "./useProcessingJobs";
-import type { Category, Group, ImageItem, Program } from "./types";
+import type { Category, Group, ImageItem } from "./types";
 import { MAX_DEPTH } from "./types";
 import AddCategoryDialog from "./components/AddCategoryDialog";
 import EditCategoryDialog from "./components/EditCategoryDialog";
