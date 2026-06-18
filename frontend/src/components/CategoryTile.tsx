@@ -19,6 +19,7 @@ import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import type { Category, Group, ImageItem, Program } from '../types'
 import { useColorMode } from '../useColorMode'
 import { getVisibilityColors } from '../theme'
+import { getInheritedRestrictionSx } from '../restrictionStyles'
 import CardImagePickerModal from './CardImagePickerModal'
 
 function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
@@ -58,7 +59,11 @@ interface CategoryTileProps {
   onSetCardImage?: (categoryId: number, imageId: number | null) => void
   onEditName?: (category: Category) => void
   programs: Program[]
+  /** Effective program restriction inherited from ancestor categories. */
+  inheritedProgramIds?: number[]
   groups?: Group[]
+  /** Effective group restriction inherited from ancestor categories. */
+  inheritedGroupIds?: number[]
   /** When true the parent category (or an ancestor) is hidden, so this tile is desaturated. */
   parentHidden?: boolean
   /** When true the hidden state is inherited from an ancestor, so dim hidden UI. */
@@ -74,7 +79,9 @@ export default function CategoryTile({
   onSetCardImage,
   onEditName,
   programs,
+  inheritedProgramIds = [],
   groups = [],
+  inheritedGroupIds = [],
   parentHidden = false,
   inheritedHidden = false,
   onDropFiles,
@@ -102,7 +109,19 @@ export default function CategoryTile({
     .filter((p): p is Program => p != null)
     .sort((a, b) => a.name.localeCompare(b.name))
 
+  const inheritedProgramChips = inheritedProgramIds
+    .filter((pid) => !category.programIds.includes(pid))
+    .map((pid) => programs.find((p) => p.id === pid))
+    .filter((p): p is Program => p != null)
+    .sort((a, b) => a.name.localeCompare(b.name))
+
   const groupChips = category.groupIds
+    .map((gid) => groups.find((g) => g.id === gid))
+    .filter((g): g is Group => g != null)
+    .sort((a, b) => a.name.localeCompare(b.name))
+
+  const inheritedGroupChips = inheritedGroupIds
+    .filter((gid) => !category.groupIds.includes(gid))
     .map((gid) => groups.find((g) => g.id === gid))
     .filter((g): g is Group => g != null)
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -276,6 +295,19 @@ export default function CategoryTile({
                 ))}
               </Box>
             )}
+            {inheritedProgramChips.length > 0 && (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                {inheritedProgramChips.map((p) => (
+                  <Chip
+                    key={p.id}
+                    label={p.name}
+                    size="small"
+                    color="primary"
+                    sx={getInheritedRestrictionSx(true)}
+                  />
+                ))}
+              </Box>
+            )}
             {groupChips.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {groupChips.map((g) => (
@@ -284,6 +316,19 @@ export default function CategoryTile({
                     label={g.name}
                     size="small"
                     color="secondary"
+                  />
+                ))}
+              </Box>
+            )}
+            {inheritedGroupChips.length > 0 && (
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                {inheritedGroupChips.map((g) => (
+                  <Chip
+                    key={g.id}
+                    label={g.name}
+                    size="small"
+                    color="secondary"
+                    sx={getInheritedRestrictionSx(true)}
                   />
                 ))}
               </Box>

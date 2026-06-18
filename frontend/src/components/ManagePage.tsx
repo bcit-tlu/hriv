@@ -50,7 +50,8 @@ import type { ApiBulkImportJob, ApiImage } from '../api'
 import type { Category, Group, Program } from '../types'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from '../categoryUtils'
 import { formatFileSize } from '../formatUtils'
-import { getGroupChipColors, getVisibilityColors } from '../theme'
+import { getVisibilityColors } from '../theme'
+import { getInheritedRestrictionSx } from '../restrictionStyles'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import { useColorMode } from '../useColorMode'
@@ -260,7 +261,6 @@ export default function ManagePage({
 }: ManagePageProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
-  const groupColors = getGroupChipColors(mode)
   const [images, setImages] = useState<ApiImage[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -1138,8 +1138,8 @@ export default function ManagePage({
                                 size="small"
                                 onClick={() => chipClick(p.name)}
                                 {...(img.active
-                                  ? { color: 'primary', sx: { cursor: 'pointer', opacity: 0.5 } }
-                                  : { sx: { cursor: 'pointer', bgcolor: visColors.inactiveChipBg, color: '#fff', opacity: 0.5 } }
+                                  ? { color: 'primary', sx: getInheritedRestrictionSx(true, { cursor: 'pointer' }) }
+                                  : { sx: getInheritedRestrictionSx(true, { cursor: 'pointer', bgcolor: visColors.inactiveChipBg, color: '#fff' }) }
                                 )}
                               />
                             ))}
@@ -1186,21 +1186,11 @@ export default function ManagePage({
                                 key={g.id}
                                 label={g.name}
                                 size="small"
+                                color="secondary"
                                 onClick={() => chipClick(g.name)}
-                                sx={{
-                                  cursor: 'pointer',
-                                  ...(img.active
-                                    ? {
-                                        bgcolor: groupColors.subtleBg,
-                                        color: groupColors.subtleText,
-                                        opacity: 0.75,
-                                      }
-                                    : {
-                                        bgcolor: visColors.inactiveChipBg,
-                                        color: '#fff',
-                                        opacity: 0.5,
-                                      }),
-                                }}
+                                sx={img.active
+                                  ? getInheritedRestrictionSx(true, { cursor: 'pointer' })
+                                  : getInheritedRestrictionSx(true, { cursor: 'pointer', bgcolor: visColors.inactiveChipBg, color: '#fff' })}
                               />
                             ))}
                         </Box>
