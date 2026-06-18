@@ -75,47 +75,6 @@ describe('ManagePage', () => {
     expect(groupChip).toBeInTheDocument()
   })
 
-  it('uses reduced opacity for inherited program and group chips', async () => {
-    const inheritedCategories = [
-      makeCategory({
-        id: 1,
-        label: 'Parent',
-        programIds: [1],
-        groupIds: [7],
-        children: [
-          makeCategory({
-            id: 10,
-            label: 'Microscopy',
-            parentId: 1,
-          }),
-        ],
-      }),
-    ]
-    localStorage.setItem('hrivpref:table-columns:manage-images:user:1', JSON.stringify({
-      thumbnail: true,
-      id: false,
-      name: true,
-      category: true,
-      copyright: false,
-      note: false,
-      program: true,
-      group: true,
-      active: true,
-      updated_at: true,
-      created_at: false,
-      dimensions: false,
-      file_size: false,
-      measurement: false,
-    }))
-
-    render(<ManagePage categories={inheritedCategories} programs={programs} groups={groups} />)
-
-    await screen.findByText('Blood Smear')
-
-    expect(screen.getByText('Medical Lab').closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' })
-    expect(screen.getByText('Lab A2').closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' })
-  })
-
   it('shows the configured default visible columns', async () => {
     render(<ManagePage categories={categories} programs={programs} groups={groups} />)
 

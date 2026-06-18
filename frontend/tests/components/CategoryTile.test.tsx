@@ -263,21 +263,6 @@ describe('CategoryTile', () => {
       )
       expect(screen.queryByText('Pathology')).not.toBeInTheDocument()
     })
-
-    it('renders inherited program chips when the restriction comes from an ancestor', () => {
-      render(
-        <CategoryTile
-          category={makeCategory()}
-          onClick={vi.fn()}
-          programs={samplePrograms}
-          inheritedProgramIds={[10]}
-        />,
-      )
-
-      const chip = screen.getByText('Pathology').closest('.MuiChip-root')
-      expect(chip).toBeInTheDocument()
-      expect(chip).toHaveStyle({ opacity: '0.6' })
-    })
   })
 
   describe('group chips', () => {
@@ -292,22 +277,6 @@ describe('CategoryTile', () => {
       )
       expect(screen.getByText('Lab A2')).toBeInTheDocument()
       expect(screen.getByText('Seminar B')).toBeInTheDocument()
-    })
-
-    it('renders inherited group chips when the restriction comes from an ancestor', () => {
-      render(
-        <CategoryTile
-          category={makeCategory()}
-          onClick={vi.fn()}
-          programs={samplePrograms}
-          groups={sampleGroups}
-          inheritedGroupIds={[30]}
-        />,
-      )
-
-      const chip = screen.getByText('Lab A2').closest('.MuiChip-root')
-      expect(chip).toBeInTheDocument()
-      expect(chip).toHaveStyle({ opacity: '0.6' })
     })
   })
 

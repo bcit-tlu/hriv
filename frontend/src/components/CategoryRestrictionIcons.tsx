@@ -1,7 +1,6 @@
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import LockIcon from '@mui/icons-material/Lock'
-import { getInheritedRestrictionOpacity } from '../restrictionStyles'
 
 interface CategoryRestrictionIconsProps {
   hasProgramRestriction: boolean
@@ -34,7 +33,7 @@ function renderIcon({
       sx={{
         fontSize: 14,
         color: hidden ? 'action.active' : color,
-        opacity: getInheritedRestrictionOpacity(inherited),
+        opacity: inherited ? 0.5 : 1,
       }}
     />
   )

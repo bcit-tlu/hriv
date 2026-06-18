@@ -76,15 +76,7 @@ import AddCategoryDialog from "./components/AddCategoryDialog";
 import EditCategoryDialog from "./components/EditCategoryDialog";
 import { useColorMode } from "./useColorMode";
 import { useBrowseData } from "./useBrowseData";
-import {
-    splitDirectAncestorGroupIds,
-    splitDirectAncestorProgramIds,
-} from "./categoryUtils";
-import { getInheritedRestrictionSx } from "./restrictionStyles";
-import {
-    getSurfaceVariant,
-    getVisibilityColors,
-} from "./theme";
+import { getSurfaceVariant, getVisibilityColors } from "./theme";
 import {
     useNavigationHistory,
     buildNavHistoryState,
@@ -239,119 +231,6 @@ export default function App() {
             imageViewerHiddenByCategory,
         ],
     );
-    const breadcrumbProgramItems = useMemo(() => {
-        const split = path.length > 0
-            ? splitDirectAncestorProgramIds(path)
-            : { direct: ancestorProgramIds, ancestor: [] };
-        return [
-            ...split.direct.map((id) => ({ id, inherited: false })),
-            ...split.ancestor.map((id) => ({ id, inherited: true })),
-        ]
-            .map((item) => {
-                const program = programs.find((p) => p.id === item.id);
-                return program ? { ...item, name: program.name } : null;
-            })
-            .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
-            .sort((a, b) => a.name.localeCompare(b.name));
-    }, [ancestorProgramIds, path, programs]);
-    const breadcrumbGroupItems = useMemo(() => {
-        const split = path.length > 0
-            ? splitDirectAncestorGroupIds(path)
-            : { direct: ancestorGroupIds, ancestor: [] };
-        return [
-            ...split.direct.map((id) => ({ id, inherited: false })),
-            ...split.ancestor.map((id) => ({ id, inherited: true })),
-        ]
-            .map((item) => {
-                const group = groups.find((g) => g.id === item.id);
-                return group ? { ...item, name: group.name } : null;
-            })
-            .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
-            .sort((a, b) => a.name.localeCompare(b.name));
-    }, [ancestorGroupIds, groups, path]);
-    const renderBreadcrumbChips = (
-        items: Array<{ id: number; name: string; inherited: boolean }>,
-        kind: "program" | "group",
-        stateSx?: Record<string, unknown>,
-    ) => {
-        if (items.length === 0) return null;
-
-        const MAX_INLINE = 2;
-        const inline = items.slice(0, MAX_INLINE);
-        const overflow = items.length - MAX_INLINE;
-        const color = kind === "program" ? ("primary" as const) : ("secondary" as const);
-        const anchor =
-            kind === "program"
-                ? programsPopoverAnchor
-                : groupsPopoverAnchor;
-        const setAnchor =
-            kind === "program"
-                ? setProgramsPopoverAnchor
-                : setGroupsPopoverAnchor;
-
-        const chipSx = (inherited: boolean) =>
-            inherited
-                ? getInheritedRestrictionSx(true, stateSx)
-                : stateSx;
-
-        return (
-            <>
-                {inline.map((item) => (
-                    <Chip
-                        key={item.id}
-                        label={item.name}
-                        size="small"
-                        color={color}
-                        sx={chipSx(item.inherited)}
-                    />
-                ))}
-                {overflow > 0 && (
-                    <>
-                        <Chip
-                            label={`+${overflow}`}
-                            size="small"
-                            color={color}
-                            variant="outlined"
-                            onClick={(e) => setAnchor(e.currentTarget)}
-                            aria-label={`${overflow} more ${kind}s`}
-                            sx={{
-                                cursor: "pointer",
-                                ...(stateSx ?? {}),
-                            }}
-                        />
-                        <Popover
-                            open={anchor != null}
-                            anchorEl={anchor}
-                            onClose={() => setAnchor(null)}
-                            anchorOrigin={{
-                                vertical: "bottom",
-                                horizontal: "left",
-                            }}
-                        >
-                            <Box
-                                sx={{
-                                    p: 1.5,
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: 0.5,
-                                }}
-                            >
-                                {items.map((item) => (
-                                    <Chip
-                                        key={item.id}
-                                        label={item.name}
-                                        size="small"
-                                        color={color}
-                                        sx={chipSx(item.inherited)}
-                                    />
-                                ))}
-                            </Box>
-                        </Popover>
-                    </>
-                )}
-            </>
-        );
-    };
 
     // Image processing jobs (extracted to useProcessingJobs hook)
     const setImagesVersionRef = useRef<React.Dispatch<React.SetStateAction<number>>>(() => {});
@@ -1248,20 +1127,254 @@ export default function App() {
                                             {selectedImage.name}
                                         </Typography>
                                     </MuiBreadcrumbs>
-                                    {renderBreadcrumbChips(
-                                        breadcrumbProgramItems,
-                                        "program",
-                                        selectedImage.active
-                                            ? imageViewerCategoryHiddenSx
-                                            : inactiveViewerActionSx,
-                                    )}
-                                    {renderBreadcrumbChips(
-                                        breadcrumbGroupItems,
-                                        "group",
-                                        selectedImage.active
-                                            ? imageViewerCategoryHiddenSx
-                                            : inactiveViewerActionSx,
-                                    )}
+                                    {(() => {
+                                        const resolved =
+                                            ancestorProgramIds
+                                                .map((pid) =>
+                                                    programs.find(
+                                                        (p) =>
+                                                            p.id === pid,
+                                                    ),
+                                                )
+                                                .filter(
+                                                    (
+                                                        p,
+                                                    ): p is Program =>
+                                                        p != null,
+                                                )
+                                                .sort((a, b) =>
+                                                    a.name.localeCompare(
+                                                        b.name,
+                                                    ),
+                                                );
+                                        if (resolved.length === 0)
+                                            return null;
+                                        const MAX_INLINE = 2;
+                                        const inline = resolved.slice(
+                                            0,
+                                            MAX_INLINE,
+                                        );
+                                        const overflow =
+                                            resolved.length - MAX_INLINE;
+                                        return (
+                                            <>
+                                                {inline.map((p) => (
+                                                    <Chip
+                                                        key={p.id}
+                                                        label={p.name}
+                                                        size="small"
+                                                        color="primary"
+                                                        sx={
+                                                            selectedImage.active
+                                                                ? imageViewerCategoryHiddenSx
+                                                                : inactiveViewerActionSx
+                                                        }
+                                                    />
+                                                ))}
+                                                {overflow > 0 && (
+                                                    <>
+                                                        <Chip
+                                                            label={`+${overflow}`}
+                                                            size="small"
+                                                            color="primary"
+                                                            variant="outlined"
+                                                            onClick={(
+                                                                e,
+                                                            ) =>
+                                                                setProgramsPopoverAnchor(
+                                                                    e.currentTarget,
+                                                                )
+                                                            }
+                                                            aria-label={`${overflow} more programs`}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                                ...(selectedImage.active
+                                                                    ? imageViewerCategoryHiddenSx ?? {}
+                                                                    : inactiveViewerActionSx ?? {}),
+                                                            }}
+                                                        />
+                                                        <Popover
+                                                            open={
+                                                                programsPopoverAnchor !=
+                                                                null
+                                                            }
+                                                            anchorEl={
+                                                                programsPopoverAnchor
+                                                            }
+                                                            onClose={() =>
+                                                                setProgramsPopoverAnchor(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            anchorOrigin={{
+                                                                vertical:
+                                                                    "bottom",
+                                                                horizontal:
+                                                                    "left",
+                                                            }}
+                                                        >
+                                                            <Box
+                                                                sx={{
+                                                                    p: 1.5,
+                                                                    display:
+                                                                        "flex",
+                                                                    flexDirection:
+                                                                        "column",
+                                                                    gap: 0.5,
+                                                                }}
+                                                            >
+                                                                {resolved.map(
+                                                                    (
+                                                                        p,
+                                                                    ) => (
+                                                                        <Chip
+                                                                            key={
+                                                                                p.id
+                                                                            }
+                                                                            label={
+                                                                                p.name
+                                                                            }
+                                                                            size="small"
+                                                                            color="primary"
+                                                                            sx={
+                                                                                selectedImage.active
+                                                                                    ? imageViewerCategoryHiddenSx
+                                                                                    : inactiveViewerActionSx
+                                                                            }
+                                                                        />
+                                                                    ),
+                                                                )}
+                                                            </Box>
+                                                        </Popover>
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                    {(() => {
+                                        const resolved =
+                                            ancestorGroupIds
+                                                .map((gid) =>
+                                                    groups.find(
+                                                        (g) =>
+                                                            g.id === gid,
+                                                    ),
+                                                )
+                                                .filter(
+                                                    (
+                                                        g,
+                                                    ): g is Group =>
+                                                        g != null,
+                                                )
+                                                .sort((a, b) =>
+                                                    a.name.localeCompare(
+                                                        b.name,
+                                                    ),
+                                                );
+                                        if (resolved.length === 0)
+                                            return null;
+                                        const MAX_INLINE = 2;
+                                        const inline = resolved.slice(
+                                            0,
+                                            MAX_INLINE,
+                                        );
+                                        const overflow =
+                                            resolved.length - MAX_INLINE;
+                                        return (
+                                            <>
+                                                {inline.map((g) => (
+                                                    <Chip
+                                                        key={g.id}
+                                                        label={g.name}
+                                                        size="small"
+                                                        color="secondary"
+                                                        sx={
+                                                            selectedImage.active
+                                                                ? imageViewerCategoryHiddenSx
+                                                                : inactiveViewerActionSx
+                                                        }
+                                                    />
+                                                ))}
+                                                {overflow > 0 && (
+                                                    <>
+                                                        <Chip
+                                                            label={`+${overflow}`}
+                                                            size="small"
+                                                            color="secondary"
+                                                            variant="outlined"
+                                                            onClick={(
+                                                                e,
+                                                            ) =>
+                                                                setGroupsPopoverAnchor(
+                                                                    e.currentTarget,
+                                                                )
+                                                            }
+                                                            aria-label={`${overflow} more groups`}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                                ...(selectedImage.active
+                                                                    ? imageViewerCategoryHiddenSx ?? {}
+                                                                    : inactiveViewerActionSx ?? {}),
+                                                            }}
+                                                        />
+                                                        <Popover
+                                                            open={
+                                                                groupsPopoverAnchor !=
+                                                                null
+                                                            }
+                                                            anchorEl={
+                                                                groupsPopoverAnchor
+                                                            }
+                                                            onClose={() =>
+                                                                setGroupsPopoverAnchor(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            anchorOrigin={{
+                                                                vertical:
+                                                                    "bottom",
+                                                                horizontal:
+                                                                    "left",
+                                                            }}
+                                                        >
+                                                            <Box
+                                                                sx={{
+                                                                    p: 1.5,
+                                                                    display:
+                                                                        "flex",
+                                                                    flexDirection:
+                                                                        "column",
+                                                                    gap: 0.5,
+                                                                }}
+                                                            >
+                                                                {resolved.map(
+                                                                    (
+                                                                        g,
+                                                                    ) => (
+                                                                        <Chip
+                                                                            key={
+                                                                                g.id
+                                                                            }
+                                                                            label={
+                                                                                g.name
+                                                                            }
+                                                                            size="small"
+                                                                            color="secondary"
+                                                                            sx={
+                                                                                selectedImage.active
+                                                                                    ? imageViewerCategoryHiddenSx
+                                                                                    : inactiveViewerActionSx
+                                                                            }
+                                                                        />
+                                                                    ),
+                                                                )}
+                                                            </Box>
+                                                        </Popover>
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
                                 </Box>
                                 <Box
                                     sx={{
@@ -1689,16 +1802,234 @@ export default function App() {
                                         })}
                                     </MuiBreadcrumbs>
                                     
-                                    {renderBreadcrumbChips(
-                                        breadcrumbProgramItems,
-                                        "program",
-                                        categoryPageHiddenSx,
-                                    )}
-                                    {renderBreadcrumbChips(
-                                        breadcrumbGroupItems,
-                                        "group",
-                                        categoryPageHiddenSx,
-                                    )}
+                                    {(() => {
+                                        const resolved =
+                                            ancestorProgramIds
+                                                .map((pid) =>
+                                                    programs.find(
+                                                        (p) =>
+                                                            p.id === pid,
+                                                    ),
+                                                )
+                                                .filter(
+                                                    (
+                                                        p,
+                                                    ): p is Program =>
+                                                        p != null,
+                                                )
+                                                .sort((a, b) =>
+                                                    a.name.localeCompare(
+                                                        b.name,
+                                                    ),
+                                                );
+                                        if (resolved.length === 0)
+                                            return null;
+                                        const MAX_INLINE = 2;
+                                        const inline = resolved.slice(
+                                            0,
+                                            MAX_INLINE,
+                                        );
+                                        const overflow =
+                                            resolved.length - MAX_INLINE;
+                                        return (
+                                            <>
+                                                {inline.map((p) => (
+                                                    <Chip
+                                                        key={p.id}
+                                                        label={p.name}
+                                                        size="small"
+                                                        color="primary"
+                                                        sx={categoryPageHiddenSx}
+                                                    />
+                                                ))}
+                                                {overflow > 0 && (
+                                                    <>
+                                                        <Chip
+                                                            label={`+${overflow}`}
+                                                            size="small"
+                                                            color="primary"
+                                                            variant="outlined"
+                                                            onClick={(
+                                                                e,
+                                                            ) =>
+                                                                setProgramsPopoverAnchor(
+                                                                    e.currentTarget,
+                                                                )
+                                                            }
+                                                            aria-label={`${overflow} more programs`}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                                ...categoryPageHiddenSx,
+                                                            }}
+                                                        />
+                                                        <Popover
+                                                            open={
+                                                                programsPopoverAnchor !=
+                                                                null
+                                                            }
+                                                            anchorEl={
+                                                                programsPopoverAnchor
+                                                            }
+                                                            onClose={() =>
+                                                                setProgramsPopoverAnchor(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            anchorOrigin={{
+                                                                vertical:
+                                                                    "bottom",
+                                                                horizontal:
+                                                                    "left",
+                                                            }}
+                                                        >
+                                                            <Box
+                                                                sx={{
+                                                                    p: 1.5,
+                                                                    display:
+                                                                        "flex",
+                                                                    flexDirection:
+                                                                        "column",
+                                                                    gap: 0.5,
+                                                                }}
+                                                            >
+                                                                {resolved.map(
+                                                                    (
+                                                                        p,
+                                                                    ) => (
+                                                                        <Chip
+                                                                            key={
+                                                                                p.id
+                                                                            }
+                                                                            label={
+                                                                                p.name
+                                                                            }
+                                                                            size="small"
+                                                                            color="primary"
+                                                                            sx={categoryPageHiddenSx}
+                                                                        />
+                                                                    ),
+                                                                )}
+                                                            </Box>
+                                                        </Popover>
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
+                                    {(() => {
+                                        const resolved =
+                                            ancestorGroupIds
+                                                .map((gid) =>
+                                                    groups.find(
+                                                        (g) =>
+                                                            g.id === gid,
+                                                    ),
+                                                )
+                                                .filter(
+                                                    (
+                                                        g,
+                                                    ): g is Group =>
+                                                        g != null,
+                                                )
+                                                .sort((a, b) =>
+                                                    a.name.localeCompare(
+                                                        b.name,
+                                                    ),
+                                                );
+                                        if (resolved.length === 0)
+                                            return null;
+                                        const MAX_INLINE = 2;
+                                        const inline = resolved.slice(
+                                            0,
+                                            MAX_INLINE,
+                                        );
+                                        const overflow =
+                                            resolved.length - MAX_INLINE;
+                                        return (
+                                            <>
+                                                {inline.map((g) => (
+                                                    <Chip
+                                                        key={g.id}
+                                                        label={g.name}
+                                                        size="small"
+                                                        color="secondary"
+                                                        sx={categoryPageHiddenSx}
+                                                    />
+                                                ))}
+                                                {overflow > 0 && (
+                                                    <>
+                                                        <Chip
+                                                            label={`+${overflow}`}
+                                                            size="small"
+                                                            color="secondary"
+                                                            variant="outlined"
+                                                            onClick={(
+                                                                e,
+                                                            ) =>
+                                                                setGroupsPopoverAnchor(
+                                                                    e.currentTarget,
+                                                                )
+                                                            }
+                                                            aria-label={`${overflow} more groups`}
+                                                            sx={{
+                                                                cursor: "pointer",
+                                                                ...categoryPageHiddenSx,
+                                                            }}
+                                                        />
+                                                        <Popover
+                                                            open={
+                                                                groupsPopoverAnchor !=
+                                                                null
+                                                            }
+                                                            anchorEl={
+                                                                groupsPopoverAnchor
+                                                            }
+                                                            onClose={() =>
+                                                                setGroupsPopoverAnchor(
+                                                                    null,
+                                                                )
+                                                            }
+                                                            anchorOrigin={{
+                                                                vertical:
+                                                                    "bottom",
+                                                                horizontal:
+                                                                    "left",
+                                                            }}
+                                                        >
+                                                            <Box
+                                                                sx={{
+                                                                    p: 1.5,
+                                                                    display:
+                                                                        "flex",
+                                                                    flexDirection:
+                                                                        "column",
+                                                                    gap: 0.5,
+                                                                }}
+                                                            >
+                                                                {resolved.map(
+                                                                    (
+                                                                        g,
+                                                                    ) => (
+                                                                        <Chip
+                                                                            key={
+                                                                                g.id
+                                                                            }
+                                                                            label={
+                                                                                g.name
+                                                                            }
+                                                                            size="small"
+                                                                            color="secondary"
+                                                                            sx={categoryPageHiddenSx}
+                                                                        />
+                                                                    ),
+                                                                )}
+                                                            </Box>
+                                                        </Popover>
+                                                    </>
+                                                )}
+                                            </>
+                                        );
+                                    })()}
                                 </Box>
                                 {canEditContent && (() => {
                                     return (

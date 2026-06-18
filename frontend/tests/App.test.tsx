@@ -202,32 +202,10 @@ vi.mock('../src/components/AppShell', () => ({
 }))
 
 vi.mock('../src/components/SortableTileGrid', () => ({
-  default: ({
-    currentImages,
-    currentCategories,
-    onImageClick,
-    onCategoryClick,
-  }: {
-    currentImages: typeof mockImage[]
-    currentCategories: typeof mockCategories
-    onImageClick: (img: typeof mockImage) => void
-    onCategoryClick: (category: (typeof mockCategories)[number]) => void
-  }) => (
-    <>
-      <button type="button" onClick={() => onImageClick(currentImages[0])}>
-        Open image
-      </button>
-      {currentCategories[0] && (
-        <button type="button" onClick={() => onCategoryClick(currentCategories[0])}>
-          Open category
-        </button>
-      )}
-      {currentCategories[0]?.children[0] && (
-        <button type="button" onClick={() => onCategoryClick(currentCategories[0].children[0])}>
-          Open child category
-        </button>
-      )}
-    </>
+  default: ({ currentImages, onImageClick }: { currentImages: typeof mockImage[]; onImageClick: (img: typeof mockImage) => void }) => (
+    <button type="button" onClick={() => onImageClick(currentImages[0])}>
+      Open image
+    </button>
   ),
 }))
 
@@ -433,62 +411,5 @@ describe('App breadcrumbs', () => {
     expect(editButton).toHaveStyle({ opacity: '0.5' })
     expect(shareButton).toHaveStyle({ filter: 'grayscale(100%)' })
     expect(shareButton).toHaveStyle({ opacity: '0.5' })
-  })
-
-  it('applies inherited shading to breadcrumb program and group chips for child categories', () => {
-    mockCategories.splice(0, mockCategories.length, {
-      id: 1,
-      label: 'Parent',
-      parentId: null,
-      children: [
-        {
-          id: 2,
-          label: 'Child',
-          parentId: 1,
-          children: [],
-          images: [],
-          programIds: [],
-          groupIds: [],
-          status: 'active',
-          sortOrder: 0,
-          version: 1,
-          cardImageId: null,
-          metadataExtra: null,
-        },
-      ],
-      images: [],
-      programIds: [1],
-      groupIds: [10],
-      status: 'active',
-      sortOrder: 0,
-      version: 1,
-      cardImageId: null,
-      metadataExtra: null,
-    })
-    mockImage.categoryId = 2
-
-    render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Open category' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Open child category' }))
-
-    const categoryBreadcrumb = screen.getByLabelText('category breadcrumb').closest('div')
-    expect(categoryBreadcrumb).not.toBeNull()
-
-    const categoryProgramChip = within(categoryBreadcrumb as HTMLElement).getByText('Pathology').closest('.MuiChip-root')
-    const categoryGroupChip = within(categoryBreadcrumb as HTMLElement).getByText('Lab A2').closest('.MuiChip-root')
-
-    expect(categoryProgramChip).toHaveStyle({ opacity: '0.6' })
-    expect(categoryGroupChip).toHaveStyle({ opacity: '0.6' })
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
-
-    const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
-    expect(imageBreadcrumb).not.toBeNull()
-
-    const imageProgramChip = within(imageBreadcrumb as HTMLElement).getByText('Pathology').closest('.MuiChip-root')
-    const imageGroupChip = within(imageBreadcrumb as HTMLElement).getByText('Lab A2').closest('.MuiChip-root')
-
-    expect(imageProgramChip).toHaveStyle({ opacity: '0.6' })
-    expect(imageGroupChip).toHaveStyle({ opacity: '0.6' })
   })
 })

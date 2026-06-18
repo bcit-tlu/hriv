@@ -414,11 +414,11 @@ describe('EditCategoryDialog', () => {
       // Should auto-select "Specific programs" when inheritedProgramIds exist
       expect(screen.getByLabelText('Specific programs')).toBeChecked()
 
-      // Inherited programs should render with reduced opacity (not selected as own)
+      // Inherited programs should render at 0.5 opacity (not selected as own)
       const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
       const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
-      expect(chipA).toHaveStyle({ opacity: '0.6' })
-      expect(chipB).toHaveStyle({ opacity: '0.6' })
+      expect(chipA).toHaveStyle({ opacity: '0.5' })
+      expect(chipB).toHaveStyle({ opacity: '0.5' })
       // Both should be filled primary
       expect(chipA).toHaveClass('MuiChip-filled')
       expect(chipB).toHaveClass('MuiChip-filled')
@@ -492,21 +492,6 @@ describe('EditCategoryDialog', () => {
       )
       expect(screen.getByText('Group restriction')).toBeInTheDocument()
       expect(screen.getByLabelText('Specific groups')).toBeChecked()
-    })
-
-    it('renders inherited groups with reduced opacity', () => {
-      render(
-        <EditCategoryDialog
-          open
-          onClose={vi.fn()}
-          onSave={vi.fn()}
-          currentLabel="Child"
-          groups={groups}
-          inheritedGroupIds={[10]}
-        />,
-      )
-
-      expect(screen.getByText('Cohort A').closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' })
     })
 
     it('saves updated groupIds when a group is toggled', async () => {

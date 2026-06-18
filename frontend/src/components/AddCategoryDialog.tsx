@@ -14,8 +14,9 @@ import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { useTheme } from '@mui/material/styles'
 import type { Group, Program } from '../types'
-import { getInheritedRestrictionSx } from '../restrictionStyles'
+import { getGroupChipColors } from '../theme'
 
 const filter = createFilterOptions<string>()
 const EMPTY_IDS: number[] = []
@@ -49,6 +50,8 @@ export default function AddCategoryDialog({
   groups = [],
   inheritedGroupIds = EMPTY_IDS,
 }: AddCategoryDialogProps) {
+  const theme = useTheme()
+  const groupColors = getGroupChipColors(theme.palette.mode)
   const [label, setLabel] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -216,7 +219,7 @@ export default function AddCategoryDialog({
                       variant={selectedProgramIds.has(p.id) || isInheritedOnly ? 'filled' : 'outlined'}
                       onClick={disabled ? undefined : () => toggleProgram(p.id)}
                       disabled={disabled}
-                      sx={getInheritedRestrictionSx(isInheritedOnly)}
+                      sx={isInheritedOnly ? { opacity: 0.5 } : undefined}
                     />
                   )
                 })}
@@ -248,11 +251,32 @@ export default function AddCategoryDialog({
                       key={g.id}
                       label={g.name}
                       size="small"
-                      color={isActive ? 'secondary' : undefined}
+                      color={isSelected ? 'secondary' : undefined}
                       variant={isActive ? 'filled' : 'outlined'}
                       onClick={disabled ? undefined : () => toggleGroup(g.id)}
                       disabled={disabled}
-                      sx={getInheritedRestrictionSx(isInheritedOnly)}
+                      sx={
+                        isInheritedOnly
+                          ? {
+                              ...(disabled
+                                ? {
+                                    bgcolor: theme.palette.action.disabledBackground,
+                                    color: theme.palette.text.disabled,
+                                    opacity: 1,
+                                    '& .MuiChip-label': {
+                                      color: theme.palette.text.disabled,
+                                    },
+                                  }
+                                : {
+                                    bgcolor: groupColors.subtleBg,
+                                    color: groupColors.subtleText,
+                                    '& .MuiChip-label': {
+                                      color: groupColors.subtleText,
+                                    },
+                                  }),
+                            }
+                          : undefined
+                      }
                     />
                   )
                 })}
