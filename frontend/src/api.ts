@@ -692,6 +692,29 @@ export function updateAnnouncement(body: {
     });
 }
 
+export interface ApiChangelogEntry {
+  id: number
+  title: string
+  body: string
+  published_at: string
+  created_at: string
+  updated_at: string
+}
+
+export function fetchChangelogEntries(): Promise<ApiChangelogEntry[]> {
+  return request('/changelog/')
+}
+
+export function createChangelogEntry(body: {
+  title: string
+  body: string
+}): Promise<ApiChangelogEntry> {
+  return request('/changelog/', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 export function updateChangelogEntry(
   id: number,
   body: { title?: string; body?: string },

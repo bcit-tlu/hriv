@@ -19,6 +19,7 @@ import Visibility from "@mui/icons-material/Visibility";
 import type { Category, Group, ImageItem, Program } from "../types";
 import { useColorMode } from "../useColorMode";
 import { getVisibilityColors } from "../theme";
+import { getInheritedRestrictionSx } from "../restrictionStyles";
 import CardImagePickerModal from "./CardImagePickerModal";
 
 function findImageInCategory(cat: Category, imageId: number): ImageItem | null {
@@ -59,6 +60,14 @@ interface CategoryTileProps {
     onEditName?: (category: Category) => void;
     programs: Program[];
     groups?: Group[];
+    /** Program ids restricted by an ancestor, shown when this category has none of its own. */
+    inheritedProgramIds?: number[];
+    /** Group ids restricted by an ancestor, shown when this category has none of its own. */
+    inheritedGroupIds?: number[];
+    /** True when an ancestor category is hidden, cascading visibility to this tile. */
+    parentHidden?: boolean;
+    /** True when this tile's hidden state is inherited rather than set directly. */
+    inheritedHidden?: boolean;
     /** Called when native files are dropped onto this category tile. */
     onDropFiles?: (categoryId: number, files: File[]) => void;
 }
@@ -72,6 +81,8 @@ export default function CategoryTile({
     onEditName,
     programs,
     groups = [],
+    inheritedProgramIds = [],
+    inheritedGroupIds = [],
     onDropFiles,
 }: CategoryTileProps) {
     const { mode } = useColorMode();
@@ -100,12 +111,18 @@ export default function CategoryTile({
     const detailText =
         detailParts.length > 0 ? detailParts.join(" \u00b7 ") : "Empty";
 
-    const programChips = category.programIds
+    const programsInherited =
+        category.programIds.length === 0 && inheritedProgramIds.length > 0;
+    const programChips = (
+        programsInherited ? inheritedProgramIds : category.programIds
+    )
         .map((pid) => programs.find((p) => p.id === pid))
         .filter((p): p is Program => p != null)
         .sort((a, b) => a.name.localeCompare(b.name));
 
-    const groupChips = category.groupIds
+    const groupsInherited =
+        category.groupIds.length === 0 && inheritedGroupIds.length > 0;
+    const groupChips = (groupsInherited ? inheritedGroupIds : category.groupIds)
         .map((gid) => groups.find((g) => g.id === gid))
         .filter((g): g is Group => g != null)
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -300,6 +317,9 @@ export default function CategoryTile({
                                         label={p.name}
                                         size="small"
                                         color="primary"
+                                        sx={getInheritedRestrictionSx(
+                                            programsInherited,
+                                        )}
                                     />
                                 ))}
                             </Box>
@@ -319,6 +339,9 @@ export default function CategoryTile({
                                         label={g.name}
                                         size="small"
                                         color="secondary"
+                                        sx={getInheritedRestrictionSx(
+                                            groupsInherited,
+                                        )}
                                     />
                                 ))}
                             </Box>

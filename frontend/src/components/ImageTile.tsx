@@ -18,6 +18,7 @@ interface ImageTileProps {
     onClick: (image: ImageItem) => void;
     onEditDetails?: (image: ImageItem) => void;
     onToggleVisibility?: (imageId: number) => Promise<void>;
+    categoryHidden?: boolean;
 }
 
 export default function ImageTile({
@@ -25,13 +26,20 @@ export default function ImageTile({
     onClick,
     onEditDetails,
     onToggleVisibility,
+    categoryHidden = false,
 }: ImageTileProps) {
     const { mode } = useColorMode();
     const visColors = getVisibilityColors(mode);
+    const desaturated = !image.active || categoryHidden;
     return (
         <Card
             elevation={2}
-            sx={{ width: "100%", maxWidth: 300, position: "relative" }}
+            sx={{
+                width: "100%",
+                maxWidth: 300,
+                position: "relative",
+                opacity: categoryHidden ? 0.5 : 1,
+            }}
         >
             <Box
                 sx={{
@@ -103,7 +111,7 @@ export default function ImageTile({
                     flexDirection: "column",
                     height: "100%",
                     alignItems: "stretch",
-                    filter: !image.active ? "grayscale(100%)" : "none",
+                    filter: desaturated ? "grayscale(100%)" : "none",
                 }}
             >
                 <CardMedia
