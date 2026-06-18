@@ -49,6 +49,9 @@ import {
     findImageInTree,
     findCategoryPath,
     resolveCategoryPath,
+    getCategoryHiddenStateInTree,
+    getCategoryHiddenStateFromPath,
+    isCategoryHiddenInTree,
 } from "./treeUtils";
 import UploadImageModal from "./components/UploadImageModal";
 import { isAcceptedFile } from "./fileUtils";
@@ -146,15 +149,6 @@ export default function App() {
     useEffect(() => {
         selectedImageRef.current = selectedImage;
     });
-    const inactiveViewerActionSx = useMemo(
-        () =>
-            selectedImage?.active
-                ? undefined
-                : {
-                      filter: "grayscale(100%)",
-                  },
-        [selectedImage?.active],
-    );
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
     const [fileDropCategoryId, setFileDropCategoryId] = useState<number | null>(
@@ -1389,242 +1383,20 @@ export default function App() {
                                             {selectedImage.name}
                                         </Typography>
                                     </MuiBreadcrumbs>
-                                    {(() => {
-                                        const resolved = ancestorProgramIds
-                                            .map((pid) =>
-                                                programs.find(
-                                                    (p) => p.id === pid,
-                                                ),
-                                            )
-                                            .filter(
-                                                (p): p is Program => p != null,
-                                            )
-                                            .sort((a, b) =>
-                                                a.name.localeCompare(b.name),
-                                            );
-                                        if (resolved.length === 0) return null;
-                                        const MAX_INLINE = 2;
-                                        const inline = resolved.slice(
-                                            0,
-                                            MAX_INLINE,
-                                        );
-                                        const overflow =
-                                            resolved.length - MAX_INLINE;
-                                        return (
-                                            <>
-                                                {inline.map((p) => (
-                                                    <Chip
-                                                        key={p.id}
-                                                        label={p.name}
-                                                        size="small"
-                                                        color="primary"
-                                                        sx={
-                                                            selectedImage.active
-                                                                ? undefined
-                                                                : {
-                                                                      filter: "grayscale(100%)",
-                                                                  }
-                                                        }
-                                                    />
-                                                ))}
-                                                {overflow > 0 && (
-                                                    <>
-                                                        <Chip
-                                                            label={`+${overflow}`}
-                                                            size="small"
-                                                            color="primary"
-                                                            variant="outlined"
-                                                            onClick={(e) =>
-                                                                setProgramsPopoverAnchor(
-                                                                    e.currentTarget,
-                                                                )
-                                                            }
-                                                            aria-label={`${overflow} more programs`}
-                                                            sx={{
-                                                                cursor: "pointer",
-                                                                ...(selectedImage.active
-                                                                    ? {}
-                                                                    : {
-                                                                          filter: "grayscale(100%)",
-                                                                      }),
-                                                            }}
-                                                        />
-                                                        <Popover
-                                                            open={
-                                                                programsPopoverAnchor !=
-                                                                null
-                                                            }
-                                                            anchorEl={
-                                                                programsPopoverAnchor
-                                                            }
-                                                            onClose={() =>
-                                                                setProgramsPopoverAnchor(
-                                                                    null,
-                                                                )
-                                                            }
-                                                            anchorOrigin={{
-                                                                vertical:
-                                                                    "bottom",
-                                                                horizontal:
-                                                                    "left",
-                                                            }}
-                                                        >
-                                                            <Box
-                                                                sx={{
-                                                                    p: 1.5,
-                                                                    display:
-                                                                        "flex",
-                                                                    flexDirection:
-                                                                        "column",
-                                                                    gap: 0.5,
-                                                                }}
-                                                            >
-                                                                {resolved.map(
-                                                                    (p) => (
-                                                                        <Chip
-                                                                            key={
-                                                                                p.id
-                                                                            }
-                                                                            label={
-                                                                                p.name
-                                                                            }
-                                                                            size="small"
-                                                                            color="primary"
-                                                                            sx={
-                                                                                selectedImage.active
-                                                                                    ? undefined
-                                                                                    : {
-                                                                                          filter: "grayscale(100%)",
-                                                                                      }
-                                                                            }
-                                                                        />
-                                                                    ),
-                                                                )}
-                                                            </Box>
-                                                        </Popover>
-                                                    </>
-                                                )}
-                                            </>
-                                        );
-                                    })()}
-                                    {(() => {
-                                        const resolved = ancestorGroupIds
-                                            .map((gid) =>
-                                                groups.find(
-                                                    (g) => g.id === gid,
-                                                ),
-                                            )
-                                            .filter(
-                                                (g): g is Group => g != null,
-                                            )
-                                            .sort((a, b) =>
-                                                a.name.localeCompare(b.name),
-                                            );
-                                        if (resolved.length === 0) return null;
-                                        const MAX_INLINE = 2;
-                                        const inline = resolved.slice(
-                                            0,
-                                            MAX_INLINE,
-                                        );
-                                        const overflow =
-                                            resolved.length - MAX_INLINE;
-                                        return (
-                                            <>
-                                                {inline.map((g) => (
-                                                    <Chip
-                                                        key={g.id}
-                                                        label={g.name}
-                                                        size="small"
-                                                        color="secondary"
-                                                        sx={
-                                                            selectedImage.active
-                                                                ? undefined
-                                                                : {
-                                                                      filter: "grayscale(100%)",
-                                                                  }
-                                                        }
-                                                    />
-                                                ))}
-                                                {overflow > 0 && (
-                                                    <>
-                                                        <Chip
-                                                            label={`+${overflow}`}
-                                                            size="small"
-                                                            color="secondary"
-                                                            variant="outlined"
-                                                            onClick={(e) =>
-                                                                setGroupsPopoverAnchor(
-                                                                    e.currentTarget,
-                                                                )
-                                                            }
-                                                            aria-label={`${overflow} more groups`}
-                                                            sx={{
-                                                                cursor: "pointer",
-                                                                ...(selectedImage.active
-                                                                    ? {}
-                                                                    : {
-                                                                          filter: "grayscale(100%)",
-                                                                      }),
-                                                            }}
-                                                        />
-                                                        <Popover
-                                                            open={
-                                                                groupsPopoverAnchor !=
-                                                                null
-                                                            }
-                                                            anchorEl={
-                                                                groupsPopoverAnchor
-                                                            }
-                                                            onClose={() =>
-                                                                setGroupsPopoverAnchor(
-                                                                    null,
-                                                                )
-                                                            }
-                                                            anchorOrigin={{
-                                                                vertical:
-                                                                    "bottom",
-                                                                horizontal:
-                                                                    "left",
-                                                            }}
-                                                        >
-                                                            <Box
-                                                                sx={{
-                                                                    p: 1.5,
-                                                                    display:
-                                                                        "flex",
-                                                                    flexDirection:
-                                                                        "column",
-                                                                    gap: 0.5,
-                                                                }}
-                                                            >
-                                                                {resolved.map(
-                                                                    (g) => (
-                                                                        <Chip
-                                                                            key={
-                                                                                g.id
-                                                                            }
-                                                                            label={
-                                                                                g.name
-                                                                            }
-                                                                            size="small"
-                                                                            color="secondary"
-                                                                            sx={
-                                                                                selectedImage.active
-                                                                                    ? undefined
-                                                                                    : {
-                                                                                          filter: "grayscale(100%)",
-                                                                                      }
-                                                                            }
-                                                                        />
-                                                                    ),
-                                                                )}
-                                                            </Box>
-                                                        </Popover>
-                                                    </>
-                                                )}
-                                            </>
-                                        );
-                                    })()}
+                                    {renderBreadcrumbChips(
+                                        breadcrumbProgramItems,
+                                        "program",
+                                        selectedImage.active
+                                            ? imageViewerCategoryHiddenSx
+                                            : inactiveViewerActionSx,
+                                    )}
+                                    {renderBreadcrumbChips(
+                                        breadcrumbGroupItems,
+                                        "group",
+                                        selectedImage.active
+                                            ? imageViewerCategoryHiddenSx
+                                            : inactiveViewerActionSx,
+                                    )}
                                 </Box>
                                 <Box
                                     sx={{
@@ -1634,45 +1406,66 @@ export default function App() {
                                         alignItems: "center",
                                     }}
                                 >
-                                    {canEditContent && (
-                                        <Tooltip
-                                            title={
-                                                selectedImage.active
-                                                    ? "Visibility: Hide from students"
-                                                    : "Visibility: Show to students"
+                                    {canEditContent &&
+                                        (() => {
+                                            if (imageViewerHiddenByCategory) {
+                                                return (
+                                                    <Button
+                                                        variant="text"
+                                                        startIcon={
+                                                            <VisibilityOff />
+                                                        }
+                                                        disabled
+                                                        aria-label="Visibility: Hidden by category"
+                                                        sx={{
+                                                            "&.Mui-disabled": {
+                                                                color: visColors.inactive,
+                                                            },
+                                                            ...imageViewerCategoryHiddenSx,
+                                                        }}
+                                                    >
+                                                        Hidden by Category
+                                                    </Button>
+                                                );
                                             }
-                                        >
-                                            <IconButton
-                                                size="small"
-                                                onClick={() =>
-                                                    toggleImageVisibility(
-                                                        selectedImage.id,
-                                                    )
-                                                }
-                                                aria-label={
-                                                    selectedImage.active
-                                                        ? "Visibility: Hide from students"
-                                                        : "Visibility: Show to students"
-                                                }
-                                            >
-                                                {selectedImage.active ? (
-                                                    <Visibility
-                                                        sx={{
-                                                            fontSize: 28,
-                                                            color: visColors.active,
+                                            if (!selectedImage.active) {
+                                                return (
+                                                    <Button
+                                                        variant="text"
+                                                        startIcon={
+                                                            <VisibilityOff />
+                                                        }
+                                                        onClick={() => {
+                                                            toggleImageVisibility(
+                                                                selectedImage.id,
+                                                            ).catch(() => {});
                                                         }}
-                                                    />
-                                                ) : (
-                                                    <VisibilityOff
+                                                        aria-label="Visibility: Show to students"
                                                         sx={{
-                                                            fontSize: 28,
                                                             color: visColors.inactive,
+                                                            filter: "grayscale(100%)",
                                                         }}
-                                                    />
-                                                )}
-                                            </IconButton>
-                                        </Tooltip>
-                                    )}
+                                                    >
+                                                        Show Image
+                                                    </Button>
+                                                );
+                                            }
+                                            return (
+                                                <Button
+                                                    variant="text"
+                                                    startIcon={<Visibility />}
+                                                    onClick={() => {
+                                                        toggleImageVisibility(
+                                                            selectedImage.id,
+                                                        ).catch(() => {});
+                                                    }}
+                                                    aria-label="Visibility: Hide from students"
+                                                    color="primary"
+                                                >
+                                                    Hide Image
+                                                </Button>
+                                            );
+                                        })()}
                                     {canEditContent && (
                                         <Tooltip
                                             title={
@@ -2075,204 +1868,16 @@ export default function App() {
                                             },
                                         )}
                                     </MuiBreadcrumbs>
-                                    {(() => {
-                                        const resolved = ancestorProgramIds
-                                            .map((pid) =>
-                                                programs.find(
-                                                    (p) => p.id === pid,
-                                                ),
-                                            )
-                                            .filter(
-                                                (p): p is Program => p != null,
-                                            )
-                                            .sort((a, b) =>
-                                                a.name.localeCompare(b.name),
-                                            );
-                                        if (resolved.length === 0) return null;
-                                        const MAX_INLINE = 2;
-                                        const inline = resolved.slice(
-                                            0,
-                                            MAX_INLINE,
-                                        );
-                                        const overflow =
-                                            resolved.length - MAX_INLINE;
-                                        return (
-                                            <>
-                                                {inline.map((p) => (
-                                                    <Chip
-                                                        key={p.id}
-                                                        label={p.name}
-                                                        size="small"
-                                                        color="primary"
-                                                    />
-                                                ))}
-                                                {overflow > 0 && (
-                                                    <>
-                                                        <Chip
-                                                            label={`+${overflow}`}
-                                                            size="small"
-                                                            color="primary"
-                                                            variant="outlined"
-                                                            onClick={(e) =>
-                                                                setProgramsPopoverAnchor(
-                                                                    e.currentTarget,
-                                                                )
-                                                            }
-                                                            aria-label={`${overflow} more programs`}
-                                                            sx={{
-                                                                cursor: "pointer",
-                                                            }}
-                                                        />
-                                                        <Popover
-                                                            open={
-                                                                programsPopoverAnchor !=
-                                                                null
-                                                            }
-                                                            anchorEl={
-                                                                programsPopoverAnchor
-                                                            }
-                                                            onClose={() =>
-                                                                setProgramsPopoverAnchor(
-                                                                    null,
-                                                                )
-                                                            }
-                                                            anchorOrigin={{
-                                                                vertical:
-                                                                    "bottom",
-                                                                horizontal:
-                                                                    "left",
-                                                            }}
-                                                        >
-                                                            <Box
-                                                                sx={{
-                                                                    p: 1.5,
-                                                                    display:
-                                                                        "flex",
-                                                                    flexDirection:
-                                                                        "column",
-                                                                    gap: 0.5,
-                                                                }}
-                                                            >
-                                                                {resolved.map(
-                                                                    (p) => (
-                                                                        <Chip
-                                                                            key={
-                                                                                p.id
-                                                                            }
-                                                                            label={
-                                                                                p.name
-                                                                            }
-                                                                            size="small"
-                                                                            color="primary"
-                                                                        />
-                                                                    ),
-                                                                )}
-                                                            </Box>
-                                                        </Popover>
-                                                    </>
-                                                )}
-                                            </>
-                                        );
-                                    })()}
-                                    {(() => {
-                                        const resolved = ancestorGroupIds
-                                            .map((gid) =>
-                                                groups.find(
-                                                    (g) => g.id === gid,
-                                                ),
-                                            )
-                                            .filter(
-                                                (g): g is Group => g != null,
-                                            )
-                                            .sort((a, b) =>
-                                                a.name.localeCompare(b.name),
-                                            );
-                                        if (resolved.length === 0) return null;
-                                        const MAX_INLINE = 2;
-                                        const inline = resolved.slice(
-                                            0,
-                                            MAX_INLINE,
-                                        );
-                                        const overflow =
-                                            resolved.length - MAX_INLINE;
-                                        return (
-                                            <>
-                                                {inline.map((g) => (
-                                                    <Chip
-                                                        key={g.id}
-                                                        label={g.name}
-                                                        size="small"
-                                                        color="secondary"
-                                                    />
-                                                ))}
-                                                {overflow > 0 && (
-                                                    <>
-                                                        <Chip
-                                                            label={`+${overflow}`}
-                                                            size="small"
-                                                            color="secondary"
-                                                            variant="outlined"
-                                                            onClick={(e) =>
-                                                                setGroupsPopoverAnchor(
-                                                                    e.currentTarget,
-                                                                )
-                                                            }
-                                                            aria-label={`${overflow} more groups`}
-                                                            sx={{
-                                                                cursor: "pointer",
-                                                            }}
-                                                        />
-                                                        <Popover
-                                                            open={
-                                                                groupsPopoverAnchor !=
-                                                                null
-                                                            }
-                                                            anchorEl={
-                                                                groupsPopoverAnchor
-                                                            }
-                                                            onClose={() =>
-                                                                setGroupsPopoverAnchor(
-                                                                    null,
-                                                                )
-                                                            }
-                                                            anchorOrigin={{
-                                                                vertical:
-                                                                    "bottom",
-                                                                horizontal:
-                                                                    "left",
-                                                            }}
-                                                        >
-                                                            <Box
-                                                                sx={{
-                                                                    p: 1.5,
-                                                                    display:
-                                                                        "flex",
-                                                                    flexDirection:
-                                                                        "column",
-                                                                    gap: 0.5,
-                                                                }}
-                                                            >
-                                                                {resolved.map(
-                                                                    (g) => (
-                                                                        <Chip
-                                                                            key={
-                                                                                g.id
-                                                                            }
-                                                                            label={
-                                                                                g.name
-                                                                            }
-                                                                            size="small"
-                                                                            color="secondary"
-                                                                        />
-                                                                    ),
-                                                                )}
-                                                            </Box>
-                                                        </Popover>
-                                                    </>
-                                                )}
-                                            </>
-                                        );
-                                    })()}
+                                    {renderBreadcrumbChips(
+                                        breadcrumbProgramItems,
+                                        "program",
+                                        categoryPageHiddenSx,
+                                    )}
+                                    {renderBreadcrumbChips(
+                                        breadcrumbGroupItems,
+                                        "group",
+                                        categoryPageHiddenSx,
+                                    )}
                                 </Box>
                                 {canEditContent && (() => {
                                     return (
@@ -2385,7 +1990,6 @@ export default function App() {
                                 }
                                 onImageClick={handleImageClick}
                                 onEditImageDetails={setBrowseEditImage}
-                                onToggleImageVisibility={toggleImageVisibility}
                                 onFilesDrop={handleFilesDropOnGrid}
                                 onGridDragOver={
                                     canEditContent

@@ -722,6 +722,31 @@ export function updateAnnouncement(body: {
     });
 }
 
+// ── Changelog ────────────────────────────────────────────
+
+export interface ApiChangelogEntry {
+  id: number
+  title: string
+  body: string
+  published_at: string
+  created_at: string
+  updated_at: string
+}
+
+export function fetchChangelogEntries(): Promise<ApiChangelogEntry[]> {
+  return request('/changelog/')
+}
+
+export function createChangelogEntry(body: {
+  title: string
+  body: string
+}): Promise<ApiChangelogEntry> {
+  return request('/changelog/', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 export function updateChangelogEntry(
   id: number,
   body: { title?: string; body?: string },
@@ -1238,6 +1263,12 @@ export interface FrontendVersionResponse {
 }
 
 export async function fetchFrontendVersion(): Promise<FrontendVersionResponse> {
+    // Local Vite dev mode (``npm run dev``) does not serve ``/version``,
+    // so skip the request entirely and report ``"dev"`` to avoid
+    // console-noisy 404s during development.
+    if (import.meta.env.MODE === "development") {
+        return { frontend: "dev" };
+    }
     // NB: absolute path, not ``${BASE}/version``. ``BASE`` is
     // ``VITE_API_URL`` (the *backend* base), so if it's ever set to a
     // cross-origin URL (e.g. ``https://api.example.com``) the fetch would

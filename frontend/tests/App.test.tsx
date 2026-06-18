@@ -472,4 +472,105 @@ describe("App breadcrumbs", () => {
             ),
         ).toBeInTheDocument();
     });
+
+    it("reduces opacity for image-view controls when category hidden state is inherited", async () => {
+        mockInitialPath = [
+            {
+                ...mockCategories[0],
+                id: 1,
+                label: "Italian",
+                status: "hidden",
+            },
+            {
+                ...mockCategories[0],
+                id: 2,
+                label: "Gothic",
+                parentId: 1,
+                status: "active",
+            },
+        ];
+
+        render(<App />);
+        await screen.findByText("Gothic");
+        fireEvent.click(screen.getByRole("button", { name: "Open image" }));
+
+        const imageBreadcrumb = screen
+            .getByLabelText("image breadcrumb")
+            .closest("div") as HTMLElement;
+        const programChip = within(imageBreadcrumb)
+            .getByText("Pathology")
+            .closest(".MuiChip-root");
+        const groupChip = within(imageBreadcrumb)
+            .getByText("Lab A2")
+            .closest(".MuiChip-root");
+        const hiddenButton = screen.getByRole("button", {
+            name: "Visibility: Hidden by category",
+        });
+        const editButton = screen.getByRole("button", { name: "Edit Details" });
+        const shareButton = screen.getByText("Share View").closest("button");
+
+        expect(programChip).toHaveStyle({ filter: "grayscale(100%)" });
+        expect(programChip).toHaveStyle({ opacity: "0.5" });
+        expect(groupChip).toHaveStyle({ filter: "grayscale(100%)" });
+        expect(groupChip).toHaveStyle({ opacity: "0.5" });
+        expect(hiddenButton).toHaveStyle({ filter: "grayscale(100%)" });
+        expect(hiddenButton).toHaveStyle({ opacity: "0.5" });
+        expect(editButton).toHaveStyle({ filter: "grayscale(100%)" });
+        expect(editButton).toHaveStyle({ opacity: "0.5" });
+        expect(shareButton).toHaveStyle({ filter: "grayscale(100%)" });
+        expect(shareButton).toHaveStyle({ opacity: "0.5" });
+    });
+
+    it("applies inherited shading to breadcrumb program and group chips for child categories", async () => {
+        mockInitialPath = [
+            {
+                ...mockCategories[0],
+                id: 1,
+                label: "Parent",
+                programIds: [1],
+                groupIds: [10],
+                status: "active",
+            },
+            {
+                ...mockCategories[0],
+                id: 2,
+                label: "Child",
+                parentId: 1,
+                programIds: [],
+                groupIds: [],
+                status: "active",
+            },
+        ];
+
+        render(<App />);
+        await screen.findByText("Child");
+
+        const categoryBreadcrumb = screen
+            .getByLabelText("category breadcrumb")
+            .closest("div") as HTMLElement;
+        const categoryProgramChip = within(categoryBreadcrumb)
+            .getByText("Pathology")
+            .closest(".MuiChip-root");
+        const categoryGroupChip = within(categoryBreadcrumb)
+            .getByText("Lab A2")
+            .closest(".MuiChip-root");
+
+        expect(categoryProgramChip).toHaveStyle({ opacity: "0.6" });
+        expect(categoryGroupChip).toHaveStyle({ opacity: "0.6" });
+
+        fireEvent.click(screen.getByRole("button", { name: "Open image" }));
+
+        const imageBreadcrumb = screen
+            .getByLabelText("image breadcrumb")
+            .closest("div") as HTMLElement;
+        const imageProgramChip = within(imageBreadcrumb)
+            .getByText("Pathology")
+            .closest(".MuiChip-root");
+        const imageGroupChip = within(imageBreadcrumb)
+            .getByText("Lab A2")
+            .closest(".MuiChip-root");
+
+        expect(imageProgramChip).toHaveStyle({ opacity: "0.6" });
+        expect(imageGroupChip).toHaveStyle({ opacity: "0.6" });
+    });
 });
