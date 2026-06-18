@@ -129,15 +129,7 @@ export default function App() {
     useEffect(() => {
         selectedImageRef.current = selectedImage;
     });
-    const inactiveViewerActionSx = useMemo(
-        () =>
-            selectedImage?.active
-                ? undefined
-                : {
-                      filter: "grayscale(100%)",
-                  },
-        [selectedImage?.active],
-    );
+
     const [dialogOpen, setDialogOpen] = useState(false);
     const [uploadOpen, setUploadOpen] = useState(false);
     const openUploadModal = useCallback(() => {
