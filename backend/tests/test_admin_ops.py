@@ -410,6 +410,16 @@ async def test_run_db_export_success(tmp_path) -> None:
         metadata_={}, created_at=now, updated_at=now,
     )]
     source_images = []
+    changelog_entries = [
+        SimpleNamespace(
+            id=1,
+            title="Release 1",
+            body="Body text",
+            published_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+    ]
     announcement = SimpleNamespace(message="", enabled=False, created_at=now, updated_at=now)
 
     groups = []
@@ -421,9 +431,9 @@ async def test_run_db_export_success(tmp_path) -> None:
         result = MagicMock()
         data_map = {
             1: programs, 2: groups, 3: categories, 4: images,
-            5: users, 6: source_images,
+            5: users, 6: source_images, 7: changelog_entries,
         }
-        if call_count <= 6:
+        if call_count <= 7:
             result.scalars.return_value.all.return_value = data_map[call_count]
         else:
             result.scalar_one_or_none.return_value = announcement
@@ -465,6 +475,16 @@ async def test_run_db_export_success(tmp_path) -> None:
     by_id = {p["id"]: p for p in dump["programs"]}
     assert set(by_id) == {1, 2}
     assert "parent_program_id" not in by_id[1]
+    assert dump["changelog_entries"] == [
+        {
+            "id": 1,
+            "title": "Release 1",
+            "body": "Body text",
+            "published_at": now.isoformat(),
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+    ]
 
 
 # ── run_db_import tests ────────────────────────────────────
@@ -638,6 +658,16 @@ def _full_dump() -> dict:
                 "image_id": 1,
             }
         ],
+        "changelog_entries": [
+            {
+                "id": 1,
+                "title": "Release 1",
+                "body": "Body text",
+                "published_at": "2025-01-02T00:00:00+00:00",
+                "created_at": "2025-01-02T00:00:00+00:00",
+                "updated_at": "2025-01-03T00:00:00+00:00",
+            }
+        ],
         "announcement": {"message": "hello", "enabled": True},
     }
 
@@ -658,12 +688,14 @@ async def test_run_db_import_happy_path(tmp_path) -> None:
     assert "Imported" in (task.log or "")
     # Exactly one atomic data-session commit + a handful of status commits.
     assert mock_session.commit.await_count >= 2
+    add_calls = [c.args[0] for c in mock_session.add.call_args_list]
+    assert any(type(obj).__name__ == "ChangelogEntry" for obj in add_calls)
     # The importer unlinks the uploaded file on the `finally` branch.
     assert not input_file.exists()
 
 
 async def test_run_db_import_without_optional_sections(tmp_path) -> None:
-    """`programs`, `source_images`, and `announcement` are optional."""
+    """`programs`, `source_images`, `changelog_entries`, and `announcement` are optional."""
     dump = {
         "users": [{"id": 1, "name": "U", "email": "u@e.com"}],
         "categories": [{"id": 1, "label": "root", "parent_id": None}],
@@ -1312,6 +1344,14 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
         instructors=[SimpleNamespace(id=1)],
         created_at=now, updated_at=now,
     )
+    changelog_entry = SimpleNamespace(
+        id=1,
+        title="Release 1",
+        body="Body text",
+        published_at=now,
+        created_at=now,
+        updated_at=now,
+    )
     announcement = SimpleNamespace(message="", enabled=False, created_at=now, updated_at=now)
     call_count = 0
 
@@ -1319,8 +1359,8 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
         nonlocal call_count
         call_count += 1
         result = MagicMock()
-        data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: []}
-        if call_count <= 6:
+        data_map = {1: [], 2: [group], 3: [], 4: [], 5: [], 6: [], 7: [changelog_entry]}
+        if call_count <= 7:
             rows = data_map[call_count]
             result.scalars.return_value.all.return_value = rows
             result.scalars.return_value.unique.return_value.all.return_value = rows
@@ -1349,3 +1389,4 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
         dump = json.load(f)
     assert dump["groups"][0]["member_ids"] == [2]
     assert dump["groups"][0]["instructor_ids"] == [1]
+    assert dump["changelog_entries"][0]["title"] == "Release 1"

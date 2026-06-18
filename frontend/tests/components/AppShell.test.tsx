@@ -53,6 +53,21 @@ describe("AppShell", () => {
             expect(screen.getByTestId("main-content")).toBeInTheDocument();
         });
 
+        it("renders the notification slot when provided", () => {
+            render(
+                <AppShell
+                    {...makeProps({
+                        notificationSlot: (
+                            <button type="button">Notifications</button>
+                        ),
+                    })}
+                />,
+            );
+            expect(
+                screen.getByRole("button", { name: "Notifications" }),
+            ).toBeInTheDocument();
+        });
+
         it("renders announcement banner when announcement is set", () => {
             render(<AppShell {...makeProps({ announcement: "Maintenance tonight" })} />);
             expect(screen.getByText("Maintenance tonight")).toBeInTheDocument();

@@ -29,6 +29,7 @@ from .models import (
     AdminTask,
     Announcement,
     Category,
+    ChangelogEntry,
     Group,
     Image,
     Program,
@@ -223,6 +224,11 @@ async def run_db_export(task_id: int) -> None:
             result = await session.execute(select(SourceImage).order_by(SourceImage.id))
             source_images = result.scalars().all()
 
+            # Changelog entries
+            await _update_task(session, task, log_line="Exporting changelog entries…", progress=70, check_cancelled=True)
+            result = await session.execute(select(ChangelogEntry).order_by(ChangelogEntry.id))
+            changelog_entries = result.scalars().all()
+
             # Announcement
             await _update_task(session, task, log_line="Exporting announcement…", progress=75, check_cancelled=True)
             result = await session.execute(
@@ -332,6 +338,17 @@ async def run_db_export(task_id: int) -> None:
                     }
                     for s in source_images
                 ],
+                "changelog_entries": [
+                    {
+                        "id": entry.id,
+                        "title": entry.title,
+                        "body": entry.body,
+                        "published_at": dt(entry.published_at),
+                        "created_at": dt(entry.created_at),
+                        "updated_at": dt(entry.updated_at),
+                    }
+                    for entry in changelog_entries
+                ],
                 "announcement": {
                     "message": ann.message if ann else "",
                     "enabled": ann.enabled if ann else False,
@@ -355,7 +372,8 @@ async def run_db_export(task_id: int) -> None:
                 f"{len(dump['categories'])} categories, "
                 f"{len(dump['images'])} images, "
                 f"{len(dump['users'])} users, "
-                f"{len(dump['source_images'])} source images."
+                f"{len(dump['source_images'])} source images, "
+                f"{len(dump['changelog_entries'])} changelog entries."
             )
             await _update_task(
                 session, task,
@@ -486,6 +504,7 @@ async def run_db_import(task_id: int) -> None:
                 await data_session.execute(text("DELETE FROM groups"))
                 await data_session.execute(text("DELETE FROM user_programs"))
                 await data_session.execute(text("DELETE FROM users"))
+                await data_session.execute(text("DELETE FROM changelog_entries"))
                 await data_session.execute(text("DELETE FROM announcements"))
                 await data_session.execute(text("DELETE FROM programs"))
 
@@ -659,6 +678,20 @@ async def run_db_import(task_id: int) -> None:
                     data_session.add(src)
                 await data_session.flush()
 
+                # Import changelog entries
+                await _update_task(status_session, task, log_line="Importing changelog entries…", progress=70)
+                for entry in dump.get("changelog_entries", []):
+                    changelog_entry = ChangelogEntry(
+                        id=entry["id"],
+                        title=entry["title"],
+                        body=entry["body"],
+                        published_at=_parse_dt(entry.get("published_at")),
+                        created_at=_parse_dt(entry.get("created_at")),
+                        updated_at=_parse_dt(entry.get("updated_at")),
+                    )
+                    data_session.add(changelog_entry)
+                await data_session.flush()
+
                 # Import announcement
                 await _update_task(status_session, task, log_line="Importing announcement…", progress=75, check_cancelled=True)
                 ann_data = dump.get("announcement")
@@ -677,7 +710,7 @@ async def run_db_import(task_id: int) -> None:
 
                 # Reset sequences
                 await _update_task(status_session, task, log_line="Resetting sequences…", progress=85)
-                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "source_images"):
+                for tbl in ("programs", "groups", "categories", "images", "users", "announcements", "changelog_entries", "source_images"):
                     await data_session.execute(
                         text(
                             f"SELECT setval('{tbl}_id_seq', "
@@ -695,7 +728,8 @@ async def run_db_import(task_id: int) -> None:
                     f"{len(dump['categories'])} categories, "
                     f"{len(dump['images'])} images, "
                     f"{len(dump['users'])} users, "
-                    f"{len(dump.get('source_images', []))} source images."
+                    f"{len(dump.get('source_images', []))} source images, "
+                    f"{len(dump.get('changelog_entries', []))} changelog entries."
                 )
                 # Do NOT check_cancelled here — data_session.commit() already
                 # succeeded so the import data is permanently persisted.
