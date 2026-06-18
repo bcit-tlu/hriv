@@ -106,6 +106,19 @@ never widen access an ancestor restricts:
   set is prevented (no widening). A symmetric, **non-blocking** advisory appears
   when a category is restricted by both a program and a group.
 
+#### Direct vs inherited restriction emphasis
+
+Anywhere the UI renders **program** or **group** restrictions as chips or lock
+icons, the same emphasis rule applies:
+- **Direct restriction** on the current entity/path segment = normal full-strength
+  primary/secondary treatment.
+- **Inherited restriction** from an ancestor = the same visual treatment at
+  **0.6 opacity**.
+
+This applies to breadcrumb chips, browse tile chips, ManagePage restriction
+chips, inherited-only category dialog chips, and restriction lock icons in
+category pickers / category-management lists.
+
 ### Visibility cascade & indicators (`EditCategoryDialog.test.tsx`, `EditImageModal.test.tsx`, `CategoryPickerSelect.test.tsx`, `ManageCategoriesDialog.test.tsx`)
 
 Category and image visibility status is surfaced in a consistent 3-state pattern
