@@ -399,7 +399,6 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     name: str | None = None
-    pass
     role: str | None = None
     program_ids: list[int] | None = None
     password: str | None = None
