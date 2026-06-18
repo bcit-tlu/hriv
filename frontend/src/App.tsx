@@ -83,10 +83,7 @@ import {
     splitDirectAncestorProgramIds,
 } from "./categoryUtils";
 import { getInheritedRestrictionSx } from "./restrictionStyles";
-import {
-    getSurfaceVariant,
-    getVisibilityColors,
-} from "./theme";
+import { getSurfaceVariant, getVisibilityColors } from "./theme";
 import {
     useNavigationHistory,
     buildNavHistoryState,
@@ -210,7 +207,8 @@ export default function App() {
     } = useBrowseData({ path, currentUser });
 
     const selectedImageCategoryHidden = useMemo(
-        () => getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
+        () =>
+            getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
         [categories, selectedImage?.categoryId],
     );
     const currentCategoryHiddenState = useMemo(
@@ -224,17 +222,16 @@ export default function App() {
         () =>
             selectedImageCategoryHidden.hidden ||
             currentCategoryHiddenState.hidden,
-        [
-            selectedImageCategoryHidden.hidden,
-            currentCategoryHiddenState.hidden,
-        ],
+        [selectedImageCategoryHidden.hidden, currentCategoryHiddenState.hidden],
     );
     const categoryPageHiddenSx = useMemo(
         () =>
             currentCategoryHiddenState.hidden
                 ? {
                       filter: "grayscale(100%)",
-                      ...(currentCategoryInheritedHidden ? { opacity: 0.5 } : {}),
+                      ...(currentCategoryInheritedHidden
+                          ? { opacity: 0.5 }
+                          : {}),
                   }
                 : undefined,
         [currentCategoryHiddenState.hidden, currentCategoryInheritedHidden],
@@ -245,14 +242,9 @@ export default function App() {
                 ? undefined
                 : {
                       filter: "grayscale(100%)",
-                      ...(imageViewerHiddenByCategory
-                          ? { opacity: 0.5 }
-                          : {}),
+                      ...(imageViewerHiddenByCategory ? { opacity: 0.5 } : {}),
                   },
-        [
-            selectedImage?.active,
-            imageViewerHiddenByCategory,
-        ],
+        [selectedImage?.active, imageViewerHiddenByCategory],
     );
     const imageViewerCategoryHiddenSx = useMemo(
         () =>
@@ -262,14 +254,13 @@ export default function App() {
                       opacity: 0.5,
                   }
                 : undefined,
-        [
-            imageViewerHiddenByCategory,
-        ],
+        [imageViewerHiddenByCategory],
     );
     const breadcrumbProgramItems = useMemo(() => {
-        const split = path.length > 0
-            ? splitDirectAncestorProgramIds(path)
-            : { direct: ancestorProgramIds, ancestor: [] };
+        const split =
+            path.length > 0
+                ? splitDirectAncestorProgramIds(path)
+                : { direct: ancestorProgramIds, ancestor: [] };
         return [
             ...split.direct.map((id) => ({ id, inherited: false })),
             ...split.ancestor.map((id) => ({ id, inherited: true })),
@@ -278,13 +269,19 @@ export default function App() {
                 const program = programs.find((p) => p.id === item.id);
                 return program ? { ...item, name: program.name } : null;
             })
-            .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
+            .filter(
+                (
+                    item,
+                ): item is { id: number; name: string; inherited: boolean } =>
+                    item != null,
+            )
             .sort((a, b) => a.name.localeCompare(b.name));
     }, [ancestorProgramIds, path, programs]);
     const breadcrumbGroupItems = useMemo(() => {
-        const split = path.length > 0
-            ? splitDirectAncestorGroupIds(path)
-            : { direct: ancestorGroupIds, ancestor: [] };
+        const split =
+            path.length > 0
+                ? splitDirectAncestorGroupIds(path)
+                : { direct: ancestorGroupIds, ancestor: [] };
         return [
             ...split.direct.map((id) => ({ id, inherited: false })),
             ...split.ancestor.map((id) => ({ id, inherited: true })),
@@ -293,7 +290,12 @@ export default function App() {
                 const group = groups.find((g) => g.id === item.id);
                 return group ? { ...item, name: group.name } : null;
             })
-            .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
+            .filter(
+                (
+                    item,
+                ): item is { id: number; name: string; inherited: boolean } =>
+                    item != null,
+            )
             .sort((a, b) => a.name.localeCompare(b.name));
     }, [ancestorGroupIds, groups, path]);
     const renderBreadcrumbChips = (
@@ -306,20 +308,17 @@ export default function App() {
         const MAX_INLINE = 2;
         const inline = items.slice(0, MAX_INLINE);
         const overflow = items.length - MAX_INLINE;
-        const color = kind === "program" ? ("primary" as const) : ("secondary" as const);
+        const color =
+            kind === "program" ? ("primary" as const) : ("secondary" as const);
         const anchor =
-            kind === "program"
-                ? programsPopoverAnchor
-                : groupsPopoverAnchor;
+            kind === "program" ? programsPopoverAnchor : groupsPopoverAnchor;
         const setAnchor =
             kind === "program"
                 ? setProgramsPopoverAnchor
                 : setGroupsPopoverAnchor;
 
         const chipSx = (inherited: boolean) =>
-            inherited
-                ? getInheritedRestrictionSx(true, stateSx)
-                : stateSx;
+            inherited ? getInheritedRestrictionSx(true, stateSx) : stateSx;
 
         return (
             <>
@@ -1114,9 +1113,10 @@ export default function App() {
                     <NotificationMenu
                         userEmail={currentUser.email}
                         serverLastReadAt={
-                            typeof currentUser.metadataExtra?.changelog_last_read_at ===
-                            "string"
-                                ? currentUser.metadataExtra.changelog_last_read_at
+                            typeof currentUser.metadataExtra
+                                ?.changelog_last_read_at === "string"
+                                ? currentUser.metadataExtra
+                                      .changelog_last_read_at
                                 : null
                         }
                         frontendVersion={frontendVersion}
@@ -1804,17 +1804,37 @@ export default function App() {
                                     </Typography>
                                 )}
                                 {selectedImage.note && (
-                                    <Box component="div" sx={{ display: "flex", alignItems: "flex-start", gap: 1, mt: 1, width: '100%' }}>
+                                    <Box
+                                        component="div"
+                                        sx={{
+                                            display: "flex",
+                                            alignItems: "flex-start",
+                                            gap: 1,
+                                            mt: 1,
+                                            width: "100%",
+                                        }}
+                                    >
                                         <Typography
                                             variant="body2"
                                             color="text.secondary"
                                             component="div"
-                                            sx={{ whiteSpace: 'nowrap' }}
+                                            sx={{ whiteSpace: "nowrap" }}
                                         >
                                             <strong>Note:&nbsp;</strong>
                                         </Typography>
-                                        <Box sx={{ flex: '1 1 60%', minWidth: 0, maxWidth: { xs: '100%', sm: '60%' } }}>
-                                            <NoteDisplay note={selectedImage.note} />
+                                        <Box
+                                            sx={{
+                                                flex: "1 1 60%",
+                                                minWidth: 0,
+                                                maxWidth: {
+                                                    xs: "100%",
+                                                    sm: "60%",
+                                                },
+                                            }}
+                                        >
+                                            <NoteDisplay
+                                                note={selectedImage.note}
+                                            />
                                         </Box>
                                     </Box>
                                 )}
@@ -2170,88 +2190,128 @@ export default function App() {
                                         );
                                     })()}
                                 </Box>
-                                {canEditContent && (() => {
-                                    return (
-                                    <Box
-                                        sx={{
-                                            display: "flex",
-                                            gap: 2,
-                                            flexShrink: 0,
-                                            alignItems: "center",
-                                        }}
-                                    >
-                                        {path.length > 0 && (() => {
-                                            const current = path[path.length - 1];
-                                            const isDirectlyHidden = current.status === "hidden";
-                                            const ancestorHidden = path.slice(0, -1).some((p) => p.status === "hidden");
-                                            const inheritedHidden = !isDirectlyHidden && ancestorHidden;
-                                            if (inheritedHidden) {
-                                                return (
-                                                    <Button
-                                                        variant="text"
-                                                        startIcon={<VisibilityOff />}
-                                                        disabled
-                                                        aria-label="Visibility: Hidden by parent category"
-                                                        sx={{
-                                                            "&.Mui-disabled": { color: visColors.inactive },
-                                                            ...categoryPageHiddenSx,
-                                                        }}
-                                                    >
-                                                        Hidden by Parent
-                                                    </Button>
-                                                );
-                                            }
-                                            if (isDirectlyHidden) {
-                                                return (
-                                                    <Button
-                                                        variant="text"
-                                                        startIcon={<VisibilityOff />}
-                                                        onClick={() => toggleCategoryVisibility(current.id)}
-                                                        aria-label="Visibility: Show category"
-                                                        sx={{ color: visColors.inactive, filter: "grayscale(100%)" }}
-                                                    >
-                                                        Show Category
-                                                    </Button>
-                                                );
-                                            }
-                                            return (
-                                                    <Button
-                                                        variant="text"
-                                                        startIcon={<Visibility />}
-                                                        onClick={() => toggleCategoryVisibility(current.id)}
-                                                        aria-label="Visibility: Hide category"
-                                                        color="primary"
-                                                    >
-                                                        Hide Category
-                                                </Button>
-                                            );
-                                        })()}
-                                        {path.length < MAX_DEPTH && (
-                                            <Button
-                                                variant="outlined"
-                                                startIcon={
-                                                    <CreateNewFolderIcon />
-                                                }
-                                                onClick={() =>
-                                                    setAddCatOpen(true)
-                                                }
-                                                sx={categoryPageHiddenSx}
+                                {canEditContent &&
+                                    (() => {
+                                        return (
+                                            <Box
+                                                sx={{
+                                                    display: "flex",
+                                                    gap: 2,
+                                                    flexShrink: 0,
+                                                    alignItems: "center",
+                                                }}
                                             >
-                                                Add Category
-                                            </Button>
-                                        )}
-                                        <Button
-                                            variant="contained"
-                                            startIcon={
-                                                <AddPhotoAlternateIcon />
-                                            }
-                                            onClick={openUploadModal}
-                                        >
-                                            Add Images
-                                        </Button>
-                                    </Box>
-                                    );
-                                })()}
+                                                {path.length > 0 &&
+                                                    (() => {
+                                                        const current =
+                                                            path[
+                                                                path.length - 1
+                                                            ];
+                                                        const isDirectlyHidden =
+                                                            current.status ===
+                                                            "hidden";
+                                                        const ancestorHidden =
+                                                            path
+                                                                .slice(0, -1)
+                                                                .some(
+                                                                    (p) =>
+                                                                        p.status ===
+                                                                        "hidden",
+                                                                );
+                                                        const inheritedHidden =
+                                                            !isDirectlyHidden &&
+                                                            ancestorHidden;
+                                                        if (inheritedHidden) {
+                                                            return (
+                                                                <Button
+                                                                    variant="text"
+                                                                    startIcon={
+                                                                        <VisibilityOff />
+                                                                    }
+                                                                    disabled
+                                                                    aria-label="Visibility: Hidden by parent category"
+                                                                    sx={{
+                                                                        "&.Mui-disabled":
+                                                                            {
+                                                                                color: visColors.inactive,
+                                                                            },
+                                                                        ...categoryPageHiddenSx,
+                                                                    }}
+                                                                >
+                                                                    Hidden by
+                                                                    Parent
+                                                                </Button>
+                                                            );
+                                                        }
+                                                        if (isDirectlyHidden) {
+                                                            return (
+                                                                <Button
+                                                                    variant="text"
+                                                                    startIcon={
+                                                                        <VisibilityOff />
+                                                                    }
+                                                                    onClick={() =>
+                                                                        toggleCategoryVisibility(
+                                                                            current.id,
+                                                                        )
+                                                                    }
+                                                                    aria-label="Visibility: Show category"
+                                                                    sx={{
+                                                                        color: visColors.inactive,
+                                                                        filter: "grayscale(100%)",
+                                                                    }}
+                                                                >
+                                                                    Show
+                                                                    Category
+                                                                </Button>
+                                                            );
+                                                        }
+                                                        return (
+                                                            <Button
+                                                                variant="text"
+                                                                startIcon={
+                                                                    <Visibility />
+                                                                }
+                                                                onClick={() =>
+                                                                    toggleCategoryVisibility(
+                                                                        current.id,
+                                                                    )
+                                                                }
+                                                                aria-label="Visibility: Hide category"
+                                                                color="primary"
+                                                            >
+                                                                Hide Category
+                                                            </Button>
+                                                        );
+                                                    })()}
+                                                {path.length < MAX_DEPTH && (
+                                                    <Button
+                                                        variant="outlined"
+                                                        startIcon={
+                                                            <CreateNewFolderIcon />
+                                                        }
+                                                        onClick={() =>
+                                                            setAddCatOpen(true)
+                                                        }
+                                                        sx={
+                                                            categoryPageHiddenSx
+                                                        }
+                                                    >
+                                                        Add Category
+                                                    </Button>
+                                                )}
+                                                <Button
+                                                    variant="contained"
+                                                    startIcon={
+                                                        <AddPhotoAlternateIcon />
+                                                    }
+                                                    onClick={openUploadModal}
+                                                >
+                                                    Add Images
+                                                </Button>
+                                            </Box>
+                                        );
+                                    })()}
                             </Box>
 
                             {/* Tile grid */}
@@ -2515,7 +2575,9 @@ export default function App() {
                                           programIds:
                                               programIds ?? p.programIds,
                                           groupIds: groupIds ?? p.groupIds,
-                                          ...(status !== undefined ? { status } : {}),
+                                          ...(status !== undefined
+                                              ? { status }
+                                              : {}),
                                       }
                                     : p,
                             ),
@@ -2531,7 +2593,10 @@ export default function App() {
                 currentGroupIds={editCategoryContext.freshGroupIds}
                 inheritedGroupIds={editCategoryContext.inheritedGroupIds}
                 categoryStatus={editNameCategory?.status}
-                ancestorHidden={isCategoryHiddenInTree(categories, editNameCategory?.parentId)}
+                ancestorHidden={isCategoryHiddenInTree(
+                    categories,
+                    editNameCategory?.parentId,
+                )}
                 categoryId={editNameCategory?.id}
             />
 

@@ -291,11 +291,12 @@ class ImageBase(BaseModel):
     height: int | None = None
     file_size: float | None = None
 
-    _validate_note = field_validator("note", mode="before")(_validate_note_value)
 
 
 class ImageCreate(ImageBase):
     pass
+
+    _validate_note = field_validator("note", mode="before")(_validate_note_value)
 
 class ImageUpdate(BaseModel):
     name: str | None = None
@@ -398,7 +399,7 @@ class UserCreate(UserBase):
 
 class UserUpdate(BaseModel):
     name: str | None = None
-    email: str | None = None
+    pass
     role: str | None = None
     program_ids: list[int] | None = None
     password: str | None = None

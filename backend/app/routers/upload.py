@@ -51,6 +51,10 @@ async def upload_source_image(
             # Ensure the source images directory exists
             os.makedirs(settings.source_images_dir, exist_ok=True)
 
+            # Validate note length early (before writing large files to disk)
+            if note is not None and isinstance(note, str) and len(note) > 500:
+                raise HTTPException(status_code=400, detail="Note must be 500 characters or fewer")
+
             # Generate a unique filename to avoid collisions
             ext = os.path.splitext(file.filename)[1] or ".bin"
             unique_name = f"{uuid.uuid4().hex}{ext}"
@@ -86,10 +90,6 @@ async def upload_source_image(
             file_size = os.path.getsize(stored_path)
 
             # Create the source image record
-            # Validate note length
-            if note is not None and isinstance(note, str) and len(note) > 500:
-                raise HTTPException(status_code=400, detail="Note must be 500 characters or fewer")
-
             src = SourceImage(
                 original_filename=file.filename,
                 stored_path=stored_path,
