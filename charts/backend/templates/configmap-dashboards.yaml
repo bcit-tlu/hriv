@@ -1,0 +1,16 @@
+{{- if .Values.observability.grafanaDashboards.enabled }}
+{{- $files := .Files.Glob "observability/dashboards/*.json" }}
+{{- range $path, $content := $files }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "hriv-backend.fullname" $ }}-dashboard-{{ $path | base | trimSuffix ".json" | lower | replace " " "-" }}
+  labels:
+    {{- include "hriv-backend.labels" $ | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  {{ $path | base }}: |
+{{ $content | toString | indent 4 }}
+{{- end }}
+{{- end }}

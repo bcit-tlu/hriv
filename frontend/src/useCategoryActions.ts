@@ -32,6 +32,8 @@ export interface UseCategoryActionsDeps {
     >;
 }
 
+type CategoryStatusUpdate = "active" | "hidden";
+
 export function useCategoryActions({
     categories,
     uncategorizedImages,
@@ -145,12 +147,14 @@ export function useCategoryActions({
             newLabel: string,
             programIds?: number[],
             groupIds?: number[],
+            status?: CategoryStatusUpdate,
         ) => {
             const body: Parameters<typeof apiUpdateCategory>[1] = {
                 label: newLabel,
             };
             if (programIds !== undefined) body.program_ids = programIds;
             if (groupIds !== undefined) body.group_ids = groupIds;
+            if (status !== undefined) body.status = status;
             const catPath = findCategoryPath(categories, categoryId);
             const version = catPath?.at(-1)?.version;
             const updated = await apiUpdateCategory(categoryId, body, version);
@@ -167,17 +171,29 @@ export function useCategoryActions({
             try {
                 const catPath = findCategoryPath(categories, categoryId);
                 const current = catPath?.[catPath.length - 1];
-                await apiUpdateCategory(categoryId, {
-                    status:
-                        current?.status === "hidden" ? "active" : "hidden",
+                const newStatus: CategoryStatusUpdate =
+                    current?.status === "hidden" ? "active" : "hidden";
+                const updated = await apiUpdateCategory(categoryId, {
+                    status: newStatus,
                 }, current?.version);
                 await loadCategories();
+                setPath((prev) =>
+                    prev.map((p) =>
+                        p.id === categoryId
+                            ? {
+                                  ...p,
+                                  status: updated.status ?? newStatus,
+                                  version: updated.version,
+                              }
+                            : p,
+                    ),
+                );
             } catch (err) {
                 console.error("Failed to toggle category visibility", err);
                 setErrorSnack(userMessage(err, "Failed to toggle category visibility."));
             }
         },
-        [categories, loadCategories, setErrorSnack],
+        [categories, loadCategories, setErrorSnack, setPath],
     );
 
     const reorderCategoriesInline = useCallback(

@@ -46,6 +46,7 @@ export interface User {
   group_ids: number[]
   group_names: string[]
   lastAccess?: string | null
+  metadataExtra?: Record<string, unknown> | null
 }
 
 export interface Program {

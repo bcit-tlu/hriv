@@ -162,6 +162,33 @@ class AnnouncementUpdate(BaseModel):
     enabled: bool | None = None
 
 
+# ── Changelog ────────────────────────────────────────────
+
+class ChangelogEntryOut(BaseModel):
+    id: int
+    title: str
+    body: str
+    published_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ChangelogEntryCreate(BaseModel):
+    title: str
+    body: str
+
+
+class ChangelogEntryUpdate(BaseModel):
+    title: str | None = None
+    body: str | None = None
+
+
+class ChangelogMarkReadResponse(BaseModel):
+    changelog_last_read_at: str
+
+
 # ── Category ──────────────────────────────────────────────
 
 class CategoryWarning(BaseModel):

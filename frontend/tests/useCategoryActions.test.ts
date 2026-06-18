@@ -299,6 +299,42 @@ describe("useCategoryActions", () => {
             expect(deps.loadCategories).toHaveBeenCalled();
         });
 
+        it("updates the matching path segment via setPath updater", async () => {
+            const other = makeCategory({ id: 1, label: "Other", status: "active", version: 3 });
+            const target = makeCategory({ id: 5, label: "Target", status: "active", version: 1 });
+            const deps = makeDeps({
+                categories: [other, target],
+                path: [other, target],
+            });
+            mockUpdateCategory.mockResolvedValue({
+                id: 5,
+                label: "Target",
+                parent_id: null,
+                program_ids: [],
+                group_ids: [],
+                status: "hidden",
+                sort_order: 0,
+                version: 2,
+                metadata_extra: null,
+                created_at: "",
+                updated_at: "",
+            });
+            const { result } = renderHook(() => useCategoryActions(deps));
+
+            await act(async () => {
+                await result.current.toggleCategoryVisibility(5);
+            });
+
+            expect(deps.setPath).toHaveBeenCalledTimes(1);
+            const setPathCall = (deps.setPath as ReturnType<typeof vi.fn>).mock.calls[0][0];
+            const newPath = setPathCall([other, target]);
+
+            expect(newPath).toEqual([
+                other,
+                { ...target, status: "hidden", version: 2 },
+            ]);
+        });
+
         it("toggles from hidden to active", async () => {
             const cat = makeCategory({ id: 5, status: "hidden" });
             const deps = makeDeps({ categories: [cat] });

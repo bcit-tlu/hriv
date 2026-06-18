@@ -106,6 +106,77 @@ never widen access an ancestor restricts:
   set is prevented (no widening). A symmetric, **non-blocking** advisory appears
   when a category is restricted by both a program and a group.
 
+#### Direct vs inherited restriction emphasis
+
+Anywhere the UI renders **program** or **group** restrictions as chips or lock
+icons, the same emphasis rule applies:
+- **Direct restriction** on the current entity/path segment = normal full-strength
+  primary/secondary treatment.
+- **Inherited restriction** from an ancestor = the same visual treatment at
+  **0.6 opacity**.
+
+This applies to breadcrumb chips, browse tile chips, ManagePage restriction
+chips, inherited-only category dialog chips, and restriction lock icons in
+category pickers / category-management lists.
+
+### Visibility cascade & indicators (`EditCategoryDialog.test.tsx`, `EditImageModal.test.tsx`, `CategoryPickerSelect.test.tsx`, `ManageCategoriesDialog.test.tsx`)
+
+Category and image visibility status is surfaced in a consistent 3-state pattern
+across all editor surfaces. Visibility toggles are **deferred** (local state
+committed on Save) in the edit modals.
+
+#### Category visibility — 3-state button (breadcrumb bar, EditCategoryDialog)
+
+| State | Button | Behaviour |
+|---|---|---|
+| Visible | Primary "Hide Category" | Clickable — toggles status |
+| Directly hidden | Grey "Show Category" | Clickable — toggles status |
+| Inherited from parent | Disabled "Hidden by Parent" | Not clickable |
+
+- **Given** a category whose ancestor is hidden, **When** the breadcrumb bar
+  renders, **Then** the visibility button shows "Hidden by Parent" and is
+  disabled; "Add Category" and "Add Images" buttons are desaturated
+  (`grayscale(100%)`).
+- **EditCategoryDialog** visibility button uses local state; the actual
+  `status` change is committed only when Save is pressed.
+
+#### Image visibility — 3-state button (EditImageModal, Image Viewer header)
+
+| State | Button | Behaviour |
+|---|---|---|
+| Active | Primary "Hide Image" | Clickable — toggles `active` locally |
+| Directly hidden | Grey "Show Image" | Clickable — toggles `active` locally |
+| Category hidden | Disabled "Hidden by Category" | Not clickable |
+
+- `categoryHidden` is computed reactively inside `EditImageForm` via
+  `isCategoryHiddenInTree(categories, categoryId)`, so it updates when the
+  user changes the category in the form.
+- The Image Viewer header buttons ("Edit Details", "Share View") desaturate
+  when the image's category is hidden.
+
+#### Tile desaturation
+
+- **Given** a category or image tile whose parent category is hidden, **When**
+  the grid renders, **Then** the tile is desaturated (`grayscale(100%)`).
+- Parent visibility overrides child: if a parent is hidden, child tiles always
+  appear desaturated regardless of their own status.
+
+#### ManagePage table row desaturation
+
+- **Given** an image row in the ManagePage table, **When** the image is
+  individually hidden **or** its category is hidden, **Then** the row
+  (including thumbnail) is dimmed via `data-dimmed` attribute; the visibility
+  Switch is disabled when hidden by category.
+
+#### Category dropdowns (CategoryPickerSelect, ManageCategoriesDialog)
+
+- Categories inherit visibility from ancestors. **Given** a child category
+  whose ancestor is hidden, **When** the dropdown renders, **Then**:
+  - `CategoryPickerSelect`: disabled `VisibilityOff` icon at 0.5 opacity,
+    dimmed text, dimmed delete icon.
+  - `ManageCategoriesDialog`: disabled `VisibilityOff` icon with "Hidden by
+    parent category" tooltip, dimmed text, dimmed delete icon.
+
 ### Category picker & direct image counts (`CategoryPickerSelect.test.tsx`)
 
 - `CategoryPickerSelect` flattens the tree into an indented list and shows each

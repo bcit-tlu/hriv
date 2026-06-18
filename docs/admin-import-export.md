@@ -70,7 +70,8 @@ This means a mid-import failure rolls back *all* data changes (via
 
 **Export** (`run_db_export`) writes a JSON document containing: `programs`,
 `groups`, `categories` (with `program_ids` and `group_ids`), `images`,
-`source_images`, `users` (with program memberships), and the `announcement`.
+`source_images`, `users` (with program memberships), `changelog_entries`, and
+the `announcement`.
 
 Each exported **group** carries `name`, `description`, `created_by_user_id`,
 `member_ids`, and `instructor_ids`.
@@ -83,7 +84,7 @@ matters because of foreign keys.
   ```
   source_images → images → category_groups → category_programs → categories →
   group_members → group_instructors → groups → user_programs → users →
-  announcements → programs
+  changelog_entries → announcements → programs
   ```
 
 - **Insert order** (parents before junctions; groups after users because
@@ -91,13 +92,14 @@ matters because of foreign keys.
 
   ```
   programs → users → groups → categories (restoring category↔program and
-  category↔group links) → images → source_images → announcement
+  category↔group links) → images → source_images → changelog_entries →
+  announcement
   ```
 
 - **Sequence reset.** After import, PostgreSQL sequences are reset to
   `max(id) + 1` so subsequent inserts don't collide. Sequences reset:
   `programs`, `groups`, `categories`, `images`, `users`, `announcements`,
-  `source_images`.
+  `changelog_entries`, `source_images`.
 
 > HRIV is **not** in production and has no legacy export archives. Imports do not
 > need to support older export formats — backward-compat code can be removed

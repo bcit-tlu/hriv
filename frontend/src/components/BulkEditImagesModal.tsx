@@ -12,6 +12,7 @@ import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { isCategoryHiddenInTree } from '../treeUtils'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import type { Category, Group, Program } from '../types'
 
@@ -32,6 +33,8 @@ interface BulkEditImagesModalProps {
   onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
   onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
+  /** True when ALL selected images are in hidden categories (disables visibility switch). */
+  allCategoryHidden?: boolean
 }
 
 export default function BulkEditImagesModal({
@@ -46,6 +49,7 @@ export default function BulkEditImagesModal({
   onAddCategory,
   onEditCategory,
   onToggleVisibility,
+  allCategoryHidden = false,
 }: BulkEditImagesModalProps) {
   const [categoryId, setCategoryId] = useState<number | null>(null)
   const [categoryChanged, setCategoryChanged] = useState(false)
@@ -57,6 +61,13 @@ export default function BulkEditImagesModal({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const nextCategoryHidden = categoryChanged && categoryId != null
+    ? isCategoryHiddenInTree(categories, categoryId)
+    : false
+  const visibilityDisabled = categoryChanged ? nextCategoryHidden : allCategoryHidden
+  const visibilityLabel = visibilityDisabled
+    ? 'Visibility (hidden by category)'
+    : 'Visibility (visible to students)'
 
   const resetForm = useCallback(() => {
     setCategoryId(null)
@@ -180,9 +191,10 @@ export default function BulkEditImagesModal({
                 setActive(e.target.checked)
                 setActiveChanged(true)
               }}
+              disabled={visibilityDisabled}
             />
           }
-          label="Visibility (visible to students)"
+          label={visibilityLabel}
         />
 
         <Divider />

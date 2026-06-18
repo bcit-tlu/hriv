@@ -68,6 +68,11 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 - backend: `poetry run pytest tests/test_router_announcement.py`
 - frontend: `npm test -- useAnnouncementModal AnnouncementBanner`
 
+### Changed changelog notifications
+- backend: `poetry run pytest tests/test_router_changelog.py`
+- frontend: `npm test -- NotificationMenu ChangelogAdmin api AppShell`
+- If the migration changed too, also run: `poetry run pytest tests/test_database.py tests/test_migrations_bootstrap.py`
+
 ### Changed maintenance mode / middleware / rate limiting
 - backend: `poetry run pytest tests/test_maintenance.py tests/test_maintenance_middleware.py tests/test_middleware.py tests/test_rate_limit.py`
 - frontend: `npm test -- MaintenanceBanner`
@@ -76,6 +81,13 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 - backend: `poetry run pytest tests/test_migrations_bootstrap.py tests/test_migration_role_helpers.py tests/test_database.py`
 - Apply locally: `DATABASE_URL=... poetry run python -m app.migrations_bootstrap`.
 - See `backend/README.md` (Database migrations).
+
+### Changed observability / tracing (OTel)
+- backend: `poetry run pytest tests/test_otel_bootstrap.py tests/test_tracing.py`
+- If changing span attribute conventions or error recording in routers, also run
+  the relevant router test (e.g. `tests/test_router_bulk_import.py` for bulk
+  import spans, `tests/test_router_images.py` for image spans).
+- See [observability-conventions.md](observability-conventions.md).
 
 ### Changed Helm charts
 - lint: `for chart in charts/*/; do helm lint "$chart"; done`

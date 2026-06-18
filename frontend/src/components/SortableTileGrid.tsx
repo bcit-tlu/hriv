@@ -18,6 +18,8 @@ import type { Draggable } from "@dnd-kit/abstract";
 import type { DragEndEvent, DragStartEvent } from "@dnd-kit/react";
 
 import type { Category, Group, ImageItem, Program } from "../types";
+import { narrowGroupIds, narrowProgramIds } from "../categoryUtils";
+import { getCategoryHiddenStateFromPath } from "../treeUtils";
 import CategoryTile from "./CategoryTile";
 import ImageTile from "./ImageTile";
 import FileDropZone from "./FileDropZone";
@@ -182,7 +184,6 @@ export interface SortableTileGridProps {
     onCategoryClick: (cat: Category) => void;
     onMoveCategory?: (cat: Category) => void;
     onSetCardImage?: (categoryId: number, imageId: number | null) => void;
-    onToggleCategoryVisibility?: (categoryId: number) => Promise<void>;
     onEditCategoryName?: (cat: Category) => void;
     onDropImageOnCategory?: (imageId: number, categoryId: number) => void;
     onDropCategoryOnCategory?: (
@@ -193,8 +194,6 @@ export interface SortableTileGridProps {
 
     onImageClick: (img: ImageItem) => void;
     onEditImageDetails?: (img: ImageItem) => void;
-    onToggleImageVisibility?: (imageId: number) => Promise<void>;
-
     onFilesDrop: (files: File[]) => void;
     onGridDragOver?: React.DragEventHandler;
     onGridDrop?: React.DragEventHandler;
@@ -215,14 +214,12 @@ export default function SortableTileGrid({
     onCategoryClick,
     onMoveCategory,
     onSetCardImage,
-    onToggleCategoryVisibility,
     onEditCategoryName,
     onDropImageOnCategory,
     onDropCategoryOnCategory,
     onDropFilesOnCategory,
     onImageClick,
     onEditImageDetails,
-    onToggleImageVisibility,
     onFilesDrop,
     onGridDragOver,
     onGridDrop,
@@ -236,6 +233,13 @@ export default function SortableTileGrid({
                 : currentImages,
         [path.length, uncategorizedImages, currentImages],
     );
+
+    const pathHiddenState = useMemo(
+        () => getCategoryHiddenStateFromPath(path),
+        [path],
+    );
+    const inheritedProgramIds = useMemo(() => narrowProgramIds(path), [path]);
+    const inheritedGroupIds = useMemo(() => narrowGroupIds(path), [path]);
 
     const [items, setItems] = useState<TileItem[]>([]);
     const [activeItem, setActiveItem] = useState<TileItem | null>(null);
@@ -429,12 +433,13 @@ export default function SortableTileGrid({
                 onClick={onCategoryClick}
                 onMove={canEditContent ? onMoveCategory : undefined}
                 onSetCardImage={canEditContent ? onSetCardImage : undefined}
-                onToggleVisibility={
-                    canEditContent ? onToggleCategoryVisibility : undefined
-                }
                 onEditName={canEditContent ? onEditCategoryName : undefined}
                 programs={programs}
+                inheritedProgramIds={inheritedProgramIds}
                 groups={groups}
+                inheritedGroupIds={inheritedGroupIds}
+                parentHidden={pathHiddenState.hidden}
+                inheritedHidden={pathHiddenState.hidden}
                 onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
             />
         );
@@ -457,9 +462,7 @@ export default function SortableTileGrid({
             image={img}
             onClick={onImageClick}
             onEditDetails={canEditContent ? onEditImageDetails : undefined}
-            onToggleVisibility={
-                canEditContent ? onToggleImageVisibility : undefined
-            }
+            categoryHidden={pathHiddenState.hidden}
         />
     );
 

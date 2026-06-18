@@ -42,6 +42,7 @@ import LoginScreen from "./components/LoginScreen";
 import EditImageModal from "./components/EditImageModal";
 import ProgramManagementModal from "./components/ProgramManagementModal";
 import GroupManagementModal from "./components/GroupManagementModal";
+import NotificationMenu from "./components/NotificationMenu";
 import ReportIssueModal from "./components/ReportIssueModal";
 import SearchModal from "./components/SearchModal";
 import type { TypeFilter } from "./components/SearchModal";
@@ -71,13 +72,21 @@ import {
 import type { ApiUser } from "./api";
 import MoveCategoryDialog from "./components/MoveCategoryDialog";
 import { useProcessingJobs } from "./useProcessingJobs";
-import type { Category, Group, ImageItem, Program } from "./types";
+import type { Category, Group, ImageItem } from "./types";
 import { MAX_DEPTH } from "./types";
 import AddCategoryDialog from "./components/AddCategoryDialog";
 import EditCategoryDialog from "./components/EditCategoryDialog";
 import { useColorMode } from "./useColorMode";
 import { useBrowseData } from "./useBrowseData";
-import { getSurfaceVariant, getVisibilityColors } from "./theme";
+import {
+    splitDirectAncestorGroupIds,
+    splitDirectAncestorProgramIds,
+} from "./categoryUtils";
+import { getInheritedRestrictionSx } from "./restrictionStyles";
+import {
+    getSurfaceVariant,
+    getVisibilityColors,
+} from "./theme";
 import {
     useNavigationHistory,
     buildNavHistoryState,
@@ -199,6 +208,177 @@ export default function App() {
         ancestorGroupIds,
         currentCategories,
     } = useBrowseData({ path, currentUser });
+
+    const selectedImageCategoryHidden = useMemo(
+        () => getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
+        [categories, selectedImage?.categoryId],
+    );
+    const currentCategoryHiddenState = useMemo(
+        () => getCategoryHiddenStateFromPath(path),
+        [path],
+    );
+    const currentCategoryInheritedHidden =
+        currentCategoryHiddenState.hiddenByAncestor &&
+        !currentCategoryHiddenState.directlyHidden;
+    const imageViewerHiddenByCategory = useMemo(
+        () =>
+            selectedImageCategoryHidden.hidden ||
+            currentCategoryHiddenState.hidden,
+        [
+            selectedImageCategoryHidden.hidden,
+            currentCategoryHiddenState.hidden,
+        ],
+    );
+    const categoryPageHiddenSx = useMemo(
+        () =>
+            currentCategoryHiddenState.hidden
+                ? {
+                      filter: "grayscale(100%)",
+                      ...(currentCategoryInheritedHidden ? { opacity: 0.5 } : {}),
+                  }
+                : undefined,
+        [currentCategoryHiddenState.hidden, currentCategoryInheritedHidden],
+    );
+    const inactiveViewerActionSx = useMemo(
+        () =>
+            selectedImage?.active && !imageViewerHiddenByCategory
+                ? undefined
+                : {
+                      filter: "grayscale(100%)",
+                      ...(imageViewerHiddenByCategory
+                          ? { opacity: 0.5 }
+                          : {}),
+                  },
+        [
+            selectedImage?.active,
+            imageViewerHiddenByCategory,
+        ],
+    );
+    const imageViewerCategoryHiddenSx = useMemo(
+        () =>
+            imageViewerHiddenByCategory
+                ? {
+                      filter: "grayscale(100%)",
+                      opacity: 0.5,
+                  }
+                : undefined,
+        [
+            imageViewerHiddenByCategory,
+        ],
+    );
+    const breadcrumbProgramItems = useMemo(() => {
+        const split = path.length > 0
+            ? splitDirectAncestorProgramIds(path)
+            : { direct: ancestorProgramIds, ancestor: [] };
+        return [
+            ...split.direct.map((id) => ({ id, inherited: false })),
+            ...split.ancestor.map((id) => ({ id, inherited: true })),
+        ]
+            .map((item) => {
+                const program = programs.find((p) => p.id === item.id);
+                return program ? { ...item, name: program.name } : null;
+            })
+            .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [ancestorProgramIds, path, programs]);
+    const breadcrumbGroupItems = useMemo(() => {
+        const split = path.length > 0
+            ? splitDirectAncestorGroupIds(path)
+            : { direct: ancestorGroupIds, ancestor: [] };
+        return [
+            ...split.direct.map((id) => ({ id, inherited: false })),
+            ...split.ancestor.map((id) => ({ id, inherited: true })),
+        ]
+            .map((item) => {
+                const group = groups.find((g) => g.id === item.id);
+                return group ? { ...item, name: group.name } : null;
+            })
+            .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
+            .sort((a, b) => a.name.localeCompare(b.name));
+    }, [ancestorGroupIds, groups, path]);
+    const renderBreadcrumbChips = (
+        items: Array<{ id: number; name: string; inherited: boolean }>,
+        kind: "program" | "group",
+        stateSx?: Record<string, unknown>,
+    ) => {
+        if (items.length === 0) return null;
+
+        const MAX_INLINE = 2;
+        const inline = items.slice(0, MAX_INLINE);
+        const overflow = items.length - MAX_INLINE;
+        const color = kind === "program" ? ("primary" as const) : ("secondary" as const);
+        const anchor =
+            kind === "program"
+                ? programsPopoverAnchor
+                : groupsPopoverAnchor;
+        const setAnchor =
+            kind === "program"
+                ? setProgramsPopoverAnchor
+                : setGroupsPopoverAnchor;
+
+        const chipSx = (inherited: boolean) =>
+            inherited
+                ? getInheritedRestrictionSx(true, stateSx)
+                : stateSx;
+
+        return (
+            <>
+                {inline.map((item) => (
+                    <Chip
+                        key={item.id}
+                        label={item.name}
+                        size="small"
+                        color={color}
+                        sx={chipSx(item.inherited)}
+                    />
+                ))}
+                {overflow > 0 && (
+                    <>
+                        <Chip
+                            label={`+${overflow}`}
+                            size="small"
+                            color={color}
+                            variant="outlined"
+                            onClick={(e) => setAnchor(e.currentTarget)}
+                            aria-label={`${overflow} more ${kind}s`}
+                            sx={{
+                                cursor: "pointer",
+                                ...(stateSx ?? {}),
+                            }}
+                        />
+                        <Popover
+                            open={anchor != null}
+                            anchorEl={anchor}
+                            onClose={() => setAnchor(null)}
+                            anchorOrigin={{
+                                vertical: "bottom",
+                                horizontal: "left",
+                            }}
+                        >
+                            <Box
+                                sx={{
+                                    p: 1.5,
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: 0.5,
+                                }}
+                            >
+                                {items.map((item) => (
+                                    <Chip
+                                        key={item.id}
+                                        label={item.name}
+                                        size="small"
+                                        color={color}
+                                        sx={chipSx(item.inherited)}
+                                    />
+                                ))}
+                            </Box>
+                        </Popover>
+                    </>
+                )}
+            </>
+        );
+    };
 
     // Image processing jobs (extracted to useProcessingJobs hook)
     const setImagesVersionRef = useRef<
@@ -928,6 +1108,23 @@ export default function App() {
             backendVersion={backendVersion}
             backupVersion={backupVersion}
             onReportIssue={() => setReportIssueOpen(true)}
+            notificationSlot={
+                currentUser.role === "admin" ||
+                currentUser.role === "instructor" ? (
+                    <NotificationMenu
+                        userEmail={currentUser.email}
+                        serverLastReadAt={
+                            typeof currentUser.metadataExtra?.changelog_last_read_at ===
+                            "string"
+                                ? currentUser.metadataExtra.changelog_last_read_at
+                                : null
+                        }
+                        frontendVersion={frontendVersion}
+                        backendVersion={backendVersion}
+                        backupVersion={backupVersion}
+                    />
+                ) : null
+            }
         >
             {/* Main content */}
             <Box
@@ -1973,14 +2170,62 @@ export default function App() {
                                         );
                                     })()}
                                 </Box>
-                                {canEditContent && (
+                                {canEditContent && (() => {
+                                    return (
                                     <Box
                                         sx={{
                                             display: "flex",
                                             gap: 2,
                                             flexShrink: 0,
+                                            alignItems: "center",
                                         }}
                                     >
+                                        {path.length > 0 && (() => {
+                                            const current = path[path.length - 1];
+                                            const isDirectlyHidden = current.status === "hidden";
+                                            const ancestorHidden = path.slice(0, -1).some((p) => p.status === "hidden");
+                                            const inheritedHidden = !isDirectlyHidden && ancestorHidden;
+                                            if (inheritedHidden) {
+                                                return (
+                                                    <Button
+                                                        variant="text"
+                                                        startIcon={<VisibilityOff />}
+                                                        disabled
+                                                        aria-label="Visibility: Hidden by parent category"
+                                                        sx={{
+                                                            "&.Mui-disabled": { color: visColors.inactive },
+                                                            ...categoryPageHiddenSx,
+                                                        }}
+                                                    >
+                                                        Hidden by Parent
+                                                    </Button>
+                                                );
+                                            }
+                                            if (isDirectlyHidden) {
+                                                return (
+                                                    <Button
+                                                        variant="text"
+                                                        startIcon={<VisibilityOff />}
+                                                        onClick={() => toggleCategoryVisibility(current.id)}
+                                                        aria-label="Visibility: Show category"
+                                                        sx={{ color: visColors.inactive, filter: "grayscale(100%)" }}
+                                                    >
+                                                        Show Category
+                                                    </Button>
+                                                );
+                                            }
+                                            return (
+                                                    <Button
+                                                        variant="text"
+                                                        startIcon={<Visibility />}
+                                                        onClick={() => toggleCategoryVisibility(current.id)}
+                                                        aria-label="Visibility: Hide category"
+                                                        color="primary"
+                                                    >
+                                                        Hide Category
+                                                </Button>
+                                            );
+                                        })()}
                                         {path.length < MAX_DEPTH && (
                                             <Button
                                                 variant="outlined"
@@ -1990,6 +2235,7 @@ export default function App() {
                                                 onClick={() =>
                                                     setAddCatOpen(true)
                                                 }
+                                                sx={categoryPageHiddenSx}
                                             >
                                                 Add Category
                                             </Button>
@@ -2004,7 +2250,8 @@ export default function App() {
                                             Add Images
                                         </Button>
                                     </Box>
-                                )}
+                                    );
+                                })()}
                             </Box>
 
                             {/* Tile grid */}
@@ -2021,9 +2268,6 @@ export default function App() {
                                 onCategoryClick={handleCategoryTileClick}
                                 onMoveCategory={handleRequestMoveCategory}
                                 onSetCardImage={handleSetCardImage}
-                                onToggleCategoryVisibility={
-                                    toggleCategoryVisibility
-                                }
                                 onEditCategoryName={setEditNameCategory}
                                 onDropImageOnCategory={
                                     handleDropImageOnCategory
@@ -2252,13 +2496,14 @@ export default function App() {
             <EditCategoryDialog
                 open={editNameCategory != null}
                 onClose={() => setEditNameCategory(null)}
-                onSave={async (newLabel, programIds, groupIds) => {
+                onSave={async (newLabel, programIds, groupIds, status) => {
                     if (!editNameCategory) return;
                     await editCategoryInline(
                         editNameCategory.id,
                         newLabel,
                         programIds,
                         groupIds,
+                        status,
                     );
                     if (path.some((p) => p.id === editNameCategory.id)) {
                         setPath((prev) =>
@@ -2270,6 +2515,7 @@ export default function App() {
                                           programIds:
                                               programIds ?? p.programIds,
                                           groupIds: groupIds ?? p.groupIds,
+                                          ...(status !== undefined ? { status } : {}),
                                       }
                                     : p,
                             ),
@@ -2284,6 +2530,9 @@ export default function App() {
                 groups={groups}
                 currentGroupIds={editCategoryContext.freshGroupIds}
                 inheritedGroupIds={editCategoryContext.inheritedGroupIds}
+                categoryStatus={editNameCategory?.status}
+                ancestorHidden={isCategoryHiddenInTree(categories, editNameCategory?.parentId)}
+                categoryId={editNameCategory?.id}
             />
 
             {/* Self-edit profile modal */}

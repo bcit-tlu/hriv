@@ -9,7 +9,7 @@
  * start from the Helm-injected ``APP_VERSION`` env var, and the
  * admin footer fetches it on mount.
  *
- * These tests cover the three externally-visible behaviours of the
+ * These tests cover the externally-visible behaviours of the
  * fetch helper:
  *   1. Local Vite dev mode → no network request, returns
  *      ``{frontend: "dev"}`` to avoid console-noisy 404s.

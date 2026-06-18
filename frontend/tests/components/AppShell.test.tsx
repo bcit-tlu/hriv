@@ -45,7 +45,9 @@ describe("AppShell", () => {
     describe("rendering", () => {
         it("renders toolbar with HRIV title", () => {
             render(<AppShell {...makeProps()} />);
-            expect(screen.getByRole("heading", { name: "HRIV" })).toBeInTheDocument();
+            expect(
+                screen.getByRole("heading", { name: "HRIV" }),
+            ).toBeInTheDocument();
         });
 
         it("renders children", () => {
@@ -53,14 +55,55 @@ describe("AppShell", () => {
             expect(screen.getByTestId("main-content")).toBeInTheDocument();
         });
 
+        it("renders the notification slot when provided", () => {
+            render(
+                <AppShell
+                    {...makeProps({
+                        notificationSlot: (
+                            <button type="button">Notifications</button>
+                        ),
+                    })}
+                />,
+            );
+            expect(
+                screen.getByRole("button", { name: "Notifications" }),
+            ).toBeInTheDocument();
+        });
+
         it("renders announcement banner when announcement is set", () => {
-            render(<AppShell {...makeProps({ announcement: "Maintenance tonight" })} />);
+            render(
+                <AppShell
+                    {...makeProps({ announcement: "Maintenance tonight" })}
+                />,
+            );
             expect(screen.getByText("Maintenance tonight")).toBeInTheDocument();
+        });
+
+        it("keeps the announcement banner on the people/admin surface background", () => {
+            render(
+                <AppShell
+                    {...makeProps({
+                        page: "people",
+                        announcement: "Maintenance tonight",
+                    })}
+                />,
+            );
+
+            expect(
+                screen.getByText("Maintenance tonight").closest(".MuiBox-root"),
+            ).toHaveStyle({ backgroundColor: "#DAC7B5" });
         });
 
         it("renders dismiss link on announcement banner when callback provided", async () => {
             const onDismiss = vi.fn();
-            render(<AppShell {...makeProps({ announcement: "Maintenance tonight", onDismissAnnouncement: onDismiss })} />);
+            render(
+                <AppShell
+                    {...makeProps({
+                        announcement: "Maintenance tonight",
+                        onDismissAnnouncement: onDismiss,
+                    })}
+                />,
+            );
             const link = screen.getByRole("button", { name: "Dismiss" });
             fireEvent.click(link);
             await waitFor(() => {
@@ -70,7 +113,9 @@ describe("AppShell", () => {
 
         it("does not render announcement banner when empty", () => {
             render(<AppShell {...makeProps({ announcement: "" })} />);
-            expect(screen.queryByText("Maintenance tonight")).not.toBeInTheDocument();
+            expect(
+                screen.queryByText("Maintenance tonight"),
+            ).not.toBeInTheDocument();
         });
 
         it("renders footer with report issue link", () => {
@@ -109,32 +154,57 @@ describe("AppShell", () => {
 
     describe("tabs", () => {
         it("renders Home tab always", () => {
-            render(<AppShell {...makeProps({ canEditContent: false, canManageUsers: false })} />);
-            expect(screen.getByRole("tab", { name: "Home" })).toBeInTheDocument();
+            render(
+                <AppShell
+                    {...makeProps({
+                        canEditContent: false,
+                        canManageUsers: false,
+                    })}
+                />,
+            );
+            expect(
+                screen.getByRole("tab", { name: "Home" }),
+            ).toBeInTheDocument();
         });
 
         it("renders Images and Manage tabs when canEditContent", () => {
             render(<AppShell {...makeProps({ canEditContent: true })} />);
-            expect(screen.getByRole("tab", { name: "Images" })).toBeInTheDocument();
-            expect(screen.getByRole("tab", { name: "Manage" })).toBeInTheDocument();
+            expect(
+                screen.getByRole("tab", { name: "Images" }),
+            ).toBeInTheDocument();
+            expect(
+                screen.getByRole("tab", { name: "Manage" }),
+            ).toBeInTheDocument();
         });
 
         it("hides Images and Manage tabs when not canEditContent", () => {
             render(<AppShell {...makeProps({ canEditContent: false })} />);
-            expect(screen.queryByRole("tab", { name: "Images" })).not.toBeInTheDocument();
-            expect(screen.queryByRole("tab", { name: "Manage" })).not.toBeInTheDocument();
+            expect(
+                screen.queryByRole("tab", { name: "Images" }),
+            ).not.toBeInTheDocument();
+            expect(
+                screen.queryByRole("tab", { name: "Manage" }),
+            ).not.toBeInTheDocument();
         });
 
         it("renders People and Admin tabs when canManageUsers", () => {
             render(<AppShell {...makeProps({ canManageUsers: true })} />);
-            expect(screen.getByRole("tab", { name: "People" })).toBeInTheDocument();
-            expect(screen.getByRole("tab", { name: "Admin" })).toBeInTheDocument();
+            expect(
+                screen.getByRole("tab", { name: "People" }),
+            ).toBeInTheDocument();
+            expect(
+                screen.getByRole("tab", { name: "Admin" }),
+            ).toBeInTheDocument();
         });
 
         it("hides People and Admin tabs when not canManageUsers", () => {
             render(<AppShell {...makeProps({ canManageUsers: false })} />);
-            expect(screen.queryByRole("tab", { name: "People" })).not.toBeInTheDocument();
-            expect(screen.queryByRole("tab", { name: "Admin" })).not.toBeInTheDocument();
+            expect(
+                screen.queryByRole("tab", { name: "People" }),
+            ).not.toBeInTheDocument();
+            expect(
+                screen.queryByRole("tab", { name: "Admin" }),
+            ).not.toBeInTheDocument();
         });
 
         it("calls onHomeClick when Home tab is clicked while already on browse", () => {
@@ -177,24 +247,45 @@ describe("AppShell", () => {
         it("opens manage menu when Manage tab is clicked", () => {
             render(<AppShell {...makeProps()} />);
             fireEvent.click(screen.getByRole("tab", { name: "Manage" }));
-            expect(screen.getByRole("menuitem", { name: "Categories" })).toBeInTheDocument();
-            expect(screen.getByRole("menuitem", { name: "Programs" })).toBeInTheDocument();
-            expect(screen.getByRole("menuitem", { name: "Announcement" })).toBeInTheDocument();
+            expect(
+                screen.getByRole("menuitem", { name: "Categories" }),
+            ).toBeInTheDocument();
+            expect(
+                screen.getByRole("menuitem", { name: "Programs" }),
+            ).toBeInTheDocument();
+            expect(
+                screen.getByRole("menuitem", { name: "Announcement" }),
+            ).toBeInTheDocument();
         });
 
         it("hides Programs menu item for non-admin editors", () => {
-            render(<AppShell {...makeProps({ canEditContent: true, canManageUsers: false })} />);
+            render(
+                <AppShell
+                    {...makeProps({
+                        canEditContent: true,
+                        canManageUsers: false,
+                    })}
+                />,
+            );
             fireEvent.click(screen.getByRole("tab", { name: "Manage" }));
-            expect(screen.getByRole("menuitem", { name: "Categories" })).toBeInTheDocument();
-            expect(screen.getByRole("menuitem", { name: "Announcement" })).toBeInTheDocument();
-            expect(screen.queryByRole("menuitem", { name: "Programs" })).not.toBeInTheDocument();
+            expect(
+                screen.getByRole("menuitem", { name: "Categories" }),
+            ).toBeInTheDocument();
+            expect(
+                screen.getByRole("menuitem", { name: "Announcement" }),
+            ).toBeInTheDocument();
+            expect(
+                screen.queryByRole("menuitem", { name: "Programs" }),
+            ).not.toBeInTheDocument();
         });
 
         it("calls onOpenCategories when Categories menu item is clicked", () => {
             const props = makeProps();
             render(<AppShell {...props} />);
             fireEvent.click(screen.getByRole("tab", { name: "Manage" }));
-            fireEvent.click(screen.getByRole("menuitem", { name: "Categories" }));
+            fireEvent.click(
+                screen.getByRole("menuitem", { name: "Categories" }),
+            );
             expect(props.onOpenCategories).toHaveBeenCalled();
         });
 
@@ -207,9 +298,18 @@ describe("AppShell", () => {
         });
 
         it("shows Groups menu item for non-admin editors (instructors)", () => {
-            render(<AppShell {...makeProps({ canEditContent: true, canManageUsers: false })} />);
+            render(
+                <AppShell
+                    {...makeProps({
+                        canEditContent: true,
+                        canManageUsers: false,
+                    })}
+                />,
+            );
             fireEvent.click(screen.getByRole("tab", { name: "Manage" }));
-            expect(screen.getByRole("menuitem", { name: "Groups" })).toBeInTheDocument();
+            expect(
+                screen.getByRole("menuitem", { name: "Groups" }),
+            ).toBeInTheDocument();
         });
 
         it("calls onOpenGroups when Groups menu item is clicked", () => {
@@ -224,7 +324,9 @@ describe("AppShell", () => {
             const props = makeProps();
             render(<AppShell {...props} />);
             fireEvent.click(screen.getByRole("tab", { name: "Manage" }));
-            fireEvent.click(screen.getByRole("menuitem", { name: "Announcement" }));
+            fireEvent.click(
+                screen.getByRole("menuitem", { name: "Announcement" }),
+            );
             expect(props.onOpenAnnouncement).toHaveBeenCalled();
         });
     });
@@ -238,7 +340,19 @@ describe("AppShell", () => {
         });
 
         it("renders user avatar with initials", () => {
-            render(<AppShell {...makeProps({ currentUser: { name: "Jane Doe", email: "j@t.com", role: "admin", program_names: [], group_names: [] } })} />);
+            render(
+                <AppShell
+                    {...makeProps({
+                        currentUser: {
+                            name: "Jane Doe",
+                            email: "j@t.com",
+                            role: "admin",
+                            program_names: [],
+                            group_names: [],
+                        },
+                    })}
+                />,
+            );
             expect(screen.getByText("JD")).toBeInTheDocument();
         });
 
@@ -294,14 +408,18 @@ describe("AppShell", () => {
 
         it("shows Update link when canManageUsers", () => {
             render(
-                <AppShell {...makeProps({ profileOpen: true, canManageUsers: true })} />,
+                <AppShell
+                    {...makeProps({ profileOpen: true, canManageUsers: true })}
+                />,
             );
             expect(screen.getByText("Update")).toBeInTheDocument();
         });
 
         it("hides Update link when not canManageUsers", () => {
             render(
-                <AppShell {...makeProps({ profileOpen: true, canManageUsers: false })} />,
+                <AppShell
+                    {...makeProps({ profileOpen: true, canManageUsers: false })}
+                />,
             );
             expect(screen.queryByText("Update")).not.toBeInTheDocument();
         });
@@ -323,32 +441,66 @@ describe("AppShell", () => {
 
         it("shows View Announcement link when announcement is enabled and dismissed", () => {
             render(
-                <AppShell {...makeProps({ profileOpen: true, annEnabled: true, annMessage: "Scheduled maintenance", announcement: "" })} />,
+                <AppShell
+                    {...makeProps({
+                        profileOpen: true,
+                        annEnabled: true,
+                        annMessage: "Scheduled maintenance",
+                        announcement: "",
+                    })}
+                />,
             );
             expect(screen.getByText("View Announcement")).toBeInTheDocument();
         });
 
         it("hides View Announcement link when announcement banner is visible (not dismissed)", () => {
             render(
-                <AppShell {...makeProps({ profileOpen: true, annEnabled: true, annMessage: "Scheduled maintenance", announcement: "Scheduled maintenance" })} />,
+                <AppShell
+                    {...makeProps({
+                        profileOpen: true,
+                        annEnabled: true,
+                        annMessage: "Scheduled maintenance",
+                        announcement: "Scheduled maintenance",
+                    })}
+                />,
             );
-            expect(screen.queryByText("View Announcement")).not.toBeInTheDocument();
+            expect(
+                screen.queryByText("View Announcement"),
+            ).not.toBeInTheDocument();
         });
 
         it("hides View Announcement link when no announcement is enabled", () => {
             render(
-                <AppShell {...makeProps({ profileOpen: true, annEnabled: false, annMessage: "", announcement: "" })} />,
+                <AppShell
+                    {...makeProps({
+                        profileOpen: true,
+                        annEnabled: false,
+                        annMessage: "",
+                        announcement: "",
+                    })}
+                />,
             );
-            expect(screen.queryByText("View Announcement")).not.toBeInTheDocument();
+            expect(
+                screen.queryByText("View Announcement"),
+            ).not.toBeInTheDocument();
         });
 
         it("opens announcement dialog when View Announcement is clicked", () => {
             render(
-                <AppShell {...makeProps({ profileOpen: true, annEnabled: true, annMessage: "Scheduled maintenance", announcement: "" })} />,
+                <AppShell
+                    {...makeProps({
+                        profileOpen: true,
+                        annEnabled: true,
+                        annMessage: "Scheduled maintenance",
+                        announcement: "",
+                    })}
+                />,
             );
             fireEvent.click(screen.getByText("View Announcement"));
             expect(screen.getByText("Announcement")).toBeInTheDocument();
-            expect(screen.getByText("Scheduled maintenance")).toBeInTheDocument();
+            expect(
+                screen.getByText("Scheduled maintenance"),
+            ).toBeInTheDocument();
         });
     });
 });

@@ -32,6 +32,60 @@ export function findCategoryPath(
     return null;
 }
 
+export interface CategoryHiddenState {
+    hidden: boolean;
+    directlyHidden: boolean;
+    hiddenByAncestor: boolean;
+}
+
+/** Derive direct vs inherited hidden state from a category path. */
+export function getCategoryHiddenStateFromPath(
+    path: Category[] | null | undefined,
+): CategoryHiddenState {
+    if (!path?.length) {
+        return {
+            hidden: false,
+            directlyHidden: false,
+            hiddenByAncestor: false,
+        };
+    }
+
+    const directlyHidden = path[path.length - 1].status === "hidden";
+    const hiddenByAncestor = path
+        .slice(0, -1)
+        .some((category) => category.status === "hidden");
+
+    return {
+        hidden: directlyHidden || hiddenByAncestor,
+        directlyHidden,
+        hiddenByAncestor,
+    };
+}
+
+/** Check whether a category is hidden directly or through an ancestor. */
+export function getCategoryHiddenStateInTree(
+    tree: Category[],
+    categoryId: number | null | undefined,
+): CategoryHiddenState {
+    if (categoryId == null) {
+        return {
+            hidden: false,
+            directlyHidden: false,
+            hiddenByAncestor: false,
+        };
+    }
+
+    return getCategoryHiddenStateFromPath(findCategoryPath(tree, categoryId));
+}
+
+/** Check if a category (or any ancestor) is hidden in the tree. */
+export function isCategoryHiddenInTree(
+    tree: Category[],
+    categoryId: number | null | undefined,
+): boolean {
+    return getCategoryHiddenStateInTree(tree, categoryId).hidden;
+}
+
 /** Return a new tree with a single image updated by ID. */
 export function updateImageInTree(
     tree: Category[],
