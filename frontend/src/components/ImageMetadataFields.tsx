@@ -45,6 +45,8 @@ export default function ImageMetadataFields({
                 multiline
                 minRows={3}
                 maxRows={10}
+                inputProps={{ maxLength: 500 }}
+                helperText={`${values.note.length}/500`}
             />
             <FormControlLabel
                 control={

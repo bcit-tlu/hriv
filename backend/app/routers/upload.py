@@ -86,6 +86,10 @@ async def upload_source_image(
             file_size = os.path.getsize(stored_path)
 
             # Create the source image record
+            # Validate note length
+            if note is not None and isinstance(note, str) and len(note) > 500:
+                raise HTTPException(status_code=400, detail="Note must be 500 characters or fewer")
+
             src = SourceImage(
                 original_filename=file.filename,
                 stored_path=stored_path,

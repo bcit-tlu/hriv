@@ -274,6 +274,8 @@ async def replace_image(
                 if copyright is not None:
                     img.copyright = copyright if copyright != "" else None
                 if note is not None:
+                    if isinstance(note, str) and len(note) > 500:
+                        raise HTTPException(status_code=400, detail="Note must be 500 characters or fewer")
                     img.note = note if note != "" else None
                 if active is not None:
                     img.active = active.lower() in ("true", "1")

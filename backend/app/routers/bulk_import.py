@@ -255,6 +255,10 @@ async def bulk_import_images(
 
     with tracer.start_as_current_span("bulk_import.enqueue") as span:
         try:
+            # Validate note length before proceeding
+            if note is not None and isinstance(note, str) and len(note) > 500:
+                raise HTTPException(status_code=400, detail="Note must be 500 characters or fewer")
+
             span.set_attribute("bulk_import.category_id", category_id if category_id is not None else "none")
 
             os.makedirs(settings.source_images_dir, exist_ok=True)

@@ -168,7 +168,7 @@ class Image(Base):
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )
     copyright: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     metadata_: Mapped[dict | None] = mapped_column(
         "metadata",
@@ -218,7 +218,7 @@ class SourceImage(Base):
         ForeignKey("categories.id", ondelete="SET NULL"), nullable=True
     )
     copyright: Mapped[str | None] = mapped_column(String(500), nullable=True)
-    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     image_id: Mapped[int | None] = mapped_column(
         ForeignKey("images.id", ondelete="SET NULL"), nullable=True

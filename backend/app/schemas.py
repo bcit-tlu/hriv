@@ -54,6 +54,14 @@ def _normalize_oidc_group(v: str | None) -> str | None:
     return v
 
 
+def _validate_note_value(v: str | None) -> str | None:
+    if v is None:
+        return v
+    if isinstance(v, str) and len(v) > 500:
+        raise ValueError("note must be 500 characters or fewer")
+    return v
+
+
 class ProgramCreate(ProgramBase):
     oidc_group: str | None = None
 
@@ -256,10 +264,11 @@ class ImageBase(BaseModel):
     height: int | None = None
     file_size: float | None = None
 
+    _validate_note = field_validator("note", mode="before")(_validate_note_value)
+
 
 class ImageCreate(ImageBase):
     pass
-
 
 class ImageUpdate(BaseModel):
     name: str | None = None
@@ -272,6 +281,8 @@ class ImageUpdate(BaseModel):
     sort_order: int | None = None
     metadata_extra: dict | None = None
     metadata_extra_merge: dict | None = None
+
+    _validate_note = field_validator("note", mode="before")(_validate_note_value)
 
     @model_validator(mode="after")
     def validate_overlay_shapes(self) -> "ImageUpdate":
@@ -389,6 +400,8 @@ class ImageBulkUpdate(BaseModel):
     copyright: str | None = None
     note: str | None = None
     active: bool | None = None
+
+    _validate_note = field_validator("note", mode="before")(_validate_note_value)
 
 
 class ImageBulkDelete(BaseModel):

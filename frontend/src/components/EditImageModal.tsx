@@ -400,6 +400,11 @@ function EditImageForm({
           variant="outlined"
           value={note}
           onChange={(e) => setNote(e.target.value)}
+          inputProps={{ maxLength: 500 }}
+          multiline
+          minRows={3}
+          maxRows={10}
+          helperText={`${note.length}/500`}
         />
         <FormControlLabel
           control={
