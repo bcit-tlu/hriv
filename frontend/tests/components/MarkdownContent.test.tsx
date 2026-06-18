@@ -83,6 +83,29 @@ describe('renderInline', () => {
     expect(screen.getByTestId('inline-probe')).toHaveTextContent('plain text only')
   })
 
+  it('renders plain http/https links safely', () => {
+    renderWithTheme(<InlineProbe text="Visit https://example.com/docs." />)
+
+    const link = screen.getByRole('link', { name: 'https://example.com/docs' })
+    expect(link).toHaveAttribute('href', 'https://example.com/docs')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(screen.getByTestId('inline-probe')).toHaveTextContent(
+      'Visit https://example.com/docs.',
+    )
+  })
+
+  it('renders markdown linked text safely', () => {
+    renderWithTheme(
+      <InlineProbe text="Read [the docs](https://example.com/docs) next." />,
+    )
+
+    const link = screen.getByRole('link', { name: 'the docs' })
+    expect(link).toHaveAttribute('href', 'https://example.com/docs')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+  })
+
   it('renders mixed inline formatting in order', () => {
     renderWithTheme(<InlineProbe text="Hello **bold** *italic* `code` world" />)
 
