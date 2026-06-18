@@ -940,6 +940,12 @@ export default function App() {
                 currentUser.role === "instructor" ? (
                     <NotificationMenu
                         userEmail={currentUser.email}
+                        serverLastReadAt={
+                            typeof currentUser.metadataExtra?.changelog_last_read_at ===
+                            "string"
+                                ? currentUser.metadataExtra.changelog_last_read_at
+                                : null
+                        }
                         frontendVersion={frontendVersion}
                         backendVersion={backendVersion}
                         backupVersion={backupVersion}

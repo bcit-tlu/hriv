@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 import Box from "@mui/material/Box";
+import Link from "@mui/material/Link";
 import Typography from "@mui/material/Typography";
 import type { SxProps, Theme } from "@mui/material/styles";
 
@@ -14,10 +15,95 @@ type Block =
     | { type: "list"; items: string[] }
     | { type: "code"; text: string };
 
+const INLINE_TOKEN_REGEX =
+    /(\[[^\]]+\]\((?:https?:\/\/[^\s)]+)\)|https?:\/\/[^\s<]+|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g;
+const MARKDOWN_LINK_REGEX = /^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/;
+
+function isSafeHref(href: string) {
+    try {
+        const url = new URL(href);
+        return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+        return false;
+    }
+}
+
+function splitTrailingUrlPunctuation(urlText: string) {
+    let href = urlText;
+    let trailingText = "";
+
+    while (href.length > 0) {
+        const lastChar = href.at(-1);
+        if (!lastChar) break;
+
+        if (".,!?;:".includes(lastChar)) {
+            trailingText = `${lastChar}${trailingText}`;
+            href = href.slice(0, -1);
+            continue;
+        }
+
+        if (lastChar === ")") {
+            const openParens = (href.match(/\(/g) ?? []).length;
+            const closeParens = (href.match(/\)/g) ?? []).length;
+            if (closeParens > openParens) {
+                trailingText = `${lastChar}${trailingText}`;
+                href = href.slice(0, -1);
+                continue;
+            }
+        }
+
+        break;
+    }
+
+    return { href, trailingText };
+}
+
 export function renderInline(text: string, keyPrefix: string): ReactNode[] {
-    const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g);
+    const parts = text.split(INLINE_TOKEN_REGEX);
     return parts.filter(Boolean).map((part, index) => {
         const key = `${keyPrefix}-${index}`;
+        const markdownLinkMatch = part.match(MARKDOWN_LINK_REGEX);
+
+        if (markdownLinkMatch) {
+            const [, label, href] = markdownLinkMatch;
+            if (isSafeHref(href)) {
+                return (
+                    <Link
+                        key={key}
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        color="inherit"
+                        underline="always"
+                        sx={{ overflowWrap: "anywhere" }}
+                    >
+                        {renderInline(label, `${key}-label`)}
+                    </Link>
+                );
+            }
+        }
+
+        if (part.startsWith("http://") || part.startsWith("https://")) {
+            const { href, trailingText } = splitTrailingUrlPunctuation(part);
+            if (isSafeHref(href)) {
+                return (
+                    <Fragment key={key}>
+                        <Link
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            color="inherit"
+                            underline="always"
+                            sx={{ overflowWrap: "anywhere" }}
+                        >
+                            {href}
+                        </Link>
+                        {trailingText}
+                    </Fragment>
+                );
+            }
+        }
+
         if (part.startsWith("**") && part.endsWith("**")) {
             return <strong key={key}>{part.slice(2, -2)}</strong>;
         }

@@ -38,6 +38,7 @@ describe("NotificationMenu", () => {
         const { container } = render(
             <NotificationMenu
                 userEmail="instructor@example.ca"
+                serverLastReadAt={null}
                 frontendVersion="1.2.3"
                 backendVersion="4.5.6"
                 backupVersion="7.8.9"
@@ -56,6 +57,7 @@ describe("NotificationMenu", () => {
         render(
             <NotificationMenu
                 userEmail="instructor@example.ca"
+                serverLastReadAt={null}
                 frontendVersion="1.2.3"
                 backendVersion="4.5.6"
                 backupVersion="7.8.9"
@@ -76,6 +78,7 @@ describe("NotificationMenu", () => {
         render(
             <NotificationMenu
                 userEmail="instructor@example.ca"
+                serverLastReadAt={null}
                 frontendVersion="1.2.3"
                 backendVersion="4.5.6"
                 backupVersion="7.8.9"
@@ -96,6 +99,48 @@ describe("NotificationMenu", () => {
         expect(localStorage.getItem(storageKey)).not.toBeNull();
     });
 
+    it("renders links and mixed inline formatting inside changelog cards", async () => {
+        mockFetchChangelogEntries.mockResolvedValue([
+            {
+                ...entry,
+                body: "See https://example.com/docs, [release notes](https://example.com/releases), **bold**, *italic*, and `code`.",
+            },
+        ]);
+
+        render(
+            <NotificationMenu
+                userEmail="instructor@example.ca"
+                serverLastReadAt={null}
+                frontendVersion="1.2.3"
+                backendVersion="4.5.6"
+                backupVersion="7.8.9"
+            />,
+        );
+
+        await waitFor(() =>
+            expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(1),
+        );
+
+        fireEvent.click(screen.getByLabelText("Notifications"));
+        fireEvent.click(screen.getByText("What's New"));
+
+        const docsLink = await screen.findByRole("link", {
+            name: "https://example.com/docs",
+        });
+        const releaseNotesLink = screen.getByRole("link", {
+            name: "release notes",
+        });
+
+        expect(docsLink).toHaveAttribute("href", "https://example.com/docs");
+        expect(releaseNotesLink).toHaveAttribute(
+            "href",
+            "https://example.com/releases",
+        );
+        expect(screen.getByText("bold").tagName).toBe("STRONG");
+        expect(screen.getByText("italic").tagName).toBe("EM");
+        expect(screen.getByText("code").tagName).toBe("CODE");
+    });
+
     it("hides the unread badge when local storage already has a newer read timestamp", async () => {
         localStorage.setItem(
             "hriv_changelog_last_read_instructor@example.ca",
@@ -105,6 +150,7 @@ describe("NotificationMenu", () => {
         const { container } = render(
             <NotificationMenu
                 userEmail="instructor@example.ca"
+                serverLastReadAt={null}
                 frontendVersion="1.2.3"
                 backendVersion="4.5.6"
                 backupVersion="7.8.9"
@@ -117,5 +163,58 @@ describe("NotificationMenu", () => {
 
         const badge = container.querySelector(".MuiBadge-badge");
         expect(badge).toHaveClass("MuiBadge-invisible");
+    });
+
+    it("prefers the server read timestamp over stale local storage on reload", async () => {
+        localStorage.setItem(
+            "hriv_changelog_last_read_instructor@example.ca",
+            "2026-06-16T11:00:00Z",
+        );
+
+        const { container } = render(
+            <NotificationMenu
+                userEmail="instructor@example.ca"
+                serverLastReadAt="2026-06-16T13:00:00Z"
+                frontendVersion="1.2.3"
+                backendVersion="4.5.6"
+                backupVersion="7.8.9"
+            />,
+        );
+
+        await waitFor(() =>
+            expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(1),
+        );
+
+        const badge = container.querySelector(".MuiBadge-badge");
+        expect(badge).toHaveClass("MuiBadge-invisible");
+        expect(
+            localStorage.getItem(
+                "hriv_changelog_last_read_instructor@example.ca",
+            ),
+        ).toBe("2026-06-16T13:00:00Z");
+    });
+
+    it("hydrates unread state from the server when local storage is empty", async () => {
+        const { container } = render(
+            <NotificationMenu
+                userEmail="instructor@example.ca"
+                serverLastReadAt="2026-06-16T13:00:00Z"
+                frontendVersion="1.2.3"
+                backendVersion="4.5.6"
+                backupVersion="7.8.9"
+            />,
+        );
+
+        await waitFor(() =>
+            expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(1),
+        );
+
+        const badge = container.querySelector(".MuiBadge-badge");
+        expect(badge).toHaveClass("MuiBadge-invisible");
+        expect(
+            localStorage.getItem(
+                "hriv_changelog_last_read_instructor@example.ca",
+            ),
+        ).toBe("2026-06-16T13:00:00Z");
     });
 });

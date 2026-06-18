@@ -14,6 +14,9 @@ existing site-wide announcement banner.
   cannot create, edit, or delete them.
 - Editing an existing entry republishes it by bumping `published_at`, which
   makes it unread again for users who already cleared it.
+- Changelog cards support safe bare `http/https` links and Markdown
+  `[label](https://...)` links, which open in a new tab while preserving the
+  existing card typography.
 
 ## Data Model
 
@@ -36,6 +39,9 @@ Read state is stored in `users.metadata_` under the
 `changelog_last_read_at` key. The frontend also caches the latest read
 timestamp in `localStorage` under `hriv_changelog_last_read_<email>` so the
 badge clears instantly on open and stays scoped to the current account.
+`NotificationMenu` hydrates from the server-backed `metadata_extra` value
+returned by `/api/auth/me` and uses `localStorage` as the same-browser fast
+path.
 
 ## API
 

@@ -40,8 +40,16 @@ function isUnreadEntry(entry: ApiChangelogEntry, lastReadAt: string | null) {
     return publishedAt > readAt;
 }
 
+function resolveInitialLastReadAt(
+    lsKey: string,
+    serverLastReadAt: string | null,
+) {
+    return serverLastReadAt ?? localStorage.getItem(lsKey);
+}
+
 export interface NotificationMenuProps {
     userEmail: string;
+    serverLastReadAt: string | null;
     frontendVersion: string | null;
     backendVersion: string | null;
     backupVersion: string | null;
@@ -49,6 +57,7 @@ export interface NotificationMenuProps {
 
 export default function NotificationMenu({
     userEmail,
+    serverLastReadAt,
     frontendVersion,
     backendVersion,
     backupVersion,
@@ -63,14 +72,21 @@ export default function NotificationMenu({
     const [whatsNewOpen, setWhatsNewOpen] = useState(false);
     const [aboutOpen, setAboutOpen] = useState(false);
     const [lastReadAt, setLastReadAt] = useState<string | null>(() =>
-        localStorage.getItem(`hriv_changelog_last_read_${userEmail}`),
+        resolveInitialLastReadAt(
+            `hriv_changelog_last_read_${userEmail}`,
+            serverLastReadAt,
+        ),
     );
     const markInFlightRef = useRef(false);
 
     useEffect(() => {
-        setLastReadAt(localStorage.getItem(lsKey));
+        const preferredReadAt = resolveInitialLastReadAt(lsKey, serverLastReadAt);
+        setLastReadAt(preferredReadAt);
+        if (serverLastReadAt !== null) {
+            localStorage.setItem(lsKey, serverLastReadAt);
+        }
         markInFlightRef.current = false;
-    }, [lsKey]);
+    }, [lsKey, serverLastReadAt]);
 
     useEffect(() => {
         let cancelled = false;
