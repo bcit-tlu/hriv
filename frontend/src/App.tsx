@@ -93,6 +93,24 @@ import { useImageActions } from './useImageActions'
 import { useAnnouncementModal } from './useAnnouncementModal'
 import { useUserProfile } from './useUserProfile'
 
+const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
+
+function getCollapsedCategoryBreadcrumb(
+  path: Category[],
+  visibleCategoryCount: number,
+): { hiddenCategories: Category[]; visibleCategories: Category[] } {
+  if (path.length <= COLLAPSED_BREADCRUMB_CATEGORY_DEPTH) {
+    return { hiddenCategories: [], visibleCategories: path }
+  }
+
+  const normalizedVisibleCount = Math.min(Math.max(visibleCategoryCount, 1), path.length)
+
+  return {
+    hiddenCategories: path.slice(0, -normalizedVisibleCount),
+    visibleCategories: path.slice(-normalizedVisibleCount),
+  }
+}
+
 export default function App() {
   const {
     currentUser,
@@ -846,6 +864,24 @@ export default function App() {
     imageEditOpen,
     browseEditImage,
   })
+  const imageBreadcrumb = useMemo(() => getCollapsedCategoryBreadcrumb(path, 1), [path])
+  const categoryBreadcrumb = useMemo(() => getCollapsedCategoryBreadcrumb(path, 2), [path])
+  const imageSkippedCategoryLabels = imageBreadcrumb.hiddenCategories
+    .map((cat) => cat.label)
+    .join(' / ')
+  const categorySkippedCategoryLabels = categoryBreadcrumb.hiddenCategories
+    .map((cat) => cat.label)
+    .join(' / ')
+  const breadcrumbItemTextSx = {
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    maxWidth: { xs: 120, sm: 180, md: 260 },
+  }
+  const breadcrumbCurrentTextSx = {
+    ...breadcrumbItemTextSx,
+    maxWidth: { xs: 140, sm: 220, md: 360 },
+  }
 
   const handleImageClick = useCallback(
     (img: ImageItem) => {
@@ -1136,6 +1172,7 @@ export default function App() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  flexWrap: 'wrap',
                   mb: 2,
                   gap: 1,
                 }}
@@ -1144,21 +1181,29 @@ export default function App() {
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
+                    flexWrap: 'wrap',
                     gap: 1,
+                    flex: '1 1 240px',
                     minWidth: 0,
+                    maxWidth: '100%',
                   }}
                 >
                   <MuiBreadcrumbs
                     aria-label="image breadcrumb"
                     sx={{
+                      flex: '1 1 auto',
                       minWidth: 0,
+                      maxWidth: '100%',
                       '& .MuiBreadcrumbs-ol': {
                         flexWrap: 'nowrap',
                       },
-                      '& .MuiBreadcrumbs-li:last-of-type': {
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
+                      '& .MuiBreadcrumbs-li': {
+                        display: 'flex',
+                        alignItems: 'center',
+                        minWidth: 0,
+                      },
+                      '& .MuiBreadcrumbs-separator': {
+                        flexShrink: 0,
                       },
                     }}
                   >
@@ -1177,32 +1222,51 @@ export default function App() {
                         alignItems: 'center',
                         gap: 0.5,
                         cursor: 'pointer',
+                        flexShrink: 0,
                       }}
                     >
                       <HomeIcon fontSize="small" />
                       Home
                     </Link>
-                    {path.map((cat, i) => (
-                      <Link
-                        key={cat.id}
-                        component="button"
-                        variant="body2"
-                        underline="hover"
-                        color="inherit"
-                        onClick={() => {
-                          clearImage()
-                          navigateToDepth(i + 1)
-                          pushNavState(
-                            'browse',
-                            path.slice(0, i + 1).map((c) => c.id),
-                          )
-                        }}
-                        sx={{ cursor: 'pointer' }}
-                      >
-                        {cat.label}
-                      </Link>
-                    ))}
-                    <Typography variant="body2" color="text.primary">
+                    {imageBreadcrumb.hiddenCategories.length > 0 && (
+                      <Tooltip title={imageSkippedCategoryLabels}>
+                        <Typography
+                          aria-label={`Skipped categories: ${imageSkippedCategoryLabels}`}
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{
+                            cursor: 'help',
+                            flexShrink: 0,
+                          }}
+                        >
+                          ...
+                        </Typography>
+                      </Tooltip>
+                    )}
+                    {imageBreadcrumb.visibleCategories.map((cat, i) => {
+                      const pathIndex = imageBreadcrumb.hiddenCategories.length + i
+                      return (
+                        <Link
+                          key={cat.id}
+                          component="button"
+                          variant="body2"
+                          underline="hover"
+                          color="inherit"
+                          onClick={() => {
+                            clearImage()
+                            navigateToDepth(pathIndex + 1)
+                            pushNavState(
+                              'browse',
+                              path.slice(0, pathIndex + 1).map((c) => c.id),
+                            )
+                          }}
+                          sx={{ cursor: 'pointer', ...breadcrumbItemTextSx }}
+                        >
+                          {cat.label}
+                        </Link>
+                      )
+                    })}
+                    <Typography variant="body2" color="text.primary" sx={breadcrumbCurrentTextSx}>
                       {selectedImage.name}
                     </Typography>
                   </MuiBreadcrumbs>
@@ -1431,6 +1495,7 @@ export default function App() {
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  flexWrap: 'wrap',
                   mb: 2,
                   gap: 1,
                 }}
@@ -1439,21 +1504,29 @@ export default function App() {
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
+                    flexWrap: 'wrap',
                     gap: 1,
+                    flex: '1 1 240px',
                     minWidth: 0,
+                    maxWidth: '100%',
                   }}
                 >
                   <MuiBreadcrumbs
                     aria-label="category breadcrumb"
                     sx={{
+                      flex: '1 1 auto',
                       minWidth: 0,
+                      maxWidth: '100%',
                       '& .MuiBreadcrumbs-ol': {
                         flexWrap: 'nowrap',
                       },
-                      '& .MuiBreadcrumbs-li:last-of-type': {
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
+                      '& .MuiBreadcrumbs-li': {
+                        display: 'flex',
+                        alignItems: 'center',
+                        minWidth: 0,
+                      },
+                      '& .MuiBreadcrumbs-separator': {
+                        flexShrink: 0,
                       },
                     }}
                   >
@@ -1471,13 +1544,30 @@ export default function App() {
                         alignItems: 'center',
                         gap: 0.5,
                         cursor: 'pointer',
+                        flexShrink: 0,
                       }}
                     >
                       <HomeIcon fontSize="small" />
                       Home
                     </Link>
-                    {path.map((cat, i) => {
-                      const isLast = i === path.length - 1
+                    {categoryBreadcrumb.hiddenCategories.length > 0 && (
+                      <Tooltip title={categorySkippedCategoryLabels}>
+                        <Typography
+                          aria-label={`Skipped categories: ${categorySkippedCategoryLabels}`}
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{
+                            cursor: 'help',
+                            flexShrink: 0,
+                          }}
+                        >
+                          ...
+                        </Typography>
+                      </Tooltip>
+                    )}
+                    {categoryBreadcrumb.visibleCategories.map((cat, i) => {
+                      const pathIndex = categoryBreadcrumb.hiddenCategories.length + i
+                      const isLast = pathIndex === path.length - 1
                       return (
                         <Box
                           key={cat.id}
@@ -1492,11 +1582,7 @@ export default function App() {
                             <Typography
                               variant="body2"
                               color="text.primary"
-                              sx={{
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
+                              sx={breadcrumbCurrentTextSx}
                             >
                               {cat.label}
                             </Typography>
@@ -1507,18 +1593,13 @@ export default function App() {
                               underline="hover"
                               color="inherit"
                               onClick={() => {
-                                navigateToDepth(i + 1)
+                                navigateToDepth(pathIndex + 1)
                                 pushNavState(
                                   'browse',
-                                  path.slice(0, i + 1).map((c) => c.id),
+                                  path.slice(0, pathIndex + 1).map((c) => c.id),
                                 )
                               }}
-                              sx={{
-                                cursor: 'pointer',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
-                              }}
+                              sx={{ cursor: 'pointer', ...breadcrumbItemTextSx }}
                             >
                               {cat.label}
                             </Link>

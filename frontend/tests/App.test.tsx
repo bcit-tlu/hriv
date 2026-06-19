@@ -1,4 +1,4 @@
-import { createRef, type ReactNode } from 'react'
+import { createRef, useEffect, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, within } from '@testing-library/react'
 import App from '../src/App'
@@ -68,6 +68,35 @@ const mockCategories = [
     metadataExtra: null,
   },
 ]
+
+type MockCategory = (typeof mockCategories)[number]
+
+const mockDeepPath: MockCategory[] = [
+  {
+    ...mockCategories[0],
+    id: 1,
+    label: 'Human Anatomy',
+    parentId: null,
+    programIds: [],
+    groupIds: [],
+  },
+  {
+    ...mockCategories[0],
+    id: 2,
+    label: 'Head Pathologies',
+    parentId: 1,
+    programIds: [],
+    groupIds: [],
+  },
+  {
+    ...mockCategories[0],
+    id: 3,
+    label: 'Intracranial Hemorrhages ICH 1',
+    parentId: 2,
+  },
+]
+
+let mockInitialPath: MockCategory[] = []
 
 const browseDataFns = {
   setGroups: vi.fn(),
@@ -316,7 +345,14 @@ vi.mock('../src/useProcessingJobs', () => ({
 }))
 
 vi.mock('../src/useShareableImageState', () => ({
-  useShareableImageState: () => shareableImageStateMock,
+  useShareableImageState: ({ setPath }: { setPath: (path: MockCategory[]) => void }) => {
+    useEffect(() => {
+      if (mockInitialPath.length > 0) {
+        setPath(mockInitialPath)
+      }
+    }, [setPath])
+    return shareableImageStateMock
+  },
 }))
 
 vi.mock('../src/useAnnouncementModal', () => ({
@@ -352,6 +388,7 @@ describe('App breadcrumbs', () => {
     mockSecondImage.categoryId = 1
     mockSecondImage.note = null
     currentImagesMock = [mockImage]
+    mockInitialPath = []
     mockCategories.splice(0, mockCategories.length, {
       id: 1,
       label: 'Slides',
@@ -406,6 +443,44 @@ describe('App breadcrumbs', () => {
     expect(groupChip).toHaveStyle({ filter: 'grayscale(100%)' })
     expect(editButton).toHaveStyle({ filter: 'grayscale(100%)' })
     expect(shareButton).toHaveStyle({ filter: 'grayscale(100%)' })
+  })
+
+  it('collapses deep category breadcrumbs to the parent and current category', async () => {
+    mockInitialPath = mockDeepPath
+
+    render(<App />)
+
+    const categoryBreadcrumb = await screen.findByLabelText('category breadcrumb')
+    expect(within(categoryBreadcrumb).getByText('...')).toBeInTheDocument()
+    expect(within(categoryBreadcrumb).queryByText('Human Anatomy')).not.toBeInTheDocument()
+    expect(within(categoryBreadcrumb).getByText('Head Pathologies')).toBeInTheDocument()
+    expect(
+      within(categoryBreadcrumb).getByText('Intracranial Hemorrhages ICH 1'),
+    ).toBeInTheDocument()
+    expect(
+      within(categoryBreadcrumb).getByLabelText('Skipped categories: Human Anatomy'),
+    ).toBeInTheDocument()
+  })
+
+  it('collapses deep image breadcrumbs to the direct image category and image', async () => {
+    mockInitialPath = mockDeepPath
+    mockImage.categoryId = 3
+
+    render(<App />)
+    await screen.findByText('Intracranial Hemorrhages ICH 1')
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    const imageBreadcrumb = screen.getByLabelText('image breadcrumb')
+    expect(within(imageBreadcrumb).getByText('...')).toBeInTheDocument()
+    expect(within(imageBreadcrumb).queryByText('Human Anatomy')).not.toBeInTheDocument()
+    expect(within(imageBreadcrumb).queryByText('Head Pathologies')).not.toBeInTheDocument()
+    expect(within(imageBreadcrumb).getByText('Intracranial Hemorrhages ICH 1')).toBeInTheDocument()
+    expect(within(imageBreadcrumb).getByText('Specimen Image')).toBeInTheDocument()
+    expect(
+      within(imageBreadcrumb).getByLabelText(
+        'Skipped categories: Human Anatomy / Head Pathologies',
+      ),
+    ).toBeInTheDocument()
   })
 
   it('reduces opacity for image-view controls when category hidden state is inherited', () => {

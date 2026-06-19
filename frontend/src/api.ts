@@ -1,15 +1,33 @@
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
 function getStorage(): Storage | null {
-  if (typeof window === 'undefined') return null
   try {
-    return window.localStorage
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    if (descriptor && 'value' in descriptor && descriptor.value) {
+      return descriptor.value as Storage
+    }
+  } catch {
+    // Continue to the browser window fallback below.
+  }
+
+  try {
+    if (typeof window !== 'undefined') return window.localStorage ?? null
+  } catch {
+    // Storage can throw when blocked or unavailable.
+  }
+
+  return null
+}
+
+function readStoredToken(): string | null {
+  try {
+    return getStorage()?.getItem('hriv_token') ?? null
   } catch {
     return null
   }
 }
 
-let _token: string | null = getStorage()?.getItem('hriv_token') ?? null
+let _token: string | null = readStoredToken()
 
 // Unique per browser-tab identifier sent on every API call.  Allows the
 // backend audit log to correlate all requests from a single tab, even when
@@ -20,10 +38,14 @@ export function setToken(token: string | null): void {
   _token = token
   const storage = getStorage()
   if (!storage) return
-  if (token) {
-    storage.setItem('hriv_token', token)
-  } else {
-    storage.removeItem('hriv_token')
+  try {
+    if (token) {
+      storage.setItem('hriv_token', token)
+    } else {
+      storage.removeItem('hriv_token')
+    }
+  } catch {
+    // Storage may be unavailable in private browsing or non-browser tests.
   }
 }
 
@@ -48,13 +70,17 @@ export function clearUserStorage(): void {
   }
 
   const keysToRemove: string[] = []
-  for (let i = 0; i < storage.length; i++) {
-    const key = storage.key(i)
-    if (key && (key.startsWith('hriv_') || key.startsWith('hriv-'))) {
-      keysToRemove.push(key)
+  try {
+    for (let i = 0; i < storage.length; i++) {
+      const key = storage.key(i)
+      if (key && (key.startsWith('hriv_') || key.startsWith('hriv-'))) {
+        keysToRemove.push(key)
+      }
     }
+    keysToRemove.forEach((key) => storage.removeItem(key))
+  } catch {
+    // Ignore storage failures; clearing in-memory auth state is still useful.
   }
-  keysToRemove.forEach((key) => storage.removeItem(key))
   _token = null
 }
 
