@@ -44,6 +44,14 @@ function isNewEntry(iso: string) {
   return Date.now() - new Date(iso).getTime() < 7 * 24 * 60 * 60 * 1000
 }
 
+function sortNewestFirst(entries: ApiChangelogEntry[]) {
+  return [...entries].sort((a, b) => b.published_at.localeCompare(a.published_at))
+}
+
+interface ChangelogAdminProps {
+  onEntriesChanged?: () => void
+}
+
 interface EntryDialogProps {
   open: boolean
   initial: ApiChangelogEntry | null
@@ -149,7 +157,7 @@ function EntryDialog({ open, initial, onClose, onSaved }: EntryDialogProps) {
   )
 }
 
-export default function ChangelogAdmin() {
+export default function ChangelogAdmin({ onEntriesChanged }: ChangelogAdminProps) {
   const [entries, setEntries] = useState<ApiChangelogEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -162,7 +170,7 @@ export default function ChangelogAdmin() {
     setLoading(true)
     setLoadError(null)
     try {
-      setEntries(await fetchChangelogEntries())
+      setEntries(sortNewestFirst(await fetchChangelogEntries()))
     } catch (err) {
       setLoadError(userMessage(err, 'Failed to load changelog entries.'))
     } finally {
@@ -177,18 +185,22 @@ export default function ChangelogAdmin() {
     return () => window.clearTimeout(timeout)
   }, [load])
 
-  const handleSaved = useCallback((saved: ApiChangelogEntry) => {
-    setEntries((prev) => {
-      const existingIndex = prev.findIndex((entry) => entry.id === saved.id)
-      if (existingIndex >= 0) {
-        const next = [...prev]
-        next[existingIndex] = saved
-        return next.sort((a, b) => b.published_at.localeCompare(a.published_at))
-      }
-      return [saved, ...prev].sort((a, b) => b.published_at.localeCompare(a.published_at))
-    })
-    setDialogEntry(undefined)
-  }, [])
+  const handleSaved = useCallback(
+    (saved: ApiChangelogEntry) => {
+      setEntries((prev) => {
+        const existingIndex = prev.findIndex((entry) => entry.id === saved.id)
+        if (existingIndex >= 0) {
+          const next = [...prev]
+          next[existingIndex] = saved
+          return sortNewestFirst(next)
+        }
+        return sortNewestFirst([saved, ...prev])
+      })
+      setDialogEntry(undefined)
+      onEntriesChanged?.()
+    },
+    [onEntriesChanged],
+  )
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return
@@ -198,12 +210,13 @@ export default function ChangelogAdmin() {
       await deleteChangelogEntry(deleteTarget.id)
       setEntries((prev) => prev.filter((entry) => entry.id !== deleteTarget.id))
       setDeleteTarget(null)
+      onEntriesChanged?.()
     } catch (err) {
       setDeleteError(userMessage(err, 'Failed to delete changelog entry.'))
     } finally {
       setDeleting(false)
     }
-  }, [deleteTarget])
+  }, [deleteTarget, onEntriesChanged])
 
   return (
     <Box>

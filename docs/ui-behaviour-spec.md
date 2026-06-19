@@ -213,6 +213,19 @@ committed on Save) in the edit modals.
   the app bumps `imagesVersion`, **Then** the table re-fetches so newly imported
   images appear without a manual reload.
 
+### Changelog notifications (`NotificationMenu.tsx`, `ChangelogAdmin.tsx`)
+
+- Changelog entries render in reverse chronological order (most recent first)
+  in both the app bar feed and the admin changelog table, even if the API
+  response arrives unsorted.
+- The admin changelog table's `new` chip is time-bound: it appears only for
+  entries published within the last 7 days, then disappears automatically.
+- The app bar changelog feed uses the same local version-bump pattern as other
+  refreshable surfaces. **Given** an admin creates, republishes, or deletes a
+  changelog entry in the Admin tab, **When** that mutation succeeds, **Then**
+  the app bumps a shared `changelogVersion` counter and `NotificationMenu`
+  re-fetches entries in the same session without a full page reload.
+
 ### Image replacement & versioning (`useImageActions.test.ts`, `ImageMetadataFields.test.tsx`)
 
 - **Given** an existing image, **When** an editor replaces its file, **Then**
