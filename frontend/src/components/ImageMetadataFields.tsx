@@ -1,6 +1,7 @@
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
+import { MAX_NOTE_LENGTH } from '../constants'
 
 export interface ImageMetadataValues {
   copyright: string
@@ -22,10 +23,14 @@ interface ImageMetadataFieldsProps {
 export default function ImageMetadataFields({
   values,
   onChange,
+  idPrefix,
   copyrightPlaceholder = 'e.g. 2026 BCIT',
   notePlaceholder = 'Image note',
   categoryHidden = false,
 }: ImageMetadataFieldsProps) {
+  const copyrightId = idPrefix ? `${idPrefix}-copyright` : undefined
+  const noteId = idPrefix ? `${idPrefix}-note` : undefined
+  const visibilityId = idPrefix ? `${idPrefix}-visibility` : undefined
   const visibilityLabel = categoryHidden
     ? 'Visibility (hidden by category)'
     : values.active
@@ -35,6 +40,7 @@ export default function ImageMetadataFields({
   return (
     <>
       <TextField
+        id={copyrightId}
         label="Copyright"
         fullWidth
         variant="outlined"
@@ -43,12 +49,18 @@ export default function ImageMetadataFields({
         placeholder={copyrightPlaceholder}
       />
       <TextField
+        id={noteId}
         label="Note"
         fullWidth
         variant="outlined"
         value={values.note}
         onChange={(e) => onChange({ ...values, note: e.target.value })}
         placeholder={notePlaceholder}
+        multiline
+        minRows={3}
+        maxRows={10}
+        slotProps={{ htmlInput: { maxLength: MAX_NOTE_LENGTH } }}
+        helperText={`${values.note.length}/${MAX_NOTE_LENGTH}`}
       />
       <FormControlLabel
         control={
@@ -56,6 +68,7 @@ export default function ImageMetadataFields({
             checked={values.active}
             onChange={(e) => onChange({ ...values, active: e.target.checked })}
             disabled={categoryHidden}
+            slotProps={{ input: { id: visibilityId, role: 'switch' } }}
           />
         }
         label={visibilityLabel}

@@ -498,6 +498,52 @@ async def test_process_bulk_import_completes_successful_job(tmp_path) -> None:
     assert job.status == "completed"
 
 
+async def test_process_bulk_import_normalizes_empty_note(tmp_path) -> None:
+    job = SimpleNamespace(
+        id=1,
+        status="pending",
+        total_count=1,
+        completed_count=1,
+        failed_count=0,
+        category_id=1,
+        errors=[],
+    )
+    src = SimpleNamespace(id=10, status="completed", error_message=None)
+
+    db = AsyncMock()
+
+    def _get(model, pk):
+        name = getattr(model, "__name__", "")
+        if name == "BulkImportJob":
+            return job
+        return src
+
+    db.get = AsyncMock(side_effect=_get)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 10))
+    db.execute = AsyncMock()
+
+    with (
+        patch(
+            "app.routers.bulk_import.async_session",
+            _make_async_session_factory(db),
+        ),
+        patch(
+            "app.routers.bulk_import.process_source_image",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await _process_bulk_import(
+            job_id=1,
+            file_entries=[("a.png", str(tmp_path / "a.png"))],
+            note="",
+        )
+
+    src_record = db.add.call_args_list[0].args[0]
+    assert src_record.note is None
+
+
 async def test_process_bulk_import_records_failure_for_failed_source(tmp_path) -> None:
     """When ``process_source_image`` completes but the SourceImage row is
     marked as ``failed``, the helper must bump ``failed_count`` and append to

@@ -30,6 +30,7 @@ import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
 import ImageViewer from './components/ImageViewer'
 import SortableTileGrid from './components/SortableTileGrid'
+import NoteDisplay from './components/NoteDisplay'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
 import AppShell from './components/AppShell'
@@ -1366,9 +1367,27 @@ export default function App() {
                   </Typography>
                 )}
                 {selectedImage.note && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Note:</strong> {selectedImage.note}
-                  </Typography>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 1,
+                      mt: 1,
+                      width: '100%',
+                    }}
+                  >
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      component="div"
+                      sx={{ whiteSpace: 'nowrap' }}
+                    >
+                      <strong>Note:&nbsp;</strong>
+                    </Typography>
+                    <Box sx={{ flex: '1 1 60%', minWidth: 0, maxWidth: { xs: '100%', sm: '60%' } }}>
+                      <NoteDisplay key={selectedImage.id} note={selectedImage.note} />
+                    </Box>
+                  </Box>
                 )}
                 {selectedImage.createdAt && (
                   <Typography variant="body2" color="text.secondary" component="span">

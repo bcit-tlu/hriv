@@ -67,6 +67,7 @@ import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVis
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
 import MoveImageDialog from './MoveImageDialog'
+import NoteDisplay from './NoteDisplay'
 import UploadImageModal from './UploadImageModal'
 
 interface CategoryPathSegment {
@@ -1324,7 +1325,11 @@ export default function ManagePage({
                       {isColumnVisible('copyright') && (
                         <TableCell>{img.copyright ?? '—'}</TableCell>
                       )}
-                      {isColumnVisible('note') && <TableCell>{img.note ?? '—'}</TableCell>}
+                      {isColumnVisible('note') && (
+                        <TableCell sx={{ maxWidth: 260, minWidth: 180 }}>
+                          {img.note ? <NoteDisplay note={img.note} collapsedLines={2} /> : '—'}
+                        </TableCell>
+                      )}
                       {isColumnVisible('program') && (
                         <TableCell onClick={(e) => e.stopPropagation()}>
                           {(() => {

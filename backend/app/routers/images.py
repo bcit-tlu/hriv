@@ -15,7 +15,17 @@ from ..auth import get_current_user, require_role
 from ..database import get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import Category, Image, SourceImage, User
-from ..schemas import ImageCreate, ImageUpdate, ImageBulkUpdate, ImageBulkDelete, ImageReorderRequest, ImageOut, SourceImageOut
+from ..schemas import (
+    MAX_NOTE_LENGTH,
+    ImageBulkDelete,
+    ImageBulkUpdate,
+    ImageCreate,
+    ImageOut,
+    ImageReorderRequest,
+    ImageUpdate,
+    SourceImageOut,
+    normalize_note_value,
+)
 from ..tracing import record_exception_if_server_error
 from ..visibility import get_student_excluded_category_ids, is_category_visible_to_student
 
@@ -274,7 +284,14 @@ async def replace_image(
                 if copyright is not None:
                     img.copyright = copyright if copyright != "" else None
                 if note is not None:
-                    img.note = note if note != "" else None
+                    try:
+                        note = normalize_note_value(note)
+                    except ValueError:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Note must be {MAX_NOTE_LENGTH} characters or fewer",
+                        )
+                    img.note = note
                 if active is not None:
                     img.active = active.lower() in ("true", "1")
                 if metadata_extra is not None:

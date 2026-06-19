@@ -21,6 +21,7 @@ import { getVisibilityColors } from '../theme'
 import { isCategoryHiddenInTree } from '../treeUtils'
 import { useColorMode } from '../useColorMode'
 import CategoryPickerSelect from './CategoryPickerSelect'
+import { MAX_NOTE_LENGTH } from '../constants'
 
 export interface ImageFormData {
   name?: string
@@ -480,6 +481,11 @@ function EditImageForm({
           variant="outlined"
           value={note}
           onChange={(e) => setNote(e.target.value)}
+          multiline
+          minRows={3}
+          maxRows={10}
+          slotProps={{ htmlInput: { maxLength: MAX_NOTE_LENGTH } }}
+          helperText={`${note.length}/${MAX_NOTE_LENGTH}`}
         />
         <Typography variant="subtitle2" sx={{ mt: 1 }}>
           Measurement Settings

@@ -3,6 +3,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+MAX_NOTE_LENGTH = 500
+
 
 # ── Overlay Rect (shared validation for locked_overlays in metadata_extra) ────
 
@@ -50,6 +52,16 @@ class ProgramBase(BaseModel):
 def _normalize_oidc_group(v: str | None) -> str | None:
     if isinstance(v, str):
         v = v.strip()
+        return v or None
+    return v
+
+
+def normalize_note_value(v: str | None) -> str | None:
+    if v is None:
+        return v
+    if isinstance(v, str):
+        if len(v) > MAX_NOTE_LENGTH:
+            raise ValueError(f"note must be {MAX_NOTE_LENGTH} characters or fewer")
         return v or None
     return v
 
@@ -285,7 +297,7 @@ class ImageBase(BaseModel):
 
 
 class ImageCreate(ImageBase):
-    pass
+    _validate_note = field_validator("note", mode="before")(normalize_note_value)
 
 
 class ImageUpdate(BaseModel):
@@ -299,6 +311,8 @@ class ImageUpdate(BaseModel):
     sort_order: int | None = None
     metadata_extra: dict | None = None
     metadata_extra_merge: dict | None = None
+
+    _validate_note = field_validator("note", mode="before")(normalize_note_value)
 
     @model_validator(mode="after")
     def validate_overlay_shapes(self) -> "ImageUpdate":
@@ -416,6 +430,8 @@ class ImageBulkUpdate(BaseModel):
     copyright: str | None = None
     note: str | None = None
     active: bool | None = None
+
+    _validate_note = field_validator("note", mode="before")(normalize_note_value)
 
 
 class ImageBulkDelete(BaseModel):

@@ -55,6 +55,30 @@ describe('ImageMetadataFields', () => {
     expect(screen.getByLabelText(/visibility.*hide image/i)).toBeInTheDocument()
   })
 
+  it('disables visibility when the category is hidden', () => {
+    render(<ImageMetadataFields values={defaultValues} onChange={vi.fn()} categoryHidden />)
+
+    expect(screen.getByRole('switch', { name: /visibility.*hidden by category/i })).toBeDisabled()
+  })
+
+  it('limits note input to 500 characters and shows a counter', () => {
+    render(<ImageMetadataFields values={{ ...defaultValues, note: 'abc' }} onChange={vi.fn()} />)
+
+    expect(screen.getByLabelText(/note/i)).toHaveAttribute('maxlength', '500')
+    expect(screen.getByText('3/500')).toBeInTheDocument()
+  })
+
+  it('uses idPrefix for stable field ids', () => {
+    render(<ImageMetadataFields values={defaultValues} onChange={vi.fn()} idPrefix="upload" />)
+
+    expect(screen.getByLabelText(/copyright/i)).toHaveAttribute('id', 'upload-copyright')
+    expect(screen.getByLabelText(/note/i)).toHaveAttribute('id', 'upload-note')
+    expect(screen.getByRole('switch', { name: /visibility/i })).toHaveAttribute(
+      'id',
+      'upload-visibility',
+    )
+  })
+
   it('shows placeholder text for copyright and note', () => {
     render(
       <ImageMetadataFields

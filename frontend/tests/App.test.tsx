@@ -16,6 +16,14 @@ const mockImage = {
   version: 1,
 }
 
+const mockSecondImage = {
+  ...mockImage,
+  id: 102,
+  name: 'Second Specimen Image',
+}
+
+let currentImagesMock = [mockImage]
+
 const mockPrograms = [
   { id: 1, name: 'Pathology', oidc_group: null, created_at: '', updated_at: '' },
 ]
@@ -214,9 +222,11 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     onCategoryClick: (category: (typeof mockCategories)[number]) => void
   }) => (
     <>
-      <button type="button" onClick={() => onImageClick(currentImages[0])}>
-        Open image
-      </button>
+      {currentImages.map((image, index) => (
+        <button key={image.id} type="button" onClick={() => onImageClick(image)}>
+          {index === 0 ? 'Open image' : `Open image ${image.id}`}
+        </button>
+      ))}
       {currentCategories[0] && (
         <button type="button" onClick={() => onCategoryClick(currentCategories[0])}>
           Open category
@@ -244,7 +254,17 @@ vi.mock('../src/components/EditImageModal', () => ({ default: () => null }))
 vi.mock('../src/components/ProgramManagementModal', () => ({ default: () => null }))
 vi.mock('../src/components/GroupManagementModal', () => ({ default: () => null }))
 vi.mock('../src/components/ReportIssueModal', () => ({ default: () => null }))
-vi.mock('../src/components/SearchModal', () => ({ default: () => null }))
+vi.mock('../src/components/SearchModal', () => ({
+  default: ({
+    onSelectImage,
+  }: {
+    onSelectImage: (image: typeof mockSecondImage, categoryPath: typeof mockCategories) => void
+  }) => (
+    <button type="button" onClick={() => onSelectImage(mockSecondImage, mockCategories)}>
+      Select second image from search
+    </button>
+  ),
+}))
 vi.mock('../src/components/UploadImageModal', () => ({ default: () => null }))
 vi.mock('../src/components/MoveCategoryDialog', () => ({ default: () => null }))
 vi.mock('../src/components/AddCategoryDialog', () => ({ default: () => null }))
@@ -277,7 +297,7 @@ vi.mock('../src/useBrowseData', () => ({
     programs: mockPrograms,
     groups: mockGroups,
     ...browseDataFns,
-    currentImages: [mockImage],
+    currentImages: currentImagesMock,
     getPathRestriction: () => [1],
     ancestorProgramIds: [1],
     getPathGroupRestriction: () => [10],
@@ -327,6 +347,11 @@ describe('App breadcrumbs', () => {
   beforeEach(() => {
     mockImage.active = true
     mockImage.categoryId = 1
+    mockImage.note = null
+    mockSecondImage.active = true
+    mockSecondImage.categoryId = 1
+    mockSecondImage.note = null
+    currentImagesMock = [mockImage]
     mockCategories.splice(0, mockCategories.length, {
       id: 1,
       label: 'Slides',
@@ -506,5 +531,22 @@ describe('App breadcrumbs', () => {
 
     expect(imageProgramChip).toHaveStyle({ opacity: '0.6' })
     expect(imageGroupChip).toHaveStyle({ opacity: '0.6' })
+  })
+
+  it('resets expanded note state when selecting another image', () => {
+    mockImage.note = 'A'.repeat(350)
+    mockSecondImage.note = 'B'.repeat(350)
+    currentImagesMock = [mockImage, mockSecondImage]
+
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Open image' }))
+
+    fireEvent.click(screen.getByRole('button', { name: /Show more/i }))
+    expect(screen.getByRole('button', { name: /Show less/i })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Select second image from search' }))
+
+    expect(screen.queryByRole('button', { name: /Show less/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Show more/i })).toBeInTheDocument()
   })
 })

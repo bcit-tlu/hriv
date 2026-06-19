@@ -17,7 +17,7 @@ from ..database import get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import SourceImage, User
 from ..processing import process_source_image
-from ..schemas import SourceImageOut
+from ..schemas import MAX_NOTE_LENGTH, SourceImageOut, normalize_note_value
 from ..tracing import record_exception_if_server_error
 from ..worker import enqueue_process_source_image
 
@@ -50,6 +50,15 @@ async def upload_source_image(
         try:
             # Ensure the source images directory exists
             os.makedirs(settings.source_images_dir, exist_ok=True)
+
+            # Validate and normalize note early (before writing large files to disk).
+            try:
+                note = normalize_note_value(note)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Note must be {MAX_NOTE_LENGTH} characters or fewer",
+                )
 
             # Generate a unique filename to avoid collisions
             ext = os.path.splitext(file.filename)[1] or ".bin"
