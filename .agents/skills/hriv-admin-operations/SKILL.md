@@ -1,0 +1,42 @@
+---
+name: hriv-admin-operations
+description: Work on HRIV admin workflows including database export/import, filesystem export/import, AdminTask lifecycle, task cancellation, stale task reconciliation, background task workers, changelog entries, announcements, maintenance mode, issue reports, admin UI, and admin operation tests.
+---
+
+# HRIV Admin Operations
+
+Use this skill for administrator-facing operations and long-running task flows.
+
+## Start Here
+
+1. Read `references/admin-operations-map.md`.
+2. Read `../../../docs/admin-import-export.md` for task lifecycle, cancellation,
+   import transaction boundaries, and export/import ordering.
+3. Read `../../../docs/changelog-notifications.md` when changing changelog,
+   announcements, notification UI, or release-note admin behavior.
+4. Use `$hriv-backend-api` for router/schema/model changes and
+   `$hriv-frontend-ui` for admin UI changes.
+
+## Fragile Contracts
+
+- `AdminTask` active statuses block another task of the same type.
+- Filesystem import starts in `uploading`; the upload endpoint atomically moves
+  it to `pending` so cancellation remains race-safe.
+- `run_db_import` uses separate status and data sessions so progress commits
+  while destructive data import remains atomic.
+- Keep DB import delete/insert ordering aligned with foreign keys, groups,
+  categories, images, source images, changelog entries, and announcements.
+- Reset PostgreSQL sequences after import.
+- `reconcile_stale_tasks` must remain multi-replica safe by using freshness on
+  `updated_at`.
+
+## Validation
+
+Common targeted tests:
+
+```bash
+cd backend && poetry run pytest tests/test_admin_ops.py tests/test_router_admin.py
+```
+
+For admin UI changes, also run the relevant frontend component tests and use
+`$testing-hriv` for browser flows when behavior crosses the API/UI boundary.

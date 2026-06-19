@@ -1,0 +1,4 @@
+interface:
+  display_name: "HRIV Image Workflows"
+  short_description: "Upload, tiling, viewer, metadata"
+  default_prompt: "Use $hriv-image-workflows to update HRIV image processing."
