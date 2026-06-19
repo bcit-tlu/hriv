@@ -30,9 +30,7 @@ const programs: Program[] = [
   { id: 10, name: 'Pathology', oidc_group: null, created_at: '', updated_at: '' },
 ]
 
-function renderDialog(
-  overrides: Partial<Parameters<typeof ManageCategoriesDialog>[0]> = {},
-) {
+function renderDialog(overrides: Partial<Parameters<typeof ManageCategoriesDialog>[0]> = {}) {
   const onClose = overrides.onClose ?? vi.fn()
   const onAddCategory = overrides.onAddCategory ?? vi.fn().mockResolvedValue(99)
   const onDeleteCategory = overrides.onDeleteCategory ?? vi.fn().mockResolvedValue(undefined)
@@ -133,9 +131,9 @@ describe('ManageCategoriesDialog — add category', () => {
     const user = userEvent.setup()
     renderDialog()
     // The root-level add button has the tooltip "Add root category"
-    const addButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.querySelector('svg[data-testid="AddIcon"]'),
-    )
+    const addButtons = screen
+      .getAllByRole('button')
+      .filter((btn) => btn.querySelector('svg[data-testid="AddIcon"]'))
     // First add button is root level
     await user.click(addButtons[0])
     // AddCategoryDialog should open with a label input
@@ -148,9 +146,9 @@ describe('ManageCategoriesDialog — add category', () => {
     renderDialog({ categories })
 
     // The "Add child category" button is on the category row
-    const addButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.querySelector('svg[data-testid="AddIcon"]'),
-    )
+    const addButtons = screen
+      .getAllByRole('button')
+      .filter((btn) => btn.querySelector('svg[data-testid="AddIcon"]'))
     // Second add button is child of first category
     await user.click(addButtons[addButtons.length - 1])
     expect(screen.getByLabelText('Category name')).toBeInTheDocument()
@@ -161,9 +159,9 @@ describe('ManageCategoriesDialog — add category', () => {
     const { onAddCategory } = renderDialog()
 
     // Open add dialog via root "+"
-    const addButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.querySelector('svg[data-testid="AddIcon"]'),
-    )
+    const addButtons = screen
+      .getAllByRole('button')
+      .filter((btn) => btn.querySelector('svg[data-testid="AddIcon"]'))
     await user.click(addButtons[0])
 
     // Type a name and submit
@@ -187,9 +185,9 @@ describe('ManageCategoriesDialog — delete category', () => {
     const categories = [makeCategory({ id: 1, label: 'Tissues' })]
     renderDialog({ categories })
 
-    const deleteButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.querySelector('svg[data-testid="DeleteIcon"]'),
-    )
+    const deleteButtons = screen
+      .getAllByRole('button')
+      .filter((btn) => btn.querySelector('svg[data-testid="DeleteIcon"]'))
     await user.click(deleteButtons[0])
 
     expect(screen.getByText('Delete Category')).toBeInTheDocument()
@@ -203,9 +201,9 @@ describe('ManageCategoriesDialog — delete category', () => {
     const categories = [makeCategory({ id: 42, label: 'Tissues' })]
     const { onDeleteCategory } = renderDialog({ categories })
 
-    const deleteButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.querySelector('svg[data-testid="DeleteIcon"]'),
-    )
+    const deleteButtons = screen
+      .getAllByRole('button')
+      .filter((btn) => btn.querySelector('svg[data-testid="DeleteIcon"]'))
     await user.click(deleteButtons[0])
 
     // Confirm
@@ -221,9 +219,9 @@ describe('ManageCategoriesDialog — delete category', () => {
     const categories = [makeCategory({ id: 1, label: 'Tissues' })]
     renderDialog({ categories })
 
-    const deleteButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.querySelector('svg[data-testid="DeleteIcon"]'),
-    )
+    const deleteButtons = screen
+      .getAllByRole('button')
+      .filter((btn) => btn.querySelector('svg[data-testid="DeleteIcon"]'))
     await user.click(deleteButtons[0])
 
     expect(screen.getByText('Delete Category')).toBeInTheDocument()
@@ -249,9 +247,9 @@ describe('ManageCategoriesDialog — delete category', () => {
     renderDialog({ categories })
 
     // Delete the parent
-    const deleteButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.querySelector('svg[data-testid="DeleteIcon"]'),
-    )
+    const deleteButtons = screen
+      .getAllByRole('button')
+      .filter((btn) => btn.querySelector('svg[data-testid="DeleteIcon"]'))
     await user.click(deleteButtons[0])
 
     expect(screen.getByText(/sub-categor/)).toBeInTheDocument()
@@ -268,9 +266,9 @@ describe('ManageCategoriesDialog — edit category', () => {
     const categories = [makeCategory({ id: 1, label: 'Anatomy' })]
     renderDialog({ categories })
 
-    const editButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.querySelector('svg[data-testid="EditIcon"]'),
-    )
+    const editButtons = screen
+      .getAllByRole('button')
+      .filter((btn) => btn.querySelector('svg[data-testid="EditIcon"]'))
     await user.click(editButtons[0])
 
     expect(screen.getByDisplayValue('Anatomy')).toBeInTheDocument()
@@ -288,9 +286,9 @@ describe('ManageCategoriesDialog — edit category', () => {
         programs={programs}
       />,
     )
-    const editButtons = screen.queryAllByRole('button').filter(
-      (btn) => btn.querySelector('svg[data-testid="EditIcon"]'),
-    )
+    const editButtons = screen
+      .queryAllByRole('button')
+      .filter((btn) => btn.querySelector('svg[data-testid="EditIcon"]'))
     expect(editButtons).toHaveLength(0)
   })
 })
@@ -303,9 +301,7 @@ describe('ManageCategoriesDialog — visibility toggle', () => {
   it('renders visibility buttons when onToggleVisibility is provided', () => {
     const categories = [makeCategory({ id: 1, label: 'Active Cat' })]
     renderDialog({ categories, onToggleVisibility: vi.fn() })
-    expect(
-      screen.getByLabelText('Visibility: Hide category'),
-    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Visibility: Hide category')).toBeInTheDocument()
   })
 
   it('calls onToggleVisibility when visibility button is clicked', async () => {
@@ -321,9 +317,7 @@ describe('ManageCategoriesDialog — visibility toggle', () => {
   it('renders "Show category" for hidden categories', () => {
     const categories = [makeCategory({ id: 1, label: 'Hidden', status: 'hidden' })]
     renderDialog({ categories, onToggleVisibility: vi.fn() })
-    expect(
-      screen.getByLabelText('Visibility: Show category'),
-    ).toBeInTheDocument()
+    expect(screen.getByLabelText('Visibility: Show category')).toBeInTheDocument()
   })
 
   it('dims inherited-hidden child rows and shows the inherited hidden icon', () => {
@@ -332,9 +326,7 @@ describe('ManageCategoriesDialog — visibility toggle', () => {
         id: 1,
         label: 'Parent',
         status: 'hidden',
-        children: [
-          makeCategory({ id: 2, label: 'Child', parentId: 1 }),
-        ],
+        children: [makeCategory({ id: 2, label: 'Child', parentId: 1 })],
       }),
     ]
     renderDialog({ categories, onToggleVisibility: vi.fn() })
@@ -349,9 +341,7 @@ describe('ManageCategoriesDialog — visibility toggle', () => {
   it('does not render visibility buttons when onToggleVisibility is omitted', () => {
     const categories = [makeCategory({ id: 1, label: 'Cat' })]
     renderDialog({ categories })
-    expect(
-      screen.queryByLabelText('Visibility: Hide category'),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Visibility: Hide category')).not.toBeInTheDocument()
   })
 })
 
@@ -363,17 +353,13 @@ describe('ManageCategoriesDialog — drag handle', () => {
   it('renders drag handles when onReorderCategories is provided', () => {
     const categories = [makeCategory({ id: 1, label: 'Cat' })]
     renderDialog({ categories, onReorderCategories: vi.fn() })
-    expect(
-      document.querySelector('svg[data-testid="DragIndicatorIcon"]'),
-    ).toBeInTheDocument()
+    expect(document.querySelector('svg[data-testid="DragIndicatorIcon"]')).toBeInTheDocument()
   })
 
   it('does not render drag handles when onReorderCategories is omitted', () => {
     const categories = [makeCategory({ id: 1, label: 'Cat' })]
     renderDialog({ categories })
-    expect(
-      document.querySelector('svg[data-testid="DragIndicatorIcon"]'),
-    ).not.toBeInTheDocument()
+    expect(document.querySelector('svg[data-testid="DragIndicatorIcon"]')).not.toBeInTheDocument()
   })
 })
 
@@ -443,9 +429,7 @@ describe('ManageCategoriesDialog — LockIcon', () => {
       id: 1,
       label: 'Parent',
       programIds: [10],
-      children: [
-        makeCategory({ id: 2, label: 'Child', parentId: 1, programIds: [] }),
-      ],
+      children: [makeCategory({ id: 2, label: 'Child', parentId: 1, programIds: [] })],
     })
     render(
       <ManageCategoriesDialog
@@ -484,9 +468,7 @@ describe('ManageCategoriesDialog — LockIcon', () => {
       id: 1,
       label: 'Parent',
       groupIds: [20],
-      children: [
-        makeCategory({ id: 2, label: 'Child', parentId: 1, groupIds: [] }),
-      ],
+      children: [makeCategory({ id: 2, label: 'Child', parentId: 1, groupIds: [] })],
     })
     render(
       <ManageCategoriesDialog

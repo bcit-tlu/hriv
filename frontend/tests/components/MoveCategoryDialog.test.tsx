@@ -6,7 +6,15 @@ import type { Category } from '../../src/types'
 
 // Mock CategoryPickerSelect since it is a complex component tested separately
 vi.mock('../../src/components/CategoryPickerSelect', () => ({
-  default: ({ value, onChange, label }: { value: number | null; onChange: (v: number | null) => void; label: string }) => (
+  default: ({
+    value,
+    onChange,
+    label,
+  }: {
+    value: number | null
+    onChange: (v: number | null) => void
+    label: string
+  }) => (
     <select
       data-testid="category-picker"
       aria-label={label}
@@ -20,8 +28,28 @@ vi.mock('../../src/components/CategoryPickerSelect', () => ({
 }))
 
 const categories: Category[] = [
-  { id: 1, label: 'Architecture', parentId: null, children: [], images: [], programIds: [], groupIds: [], sortOrder: 0, version: 1 },
-  { id: 10, label: 'Italian', parentId: 1, children: [], images: [], programIds: [], groupIds: [], sortOrder: 0, version: 1 },
+  {
+    id: 1,
+    label: 'Architecture',
+    parentId: null,
+    children: [],
+    images: [],
+    programIds: [],
+    groupIds: [],
+    sortOrder: 0,
+    version: 1,
+  },
+  {
+    id: 10,
+    label: 'Italian',
+    parentId: 1,
+    children: [],
+    images: [],
+    programIds: [],
+    groupIds: [],
+    sortOrder: 0,
+    version: 1,
+  },
 ]
 
 const category: Category = {

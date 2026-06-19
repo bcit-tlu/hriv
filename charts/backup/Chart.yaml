@@ -3,4 +3,4 @@ name: hriv-backup
 description: HRIV Backup Service – scheduled database and filesystem snapshots
 type: application
 version: 0.1.0 # x-release-please-version
-appVersion: "0.1.0" # x-release-please-version
+appVersion: '0.1.0' # x-release-please-version

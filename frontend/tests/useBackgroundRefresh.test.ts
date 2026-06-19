@@ -88,10 +88,9 @@ describe('useBackgroundRefresh', () => {
 
   it('stops polling when enabled changes to false', () => {
     const refresh = vi.fn().mockResolvedValue(undefined)
-    const { rerender } = renderHook(
-      ({ enabled }) => useBackgroundRefresh(refresh, enabled),
-      { initialProps: { enabled: true } },
-    )
+    const { rerender } = renderHook(({ enabled }) => useBackgroundRefresh(refresh, enabled), {
+      initialProps: { enabled: true },
+    })
 
     vi.advanceTimersByTime(30_000)
     expect(refresh).toHaveBeenCalledTimes(1)
@@ -121,7 +120,9 @@ describe('useBackgroundRefresh', () => {
     expect(signal.aborted).toBe(false)
 
     // Call invalidate
-    act(() => { result.current() })
+    act(() => {
+      result.current()
+    })
     expect(signal.aborted).toBe(true)
 
     // Timer restarted — next poll fires after fresh 30s

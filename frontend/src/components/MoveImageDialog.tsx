@@ -15,8 +15,18 @@ interface MoveImageDialogProps {
   onMove: (categoryId: number | null) => Promise<void>
   image: ApiImage | null
   categories: Category[]
-  onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
+  onAddCategory?: (
+    label: string,
+    parentId: number | null,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<number | void>
+  onEditCategory?: (
+    categoryId: number,
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
   programs?: Program[]
   groups?: Group[]
@@ -51,7 +61,13 @@ export default function MoveImageDialog({
   }
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth TransitionProps={{ onEnter: handleEnter }}>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="xs"
+      fullWidth
+      TransitionProps={{ onEnter: handleEnter }}
+    >
       <DialogTitle>Move Image</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
         {image && (
@@ -72,7 +88,9 @@ export default function MoveImageDialog({
         />
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button onClick={onClose} disabled={saving}>
+          Cancel
+        </Button>
         <Button onClick={handleMove} variant="contained" disabled={saving}>
           {saving ? 'Moving…' : 'Move'}
         </Button>

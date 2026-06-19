@@ -1,4 +1,4 @@
-name: "[CI] Test, build & publish"
+name: '[CI] Test, build & publish'
 
 # PR runs show PR title; main runs show head commit subject.
 run-name: >-
@@ -32,7 +32,7 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.13"
+          python-version: '3.13'
 
       - name: Install Poetry
         run: pip install poetry
@@ -63,7 +63,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: "22"
+          node-version: '22'
 
       - uses: actions/cache@v5
         with:
@@ -73,6 +73,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Check formatting (Prettier)
+        run: npm run format:check
 
       # Advisory until pre-existing lint errors are resolved.
       - name: Lint (ESLint)
@@ -125,7 +128,7 @@ jobs:
       image_name: hriv-frontend
       context: ./frontend
       target: stable
-      build_contexts: "nginx-config=./charts/frontend/files"
+      build_contexts: 'nginx-config=./charts/frontend/files'
       extra_watch_paths: ./charts/frontend/files
       trivyignore: .trivyignore
     secrets: inherit

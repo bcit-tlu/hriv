@@ -1,10 +1,8 @@
 import type { ReactElement } from 'react'
 import { render, screen, within } from '@testing-library/react'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
-import MarkdownContent, {
-  parseMarkdown,
-  renderInline,
-} from '../../src/components/MarkdownContent'
+import MarkdownContent from '../../src/components/MarkdownContent'
+import { parseMarkdown, renderInline } from '../../src/markdownUtils'
 
 function renderWithTheme(ui: ReactElement) {
   const theme = createTheme()
@@ -90,15 +88,11 @@ describe('renderInline', () => {
     expect(link).toHaveAttribute('href', 'https://example.com/docs')
     expect(link).toHaveAttribute('target', '_blank')
     expect(link).toHaveAttribute('rel', 'noopener noreferrer')
-    expect(screen.getByTestId('inline-probe')).toHaveTextContent(
-      'Visit https://example.com/docs.',
-    )
+    expect(screen.getByTestId('inline-probe')).toHaveTextContent('Visit https://example.com/docs.')
   })
 
   it('renders markdown linked text safely', () => {
-    renderWithTheme(
-      <InlineProbe text="Read [the docs](https://example.com/docs) next." />,
-    )
+    renderWithTheme(<InlineProbe text="Read [the docs](https://example.com/docs) next." />)
 
     const link = screen.getByRole('link', { name: 'the docs' })
     expect(link).toHaveAttribute('href', 'https://example.com/docs')
@@ -119,9 +113,7 @@ describe('renderInline', () => {
 
 describe('MarkdownContent', () => {
   it('renders headings as Typography with the expected elements and variants', () => {
-    renderWithTheme(
-      <MarkdownContent markdown={'# Title\n## Section\n### Detail'} />,
-    )
+    renderWithTheme(<MarkdownContent markdown={'# Title\n## Section\n### Detail'} />)
 
     const h1 = screen.getByRole('heading', { level: 1, name: 'Title' })
     const h2 = screen.getByRole('heading', { level: 2, name: 'Section' })
@@ -133,9 +125,7 @@ describe('MarkdownContent', () => {
   })
 
   it('renders lists as ul and li elements', () => {
-    renderWithTheme(
-      <MarkdownContent markdown={'- First item\n* Second item'} />,
-    )
+    renderWithTheme(<MarkdownContent markdown={'- First item\n* Second item'} />)
 
     const list = screen.getByRole('list')
     const items = within(list).getAllByRole('listitem')
@@ -147,9 +137,7 @@ describe('MarkdownContent', () => {
   })
 
   it('renders fenced code blocks as pre and code', () => {
-    renderWithTheme(
-      <MarkdownContent markdown={'```\nconst x = 1;\n```'} />,
-    )
+    renderWithTheme(<MarkdownContent markdown={'```\nconst x = 1;\n```'} />)
 
     const code = screen.getByText('const x = 1;')
     expect(code.tagName).toBe('CODE')
@@ -158,10 +146,7 @@ describe('MarkdownContent', () => {
 
   it('applies the custom sx prop to the root container', () => {
     const { container } = renderWithTheme(
-      <MarkdownContent
-        markdown="Paragraph"
-        sx={{ borderTop: '3px solid rgb(255, 0, 0)' }}
-      />,
+      <MarkdownContent markdown="Paragraph" sx={{ borderTop: '3px solid rgb(255, 0, 0)' }} />,
     )
 
     expect(container.firstChild).toHaveStyle({

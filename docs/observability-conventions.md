@@ -6,13 +6,13 @@ downstream dashboards.
 
 ## Stack Overview
 
-| Layer | Technology | Role |
-|-------|-----------|------|
-| SDK bootstrap | `otel_bootstrap.py` | Ensures the OTel SDK is active under `uvicorn --reload` |
+| Layer                | Technology                                                                 | Role                                                       |
+| -------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| SDK bootstrap        | `otel_bootstrap.py`                                                        | Ensures the OTel SDK is active under `uvicorn --reload`    |
 | Auto-instrumentation | `opentelemetry-instrumentation-fastapi`, `-sqlalchemy`, `-redis`, `-httpx` | Captures HTTP, DB, cache, and outbound spans automatically |
-| Exporter | OTLP (gRPC) → Tempo | Ships traces to the cluster collector |
-| Dashboards | Grafana (Tempo data source) | Query and alert on traces |
-| Structured logs | `AuditMiddleware` → NDJSON stdout → Loki | Request-level audit trail with `X-Request-ID` correlation |
+| Exporter             | OTLP (gRPC) → Tempo                                                        | Ships traces to the cluster collector                      |
+| Dashboards           | Grafana (Tempo data source)                                                | Query and alert on traces                                  |
+| Structured logs      | `AuditMiddleware` → NDJSON stdout → Loki                                   | Request-level audit trail with `X-Request-ID` correlation  |
 
 Configuration is entirely via `OTEL_*` environment variables (set in the Helm
 chart values). When all exporters are `"none"`, the SDK stays in no-op mode
@@ -50,11 +50,11 @@ def record_exception_if_server_error(span: Span, exc: Exception) -> None:
 
 ### Where to use it
 
-| Context | Pattern | Rationale |
-|---------|---------|-----------|
-| **Endpoint handlers** (FastAPI route functions) | `record_exception_if_server_error(span, exc)` | May raise 4xx `HTTPException`s that should not be errors |
+| Context                                                   | Pattern                                                                          | Rationale                                                                                                                                                 |
+| --------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Endpoint handlers** (FastAPI route functions)           | `record_exception_if_server_error(span, exc)`                                    | May raise 4xx `HTTPException`s that should not be errors                                                                                                  |
 | **Background tasks** (`_process_bulk_import`, arq worker) | `span.record_exception(exc)` + `span.set_status(StatusCode.ERROR, ...)` directly | These only encounter internal processing exceptions (RuntimeError, OSError, SQLAlchemy errors) — never `HTTPException`s — so the 4xx filter adds no value |
-| **OIDC / auth flows** | Direct `span.set_status(StatusCode.ERROR, ...)` with error-code attributes | Auth failures need distinct error codes for diagnosis (see below) |
+| **OIDC / auth flows**                                     | Direct `span.set_status(StatusCode.ERROR, ...)` with error-code attributes       | Auth failures need distinct error codes for diagnosis (see below)                                                                                         |
 
 ## Span Attributes
 
@@ -113,30 +113,30 @@ root HTTP span. To query them:
 
 ### Grafana dashboard panels
 
-| Panel | Query approach |
-|-------|---------------|
+| Panel                 | Query approach                                                                                                    |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | **Server Error Rate** | `rate(traces_spanmetrics_calls_total{status_code="STATUS_CODE_ERROR"}[5m])` or TraceQL `{ status = error }` count |
-| **Client Error Rate** | Filter on `http.response.status_code >= 400 && < 500`; this is informational, not alertable by default |
-| **OCC Contention** | Count of `{ span.http.response.status_code = 409 }` — useful for detecting hot categories/images |
-| **Auth Failures** | Filter on `{ span.oidc.error_code != "" }` |
+| **Client Error Rate** | Filter on `http.response.status_code >= 400 && < 500`; this is informational, not alertable by default            |
+| **OCC Contention**    | Count of `{ span.http.response.status_code = 409 }` — useful for detecting hot categories/images                  |
+| **Auth Failures**     | Filter on `{ span.oidc.error_code != "" }`                                                                        |
 
 ### Alerting recommendations
 
-| Alert | Condition | Severity |
-|-------|-----------|----------|
-| High 5xx rate | Span error rate > 1% over 5 min | Critical |
-| Sustained 409 spike | 409 count > 50/min for 10 min | Warning (OCC contention — possible UI bug or concurrent batch operations) |
-| OIDC provider down | `oidc.error_code = PROVIDER_UNREACHABLE` > 0 for 2 min | Critical |
-| Background task failure | Span error in `_process_bulk_import` or `process_source_image` | Warning |
+| Alert                   | Condition                                                      | Severity                                                                  |
+| ----------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| High 5xx rate           | Span error rate > 1% over 5 min                                | Critical                                                                  |
+| Sustained 409 spike     | 409 count > 50/min for 10 min                                  | Warning (OCC contention — possible UI bug or concurrent batch operations) |
+| OIDC provider down      | `oidc.error_code = PROVIDER_UNREACHABLE` > 0 for 2 min         | Critical                                                                  |
+| Background task failure | Span error in `_process_bulk_import` or `process_source_image` | Warning                                                                   |
 
 ## Structured Logging vs Tracing
 
 HRIV uses **both** structured logs and distributed traces. They serve different
 purposes:
 
-| Signal | Tool | Best for |
-|--------|------|----------|
-| **Traces** (spans) | OTel → Tempo | Latency analysis, dependency mapping, error attribution across services |
+| Signal              | Tool                     | Best for                                                                                                |
+| ------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------- |
+| **Traces** (spans)  | OTel → Tempo             | Latency analysis, dependency mapping, error attribution across services                                 |
 | **Structured logs** | `AuditMiddleware` → Loki | Audit trail (who did what), request correlation via `X-Request-ID`, session tracking via `X-Session-ID` |
 
 The `X-Request-ID` header (generated by `AuditMiddleware`) can be used to

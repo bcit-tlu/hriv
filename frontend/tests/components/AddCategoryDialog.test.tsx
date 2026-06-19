@@ -40,8 +40,26 @@ function renderDialog(props: Partial<Parameters<typeof AddCategoryDialog>[0]> = 
 }
 
 const GROUPS = [
-  { id: 10, name: 'Cohort A', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '', updatedAt: '' },
-  { id: 11, name: 'Cohort B', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '', updatedAt: '' },
+  {
+    id: 10,
+    name: 'Cohort A',
+    description: null,
+    createdByUserId: 1,
+    memberIds: [],
+    instructorIds: [1],
+    createdAt: '',
+    updatedAt: '',
+  },
+  {
+    id: 11,
+    name: 'Cohort B',
+    description: null,
+    createdByUserId: 1,
+    memberIds: [],
+    instructorIds: [1],
+    createdAt: '',
+    updatedAt: '',
+  },
 ]
 
 function getCategoryInput() {
@@ -127,12 +145,7 @@ describe('AddCategoryDialog', () => {
 
     const { container } = render(
       <div onKeyDown={outerKeyDown}>
-        <AddCategoryDialog
-          open={true}
-          onClose={onClose}
-          onAdd={onAdd}
-          parentLabel={undefined}
-        />
+        <AddCategoryDialog open={true} onClose={onClose} onAdd={onAdd} parentLabel={undefined} />
       </div>,
     )
 
@@ -183,9 +196,7 @@ describe('AddCategoryDialog', () => {
   })
 
   it('defaults to "All students" when no inherited programs', () => {
-    const programs = [
-      { id: 1, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' },
-    ]
+    const programs = [{ id: 1, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' }]
     renderDialog({ programs, inheritedProgramIds: [] })
 
     expect(screen.getByLabelText('All students')).toBeChecked()
@@ -229,9 +240,7 @@ describe('AddCategoryDialog', () => {
 
   it('shows the symmetric intersection warning when both program and group restricted', async () => {
     const user = userEvent.setup()
-    const programs = [
-      { id: 1, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' },
-    ]
+    const programs = [{ id: 1, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' }]
     renderDialog({ programs, groups: GROUPS })
 
     expect(screen.queryByText(/restricted by both program and group/i)).not.toBeInTheDocument()

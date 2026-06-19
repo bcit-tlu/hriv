@@ -1,4 +1,4 @@
 interface:
-  display_name: "Testing Backup Service"
-  short_description: "HRIV backup and restore testing"
-  default_prompt: "Use $testing-backup-service to test HRIV backup and restore."
+  display_name: 'Testing Backup Service'
+  short_description: 'HRIV backup and restore testing'
+  default_prompt: 'Use $testing-backup-service to test HRIV backup and restore.'

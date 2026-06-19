@@ -49,17 +49,30 @@ vi.mock('fabric', () => {
     this.height = 600
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function FabricRect(this: any) { this.set = vi.fn() }
+  function FabricRect(this: any) {
+    this.set = vi.fn()
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function FabricEllipse(this: any) { this.set = vi.fn() }
+  function FabricEllipse(this: any) {
+    this.set = vi.fn()
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function FabricLine(this: any) { this.set = vi.fn() }
+  function FabricLine(this: any) {
+    this.set = vi.fn()
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function FabricIText(this: any) { this.set = vi.fn() }
+  function FabricIText(this: any) {
+    this.set = vi.fn()
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function FabricPoint(this: any, x: number, y: number) { this.x = x; this.y = y }
+  function FabricPoint(this: any, x: number, y: number) {
+    this.x = x
+    this.y = y
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function FabricObject(this: any) { this.set = vi.fn() }
+  function FabricObject(this: any) {
+    this.set = vi.fn()
+  }
 
   return {
     Canvas: FabricCanvas,
@@ -75,7 +88,10 @@ vi.mock('fabric', () => {
 
 vi.mock('openseadragon', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function OSDPoint(this: any, x: number, y: number) { this.x = x; this.y = y }
+  function OSDPoint(this: any, x: number, y: number) {
+    this.x = x
+    this.y = y
+  }
   return { default: { Point: OSDPoint }, Point: OSDPoint }
 })
 
@@ -269,7 +285,9 @@ describe('CanvasOverlay', () => {
       )
       // Click cancel
       const cancelBtn = screen.getByLabelText('Cancel — discard changes')
-      await act(async () => { cancelBtn.click() })
+      await act(async () => {
+        cancelBtn.click()
+      })
       expect(onAnnotationsChange).toHaveBeenCalledWith(original)
       expect(onEditModeChange).toHaveBeenCalledWith(false)
     })
@@ -624,14 +642,12 @@ describe('CanvasOverlay', () => {
     }
 
     it('applies save/translate/rotate/restore for a rotated rect', () => {
-      const calls = renderAndCaptureCalls([
-        makeAnnotation({ type: 'rect', rotation: 45 }),
-      ])
+      const calls = renderAndCaptureCalls([makeAnnotation({ type: 'rect', rotation: 45 })])
 
-      const saveIdx = calls.findIndex(c => c.method === 'save')
-      const translateIdx = calls.findIndex(c => c.method === 'translate')
-      const rotateIdx = calls.findIndex(c => c.method === 'rotate')
-      const restoreIdx = calls.findIndex(c => c.method === 'restore')
+      const saveIdx = calls.findIndex((c) => c.method === 'save')
+      const translateIdx = calls.findIndex((c) => c.method === 'translate')
+      const rotateIdx = calls.findIndex((c) => c.method === 'rotate')
+      const restoreIdx = calls.findIndex((c) => c.method === 'restore')
 
       expect(saveIdx).toBeGreaterThanOrEqual(0)
       expect(translateIdx).toBeGreaterThan(saveIdx)
@@ -652,7 +668,7 @@ describe('CanvasOverlay', () => {
         makeAnnotation({ type: 'rect' }), // no rotation field
       ])
 
-      const rotateCalls = calls.filter(c => c.method === 'rotate')
+      const rotateCalls = calls.filter((c) => c.method === 'rotate')
       expect(rotateCalls).toHaveLength(0)
     })
 
@@ -666,11 +682,11 @@ describe('CanvasOverlay', () => {
         }),
       ])
 
-      const saveIdx = calls.findIndex(c => c.method === 'save')
-      const translateIdx = calls.findIndex(c => c.method === 'translate')
-      const rotateIdx = calls.findIndex(c => c.method === 'rotate')
-      const ellipseIdx = calls.findIndex(c => c.method === 'ellipse')
-      const restoreIdx = calls.findIndex(c => c.method === 'restore')
+      const saveIdx = calls.findIndex((c) => c.method === 'save')
+      const translateIdx = calls.findIndex((c) => c.method === 'translate')
+      const rotateIdx = calls.findIndex((c) => c.method === 'rotate')
+      const ellipseIdx = calls.findIndex((c) => c.method === 'ellipse')
+      const restoreIdx = calls.findIndex((c) => c.method === 'restore')
 
       expect(saveIdx).toBeGreaterThanOrEqual(0)
       expect(translateIdx).toBeGreaterThan(saveIdx)
@@ -699,7 +715,7 @@ describe('CanvasOverlay', () => {
         }),
       ])
 
-      const ellipseCall = calls.find(c => c.method === 'ellipse')
+      const ellipseCall = calls.find((c) => c.method === 'ellipse')
       expect(ellipseCall).toBeDefined()
       // pw = 300 - 100 = 200, ph = 200 - 100 = 100
       // cx = pw/2 = 100, cy = ph/2 = 50, rx = |pw/2| = 100, ry = |ph/2| = 50
@@ -718,11 +734,11 @@ describe('CanvasOverlay', () => {
         }),
       ])
 
-      const saveIdx = calls.findIndex(c => c.method === 'save')
-      const translateIdx = calls.findIndex(c => c.method === 'translate')
-      const rotateIdx = calls.findIndex(c => c.method === 'rotate')
-      const fillTextIdx = calls.findIndex(c => c.method === 'fillText')
-      const restoreIdx = calls.findIndex(c => c.method === 'restore')
+      const saveIdx = calls.findIndex((c) => c.method === 'save')
+      const translateIdx = calls.findIndex((c) => c.method === 'translate')
+      const rotateIdx = calls.findIndex((c) => c.method === 'rotate')
+      const fillTextIdx = calls.findIndex((c) => c.method === 'fillText')
+      const restoreIdx = calls.findIndex((c) => c.method === 'restore')
 
       expect(saveIdx).toBeGreaterThanOrEqual(0)
       expect(translateIdx).toBeGreaterThan(saveIdx)
@@ -750,9 +766,9 @@ describe('CanvasOverlay', () => {
         }),
       ])
 
-      const moveToIdx = calls.findIndex(c => c.method === 'moveTo')
-      const lineToIdx = calls.findIndex(c => c.method === 'lineTo')
-      const strokeIdx = calls.findIndex(c => c.method === 'stroke')
+      const moveToIdx = calls.findIndex((c) => c.method === 'moveTo')
+      const lineToIdx = calls.findIndex((c) => c.method === 'lineTo')
+      const strokeIdx = calls.findIndex((c) => c.method === 'stroke')
 
       expect(moveToIdx).toBeGreaterThanOrEqual(0)
       expect(lineToIdx).toBeGreaterThan(moveToIdx)
@@ -775,12 +791,12 @@ describe('CanvasOverlay', () => {
         }),
       ])
 
-      const rotateIdx = calls.findIndex(c => c.method === 'rotate')
+      const rotateIdx = calls.findIndex((c) => c.method === 'rotate')
       expect(rotateIdx).toBeGreaterThanOrEqual(0)
       expect(calls[rotateIdx].args[0]).toBeCloseTo((60 * Math.PI) / 180, 5)
 
       // Verify underline moveTo starts at x=0 (origin-based)
-      const moveToCall = calls.find(c => c.method === 'moveTo')
+      const moveToCall = calls.find((c) => c.method === 'moveTo')
       expect(moveToCall).toBeDefined()
       expect(moveToCall!.args[0]).toBe(0) // x = 0
     })

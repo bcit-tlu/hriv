@@ -2,30 +2,30 @@
 
 ## Backend Files
 
-| Concern | Files |
-|---|---|
-| JWT, current user, role dependency | `backend/app/auth.py` |
-| Scoped authorization predicates | `backend/app/authz.py` |
-| Student category visibility | `backend/app/visibility.py` |
-| Category restriction attachment | `backend/app/routers/categories.py` |
-| Image visibility enforcement | `backend/app/routers/images.py` |
-| Group CRUD and roster rules | `backend/app/routers/groups.py` |
-| User/program membership | `backend/app/routers/users.py`, `backend/app/routers/programs.py` |
-| OIDC provisioning | `backend/app/routers/oidc.py` |
-| Models and junctions | `backend/app/models.py` |
+| Concern                            | Files                                                             |
+| ---------------------------------- | ----------------------------------------------------------------- |
+| JWT, current user, role dependency | `backend/app/auth.py`                                             |
+| Scoped authorization predicates    | `backend/app/authz.py`                                            |
+| Student category visibility        | `backend/app/visibility.py`                                       |
+| Category restriction attachment    | `backend/app/routers/categories.py`                               |
+| Image visibility enforcement       | `backend/app/routers/images.py`                                   |
+| Group CRUD and roster rules        | `backend/app/routers/groups.py`                                   |
+| User/program membership            | `backend/app/routers/users.py`, `backend/app/routers/programs.py` |
+| OIDC provisioning                  | `backend/app/routers/oidc.py`                                     |
+| Models and junctions               | `backend/app/models.py`                                           |
 
 ## Frontend Files
 
-| Concern | Files |
-|---|---|
-| User session fields | `AuthContext.tsx`, `useAuth.ts`, `api.ts` |
-| Category restriction narrowing | `categoryUtils.ts` |
-| Group utilities | `groupUtils.ts` |
-| Category dialogs | `AddCategoryDialog.tsx`, `EditCategoryDialog.tsx`, `ManageCategoriesDialog.tsx` |
-| Category picker | `CategoryPickerSelect.tsx` |
-| Restriction chips/icons | `CategoryRestrictionIcons.tsx`, `restrictionStyles.ts`, `theme.ts` |
-| Group management | `GroupManagementModal.tsx` |
-| People and programs | `PeoplePage.tsx`, `ProgramManagementModal.tsx` |
+| Concern                        | Files                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------- |
+| User session fields            | `AuthContext.tsx`, `useAuth.ts`, `api.ts`                                       |
+| Category restriction narrowing | `categoryUtils.ts`                                                              |
+| Group utilities                | `groupUtils.ts`                                                                 |
+| Category dialogs               | `AddCategoryDialog.tsx`, `EditCategoryDialog.tsx`, `ManageCategoriesDialog.tsx` |
+| Category picker                | `CategoryPickerSelect.tsx`                                                      |
+| Restriction chips/icons        | `CategoryRestrictionIcons.tsx`, `restrictionStyles.ts`, `theme.ts`              |
+| Group management               | `GroupManagementModal.tsx`                                                      |
+| People and programs            | `PeoplePage.tsx`, `ProgramManagementModal.tsx`                                  |
 
 ## Role Model
 

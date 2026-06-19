@@ -1,4 +1,4 @@
 interface:
-  display_name: "Testing Image Processing"
-  short_description: "HRIV tiling and worker testing"
-  default_prompt: "Use $testing-image-processing to verify HRIV image processing."
+  display_name: 'Testing Image Processing'
+  short_description: 'HRIV tiling and worker testing'
+  default_prompt: 'Use $testing-image-processing to verify HRIV image processing.'

@@ -24,7 +24,16 @@ const programs: Program[] = [
 ]
 
 const groups: Group[] = [
-  { id: 7, name: 'Lab A2', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '', updatedAt: '' },
+  {
+    id: 7,
+    name: 'Lab A2',
+    description: null,
+    createdByUserId: 1,
+    memberIds: [],
+    instructorIds: [1],
+    createdAt: '',
+    updatedAt: '',
+  },
 ]
 
 const categories = [
@@ -91,22 +100,25 @@ describe('ManagePage', () => {
         ],
       }),
     ]
-    localStorage.setItem('hrivpref:table-columns:manage-images:user:1', JSON.stringify({
-      thumbnail: true,
-      id: false,
-      name: true,
-      category: true,
-      copyright: false,
-      note: false,
-      program: true,
-      group: true,
-      active: true,
-      updated_at: true,
-      created_at: false,
-      dimensions: false,
-      file_size: false,
-      measurement: false,
-    }))
+    localStorage.setItem(
+      'hrivpref:table-columns:manage-images:user:1',
+      JSON.stringify({
+        thumbnail: true,
+        id: false,
+        name: true,
+        category: true,
+        copyright: false,
+        note: false,
+        program: true,
+        group: true,
+        active: true,
+        updated_at: true,
+        created_at: false,
+        dimensions: false,
+        file_size: false,
+        measurement: false,
+      }),
+    )
 
     render(<ManagePage categories={inheritedCategories} programs={programs} groups={groups} />)
 
@@ -184,7 +196,9 @@ describe('ManagePage', () => {
       updated_at: '2026-01-03T00:00:00Z',
     })
 
-    const { container } = render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+    const { container } = render(
+      <ManagePage categories={categories} programs={programs} groups={groups} />,
+    )
 
     await screen.findByText('Blood Smear')
     const checkboxes = Array.from(container.querySelectorAll('input[type="checkbox"]'))
@@ -200,24 +214,29 @@ describe('ManagePage', () => {
 
   it('persists selected columns between renders', async () => {
     const storageKey = 'hrivpref:table-columns:manage-images:user:1'
-    localStorage.setItem(storageKey, JSON.stringify({
-      thumbnail: true,
-      id: false,
-      name: true,
-      category: true,
-      copyright: false,
-      note: false,
-      program: true,
-      group: true,
-      active: true,
-      updated_at: true,
-      created_at: false,
-      dimensions: false,
-      file_size: false,
-      measurement: false,
-    }))
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        thumbnail: true,
+        id: false,
+        name: true,
+        category: true,
+        copyright: false,
+        note: false,
+        program: true,
+        group: true,
+        active: true,
+        updated_at: true,
+        created_at: false,
+        dimensions: false,
+        file_size: false,
+        measurement: false,
+      }),
+    )
 
-    const { unmount } = render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+    const { unmount } = render(
+      <ManagePage categories={categories} programs={programs} groups={groups} />,
+    )
 
     await screen.findByText('Blood Smear')
     expect(JSON.parse(localStorage.getItem(storageKey) ?? '{}')).toMatchObject({
@@ -251,7 +270,9 @@ describe('ManagePage', () => {
       }),
     ]
 
-    render(<ManagePage categories={inheritedHiddenCategories} programs={programs} groups={groups} />)
+    render(
+      <ManagePage categories={inheritedHiddenCategories} programs={programs} groups={groups} />,
+    )
 
     await screen.findByText('Blood Smear')
 

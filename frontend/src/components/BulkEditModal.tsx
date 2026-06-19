@@ -50,12 +50,9 @@ export default function BulkEditModal({
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
       <DialogTitle>Bulk Edit Programs</DialogTitle>
-      <DialogContent
-        sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
-      >
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
         <Typography variant="body2" color="text.secondary">
-          Assign programs to {selectedCount} selected{' '}
-          {selectedCount === 1 ? 'person' : 'people'}.
+          Assign programs to {selectedCount} selected {selectedCount === 1 ? 'person' : 'people'}.
         </Typography>
         <Typography variant="body2" color="warning.main">
           This will replace any existing program associations for the selected{' '}
@@ -73,9 +70,7 @@ export default function BulkEditModal({
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                 {selected.map((id) => {
                   const prog = programs.find((p) => p.id === id)
-                  return (
-                    <Chip key={id} label={prog?.name ?? id} size="small" color="primary" />
-                  )
+                  return <Chip key={id} label={prog?.name ?? id} size="small" color="primary" />
                 })}
               </Box>
             )}

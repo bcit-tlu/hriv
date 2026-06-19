@@ -4,12 +4,12 @@ A minimal, functional [OpenSeaDragon](https://openseadragon.github.io/) deep-zoo
 
 ## Stack
 
-| Layer        | Technology                  |
-| ------------ | --------------------------- |
-| Build        | Vite 8                      |
-| Framework    | React 19 + TypeScript 5.9   |
-| UI           | Material UI (MUI) v7        |
-| Image viewer | OpenSeaDragon 6             |
+| Layer        | Technology                |
+| ------------ | ------------------------- |
+| Build        | Vite 8                    |
+| Framework    | React 19 + TypeScript 5.9 |
+| UI           | Material UI (MUI) v7      |
+| Image viewer | OpenSeaDragon 6           |
 
 ## Getting started
 
@@ -21,11 +21,11 @@ npm run dev        # starts dev server at http://localhost:5173
 
 ## Available scripts
 
-| Script          | Description                        |
-| --------------- | ---------------------------------- |
-| `npm run dev`   | Start Vite dev server with HMR     |
-| `npm run build` | Type-check then production build   |
-| `npm run lint`  | Run ESLint                         |
+| Script            | Description                      |
+| ----------------- | -------------------------------- |
+| `npm run dev`     | Start Vite dev server with HMR   |
+| `npm run build`   | Type-check then production build |
+| `npm run lint`    | Run ESLint                       |
 | `npm run preview` | Preview production build locally |
 
 ## Project structure

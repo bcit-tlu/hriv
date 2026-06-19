@@ -6,19 +6,23 @@ description: Test the HRIV backup service for database and filesystem backup, lo
 # Testing the Backup Service
 
 ## Overview
+
 The backup service (`backup/`) is a standalone Docker service for disaster recovery. It snapshots the PostgreSQL database and filesystem, stores archives locally or in S3-compatible storage, and supports full restore.
 
 ## Prerequisites
+
 - Docker and Docker Compose
 - The `db` service must be running: `docker compose up -d db`
 - Wait for DB readiness: `docker compose exec db pg_isready -U hriv`
 - Build the backup image: `docker compose --profile backup build backup`
 
 ## Devin Secrets Needed
+
 - None for local-only testing
 - For S3 testing: `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` (and optionally `S3_ENDPOINT_URL` for non-AWS providers)
 
 ## Critical: PostgreSQL Version Compatibility
+
 - The `db` service runs `postgres:16-alpine` (PG 16)
 - The backup Dockerfile MUST use `postgresql-client-16` (not 17)
 - PG 17's `pg_dump` emits `SET transaction_timeout = 0;` which PG 16 does not recognise, causing restore to fail with: `ERROR: unrecognized configuration parameter 'transaction_timeout'`
@@ -28,6 +32,7 @@ The backup service (`backup/`) is a standalone Docker service for disaster recov
 ## Running Tests
 
 ### Clean Start
+
 ```bash
 docker compose down -v
 docker compose up -d db
@@ -36,6 +41,7 @@ for i in $(seq 1 15); do docker compose exec db pg_isready -U hriv && break; sle
 ```
 
 ### Test 1: Full Backup-Restore Cycle
+
 1. Verify seed data: `docker compose exec db psql -U hriv -c "SELECT count(*) FROM users"` (expect 3)
 2. Create test filesystem data:
    ```bash
@@ -63,6 +69,7 @@ for i in $(seq 1 15); do docker compose exec db pg_isready -U hriv && break; sle
    - `docker run --rm -v hriv_image_data:/data alpine cat /data/test_dir/sample.txt` (expect original content)
 
 ### Test 2: Retention Policy
+
 1. Clear old backups: `docker run --rm -v hriv_backup_data:/backups alpine rm -f /backups/hriv-backup-*.tar.gz`
 2. Run 3 backups with retention=2:
    ```bash
@@ -76,6 +83,7 @@ for i in $(seq 1 15); do docker compose exec db pg_isready -U hriv && break; sle
 4. List should show exactly 2 snapshots
 
 ## Troubleshooting
+
 - If restore fails with "unrecognized configuration parameter", check PG client version in the Docker image (`pg_dump --version` inside the container). It must match the server major version.
 - The `hriv_image_data` volume might not be created by Docker Compose if you're only running `db`. Use `docker run --rm -v hriv_image_data:/data alpine ...` to interact with it.
 - The backup service uses Docker Compose profiles. Use `--profile backup` to include it.

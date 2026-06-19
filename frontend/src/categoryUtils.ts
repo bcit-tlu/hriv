@@ -6,7 +6,7 @@
  * and useBrowseData.
  */
 
-import type { Category, ImageItem } from "./types";
+import type { Category, ImageItem } from './types'
 
 /**
  * Walk an ordered (top-down) list of ancestors applying narrowing semantics:
@@ -15,9 +15,7 @@ import type { Category, ImageItem } from "./types";
  *
  * A child can never widen the restriction beyond what its ancestors allow.
  */
-export function narrowProgramIds(
-  ancestors: ReadonlyArray<{ programIds: number[] }>,
-): number[] {
+export function narrowProgramIds(ancestors: ReadonlyArray<{ programIds: number[] }>): number[] {
   let effective: number[] = []
   let initialized = false
   for (const node of ancestors) {
@@ -37,9 +35,7 @@ export function narrowProgramIds(
  * (narrowing) semantics: a child can never widen its group restriction beyond
  * what its ancestors allow.
  */
-export function narrowGroupIds(
-  ancestors: ReadonlyArray<{ groupIds: number[] }>,
-): number[] {
+export function narrowGroupIds(ancestors: ReadonlyArray<{ groupIds: number[] }>): number[] {
   let effective: number[] = []
   let initialized = false
   for (const node of ancestors) {
@@ -59,9 +55,10 @@ export function narrowGroupIds(
  * the result into "direct" IDs (present on the leaf category itself) and
  * "ancestor" IDs (inherited from above but not on the leaf).
  */
-export function splitDirectAncestorProgramIds(
-  fullPath: ReadonlyArray<{ programIds: number[] }>,
-): { direct: number[]; ancestor: number[] } {
+export function splitDirectAncestorProgramIds(fullPath: ReadonlyArray<{ programIds: number[] }>): {
+  direct: number[]
+  ancestor: number[]
+} {
   if (fullPath.length === 0) return { direct: [], ancestor: [] }
   const ownCategory = fullPath[fullPath.length - 1]
   const effective = narrowProgramIds(fullPath)
@@ -77,9 +74,10 @@ export function splitDirectAncestorProgramIds(
  * the result into "direct" IDs (present on the leaf category itself) and
  * "ancestor" IDs (inherited from above but not on the leaf).
  */
-export function splitDirectAncestorGroupIds(
-  fullPath: ReadonlyArray<{ groupIds: number[] }>,
-): { direct: number[]; ancestor: number[] } {
+export function splitDirectAncestorGroupIds(fullPath: ReadonlyArray<{ groupIds: number[] }>): {
+  direct: number[]
+  ancestor: number[]
+} {
   if (fullPath.length === 0) return { direct: [], ancestor: [] }
   const ownCategory = fullPath[fullPath.length - 1]
   const effective = narrowGroupIds(fullPath)

@@ -6,34 +6,34 @@
  * to customise individual values.
  */
 
-import type { Category, ImageItem } from "../../src/types";
+import type { Category, ImageItem } from '../../src/types'
 
 export function makeCategory(overrides: Partial<Category> = {}): Category {
-    return {
-        id: 1,
-        label: "Test Category",
-        parentId: null,
-        children: [],
-        images: [],
-        programIds: [],
-        groupIds: [],
-        status: null,
-        sortOrder: 0,
-        version: 1,
-        cardImageId: null,
-        ...overrides,
-    };
+  return {
+    id: 1,
+    label: 'Test Category',
+    parentId: null,
+    children: [],
+    images: [],
+    programIds: [],
+    groupIds: [],
+    status: null,
+    sortOrder: 0,
+    version: 1,
+    cardImageId: null,
+    ...overrides,
+  }
 }
 
 export function makeImage(overrides: Partial<ImageItem> = {}): ImageItem {
-    return {
-        id: 100,
-        name: "Test Image",
-        thumb: "/thumbs/test.jpg",
-        tileSources: "/tiles/test.dzi",
-        active: true,
-        sortOrder: 0,
-        version: 1,
-        ...overrides,
-    };
+  return {
+    id: 100,
+    name: 'Test Image',
+    thumb: '/thumbs/test.jpg',
+    tileSources: '/tiles/test.dzi',
+    active: true,
+    sortOrder: 0,
+    version: 1,
+    ...overrides,
+  }
 }

@@ -2,20 +2,20 @@
 
 ## Primary Files
 
-| Concern | Files |
-|---|---|
-| App composition and routing state | `frontend/src/App.tsx` |
-| Auth/session state | `frontend/src/AuthContext.tsx`, `frontend/src/useAuth.ts` |
-| API client and type mapping | `frontend/src/api.ts`, `frontend/src/types.ts` |
-| Shell, tabs, theme | `components/AppShell.tsx`, `ThemeContext.tsx`, `theme.ts` |
-| Browse/category data | `useBrowseData.ts`, `treeUtils.ts`, `CategoryTile.tsx` |
-| Category editing and picking | `AddCategoryDialog.tsx`, `EditCategoryDialog.tsx`, `CategoryPickerSelect.tsx`, `ManageCategoriesDialog.tsx`, `categoryUtils.ts` |
-| Image table/manage workflows | `ManagePage.tsx`, `EditImageModal.tsx`, `UploadImageModal.tsx`, `BulkEditImagesModal.tsx`, `MoveImageDialog.tsx` |
-| Viewer | `ImageViewer.tsx`, `CanvasOverlay.tsx`, `imageViewerUtils.ts`, `useShareableImageState.ts` |
-| Annotations and overlays | `useCanvasAnnotations.ts`, `useOverlayPersistence.ts` |
-| Processing status | `useProcessingJobs.ts`, `pollProcessingJob.ts` |
-| Drag and drop | `SortableTileGrid.tsx`, `sortableTileGridUtils.ts` |
-| People/admin UI | `PeoplePage.tsx`, `AdminPage.tsx`, `GroupManagementModal.tsx`, `ProgramManagementModal.tsx` |
+| Concern                           | Files                                                                                                                           |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| App composition and routing state | `frontend/src/App.tsx`                                                                                                          |
+| Auth/session state                | `frontend/src/AuthContext.tsx`, `frontend/src/useAuth.ts`                                                                       |
+| API client and type mapping       | `frontend/src/api.ts`, `frontend/src/types.ts`                                                                                  |
+| Shell, tabs, theme                | `components/AppShell.tsx`, `ThemeContext.tsx`, `theme.ts`                                                                       |
+| Browse/category data              | `useBrowseData.ts`, `treeUtils.ts`, `CategoryTile.tsx`                                                                          |
+| Category editing and picking      | `AddCategoryDialog.tsx`, `EditCategoryDialog.tsx`, `CategoryPickerSelect.tsx`, `ManageCategoriesDialog.tsx`, `categoryUtils.ts` |
+| Image table/manage workflows      | `ManagePage.tsx`, `EditImageModal.tsx`, `UploadImageModal.tsx`, `BulkEditImagesModal.tsx`, `MoveImageDialog.tsx`                |
+| Viewer                            | `ImageViewer.tsx`, `CanvasOverlay.tsx`, `imageViewerUtils.ts`, `useShareableImageState.ts`                                      |
+| Annotations and overlays          | `useCanvasAnnotations.ts`, `useOverlayPersistence.ts`                                                                           |
+| Processing status                 | `useProcessingJobs.ts`, `pollProcessingJob.ts`                                                                                  |
+| Drag and drop                     | `SortableTileGrid.tsx`, `sortableTileGridUtils.ts`                                                                              |
+| People/admin UI                   | `PeoplePage.tsx`, `AdminPage.tsx`, `GroupManagementModal.tsx`, `ProgramManagementModal.tsx`                                     |
 
 ## Change Heuristics
 

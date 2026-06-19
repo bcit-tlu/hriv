@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/bcit-tlu/hriv/hriv-frontend
-  tag: "" # Defaults to .Chart.AppVersion
+  tag: '' # Defaults to .Chart.AppVersion
   pullPolicy: IfNotPresent
 
 service:
@@ -21,7 +21,7 @@ backend:
   # uses .Release.Namespace (i.e. the namespace you pass to
   # helm install/upgrade --namespace).  Set this explicitly if the
   # backend is deployed to a different namespace than the frontend.
-  namespace: ""
+  namespace: ''
 
 # Tile server for DZI deep-zoom tiles. When the backend chart's
 # `tiles.enabled` option is enabled, set tileServer.port to the
@@ -34,7 +34,7 @@ tileServer:
   port: 8001
 
 env:
-  BACKEND_URL: ""
+  BACKEND_URL: ''
 
 # Volume mounts backed by ConfigMaps.  Each entry creates a ConfigMap
 # resource and is mounted into the container at the given mountPath.
@@ -66,17 +66,17 @@ emptyDirMounts:
 
 ingress:
   enabled: false
-  className: ""
+  className: ''
   annotations:
     # Allow large image uploads through the ingress controller.
     # Without this the nginx ingress controller defaults to 1 MB,
     # which blocks pathology TIFF/SVS uploads.  0 = unlimited.
-    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    nginx.ingress.kubernetes.io/proxy-body-size: '0'
     # Stream request bodies upstream instead of buffering them in the
     # ingress controller's temp storage first; this makes multi-GB
     # uploads visible to the backend immediately and avoids temp-disk
     # pressure before the frontend nginx receives the request.
-    nginx.ingress.kubernetes.io/proxy-request-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-request-buffering: 'off'
   hosts: []
   tls: []
 

@@ -14,8 +14,18 @@ interface MoveCategoryDialogProps {
   onMove: (categoryId: number, newParentId: number | null) => void
   category: Category | null
   categories: Category[]
-  onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
+  onAddCategory?: (
+    label: string,
+    parentId: number | null,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<number | void>
+  onEditCategory?: (
+    categoryId: number,
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
   programs?: Program[]
   groups?: Group[]
@@ -45,7 +55,13 @@ export default function MoveCategoryDialog({
   }
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth TransitionProps={{ onEnter: handleEnter }}>
+    <Dialog
+      open={open}
+      onClose={onClose}
+      maxWidth="xs"
+      fullWidth
+      TransitionProps={{ onEnter: handleEnter }}
+    >
       <DialogTitle>Move Category</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
         {category && (

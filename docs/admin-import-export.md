@@ -56,7 +56,7 @@ it raises `TaskCancelled` so the runner aborts and cleans up any partial files.
 - **`data_session`** — performs the actual destructive clear + re-import,
   committed **once atomically at the very end**.
 
-This means a mid-import failure rolls back *all* data changes (via
+This means a mid-import failure rolls back _all_ data changes (via
 `data_session`) without losing task-status visibility (already committed via
 `status_session`).
 

@@ -136,11 +136,7 @@ export default function ImageViewer({
    * and the height label centered along the right edge.
    */
   const updateMeasurementLabels = useCallback(
-    (
-      rect: OpenSeadragon.Rect,
-      widthLabel: HTMLDivElement,
-      heightLabel: HTMLDivElement,
-    ) => {
+    (rect: OpenSeadragon.Rect, widthLabel: HTMLDivElement, heightLabel: HTMLDivElement) => {
       const viewer = viewerRef.current
       if (!viewer?.viewport) return
 
@@ -152,9 +148,7 @@ export default function ImageViewer({
       heightLabel.textContent = hText
 
       // Convert viewport rect corners to web (pixel) coordinates
-      const topLeft = viewer.viewport.pixelFromPoint(
-        new OpenSeadragon.Point(rect.x, rect.y),
-      )
+      const topLeft = viewer.viewport.pixelFromPoint(new OpenSeadragon.Point(rect.x, rect.y))
       const bottomRight = viewer.viewport.pixelFromPoint(
         new OpenSeadragon.Point(rect.x + rect.width, rect.y + rect.height),
       )
@@ -360,12 +354,8 @@ export default function ImageViewer({
       onClick: () => {
         selectionModeRef.current = !selectionModeRef.current
         viewer.setMouseNavEnabled(!selectionModeRef.current)
-        selectionButton.element.style.outline = selectionModeRef.current
-          ? '2px solid red'
-          : 'none'
-        selectionButton.element.style.outlineOffset = selectionModeRef.current
-          ? '-2px'
-          : ''
+        selectionButton.element.style.outline = selectionModeRef.current ? '2px solid red' : 'none'
+        selectionButton.element.style.outlineOffset = selectionModeRef.current ? '-2px' : ''
       },
     })
     selectionButton.element.style.lineHeight = '0'
@@ -423,11 +413,7 @@ export default function ImageViewer({
         currentRect = location
 
         // Update measurement labels during drag
-        updateMeasurementLabels(
-          location,
-          dragRef.current.widthLabel,
-          dragRef.current.heightLabel,
-        )
+        updateMeasurementLabels(location, dragRef.current.widthLabel, dragRef.current.heightLabel)
       },
       releaseHandler: () => {
         if (!dragRef.current) return
@@ -603,14 +589,8 @@ export default function ImageViewer({
 
     const updateMagnification = () => {
       if (!viewer.viewport) return
-      const imageZoom = viewer.viewport.viewportToImageZoom(
-        viewer.viewport.getZoom(),
-      )
-      const mag = computeMagnification(
-        imageZoom,
-        measurementRef.current,
-        window.devicePixelRatio,
-      )
+      const imageZoom = viewer.viewport.viewportToImageZoom(viewer.viewport.getZoom())
+      const mag = computeMagnification(imageZoom, measurementRef.current, window.devicePixelRatio)
       if (mag === undefined) {
         magBadge.style.display = 'none'
         return
@@ -636,10 +616,7 @@ export default function ImageViewer({
     viewer.addOnceHandler('open', () => {
       if (initialViewport) {
         viewer.viewport.zoomTo(initialViewport.zoom, undefined, true)
-        viewer.viewport.panTo(
-          new OpenSeadragon.Point(initialViewport.x, initialViewport.y),
-          true,
-        )
+        viewer.viewport.panTo(new OpenSeadragon.Point(initialViewport.x, initialViewport.y), true)
         if (initialViewport.rotation) {
           viewer.viewport.setRotation(initialViewport.rotation, true)
         }
@@ -683,13 +660,16 @@ export default function ImageViewer({
   }, [overlaysLocked])
 
   // Handle canvas edit mode toggle from the CanvasOverlay (e.g. "Done" button)
-  const handleCanvasEditModeChange = useCallback((mode: boolean) => {
-    canvasEditModeRef.current = mode
-    setCanvasEditMode(mode)
-    viewerRef.current?.setMouseNavEnabled(!mode)
-    updateCanvasEditUiRef.current?.(mode)
-    onCanvasEditModeChange?.(mode)
-  }, [onCanvasEditModeChange])
+  const handleCanvasEditModeChange = useCallback(
+    (mode: boolean) => {
+      canvasEditModeRef.current = mode
+      setCanvasEditMode(mode)
+      viewerRef.current?.setMouseNavEnabled(!mode)
+      updateCanvasEditUiRef.current?.(mode)
+      onCanvasEditModeChange?.(mode)
+    },
+    [onCanvasEditModeChange],
+  )
 
   return (
     <Box

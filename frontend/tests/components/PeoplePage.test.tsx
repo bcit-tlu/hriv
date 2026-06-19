@@ -39,7 +39,9 @@ const USERS = [
     email: 'admin@example.ca',
     role: 'admin',
     program_ids: [],
-    program_names: [], group_ids: [], group_names: [],
+    program_names: [],
+    group_ids: [],
+    group_names: [],
     last_access: '2026-02-15T10:00:00Z',
     metadata_extra: null,
     created_at: '2026-01-01T00:00:00Z',
@@ -51,7 +53,9 @@ const USERS = [
     email: 'student@example.ca',
     role: 'student',
     program_ids: [1],
-    program_names: ['Medical Lab'], group_ids: [7], group_names: ['Lab A2'],
+    program_names: ['Medical Lab'],
+    group_ids: [7],
+    group_names: ['Lab A2'],
     last_access: null,
     metadata_extra: null,
     created_at: '2026-01-01T00:00:00Z',
@@ -236,7 +240,9 @@ describe('PeoplePage', () => {
     await user.click(within(dialog).getByRole('checkbox', { name: 'Groups' }))
     await user.click(within(dialog).getByRole('button', { name: 'Done' }))
     await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: 'Choose people table columns' })).not.toBeInTheDocument()
+      expect(
+        screen.queryByRole('dialog', { name: 'Choose people table columns' }),
+      ).not.toBeInTheDocument()
     })
 
     expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
@@ -334,9 +340,7 @@ describe('PeoplePage', () => {
   })
 
   it('does not open edit modal when initialEditUserId is null', async () => {
-    render(
-      <PeoplePage programs={programs} initialEditUserId={null} />,
-    )
+    render(<PeoplePage programs={programs} initialEditUserId={null} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -347,9 +351,7 @@ describe('PeoplePage', () => {
 
   it('filter icon changes aria-label and color when panel is toggled', async () => {
     const user = userEvent.setup()
-    render(
-      <PeoplePage programs={programs} initialEditUserId={null} />,
-    )
+    render(<PeoplePage programs={programs} initialEditUserId={null} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()

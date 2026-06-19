@@ -7,7 +7,15 @@ import type { Category } from '../../src/types'
 
 // Mock CategoryPickerSelect
 vi.mock('../../src/components/CategoryPickerSelect', () => ({
-  default: ({ value, onChange, label }: { value: number | null; onChange: (v: number | null) => void; label: string }) => (
+  default: ({
+    value,
+    onChange,
+    label,
+  }: {
+    value: number | null
+    onChange: (v: number | null) => void
+    label: string
+  }) => (
     <select
       data-testid="category-picker"
       aria-label={label}
@@ -40,7 +48,17 @@ const image: ApiImage = {
 }
 
 const categories: Category[] = [
-  { id: 5, label: 'Architecture', parentId: null, children: [], images: [], programIds: [], groupIds: [], sortOrder: 0, version: 1 },
+  {
+    id: 5,
+    label: 'Architecture',
+    parentId: null,
+    children: [],
+    images: [],
+    programIds: [],
+    groupIds: [],
+    sortOrder: 0,
+    version: 1,
+  },
 ]
 
 describe('MoveImageDialog', () => {
@@ -83,7 +101,9 @@ describe('MoveImageDialog', () => {
   it('shows "Moving..." text while saving', async () => {
     let resolveFn: () => void
     const onMove = vi.fn().mockReturnValue(
-      new Promise<void>((resolve) => { resolveFn = resolve }),
+      new Promise<void>((resolve) => {
+        resolveFn = resolve
+      }),
     )
     const user = userEvent.setup()
     render(

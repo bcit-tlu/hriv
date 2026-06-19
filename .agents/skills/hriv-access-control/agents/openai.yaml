@@ -1,4 +1,4 @@
 interface:
-  display_name: "HRIV Access Control"
-  short_description: "Roles, groups, programs, visibility"
-  default_prompt: "Use $hriv-access-control to change HRIV visibility rules."
+  display_name: 'HRIV Access Control'
+  short_description: 'Roles, groups, programs, visibility'
+  default_prompt: 'Use $hriv-access-control to change HRIV visibility rules.'

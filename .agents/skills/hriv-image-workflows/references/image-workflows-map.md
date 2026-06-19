@@ -2,30 +2,30 @@
 
 ## Backend Files
 
-| Concern | Files |
-|---|---|
-| Upload endpoint | `backend/app/routers/upload.py` |
-| Image CRUD and metadata | `backend/app/routers/images.py` |
-| Processing pipeline | `backend/app/processing.py` |
-| Worker task entry | `backend/app/worker.py` |
-| Validation | `backend/app/image_validation.py` |
-| Models | `backend/app/models.py` (`Image`, `SourceImage`) |
-| Schemas | `backend/app/schemas.py` |
-| Tile/static serving setup | `backend/app/main.py` |
-| OTEL spans | `backend/app/tracing.py`, `backend/app/otel_bootstrap.py` |
+| Concern                   | Files                                                     |
+| ------------------------- | --------------------------------------------------------- |
+| Upload endpoint           | `backend/app/routers/upload.py`                           |
+| Image CRUD and metadata   | `backend/app/routers/images.py`                           |
+| Processing pipeline       | `backend/app/processing.py`                               |
+| Worker task entry         | `backend/app/worker.py`                                   |
+| Validation                | `backend/app/image_validation.py`                         |
+| Models                    | `backend/app/models.py` (`Image`, `SourceImage`)          |
+| Schemas                   | `backend/app/schemas.py`                                  |
+| Tile/static serving setup | `backend/app/main.py`                                     |
+| OTEL spans                | `backend/app/tracing.py`, `backend/app/otel_bootstrap.py` |
 
 ## Frontend Files
 
-| Concern | Files |
-|---|---|
-| Viewer | `frontend/src/components/ImageViewer.tsx` |
-| Canvas annotations | `frontend/src/components/CanvasOverlay.tsx`, `useCanvasAnnotations.ts` |
-| Locked overlays | `useOverlayPersistence.ts` |
-| Upload modal | `components/UploadImageModal.tsx` |
-| Edit/replace image | `components/EditImageModal.tsx`, `useImageActions.ts` |
-| Processing polling | `useProcessingJobs.ts`, `pollProcessingJob.ts` |
-| Metadata form | `components/ImageMetadataFields.tsx` |
-| Shareable viewer state | `useShareableImageState.ts` |
+| Concern                | Files                                                                  |
+| ---------------------- | ---------------------------------------------------------------------- |
+| Viewer                 | `frontend/src/components/ImageViewer.tsx`                              |
+| Canvas annotations     | `frontend/src/components/CanvasOverlay.tsx`, `useCanvasAnnotations.ts` |
+| Locked overlays        | `useOverlayPersistence.ts`                                             |
+| Upload modal           | `components/UploadImageModal.tsx`                                      |
+| Edit/replace image     | `components/EditImageModal.tsx`, `useImageActions.ts`                  |
+| Processing polling     | `useProcessingJobs.ts`, `pollProcessingJob.ts`                         |
+| Metadata form          | `components/ImageMetadataFields.tsx`                                   |
+| Shareable viewer state | `useShareableImageState.ts`                                            |
 
 ## Lifecycle
 
