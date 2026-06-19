@@ -78,7 +78,7 @@ try {
     const tempFile = join(tempRoot, file);
     mkdirSync(dirname(tempFile), { recursive: true });
     writeFileSync(tempFile, gitBuffer(["show", `:${file}`]));
-    return { file, tempFile };
+    return { file, tempFile, hadUnstagedChanges: hasUnstagedChanges(file) };
   });
 
   execFileSync(
@@ -97,7 +97,7 @@ try {
     },
   );
 
-  for (const { file, tempFile } of tempFiles) {
+  for (const { file, tempFile, hadUnstagedChanges } of tempFiles) {
     const blobHash = git(["hash-object", "-w", tempFile]);
     const mode = getIndexMode(file);
 
@@ -110,7 +110,7 @@ try {
       },
     );
 
-    if (!hasUnstagedChanges(file)) {
+    if (!hadUnstagedChanges) {
       copyFileSync(tempFile, join(repoRoot, file));
     }
   }
