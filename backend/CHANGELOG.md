@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.23.0...backend-v0.24.0) (2026-06-19)
+
+
+### Features
+
+* 667 image note metadata field should allow more characters ([#686](https://github.com/bcit-tlu/hriv/issues/686)) ([2a864f8](https://github.com/bcit-tlu/hriv/commit/2a864f89f877f10e2c179a771c8e8448d1e6c8fd))
+
 ## [0.23.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.22.0...backend-v0.23.0) (2026-06-18)
 
 ### Features
