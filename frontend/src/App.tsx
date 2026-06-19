@@ -911,6 +911,23 @@ export default function App() {
     [navigateToCategory, path, pushNavState],
   )
 
+  const handleManageCategoryNavigate = useCallback(
+    (categoryId: number) => {
+      const nextPath = findCategoryPath(categories, categoryId)
+      if (!nextPath) return
+
+      setDialogOpen(false)
+      setPage('browse')
+      clearImage()
+      setPath(nextPath)
+      pushNavState(
+        'browse',
+        nextPath.map((category) => category.id),
+      )
+    },
+    [categories, clearImage, pushNavState],
+  )
+
   const handleFilesDropOnGrid = useCallback((files: File[]) => {
     const accepted = files.filter(isAcceptedFile)
     const rejected = files.length - accepted.length
@@ -1798,6 +1815,7 @@ export default function App() {
         onClose={() => setDialogOpen(false)}
         categories={categories}
         uncategorizedImages={uncategorizedImages}
+        onCategoryNavigate={handleManageCategoryNavigate}
         onAddCategory={addCategoryInline}
         onDeleteCategory={deleteCategoryInline}
         onEditCategory={editCategoryInline}

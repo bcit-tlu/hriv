@@ -104,6 +104,11 @@ Two capability flags in `AuthContext.tsx` drive all gating:
   chips. Parent selection uses `CategoryPickerSelect`.
 - **Move:** `MoveCategoryDialog` reparents a category; a category cannot be moved
   under itself or its own descendant.
+- **Manage Categories dialog:** the category list stays scoped to
+  `ManageCategoriesDialog` (not `CategoryPickerSelect` or `MoveCategoryDialog`),
+  starts expanded, lets editors collapse subtrees that are not relevant, and
+  renders each category label as a link that navigates the app to that category
+  in Browse.
 - **Delete:** confirmation required; deleting a category cascades to children and
   detaches images (`category_id → NULL`). See [domain-model.md](domain-model.md).
 
