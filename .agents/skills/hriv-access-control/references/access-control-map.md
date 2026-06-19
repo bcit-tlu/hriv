@@ -50,8 +50,8 @@ category visibility; do not add image-level program visibility.
 
 ## Docs And Tests
 
-- Read `../../../docs/category-visibility-and-programs.md`.
-- Read `../../../docs/groups.md`.
-- Read `../../../docs/OIDC_SETUP.md` for IdP group and role mapping.
-- Update `../../../README.md` and `../../../docs/TESTING.md` when roles,
+- Read `../../../../docs/category-visibility-and-programs.md`.
+- Read `../../../../docs/groups.md`.
+- Read `../../../../docs/OIDC_SETUP.md` for IdP group and role mapping.
+- Update `../../../../README.md` and `../../../../docs/TESTING.md` when roles,
   credentials, endpoint permissions, or auth rules change.

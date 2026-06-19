@@ -46,8 +46,8 @@
 
 ## Documentation To Read When Relevant
 
-- `../../../backend/README.md`: backend setup and migrations.
-- `../../../docs/domain-model.md`: model relationships and schema reference.
-- `../../../docs/TESTING.md`: endpoint role table and test cases.
-- `../../../docs/agent-test-matrix.md`: targeted test selection.
-- `../../../docs/observability-conventions.md`: logging/tracing conventions.
+- `../../../../backend/README.md`: backend setup and migrations.
+- `../../../../docs/domain-model.md`: model relationships and schema reference.
+- `../../../../docs/TESTING.md`: endpoint role table and test cases.
+- `../../../../docs/agent-test-matrix.md`: targeted test selection.
+- `../../../../docs/observability-conventions.md`: logging/tracing conventions.

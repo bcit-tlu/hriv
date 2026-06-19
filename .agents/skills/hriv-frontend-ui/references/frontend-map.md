@@ -33,10 +33,10 @@
 
 ## Docs To Read When Relevant
 
-- `../../../docs/ui-behaviour-spec.md`: current UI behavior.
-- `../../../docs/drag-and-drop.md`: locked move-vs-reorder contract.
-- `../../../docs/category-visibility-and-programs.md`: mirrored visibility and
+- `../../../../docs/ui-behaviour-spec.md`: current UI behavior.
+- `../../../../docs/drag-and-drop.md`: locked move-vs-reorder contract.
+- `../../../../docs/category-visibility-and-programs.md`: mirrored visibility and
   narrowing semantics.
-- `../../../docs/groups.md`: group UI behavior and roster management.
-- `../../../docs/image-metadata-and-versioning.md`: annotation and overlay
+- `../../../../docs/groups.md`: group UI behavior and roster management.
+- `../../../../docs/image-metadata-and-versioning.md`: annotation and overlay
   persistence.

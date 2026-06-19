@@ -44,7 +44,7 @@ Filesystem export/import handles source-image filesystem archives.
 
 ## Docs And Tests
 
-- `../../../docs/admin-import-export.md`
-- `../../../docs/changelog-notifications.md`
+- `../../../../docs/admin-import-export.md`
+- `../../../../docs/changelog-notifications.md`
 - `backend/tests/test_admin_ops.py`
 - `backend/tests/test_router_admin.py`

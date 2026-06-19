@@ -49,7 +49,7 @@
 
 ## Docs And Tests
 
-- `../../../docs/image-processing-lifecycle.md`
-- `../../../docs/image-metadata-and-versioning.md`
-- `../../../docs/observability-conventions.md` for spans/logging
+- `../../../../docs/image-processing-lifecycle.md`
+- `../../../../docs/image-metadata-and-versioning.md`
+- `../../../../docs/observability-conventions.md` for spans/logging
 - `$testing-image-processing` for local stack and large-file verification

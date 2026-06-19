@@ -36,7 +36,7 @@ with the server image.
 
 ## Docs To Read
 
-- `../../../docs/RELEASE_AND_DEPLOY_FLOW.md`
-- `../../../docs/observability-conventions.md`
-- `../../../backup/README.md`
-- `../../../charts/backend/README.md`
+- `../../../../docs/RELEASE_AND_DEPLOY_FLOW.md`
+- `../../../../docs/observability-conventions.md`
+- `../../../../backup/README.md`
+- `../../../../charts/backend/README.md`
