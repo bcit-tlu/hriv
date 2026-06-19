@@ -29,7 +29,7 @@ from ..database import async_session, get_db, settings
 from ..image_validation import IMAGE_EXTENSIONS, UPLOAD_CHUNK_SIZE
 from ..models import BulkImportJob, Category, SourceImage, User
 from ..processing import process_source_image
-from ..schemas import MAX_NOTE_LENGTH, BulkImportJobOut
+from ..schemas import MAX_NOTE_LENGTH, BulkImportJobOut, normalize_note_value
 from ..tracing import record_exception_if_server_error
 from ..worker import enqueue_bulk_import
 
@@ -64,6 +64,7 @@ async def _process_bulk_import(
     existing VIPS pipeline, with concurrency limited by a semaphore.
     """
     semaphore = asyncio.Semaphore(_MAX_CONCURRENCY)
+    note = normalize_note_value(note)
 
     async def _process_one(original_filename: str, stored_path: str) -> None:
         try:
@@ -255,12 +256,10 @@ async def bulk_import_images(
 
     with tracer.start_as_current_span("bulk_import.enqueue") as span:
         try:
-            # Validate note length before proceeding
-            if (
-                note is not None
-                and isinstance(note, str)
-                and len(note) > MAX_NOTE_LENGTH
-            ):
+            # Validate and normalize note before proceeding.
+            try:
+                note = normalize_note_value(note)
+            except ValueError:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Note must be {MAX_NOTE_LENGTH} characters or fewer",

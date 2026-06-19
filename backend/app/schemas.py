@@ -56,11 +56,13 @@ def _normalize_oidc_group(v: str | None) -> str | None:
     return v
 
 
-def _validate_note_value(v: str | None) -> str | None:
+def normalize_note_value(v: str | None) -> str | None:
     if v is None:
         return v
-    if isinstance(v, str) and len(v) > MAX_NOTE_LENGTH:
-        raise ValueError(f"note must be {MAX_NOTE_LENGTH} characters or fewer")
+    if isinstance(v, str):
+        if len(v) > MAX_NOTE_LENGTH:
+            raise ValueError(f"note must be {MAX_NOTE_LENGTH} characters or fewer")
+        return v or None
     return v
 
 
@@ -295,7 +297,7 @@ class ImageBase(BaseModel):
 
 
 class ImageCreate(ImageBase):
-    _validate_note = field_validator("note", mode="before")(_validate_note_value)
+    _validate_note = field_validator("note", mode="before")(normalize_note_value)
 
 
 class ImageUpdate(BaseModel):
@@ -310,7 +312,7 @@ class ImageUpdate(BaseModel):
     metadata_extra: dict | None = None
     metadata_extra_merge: dict | None = None
 
-    _validate_note = field_validator("note", mode="before")(_validate_note_value)
+    _validate_note = field_validator("note", mode="before")(normalize_note_value)
 
     @model_validator(mode="after")
     def validate_overlay_shapes(self) -> "ImageUpdate":
@@ -429,7 +431,7 @@ class ImageBulkUpdate(BaseModel):
     note: str | None = None
     active: bool | None = None
 
-    _validate_note = field_validator("note", mode="before")(_validate_note_value)
+    _validate_note = field_validator("note", mode="before")(normalize_note_value)
 
 
 class ImageBulkDelete(BaseModel):

@@ -175,25 +175,25 @@ def _image_bulk_update_with_note(note: str | None) -> ImageBulkUpdate:
 
 
 @pytest.mark.parametrize(
-    ("factory", "note"),
+    ("factory", "note", "expected"),
     [
-        (_image_create_with_note, "x" * 500),
-        (_image_create_with_note, None),
-        (_image_create_with_note, ""),
-        (_image_create_with_note, "short note"),
-        (_image_update_with_note, "x" * 500),
-        (_image_update_with_note, None),
-        (_image_update_with_note, ""),
-        (_image_update_with_note, "short note"),
-        (_image_bulk_update_with_note, "x" * 500),
-        (_image_bulk_update_with_note, None),
-        (_image_bulk_update_with_note, ""),
-        (_image_bulk_update_with_note, "short note"),
+        (_image_create_with_note, "x" * 500, "x" * 500),
+        (_image_create_with_note, None, None),
+        (_image_create_with_note, "", None),
+        (_image_create_with_note, "short note", "short note"),
+        (_image_update_with_note, "x" * 500, "x" * 500),
+        (_image_update_with_note, None, None),
+        (_image_update_with_note, "", None),
+        (_image_update_with_note, "short note", "short note"),
+        (_image_bulk_update_with_note, "x" * 500, "x" * 500),
+        (_image_bulk_update_with_note, None, None),
+        (_image_bulk_update_with_note, "", None),
+        (_image_bulk_update_with_note, "short note", "short note"),
     ],
 )
-def test_image_write_schemas_accept_valid_note_values(factory, note) -> None:
+def test_image_write_schemas_accept_valid_note_values(factory, note, expected) -> None:
     schema = factory(note)
-    assert schema.note == note
+    assert schema.note == expected
 
 
 @pytest.mark.parametrize(
