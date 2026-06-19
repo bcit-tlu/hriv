@@ -22,7 +22,7 @@ type DragEndHandler = (event: {
     target: ({ id: string | number } & SortableMeta) | null
     canceled: boolean
   }
-}) => void
+}) => void | Promise<void>
 
 // Build a reorder source with the reflowed index `move()` actually commits.
 function sortableSource(id: string, index: number, initialIndex = index) {
@@ -587,6 +587,46 @@ describe('handleDragEnd — reorder branches', () => {
 
     // Both steps ran — the handler awaited the async callback.
     expect(callLog).toEqual(['complete-called', 'complete-resolved'])
+  })
+
+  it('applies refreshed props that arrive while reorder is still in flight', async () => {
+    const initialImages = [
+      makeImage({ id: 10, name: 'A', sortOrder: 0 }),
+      makeImage({ id: 11, name: 'B', sortOrder: 1 }),
+    ]
+    const refreshedImages = [
+      makeImage({ id: 11, name: 'B', sortOrder: 0 }),
+      makeImage({ id: 10, name: 'A', sortOrder: 1 }),
+    ]
+
+    const view = renderGrid({
+      currentImages: initialImages,
+      onReorderComplete: async () => {
+        view.rerender(
+          <SortableTileGrid
+            {...view.props}
+            currentImages={refreshedImages}
+            onReorderComplete={view.props.onReorderComplete}
+          />,
+        )
+        await Promise.resolve()
+      },
+    })
+
+    const getTileLabels = () =>
+      Array.from(view.container.querySelectorAll('h6')).map((node) => node.textContent ?? '')
+
+    await act(async () => {
+      await capturedOnDragEnd!({
+        operation: {
+          source: sortableSource('img-11', 0, 1),
+          target: { id: 'img-10' },
+          canceled: false,
+        },
+      })
+    })
+
+    expect(getTileLabels().slice(0, 2)).toEqual(['B', 'A'])
   })
 })
 

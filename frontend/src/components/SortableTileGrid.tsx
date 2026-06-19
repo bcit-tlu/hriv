@@ -225,29 +225,27 @@ export default function SortableTileGrid({
   const inheritedProgramIds = useMemo(() => narrowProgramIds(path), [path])
   const inheritedGroupIds = useMemo(() => narrowGroupIds(path), [path])
 
-  const [items, setItems] = useState<TileItem[]>([])
+  const [items, setItems] = useState<TileItem[]>(() =>
+    buildTileItems(currentCategories, visibleImages),
+  )
   const [activeItem, setActiveItem] = useState<TileItem | null>(null)
   const reorderInFlightRef = useRef(false)
-  const [prevCats, setPrevCats] = useState<Category[] | null>(null)
-  const [prevImgs, setPrevImgs] = useState<ImageItem[] | null>(null)
+  const pendingItemsRef = useRef<TileItem[] | null>(null)
   // Refs for async callback access (always reflect latest props)
   const currentCategoriesRef = useRef(currentCategories)
-  useEffect(() => {
-    currentCategoriesRef.current = currentCategories
-  })
   const visibleImagesRef = useRef(visibleImages)
-  useEffect(() => {
-    visibleImagesRef.current = visibleImages
-  })
+  currentCategoriesRef.current = currentCategories
+  visibleImagesRef.current = visibleImages
 
-  if (prevCats !== currentCategories || prevImgs !== visibleImages) {
-    setPrevCats(currentCategories)
-    setPrevImgs(visibleImages)
-    // eslint-disable-next-line react-hooks/refs -- guard ref prevents item rebuild during active reorder
-    if (!reorderInFlightRef.current) {
-      setItems(buildTileItems(currentCategories, visibleImages))
+  useEffect(() => {
+    const nextItems = buildTileItems(currentCategories, visibleImages)
+    if (reorderInFlightRef.current) {
+      pendingItemsRef.current = nextItems
+      return
     }
-  }
+    pendingItemsRef.current = null
+    setItems(nextItems)
+  }, [currentCategories, visibleImages])
 
   const blockedIdsMap = useMemo(() => {
     const map = new Map<number, Set<number>>()
@@ -363,14 +361,15 @@ export default function SortableTileGrid({
           /* handled inside the callback */
         }
         reorderInFlightRef.current = false
-        // The render-time guard ran while the flag was raised
-        // and skipped setItems, so rebuild from fresh data now.
-        if (currentCategoriesRef.current && visibleImagesRef.current) {
-          setItems(buildTileItems(currentCategoriesRef.current, visibleImagesRef.current))
-        }
+        setItems(
+          pendingItemsRef.current ??
+            buildTileItems(currentCategoriesRef.current, visibleImagesRef.current),
+        )
+        pendingItemsRef.current = null
       } catch (err) {
         console.error('Failed to persist reorder', err)
         reorderInFlightRef.current = false
+        pendingItemsRef.current = null
         setItems((current) => (current === reordered ? items : current))
         onReorderError?.(err)
         onReorderComplete?.()

@@ -4,6 +4,7 @@ import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
 import Box from '@mui/material/Box'
 import Collapse from '@mui/material/Collapse'
+import Container from '@mui/material/Container'
 import Card from '@mui/material/Card'
 import CardContent from '@mui/material/CardContent'
 import Chip from '@mui/material/Chip'
@@ -362,15 +363,15 @@ export default function AppShell(props: AppShellProps) {
           <Box
             sx={{
               bgcolor: contentBg,
-              mx: '10%',
-              mt: '20px',
-              mb: 0,
+              pt: 2.5,
             }}
           >
-            <AnnouncementBanner
-              message={announcement}
-              onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined}
-            />
+            <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
+              <AnnouncementBanner
+                message={announcement}
+                onDismiss={onDismissAnnouncement ? () => setAnnCollapsed(true) : undefined}
+              />
+            </Container>
           </Box>
         </Collapse>
       )}
