@@ -44,17 +44,21 @@ describe('ImageMetadataFields', () => {
     const user = userEvent.setup()
     render(<ImageMetadataFields values={defaultValues} onChange={onChange} />)
 
-    const toggle = screen.getByRole('switch', { name: /visibility.*visible to students/i })
+    const toggle = screen.getByRole('switch', { name: /visibility.*show image/i })
     await user.click(toggle)
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ active: false }))
   })
 
-  it('keeps the visibility label available when active is false', () => {
+  it('shows "hide image" when active is false', () => {
     render(<ImageMetadataFields values={{ ...defaultValues, active: false }} onChange={vi.fn()} />)
 
-    expect(
-      screen.getByRole('switch', { name: /visibility.*visible to students/i }),
-    ).toBeInTheDocument()
+    expect(screen.getByLabelText(/visibility.*hide image/i)).toBeInTheDocument()
+  })
+
+  it('disables visibility when the category is hidden', () => {
+    render(<ImageMetadataFields values={defaultValues} onChange={vi.fn()} categoryHidden />)
+
+    expect(screen.getByRole('switch', { name: /visibility.*hidden by category/i })).toBeDisabled()
   })
 
   it('limits note input to 500 characters and shows a counter', () => {
