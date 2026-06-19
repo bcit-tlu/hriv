@@ -6,6 +6,9 @@ jobs tracked by the `AdminTask` model. This page documents the task lifecycle,
 cancellation semantics, the two-session import pattern, stale-task
 reconciliation, and exactly what data round-trips.
 
+In the frontend admin UI, these controls live under the Admin page's
+**Backups** tab. The separate **Changelog** tab is the default landing view.
+
 - Endpoints: `backend/app/routers/admin.py`
 - Runners: `backend/app/admin_ops.py`
 - Model: `AdminTask` in `backend/app/models.py` (see [Domain model](domain-model.md))

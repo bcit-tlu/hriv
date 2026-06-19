@@ -69,19 +69,20 @@ All seed users share the password `password`.
 **Purpose:** Verify the bell badge, What's New feed, and admin-only changelog management.
 
 1. Login as `admin@example.ca` / `password`.
-2. Open the `Admin` tab and scroll to the `Changelog` section.
-3. Create a new entry with title `v2.5` and a short Markdown body.
-4. **Assert:** The new entry appears in the changelog table.
-5. **Assert:** A notification bell is visible in the AppBar with an unread dot.
-6. Open the bell menu.
-7. **Assert:** The unread dot remains until `What's New` is opened.
-8. Click `What's New`.
-9. **Assert:** The dialog lists the new entry and renders the Markdown content.
-10. Close the dialog.
-11. **Assert:** The unread dot is cleared.
-12. Logout and login as `instructor@example.ca` / `password`.
-13. **Assert:** The bell is visible and the entry is readable from `What's New`.
-14. **Assert:** The instructor still has no `Admin` tab and therefore cannot access changelog management controls.
+2. Open the `Admin` tab.
+3. **Assert:** The `Changelog` sub-tab is selected by default.
+4. Create a new entry with title `v2.5` and a short Markdown body.
+5. **Assert:** The new entry appears in the changelog table.
+6. **Assert:** A notification bell is visible in the AppBar with an unread dot.
+7. Open the bell menu.
+8. **Assert:** The unread dot remains until `What's New` is opened.
+9. Click `What's New`.
+10. **Assert:** The dialog lists the new entry and renders the Markdown content.
+11. Close the dialog.
+12. **Assert:** The unread dot is cleared.
+13. Logout and login as `instructor@example.ca` / `password`.
+14. **Assert:** The bell is visible and the entry is readable from `What's New`.
+15. **Assert:** The instructor still has no `Admin` tab and therefore cannot access changelog management controls.
 
 ---
 
@@ -212,13 +213,15 @@ curl -s http://localhost:8000/api/categories/ -H "Authorization: Bearer $TOKEN"
 
 1. Login as `admin@example.ca` / `password` (admin).
 2. Navigate to the Admin tab.
-3. Click "Export" to download the database as JSON.
-4. **Assert:** JSON file downloads containing categories, images, and users.
-5. Navigate to Browse, create a new test category (to dirty the database).
-6. Go back to Admin tab, click "Import", select the previously exported JSON file.
-7. **Assert:** Import succeeds.
-8. Navigate to Browse tab.
-9. **Assert:** The test category created in step 5 is gone (database restored to exported state).
+3. Click the `Backups` sub-tab.
+4. **Assert:** Export cards are shown above the `Recent Tasks` accordion, and import cards are at the bottom.
+5. Click "Export" on the database export card to download the database as JSON.
+6. **Assert:** JSON file downloads containing categories, images, and users.
+7. Navigate to Browse, create a new test category (to dirty the database).
+8. Go back to Admin tab, open `Backups`, click "Import" on the database import card, and select the previously exported JSON file.
+9. **Assert:** Import succeeds.
+10. Navigate to Browse tab.
+11. **Assert:** The test category created in step 7 is gone (database restored to exported state).
 
 ---
 
