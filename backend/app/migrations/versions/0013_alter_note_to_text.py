@@ -38,6 +38,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Restore the previous VARCHAR(500) column types.
+    # App validation keeps notes within this limit; direct DB writes above 500
+    # characters must be corrected before downgrading.
     op.alter_column(
         "source_images",
         "note",

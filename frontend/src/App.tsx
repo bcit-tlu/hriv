@@ -1385,7 +1385,7 @@ export default function App() {
                       <strong>Note:&nbsp;</strong>
                     </Typography>
                     <Box sx={{ flex: '1 1 60%', minWidth: 0, maxWidth: { xs: '100%', sm: '60%' } }}>
-                      <NoteDisplay note={selectedImage.note} />
+                      <NoteDisplay key={selectedImage.id} note={selectedImage.note} />
                     </Box>
                   </Box>
                 )}
