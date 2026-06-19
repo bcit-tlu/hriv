@@ -14,6 +14,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import { isCategoryHiddenInTree } from '../treeUtils'
 import CategoryPickerSelect from './CategoryPickerSelect'
+import { MAX_NOTE_LENGTH } from '../constants'
 import type { Category, Group, Program } from '../types'
 
 interface BulkEditImagesModalProps {
@@ -186,8 +187,8 @@ export default function BulkEditImagesModal({
           multiline
           minRows={3}
           maxRows={10}
-          slotProps={{ htmlInput: { maxLength: 500 } }}
-          helperText={`${note.length}/500`}
+          slotProps={{ htmlInput: { maxLength: MAX_NOTE_LENGTH } }}
+          helperText={`${note.length}/${MAX_NOTE_LENGTH}`}
         />
         <FormControlLabel
           control={

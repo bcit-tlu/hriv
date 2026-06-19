@@ -1,7 +1,7 @@
 """Alter `note` columns to TEXT while app validation enforces note length.
 
-Revision ID: 0012_alter_note_to_text
-Revises: 0011_add_category_version
+Revision ID: 0013_alter_note_to_text
+Revises: 0012_add_changelog_entries
 Create Date: 2026-06-18
 
 """
@@ -11,8 +11,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "0012_alter_note_to_text"
-down_revision = "0011_add_category_version"
+revision = "0013_alter_note_to_text"
+down_revision = "0012_add_changelog_entries"
 branch_labels = None
 depends_on = None
 

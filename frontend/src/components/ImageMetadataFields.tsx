@@ -1,6 +1,7 @@
 import FormControlLabel from '@mui/material/FormControlLabel'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
+import { MAX_NOTE_LENGTH } from '../constants'
 
 export interface ImageMetadataValues {
   copyright: string
@@ -58,8 +59,8 @@ export default function ImageMetadataFields({
         multiline
         minRows={3}
         maxRows={10}
-        slotProps={{ htmlInput: { maxLength: 500 } }}
-        helperText={`${values.note.length}/500`}
+        slotProps={{ htmlInput: { maxLength: MAX_NOTE_LENGTH } }}
+        helperText={`${values.note.length}/${MAX_NOTE_LENGTH}`}
       />
       <FormControlLabel
         control={

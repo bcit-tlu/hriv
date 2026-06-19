@@ -14,10 +14,10 @@ export default function NoteDisplay({ note, collapsedLines = 2 }: NoteDisplayPro
   // Heuristic: show "more" when there are more than `collapsedLines` explicit
   // newlines or when the text is long enough that it will likely wrap to multiple
   // lines. Use a chars-per-line estimate to catch wrapped single-line text.
-  const newlineCount = note.split('\n').length
+  const lineCount = note.split('\n').length
   const charsPerLineEstimate = 80 // conservative estimate for wrapping
   const isLongByChars = note.length > collapsedLines * charsPerLineEstimate
-  const shouldTruncate = !expanded && (newlineCount > collapsedLines || isLongByChars)
+  const shouldTruncate = !expanded && (lineCount > collapsedLines || isLongByChars)
 
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -34,7 +34,7 @@ export default function NoteDisplay({ note, collapsedLines = 2 }: NoteDisplayPro
           {note}
         </Typography>
       </Box>
-      {(newlineCount > collapsedLines || isLongByChars) && (
+      {(lineCount > collapsedLines || isLongByChars) && (
         <Button
           size="small"
           variant="text"
