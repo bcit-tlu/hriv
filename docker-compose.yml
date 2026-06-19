@@ -10,7 +10,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hriv"]
+      test: ['CMD-SHELL', 'pg_isready -U hriv']
       interval: 30s
       timeout: 3s
       retries: 5
@@ -26,7 +26,7 @@ services:
     build:
       context: ./backend
       target: dev
-    command: ["python", "-m", "app.migrations_bootstrap"]
+    command: ['python', '-m', 'app.migrations_bootstrap']
     volumes:
       - ./backend/app:/app/app
       - ./backend/alembic.ini:/app/alembic.ini
@@ -38,7 +38,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    restart: "no"
+    restart: 'no'
 
   seed:
     # Loads idempotent demo data (``db/seed.sql``) for local development.
@@ -47,14 +47,7 @@ services:
     # All INSERTs are ``ON CONFLICT DO NOTHING`` so re-runs are no-ops.
     image: postgres:16-alpine
     command:
-      [
-        "psql",
-        "postgresql://hriv:hriv@db:5432/hriv",
-        "-v",
-        "ON_ERROR_STOP=1",
-        "-f",
-        "/seed.sql",
-      ]
+      ['psql', 'postgresql://hriv:hriv@db:5432/hriv', '-v', 'ON_ERROR_STOP=1', '-f', '/seed.sql']
     volumes:
       - ./db/seed.sql:/seed.sql:ro
     depends_on:
@@ -62,7 +55,7 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
-    restart: "no"
+    restart: 'no'
 
   backend:
     build:
@@ -95,9 +88,9 @@ services:
     healthcheck:
       test:
         [
-          "CMD",
-          "python",
-          "-c",
+          'CMD',
+          'python',
+          '-c',
           "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health').read()",
         ]
       interval: 30s
@@ -112,7 +105,7 @@ services:
     volumes:
       - ./backend:/app
     working_dir: /app
-    entrypoint: ["/opt/poetry-venv/bin/poetry"]
+    entrypoint: ['/opt/poetry-venv/bin/poetry']
     profiles:
       - tools
 
@@ -145,7 +138,7 @@ services:
     build:
       context: ./backend
       target: dev
-    command: ["opentelemetry-instrument", "arq", "app.worker.WorkerSettings"]
+    command: ['opentelemetry-instrument', 'arq', 'app.worker.WorkerSettings']
     volumes:
       - ./backend/app:/app/app
       - image_data:/data
@@ -174,7 +167,7 @@ services:
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 30s
       timeout: 3s
       retries: 5

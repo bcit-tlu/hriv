@@ -208,7 +208,7 @@ vi.mock('../src/components/SortableTileGrid', () => ({
     onImageClick,
     onCategoryClick,
   }: {
-    currentImages: typeof mockImage[]
+    currentImages: (typeof mockImage)[]
     currentCategories: typeof mockCategories
     onImageClick: (img: typeof mockImage) => void
     onCategoryClick: (category: (typeof mockCategories)[number]) => void
@@ -368,8 +368,12 @@ describe('App breadcrumbs', () => {
     const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
     expect(imageBreadcrumb).not.toBeNull()
 
-    const programChip = within(imageBreadcrumb as HTMLElement).getByText('Pathology').closest('.MuiChip-root')
-    const groupChip = within(imageBreadcrumb as HTMLElement).getByText('Lab A2').closest('.MuiChip-root')
+    const programChip = within(imageBreadcrumb as HTMLElement)
+      .getByText('Pathology')
+      .closest('.MuiChip-root')
+    const groupChip = within(imageBreadcrumb as HTMLElement)
+      .getByText('Lab A2')
+      .closest('.MuiChip-root')
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')
 
@@ -417,8 +421,12 @@ describe('App breadcrumbs', () => {
     const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
     expect(imageBreadcrumb).not.toBeNull()
 
-    const programChip = within(imageBreadcrumb as HTMLElement).getByText('Pathology').closest('.MuiChip-root')
-    const groupChip = within(imageBreadcrumb as HTMLElement).getByText('Lab A2').closest('.MuiChip-root')
+    const programChip = within(imageBreadcrumb as HTMLElement)
+      .getByText('Pathology')
+      .closest('.MuiChip-root')
+    const groupChip = within(imageBreadcrumb as HTMLElement)
+      .getByText('Lab A2')
+      .closest('.MuiChip-root')
     const hiddenButton = screen.getByRole('button', { name: 'Visibility: Hidden by category' })
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')
@@ -474,8 +482,12 @@ describe('App breadcrumbs', () => {
     const categoryBreadcrumb = screen.getByLabelText('category breadcrumb').closest('div')
     expect(categoryBreadcrumb).not.toBeNull()
 
-    const categoryProgramChip = within(categoryBreadcrumb as HTMLElement).getByText('Pathology').closest('.MuiChip-root')
-    const categoryGroupChip = within(categoryBreadcrumb as HTMLElement).getByText('Lab A2').closest('.MuiChip-root')
+    const categoryProgramChip = within(categoryBreadcrumb as HTMLElement)
+      .getByText('Pathology')
+      .closest('.MuiChip-root')
+    const categoryGroupChip = within(categoryBreadcrumb as HTMLElement)
+      .getByText('Lab A2')
+      .closest('.MuiChip-root')
 
     expect(categoryProgramChip).toHaveStyle({ opacity: '0.6' })
     expect(categoryGroupChip).toHaveStyle({ opacity: '0.6' })
@@ -485,8 +497,12 @@ describe('App breadcrumbs', () => {
     const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
     expect(imageBreadcrumb).not.toBeNull()
 
-    const imageProgramChip = within(imageBreadcrumb as HTMLElement).getByText('Pathology').closest('.MuiChip-root')
-    const imageGroupChip = within(imageBreadcrumb as HTMLElement).getByText('Lab A2').closest('.MuiChip-root')
+    const imageProgramChip = within(imageBreadcrumb as HTMLElement)
+      .getByText('Pathology')
+      .closest('.MuiChip-root')
+    const imageGroupChip = within(imageBreadcrumb as HTMLElement)
+      .getByText('Lab A2')
+      .closest('.MuiChip-root')
 
     expect(imageProgramChip).toHaveStyle({ opacity: '0.6' })
     expect(imageGroupChip).toHaveStyle({ opacity: '0.6' })

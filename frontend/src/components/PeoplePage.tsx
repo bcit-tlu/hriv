@@ -49,7 +49,15 @@ import AddEditPersonModal from './AddEditPersonModal'
 import BulkEditModal from './BulkEditModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
 
-type SortableColumn = 'id' | 'name' | 'email' | 'role' | 'program' | 'group' | 'last_access' | 'created_at'
+type SortableColumn =
+  | 'id'
+  | 'name'
+  | 'email'
+  | 'role'
+  | 'program'
+  | 'group'
+  | 'last_access'
+  | 'created_at'
 type SortDirection = 'asc' | 'desc'
 type PeopleTableColumn =
   | 'id'
@@ -81,7 +89,9 @@ const PEOPLE_DEFAULT_VISIBLE_COLUMNS: readonly PeopleTableColumn[] = [
   'group',
   'last_access',
 ]
-const PEOPLE_ALL_COLUMNS: readonly PeopleTableColumn[] = PEOPLE_COLUMN_OPTIONS.map((column) => column.key)
+const PEOPLE_ALL_COLUMNS: readonly PeopleTableColumn[] = PEOPLE_COLUMN_OPTIONS.map(
+  (column) => column.key,
+)
 
 const PEOPLE_COLUMN_FILTER_KEYS: Partial<Record<PeopleTableColumn, string>> = {
   name: 'name',
@@ -97,7 +107,11 @@ interface PeoplePageProps {
   onEditUserHandled?: () => void
 }
 
-export default function PeoplePage({ programs, initialEditUserId, onEditUserHandled }: PeoplePageProps) {
+export default function PeoplePage({
+  programs,
+  initialEditUserId,
+  onEditUserHandled,
+}: PeoplePageProps) {
   const [users, setUsers] = useState<ApiUser[]>([])
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
@@ -113,15 +127,12 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
   // Filter row visibility
   const [showFilters, setShowFilters] = useState(false)
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
-  const {
-    visibleColumns,
-    isColumnVisible,
-    setColumnVisible,
-  } = useTableColumnPreferences<PeopleTableColumn>({
-    tableKey: 'people',
-    allColumns: PEOPLE_ALL_COLUMNS,
-    defaultVisibleColumns: PEOPLE_DEFAULT_VISIBLE_COLUMNS,
-  })
+  const { visibleColumns, isColumnVisible, setColumnVisible } =
+    useTableColumnPreferences<PeopleTableColumn>({
+      tableKey: 'people',
+      allColumns: PEOPLE_ALL_COLUMNS,
+      defaultVisibleColumns: PEOPLE_DEFAULT_VISIBLE_COLUMNS,
+    })
 
   // Pagination state
   const [rowsPerPage, setRowsPerPage] = useState(25)
@@ -252,21 +263,24 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
     setCurrentPage(0)
   }
 
-  const handleColumnVisibilityToggle = useCallback((column: PeopleTableColumn) => {
-    const nextVisible = !visibleColumns[column]
-    setColumnVisible(column, nextVisible)
-    if (!nextVisible) {
-      const filterKey = PEOPLE_COLUMN_FILTER_KEYS[column]
-      if (filterKey) {
-        setFilters((prev) => {
-          if (!prev[filterKey]) return prev
-          const next = { ...prev }
-          delete next[filterKey]
-          return next
-        })
+  const handleColumnVisibilityToggle = useCallback(
+    (column: PeopleTableColumn) => {
+      const nextVisible = !visibleColumns[column]
+      setColumnVisible(column, nextVisible)
+      if (!nextVisible) {
+        const filterKey = PEOPLE_COLUMN_FILTER_KEYS[column]
+        if (filterKey) {
+          setFilters((prev) => {
+            if (!prev[filterKey]) return prev
+            const next = { ...prev }
+            delete next[filterKey]
+            return next
+          })
+        }
       }
-    }
-  }, [setColumnVisible, visibleColumns])
+    },
+    [setColumnVisible, visibleColumns],
+  )
 
   const pageUsers = useMemo(
     () => sortedUsers.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage),
@@ -281,9 +295,17 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
   // Selection handlers — scoped to current page
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelected((prev) => { const next = new Set(prev); pageUsers.forEach((u) => next.add(u.id)); return next })
+      setSelected((prev) => {
+        const next = new Set(prev)
+        pageUsers.forEach((u) => next.add(u.id))
+        return next
+      })
     } else {
-      setSelected((prev) => { const next = new Set(prev); pageUsers.forEach((u) => next.delete(u.id)); return next })
+      setSelected((prev) => {
+        const next = new Set(prev)
+        pageUsers.forEach((u) => next.delete(u.id))
+        return next
+      })
     }
   }
 
@@ -393,10 +415,17 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3, flexWrap: 'wrap', gap: 1 }}>
-        <Typography variant="h5">
-          People
-        </Typography>
+      <Box
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          mb: 3,
+          flexWrap: 'wrap',
+          gap: 1,
+        }}
+      >
+        <Typography variant="h5">People</Typography>
         <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'center' }}>
           <ToggleButtonGroup
             size="small"
@@ -469,11 +498,7 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
               </Button>
             </>
           )}
-          <Button
-            variant="contained"
-            startIcon={<PersonAddIcon />}
-            onClick={handleOpenAdd}
-          >
+          <Button variant="contained" startIcon={<PersonAddIcon />} onClick={handleOpenAdd}>
             Add Person
           </Button>
         </Box>
@@ -495,151 +520,249 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                     onChange={(e) => handleSelectAll(e.target.checked)}
                   />
                 </TableCell>
-                {isColumnVisible('id') && <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'id'}
-                    direction={sortColumn === 'id' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('id')}
-                  >
-                    ID
-                  </TableSortLabel>
-                </TableCell>}
-                {isColumnVisible('name') && <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'name'}
-                    direction={sortColumn === 'name' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('name')}
-                  >
-                    Name
-                  </TableSortLabel>
-                </TableCell>}
-                {isColumnVisible('email') && <TableCell sortDirection={sortColumn === 'email' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'email'}
-                    direction={sortColumn === 'email' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('email')}
-                  >
-                    Email
-                  </TableSortLabel>
-                </TableCell>}
-                {isColumnVisible('role') && <TableCell sortDirection={sortColumn === 'role' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'role'}
-                    direction={sortColumn === 'role' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('role')}
-                  >
-                    Role
-                  </TableSortLabel>
-                </TableCell>}
-                {isColumnVisible('program') && <TableCell sortDirection={sortColumn === 'program' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'program'}
-                    direction={sortColumn === 'program' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('program')}
-                  >
-                    Program
-                  </TableSortLabel>
-                </TableCell>}
-                {isColumnVisible('group') && <TableCell sortDirection={sortColumn === 'group' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'group'}
-                    direction={sortColumn === 'group' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('group')}
-                  >
-                    Groups
-                  </TableSortLabel>
-                </TableCell>}
-                {isColumnVisible('last_access') && <TableCell sortDirection={sortColumn === 'last_access' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'last_access'}
-                    direction={sortColumn === 'last_access' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('last_access')}
-                  >
-                    Last Accessed
-                  </TableSortLabel>
-                </TableCell>}
-                {isColumnVisible('created_at') && <TableCell sortDirection={sortColumn === 'created_at' ? sortDirection : false}>
-                  <TableSortLabel
-                    active={sortColumn === 'created_at'}
-                    direction={sortColumn === 'created_at' ? sortDirection : 'asc'}
-                    onClick={() => handleSort('created_at')}
-                  >
-                    Created
-                  </TableSortLabel>
-                </TableCell>}
+                {isColumnVisible('id') && (
+                  <TableCell sortDirection={sortColumn === 'id' ? sortDirection : false}>
+                    <TableSortLabel
+                      active={sortColumn === 'id'}
+                      direction={sortColumn === 'id' ? sortDirection : 'asc'}
+                      onClick={() => handleSort('id')}
+                    >
+                      ID
+                    </TableSortLabel>
+                  </TableCell>
+                )}
+                {isColumnVisible('name') && (
+                  <TableCell sortDirection={sortColumn === 'name' ? sortDirection : false}>
+                    <TableSortLabel
+                      active={sortColumn === 'name'}
+                      direction={sortColumn === 'name' ? sortDirection : 'asc'}
+                      onClick={() => handleSort('name')}
+                    >
+                      Name
+                    </TableSortLabel>
+                  </TableCell>
+                )}
+                {isColumnVisible('email') && (
+                  <TableCell sortDirection={sortColumn === 'email' ? sortDirection : false}>
+                    <TableSortLabel
+                      active={sortColumn === 'email'}
+                      direction={sortColumn === 'email' ? sortDirection : 'asc'}
+                      onClick={() => handleSort('email')}
+                    >
+                      Email
+                    </TableSortLabel>
+                  </TableCell>
+                )}
+                {isColumnVisible('role') && (
+                  <TableCell sortDirection={sortColumn === 'role' ? sortDirection : false}>
+                    <TableSortLabel
+                      active={sortColumn === 'role'}
+                      direction={sortColumn === 'role' ? sortDirection : 'asc'}
+                      onClick={() => handleSort('role')}
+                    >
+                      Role
+                    </TableSortLabel>
+                  </TableCell>
+                )}
+                {isColumnVisible('program') && (
+                  <TableCell sortDirection={sortColumn === 'program' ? sortDirection : false}>
+                    <TableSortLabel
+                      active={sortColumn === 'program'}
+                      direction={sortColumn === 'program' ? sortDirection : 'asc'}
+                      onClick={() => handleSort('program')}
+                    >
+                      Program
+                    </TableSortLabel>
+                  </TableCell>
+                )}
+                {isColumnVisible('group') && (
+                  <TableCell sortDirection={sortColumn === 'group' ? sortDirection : false}>
+                    <TableSortLabel
+                      active={sortColumn === 'group'}
+                      direction={sortColumn === 'group' ? sortDirection : 'asc'}
+                      onClick={() => handleSort('group')}
+                    >
+                      Groups
+                    </TableSortLabel>
+                  </TableCell>
+                )}
+                {isColumnVisible('last_access') && (
+                  <TableCell sortDirection={sortColumn === 'last_access' ? sortDirection : false}>
+                    <TableSortLabel
+                      active={sortColumn === 'last_access'}
+                      direction={sortColumn === 'last_access' ? sortDirection : 'asc'}
+                      onClick={() => handleSort('last_access')}
+                    >
+                      Last Accessed
+                    </TableSortLabel>
+                  </TableCell>
+                )}
+                {isColumnVisible('created_at') && (
+                  <TableCell sortDirection={sortColumn === 'created_at' ? sortDirection : false}>
+                    <TableSortLabel
+                      active={sortColumn === 'created_at'}
+                      direction={sortColumn === 'created_at' ? sortDirection : 'asc'}
+                      onClick={() => handleSort('created_at')}
+                    >
+                      Created
+                    </TableSortLabel>
+                  </TableCell>
+                )}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
               {showFilters && (
-              <TableRow>
-                <TableCell padding="checkbox">
-                  {hasActiveFilters && (
-                    <IconButton size="small" onClick={handleClearFilters} title="Clear all filters">
-                      <ClearIcon fontSize="small" />
-                    </IconButton>
+                <TableRow>
+                  <TableCell padding="checkbox">
+                    {hasActiveFilters && (
+                      <IconButton
+                        size="small"
+                        onClick={handleClearFilters}
+                        title="Clear all filters"
+                      >
+                        <ClearIcon fontSize="small" />
+                      </IconButton>
+                    )}
+                  </TableCell>
+                  {isColumnVisible('id') && <TableCell />}
+                  {isColumnVisible('name') && (
+                    <TableCell>
+                      <TextField
+                        size="small"
+                        variant="standard"
+                        placeholder="Filter"
+                        value={filters['name'] ?? ''}
+                        onChange={(e) => handleFilterChange('name', e.target.value)}
+                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
+                        InputProps={
+                          filters['name']
+                            ? {
+                                endAdornment: (
+                                  <InputAdornment position="end">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleFilterChange('name', '')}
+                                    >
+                                      <ClearIcon sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                  </InputAdornment>
+                                ),
+                              }
+                            : undefined
+                        }
+                      />
+                    </TableCell>
                   )}
-                </TableCell>
-                {isColumnVisible('id') && <TableCell />}
-                {isColumnVisible('name') && <TableCell>
-                  <TextField
-                    size="small"
-                    variant="standard"
-                    placeholder="Filter"
-                    value={filters['name'] ?? ''}
-                    onChange={(e) => handleFilterChange('name', e.target.value)}
-                    slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                    InputProps={filters['name'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('name', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
-                  />
-                </TableCell>}
-                {isColumnVisible('email') && <TableCell>
-                  <TextField
-                    size="small"
-                    variant="standard"
-                    placeholder="Filter"
-                    value={filters['email'] ?? ''}
-                    onChange={(e) => handleFilterChange('email', e.target.value)}
-                    slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                    InputProps={filters['email'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('email', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
-                  />
-                </TableCell>}
-                {isColumnVisible('role') && <TableCell>
-                  <FormControl size="small" variant="standard" fullWidth>
-                    <Select
-                      value={filters['role'] ?? ''}
-                      onChange={(e: SelectChangeEvent) => handleFilterChange('role', e.target.value)}
-                      displayEmpty
-                      sx={{ fontSize: '0.8rem' }}
-                    >
-                      <MenuItem value=""><em>All</em></MenuItem>
-                      {ROLES.map((r) => <MenuItem key={r} value={r}>{r}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                </TableCell>}
-                {isColumnVisible('program') && <TableCell>
-                  <TextField
-                    size="small"
-                    variant="standard"
-                    placeholder="Filter"
-                    value={filters['program'] ?? ''}
-                    onChange={(e) => handleFilterChange('program', e.target.value)}
-                    slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                    InputProps={filters['program'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('program', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
-                  />
-                </TableCell>}
-                {isColumnVisible('group') && <TableCell>
-                  <TextField
-                    size="small"
-                    variant="standard"
-                    placeholder="Filter"
-                    value={filters['group'] ?? ''}
-                    onChange={(e) => handleFilterChange('group', e.target.value)}
-                    slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                    InputProps={filters['group'] ? { endAdornment: <InputAdornment position="end"><IconButton size="small" onClick={() => handleFilterChange('group', '')}><ClearIcon sx={{ fontSize: 14 }} /></IconButton></InputAdornment> } : undefined}
-                  />
-                </TableCell>}
-                {isColumnVisible('last_access') && <TableCell />}
-                {isColumnVisible('created_at') && <TableCell />}
-                <TableCell />
-              </TableRow>
+                  {isColumnVisible('email') && (
+                    <TableCell>
+                      <TextField
+                        size="small"
+                        variant="standard"
+                        placeholder="Filter"
+                        value={filters['email'] ?? ''}
+                        onChange={(e) => handleFilterChange('email', e.target.value)}
+                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
+                        InputProps={
+                          filters['email']
+                            ? {
+                                endAdornment: (
+                                  <InputAdornment position="end">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleFilterChange('email', '')}
+                                    >
+                                      <ClearIcon sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                  </InputAdornment>
+                                ),
+                              }
+                            : undefined
+                        }
+                      />
+                    </TableCell>
+                  )}
+                  {isColumnVisible('role') && (
+                    <TableCell>
+                      <FormControl size="small" variant="standard" fullWidth>
+                        <Select
+                          value={filters['role'] ?? ''}
+                          onChange={(e: SelectChangeEvent) =>
+                            handleFilterChange('role', e.target.value)
+                          }
+                          displayEmpty
+                          sx={{ fontSize: '0.8rem' }}
+                        >
+                          <MenuItem value="">
+                            <em>All</em>
+                          </MenuItem>
+                          {ROLES.map((r) => (
+                            <MenuItem key={r} value={r}>
+                              {r}
+                            </MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                    </TableCell>
+                  )}
+                  {isColumnVisible('program') && (
+                    <TableCell>
+                      <TextField
+                        size="small"
+                        variant="standard"
+                        placeholder="Filter"
+                        value={filters['program'] ?? ''}
+                        onChange={(e) => handleFilterChange('program', e.target.value)}
+                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
+                        InputProps={
+                          filters['program']
+                            ? {
+                                endAdornment: (
+                                  <InputAdornment position="end">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleFilterChange('program', '')}
+                                    >
+                                      <ClearIcon sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                  </InputAdornment>
+                                ),
+                              }
+                            : undefined
+                        }
+                      />
+                    </TableCell>
+                  )}
+                  {isColumnVisible('group') && (
+                    <TableCell>
+                      <TextField
+                        size="small"
+                        variant="standard"
+                        placeholder="Filter"
+                        value={filters['group'] ?? ''}
+                        onChange={(e) => handleFilterChange('group', e.target.value)}
+                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
+                        InputProps={
+                          filters['group']
+                            ? {
+                                endAdornment: (
+                                  <InputAdornment position="end">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleFilterChange('group', '')}
+                                    >
+                                      <ClearIcon sx={{ fontSize: 14 }} />
+                                    </IconButton>
+                                  </InputAdornment>
+                                ),
+                              }
+                            : undefined
+                        }
+                      />
+                    </TableCell>
+                  )}
+                  {isColumnVisible('last_access') && <TableCell />}
+                  {isColumnVisible('created_at') && <TableCell />}
+                  <TableCell />
+                </TableRow>
               )}
             </TableHead>
             <TableBody>
@@ -651,60 +774,58 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
                   sx={{ cursor: 'pointer' }}
                   onClick={() => handleRowClick(user)}
                 >
-                  <TableCell
-                    padding="checkbox"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
                     <Checkbox
                       checked={selected.has(user.id)}
-                      onChange={(e) =>
-                        handleSelectOne(user.id, e.target.checked)
-                      }
+                      onChange={(e) => handleSelectOne(user.id, e.target.checked)}
                     />
                   </TableCell>
                   {isColumnVisible('id') && <TableCell>{user.id}</TableCell>}
                   {isColumnVisible('name') && <TableCell>{user.name}</TableCell>}
                   {isColumnVisible('email') && <TableCell>{user.email}</TableCell>}
                   {isColumnVisible('role') && <TableCell>{user.role}</TableCell>}
-                  {isColumnVisible('program') && <TableCell>
-                    {user.program_names.length > 0 ? (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {user.program_names.map((name) => (
-                          <Chip key={name} label={name} size="small" color="primary" />
-                        ))}
-                      </Box>
-                    ) : '—'}
-                  </TableCell>}
-                  {isColumnVisible('group') && <TableCell>
-                    {user.group_names.length > 0 ? (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {user.group_names.map((name) => (
-                          <Chip
-                            key={name}
-                            label={name}
-                            size="small"
-                            color="secondary"
-                          />
-                        ))}
-                      </Box>
-                    ) : '—'}
-                  </TableCell>}
-                  {isColumnVisible('last_access') && <TableCell>
-                    {user.last_access
-                      ? new Date(user.last_access).toLocaleDateString()
-                      : '—'}
-                  </TableCell>}
-                  {isColumnVisible('created_at') && <TableCell>
-                    {new Date(user.created_at).toLocaleDateString()}
-                  </TableCell>}
-                  <TableCell
-                    align="right"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  {isColumnVisible('program') && (
+                    <TableCell>
+                      {user.program_names.length > 0 ? (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {user.program_names.map((name) => (
+                            <Chip key={name} label={name} size="small" color="primary" />
+                          ))}
+                        </Box>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                  )}
+                  {isColumnVisible('group') && (
+                    <TableCell>
+                      {user.group_names.length > 0 ? (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {user.group_names.map((name) => (
+                            <Chip key={name} label={name} size="small" color="secondary" />
+                          ))}
+                        </Box>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                  )}
+                  {isColumnVisible('last_access') && (
+                    <TableCell>
+                      {user.last_access ? new Date(user.last_access).toLocaleDateString() : '—'}
+                    </TableCell>
+                  )}
+                  {isColumnVisible('created_at') && (
+                    <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
+                  )}
+                  <TableCell align="right" onClick={(e) => e.stopPropagation()}>
                     <Button
                       size="small"
                       color="error"
-                      onClick={() => { setDeleteConfirmUser(user); setDeleteConfirmOpen(true) }}
+                      onClick={() => {
+                        setDeleteConfirmUser(user)
+                        setDeleteConfirmOpen(true)
+                      }}
                     >
                       Delete
                     </Button>
@@ -762,15 +883,18 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
         <DialogTitle>Bulk Update Role</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
           <Typography variant="body2" color="text.secondary">
-            Change the role of {selected.size} selected{' '}
-            {selected.size === 1 ? 'person' : 'people'}.
+            Change the role of {selected.size} selected {selected.size === 1 ? 'person' : 'people'}.
           </Typography>
           <FormControl fullWidth>
             <Select
               value={bulkRole}
               onChange={(e: SelectChangeEvent) => setBulkRole(e.target.value)}
             >
-              {ROLES.map((r) => <MenuItem key={r} value={r}>{r}</MenuItem>)}
+              {ROLES.map((r) => (
+                <MenuItem key={r} value={r}>
+                  {r}
+                </MenuItem>
+              ))}
             </Select>
           </FormControl>
         </DialogContent>
@@ -783,7 +907,12 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
       </Dialog>
 
       {/* Bulk Delete Confirmation Dialog */}
-      <Dialog open={bulkDeleteOpen} onClose={() => setBulkDeleteOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
         <DialogTitle>Delete Users</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
@@ -792,12 +921,7 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
           </Typography>
           <Divider />
           <Box>
-            <Button
-              color="error"
-              variant="contained"
-              onClick={handleBulkDelete}
-              fullWidth
-            >
+            <Button color="error" variant="contained" onClick={handleBulkDelete} fullWidth>
               Delete {selected.size} {selected.size === 1 ? 'User' : 'Users'}
             </Button>
             <Typography
@@ -825,7 +949,8 @@ export default function PeoplePage({ programs, initialEditUserId, onEditUserHand
         <DialogTitle>Delete Person</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Are you sure you want to delete <strong>{deleteConfirmUser?.name || deleteConfirmUser?.email}</strong>?
+            Are you sure you want to delete{' '}
+            <strong>{deleteConfirmUser?.name || deleteConfirmUser?.email}</strong>?
           </Typography>
           <Divider />
           <Box>

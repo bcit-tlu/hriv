@@ -1,43 +1,43 @@
 {
-    "include-component-in-tag": true,
-    "separate-pull-requests": true,
-    "bump-minor-pre-major": true,
-    "packages": {
-        "frontend": {
-            "path": "frontend",
-            "component": "frontend",
-            "release-type": "node",
-            "extra-files": [
-                {
-                    "type": "generic",
-                    "path": "/charts/frontend/Chart.yaml",
-                    "glob": true
-                }
-            ]
-        },
-        "backend": {
-            "path": "backend",
-            "component": "backend",
-            "release-type": "python",
-            "extra-files": [
-                {
-                    "type": "generic",
-                    "path": "/charts/backend/Chart.yaml",
-                    "glob": true
-                }
-            ]
-        },
-        "backup": {
-            "path": "backup",
-            "component": "backup",
-            "release-type": "python",
-            "extra-files": [
-                {
-                    "type": "generic",
-                    "path": "/charts/backup/Chart.yaml",
-                    "glob": true
-                }
-            ]
+  "include-component-in-tag": true,
+  "separate-pull-requests": true,
+  "bump-minor-pre-major": true,
+  "packages": {
+    "frontend": {
+      "path": "frontend",
+      "component": "frontend",
+      "release-type": "node",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "/charts/frontend/Chart.yaml",
+          "glob": true
         }
+      ]
+    },
+    "backend": {
+      "path": "backend",
+      "component": "backend",
+      "release-type": "python",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "/charts/backend/Chart.yaml",
+          "glob": true
+        }
+      ]
+    },
+    "backup": {
+      "path": "backup",
+      "component": "backup",
+      "release-type": "python",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "/charts/backup/Chart.yaml",
+          "glob": true
+        }
+      ]
     }
+  }
 }

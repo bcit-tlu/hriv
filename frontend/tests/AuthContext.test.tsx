@@ -26,7 +26,9 @@ vi.mock('../src/api', () => ({
   loginUser: (...args: unknown[]) => mockLoginUser(...args),
   createUser: (...args: unknown[]) => mockCreateUser(...args),
   deleteUser: (...args: unknown[]) => mockDeleteUser(...args),
-  setToken: (t: string | null) => { currentToken = t },
+  setToken: (t: string | null) => {
+    currentToken = t
+  },
   getToken: () => currentToken,
   clearUserStorage: () => {
     Object.keys(storage).forEach((k) => {
@@ -39,8 +41,12 @@ vi.mock('../src/api', () => ({
 const storage: Record<string, string> = {}
 const localStorageMock = {
   getItem: vi.fn((key: string) => storage[key] ?? null),
-  setItem: vi.fn((key: string, val: string) => { storage[key] = val }),
-  removeItem: vi.fn((key: string) => { delete storage[key] }),
+  setItem: vi.fn((key: string, val: string) => {
+    storage[key] = val
+  }),
+  removeItem: vi.fn((key: string) => {
+    delete storage[key]
+  }),
 }
 Object.defineProperty(window, 'localStorage', { value: localStorageMock, writable: true })
 
@@ -104,21 +110,29 @@ describe('AuthProvider', () => {
 
   it('validates stored token via /auth/me on mount', async () => {
     currentToken = 'stored-jwt'
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'Admin', email: 'admin@example.ca', role: 'admin' })
+    storage['hriv_user'] = JSON.stringify({
+      id: 1,
+      name: 'Admin',
+      email: 'admin@example.ca',
+      role: 'admin',
+    })
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({
-        id: 1,
-        name: 'Admin',
-        email: 'admin@example.ca',
-        role: 'admin',
-        program_ids: [],
-        program_names: [], group_ids: [], group_names: [],
-        last_access: null,
-        metadata_extra: { changelog_last_read_at: '2026-06-17T12:00:00Z' },
-      }),
+      json: () =>
+        Promise.resolve({
+          id: 1,
+          name: 'Admin',
+          email: 'admin@example.ca',
+          role: 'admin',
+          program_ids: [],
+          program_names: [],
+          group_ids: [],
+          group_names: [],
+          last_access: null,
+          metadata_extra: { changelog_last_read_at: '2026-06-17T12:00:00Z' },
+        }),
     })
     // The admin user triggers loadUsers
     mockFetchUsers.mockResolvedValueOnce([])
@@ -141,27 +155,39 @@ describe('AuthProvider', () => {
     let authCtx: AuthContextValue | null = null
 
     currentToken = 'stored-jwt'
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'Admin', email: 'admin@example.ca', role: 'admin' })
+    storage['hriv_user'] = JSON.stringify({
+      id: 1,
+      name: 'Admin',
+      email: 'admin@example.ca',
+      role: 'admin',
+    })
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({
-        id: 1,
-        name: 'Admin',
-        email: 'admin@example.ca',
-        role: 'admin',
-        program_ids: [],
-        program_names: [], group_ids: [], group_names: [],
-        last_access: null,
-        metadata_extra: { changelog_last_read_at: '2026-06-17T12:00:00Z' },
-      }),
+      json: () =>
+        Promise.resolve({
+          id: 1,
+          name: 'Admin',
+          email: 'admin@example.ca',
+          role: 'admin',
+          program_ids: [],
+          program_names: [],
+          group_ids: [],
+          group_names: [],
+          last_access: null,
+          metadata_extra: { changelog_last_read_at: '2026-06-17T12:00:00Z' },
+        }),
     })
     mockFetchUsers.mockResolvedValueOnce([])
 
     render(
       <AuthProvider>
-        <AuthConsumer onContext={(ctx) => { authCtx = ctx }} />
+        <AuthConsumer
+          onContext={(ctx) => {
+            authCtx = ctx
+          }}
+        />
       </AuthProvider>,
     )
 
@@ -174,7 +200,12 @@ describe('AuthProvider', () => {
 
   it('clears session when /auth/me returns 401', async () => {
     currentToken = 'expired-jwt'
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'Admin', email: 'admin@example.ca', role: 'admin' })
+    storage['hriv_user'] = JSON.stringify({
+      id: 1,
+      name: 'Admin',
+      email: 'admin@example.ca',
+      role: 'admin',
+    })
 
     mockFetch.mockResolvedValueOnce({
       ok: false,
@@ -223,14 +254,20 @@ describe('AuthProvider', () => {
         email: 'instructor@example.ca',
         role: 'instructor',
         program_ids: [],
-        program_names: [], group_ids: [], group_names: [],
+        program_names: [],
+        group_ids: [],
+        group_names: [],
         last_access: null,
       },
     })
 
     render(
       <AuthProvider>
-        <AuthConsumer onContext={(ctx) => { authCtx = ctx }} />
+        <AuthConsumer
+          onContext={(ctx) => {
+            authCtx = ctx
+          }}
+        />
       </AuthProvider>,
     )
 
@@ -252,7 +289,12 @@ describe('AuthProvider', () => {
     let authCtx: AuthContextValue | null = null
 
     // A previous user's data is in storage
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'Old', email: 'old@example.ca', role: 'student' })
+    storage['hriv_user'] = JSON.stringify({
+      id: 1,
+      name: 'Old',
+      email: 'old@example.ca',
+      role: 'student',
+    })
     storage['hriv-color-mode'] = 'dark'
 
     mockLoginUser.mockResolvedValue({
@@ -263,14 +305,20 @@ describe('AuthProvider', () => {
         email: 'new@example.ca',
         role: 'student',
         program_ids: [],
-        program_names: [], group_ids: [], group_names: [],
+        program_names: [],
+        group_ids: [],
+        group_names: [],
         last_access: null,
       },
     })
 
     render(
       <AuthProvider>
-        <AuthConsumer onContext={(ctx) => { authCtx = ctx }} />
+        <AuthConsumer
+          onContext={(ctx) => {
+            authCtx = ctx
+          }}
+        />
       </AuthProvider>,
     )
 
@@ -292,7 +340,12 @@ describe('AuthProvider', () => {
   it('login preserves storage when the same user logs in again', async () => {
     let authCtx: AuthContextValue | null = null
 
-    storage['hriv_user'] = JSON.stringify({ id: 2, name: 'Same', email: 'same@example.ca', role: 'student' })
+    storage['hriv_user'] = JSON.stringify({
+      id: 2,
+      name: 'Same',
+      email: 'same@example.ca',
+      role: 'student',
+    })
     storage['hriv-color-mode'] = 'dark'
 
     mockLoginUser.mockResolvedValue({
@@ -303,14 +356,20 @@ describe('AuthProvider', () => {
         email: 'same@example.ca',
         role: 'student',
         program_ids: [],
-        program_names: [], group_ids: [], group_names: [],
+        program_names: [],
+        group_ids: [],
+        group_names: [],
         last_access: null,
       },
     })
 
     render(
       <AuthProvider>
-        <AuthConsumer onContext={(ctx) => { authCtx = ctx }} />
+        <AuthConsumer
+          onContext={(ctx) => {
+            authCtx = ctx
+          }}
+        />
       </AuthProvider>,
     )
 
@@ -332,25 +391,37 @@ describe('AuthProvider', () => {
 
     // Start with a valid session + user preferences
     currentToken = 'valid-jwt'
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'A', email: 'a@example.ca', role: 'student' })
+    storage['hriv_user'] = JSON.stringify({
+      id: 1,
+      name: 'A',
+      email: 'a@example.ca',
+      role: 'student',
+    })
     storage['hriv-color-mode'] = 'dark'
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({
-        id: 1,
-        name: 'A',
-        email: 'a@example.ca',
-        role: 'student',
-        program_ids: [],
-        program_names: [], group_ids: [], group_names: [],
-        last_access: null,
-      }),
+      json: () =>
+        Promise.resolve({
+          id: 1,
+          name: 'A',
+          email: 'a@example.ca',
+          role: 'student',
+          program_ids: [],
+          program_names: [],
+          group_ids: [],
+          group_names: [],
+          last_access: null,
+        }),
     })
 
     render(
       <AuthProvider>
-        <AuthConsumer onContext={(ctx) => { authCtx = ctx }} />
+        <AuthConsumer
+          onContext={(ctx) => {
+            authCtx = ctx
+          }}
+        />
       </AuthProvider>,
     )
 
@@ -370,19 +441,27 @@ describe('AuthProvider', () => {
 
   it('canEditContent is true for instructor role', async () => {
     currentToken = 'jwt'
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'I', email: 'i@example.ca', role: 'instructor' })
+    storage['hriv_user'] = JSON.stringify({
+      id: 1,
+      name: 'I',
+      email: 'i@example.ca',
+      role: 'instructor',
+    })
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({
-        id: 1,
-        name: 'I',
-        email: 'i@example.ca',
-        role: 'instructor',
-        program_ids: [],
-        program_names: [], group_ids: [], group_names: [],
-        last_access: null,
-      }),
+      json: () =>
+        Promise.resolve({
+          id: 1,
+          name: 'I',
+          email: 'i@example.ca',
+          role: 'instructor',
+          program_ids: [],
+          program_names: [],
+          group_ids: [],
+          group_names: [],
+          last_access: null,
+        }),
     })
 
     render(
@@ -400,25 +479,51 @@ describe('AuthProvider', () => {
   it('addUser calls createUser and appends to users list', async () => {
     let authCtx: AuthContextValue | null = null
     currentToken = 'jwt'
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'A', email: 'admin@example.ca', role: 'admin' })
+    storage['hriv_user'] = JSON.stringify({
+      id: 1,
+      name: 'A',
+      email: 'admin@example.ca',
+      role: 'admin',
+    })
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({
-        id: 1, name: 'A', email: 'admin@example.ca', role: 'admin',
-        program_ids: [], program_names: [], group_ids: [], group_names: [], last_access: null,
-      }),
+      json: () =>
+        Promise.resolve({
+          id: 1,
+          name: 'A',
+          email: 'admin@example.ca',
+          role: 'admin',
+          program_ids: [],
+          program_names: [],
+          group_ids: [],
+          group_names: [],
+          last_access: null,
+        }),
     })
     mockFetchUsers.mockResolvedValueOnce([])
     mockCreateUser.mockResolvedValueOnce({
-      id: 5, name: 'New', email: 'new@example.ca', role: 'student',
-      program_ids: [], program_names: [], group_ids: [], group_names: [], last_access: null,
-      metadata_extra: null, created_at: '', updated_at: '',
+      id: 5,
+      name: 'New',
+      email: 'new@example.ca',
+      role: 'student',
+      program_ids: [],
+      program_names: [],
+      group_ids: [],
+      group_names: [],
+      last_access: null,
+      metadata_extra: null,
+      created_at: '',
+      updated_at: '',
     })
 
     render(
       <AuthProvider>
-        <AuthConsumer onContext={(ctx) => { authCtx = ctx }} />
+        <AuthConsumer
+          onContext={(ctx) => {
+            authCtx = ctx
+          }}
+        />
       </AuthProvider>,
     )
 
@@ -442,27 +547,53 @@ describe('AuthProvider', () => {
   it('deleteUser removes user from list', async () => {
     let authCtx: AuthContextValue | null = null
     currentToken = 'jwt'
-    storage['hriv_user'] = JSON.stringify({ id: 1, name: 'A', email: 'admin@example.ca', role: 'admin' })
+    storage['hriv_user'] = JSON.stringify({
+      id: 1,
+      name: 'A',
+      email: 'admin@example.ca',
+      role: 'admin',
+    })
 
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({
-        id: 1, name: 'A', email: 'admin@example.ca', role: 'admin',
-        program_ids: [], program_names: [], group_ids: [], group_names: [], last_access: null,
-      }),
+      json: () =>
+        Promise.resolve({
+          id: 1,
+          name: 'A',
+          email: 'admin@example.ca',
+          role: 'admin',
+          program_ids: [],
+          program_names: [],
+          group_ids: [],
+          group_names: [],
+          last_access: null,
+        }),
     })
     mockFetchUsers.mockResolvedValueOnce([
       {
-        id: 5, name: 'Other', email: 'other@example.ca', role: 'student',
-        program_ids: [], program_names: [], group_ids: [], group_names: [], last_access: null,
-        metadata_extra: null, created_at: '', updated_at: '',
+        id: 5,
+        name: 'Other',
+        email: 'other@example.ca',
+        role: 'student',
+        program_ids: [],
+        program_names: [],
+        group_ids: [],
+        group_names: [],
+        last_access: null,
+        metadata_extra: null,
+        created_at: '',
+        updated_at: '',
       },
     ])
     mockDeleteUser.mockResolvedValueOnce(undefined)
 
     render(
       <AuthProvider>
-        <AuthConsumer onContext={(ctx) => { authCtx = ctx }} />
+        <AuthConsumer
+          onContext={(ctx) => {
+            authCtx = ctx
+          }}
+        />
       </AuthProvider>,
     )
 
@@ -487,7 +618,11 @@ describe('AuthProvider', () => {
     // so we test the clearOidcError path by calling it directly
     render(
       <AuthProvider>
-        <AuthConsumer onContext={(ctx) => { authCtx = ctx }} />
+        <AuthConsumer
+          onContext={(ctx) => {
+            authCtx = ctx
+          }}
+        />
       </AuthProvider>,
     )
 

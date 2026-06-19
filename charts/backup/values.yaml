@@ -1,6 +1,6 @@
 image:
   repository: ghcr.io/bcit-tlu/hriv/hriv-backup
-  tag: "" # Defaults to .Chart.AppVersion
+  tag: '' # Defaults to .Chart.AppVersion
   pullPolicy: IfNotPresent
 
 # Exposes Chart.AppVersion as a ConfigMap so the hriv-backend chart can
@@ -28,9 +28,9 @@ colocateWithPodLabel: hriv-backend
 
 env:
   DATA_DIR: /data
-  BACKUP_CRON_SCHEDULE: "0 2 * * *"
-  BACKUP_RETENTION_COUNT: "30"
-  AZURE_STORAGE_CONTAINER: ""
+  BACKUP_CRON_SCHEDULE: '0 2 * * *'
+  BACKUP_RETENTION_COUNT: '30'
+  AZURE_STORAGE_CONTAINER: ''
   AZURE_BLOB_PREFIX: hriv-backups
 
 # ── OpenTelemetry observability ─────────────────────────────
@@ -48,13 +48,13 @@ env:
 observability:
   openTelemetry:
     enabled: false
-    serviceName: "hriv-backup"
+    serviceName: 'hriv-backup'
     exporter:
-      traces: "otlp"
-      metrics: "none"
-      logs: "otlp"
-      endpoint: ""
-      protocol: "http/protobuf"
+      traces: 'otlp'
+      metrics: 'none'
+      logs: 'otlp'
+      endpoint: ''
+      protocol: 'http/protobuf'
 
 # Vault Secrets Operator integration.
 # Disabled by default so standalone chart users are not required to use Vault.
@@ -66,16 +66,16 @@ vault:
 persistence:
   data:
     enabled: true
-    existingClaim: "" # Set to backend PVC name to share its data volume
+    existingClaim: '' # Set to backend PVC name to share its data volume
     # Leave empty to use the cluster default StorageClass.
-    storageClass: ""
+    storageClass: ''
     size: 5Gi
     accessModes:
       - ReadWriteOnce
   backups:
     enabled: true
     # Leave empty to use the cluster default StorageClass.
-    storageClass: ""
+    storageClass: ''
     size: 10Gi
     accessModes:
       - ReadWriteOnce

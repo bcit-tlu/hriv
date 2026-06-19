@@ -21,20 +21,15 @@ interface ConfirmImportDialogProps {
   onConfirm: () => void
 }
 
-const KIND_COPY: Record<
-  ConfirmImportKind,
-  { title: string; replaces: string; verb: string }
-> = {
+const KIND_COPY: Record<ConfirmImportKind, { title: string; replaces: string; verb: string }> = {
   db_import: {
     title: 'Import database?',
-    replaces:
-      'all categories, images, users, and source image records currently in the database',
+    replaces: 'all categories, images, users, and source image records currently in the database',
     verb: 'overwritten',
   },
   files_import: {
     title: 'Import filesystem?',
-    replaces:
-      'all image tiles, thumbnails, and uploaded source files currently on disk',
+    replaces: 'all image tiles, thumbnails, and uploaded source files currently on disk',
     verb: 'overwritten',
   },
 }
@@ -82,12 +77,7 @@ export default function ConfirmImportDialog(props: ConfirmImportDialogProps) {
   )
 }
 
-function ConfirmImportDialogBody({
-  kind,
-  file,
-  onCancel,
-  onConfirm,
-}: ConfirmImportDialogProps) {
+function ConfirmImportDialogBody({ kind, file, onCancel, onConfirm }: ConfirmImportDialogProps) {
   const [backupVerified, setBackupVerified] = useState(false)
   const copy = KIND_COPY[kind]
 
@@ -99,8 +89,8 @@ function ConfirmImportDialogBody({
       </DialogTitle>
       <DialogContent>
         <Alert severity="warning" sx={{ mb: 2 }}>
-          This will replace {copy.replaces}. The operation cannot be undone —
-          any data not included in the archive will be {copy.verb}.
+          This will replace {copy.replaces}. The operation cannot be undone — any data not included
+          in the archive will be {copy.verb}.
         </Alert>
 
         <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
@@ -118,9 +108,7 @@ function ConfirmImportDialogBody({
           }}
         >
           <div>{file?.name ?? '(no file selected)'}</div>
-          <div style={{ opacity: 0.7 }}>
-            {file ? formatBytes(file.size) : ''}
-          </div>
+          <div style={{ opacity: 0.7 }}>{file ? formatBytes(file.size) : ''}</div>
         </Box>
 
         <FormControlLabel

@@ -93,7 +93,8 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     }
     if (oidcToken || oidcErr) {
       const remaining = params.toString()
-      const cleanUrl = window.location.pathname + window.location.search + (remaining ? `#${remaining}` : '')
+      const cleanUrl =
+        window.location.pathname + window.location.search + (remaining ? `#${remaining}` : '')
       window.history.replaceState({}, '', cleanUrl)
     }
   }, [])
@@ -170,29 +171,26 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [currentUser, loadUsers])
 
-  const login = useCallback(
-    async (email: string, password: string) => {
-      const resp = await apiLoginUser(email, password)
-      const user = toUser(resp.user)
-      // If a different user was previously logged in, clear all stored state
-      // to prevent cross-account leakage (common with shared student browsers).
-      const prev = localStorage.getItem('hriv_user')
-      if (prev) {
-        try {
-          const prevUser = JSON.parse(prev) as { id?: number }
-          if (prevUser.id !== user.id) {
-            clearUserStorage()
-          }
-        } catch {
+  const login = useCallback(async (email: string, password: string) => {
+    const resp = await apiLoginUser(email, password)
+    const user = toUser(resp.user)
+    // If a different user was previously logged in, clear all stored state
+    // to prevent cross-account leakage (common with shared student browsers).
+    const prev = localStorage.getItem('hriv_user')
+    if (prev) {
+      try {
+        const prevUser = JSON.parse(prev) as { id?: number }
+        if (prevUser.id !== user.id) {
           clearUserStorage()
         }
+      } catch {
+        clearUserStorage()
       }
-      setToken(resp.access_token)
-      setCurrentUser(user)
-      localStorage.setItem('hriv_user', JSON.stringify(user))
-    },
-    [],
-  )
+    }
+    setToken(resp.access_token)
+    setCurrentUser(user)
+    localStorage.setItem('hriv_user', JSON.stringify(user))
+  }, [])
 
   const logout = useCallback(() => {
     setCurrentUser(null)
@@ -229,8 +227,7 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   )
 
   const canManageUsers = currentUser?.role === 'admin'
-  const canEditContent =
-    currentUser?.role === 'admin' || currentUser?.role === 'instructor'
+  const canEditContent = currentUser?.role === 'admin' || currentUser?.role === 'instructor'
 
   return (
     <AuthContext.Provider

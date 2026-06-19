@@ -9,7 +9,7 @@ const columns = [
   { key: 'name', label: 'Name' },
   { key: 'email', label: 'Email' },
   { key: 'role', label: 'Role' },
-] as const satisfies readonly { key: TestColumn, label: string }[]
+] as const satisfies readonly { key: TestColumn; label: string }[]
 
 describe('ColumnVisibilityDialog', () => {
   it('renders the dialog title and all column options', () => {

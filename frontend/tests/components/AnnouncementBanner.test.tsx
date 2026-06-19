@@ -20,9 +20,7 @@ describe('AnnouncementBanner', () => {
   })
 
   it('renders message in login variant', () => {
-    renderWithTheme(
-      <AnnouncementBanner message="Scheduled maintenance" variant="login" />,
-    )
+    renderWithTheme(<AnnouncementBanner message="Scheduled maintenance" variant="login" />)
     expect(screen.getByText('Scheduled maintenance')).toBeInTheDocument()
   })
 
@@ -42,23 +40,19 @@ describe('AnnouncementBanner', () => {
 
   it('does not render dismiss link for login variant', () => {
     const onDismiss = vi.fn()
-    renderWithTheme(<AnnouncementBanner message="Login msg" variant="login" onDismiss={onDismiss} />)
+    renderWithTheme(
+      <AnnouncementBanner message="Login msg" variant="login" onDismiss={onDismiss} />,
+    )
     expect(screen.queryByRole('button', { name: 'Dismiss' })).not.toBeInTheDocument()
   })
 
   it('renders in dark mode without errors', () => {
-    renderWithTheme(
-      <AnnouncementBanner message="Dark mode test" />,
-      'dark',
-    )
+    renderWithTheme(<AnnouncementBanner message="Dark mode test" />, 'dark')
     expect(screen.getByText('Dark mode test')).toBeInTheDocument()
   })
 
   it('renders login variant in dark mode', () => {
-    renderWithTheme(
-      <AnnouncementBanner message="Dark login" variant="login" />,
-      'dark',
-    )
+    renderWithTheme(<AnnouncementBanner message="Dark login" variant="login" />, 'dark')
     expect(screen.getByText('Dark login')).toBeInTheDocument()
   })
 })

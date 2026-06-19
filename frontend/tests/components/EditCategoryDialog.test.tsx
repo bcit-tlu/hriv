@@ -9,12 +9,7 @@ describe('EditCategoryDialog', () => {
 
   it('renders title and pre-filled label', () => {
     render(
-      <EditCategoryDialog
-        open
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        currentLabel="Architecture"
-      />,
+      <EditCategoryDialog open onClose={vi.fn()} onSave={vi.fn()} currentLabel="Architecture" />,
     )
     expect(screen.getByText('Edit Category')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Architecture')).toBeInTheDocument()
@@ -27,9 +22,7 @@ describe('EditCategoryDialog', () => {
         onClose={vi.fn()}
         onSave={vi.fn()}
         currentLabel="Architecture"
-        programs={[
-          { id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' },
-        ]}
+        programs={[{ id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' }]}
       />,
     )
 
@@ -40,12 +33,7 @@ describe('EditCategoryDialog', () => {
 
   it('Save button is disabled when label is unchanged', () => {
     render(
-      <EditCategoryDialog
-        open
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        currentLabel="Architecture"
-      />,
+      <EditCategoryDialog open onClose={vi.fn()} onSave={vi.fn()} currentLabel="Architecture" />,
     )
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
@@ -53,12 +41,7 @@ describe('EditCategoryDialog', () => {
   it('Save button is disabled when label is empty', async () => {
     const user = userEvent.setup()
     render(
-      <EditCategoryDialog
-        open
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        currentLabel="Architecture"
-      />,
+      <EditCategoryDialog open onClose={vi.fn()} onSave={vi.fn()} currentLabel="Architecture" />,
     )
     const input = screen.getByDisplayValue('Architecture')
     await user.clear(input)
@@ -71,12 +54,7 @@ describe('EditCategoryDialog', () => {
     const onClose = vi.fn()
 
     render(
-      <EditCategoryDialog
-        open
-        onClose={onClose}
-        onSave={onSave}
-        currentLabel="Architecture"
-      />,
+      <EditCategoryDialog open onClose={onClose} onSave={onSave} currentLabel="Architecture" />,
     )
 
     const input = screen.getByDisplayValue('Architecture')
@@ -123,12 +101,7 @@ describe('EditCategoryDialog', () => {
     const onSave = vi.fn().mockRejectedValue(new ApiError(409, 'Conflict'))
 
     render(
-      <EditCategoryDialog
-        open
-        onClose={vi.fn()}
-        onSave={onSave}
-        currentLabel="Architecture"
-      />,
+      <EditCategoryDialog open onClose={vi.fn()} onSave={onSave} currentLabel="Architecture" />,
     )
 
     const input = screen.getByDisplayValue('Architecture')
@@ -148,12 +121,7 @@ describe('EditCategoryDialog', () => {
     const onSave = vi.fn().mockRejectedValue(new Error('Server error'))
 
     render(
-      <EditCategoryDialog
-        open
-        onClose={vi.fn()}
-        onSave={onSave}
-        currentLabel="Architecture"
-      />,
+      <EditCategoryDialog open onClose={vi.fn()} onSave={onSave} currentLabel="Architecture" />,
     )
 
     const input = screen.getByDisplayValue('Architecture')
@@ -455,12 +423,7 @@ describe('EditCategoryDialog', () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
     render(
-      <EditCategoryDialog
-        open
-        onClose={onClose}
-        onSave={vi.fn()}
-        currentLabel="Architecture"
-      />,
+      <EditCategoryDialog open onClose={onClose} onSave={vi.fn()} currentLabel="Architecture" />,
     )
     await user.click(screen.getByRole('button', { name: /cancel/i }))
     expect(onClose).toHaveBeenCalledOnce()
@@ -468,14 +431,30 @@ describe('EditCategoryDialog', () => {
 
   describe('group restriction', () => {
     const groups = [
-      { id: 10, name: 'Cohort A', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '', updatedAt: '' },
-      { id: 11, name: 'Cohort B', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '', updatedAt: '' },
+      {
+        id: 10,
+        name: 'Cohort A',
+        description: null,
+        createdByUserId: 1,
+        memberIds: [],
+        instructorIds: [1],
+        createdAt: '',
+        updatedAt: '',
+      },
+      {
+        id: 11,
+        name: 'Cohort B',
+        description: null,
+        createdByUserId: 1,
+        memberIds: [],
+        instructorIds: [1],
+        createdAt: '',
+        updatedAt: '',
+      },
     ]
 
     it('does not render group section when no groups provided', () => {
-      render(
-        <EditCategoryDialog open onClose={vi.fn()} onSave={vi.fn()} currentLabel="Child" />,
-      )
+      render(<EditCategoryDialog open onClose={vi.fn()} onSave={vi.fn()} currentLabel="Child" />)
       expect(screen.queryByText('Group restriction')).not.toBeInTheDocument()
     })
 
@@ -543,9 +522,7 @@ describe('EditCategoryDialog', () => {
           onClose={vi.fn()}
           onSave={vi.fn()}
           currentLabel="Child"
-          programs={[
-            { id: 1, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' },
-          ]}
+          programs={[{ id: 1, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' }]}
           currentProgramIds={[1]}
           groups={groups}
           currentGroupIds={[10]}

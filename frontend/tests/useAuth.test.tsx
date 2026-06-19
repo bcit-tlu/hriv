@@ -21,11 +21,7 @@ const mockValue: AuthContextValue = {
 }
 
 function wrapper({ children }: { children: ReactNode }) {
-  return (
-    <AuthContext.Provider value={mockValue}>
-      {children}
-    </AuthContext.Provider>
-  )
+  return <AuthContext.Provider value={mockValue}>{children}</AuthContext.Provider>
 }
 
 describe('useAuth', () => {

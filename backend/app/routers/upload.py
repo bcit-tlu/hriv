@@ -53,7 +53,10 @@ async def upload_source_image(
 
             # Validate note length early (before writing large files to disk)
             if note is not None and isinstance(note, str) and len(note) > 500:
-                raise HTTPException(status_code=400, detail="Note must be 500 characters or fewer")
+                raise HTTPException(
+                    status_code=400,
+                    detail="Note must be 500 characters or fewer",
+                )
 
             # Generate a unique filename to avoid collisions
             ext = os.path.splitext(file.filename)[1] or ".bin"

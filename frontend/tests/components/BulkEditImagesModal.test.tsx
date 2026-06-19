@@ -3,9 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import BulkEditImagesModal from '../../src/components/BulkEditImagesModal'
 
-function renderModal(
-  overrides: Partial<Parameters<typeof BulkEditImagesModal>[0]> = {},
-) {
+function renderModal(overrides: Partial<Parameters<typeof BulkEditImagesModal>[0]> = {}) {
   const onClose = overrides.onClose ?? vi.fn()
   const onSave = overrides.onSave ?? vi.fn()
   const onDelete = overrides.onDelete ?? vi.fn()
@@ -40,9 +38,7 @@ describe('BulkEditImagesModal – delete error toast', () => {
     await user.click(confirmBtn)
 
     await waitFor(() => {
-      expect(
-        screen.getByText('Failed to delete images. Please try again.'),
-      ).toBeInTheDocument()
+      expect(screen.getByText('Failed to delete images. Please try again.')).toBeInTheDocument()
     })
   })
 
@@ -55,9 +51,7 @@ describe('BulkEditImagesModal – delete error toast', () => {
     await user.click(saveBtn)
 
     await waitFor(() => {
-      expect(
-        screen.getByText('Failed to save changes. Please try again.'),
-      ).toBeInTheDocument()
+      expect(screen.getByText('Failed to save changes. Please try again.')).toBeInTheDocument()
     })
   })
 
@@ -75,8 +69,6 @@ describe('BulkEditImagesModal – delete error toast', () => {
     await waitFor(() => {
       expect(onDelete).toHaveBeenCalledTimes(1)
     })
-    expect(
-      screen.queryByText('Failed to delete images. Please try again.'),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Failed to delete images. Please try again.')).not.toBeInTheDocument()
   })
 })

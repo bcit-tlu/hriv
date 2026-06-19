@@ -21,13 +21,7 @@ describe('CategoryPickerSelect — LockIcon', () => {
   it('renders LockIcon for a category with programIds', async () => {
     const user = userEvent.setup()
     const categories = [makeCategory({ id: 1, label: 'Restricted', programIds: [10] })]
-    render(
-      <CategoryPickerSelect
-        categories={categories}
-        value={null}
-        onChange={vi.fn()}
-      />,
-    )
+    render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
     // Open the select dropdown
     await user.click(screen.getByRole('combobox'))
     expect(screen.getByLabelText('Restricted to specific programs')).toBeInTheDocument()
@@ -36,13 +30,7 @@ describe('CategoryPickerSelect — LockIcon', () => {
   it('wraps LockIcon in a semantic span with aria-label for screen readers', async () => {
     const user = userEvent.setup()
     const categories = [makeCategory({ id: 1, label: 'Restricted', programIds: [10] })]
-    render(
-      <CategoryPickerSelect
-        categories={categories}
-        value={null}
-        onChange={vi.fn()}
-      />,
-    )
+    render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
     await user.click(screen.getByRole('combobox'))
     const lockElement = screen.getByLabelText('Restricted to specific programs')
     expect(lockElement).toHaveAttribute('role', 'img')
@@ -50,13 +38,7 @@ describe('CategoryPickerSelect — LockIcon', () => {
 
   it('displays "None (root level)" when root is selected (value=null)', () => {
     const categories = [makeCategory({ id: 1, label: 'Test' })]
-    render(
-      <CategoryPickerSelect
-        categories={categories}
-        value={null}
-        onChange={vi.fn()}
-      />,
-    )
+    render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
     expect(screen.getByText('None (root level)')).toBeInTheDocument()
   })
 
@@ -94,26 +76,14 @@ describe('CategoryPickerSelect — LockIcon', () => {
     await user.click(screen.getByText('None (root level)'))
 
     // Simulate parent state update: value stays null but placeholder removed
-    rerender(
-      <CategoryPickerSelect
-        categories={categories}
-        value={null}
-        onChange={onChange}
-      />,
-    )
+    rerender(<CategoryPickerSelect categories={categories} value={null} onChange={onChange} />)
     expect(screen.getByText('None (root level)')).toBeInTheDocument()
     expect(screen.queryByText('(no change)')).not.toBeInTheDocument()
   })
 
   it('shrinks the input label when root option is displayed', () => {
     const categories = [makeCategory({ id: 1, label: 'Test' })]
-    render(
-      <CategoryPickerSelect
-        categories={categories}
-        value={null}
-        onChange={vi.fn()}
-      />,
-    )
+    render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
     const label = document.querySelector('label')
     expect(label).toHaveAttribute('data-shrink', 'true')
   })
@@ -134,22 +104,18 @@ describe('CategoryPickerSelect — LockIcon', () => {
 
   it('displays selected category label in the collapsed select', () => {
     const categories = [makeCategory({ id: 5, label: 'Histology' })]
-    render(
-      <CategoryPickerSelect
-        categories={categories}
-        value={5}
-        onChange={vi.fn()}
-      />,
-    )
+    render(<CategoryPickerSelect categories={categories} value={5} onChange={vi.fn()} />)
     expect(screen.getByText('Histology')).toBeInTheDocument()
   })
 
   it('shows non-excluded categories in dropdown when excludeCategoryId is set', async () => {
     const user = userEvent.setup()
     const categories = [
-      makeCategory({ id: 1, label: 'Skills 1', children: [
-        makeCategory({ id: 2, label: 'Sub A', parentId: 1 }),
-      ] }),
+      makeCategory({
+        id: 1,
+        label: 'Skills 1',
+        children: [makeCategory({ id: 2, label: 'Sub A', parentId: 1 })],
+      }),
       makeCategory({ id: 3, label: 'Skills 2' }),
     ]
     render(
@@ -173,17 +139,9 @@ describe('CategoryPickerSelect — LockIcon', () => {
       id: 1,
       label: 'Parent',
       programIds: [10],
-      children: [
-        makeCategory({ id: 2, label: 'Child', parentId: 1, programIds: [] }),
-      ],
+      children: [makeCategory({ id: 2, label: 'Child', parentId: 1, programIds: [] })],
     })
-    render(
-      <CategoryPickerSelect
-        categories={[parent]}
-        value={null}
-        onChange={vi.fn()}
-      />,
-    )
+    render(<CategoryPickerSelect categories={[parent]} value={null} onChange={vi.fn()} />)
     await user.click(screen.getByRole('combobox'))
     expect(screen.getByLabelText('Restricted to specific programs')).toBeInTheDocument()
     expect(screen.getByLabelText('Program restriction inherited from parent')).toBeInTheDocument()
@@ -192,13 +150,7 @@ describe('CategoryPickerSelect — LockIcon', () => {
   it('renders a secondary lock icon for direct group restrictions', async () => {
     const user = userEvent.setup()
     const categories = [makeCategory({ id: 1, label: 'Grouped', groupIds: [20] })]
-    render(
-      <CategoryPickerSelect
-        categories={categories}
-        value={null}
-        onChange={vi.fn()}
-      />,
-    )
+    render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
     await user.click(screen.getByRole('combobox'))
     expect(screen.getByLabelText('Restricted to specific groups')).toBeInTheDocument()
   })
@@ -209,17 +161,9 @@ describe('CategoryPickerSelect — LockIcon', () => {
       id: 1,
       label: 'Parent',
       groupIds: [20],
-      children: [
-        makeCategory({ id: 2, label: 'Child', parentId: 1, groupIds: [] }),
-      ],
+      children: [makeCategory({ id: 2, label: 'Child', parentId: 1, groupIds: [] })],
     })
-    render(
-      <CategoryPickerSelect
-        categories={[parent]}
-        value={null}
-        onChange={vi.fn()}
-      />,
-    )
+    render(<CategoryPickerSelect categories={[parent]} value={null} onChange={vi.fn()} />)
     await user.click(screen.getByRole('combobox'))
     expect(screen.getByLabelText('Restricted to specific groups')).toBeInTheDocument()
     expect(screen.getByLabelText('Group restriction inherited from parent')).toBeInTheDocument()
@@ -235,13 +179,7 @@ describe('CategoryPickerSelect — onChange', () => {
     const user = userEvent.setup()
     const onChange = vi.fn()
     const categories = [makeCategory({ id: 5, label: 'Histology' })]
-    render(
-      <CategoryPickerSelect
-        categories={categories}
-        value={null}
-        onChange={onChange}
-      />,
-    )
+    render(<CategoryPickerSelect categories={categories} value={null} onChange={onChange} />)
     await user.click(screen.getByRole('combobox'))
     await user.click(screen.getByText('Histology'))
     expect(onChange).toHaveBeenCalledWith(5)
@@ -252,12 +190,7 @@ describe('CategoryPickerSelect — onChange', () => {
     const onChange = vi.fn()
     const categories = [makeCategory({ id: 5, label: 'Histology' })]
     render(
-      <CategoryPickerSelect
-        categories={categories}
-        value={5}
-        onChange={onChange}
-        includeRoot
-      />,
+      <CategoryPickerSelect categories={categories} value={5} onChange={onChange} includeRoot />,
     )
     await user.click(screen.getByRole('combobox'))
     await user.click(screen.getByText('None (root level)'))
@@ -324,9 +257,9 @@ describe('CategoryPickerSelect — action buttons', () => {
       />,
     )
     await user.click(screen.getByRole('combobox'))
-    const addButtons = screen.getAllByRole('button').filter(
-      (btn) => btn.querySelector('svg[data-testid="AddIcon"]'),
-    )
+    const addButtons = screen
+      .getAllByRole('button')
+      .filter((btn) => btn.querySelector('svg[data-testid="AddIcon"]'))
     expect(addButtons.length).toBeGreaterThanOrEqual(1)
   })
 
@@ -343,9 +276,7 @@ describe('CategoryPickerSelect — action buttons', () => {
     )
     await user.click(screen.getByRole('combobox'))
     expect(
-      screen.getAllByRole('button').some(
-        (btn) => btn.querySelector('svg[data-testid="EditIcon"]'),
-      ),
+      screen.getAllByRole('button').some((btn) => btn.querySelector('svg[data-testid="EditIcon"]')),
     ).toBe(true)
   })
 
@@ -362,9 +293,9 @@ describe('CategoryPickerSelect — action buttons', () => {
       />,
     )
     await user.click(screen.getByRole('combobox'))
-    const deleteBtn = screen.getAllByRole('button').find(
-      (btn) => btn.querySelector('svg[data-testid="DeleteIcon"]'),
-    )
+    const deleteBtn = screen
+      .getAllByRole('button')
+      .find((btn) => btn.querySelector('svg[data-testid="DeleteIcon"]'))
     expect(deleteBtn).toBeDefined()
     await user.click(deleteBtn!)
     expect(onDeleteCategory).toHaveBeenCalledWith(42)
@@ -405,18 +336,14 @@ describe('CategoryPickerSelect — action buttons', () => {
 
   it('renders image count next to category name', async () => {
     const user = userEvent.setup()
-    const categories = [makeCategory({
-      id: 1,
-      label: 'Cat1',
-      images: [makeImage({ id: 1 }), makeImage({ id: 2 }), makeImage({ id: 3 })],
-    })]
-    render(
-      <CategoryPickerSelect
-        categories={categories}
-        value={null}
-        onChange={vi.fn()}
-      />,
-    )
+    const categories = [
+      makeCategory({
+        id: 1,
+        label: 'Cat1',
+        images: [makeImage({ id: 1 }), makeImage({ id: 2 }), makeImage({ id: 3 })],
+      }),
+    ]
+    render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
     await user.click(screen.getByRole('combobox'))
     expect(screen.getByText('(3)')).toBeInTheDocument()
   })

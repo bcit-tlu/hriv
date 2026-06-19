@@ -109,16 +109,16 @@ Example files already included:
 ## Database migrations (Alembic)
 
 The backend uses [Alembic](https://alembic.sqlalchemy.org/) for schema
-migrations.  The config lives in `backend/alembic.ini` and the migration
+migrations. The config lives in `backend/alembic.ini` and the migration
 scripts in `backend/app/migrations/versions/`.
 
 ### Running migrations
 
-Alembic is the sole source of truth for the schema.  At deployment time,
-prefer the bootstrap helper which runs ``alembic upgrade head`` under a
-``pg_advisory_lock`` so concurrent pods (Helm ``replicaCount > 1``)
+Alembic is the sole source of truth for the schema. At deployment time,
+prefer the bootstrap helper which runs `alembic upgrade head` under a
+`pg_advisory_lock` so concurrent pods (Helm `replicaCount > 1`)
 serialize on the database rather than racing on the baseline
-``CREATE TABLE``:
+`CREATE TABLE`:
 
 ```sh
 DATABASE_URL=postgresql+asyncpg://... poetry run python -m app.migrations_bootstrap
@@ -151,7 +151,7 @@ through a new Alembic revision.
      poetry run alembic revision --autogenerate -m "add_foo_column_to_bar"
    ```
 
-3. Review the generated file in `app/migrations/versions/`.  Autogenerate
+3. Review the generated file in `app/migrations/versions/`. Autogenerate
    is a heuristic — always check it captures the change you intended
    and no spurious drops.
 4. Run `poetry run alembic upgrade head` locally against a test DB to
@@ -162,7 +162,7 @@ through a new Alembic revision.
 
 Deployments whose database was bootstrapped before Alembic existed
 (i.e. produced by `db/init.sql` directly) should run the bootstrap
-helper once.  It detects the legacy schema — presence of the `programs`
+helper once. It detects the legacy schema — presence of the `programs`
 table without an `alembic_version` table — and stamps `head` so that
 future migrations apply on top of the existing schema without
 re-creating any tables.
@@ -177,11 +177,11 @@ more than one replica — without a stable, shared secret each worker generates
 its own ephemeral value at startup, and tokens signed by one worker fail
 validation on another, producing random authentication errors.
 
-| Env var                | Default | Purpose                                                                                       |
-| ---------------------- | ------- | --------------------------------------------------------------------------------------------- |
-| `JWT_SECRET`           | *empty* | Stable secret used to sign/verify JWTs across all workers and replicas.                       |
-| `REQUIRE_JWT_SECRET`   | `false` | When `true`, the app refuses to start unless `JWT_SECRET` is set. Enable in all multi-worker/multi-replica deployments. |
-| `JWT_INSTANCE_EPOCH`   | *empty* | Optional override for the per-instance epoch claim. Derived from `JWT_SECRET` when blank.     |
+| Env var              | Default | Purpose                                                                                                                 |
+| -------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`         | _empty_ | Stable secret used to sign/verify JWTs across all workers and replicas.                                                 |
+| `REQUIRE_JWT_SECRET` | `false` | When `true`, the app refuses to start unless `JWT_SECRET` is set. Enable in all multi-worker/multi-replica deployments. |
+| `JWT_INSTANCE_EPOCH` | _empty_ | Optional override for the per-instance epoch claim. Derived from `JWT_SECRET` when blank.                               |
 
 ### Local dev
 

@@ -45,9 +45,7 @@ function AddEditPersonForm({
   const [email, setEmail] = useState(user?.email ?? '')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<Role>((user?.role as Role) ?? 'student')
-  const [programIds, setProgramIds] = useState<number[]>(
-    user?.program_ids ?? [],
-  )
+  const [programIds, setProgramIds] = useState<number[]>(user?.program_ids ?? [])
 
   const handleSave = () => {
     const trimmedName = name.trim()
@@ -84,9 +82,7 @@ function AddEditPersonForm({
   return (
     <>
       <DialogTitle>{isEdit ? 'Edit Person' : 'Add Person'}</DialogTitle>
-      <DialogContent
-        sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
-      >
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
         <TextField
           autoFocus
           label="Full name"
@@ -135,9 +131,7 @@ function AddEditPersonForm({
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                   {selected.map((id) => {
                     const prog = programs.find((p) => p.id === id)
-                    return (
-                      <Chip key={id} label={prog?.name ?? id} size="small" color="primary" />
-                    )
+                    return <Chip key={id} label={prog?.name ?? id} size="small" color="primary" />
                   })}
                 </Box>
               )

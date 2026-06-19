@@ -1,0 +1,4 @@
+interface:
+  display_name: 'HRIV Admin Operations'
+  short_description: 'Admin tasks, import/export flows'
+  default_prompt: 'Use $hriv-admin-operations to change an HRIV admin task flow.'

@@ -13,11 +13,13 @@ import CategoryIcon from '@mui/icons-material/Folder'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import CopyrightIcon from '@mui/icons-material/Copyright'
 import ImageIcon from '@mui/icons-material/Image'
+import LinkIcon from '@mui/icons-material/Link'
 import NoteIcon from '@mui/icons-material/StickyNote2'
 import PersonIcon from '@mui/icons-material/Person'
 import BadgeIcon from '@mui/icons-material/Badge'
 import SchoolIcon from '@mui/icons-material/School'
 import SearchIcon from '@mui/icons-material/Search'
+import TextFieldsIcon from '@mui/icons-material/TextFields'
 import type { Category, ImageItem, Program } from '../types'
 import type { ApiUser } from '../api'
 
@@ -83,7 +85,7 @@ interface UserPayload {
 // ── Filter definitions ─────────────────────────────────
 
 export type TypeFilter = ResultKind
-type FieldFilter = 'Copyright' | 'Note' | 'Role'
+type FieldFilter = 'Annotation' | 'Link' | 'Link URL' | 'Copyright' | 'Note' | 'Role'
 
 interface FilterDef<T extends string> {
   key: T
@@ -93,14 +95,52 @@ interface FilterDef<T extends string> {
 }
 
 const TYPE_FILTERS: FilterDef<TypeFilter>[] = [
-  { key: 'category', label: 'Categories', icon: <CategoryIcon fontSize="small" />, tooltip: 'Show only categories' },
-  { key: 'image', label: 'Images', icon: <ImageIcon fontSize="small" />, tooltip: 'Show only images' },
-  { key: 'program', label: 'Programs', icon: <SchoolIcon fontSize="small" />, tooltip: 'Show only programs' },
-  { key: 'user', label: 'People', icon: <PersonIcon fontSize="small" />, tooltip: 'Show only people' },
+  {
+    key: 'category',
+    label: 'Categories',
+    icon: <CategoryIcon fontSize="small" />,
+    tooltip: 'Show only categories',
+  },
+  {
+    key: 'image',
+    label: 'Images',
+    icon: <ImageIcon fontSize="small" />,
+    tooltip: 'Show only images',
+  },
+  {
+    key: 'program',
+    label: 'Programs',
+    icon: <SchoolIcon fontSize="small" />,
+    tooltip: 'Show only programs',
+  },
+  {
+    key: 'user',
+    label: 'People',
+    icon: <PersonIcon fontSize="small" />,
+    tooltip: 'Show only people',
+  },
 ]
 
 const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
-  { key: 'Copyright', label: 'Copyright', icon: <CopyrightIcon fontSize="small" />, tooltip: 'Copyright field only' },
+  {
+    key: 'Annotation',
+    label: 'Annotation',
+    icon: <TextFieldsIcon fontSize="small" />,
+    tooltip: 'Text annotations only',
+  },
+  { key: 'Link', label: 'Link', icon: <LinkIcon fontSize="small" />, tooltip: 'Link text only' },
+  {
+    key: 'Link URL',
+    label: 'Link URL',
+    icon: <LinkIcon fontSize="small" />,
+    tooltip: 'Link URLs only',
+  },
+  {
+    key: 'Copyright',
+    label: 'Copyright',
+    icon: <CopyrightIcon fontSize="small" />,
+    tooltip: 'Copyright field only',
+  },
   { key: 'Note', label: 'Note', icon: <NoteIcon fontSize="small" />, tooltip: 'Note field only' },
   { key: 'Role', label: 'Role', icon: <BadgeIcon fontSize="small" />, tooltip: 'Role field only' },
 ]
@@ -109,6 +149,33 @@ const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
 
 const MAX_RESULTS = 50
 const CONTEXT_CHARS = 40
+
+function getAnnotationSearchFields(
+  metadataExtra: Record<string, unknown> | null | undefined,
+): Array<{ field: string; value: string }> {
+  const annotations = metadataExtra?.canvas_annotations
+  if (!Array.isArray(annotations)) return []
+
+  const fields: Array<{ field: string; value: string }> = []
+  for (const annotation of annotations) {
+    if (!annotation || typeof annotation !== 'object') continue
+    const candidate = annotation as Record<string, unknown>
+    const type = candidate.type
+    const text = typeof candidate.text === 'string' ? candidate.text.trim() : ''
+    const url = typeof candidate.url === 'string' ? candidate.url.trim() : ''
+
+    if (type === 'text') {
+      if (text) fields.push({ field: 'Annotation', value: text })
+      continue
+    }
+
+    if (type !== 'link') continue
+    if (text) fields.push({ field: 'Link', value: text })
+    if (url) fields.push({ field: 'Link URL', value: url })
+  }
+
+  return fields
+}
 
 function contextSnippet(
   value: string,
@@ -174,15 +241,18 @@ function getResultProgramNames(
   switch (payload.kind) {
     case 'category': {
       const cat = payload.categoryPath[payload.categoryPath.length - 1]
-      return cat?.programIds
-        .map((pid) => programMap.get(pid))
-        .filter((n): n is string => n != null) ?? []
+      return (
+        cat?.programIds.map((pid) => programMap.get(pid)).filter((n): n is string => n != null) ??
+        []
+      )
     }
     case 'image': {
       const parentCat = payload.categoryPath[payload.categoryPath.length - 1]
-      return parentCat?.programIds
-        .map((pid) => programMap.get(pid))
-        .filter((n): n is string => n != null) ?? []
+      return (
+        parentCat?.programIds
+          .map((pid) => programMap.get(pid))
+          .filter((n): n is string => n != null) ?? []
+      )
     }
     case 'user':
       return payload.programNames
@@ -269,6 +339,7 @@ function addImageMatches(
     { field: 'Name', value: img.name },
     { field: 'Copyright', value: img.copyright },
     { field: 'Note', value: img.note },
+    ...getAnnotationSearchFields(img.metadataExtra),
   ]
   if (parentCat) {
     fields.push({ field: 'Category', value: parentCat.label })
@@ -488,12 +559,14 @@ export default function SearchModal({
           kind: r.kind,
           entityId: r.entityId,
           label: r.label,
-          matches: [{
-            field: r.field,
-            fieldValue: r.fieldValue,
-            matchIndex: r.matchIndex,
-            matchLength: r.matchLength,
-          }],
+          matches: [
+            {
+              field: r.field,
+              fieldValue: r.fieldValue,
+              matchIndex: r.matchIndex,
+              matchLength: r.matchLength,
+            },
+          ],
           payload: r.payload,
         })
       }
@@ -501,10 +574,7 @@ export default function SearchModal({
     return [...groups.values()]
   }, [filteredResults])
 
-  const displayResults = useMemo(
-    () => groupedResults.slice(0, MAX_RESULTS),
-    [groupedResults],
-  )
+  const displayResults = useMemo(() => groupedResults.slice(0, MAX_RESULTS), [groupedResults])
 
   const handleSelect = (result: GroupedResult) => {
     onClose()
@@ -544,7 +614,11 @@ export default function SearchModal({
         <TextField
           autoFocus
           fullWidth
-          placeholder={isStudent ? "Search categories and images" : "Search categories, images, programs, people"}
+          placeholder={
+            isStudent
+              ? 'Search categories and images'
+              : 'Search categories, images, programs, people'
+          }
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           slotProps={{
@@ -561,10 +635,16 @@ export default function SearchModal({
         {/* Filter chips */}
         {query.trim().length > 0 && allResults.length > 0 && (
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', mr: 0.5 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ alignSelf: 'center', mr: 0.5 }}
+            >
               Type:
             </Typography>
-            {TYPE_FILTERS.filter((f) => !(isStudent && (f.key === 'program' || f.key === 'user'))).map((f) => (
+            {TYPE_FILTERS.filter(
+              (f) => !(isStudent && (f.key === 'program' || f.key === 'user')),
+            ).map((f) => (
               <Tooltip key={f.key} title={f.tooltip}>
                 <Chip
                   icon={f.icon}
@@ -578,7 +658,11 @@ export default function SearchModal({
               </Tooltip>
             ))}
             <Box sx={{ mx: 0.5, borderLeft: 1, borderColor: 'divider' }} />
-            <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', mr: 0.5 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ alignSelf: 'center', mr: 0.5 }}
+            >
               Field:
             </Typography>
             {FIELD_FILTERS.filter((f) => !(isStudent && f.key === 'Role')).map((f) => (
@@ -599,13 +683,29 @@ export default function SearchModal({
 
         <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
           {query.trim().length === 0 ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: 200 }}>
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                height: '100%',
+                minHeight: 200,
+              }}
+            >
               <Typography variant="body1" color="text.secondary">
                 Start typing to search&hellip;
               </Typography>
             </Box>
           ) : groupedResults.length === 0 ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: 200 }}>
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                height: '100%',
+                minHeight: 200,
+              }}
+            >
               <Typography variant="body1" color="text.secondary">
                 No results found for &ldquo;{query}&rdquo;
               </Typography>
@@ -644,7 +744,15 @@ export default function SearchModal({
                         <Box sx={{ mt: 0.25 }}>{iconForKind(result.kind)}</Box>
                       ) : null}
                       <Box sx={{ minWidth: 0, flex: 1 }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.25, flexWrap: 'wrap' }}>
+                        <Box
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1,
+                            mb: 0.25,
+                            flexWrap: 'wrap',
+                          }}
+                        >
                           {result.kind === 'program' ? (
                             <Chip label={result.label} size="small" />
                           ) : (
@@ -665,7 +773,15 @@ export default function SearchModal({
                             {labelForKind(result.kind)}
                           </Typography>
                           {!isStudent && chipNames.length > 0 && (
-                            <Box sx={{ display: 'flex', gap: 0.5, ml: 'auto', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            <Box
+                              sx={{
+                                display: 'flex',
+                                gap: 0.5,
+                                ml: 'auto',
+                                flexWrap: 'wrap',
+                                justifyContent: 'flex-end',
+                              }}
+                            >
                               {chipNames.map((name) => (
                                 <Chip key={name} label={name} size="small" color="primary" />
                               ))}
@@ -679,14 +795,24 @@ export default function SearchModal({
                             fm.matchLength,
                           )
                           return (
-                            <Typography key={mi} variant="body2" color="text.secondary" sx={{ wordBreak: 'break-word' }}>
+                            <Typography
+                              key={mi}
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{ wordBreak: 'break-word' }}
+                            >
                               <Typography variant="caption" color="text.disabled" component="span">
                                 {fm.field}:{' '}
                               </Typography>
                               {before}
                               <Box
                                 component="span"
-                                sx={{ bgcolor: 'warning.light', color: 'warning.contrastText', borderRadius: 0.5, px: 0.25 }}
+                                sx={{
+                                  bgcolor: 'warning.light',
+                                  color: 'warning.contrastText',
+                                  borderRadius: 0.5,
+                                  px: 0.25,
+                                }}
                               >
                                 {match}
                               </Box>
@@ -695,11 +821,26 @@ export default function SearchModal({
                           )
                         })}
                         {catPath && catPath.length > 0 && (
-                          <Box sx={{ display: 'inline-flex', alignItems: 'center', mt: 0.5, flexWrap: 'wrap' }}>
+                          <Box
+                            sx={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              mt: 0.5,
+                              flexWrap: 'wrap',
+                            }}
+                          >
                             <CategoryIcon sx={{ fontSize: 14, color: 'text.disabled', mr: 0.5 }} />
                             {catPath.map((cat, ci) => (
-                              <Box component="span" key={cat.id} sx={{ display: 'inline-flex', alignItems: 'center' }}>
-                                {ci > 0 && <ChevronRightIcon sx={{ fontSize: 14, color: 'text.disabled', mx: 0.25 }} />}
+                              <Box
+                                component="span"
+                                key={cat.id}
+                                sx={{ display: 'inline-flex', alignItems: 'center' }}
+                              >
+                                {ci > 0 && (
+                                  <ChevronRightIcon
+                                    sx={{ fontSize: 14, color: 'text.disabled', mx: 0.25 }}
+                                  />
+                                )}
                                 <Typography variant="caption" color="text.secondary">
                                   {cat.label}
                                 </Typography>
