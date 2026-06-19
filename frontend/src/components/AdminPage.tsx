@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import Accordion from '@mui/material/Accordion'
+import AccordionDetails from '@mui/material/AccordionDetails'
+import AccordionSummary from '@mui/material/AccordionSummary'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -15,9 +18,13 @@ import IconButton from '@mui/material/IconButton'
 import LinearProgress from '@mui/material/LinearProgress'
 import Link from '@mui/material/Link'
 import Snackbar from '@mui/material/Snackbar'
+import Stack from '@mui/material/Stack'
+import Tab from '@mui/material/Tab'
+import Tabs from '@mui/material/Tabs'
 import Typography from '@mui/material/Typography'
 import CloseIcon from '@mui/icons-material/Close'
 import DownloadIcon from '@mui/icons-material/Download'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import FolderZipIcon from '@mui/icons-material/FolderZip'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
@@ -57,6 +64,29 @@ interface AdminPageProps {
   onChangelogEntriesChanged?: () => void
 }
 
+type AdminTabValue = 'changelog' | 'backups'
+
+interface AdminTabPanelProps {
+  children: ReactNode
+  value: AdminTabValue
+  currentValue: AdminTabValue
+}
+
+function AdminTabPanel({ children, value, currentValue }: AdminTabPanelProps) {
+  const hidden = value !== currentValue
+  return (
+    <Box
+      role="tabpanel"
+      hidden={hidden}
+      id={`admin-tabpanel-${value}`}
+      aria-labelledby={`admin-tab-${value}`}
+      sx={{ pt: 3 }}
+    >
+      {children}
+    </Box>
+  )
+}
+
 export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps) {
   const fileRef = useRef<HTMLInputElement>(null)
   const filesRef = useRef<HTMLInputElement>(null)
@@ -71,6 +101,8 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   const [notifications, setNotifications] = useState<TaskNotification[]>([])
   // Log viewer modal
   const [logTask, setLogTask] = useState<AdminTask | null>(null)
+  const [activeTab, setActiveTab] = useState<AdminTabValue>('changelog')
+  const [taskHistoryExpanded, setTaskHistoryExpanded] = useState(false)
 
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState<string | null>(null) // task_type being kicked off
@@ -450,229 +482,306 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
         </Alert>
       ))}
 
-      {/* ── Database Section ──────────────────────────────── */}
-      <Typography variant="h6" sx={{ mb: 2 }}>
-        Database
-      </Typography>
+      <Tabs
+        value={activeTab}
+        onChange={(_event, value: AdminTabValue) => setActiveTab(value)}
+        aria-label="Admin sections"
+      >
+        <Tab
+          label="Changelog"
+          value="changelog"
+          id="admin-tab-changelog"
+          aria-controls="admin-tabpanel-changelog"
+        />
+        <Tab
+          label="Backups"
+          value="backups"
+          id="admin-tab-backups"
+          aria-controls="admin-tabpanel-backups"
+        />
+      </Tabs>
 
-      <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 4 }}>
-        {/* Export card */}
-        <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: 'background.paper' }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Export Database
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Download a JSON snapshot of all categories, images, users, and source image records.
-              The export runs in the background — you will be notified when it is ready to download.
-            </Typography>
-            <Button
-              variant="contained"
-              startIcon={
-                starting === 'db_export' ? (
-                  <CircularProgress size={18} color="inherit" />
-                ) : (
-                  <DownloadIcon />
-                )
-              }
-              onClick={handleExport}
-              disabled={busy}
-            >
-              {starting === 'db_export' ? 'Starting…' : 'Export'}
-            </Button>
-          </CardContent>
-        </Card>
+      <AdminTabPanel value="changelog" currentValue={activeTab}>
+        <ChangelogAdmin onEntriesChanged={onChangelogEntriesChanged} />
+      </AdminTabPanel>
 
-        {/* Import card */}
-        <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: 'background.paper' }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Import Database
+      <AdminTabPanel value="backups" currentValue={activeTab}>
+        <Stack spacing={3}>
+          <Box>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Export
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Upload a previously exported JSON file to replace all current data. This action is
-              destructive — existing records will be overwritten. The import runs in the background.
-            </Typography>
-            <Button
-              variant="contained"
-              color="warning"
-              startIcon={
-                starting === 'db_import' ? (
-                  <CircularProgress size={18} color="inherit" />
-                ) : (
-                  <UploadFileIcon />
-                )
-              }
-              onClick={handleImportClick}
-              disabled={busy}
-            >
-              {starting === 'db_import' ? 'Starting…' : 'Import'}
-            </Button>
-            <input ref={fileRef} type="file" accept=".json" hidden onChange={handleFileChange} />
-          </CardContent>
-        </Card>
-      </Box>
-
-      <Divider sx={{ mb: 4 }} />
-
-      {/* ── Filesystem Section ────────────────────────────── */}
-      <Typography variant="h6" sx={{ mb: 2 }}>
-        Filesystem
-      </Typography>
-
-      <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 4 }}>
-        {/* Export Files card */}
-        <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: 'background.paper' }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Export Files
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Create a compressed archive (.tar.gz) of all image tiles, thumbnails, and uploaded
-              source files. The archive is built in the background — you will be notified when it is
-              ready to download.
-            </Typography>
-            <Button
-              variant="contained"
-              startIcon={
-                starting === 'files_export' ? (
-                  <CircularProgress size={18} color="inherit" />
-                ) : (
-                  <FolderZipIcon />
-                )
-              }
-              onClick={handleExportFiles}
-              disabled={busy}
-            >
-              {starting === 'files_export' ? 'Starting…' : 'Export'}
-            </Button>
-          </CardContent>
-        </Card>
-
-        {/* Import Files card */}
-        <Card sx={{ minWidth: 300, maxWidth: 400, flex: '1 1 300px', bgcolor: 'background.paper' }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              Import Files
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Upload a previously exported .tar.gz file to replace all tiles and source files on
-              disk. This action is destructive — existing files will be overwritten. The import runs
-              in the background.
-            </Typography>
-            <Button
-              variant="contained"
-              color="warning"
-              startIcon={
-                starting === 'files_import' ? (
-                  <CircularProgress size={18} color="inherit" />
-                ) : (
-                  <UploadFileIcon />
-                )
-              }
-              onClick={handleImportFilesClick}
-              disabled={busy}
-            >
-              {starting === 'files_import' ? 'Starting…' : 'Import'}
-            </Button>
-            <input
-              ref={filesRef}
-              type="file"
-              accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar,application/x-compressed-tar"
-              hidden
-              onChange={handleFilesChange}
-            />
-          </CardContent>
-        </Card>
-      </Box>
-
-      {/* ── Recent Tasks ──────────────────────────────────── */}
-      {taskHistory.length > 0 && (
-        <>
-          <Divider sx={{ mb: 4 }} />
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            Recent Tasks
-          </Typography>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-            {taskHistory.slice(0, 20).map((task) => (
-              <Box
-                key={task.id}
+            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+              <Card
                 sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 2,
-                  px: 2,
-                  py: 1,
-                  borderRadius: 1,
+                  minWidth: 300,
+                  maxWidth: 400,
+                  flex: '1 1 300px',
                   bgcolor: 'background.paper',
                 }}
               >
-                <Chip
-                  size="small"
-                  label={task.status}
-                  color={
-                    task.status === 'completed'
-                      ? 'success'
-                      : task.status === 'failed'
-                        ? 'error'
-                        : task.status === 'running'
-                          ? 'info'
-                          : task.status === 'cancelling' || task.status === 'cancelled'
-                            ? 'warning'
-                            : 'default'
-                  }
-                  sx={{ minWidth: 80 }}
-                />
-                <Typography variant="body2" sx={{ flex: 1 }}>
-                  {TASK_LABELS[task.task_type] ?? task.task_type}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {task.created_at ? new Date(task.created_at).toLocaleString() : ''}
-                </Typography>
-                {(task.status === 'uploading' ||
-                  task.status === 'pending' ||
-                  task.status === 'running') && (
-                  <IconButton
-                    size="small"
-                    color="warning"
-                    onClick={() => handleCancel(task.id)}
-                    title="Cancel"
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Export Database
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Download a JSON snapshot of all categories, images, users, and source image
+                    records. The export runs in the background — you will be notified when it is
+                    ready to download.
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    startIcon={
+                      starting === 'db_export' ? (
+                        <CircularProgress size={18} color="inherit" />
+                      ) : (
+                        <DownloadIcon />
+                      )
+                    }
+                    onClick={handleExport}
+                    disabled={busy}
                   >
-                    <CancelIcon fontSize="small" />
-                  </IconButton>
-                )}
-                {task.status === 'cancelling' && (
-                  <IconButton
-                    size="small"
-                    color="error"
-                    onClick={() => handleCancel(task.id, true)}
-                    title="Force cancel (runner appears stuck)"
+                    {starting === 'db_export' ? 'Starting…' : 'Export'}
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card
+                sx={{
+                  minWidth: 300,
+                  maxWidth: 400,
+                  flex: '1 1 300px',
+                  bgcolor: 'background.paper',
+                }}
+              >
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Export Files
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Create a compressed archive (.tar.gz) of all image tiles, thumbnails, and
+                    uploaded source files. The archive is built in the background — you will be
+                    notified when it is ready to download.
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    startIcon={
+                      starting === 'files_export' ? (
+                        <CircularProgress size={18} color="inherit" />
+                      ) : (
+                        <FolderZipIcon />
+                      )
+                    }
+                    onClick={handleExportFiles}
+                    disabled={busy}
                   >
-                    <CancelIcon fontSize="small" />
-                  </IconButton>
-                )}
-                {task.status === 'completed' && task.result_filename && (
-                  <IconButton
-                    size="small"
-                    onClick={() => downloadAdminTaskResult(task.id)}
-                    title="Download"
-                  >
-                    <DownloadIcon fontSize="small" />
-                  </IconButton>
-                )}
-                <IconButton size="small" onClick={() => setLogTask(task)} title="View details">
-                  <InfoOutlinedIcon fontSize="small" />
-                </IconButton>
-              </Box>
-            ))}
+                    {starting === 'files_export' ? 'Starting…' : 'Export'}
+                  </Button>
+                </CardContent>
+              </Card>
+            </Box>
           </Box>
-        </>
-      )}
 
-      <Divider sx={{ mb: 4 }} />
+          <Accordion
+            disableGutters
+            expanded={taskHistoryExpanded}
+            onChange={(_event, expanded) => setTaskHistoryExpanded(expanded)}
+          >
+            <AccordionSummary
+              expandIcon={<ExpandMoreIcon />}
+              aria-controls="recent-tasks-content"
+              id="recent-tasks-header"
+            >
+              <Box>
+                <Typography variant="h6">Recent Tasks</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {taskHistory.length > 0
+                    ? `Latest ${Math.min(taskHistory.length, 20)} export/import jobs`
+                    : 'No export or import jobs have run yet.'}
+                </Typography>
+              </Box>
+            </AccordionSummary>
+            <AccordionDetails>
+              {taskHistory.length > 0 ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {taskHistory.slice(0, 20).map((task) => (
+                    <Box
+                      key={task.id}
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 2,
+                        px: 2,
+                        py: 1,
+                        borderRadius: 1,
+                        bgcolor: 'background.paper',
+                      }}
+                    >
+                      <Chip
+                        size="small"
+                        label={task.status}
+                        color={
+                          task.status === 'completed'
+                            ? 'success'
+                            : task.status === 'failed'
+                              ? 'error'
+                              : task.status === 'running'
+                                ? 'info'
+                                : task.status === 'cancelling' || task.status === 'cancelled'
+                                  ? 'warning'
+                                  : 'default'
+                        }
+                        sx={{ minWidth: 80 }}
+                      />
+                      <Typography variant="body2" sx={{ flex: 1 }}>
+                        {TASK_LABELS[task.task_type] ?? task.task_type}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {task.created_at ? new Date(task.created_at).toLocaleString() : ''}
+                      </Typography>
+                      {(task.status === 'uploading' ||
+                        task.status === 'pending' ||
+                        task.status === 'running') && (
+                        <IconButton
+                          size="small"
+                          color="warning"
+                          onClick={() => handleCancel(task.id)}
+                          title="Cancel"
+                        >
+                          <CancelIcon fontSize="small" />
+                        </IconButton>
+                      )}
+                      {task.status === 'cancelling' && (
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => handleCancel(task.id, true)}
+                          title="Force cancel (runner appears stuck)"
+                        >
+                          <CancelIcon fontSize="small" />
+                        </IconButton>
+                      )}
+                      {task.status === 'completed' && task.result_filename && (
+                        <IconButton
+                          size="small"
+                          onClick={() => downloadAdminTaskResult(task.id)}
+                          title="Download"
+                        >
+                          <DownloadIcon fontSize="small" />
+                        </IconButton>
+                      )}
+                      <IconButton
+                        size="small"
+                        onClick={() => setLogTask(task)}
+                        title="View details"
+                      >
+                        <InfoOutlinedIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  ))}
+                </Box>
+              ) : (
+                <Typography color="text.secondary">
+                  No completed, failed, or cancelled tasks yet.
+                </Typography>
+              )}
+            </AccordionDetails>
+          </Accordion>
 
-      {/* ── Changelog Section ─────────────────────────────── */}
-      <ChangelogAdmin onEntriesChanged={onChangelogEntriesChanged} />
+          <Divider />
+
+          <Box>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Import
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+              <Card
+                sx={{
+                  minWidth: 300,
+                  maxWidth: 400,
+                  flex: '1 1 300px',
+                  bgcolor: 'background.paper',
+                }}
+              >
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Import Database
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Upload a previously exported JSON file to replace all current data. This action
+                    is destructive — existing records will be overwritten. The import runs in the
+                    background.
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="warning"
+                    startIcon={
+                      starting === 'db_import' ? (
+                        <CircularProgress size={18} color="inherit" />
+                      ) : (
+                        <UploadFileIcon />
+                      )
+                    }
+                    onClick={handleImportClick}
+                    disabled={busy}
+                  >
+                    {starting === 'db_import' ? 'Starting…' : 'Import'}
+                  </Button>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".json"
+                    hidden
+                    onChange={handleFileChange}
+                  />
+                </CardContent>
+              </Card>
+
+              <Card
+                sx={{
+                  minWidth: 300,
+                  maxWidth: 400,
+                  flex: '1 1 300px',
+                  bgcolor: 'background.paper',
+                }}
+              >
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Import Files
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Upload a previously exported .tar.gz file to replace all tiles and source files
+                    on disk. This action is destructive — existing files will be overwritten. The
+                    import runs in the background.
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    color="warning"
+                    startIcon={
+                      starting === 'files_import' ? (
+                        <CircularProgress size={18} color="inherit" />
+                      ) : (
+                        <UploadFileIcon />
+                      )
+                    }
+                    onClick={handleImportFilesClick}
+                    disabled={busy}
+                  >
+                    {starting === 'files_import' ? 'Starting…' : 'Import'}
+                  </Button>
+                  <input
+                    ref={filesRef}
+                    type="file"
+                    accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar,application/x-compressed-tar"
+                    hidden
+                    onChange={handleFilesChange}
+                  />
+                </CardContent>
+              </Card>
+            </Box>
+          </Box>
+        </Stack>
+      </AdminTabPanel>
 
       {/* ── Snackbar notifications ────────────────────────── */}
       {notifications.map((n, index) => (

@@ -10,8 +10,8 @@ existing site-wide announcement banner.
   first.
 - The unread dot clears when the user opens **What's New**, not when they only
   open the bell menu.
-- Admins manage entries from the Admin page; instructors can read entries but
-  cannot create, edit, or delete them.
+- Admins manage entries from the Admin page's default **Changelog** tab;
+  instructors can read entries but cannot create, edit, or delete them.
 - Editing an existing entry republishes it by bumping `published_at`, which
   makes it unread again for users who already cleared it.
 - Changelog cards support safe bare `http/https` links and Markdown
@@ -58,6 +58,7 @@ path.
 | Concern                                                        | File                                           |
 | -------------------------------------------------------------- | ---------------------------------------------- |
 | Notification bell, unread dot, What's New dialog, About dialog | `frontend/src/components/NotificationMenu.tsx` |
+| Admin tab layout and tab state                                 | `frontend/src/components/AdminPage.tsx`        |
 | Admin CRUD table and dialogs                                   | `frontend/src/components/ChangelogAdmin.tsx`   |
 | Shared Markdown rendering                                      | `frontend/src/components/MarkdownContent.tsx`  |
 | AppBar insertion point                                         | `frontend/src/components/AppShell.tsx`         |

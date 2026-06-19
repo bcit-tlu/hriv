@@ -39,7 +39,7 @@ All seed users share the password `password`.
 | Manage announcement             | Yes   | Yes        | No      |
 | View changelog notifications    | Yes   | Yes        | No      |
 | Manage changelog entries        | Yes   | No         | No      |
-| Admin page (DB import/export)   | Yes   | No         | No      |
+| Admin tab (changelog + backups) | Yes   | No         | No      |
 | User management (add/delete)    | Yes   | No         | No      |
 | List users                      | Yes   | Yes        | No      |
 
@@ -59,8 +59,10 @@ A **group** is an instructor-managed visibility dimension, independent of progra
 The notification bell is a separate feature from the site-wide announcement
 banner. Admins publish Markdown changelog entries from the Admin page, and
 admins plus instructors can read them from the AppBar bell's **What's New**
-dialog. Read state is tracked per user, and republishing an entry marks it
-unread again. See [docs/changelog-notifications.md](docs/changelog-notifications.md).
+dialog. The Admin tab now opens on a dedicated **Changelog** sub-tab, while the
+backup/import tools live under **Backups**. Read state is tracked per user, and
+republishing an entry marks it unread again. See
+[docs/changelog-notifications.md](docs/changelog-notifications.md).
 
 ### CLI Access via curl
 

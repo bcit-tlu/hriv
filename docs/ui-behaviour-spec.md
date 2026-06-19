@@ -231,6 +231,17 @@ committed on Save) in the edit modals.
   the app bumps a shared `changelogVersion` counter and `NotificationMenu`
   re-fetches entries in the same session without a full page reload.
 
+### Admin tab layout (`AdminPage.tsx`)
+
+- **Given** an admin opens the `Admin` tab, **When** the page renders,
+  **Then** the `Changelog` sub-tab is selected by default so changelog
+  management appears without scrolling.
+- **Given** the admin switches to the `Backups` sub-tab, **Then** the page
+  groups backup tools in this order: export cards first, `Recent Tasks` in a
+  collapsible accordion, and destructive import cards at the bottom.
+- Active task alerts remain visible above the tab strip so background export or
+  import progress is not hidden while the admin is working in either sub-tab.
+
 ### Image replacement & versioning (`useImageActions.test.ts`, `ImageMetadataFields.test.tsx`)
 
 - **Given** an existing image, **When** an editor replaces its file, **Then**
