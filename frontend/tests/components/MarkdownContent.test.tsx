@@ -1,7 +1,8 @@
 import type { ReactElement } from 'react'
 import { render, screen, within } from '@testing-library/react'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
-import MarkdownContent, { parseMarkdown, renderInline } from '../../src/components/MarkdownContent'
+import MarkdownContent from '../../src/components/MarkdownContent'
+import { parseMarkdown, renderInline } from '../../src/markdownUtils'
 
 function renderWithTheme(ui: ReactElement) {
   const theme = createTheme()

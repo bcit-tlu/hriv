@@ -67,17 +67,19 @@ export default function NotificationMenu({
   const markInFlightRef = useRef(false)
 
   useEffect(() => {
-    const preferredReadAt = resolveInitialLastReadAt(lsKey, serverLastReadAt)
-    setLastReadAt(preferredReadAt)
-    if (serverLastReadAt !== null) {
-      localStorage.setItem(lsKey, serverLastReadAt)
-    }
-    markInFlightRef.current = false
+    const timeout = window.setTimeout(() => {
+      const preferredReadAt = resolveInitialLastReadAt(lsKey, serverLastReadAt)
+      setLastReadAt(preferredReadAt)
+      if (serverLastReadAt !== null) {
+        localStorage.setItem(lsKey, serverLastReadAt)
+      }
+      markInFlightRef.current = false
+    }, 0)
+    return () => window.clearTimeout(timeout)
   }, [lsKey, serverLastReadAt])
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
     fetchChangelogEntries()
       .then((rows) => {
         if (!cancelled) setEntries(rows)

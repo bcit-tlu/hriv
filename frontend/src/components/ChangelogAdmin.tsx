@@ -53,18 +53,10 @@ interface EntryDialogProps {
 
 function EntryDialog({ open, initial, onClose, onSaved }: EntryDialogProps) {
   const [tab, setTab] = useState(0)
-  const [title, setTitle] = useState('')
-  const [body, setBody] = useState('')
+  const [title, setTitle] = useState(() => initial?.title ?? '')
+  const [body, setBody] = useState(() => initial?.body ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!open) return
-    setTitle(initial?.title ?? '')
-    setBody(initial?.body ?? '')
-    setTab(0)
-    setError(null)
-  }, [initial, open])
 
   const handleSave = useCallback(async () => {
     if (!title.trim() || !body.trim()) return
@@ -179,7 +171,10 @@ export default function ChangelogAdmin() {
   }, [])
 
   useEffect(() => {
-    void load()
+    const timeout = window.setTimeout(() => {
+      void load()
+    }, 0)
+    return () => window.clearTimeout(timeout)
   }, [load])
 
   const handleSaved = useCallback((saved: ApiChangelogEntry) => {
@@ -295,6 +290,7 @@ export default function ChangelogAdmin() {
       )}
 
       <EntryDialog
+        key={dialogEntry === undefined ? 'closed' : dialogEntry === null ? 'new' : dialogEntry.id}
         open={dialogEntry !== undefined}
         initial={dialogEntry ?? null}
         onClose={() => setDialogEntry(undefined)}
