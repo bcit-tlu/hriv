@@ -185,19 +185,22 @@ export default function ChangelogAdmin({ onEntriesChanged }: ChangelogAdminProps
     return () => window.clearTimeout(timeout)
   }, [load])
 
-  const handleSaved = useCallback((saved: ApiChangelogEntry) => {
-    setEntries((prev) => {
-      const existingIndex = prev.findIndex((entry) => entry.id === saved.id)
-      if (existingIndex >= 0) {
-        const next = [...prev]
-        next[existingIndex] = saved
-        return sortNewestFirst(next)
-      }
-      return sortNewestFirst([saved, ...prev])
-    })
-    setDialogEntry(undefined)
-    onEntriesChanged?.()
-  }, [onEntriesChanged])
+  const handleSaved = useCallback(
+    (saved: ApiChangelogEntry) => {
+      setEntries((prev) => {
+        const existingIndex = prev.findIndex((entry) => entry.id === saved.id)
+        if (existingIndex >= 0) {
+          const next = [...prev]
+          next[existingIndex] = saved
+          return sortNewestFirst(next)
+        }
+        return sortNewestFirst([saved, ...prev])
+      })
+      setDialogEntry(undefined)
+      onEntriesChanged?.()
+    },
+    [onEntriesChanged],
+  )
 
   const handleDelete = useCallback(async () => {
     if (!deleteTarget) return
