@@ -69,7 +69,7 @@ describe('AppShell', () => {
       expect(screen.getByText('Maintenance tonight')).toBeInTheDocument()
     })
 
-    it('keeps the announcement banner on the people/admin surface background', () => {
+    it('keeps the full announcement row on the people/admin surface background', () => {
       render(
         <AppShell
           {...makeProps({
@@ -79,7 +79,9 @@ describe('AppShell', () => {
         />,
       )
 
-      expect(screen.getByText('Maintenance tonight').closest('.MuiBox-root')).toHaveStyle({
+      expect(
+        screen.getByText('Maintenance tonight').closest('.MuiContainer-root')?.parentElement,
+      ).toHaveStyle({
         backgroundColor: '#DAC7B5',
       })
     })
