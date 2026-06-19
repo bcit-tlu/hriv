@@ -195,7 +195,7 @@ export function useShareableImageState(
         setOverlays(pendingOverlays.current)
         pendingOverlays.current = undefined
       }
-    } else if (!categoriesLoading && uncategorizedLoaded.current) {
+    } else if (uncategorizedLoaded.current) {
       // Both data sources have loaded — image doesn't exist.
       // Clear pending state and URL so URL sync can resume normally.
       pendingImageId.current = null
