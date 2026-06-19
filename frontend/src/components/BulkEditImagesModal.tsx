@@ -186,7 +186,7 @@ export default function BulkEditImagesModal({
           multiline
           minRows={3}
           maxRows={10}
-          inputProps={{ maxLength: 500 }}
+          slotProps={{ htmlInput: { maxLength: 500 } }}
           helperText={`${note.length}/500`}
         />
         <FormControlLabel

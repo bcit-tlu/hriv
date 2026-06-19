@@ -17,7 +17,7 @@ from ..database import get_db, settings
 from ..image_validation import UPLOAD_CHUNK_SIZE, is_valid_image
 from ..models import SourceImage, User
 from ..processing import process_source_image
-from ..schemas import SourceImageOut
+from ..schemas import MAX_NOTE_LENGTH, SourceImageOut
 from ..tracing import record_exception_if_server_error
 from ..worker import enqueue_process_source_image
 
@@ -52,10 +52,14 @@ async def upload_source_image(
             os.makedirs(settings.source_images_dir, exist_ok=True)
 
             # Validate note length early (before writing large files to disk)
-            if note is not None and isinstance(note, str) and len(note) > 500:
+            if (
+                note is not None
+                and isinstance(note, str)
+                and len(note) > MAX_NOTE_LENGTH
+            ):
                 raise HTTPException(
                     status_code=400,
-                    detail="Note must be 500 characters or fewer",
+                    detail=f"Note must be {MAX_NOTE_LENGTH} characters or fewer",
                 )
 
             # Generate a unique filename to avoid collisions

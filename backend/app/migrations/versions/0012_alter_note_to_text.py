@@ -1,4 +1,4 @@
-"""Alter `note` columns to TEXT to allow longer notes.
+"""Alter `note` columns to TEXT while app validation enforces note length.
 
 Revision ID: 0012_alter_note_to_text
 Revises: 0011_add_category_version
@@ -18,7 +18,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Change images.note and source_images.note from VARCHAR(500) to TEXT
+    # Remove the database-level length constraint from note columns.
     op.alter_column(
         "images",
         "note",
@@ -37,7 +37,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Revert back to VARCHAR(500)
+    # Restore the previous VARCHAR(500) column types.
     op.alter_column(
         "source_images",
         "note",

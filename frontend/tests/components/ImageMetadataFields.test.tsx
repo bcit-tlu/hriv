@@ -68,6 +68,17 @@ describe('ImageMetadataFields', () => {
     expect(screen.getByText('3/500')).toBeInTheDocument()
   })
 
+  it('uses idPrefix for stable field ids', () => {
+    render(<ImageMetadataFields values={defaultValues} onChange={vi.fn()} idPrefix="upload" />)
+
+    expect(screen.getByLabelText(/copyright/i)).toHaveAttribute('id', 'upload-copyright')
+    expect(screen.getByLabelText(/note/i)).toHaveAttribute('id', 'upload-note')
+    expect(screen.getByRole('switch', { name: /visibility/i })).toHaveAttribute(
+      'id',
+      'upload-visibility',
+    )
+  })
+
   it('shows placeholder text for copyright and note', () => {
     render(
       <ImageMetadataFields

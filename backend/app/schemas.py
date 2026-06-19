@@ -3,6 +3,8 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+MAX_NOTE_LENGTH = 500
+
 
 # ── Overlay Rect (shared validation for locked_overlays in metadata_extra) ────
 
@@ -57,8 +59,8 @@ def _normalize_oidc_group(v: str | None) -> str | None:
 def _validate_note_value(v: str | None) -> str | None:
     if v is None:
         return v
-    if isinstance(v, str) and len(v) > 500:
-        raise ValueError("note must be 500 characters or fewer")
+    if isinstance(v, str) and len(v) > MAX_NOTE_LENGTH:
+        raise ValueError(f"note must be {MAX_NOTE_LENGTH} characters or fewer")
     return v
 
 

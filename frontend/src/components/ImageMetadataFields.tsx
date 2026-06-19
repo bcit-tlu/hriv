@@ -22,10 +22,14 @@ interface ImageMetadataFieldsProps {
 export default function ImageMetadataFields({
   values,
   onChange,
+  idPrefix,
   copyrightPlaceholder = 'e.g. 2026 BCIT',
   notePlaceholder = 'Image note',
   categoryHidden = false,
 }: ImageMetadataFieldsProps) {
+  const copyrightId = idPrefix ? `${idPrefix}-copyright` : undefined
+  const noteId = idPrefix ? `${idPrefix}-note` : undefined
+  const visibilityId = idPrefix ? `${idPrefix}-visibility` : undefined
   const visibilityLabel = categoryHidden
     ? 'Visibility (hidden by category)'
     : values.active
@@ -35,6 +39,7 @@ export default function ImageMetadataFields({
   return (
     <>
       <TextField
+        id={copyrightId}
         label="Copyright"
         fullWidth
         variant="outlined"
@@ -43,6 +48,7 @@ export default function ImageMetadataFields({
         placeholder={copyrightPlaceholder}
       />
       <TextField
+        id={noteId}
         label="Note"
         fullWidth
         variant="outlined"
@@ -52,7 +58,7 @@ export default function ImageMetadataFields({
         multiline
         minRows={3}
         maxRows={10}
-        inputProps={{ maxLength: 500 }}
+        slotProps={{ htmlInput: { maxLength: 500 } }}
         helperText={`${values.note.length}/500`}
       />
       <FormControlLabel
@@ -61,6 +67,7 @@ export default function ImageMetadataFields({
             checked={values.active}
             onChange={(e) => onChange({ ...values, active: e.target.checked })}
             disabled={categoryHidden}
+            slotProps={{ input: { id: visibilityId, role: 'switch' } }}
           />
         }
         label={visibilityLabel}

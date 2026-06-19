@@ -483,7 +483,7 @@ function EditImageForm({
           multiline
           minRows={3}
           maxRows={10}
-          inputProps={{ maxLength: 500 }}
+          slotProps={{ htmlInput: { maxLength: 500 } }}
           helperText={`${note.length}/500`}
         />
         <Typography variant="subtitle2" sx={{ mt: 1 }}>
