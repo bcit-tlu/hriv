@@ -50,6 +50,10 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 - frontend: `npm test -- SortableTileGrid sortableTileGridUtils`
 - **manual: human feel-test required** — see [drag-and-drop.md](drag-and-drop.md).
 
+### Changed search modal
+- frontend: `npm test -- SearchModal`
+- See [ui-behaviour-spec.md](ui-behaviour-spec.md).
+
 ### Changed admin import/export
 - backend: `poetry run pytest tests/test_admin_ops.py tests/test_router_admin.py`
 - skill: [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md) (admin export/import section)
