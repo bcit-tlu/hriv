@@ -8,6 +8,9 @@ backend/.venv
 backend/.pytest_cache
 backend/htmlcov
 backend/CHANGELOG.md
+frontend/CHANGELOG.md
+backup/CHANGELOG.md
+
 
 backup/.venv
 backup/.pytest_cache
