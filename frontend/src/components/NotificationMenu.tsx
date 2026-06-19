@@ -71,6 +71,7 @@ export default function NotificationMenu({
     resolveInitialLastReadAt(`hriv_changelog_last_read_${userEmail}`, serverLastReadAt),
   )
   const markInFlightRef = useRef(false)
+  const hasFetchedEntriesRef = useRef(false)
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -86,16 +87,24 @@ export default function NotificationMenu({
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    const initialLoad = !hasFetchedEntriesRef.current
+    if (initialLoad) {
+      setLoading(true)
+    }
     fetchChangelogEntries()
       .then((rows) => {
         if (!cancelled) setEntries(sortNewestFirst(rows))
       })
       .catch(() => {
-        if (!cancelled) setEntries([])
+        if (!cancelled && initialLoad) setEntries([])
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          hasFetchedEntriesRef.current = true
+          if (initialLoad) {
+            setLoading(false)
+          }
+        }
       })
     return () => {
       cancelled = true

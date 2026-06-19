@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import NotificationMenu from '../../src/components/NotificationMenu'
 import * as api from '../../src/api'
@@ -32,6 +32,10 @@ describe('NotificationMenu', () => {
     mockMarkChangelogRead.mockResolvedValue({
       changelog_last_read_at: '2026-06-16T12:30:00Z',
     })
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('shows an unread badge when there are unseen entries', async () => {
@@ -237,6 +241,98 @@ describe('NotificationMenu', () => {
     fireEvent.click(screen.getByText("What's New"))
 
     expect(await screen.findByText('v2.6')).toBeInTheDocument()
+  })
+
+  it('keeps existing entries visible during a background re-fetch', async () => {
+    let resolveSecondFetch: ((value: api.ApiChangelogEntry[]) => void) | null = null
+    mockFetchChangelogEntries.mockResolvedValueOnce([entry]).mockImplementationOnce(
+      () =>
+        new Promise<api.ApiChangelogEntry[]>((resolve) => {
+          resolveSecondFetch = resolve
+        }),
+    )
+
+    const { rerender } = render(
+      <NotificationMenu
+        userEmail="instructor@example.ca"
+        serverLastReadAt={null}
+        frontendVersion="1.2.3"
+        backendVersion="4.5.6"
+        backupVersion="7.8.9"
+        changelogVersion={0}
+      />,
+    )
+
+    await waitFor(() => expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByLabelText('Notifications'))
+    fireEvent.click(screen.getByText("What's New"))
+    expect(await screen.findByText('v2.5')).toBeInTheDocument()
+
+    rerender(
+      <NotificationMenu
+        userEmail="instructor@example.ca"
+        serverLastReadAt={null}
+        frontendVersion="1.2.3"
+        backendVersion="4.5.6"
+        backupVersion="7.8.9"
+        changelogVersion={1}
+      />,
+    )
+
+    await waitFor(() => expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(2))
+    expect(screen.getByText('v2.5')).toBeInTheDocument()
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+
+    resolveSecondFetch?.([
+      {
+        ...entry,
+        id: 2,
+        title: 'v2.6',
+        published_at: '2026-06-17T12:00:00Z',
+        created_at: '2026-06-17T12:00:00Z',
+        updated_at: '2026-06-17T12:00:00Z',
+      },
+    ])
+
+    expect(await screen.findByText('v2.6')).toBeInTheDocument()
+  })
+
+  it('keeps existing entries if a background re-fetch fails', async () => {
+    mockFetchChangelogEntries
+      .mockResolvedValueOnce([entry])
+      .mockRejectedValueOnce(new Error('boom'))
+
+    const { rerender } = render(
+      <NotificationMenu
+        userEmail="instructor@example.ca"
+        serverLastReadAt={null}
+        frontendVersion="1.2.3"
+        backendVersion="4.5.6"
+        backupVersion="7.8.9"
+        changelogVersion={0}
+      />,
+    )
+
+    await waitFor(() => expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByLabelText('Notifications'))
+    fireEvent.click(screen.getByText("What's New"))
+    expect(await screen.findByText('v2.5')).toBeInTheDocument()
+
+    rerender(
+      <NotificationMenu
+        userEmail="instructor@example.ca"
+        serverLastReadAt={null}
+        frontendVersion="1.2.3"
+        backendVersion="4.5.6"
+        backupVersion="7.8.9"
+        changelogVersion={1}
+      />,
+    )
+
+    await waitFor(() => expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(2))
+    expect(screen.getByText('v2.5')).toBeInTheDocument()
   })
 
   it('renders entries newest-first even if the API returns them oldest-first', async () => {
