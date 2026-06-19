@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
@@ -234,10 +234,21 @@ export default function SortableTileGrid({
   // Refs for async callback access (always reflect latest props)
   const currentCategoriesRef = useRef(currentCategories)
   const visibleImagesRef = useRef(visibleImages)
+  const syncedCategoriesRef = useRef(currentCategories)
+  const syncedVisibleImagesRef = useRef(visibleImages)
   currentCategoriesRef.current = currentCategories
   visibleImagesRef.current = visibleImages
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (
+      syncedCategoriesRef.current === currentCategories &&
+      syncedVisibleImagesRef.current === visibleImages
+    ) {
+      return
+    }
+    syncedCategoriesRef.current = currentCategories
+    syncedVisibleImagesRef.current = visibleImages
+
     const nextItems = buildTileItems(currentCategories, visibleImages)
     if (reorderInFlightRef.current) {
       pendingItemsRef.current = nextItems
@@ -346,6 +357,7 @@ export default function SortableTileGrid({
             (failed[0] as PromiseRejectedResult).reason ?? new Error('Reorder partially failed')
           console.error('Reorder partially failed', failed)
           reorderInFlightRef.current = false
+          pendingItemsRef.current = null
           setItems((current) => (current === reordered ? items : current))
           onReorderError?.(err)
           onReorderComplete?.()
