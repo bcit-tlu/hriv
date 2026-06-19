@@ -7,9 +7,12 @@
 ### Frontend
 
 - Install dependencies: `npm ci`
+- `npm ci` installs the repo-local `.githooks/pre-commit` hook unless `core.hooksPath` is already customized.
 - Start development server: `npm run dev`
 - Run tests: `npm test`
 - Build for production: `npm run build`
+- Format staged files manually: `npm run format:staged`
+- Check formatting for the repo: `npm run format:check`
 
 ### Backend
 
@@ -37,6 +40,7 @@
 - Use TypeScript strict mode
 - Prefer functional components in React
 - Use ESLint and Prettier configurations
+- The frontend `prepare` script installs a repo-local pre-commit hook that runs Prettier on staged files; if you keep a custom `core.hooksPath`, run `npm run format:check` manually before commit.
 - Follow conventional commit format for PR titles
 - License: MPL-2.0
 - **Drag-and-drop tiles use `@dnd-kit/react` v2 (NOT v1 `@dnd-kit/core`).** Before changing collision detection, drop zones, collision priority, or activation constraints in `SortableTileGrid.tsx`, read `docs/drag-and-drop.md` — it is the locked move-vs-reorder contract, and such changes require a human feel-test before merge.

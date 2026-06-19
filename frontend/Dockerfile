@@ -4,6 +4,7 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package*.json ./
+COPY scripts/install-git-hooks.mjs ./scripts/install-git-hooks.mjs
 RUN --mount=type=cache,target=/root/.npm \
     if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then \
         npm ci; \

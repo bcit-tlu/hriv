@@ -23,6 +23,9 @@ frontend-facing behavior described in docs.
 - Use strict TypeScript and functional React components.
 - Prefer existing hooks and API wrappers in `api.ts`; keep snake_case to
   camelCase mapping centralized and deliberate.
+- `npm ci` installs the repo-local `.githooks/pre-commit` hook unless
+  `core.hooksPath` is already customized; the hook runs Prettier on staged
+  files before commit.
 - Do not treat frontend filtering as security. Mirrored filtering is UX only;
   backend routers enforce student visibility.
 - Do not change drag-and-drop collision logic, drop zones, collision priority,
@@ -37,6 +40,12 @@ Run focused Vitest targets for touched components or hooks:
 
 ```bash
 npm test -- <test file or pattern>
+```
+
+Check repo formatting when you touch frontend files or docs:
+
+```bash
+npm run format:check
 ```
 
 Run the frontend suite before a PR when practical:
