@@ -36,7 +36,15 @@ describe('AdminPage', () => {
     render(<AdminPage />)
 
     expect(screen.getByRole('tab', { name: 'Changelog' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('tab', { name: 'Changelog' })).toHaveAttribute(
+      'aria-controls',
+      'admin-tabpanel-changelog',
+    )
     expect(screen.getByRole('tab', { name: 'Backups' })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('tab', { name: 'Backups' })).toHaveAttribute(
+      'aria-controls',
+      'admin-tabpanel-backups',
+    )
     expect(screen.getByText('Changelog admin content')).toBeInTheDocument()
 
     await waitFor(() => expect(mockFetchAdminTasks).toHaveBeenCalledTimes(1))

@@ -82,7 +82,7 @@ function AdminTabPanel({ children, value, currentValue }: AdminTabPanelProps) {
       aria-labelledby={`admin-tab-${value}`}
       sx={{ pt: 3 }}
     >
-      {!hidden && children}
+      {children}
     </Box>
   )
 }
@@ -487,8 +487,18 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
         onChange={(_event, value: AdminTabValue) => setActiveTab(value)}
         aria-label="Admin sections"
       >
-        <Tab label="Changelog" value="changelog" id="admin-tab-changelog" />
-        <Tab label="Backups" value="backups" id="admin-tab-backups" />
+        <Tab
+          label="Changelog"
+          value="changelog"
+          id="admin-tab-changelog"
+          aria-controls="admin-tabpanel-changelog"
+        />
+        <Tab
+          label="Backups"
+          value="backups"
+          id="admin-tab-backups"
+          aria-controls="admin-tabpanel-backups"
+        />
       </Tabs>
 
       <AdminTabPanel value="changelog" currentValue={activeTab}>
