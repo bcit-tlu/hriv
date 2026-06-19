@@ -24,14 +24,14 @@ existing site-wide announcement banner.
 
 The backend stores changelog content in a dedicated `changelog_entries` table.
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | integer PK | |
-| `title` | string(500) | Card title shown in both admin and reader views |
-| `body` | text | Markdown body |
-| `published_at` | timestamptz | Updated on create and republish |
-| `created_at` | timestamptz | Insert timestamp |
-| `updated_at` | timestamptz | Standard update timestamp |
+| Column         | Type        | Notes                                           |
+| -------------- | ----------- | ----------------------------------------------- |
+| `id`           | integer PK  |                                                 |
+| `title`        | string(500) | Card title shown in both admin and reader views |
+| `body`         | text        | Markdown body                                   |
+| `published_at` | timestamptz | Updated on create and republish                 |
+| `created_at`   | timestamptz | Insert timestamp                                |
+| `updated_at`   | timestamptz | Standard update timestamp                       |
 
 ### Per-user read state
 
@@ -45,23 +45,23 @@ path.
 
 ## API
 
-| Method | Endpoint | Minimum role | Purpose |
-|---|---|---|---|
-| `GET` | `/api/changelog/` | instructor | List entries, newest first |
-| `POST` | `/api/changelog/` | admin | Create a new entry |
-| `PATCH` | `/api/changelog/{id}` | admin | Update and republish an entry |
-| `DELETE` | `/api/changelog/{id}` | admin | Delete an entry |
-| `POST` | `/api/changelog/mark-read` | instructor | Persist the caller's latest read time |
+| Method   | Endpoint                   | Minimum role | Purpose                               |
+| -------- | -------------------------- | ------------ | ------------------------------------- |
+| `GET`    | `/api/changelog/`          | instructor   | List entries, newest first            |
+| `POST`   | `/api/changelog/`          | admin        | Create a new entry                    |
+| `PATCH`  | `/api/changelog/{id}`      | admin        | Update and republish an entry         |
+| `DELETE` | `/api/changelog/{id}`      | admin        | Delete an entry                       |
+| `POST`   | `/api/changelog/mark-read` | instructor   | Persist the caller's latest read time |
 
 ## Frontend Locations
 
-| Concern | File |
-|---|---|
+| Concern                                                        | File                                           |
+| -------------------------------------------------------------- | ---------------------------------------------- |
 | Notification bell, unread dot, What's New dialog, About dialog | `frontend/src/components/NotificationMenu.tsx` |
-| Admin CRUD table and dialogs | `frontend/src/components/ChangelogAdmin.tsx` |
-| Shared Markdown rendering | `frontend/src/components/MarkdownContent.tsx` |
-| AppBar insertion point | `frontend/src/components/AppShell.tsx` |
-| Role-gated wiring | `frontend/src/App.tsx` |
+| Admin CRUD table and dialogs                                   | `frontend/src/components/ChangelogAdmin.tsx`   |
+| Shared Markdown rendering                                      | `frontend/src/components/MarkdownContent.tsx`  |
+| AppBar insertion point                                         | `frontend/src/components/AppShell.tsx`         |
+| Role-gated wiring                                              | `frontend/src/App.tsx`                         |
 
 ## Invariants
 

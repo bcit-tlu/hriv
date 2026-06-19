@@ -27,12 +27,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'text-summary'],
       include: ['src/**/*.{ts,tsx}'],
-      exclude: [
-        'src/**/*.d.ts',
-        'src/main.tsx',
-        'src/vite-env.d.ts',
-        'src/test/**',
-      ],
+      exclude: ['src/**/*.d.ts', 'src/main.tsx', 'src/vite-env.d.ts', 'src/test/**'],
       // Floor — not target.  Ratchet upward as component-level tests
       // are filled in.  The >80 % AGENTS.md target is the goal.
       thresholds: {

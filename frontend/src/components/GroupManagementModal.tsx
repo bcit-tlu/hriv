@@ -232,10 +232,7 @@ export default function GroupManagementModal({
   }, [open, selectedGroupIdForFetch, tab, q, selectedProgramIds, page, pageSize])
 
   const memberIds = useMemo(() => new Set(selectedGroup?.memberIds ?? []), [selectedGroup])
-  const instructorIds = useMemo(
-    () => new Set(selectedGroup?.instructorIds ?? []),
-    [selectedGroup],
-  )
+  const instructorIds = useMemo(() => new Set(selectedGroup?.instructorIds ?? []), [selectedGroup])
   const assignedIds = tab === 'students' ? memberIds : instructorIds
   const manageable = selectedGroup ? canManage(selectedGroup) : false
 
@@ -620,8 +617,8 @@ export default function GroupManagementModal({
                         {selectedGroup.name}
                       </Typography>
                       <Typography variant="body2" color="text.secondary">
-                        {selectedGroup.memberIds.length} students · {selectedGroup.instructorIds.length}{' '}
-                        instructors
+                        {selectedGroup.memberIds.length} students ·{' '}
+                        {selectedGroup.instructorIds.length} instructors
                       </Typography>
                       {selectedGroup.description && (
                         <Typography variant="body2" color="text.secondary" noWrap>
@@ -638,7 +635,10 @@ export default function GroupManagementModal({
                   sx={{ px: 2, borderBottom: 1, borderColor: 'divider' }}
                 >
                   <Tab label={`Students (${selectedGroup.memberIds.length})`} value="students" />
-                  <Tab label={`Instructors (${selectedGroup.instructorIds.length})`} value="instructors" />
+                  <Tab
+                    label={`Instructors (${selectedGroup.instructorIds.length})`}
+                    value="instructors"
+                  />
                 </Tabs>
 
                 <Box sx={{ px: 2, pt: 2, pb: 1.5, borderBottom: 1, borderColor: 'divider' }}>
@@ -681,7 +681,11 @@ export default function GroupManagementModal({
                   </Stack>
                   {tab === 'students' && programs.length > 0 && (
                     <Box>
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ display: 'block', mb: 0.75 }}
+                      >
                         Filter by program
                       </Typography>
                       <Stack direction="row" flexWrap="wrap" gap={0.75}>
@@ -742,8 +746,15 @@ export default function GroupManagementModal({
                           {currentRows.length > 0 && (
                             <>
                               <TableRow>
-                                <TableCell colSpan={colSpan} sx={{ bgcolor: 'action.hover', py: 0.5 }}>
-                                  <Typography variant="caption" fontWeight={600} color="text.secondary">
+                                <TableCell
+                                  colSpan={colSpan}
+                                  sx={{ bgcolor: 'action.hover', py: 0.5 }}
+                                >
+                                  <Typography
+                                    variant="caption"
+                                    fontWeight={600}
+                                    color="text.secondary"
+                                  >
                                     {tab === 'students' ? 'CURRENT MEMBERS' : 'CO-OWNERS'}
                                   </Typography>
                                 </TableCell>
@@ -754,9 +765,18 @@ export default function GroupManagementModal({
                           {availableRows.length > 0 && (
                             <>
                               <TableRow>
-                                <TableCell colSpan={colSpan} sx={{ bgcolor: 'action.hover', py: 0.5 }}>
-                                  <Typography variant="caption" fontWeight={600} color="text.secondary">
-                                    {tab === 'students' ? 'AVAILABLE STUDENTS' : 'AVAILABLE INSTRUCTORS'}
+                                <TableCell
+                                  colSpan={colSpan}
+                                  sx={{ bgcolor: 'action.hover', py: 0.5 }}
+                                >
+                                  <Typography
+                                    variant="caption"
+                                    fontWeight={600}
+                                    color="text.secondary"
+                                  >
+                                    {tab === 'students'
+                                      ? 'AVAILABLE STUDENTS'
+                                      : 'AVAILABLE INSTRUCTORS'}
                                   </Typography>
                                 </TableCell>
                               </TableRow>
@@ -817,7 +837,9 @@ export default function GroupManagementModal({
         maxWidth="xs"
         fullWidth
       >
-        <DialogTitle>{groupDialogMode === 'create' ? 'Create New Group' : 'Rename Group'}</DialogTitle>
+        <DialogTitle>
+          {groupDialogMode === 'create' ? 'Create New Group' : 'Rename Group'}
+        </DialogTitle>
         <DialogContent>
           {groupActionError && (
             <Alert severity="error" sx={{ mt: 1, mb: 1 }}>

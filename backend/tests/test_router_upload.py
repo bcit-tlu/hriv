@@ -159,6 +159,31 @@ async def test_upload_source_image_success(tmp_path) -> None:
     bg.add_task.assert_called_once()
 
 
+async def test_upload_source_image_normalizes_empty_note(tmp_path) -> None:
+    file = AsyncMock()
+    file.filename = "test.png"
+    file.content_type = "image/png"
+    file.read = AsyncMock(side_effect=[b"fake-png-data", b""])
+
+    db = AsyncMock()
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    with patch("app.routers.upload.settings") as mock_settings:
+        mock_settings.source_images_dir = str(tmp_path)
+        await upload_source_image(
+            file=file,
+            background_tasks=MagicMock(),
+            _user=MagicMock(),
+            note="",
+            db=db,
+        )
+
+    src = db.add.call_args.args[0]
+    assert src.note is None
+
+
 async def test_upload_source_image_enospc(tmp_path) -> None:
     """ENOSPC during file write returns 507 and cleans up partial file."""
     file = AsyncMock()

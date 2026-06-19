@@ -39,14 +39,17 @@ export default function FileDropZone({ isDragActive, onDrop }: FileDropZoneProps
     e.dataTransfer.dropEffect = 'copy'
   }, [])
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    dragCounter.current = 0
-    setDragOver(false)
-    const files = Array.from(e.dataTransfer.files)
-    if (files.length > 0) onDrop(files)
-  }, [onDrop])
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      dragCounter.current = 0
+      setDragOver(false)
+      const files = Array.from(e.dataTransfer.files)
+      if (files.length > 0) onDrop(files)
+    },
+    [onDrop],
+  )
 
   if (!isDragActive) return null
 
@@ -68,9 +71,10 @@ export default function FileDropZone({ isDragActive, onDrop }: FileDropZoneProps
         borderRadius: 1,
         border: '3px dashed',
         borderColor: dragOver ? 'primary.dark' : 'primary.main',
-        bgcolor: (theme) => dragOver
-          ? alpha(theme.palette.primary.main, 0.12)
-          : alpha(theme.palette.primary.main, 0.06),
+        bgcolor: (theme) =>
+          dragOver
+            ? alpha(theme.palette.primary.main, 0.12)
+            : alpha(theme.palette.primary.main, 0.06),
         transition: 'border-color 0.2s, background-color 0.2s, transform 0.15s',
         transform: dragOver ? 'scale(1.02)' : 'scale(1)',
         cursor: 'copy',
@@ -100,11 +104,7 @@ export default function FileDropZone({ isDragActive, onDrop }: FileDropZoneProps
       >
         Add images
       </Typography>
-      <Typography
-        variant="caption"
-        color="text.secondary"
-        sx={{ userSelect: 'none' }}
-      >
+      <Typography variant="caption" color="text.secondary" sx={{ userSelect: 'none' }}>
         Drop files here
       </Typography>
     </Box>

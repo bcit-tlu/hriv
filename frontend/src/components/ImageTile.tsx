@@ -20,7 +20,12 @@ interface ImageTileProps {
   categoryHidden?: boolean
 }
 
-export default function ImageTile({ image, onClick, onEditDetails, categoryHidden = false }: ImageTileProps) {
+export default function ImageTile({
+  image,
+  onClick,
+  onEditDetails,
+  categoryHidden = false,
+}: ImageTileProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
   return (
@@ -28,8 +33,16 @@ export default function ImageTile({ image, onClick, onEditDetails, categoryHidde
       elevation={2}
       sx={{ width: '100%', maxWidth: 300, position: 'relative', opacity: categoryHidden ? 0.5 : 1 }}
     >
-      
-      <CardActionArea onClick={() => onClick(image)} sx={{ display: 'flex', flexDirection: 'column', height: '100%', alignItems: 'stretch', filter: (categoryHidden || !image.active) ? 'grayscale(100%)' : 'none' }}>
+      <CardActionArea
+        onClick={() => onClick(image)}
+        sx={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100%',
+          alignItems: 'stretch',
+          filter: categoryHidden || !image.active ? 'grayscale(100%)' : 'none',
+        }}
+      >
         <CardMedia
           component="img"
           height="160"
@@ -39,12 +52,20 @@ export default function ImageTile({ image, onClick, onEditDetails, categoryHidde
         />
         <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Typography variant="h6" noWrap sx={!image.active ? { color: visColors.inactive } : undefined}>
+            <Typography
+              variant="h6"
+              noWrap
+              sx={!image.active ? { color: visColors.inactive } : undefined}
+            >
               {image.name}
             </Typography>
             {!image.active && (
               <Tooltip title="Visibility: Inactive">
-                <span role="img" aria-label="Visibility: Inactive" style={{ display: 'inline-flex' }}>
+                <span
+                  role="img"
+                  aria-label="Visibility: Inactive"
+                  style={{ display: 'inline-flex' }}
+                >
                   <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
                 </span>
               </Tooltip>

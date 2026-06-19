@@ -37,14 +37,17 @@ and bulk import. For domain-specific flows see the sibling skills
 If the frontend Docker build fails with `npm ci` errors about missing packages from
 the lock file, delete the stale `frontend/package-lock.json` (it is in `.gitignore`
 but may exist locally from a prior `npm install`) and rebuild:
+
 ```bash
 rm -f frontend/package-lock.json
 docker compose up -d --build frontend
 ```
+
 ### Rebuilding After Code Changes
 
 Bind-mounts give hot-reload for most source edits. For Dockerfile / dependency / nginx
 config changes, rebuild the specific service:
+
 ```bash
 docker compose up -d --build frontend   # or backend, worker, etc.
 ```
@@ -58,15 +61,16 @@ Backup-service S3/Azure testing needs credentials; see `testing-backup-service`.
 
 All use password: `password`
 
-| Email | Role | canEditContent | canManageUsers |
-|---|---|---|---|
-| admin@example.ca | admin | Yes | Yes |
-| instructor@example.ca | instructor | Yes | No |
-| student@example.ca | student | No | No |
+| Email                 | Role       | canEditContent | canManageUsers |
+| --------------------- | ---------- | -------------- | -------------- |
+| admin@example.ca      | admin      | Yes            | Yes            |
+| instructor@example.ca | instructor | Yes            | No             |
+| student@example.ca    | student    | No             | No             |
 
 ## Seed Data
 
 ### Categories (hierarchical)
+
 - Architecture (id=1)
   - American (id=4)
   - Italian (id=3)
@@ -74,21 +78,24 @@ All use password: `password`
 - Panoramas (id=2)
 
 ### Programs
-| ID | Name |
-|---|---|
-| 1 | Administration |
-| 2 | Digital Design |
-| 3 | Photography |
+
+| ID  | Name           |
+| --- | -------------- |
+| 1   | Administration |
+| 2   | Digital Design |
+| 3   | Photography    |
 
 ### Images
-| ID | Name | Category | Program | Source |
-|---|---|---|---|---|
-| 1 | Duomo di Milano | Italian | Digital Design | OpenSeadragon examples |
-| 2 | Duomo di Milano (Gothic Detail) | Gothic | Digital Design | OpenSeadragon examples |
-| 3 | Highsmith Panorama | American | Photography | Library of Congress |
-| 4 | Library of Congress | Panoramas | Photography | Library of Congress |
+
+| ID  | Name                            | Category  | Program        | Source                 |
+| --- | ------------------------------- | --------- | -------------- | ---------------------- |
+| 1   | Duomo di Milano                 | Italian   | Digital Design | OpenSeadragon examples |
+| 2   | Duomo di Milano (Gothic Detail) | Gothic    | Digital Design | OpenSeadragon examples |
+| 3   | Highsmith Panorama              | American  | Photography    | Library of Congress    |
+| 4   | Library of Congress             | Panoramas | Photography    | Library of Congress    |
 
 ### Direct Image Counts per Category
+
 These are direct (first-child) counts, not subtree sums:
 | Category | Direct Image Count |
 |---|---|
@@ -112,15 +119,18 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1
 ## Key UI Navigation
 
 ### Tabs by Role
+
 - **admin:** Home, Images, Manage, People, Admin
 - **instructor:** Home, Images, Manage
 - **student:** Home only
 
 ### Browse (Home)
+
 - Category tiles + uncategorized image tiles.
 - Click a tile to drill down; click an image tile to open the OpenSeadragon viewer.
 
 ### Images Tab
+
 - Table columns: ID, Name, Category, Copyright, Note, Program, Status, Modified, Actions.
 - Filter icon next to **ADD IMAGE** reveals per-column filters. The Category filter
   matches the full path (e.g. "Architecture : Italian" — partial string like `arch` matches).
@@ -128,6 +138,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1
 - Clicking an image name opens the **Edit Details** modal.
 
 ### Edit Details / Add Image / Bulk Edit modals
+
 - All share a category dropdown rendering the full tree with view / edit / `+` icons.
 - `+` on any row opens a "New Category" dialog; the new category is auto-selected.
 - **Edit Details** has a **VIEW IMAGE** button that navigates to the viewer.
@@ -135,15 +146,19 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1
   to avoid polluting seed data.
 
 #### Category Dropdown Image Counts
+
 The category dropdown (`CategoryPickerSelect`) shows direct image counts next to
 each category name — e.g. `Architecture (0)`, `Italian (1)`. These are **direct**
 counts (images directly in that category), not subtree sums. When testing:
+
 - Verify Architecture shows `(0)` not `(3)` — it has no direct images
 - Verify leaf categories (American, Italian, Gothic, Panoramas) each show `(1)`
 
 #### Program Chip Toggles
+
 All image metadata forms (Edit Details, Add Images, Bulk Edit) use a **chip toggle
 panel** for program multi-select — not a Select dropdown. The pattern:
+
 - "Program" appears as a Typography heading above a row of Chip components
 - **Filled/primary** = selected, **outlined/default** = unselected
 - Click a chip to toggle its state (no Ctrl key needed)
@@ -153,6 +168,7 @@ panel** for program multi-select — not a Select dropdown. The pattern:
 - In **Bulk Edit**: all chips start outlined (changes apply to all selected images)
 
 **Testing flow:**
+
 1. Open Edit Details for an image with a known program (e.g. Duomo di Milano → Digital Design)
 2. Verify the correct chip is filled, others are outlined
 3. Click an unselected chip → verify it becomes filled (others unchanged)
@@ -172,16 +188,20 @@ are managed manually via user assignment on the People tab (admin only). A categ
 one or more programs is visible to a student only if they belong to at least one of those programs.
 
 ### Category Management
+
 - Manage > Categories has a full dialog with drag-and-drop reordering.
 - Category tree changes are reflected immediately on Browse without a refresh
   (frontend invalidates the ETag-cached `/api/categories/tree` query).
 
 #### Category Program Visibility
+
 Edit Category dialog has a "Visible to" radio group:
+
 - **All students** (default): no program restriction, chip panel hidden
 - **Specific programs**: shows chip toggle panel to select which programs can see the category
 
 Key behaviors:
+
 - Save/Create disabled when "Specific programs" selected but no chips toggled
 - Save disabled when label is empty (even if programs changed)
 - Inline rename (via category picker in image modals) does NOT show visibility controls
@@ -195,27 +215,32 @@ that already exists among its siblings (same `parent_id`). The frontend dialogs
 open for retry.
 
 **Key behaviors to verify:**
+
 - Creating a category with the same name as an existing sibling → 409 error, dialog stays open
-- Creating a category with a name that exists under a *different* parent → allowed (succeeds)
+- Creating a category with a name that exists under a _different_ parent → allowed (succeeds)
 - Renaming a category to match an existing sibling → 409 error, dialog stays open
 - After a 409 error: Create/Save button re-enables (not stuck in saving state)
 - The error Alert is dismissible via its close (X) button
 - Validation is sibling-scoped (same `parent_id`), not global
 
 **Testing flow (Manage > Categories):**
+
 1. Click `+` next to "Root level" → type an existing root name (e.g. "Architecture") → Create → expect error
 2. Click `+` next to a different parent (e.g. Panoramas) → type a name that exists elsewhere (e.g. "American") → Create → expect success
 3. Click pencil on a category → type an existing sibling name → Save → expect error
 4. **Clean up** any test categories created during step 2 (delete via the trash icon)
 
 ###
+
 # Category Program Visibility Picker
 
 The Add/Edit Category dialogs include a "Visible to" radio group:
+
 - **"All students"** (default for new categories) — `program_ids=[]`, chip panel hidden
 - **"Specific programs"** — reveals clickable chip toggles for each program; filled/primary = selected, outlined = unselected
 
 **Key behaviors to verify:**
+
 - Edit dialog pre-populates radio state from existing `program_ids` (non-empty → "Specific programs" selected)
 - Edit dialog pre-selects the correct program chips based on `program_ids`
 - Toggling a chip enables the Save button (change detection compares against original set)
@@ -226,6 +251,7 @@ The Add/Edit Category dialogs include a "Visible to" radio group:
 - Inline category rename (via CategoryPickerSelect in EditImageModal, etc.) does NOT wipe program associations — `programIds` parameter is optional and only included when explicitly provided
 
 **Testing flow (Manage > Categories):**
+
 1. Click pencil on "Architecture" → expect "Specific programs" radio selected, "Digital Design" chip filled
 2. Toggle another chip (e.g. "Photography") → Save → re-open → expect both chips filled
 3. Click `+` at root level → expect "All students" radio, no chip panel → switch to "Specific programs" → select a chip → Create
@@ -233,6 +259,7 @@ The Add/Edit Category dialogs include a "Visible to" radio group:
 5. **Clean up** test data: restore Architecture to original `program_ids=[2]`, delete test categories
 
 **Testing flow (inline rename via EditImageModal):**
+
 1. Check precondition via API: Italian (id=3) has `program_ids=[2]`
 2. Navigate to Architecture > Italian > click "Duomo di Milano" image tile
 3. Click "Edit Details" to open EditImageModal
@@ -246,6 +273,7 @@ The Add/Edit Category dialogs include a "Visible to" radio group:
 **Note:** CategoryPickerSelect is used in 5 components (EditImageModal, UploadImageModal, BulkEditImagesModal, MoveImageDialog, MoveCategoryDialog). All render EditCategoryDialog without `programs` prop, so all follow the same code path. Testing via EditImageModal covers the shared behavior.
 
 **API verification pattern:**
+
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
@@ -265,12 +293,16 @@ The Save (Edit) and Create (Add) buttons have multi-condition disabled guards. K
 - **Positive control**: Once a valid state is restored (label filled + at least one chip selected), button re-enables immediately
 
 **Testing tip:** The category name input is a React-controlled Autocomplete (Combobox). Standard keyboard clearing (triple-click + Delete) may be intercepted by the autocomplete. If keyboard clearing doesn't work, use the browser console to clear it programmatically:
+
 ```javascript
-const input = document.querySelector('input[type="text"]');
-const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-nativeInputValueSetter.call(input, '');
-input.dispatchEvent(new Event('input', { bubbles: true }));
-input.dispatchEvent(new Event('change', { bubbles: true }));
+const input = document.querySelector('input[type="text"]')
+const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+  window.HTMLInputElement.prototype,
+  'value',
+).set
+nativeInputValueSetter.call(input, '')
+input.dispatchEvent(new Event('input', { bubbles: true }))
+input.dispatchEvent(new Event('change', { bubbles: true }))
 ```
 
 ### Manage Members (Groups — bulk association)
@@ -281,7 +313,7 @@ heavy programs). It is gated by group co-ownership (`canManageGroup`). The detai
 
 - **Students** tab — a paginated table (10 rows/page) of student accounts, with:
   - **Program filter chips** (multi-select, **OR** semantics) — clicking chips narrows the table
-    to students in *any* selected program. Chips render from each student's `program_ids`.
+    to students in _any_ selected program. Chips render from each student's `program_ids`.
   - **Search box** (name **or** email, debounced ~300 ms).
   - A header **"select all on page"** checkbox + per-row checkboxes, and an **"Add N to group"**
     button that calls `POST /api/groups/{id}/members/bulk` once for the whole selection.
@@ -296,6 +328,7 @@ reading the **`X-Total-Count`** response header to render page controls. The tab
 state from the `GroupOut` response returned by the bulk/remove calls (no full re-fetch on toggle).
 
 **Key behaviors to verify:**
+
 - Selecting one or more program chips filters the student rows to the OR-union of those programs;
   clearing chips restores the full list. The instructors tab has no program chips.
 - Typing in search filters by name/email after the debounce; combining search + program chips
@@ -313,6 +346,7 @@ state from the `GroupOut` response returned by the bulk/remove calls (no full re
 — both WCAG-AA (≥4.5:1). Verify via `getGroupChipColors(mode)` in `frontend/src/theme.ts`.
 
 **API verification pattern (paginated listing + bulk add):**
+
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/login \
   -H 'Content-Type: application/json' \
@@ -331,13 +365,16 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 ```
 
 ### People tab (admin only)
+
 - Add / delete / edit users. Persistence survives a hard refresh.
 
 ### Admin tab (admin only)
+
 - Database export/import (JSON).
 - Filesystem export/import (tar.gz via background tasks with log streaming).
 
 ### Footer
+
 - "BCIT Teaching and Learning Unit" link → https://www.bcit.ca/learning-teaching-centre/.
   Visible on all pages.
 
@@ -345,18 +382,18 @@ curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/
 
 Bottom-left of the viewer, left to right:
 
-| # | Icon | Function |
-|---|---|---|
-| 1 | + | Zoom in |
-| 2 | – | Zoom out |
-| 3 | House | Home (reset view) |
-| 4 | Arrows | Fullscreen toggle |
-| 5 | CCW arrow | Rotate left |
-| 6 | CW arrow | Rotate right |
-| 7 | Diagonal arrow | Selection tool (draw rectangles) |
-| 8 | Padlock | Lock / unlock overlays |
-| 9 | X | Clear overlays |
-| 10 | Pencil | Canvas annotation edit |
+| #   | Icon           | Function                         |
+| --- | -------------- | -------------------------------- |
+| 1   | +              | Zoom in                          |
+| 2   | –              | Zoom out                         |
+| 3   | House          | Home (reset view)                |
+| 4   | Arrows         | Fullscreen toggle                |
+| 5   | CCW arrow      | Rotate left                      |
+| 6   | CW arrow       | Rotate right                     |
+| 7   | Diagonal arrow | Selection tool (draw rectangles) |
+| 8   | Padlock        | Lock / unlock overlays           |
+| 9   | X              | Clear overlays                   |
+| 10  | Pencil         | Canvas annotation edit           |
 
 **Warning:** Fullscreen (4) is adjacent to the selection tool (7) and easy to hit
 accidentally. Press Escape to exit fullscreen.
@@ -372,9 +409,9 @@ of the viewer). The badge updates on every zoom animation frame.
 
 ### Two display modes
 
-| Condition | Display |
-|---|---|
-| No measurement settings on image | Raw image-zoom ratio (e.g. `<1X`, `1X`, `4X`) |
+| Condition                           | Display                                         |
+| ----------------------------------- | ----------------------------------------------- |
+| No measurement settings on image    | Raw image-zoom ratio (e.g. `<1X`, `1X`, `4X`)   |
 | Measurement scale + unit configured | Real-world magnification (e.g. `155X`, `2117X`) |
 
 Seed images have no measurement settings by default, so the badge shows `<1X` at
@@ -405,6 +442,7 @@ home zoom. To test measurement-aware magnification:
 ### Optimistic Concurrency
 
 Images use version-based optimistic concurrency; PATCH requires `If-Match`:
+
 ```bash
 VERSION=$(curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1 \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['version'])")
@@ -415,6 +453,7 @@ curl -X PATCH http://localhost:8000/api/images/1 \
   -H "If-Match: $VERSION" \
   -d '{"name": "New Name"}'
 ```
+
 Always re-fetch `version` before each PATCH or you'll get 409 Conflict.
 
 ### metadata_extra_merge (Partial Updates)
@@ -422,6 +461,7 @@ Always re-fetch `version` before each PATCH or you'll get 409 Conflict.
 `metadata_extra_merge` patches individual keys in `metadata_extra` without
 overwriting the rest — this is how the frontend updates locked overlays and
 measurement settings independently:
+
 ```bash
 # Add / update a key
 curl -X PATCH http://localhost:8000/api/images/1 \
@@ -435,6 +475,7 @@ curl -X PATCH http://localhost:8000/api/images/1 \
   -H "If-Match: $VERSION" \
   -d '{"metadata_extra_merge": {"locked_overlays": null}}'
 ```
+
 `metadata_extra` and `metadata_extra_merge` are mutually exclusive — sending both
 in one request returns 422.
 
@@ -445,12 +486,14 @@ backend and frontend.
 ### Injecting Test Data
 
 To exercise frontend handling of malformed metadata, inject directly:
+
 ```bash
 docker exec hriv-db-1 psql -U hriv -d hriv -c \
   "UPDATE images SET metadata = jsonb_set(COALESCE(metadata,'{}'), '{locked_overlays}', \
    '[{\"x\":0.1,\"y\":0.2,\"w\":0.3,\"h\":0.4},{\"garbage\":true},{\"x\":\"str\",\"y\":0,\"w\":0,\"h\":0}]') \
    WHERE id=2"
 ```
+
 Then open that image in the browser to verify graceful handling.
 
 ## Testing Drag-and-Drop (Browse Page)
@@ -467,21 +510,22 @@ All drag interactions are gated behind `canEditContent` — students see no drag
 > merge; a green recording is only a mechanics smoke-test, not feel validation.
 
 ### Custom MIME Types
+
 - `application/x-hriv-image` — image tile drag payload (`{"id": <imageId>}`)
 - `application/x-hriv-category` — category tile drag payload (`{"id": <categoryId>}`)
 - `Files` — native file drag from OS
 
 ### DnD Interactions to Test
 
-| Action | Expected Result |
-|---|---|
-| Drag image tile onto category tile | Image moves to target category |
-| Drag category tile onto another category | Category reparented under target |
-| Drag category onto itself | No-op (self-drop guard) |
-| Drop files on category tile | Upload dialog opens with that category pre-selected |
-| Drop files on grid (not on a tile) | Upload dialog opens with current path category |
-| Student views any tile | `draggable="false"`, no drop handlers |
-| Drag text/URL onto category tile | No highlight, drop rejected (MIME filtering) |
+| Action                                   | Expected Result                                     |
+| ---------------------------------------- | --------------------------------------------------- |
+| Drag image tile onto category tile       | Image moves to target category                      |
+| Drag category tile onto another category | Category reparented under target                    |
+| Drag category onto itself                | No-op (self-drop guard)                             |
+| Drop files on category tile              | Upload dialog opens with that category pre-selected |
+| Drop files on grid (not on a tile)       | Upload dialog opens with current path category      |
+| Student views any tile                   | `draggable="false"`, no drop handlers               |
+| Drag text/URL onto category tile         | No highlight, drop rejected (MIME filtering)        |
 
 ### Testing the FileDropZone Component
 
@@ -492,64 +536,74 @@ behind `canEditContent` (admin/instructor only).
 **Key DOM selector:** `[role="region"][aria-label="Drop files here to upload images"]`
 
 **Triggering FileDropZone visibility:**
+
 ```javascript
 // Dispatch dragenter with Files type on window to activate fileDragActive state
-const dt = new DataTransfer();
-dt.items.add(new File(['test'], 'test.png', { type: 'image/png' }));
-window.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
+const dt = new DataTransfer()
+dt.items.add(new File(['test'], 'test.png', { type: 'image/png' }))
+window.dispatchEvent(
+  new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }),
+)
 
 // After ~100ms, check for the dropzone element:
-const dz = document.querySelector('[role="region"][aria-label="Drop files here to upload images"]');
+const dz = document.querySelector('[role="region"][aria-label="Drop files here to upload images"]')
 // dz should be non-null when fileDragActive=true
 ```
 
 **Expected visual properties when visible:**
+
 - `border: 3px dashed` with `borderColor: rgb(167, 74, 74)` (primary.main in light mode)
 - `minHeight: 220px`, `maxWidth: 300px`
 - `cursor: copy`
 - Contains "Add images" heading + "Drop files here" subtext + circular badge with AddIcon
 
 **Testing drop on FileDropZone:**
+
 ```javascript
-const dz = document.querySelector('[role="region"][aria-label="Drop files here to upload images"]');
-const dt = new DataTransfer();
-dt.items.add(new File(['data'], 'photo.jpg', { type: 'image/jpeg' }));
-dz.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
-dz.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
-dz.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+const dz = document.querySelector('[role="region"][aria-label="Drop files here to upload images"]')
+const dt = new DataTransfer()
+dt.items.add(new File(['data'], 'photo.jpg', { type: 'image/jpeg' }))
+dz.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }))
+dz.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
+dz.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
 // After ~100ms: upload dialog (.MuiDialog-root) should open, FileDropZone should disappear
 ```
 
 **Resetting drag state:** Dispatch a drop event on window with Files type to reset
 `fileDragCounter` and `fileDragActive`:
+
 ```javascript
-const dt = new DataTransfer();
-dt.items.add(new File(['x'], 'x.png', { type: 'image/png' }));
-window.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }));
+const dt = new DataTransfer()
+dt.items.add(new File(['x'], 'x.png', { type: 'image/png' }))
+window.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt }))
 ```
 
 ### Testing CategoryTile Drag-Over State
 
 When files (or images/categories) are dragged over a CategoryTile, it shows:
+
 - 3px dashed outline (primary color) with `outlineOffset: -3` (no box-model shift)
 - `transform: scale(1.03)` for tactile feedback
 - "Drop here" text overlay with move icon badge and semi-transparent primary background
 
 **Verifying drag-over styling:**
+
 ```javascript
-const card = document.querySelectorAll('.MuiCard-root')[0];
-const dt = new DataTransfer();
-dt.items.add(new File(['test'], 'test.png', { type: 'image/png' }));
-card.dispatchEvent(new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }));
-card.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }));
+const card = document.querySelectorAll('.MuiCard-root')[0]
+const dt = new DataTransfer()
+dt.items.add(new File(['test'], 'test.png', { type: 'image/png' }))
+card.dispatchEvent(
+  new DragEvent('dragenter', { bubbles: true, cancelable: true, dataTransfer: dt }),
+)
+card.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dt }))
 
 // After ~100ms, verify computed styles:
-const cs = window.getComputedStyle(card);
-console.log(cs.outlineStyle);   // 'dashed'
-console.log(cs.outlineColor);   // 'rgb(167, 74, 74)'
-console.log(cs.outlineWidth);   // '3px'
-console.log(cs.transform);      // 'matrix(1.03, 0, 0, 1.03, 0, 0)'
-console.log(card.textContent.includes('Drop here')); // true
+const cs = window.getComputedStyle(card)
+console.log(cs.outlineStyle) // 'dashed'
+console.log(cs.outlineColor) // 'rgb(167, 74, 74)'
+console.log(cs.outlineWidth) // '3px'
+console.log(cs.transform) // 'matrix(1.03, 0, 0, 1.03, 0, 0)'
+console.log(card.textContent.includes('Drop here')) // true
 ```
 
 ### Testing DnD with Synthetic Events
@@ -590,6 +644,7 @@ asyncio.run(drag_image_to_category())
 ```
 
 **Important notes for synthetic DnD:**
+
 - The full event sequence is required: `dragstart` → `dragenter` → `dragover` → `drop` → `dragend`
 - `dragover` must have `cancelable: true` and the handler must call `preventDefault()` to allow the drop
 - For file drops, use `dt.items.add(new File(['test'], 'test.jpg', { type: 'image/jpeg' }))` to populate the `Files` type
@@ -603,21 +658,25 @@ Verify filtering by checking `defaultPrevented` on `dragover` events:
 
 ```javascript
 // In browser console or Playwright evaluate:
-const card = document.querySelectorAll('.MuiCard-root')[0];
+const card = document.querySelectorAll('.MuiCard-root')[0]
 
 // text/plain should be REJECTED (defaultPrevented = false)
-const dtText = new DataTransfer();
-dtText.setData('text/plain', 'test');
-const textOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dtText });
-card.dispatchEvent(textOver);
-console.log('text/plain prevented:', textOver.defaultPrevented); // false
+const dtText = new DataTransfer()
+dtText.setData('text/plain', 'test')
+const textOver = new DragEvent('dragover', {
+  bubbles: true,
+  cancelable: true,
+  dataTransfer: dtText,
+})
+card.dispatchEvent(textOver)
+console.log('text/plain prevented:', textOver.defaultPrevented) // false
 
 // HRIV MIME should be ACCEPTED (defaultPrevented = true)
-const dtCat = new DataTransfer();
-dtCat.setData('application/x-hriv-category', '{"id":2}');
-const catOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dtCat });
-card.dispatchEvent(catOver);
-console.log('x-hriv-category prevented:', catOver.defaultPrevented); // true
+const dtCat = new DataTransfer()
+dtCat.setData('application/x-hriv-category', '{"id":2}')
+const catOver = new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: dtCat })
+card.dispatchEvent(catOver)
+console.log('x-hriv-category prevented:', catOver.defaultPrevented) // true
 ```
 
 ### Verifying File Drop Category Pre-Selection
@@ -626,8 +685,8 @@ When files are dropped on a category tile, the upload dialog should open with th
 category pre-selected. After the dialog opens, verify:
 
 ```javascript
-const dialog = document.querySelector('.MuiDialog-root');
-const dialogText = dialog.textContent;
+const dialog = document.querySelector('.MuiDialog-root')
+const dialogText = dialog.textContent
 // Should contain "CategoryArchitecture(0)" (or whichever category was dropped on)
 // NOT just "Category" with no selection
 ```
@@ -671,6 +730,7 @@ instead of `:29229`.
 
 Default seed data is too small to exercise cancellation. Generate ~1 GB of
 incompressible data inside the backend container:
+
 ```bash
 docker exec hriv-backend-1 python3 -c "
 import os, random
@@ -686,6 +746,7 @@ for d in range(20):
 ### Verifying Archive Contents
 
 Archives are stored at `/data/admin_tasks/` inside the backend container:
+
 ```bash
 docker exec hriv-backend-1 find /data/admin_tasks -name "*.tar.gz" -type f
 docker exec hriv-backend-1 tar -tzf /data/admin_tasks/<filename>.tar.gz | head -20
@@ -734,6 +795,7 @@ when the job completes, which triggers ManagePage's `loadImages()` useEffect.
 ### Creating Test Images for Bulk Import
 
 Use ImageMagick to create small test images and ZIP them:
+
 ```bash
 # Create test JPEGs (PIL may not be installed)
 for i in 1 2 3; do
@@ -754,6 +816,7 @@ with zipfile.ZipFile('/tmp/test_bulk_import.zip', 'w') as zf:
 1. Navigate to **Images** tab (ManagePage) — note the current row count.
 2. Click **ADD IMAGES** to open the upload modal.
 3. Inject the ZIP file via Playwright (the native file picker won't work with computer-use):
+
    ```python
    import asyncio
    from playwright.async_api import async_playwright
@@ -768,6 +831,7 @@ with zipfile.ZipFile('/tmp/test_bulk_import.zip', 'w') as zf:
 
    asyncio.run(inject_zip())
    ```
+
 4. Select a target category from the dropdown.
 5. Click **IMPORT 1 FILE** (the button shows file count, not image count).
 6. The upload modal closes, a snackbar shows import progress.
@@ -776,6 +840,7 @@ with zipfile.ZipFile('/tmp/test_bulk_import.zip', 'w') as zf:
 
 **Key behavior:** The table should update automatically when the bulk import
 completes. The `imagesVersion` counter in App.tsx increments on both:
+
 - Bulk import job completion (polling path at `App.tsx:592-594`)
 - Single-image processing completion (processing job path at `App.tsx:477-481`)
 
@@ -826,6 +891,7 @@ and clears canvas metadata (`locked_overlays`, `canvas_annotations`).
 ### Creating Test Images
 
 Generate synthetic test images of varying sizes:
+
 ```bash
 # Small JPEG for quick tests
 python3 -c "import numpy as np; from PIL import Image; Image.fromarray(np.random.randint(0,255,(600,800,3),dtype=np.uint8)).save('/tmp/test_replacement.jpg', quality=85)"
@@ -836,22 +902,29 @@ python3 -c "import numpy as np; from PIL import Image; Image.fromarray(np.random
 
 Alternatively, generate a test image directly in the browser console (avoids
 needing PIL/numpy and the native file picker):
+
 ```javascript
-const canvas = document.createElement('canvas');
-canvas.width = 4000; canvas.height = 3000;
-const ctx = canvas.getContext('2d');
+const canvas = document.createElement('canvas')
+canvas.width = 4000
+canvas.height = 3000
+const ctx = canvas.getContext('2d')
 for (let y = 0; y < 3000; y += 10)
   for (let x = 0; x < 4000; x += 10) {
-    ctx.fillStyle = `rgb(${(x*y)%256},${(x+y)%256},${(x^y)%256})`;
-    ctx.fillRect(x, y, 10, 10);
+    ctx.fillStyle = `rgb(${(x * y) % 256},${(x + y) % 256},${(x ^ y) % 256})`
+    ctx.fillRect(x, y, 10, 10)
   }
-canvas.toBlob(blob => {
-  const file = new File([blob], 'test_image.jpg', {type: 'image/jpeg'});
-  const dt = new DataTransfer(); dt.items.add(file);
-  const input = document.querySelector('input[type="file"]');
-  input.files = dt.files;
-  input.dispatchEvent(new Event('change', {bubbles: true}));
-}, 'image/jpeg', 0.98);
+canvas.toBlob(
+  (blob) => {
+    const file = new File([blob], 'test_image.jpg', { type: 'image/jpeg' })
+    const dt = new DataTransfer()
+    dt.items.add(file)
+    const input = document.querySelector('input[type="file"]')
+    input.files = dt.files
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  },
+  'image/jpeg',
+  0.98,
+)
 ```
 
 ### UI Flow
@@ -881,6 +954,7 @@ match nothing and `set_input_files(...)` fails with a locator timeout. Selecting
 correct page (e.g. by `localhost:5173` in `page.url`) does **not** help here — that
 only picks the tab, not whether the modal is visible. Open the modal first (click the
 row's ⋮ → Replace image / Edit details), then run:
+
 ```python
 import asyncio
 from playwright.async_api import async_playwright
@@ -895,17 +969,20 @@ async def inject_file():
 
 asyncio.run(inject_file())
 ```
+
 This directly sets the hidden `<input type="file">` without needing to interact
 with the native file chooser dialog (modal-open precondition above still applies).
 
 ### Post-Replacement Verification
 
 After the processing snackbar disappears, verify via API:
+
 ```bash
 curl -s -H "Authorization: Bearer $TOKEN" http://localhost:8000/api/images/1 | python3 -m json.tool
 ```
 
 Key assertions:
+
 - `tile_sources` changed from external URL to `/api/tiles/<id>/image.dzi`
 - `thumb` changed to `/api/tiles/<id>/thumbnail.jpeg`
 - `width` and `height` match the replacement image dimensions
@@ -917,6 +994,7 @@ Key assertions:
 ### Known Limitation (Issue #271)
 
 The frontend performs two separate API calls for replacement:
+
 1. Metadata PATCH (`apiUpdateImage`) — updates form fields
 2. File POST (`apiReplaceImage`) — uploads the new file
 
@@ -932,6 +1010,7 @@ by the server. On loopback, the kernel's TCP buffers (128KB–4MB) absorb the en
 file instantly — progress jumps 0→100% before the 500ms React re-render tick fires.
 
 Approaches that do NOT work on localhost:
+
 - `tc qdisc` on port 8000 — wrong port (XHR tracks browser→Vite on 5173)
 - `tc qdisc` on port 5173 IPv4 — Chrome uses IPv6 `::1`, bypasses filter
 - `tc qdisc` on port 5173 IPv4+IPv6 — throttles ALL traffic including PATCH
@@ -981,13 +1060,13 @@ powered by Fabric.js. Annotations are stored as JSON in `metadata_extra.canvas_a
 
 ### Drawing Tools
 
-| Tool | Fabric Object | Notes |
-|---|---|---|
-| Rectangle | `fabric.Rect` | Outlined or filled via fill-mode toggle |
-| Ellipse | `fabric.Ellipse` | Outlined or filled via fill-mode toggle |
-| Arrow | `fabric.Line` | Has arrowhead style selector (none, standard, triangle, circle) |
-| Text | `fabric.IText` | Inline editable |
-| Link | `fabric.IText` | Like text but serialises a URL; shown as clickable in view mode |
+| Tool      | Fabric Object    | Notes                                                           |
+| --------- | ---------------- | --------------------------------------------------------------- |
+| Rectangle | `fabric.Rect`    | Outlined or filled via fill-mode toggle                         |
+| Ellipse   | `fabric.Ellipse` | Outlined or filled via fill-mode toggle                         |
+| Arrow     | `fabric.Line`    | Has arrowhead style selector (none, standard, triangle, circle) |
+| Text      | `fabric.IText`   | Inline editable                                                 |
+| Link      | `fabric.IText`   | Like text but serialises a URL; shown as clickable in view mode |
 
 ### Dual Rendering Modes
 
@@ -1000,6 +1079,7 @@ only affects view mode, while Fabric object styling only affects edit mode.
 ### Arrowhead Scaling
 
 The view-mode arrowhead scaling formula is:
+
 ```
 sw = strokeWidth * zoom
 headLen = Math.max(24, sw * 12)
@@ -1011,6 +1091,7 @@ arrowLineWidth = Math.max(1, sw)
 so prongs match the shaft thickness.
 
 **Testing procedure:**
+
 1. Open an image, enter edit mode (pencil icon).
 2. Draw 4 arrows, each with a different arrowhead style (standard, triangle, circle, plain-line).
 3. Exit edit mode to see the view-mode rendering.

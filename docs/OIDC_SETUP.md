@@ -2,24 +2,24 @@
 
 HRIV supports OpenID Connect (OIDC) single sign-on so that every user
 authenticates through an external Identity Provider (IdP) instead of
-local email/password credentials.  Local login is kept as a fallback for
+local email/password credentials. Local login is kept as a fallback for
 admin bootstrap accounts.
 
 ---
 
 ## Environment Variables
 
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `OIDC_ENABLED` | No | `false` | Set to `true` to activate OIDC login. |
-| `OIDC_ISSUER` | Yes (when enabled) | — | The IdP issuer URL, e.g. `https://login.microsoftonline.com/{tenant}/v2.0`. Must expose `/.well-known/openid-configuration`. |
-| `OIDC_CLIENT_ID` | Yes | — | OAuth 2.0 client / application ID registered with the IdP. |
-| `OIDC_CLIENT_SECRET` | Yes | — | OAuth 2.0 client secret. |
-| `OIDC_REDIRECT_URI` | Yes | — | The callback URL registered with the IdP, e.g. `https://hriv.example.com/api/auth/oidc/callback`. |
-| `OIDC_SCOPES` | No | `openid email profile` | Space-separated list of scopes to request. |
-| `OIDC_ROLE_MAPPING` | No | `{}` | JSON object mapping IdP group names to HRIV roles. See [Role Mapping](#role-mapping). |
-| `OIDC_POST_LOGIN_REDIRECT` | No | — | Frontend URL to redirect to after OIDC login (e.g. `https://hriv.example.com`). Falls back to the first non-wildcard `CORS_ORIGINS` entry. |
-| `OIDC_TRUST_EMAIL` | No | `false` | Set to `true` to skip the `email_verified` check when linking existing accounts by email. **Only enable this with trusted corporate IdPs** (e.g. Vault, internal LDAP) where all emails are known to be valid. Do not enable with public/self-registration IdPs. |
+| Variable                   | Required           | Default                | Description                                                                                                                                                                                                                                                      |
+| -------------------------- | ------------------ | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OIDC_ENABLED`             | No                 | `false`                | Set to `true` to activate OIDC login.                                                                                                                                                                                                                            |
+| `OIDC_ISSUER`              | Yes (when enabled) | —                      | The IdP issuer URL, e.g. `https://login.microsoftonline.com/{tenant}/v2.0`. Must expose `/.well-known/openid-configuration`.                                                                                                                                     |
+| `OIDC_CLIENT_ID`           | Yes                | —                      | OAuth 2.0 client / application ID registered with the IdP.                                                                                                                                                                                                       |
+| `OIDC_CLIENT_SECRET`       | Yes                | —                      | OAuth 2.0 client secret.                                                                                                                                                                                                                                         |
+| `OIDC_REDIRECT_URI`        | Yes                | —                      | The callback URL registered with the IdP, e.g. `https://hriv.example.com/api/auth/oidc/callback`.                                                                                                                                                                |
+| `OIDC_SCOPES`              | No                 | `openid email profile` | Space-separated list of scopes to request.                                                                                                                                                                                                                       |
+| `OIDC_ROLE_MAPPING`        | No                 | `{}`                   | JSON object mapping IdP group names to HRIV roles. See [Role Mapping](#role-mapping).                                                                                                                                                                            |
+| `OIDC_POST_LOGIN_REDIRECT` | No                 | —                      | Frontend URL to redirect to after OIDC login (e.g. `https://hriv.example.com`). Falls back to the first non-wildcard `CORS_ORIGINS` entry.                                                                                                                       |
+| `OIDC_TRUST_EMAIL`         | No                 | `false`                | Set to `true` to skip the `email_verified` check when linking existing accounts by email. **Only enable this with trusted corporate IdPs** (e.g. Vault, internal LDAP) where all emails are known to be valid. Do not enable with public/self-registration IdPs. |
 
 All variables should be provided via Kubernetes Secrets or a `.env` file
 in development.
@@ -46,7 +46,7 @@ in development.
 ## Role Mapping
 
 HRIV maps IdP group memberships to its three roles: `admin`,
-`instructor`, and `student`.  Users whose groups do not match any entry
+`instructor`, and `student`. Users whose groups do not match any entry
 default to `student`.
 
 Configure `OIDC_ROLE_MAPPING` as a JSON object where keys are IdP group
@@ -62,14 +62,14 @@ below) and values are HRIV roles:
 ```
 
 When a user belongs to **multiple** mapped groups, the highest-privilege
-role wins: `admin` > `instructor` > `student`.  This is important for
+role wins: `admin` > `instructor` > `student`. This is important for
 IdPs like Azure AD where users are typically members of several groups
 simultaneously (e.g. both `Current_Employee` → student and
 `HRIV_Admins` → admin).
 
 > **Tip:** If the IdP does not emit a `groups` claim in the ID token,
 > existing users keep their current role and new users default to
-> `student`.  You can promote individual users to `admin` or
+> `student`. You can promote individual users to `admin` or
 > `instructor` through the HRIV admin UI and those promotions will be
 > preserved across OIDC logins as long as the IdP does not supply
 > groups.
@@ -88,7 +88,7 @@ simultaneously (e.g. both `Current_Employee` → student and
    `oidc_subject`), and issues a HRIV JWT.
 5. The backend redirects to the frontend with the JWT in a URL
    fragment (`#oidc_token=...`) so the token is never sent to the
-   server or recorded in access logs.  The frontend stores the token
+   server or recorded in access logs. The frontend stores the token
    and cleans the URL.
 
 ---
@@ -97,25 +97,25 @@ simultaneously (e.g. both `Current_Employee` → student and
 
 Phase 3 adds a nullable `oidc_subject` column to the `users` table.
 This stores the IdP's unique subject identifier (`sub` claim) for each
-user.  Existing local-only accounts have this column set to `NULL`.
+user. Existing local-only accounts have this column set to `NULL`.
 
 When an OIDC user logs in for the first time and their email matches an
 existing local account, the accounts are linked automatically by
-populating `oidc_subject`.  Email matching during account linking is
+populating `oidc_subject`. Email matching during account linking is
 case-insensitive, and all emails are stored in lowercase.
 
 ### Schema provenance
 
 The `oidc_subject` column is part of the Alembic baseline
 (`0001_initial_schema`), so every deployment picks it up automatically
-via `alembic upgrade head`.  No manual SQL is required.
+via `alembic upgrade head`. No manual SQL is required.
 
 ---
 
 ## Local Development
 
 To test OIDC locally, set `OIDC_ENABLED=true` and point to a local
-Keycloak instance or similar IdP.  Make sure `OIDC_REDIRECT_URI` points
+Keycloak instance or similar IdP. Make sure `OIDC_REDIRECT_URI` points
 to `http://localhost:8000/api/auth/oidc/callback` (or wherever the
 backend is running).
 
@@ -129,7 +129,7 @@ configuration.
 
 When connecting HRIV directly to Microsoft Entra ID (without Vault as
 a proxy), the groups claim contains **Object IDs** (GUIDs), not
-display names.  Map the Object IDs in `OIDC_ROLE_MAPPING`:
+display names. Map the Object IDs in `OIDC_ROLE_MAPPING`:
 
 ```json
 {
@@ -139,12 +139,12 @@ display names.  Map the Object IDs in `OIDC_ROLE_MAPPING`:
 }
 ```
 
-| Setting | Value |
-|---|---|
-| `OIDC_ISSUER` | `https://login.microsoftonline.com/{tenant-id}/v2.0` |
-| `OIDC_CLIENT_ID` | The Application (client) ID from the Entra app registration |
-| `OIDC_SCOPES` | `openid email profile` |
-| `OIDC_TRUST_EMAIL` | `true` (corporate Entra ID — all emails are managed) |
+| Setting            | Value                                                       |
+| ------------------ | ----------------------------------------------------------- |
+| `OIDC_ISSUER`      | `https://login.microsoftonline.com/{tenant-id}/v2.0`        |
+| `OIDC_CLIENT_ID`   | The Application (client) ID from the Entra app registration |
+| `OIDC_SCOPES`      | `openid email profile`                                      |
+| `OIDC_TRUST_EMAIL` | `true` (corporate Entra ID — all emails are managed)        |
 
 ### Prerequisites
 
@@ -152,7 +152,7 @@ display names.  Map the Object IDs in `OIDC_ROLE_MAPPING`:
    `OIDC_REDIRECT_URI`.
 2. **Client secret** generated for the app registration.
 3. **Groups claim** enabled in Token Configuration → Add groups claim →
-   Security groups.  The token will contain the Object IDs of all
+   Security groups. The token will contain the Object IDs of all
    security groups the user belongs to.
 4. **Role groups** created and assigned to the app registration so they
    appear in the token's `groups` claim.
@@ -160,7 +160,7 @@ display names.  Map the Object IDs in `OIDC_ROLE_MAPPING`:
 ### Multiple group membership
 
 Users in a corporate directory typically belong to several groups at
-once (e.g. `Current_Employee` *and* `HRIV_Admins`).  Because HRIV
+once (e.g. `Current_Employee` _and_ `HRIV_Admins`). Because HRIV
 resolves the **highest-privilege** role across all matched groups,
 an admin who is also an employee correctly receives the `admin` role
 even if `Current_Employee` → `student` appears first in the token.
@@ -176,14 +176,14 @@ for teams using Vault as their IdP.
 
 ### Vault OIDC provider details
 
-| Field | Value |
-|---|---|
-| Issuer | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider` |
-| Discovery URL | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/openid-configuration` |
-| Authorization endpoint | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/authorize` |
-| Token endpoint | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/token` |
-| JWKS URI | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/keys` |
-| Client ID (HRIV) | `hkPdYUJqqEYWxiVwIrgrAjiS8fLja2ip` |
+| Field                  | Value                                                                                                     |
+| ---------------------- | --------------------------------------------------------------------------------------------------------- |
+| Issuer                 | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider`                                  |
+| Discovery URL          | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/openid-configuration` |
+| Authorization endpoint | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/authorize`                        |
+| Token endpoint         | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/token`                            |
+| JWKS URI               | `https://vault.example.ca:8200/v1/identity/oidc/provider/vault-provider/.well-known/keys`                 |
+| Client ID (HRIV)       | `hkPdYUJqqEYWxiVwIrgrAjiS8fLja2ip`                                                                        |
 
 > **Important:** `OIDC_ISSUER` must be the **full provider path**
 > including port 8200 and `/v1/identity/oidc/provider/vault-provider`.
@@ -210,7 +210,7 @@ open http://localhost:5173
 ```
 
 Click **"Sign in with ..."** on the login page. The browser will
-redirect to the Vault authorization endpoint.  After authenticating,
+redirect to the Vault authorization endpoint. After authenticating,
 Vault redirects back to
 `http://localhost:8000/api/auth/oidc/callback`, which exchanges the
 code for tokens, upserts your user, and redirects to the frontend with
@@ -218,7 +218,7 @@ a JWT fragment.
 
 ### Retrieving the client secret from Vault
 
-The client secret is set when the OIDC client is created in Vault.  If
+The client secret is set when the OIDC client is created in Vault. If
 you manage Vault via Terraform, the secret is in the Terraform state or
 output:
 
@@ -237,18 +237,18 @@ the client secret associated with client ID
 ### Vault-specific notes
 
 - **No `email_verified` claim:** Vault's OIDC provider does not emit
-  `email_verified` in the ID token.  Set `OIDC_TRUST_EMAIL=true` so
+  `email_verified` in the ID token. Set `OIDC_TRUST_EMAIL=true` so
   that first-time OIDC users can be linked to existing accounts by
-  email.  This is safe because Vault is a trusted corporate IdP where
+  email. This is safe because Vault is a trusted corporate IdP where
   all email addresses are administrator-managed.
 
 - **No dedicated userinfo endpoint:** Vault returns all claims in the
-  ID token itself.  The backend handles this correctly — it reads
+  ID token itself. The backend handles this correctly — it reads
   `userinfo` from the parsed ID token first, and only falls back to the
   userinfo endpoint if that is missing.
 
 - **Groups claim:** To enable role mapping, the Vault OIDC scope /
-  template must include a `groups` claim.  If it is not present, all
+  template must include a `groups` claim. If it is not present, all
   new users default to `student` and existing users keep their current
   role.
 
@@ -285,11 +285,11 @@ curl -s http://localhost:8000/api/auth/me \
 
 ### Troubleshooting
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| 404 on `/api/auth/oidc/login` | `OIDC_ENABLED` is not `true` | Check `backend/.env` is mounted and has `OIDC_ENABLED=true` |
-| `OIDC client not configured` (500) | Authlib could not register the client at startup | Check backend logs for discovery URL errors; verify `OIDC_ISSUER` is the full Vault path |
-| `OIDC authentication failed` (401) | Token exchange failed | Verify `OIDC_CLIENT_SECRET` is correct; check that `OIDC_REDIRECT_URI` matches what is registered in Vault |
-| Redirect loop or blank page | Frontend redirect misconfigured | Verify `OIDC_POST_LOGIN_REDIRECT=http://localhost:5173` and `CORS_ORIGINS` includes it |
-| `IdP did not return required claims` (401) | ID token missing `sub` or `email` | Check Vault OIDC scope template includes `email` and `sub` claims |
-| `email_verified` linking skipped | `OIDC_TRUST_EMAIL` not set | Set `OIDC_TRUST_EMAIL=true` for Vault |
+| Symptom                                    | Cause                                            | Fix                                                                                                        |
+| ------------------------------------------ | ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| 404 on `/api/auth/oidc/login`              | `OIDC_ENABLED` is not `true`                     | Check `backend/.env` is mounted and has `OIDC_ENABLED=true`                                                |
+| `OIDC client not configured` (500)         | Authlib could not register the client at startup | Check backend logs for discovery URL errors; verify `OIDC_ISSUER` is the full Vault path                   |
+| `OIDC authentication failed` (401)         | Token exchange failed                            | Verify `OIDC_CLIENT_SECRET` is correct; check that `OIDC_REDIRECT_URI` matches what is registered in Vault |
+| Redirect loop or blank page                | Frontend redirect misconfigured                  | Verify `OIDC_POST_LOGIN_REDIRECT=http://localhost:5173` and `CORS_ORIGINS` includes it                     |
+| `IdP did not return required claims` (401) | ID token missing `sub` or `email`                | Check Vault OIDC scope template includes `email` and `sub` claims                                          |
+| `email_verified` linking skipped           | `OIDC_TRUST_EMAIL` not set                       | Set `OIDC_TRUST_EMAIL=true` for Vault                                                                      |

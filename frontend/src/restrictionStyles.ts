@@ -1,8 +1,6 @@
 import type { SxProps, Theme } from '@mui/material/styles'
 
-type RestrictionBaseSx =
-  | Record<string, unknown>
-  | ((theme: Theme) => Record<string, unknown>)
+type RestrictionBaseSx = Record<string, unknown> | ((theme: Theme) => Record<string, unknown>)
 
 export const INHERITED_RESTRICTION_OPACITY = 0.6
 

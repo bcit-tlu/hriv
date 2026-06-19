@@ -21,6 +21,7 @@ import { getVisibilityColors } from '../theme'
 import { isCategoryHiddenInTree } from '../treeUtils'
 import { useColorMode } from '../useColorMode'
 import CategoryPickerSelect from './CategoryPickerSelect'
+import { MAX_NOTE_LENGTH } from '../constants'
 
 export interface ImageFormData {
   name?: string
@@ -33,16 +34,26 @@ export interface ImageFormData {
 
 /** Recognised image MIME types (must stay in sync with backend). */
 const IMAGE_MIME_TYPES = new Set<string>([
-  'image/jpeg', 'image/png', 'image/tiff', 'image/gif', 'image/webp',
+  'image/jpeg',
+  'image/png',
+  'image/tiff',
+  'image/gif',
+  'image/webp',
 ])
 
 /** Recognised image extensions for drag-and-drop validation. */
 const IMAGE_EXTENSIONS = new Set([
-  '.jpg', '.jpeg', '.png', '.gif', '.webp', '.tif', '.tiff', '.svs',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.webp',
+  '.tif',
+  '.tiff',
+  '.svs',
 ])
 
-const ACCEPTED_IMAGE_TYPES =
-  'image/jpeg,image/png,image/tiff,image/gif,image/webp,.tif,.tiff,.svs'
+const ACCEPTED_IMAGE_TYPES = 'image/jpeg,image/png,image/tiff,image/gif,image/webp,.tif,.tiff,.svs'
 
 function isImageFile(file: File): boolean {
   if (IMAGE_MIME_TYPES.has(file.type)) return true
@@ -74,8 +85,18 @@ interface EditImageModalProps {
   categories: Category[]
   programs: Program[]
   groups?: Group[]
-  onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
+  onAddCategory?: (
+    label: string,
+    parentId: number | null,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<number | void>
+  onEditCategory?: (
+    categoryId: number,
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
   onViewImage?: () => void
 }
@@ -190,36 +211,39 @@ function EditImageForm({
 
   // ── Replacement handlers ──────────────────────────────
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
-    if (!onReplace) return
-    const dropped = e.dataTransfer.files[0]
-    if (dropped && isImageFile(dropped)) {
-      setReplaceFile(dropped)
-      setConfirmReplace(false)
-    }
-  }, [onReplace])
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      setDragOver(false)
+      if (!onReplace) return
+      const dropped = e.dataTransfer.files[0]
+      if (dropped && isImageFile(dropped)) {
+        setReplaceFile(dropped)
+        setConfirmReplace(false)
+      }
+    },
+    [onReplace],
+  )
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    if (onReplace) setDragOver(true)
-  }, [onReplace])
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      if (onReplace) setDragOver(true)
+    },
+    [onReplace],
+  )
 
   const handleDragLeave = useCallback(() => {
     setDragOver(false)
   }, [])
 
-  const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const selected = e.target.files?.[0]
-      if (selected && isImageFile(selected)) {
-        setReplaceFile(selected)
-        setConfirmReplace(false)
-      }
-    },
-    [],
-  )
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = e.target.files?.[0]
+    if (selected && isImageFile(selected)) {
+      setReplaceFile(selected)
+      setConfirmReplace(false)
+    }
+  }, [])
 
   const handleClearFile = () => {
     setReplaceFile(null)
@@ -256,48 +280,52 @@ function EditImageForm({
       <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         Edit Details
         <Box sx={{ display: 'flex', gap: 1 }}>
-          {image && (() => {
-            if (categoryHidden) {
+          {image &&
+            (() => {
+              if (categoryHidden) {
+                return (
+                  <Button
+                    size="small"
+                    variant="text"
+                    startIcon={<VisibilityOff />}
+                    disabled
+                    aria-label="Visibility: Hidden by category"
+                    sx={{
+                      '&.Mui-disabled': { color: visColors.inactive },
+                      filter: 'grayscale(100%)',
+                    }}
+                  >
+                    Hidden by Category
+                  </Button>
+                )
+              }
+              if (!active) {
+                return (
+                  <Button
+                    size="small"
+                    variant="text"
+                    startIcon={<VisibilityOff />}
+                    onClick={() => setActive(true)}
+                    aria-label="Visibility: Show to students"
+                    sx={{ color: visColors.inactive, filter: 'grayscale(100%)' }}
+                  >
+                    Show Image
+                  </Button>
+                )
+              }
               return (
                 <Button
                   size="small"
                   variant="text"
-                  startIcon={<VisibilityOff />}
-                  disabled
-                  aria-label="Visibility: Hidden by category"
-                  sx={{ '&.Mui-disabled': { color: visColors.inactive }, filter: 'grayscale(100%)' }}
+                  startIcon={<Visibility />}
+                  onClick={() => setActive(false)}
+                  aria-label="Visibility: Hide from students"
+                  color="primary"
                 >
-                  Hidden by Category
+                  Hide Image
                 </Button>
               )
-            }
-            if (!active) {
-              return (
-                <Button
-                  size="small"
-                  variant="text"
-                  startIcon={<VisibilityOff />}
-                  onClick={() => setActive(true)}
-                  aria-label="Visibility: Show to students"
-                  sx={{ color: visColors.inactive, filter: 'grayscale(100%)' }}
-                >
-                  Show Image
-                </Button>
-              )
-            }
-            return (
-              <Button
-                size="small"
-                variant="text"
-                startIcon={<Visibility />}
-                onClick={() => setActive(false)}
-                aria-label="Visibility: Hide from students"
-                color="primary"
-              >
-                Hide Image
-              </Button>
-            )
-          })()}
+            })()}
           {onViewImage && (
             <Button
               size="small"
@@ -316,9 +344,7 @@ function EditImageForm({
           )}
         </Box>
       </DialogTitle>
-      <DialogContent
-        sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
-      >
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
         {/* Replace image drop zone */}
         <input
           ref={fileInputRef}
@@ -362,7 +388,10 @@ function EditImageForm({
               </Typography>
               <Button
                 size="small"
-                onClick={(e) => { e.stopPropagation(); handleClearFile() }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  handleClearFile()
+                }}
                 sx={{ mt: 0.5 }}
               >
                 Clear
@@ -394,9 +423,9 @@ function EditImageForm({
 
         {replaceFile && confirmReplace && (
           <Alert severity="warning" sx={{ mt: -1 }}>
-            Replacing this image will delete the current image file, all tiles,
-            and any canvas annotations and overlays. This cannot be undone.
-            Click &quot;Replace &amp; Save&quot; again to confirm.
+            Replacing this image will delete the current image file, all tiles, and any canvas
+            annotations and overlays. This cannot be undone. Click &quot;Replace &amp; Save&quot;
+            again to confirm.
           </Alert>
         )}
 
@@ -452,6 +481,11 @@ function EditImageForm({
           variant="outlined"
           value={note}
           onChange={(e) => setNote(e.target.value)}
+          multiline
+          minRows={3}
+          maxRows={10}
+          slotProps={{ htmlInput: { maxLength: MAX_NOTE_LENGTH } }}
+          helperText={`${note.length}/${MAX_NOTE_LENGTH}`}
         />
         <Typography variant="subtitle2" sx={{ mt: 1 }}>
           Measurement Settings
@@ -498,9 +532,7 @@ function EditImageForm({
                 disabled={disableActions}
                 fullWidth
               >
-                {confirmDelete
-                  ? 'Confirm Delete Image'
-                  : 'Delete Image'}
+                {confirmDelete ? 'Confirm Delete Image' : 'Delete Image'}
               </Button>
               {confirmDelete && (
                 <Typography
@@ -526,9 +558,7 @@ function EditImageForm({
             justifyContent: 'space-between',
           }}
         >
-          <Typography variant="body2">
-            You have unsaved changes. Discard and view image?
-          </Typography>
+          <Typography variant="body2">You have unsaved changes. Discard and view image?</Typography>
           <Box sx={{ display: 'flex', gap: 1, ml: 2, flexShrink: 0 }}>
             <Button size="small" onClick={() => setConfirmViewImage(false)}>
               Cancel
@@ -562,11 +592,7 @@ function EditImageForm({
             {confirmReplace ? 'Confirm Replace & Save' : 'Replace & Save'}
           </Button>
         ) : (
-          <Button
-            onClick={handleSave}
-            variant="contained"
-            disabled={!name.trim() || busy}
-          >
+          <Button onClick={handleSave} variant="contained" disabled={!name.trim() || busy}>
             Save
           </Button>
         )}
@@ -574,7 +600,10 @@ function EditImageForm({
       <Snackbar
         open={deleteError !== null}
         autoHideDuration={6000}
-        onClose={(_event, reason) => { if (reason === 'clickaway') return; setDeleteError(null) }}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return
+          setDeleteError(null)
+        }}
       >
         <Alert severity="error" variant="filled" onClose={() => setDeleteError(null)}>
           {deleteError}

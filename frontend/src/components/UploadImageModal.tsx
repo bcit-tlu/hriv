@@ -49,7 +49,12 @@ interface UploadImageModalProps {
   onClose: () => void
   onUploaded: () => void
   /** Called after file upload completes so the parent can track processing. */
-  onProcessingStarted?: (sourceImageId: number, filename: string, fileSize: number, uploadId: number) => void
+  onProcessingStarted?: (
+    sourceImageId: number,
+    filename: string,
+    fileSize: number,
+    uploadId: number,
+  ) => void
   /** Called when a file upload begins (before server response). */
   onUploadStarted?: (uploadId: number, filename: string, fileSize: number) => void
   /** Called with progress fraction (0-1) during upload. */
@@ -69,8 +74,18 @@ interface UploadImageModalProps {
   categories: Category[]
   programs?: Program[]
   groups?: Group[]
-  onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
+  onAddCategory?: (
+    label: string,
+    parentId: number | null,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<number | void>
+  onEditCategory?: (
+    categoryId: number,
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
 }
 
@@ -138,20 +153,23 @@ export default function UploadImageModal({
     setError(null)
   }, [initialCategoryId])
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
-    const dropped = Array.from(e.dataTransfer.files).filter(isAcceptedFile)
-    if (dropped.length === 0) return
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      setDragOver(false)
+      const dropped = Array.from(e.dataTransfer.files).filter(isAcceptedFile)
+      if (dropped.length === 0) return
 
-    setFiles((prev) => {
-      const next = [...prev, ...dropped]
-      if (next.length === 1 && isImageFile(next[0]) && !name) {
-        setName(next[0].name.replace(/\.[^.]+$/, ''))
-      }
-      return next
-    })
-  }, [name])
+      setFiles((prev) => {
+        const next = [...prev, ...dropped]
+        if (next.length === 1 && isImageFile(next[0]) && !name) {
+          setName(next[0].name.replace(/\.[^.]+$/, ''))
+        }
+        return next
+      })
+    },
+    [name],
+  )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -205,8 +223,7 @@ export default function UploadImageModal({
       uploadIdRef.current = uploadId
       const abort = new AbortController()
       abortRef.current = abort
-      const uploadFilename =
-        files.length === 1 ? files[0].name : `${files.length} files`
+      const uploadFilename = files.length === 1 ? files[0].name : `${files.length} files`
       const uploadFileSize = files.reduce((total, file) => total + file.size, 0)
       onUploadStarted?.(uploadId, uploadFilename, uploadFileSize)
       try {
@@ -286,8 +303,7 @@ export default function UploadImageModal({
   }
 
   const singleFile = files.length === 1 && !bulk ? files[0] : null
-  const selectedBytes =
-    singleFile?.size ?? files.reduce((total, file) => total + file.size, 0)
+  const selectedBytes = singleFile?.size ?? files.reduce((total, file) => total + file.size, 0)
 
   return (
     <Dialog
@@ -298,9 +314,7 @@ export default function UploadImageModal({
       TransitionProps={{ onExited: handleReset }}
     >
       <DialogTitle>Add Images</DialogTitle>
-      <DialogContent
-        sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
-      >
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
         <input
           ref={fileInputRef}
           type="file"
@@ -309,131 +323,127 @@ export default function UploadImageModal({
           hidden
           onChange={handleFileSelect}
         />
-            <Box
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onClick={() => fileInputRef.current?.click()}
-              sx={{
-                mt: 1,
-                border: '2px dashed',
-                borderColor: dragOver ? 'primary.main' : 'grey.400',
-                borderRadius: 2,
-                p: 4,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                minHeight: 180,
-                bgcolor: dragOver ? 'action.hover' : 'grey.50',
-                transition: 'all 0.2s',
-                cursor: 'pointer',
-              }}
-            >
-              <CloudUploadIcon
-                sx={{ fontSize: 48, color: 'grey.500', mb: 1 }}
-              />
-              {singleFile ? (
-                <>
-                  <Typography variant="body1" sx={{ fontWeight: 500 }}>
-                    {singleFile.name}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {formatBytes(singleFile.size)}
-                  </Typography>
-                </>
-              ) : files.length === 0 ? (
-                <>
-                  <Typography variant="body1" color="text.secondary">
-                    Drag and drop images or zip files here
-                  </Typography>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ mt: 0.5 }}
-                  >
-                    or{' '}
-                    <Typography
-                      component="span"
-                      variant="body2"
-                      color="primary"
-                      sx={{ cursor: 'pointer', textDecoration: 'underline' }}
-                    >
-                      browse to upload
-                    </Typography>
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
-                    Supports JPEG, PNG, TIFF, GIF, WebP, SVS, and ZIP files.
-                  </Typography>
-                </>
-              ) : (
-                <Typography variant="body1" color="text.secondary">
-                  {files.length} file{files.length !== 1 ? 's' : ''} selected
+        <Box
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onClick={() => fileInputRef.current?.click()}
+          sx={{
+            mt: 1,
+            border: '2px dashed',
+            borderColor: dragOver ? 'primary.main' : 'grey.400',
+            borderRadius: 2,
+            p: 4,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight: 180,
+            bgcolor: dragOver ? 'action.hover' : 'grey.50',
+            transition: 'all 0.2s',
+            cursor: 'pointer',
+          }}
+        >
+          <CloudUploadIcon sx={{ fontSize: 48, color: 'grey.500', mb: 1 }} />
+          {singleFile ? (
+            <>
+              <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                {singleFile.name}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {formatBytes(singleFile.size)}
+              </Typography>
+            </>
+          ) : files.length === 0 ? (
+            <>
+              <Typography variant="body1" color="text.secondary">
+                Drag and drop images or zip files here
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                or{' '}
+                <Typography
+                  component="span"
+                  variant="body2"
+                  color="primary"
+                  sx={{ cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                  browse to upload
                 </Typography>
-              )}
-            </Box>
-
-            {/* File chips for bulk mode */}
-            {bulk && files.length > 0 && (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {files.map((f, i) => (
-                  <Chip
-                    key={`${f.name}-${i}`}
-                    label={f.name}
-                    size="small"
-                    onDelete={() => handleRemoveFile(i)}
-                    color={isZipFile(f) ? 'secondary' : 'default'}
-                  />
-                ))}
-              </Box>
-            )}
-
-            {/* Name field only in single-image mode */}
-            {!bulk && (
-              <TextField
-                label="Name"
-                fullWidth
-                variant="outlined"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Image name (defaults to filename)"
-              />
-            )}
-
-            <Box>
-              <CategoryPickerSelect
-                categories={categories}
-                value={categoryId}
-                onChange={setCategoryId}
-                onAddCategory={onAddCategory}
-                onEditCategory={onEditCategory}
-                onToggleVisibility={onToggleVisibility}
-                programs={programs}
-                groups={groups}
-              />
-            </Box>
-            <ImageMetadataFields
-              values={metadata}
-              onChange={setMetadata}
-              idPrefix="upload"
-              categoryHidden={isCategoryHiddenInTree(categories, categoryId)}
-            />
-            {uploading && uploadProgress !== null && (
-              <Box sx={{ width: '100%' }}>
-                <LinearProgress
-                  variant="determinate"
-                  value={Math.round(uploadProgress * 100)}
-                  sx={{ height: 8, borderRadius: 1 }}
-                />
-                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
-                  Uploading: {Math.round(uploadProgress * 100)}%
-                  {` (${formatBytes(Math.round(uploadProgress * selectedBytes))} / ${formatBytes(selectedBytes)})`}
-                </Typography>
-              </Box>
-            )}
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-              Uploaded images are processed into zoomable views and named from their filenames. ZIP uploads are automatically extracted and imported, and metadata can be bulk-edited later from the <strong>Images</strong> page.
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1 }}>
+                Supports JPEG, PNG, TIFF, GIF, WebP, SVS, and ZIP files.
+              </Typography>
+            </>
+          ) : (
+            <Typography variant="body1" color="text.secondary">
+              {files.length} file{files.length !== 1 ? 's' : ''} selected
             </Typography>
+          )}
+        </Box>
+
+        {/* File chips for bulk mode */}
+        {bulk && files.length > 0 && (
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+            {files.map((f, i) => (
+              <Chip
+                key={`${f.name}-${i}`}
+                label={f.name}
+                size="small"
+                onDelete={() => handleRemoveFile(i)}
+                color={isZipFile(f) ? 'secondary' : 'default'}
+              />
+            ))}
+          </Box>
+        )}
+
+        {/* Name field only in single-image mode */}
+        {!bulk && (
+          <TextField
+            label="Name"
+            fullWidth
+            variant="outlined"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Image name (defaults to filename)"
+          />
+        )}
+
+        <Box>
+          <CategoryPickerSelect
+            categories={categories}
+            value={categoryId}
+            onChange={setCategoryId}
+            onAddCategory={onAddCategory}
+            onEditCategory={onEditCategory}
+            onToggleVisibility={onToggleVisibility}
+            programs={programs}
+            groups={groups}
+          />
+        </Box>
+        <ImageMetadataFields
+          values={metadata}
+          onChange={setMetadata}
+          idPrefix="upload"
+          categoryHidden={isCategoryHiddenInTree(categories, categoryId)}
+        />
+        {uploading && uploadProgress !== null && (
+          <Box sx={{ width: '100%' }}>
+            <LinearProgress
+              variant="determinate"
+              value={Math.round(uploadProgress * 100)}
+              sx={{ height: 8, borderRadius: 1 }}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5 }}>
+              Uploading: {Math.round(uploadProgress * 100)}%
+              {` (${formatBytes(Math.round(uploadProgress * selectedBytes))} / ${formatBytes(selectedBytes)})`}
+            </Typography>
+          </Box>
+        )}
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+          Uploaded images are processed into zoomable views and named from their filenames. ZIP
+          uploads are automatically extracted and imported, and metadata can be bulk-edited later
+          from the <strong>Images</strong> page.
+        </Typography>
         {error && (
           <Alert severity="error" sx={{ mt: 1 }} onClose={() => setError(null)}>
             {error}
@@ -459,7 +469,9 @@ export default function UploadImageModal({
           startIcon={uploading ? <CircularProgress size={16} /> : undefined}
         >
           {uploading
-            ? bulk ? 'Uploading...' : 'Adding\u2026'
+            ? bulk
+              ? 'Uploading...'
+              : 'Adding\u2026'
             : bulk
               ? `Import ${files.length} file${files.length !== 1 ? 's' : ''}`
               : 'Add'}

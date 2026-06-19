@@ -42,25 +42,25 @@ docker compose --profile backup run --rm backup restore hriv-backup-20260101-020
 
 Each snapshot is a `.tar.gz` archive containing:
 
-| File | Description |
-|---|---|
-| `db.sql` | Full PostgreSQL dump (`pg_dump --no-owner --no-acl`) |
-| `data/` | Complete copy of the image filesystem (source images + DZI tiles) |
-| `manifest.json` | Metadata: timestamp, file listing with SHA-256 checksums |
+| File            | Description                                                       |
+| --------------- | ----------------------------------------------------------------- |
+| `db.sql`        | Full PostgreSQL dump (`pg_dump --no-owner --no-acl`)              |
+| `data/`         | Complete copy of the image filesystem (source images + DZI tiles) |
+| `manifest.json` | Metadata: timestamp, file listing with SHA-256 checksums          |
 
 ## Configuration
 
 All settings are controlled via environment variables in `docker-compose.yml`:
 
-| Variable | Default | Description |
-|---|---|---|
-| `DATABASE_URL` | `postgresql://hriv:hriv@db:5432/hriv` | PostgreSQL connection string |
-| `DATA_DIR` | `/data` | Path to the image data volume |
-| `BACKUP_CRON_SCHEDULE` | `0 2 * * *` | Cron expression for scheduled backups |
-| `BACKUP_RETENTION_COUNT` | `30` | Number of snapshots to keep (older ones are deleted) |
-| `AZURE_STORAGE_CONNECTION_STRING` | *(empty)* | Azure Blob Storage connection string |
-| `AZURE_STORAGE_CONTAINER` | *(empty)* | Azure Blob Storage container name |
-| `AZURE_BLOB_PREFIX` | `hriv-backups` | Blob name prefix (folder) inside the container |
+| Variable                          | Default                               | Description                                          |
+| --------------------------------- | ------------------------------------- | ---------------------------------------------------- |
+| `DATABASE_URL`                    | `postgresql://hriv:hriv@db:5432/hriv` | PostgreSQL connection string                         |
+| `DATA_DIR`                        | `/data`                               | Path to the image data volume                        |
+| `BACKUP_CRON_SCHEDULE`            | `0 2 * * *`                           | Cron expression for scheduled backups                |
+| `BACKUP_RETENTION_COUNT`          | `30`                                  | Number of snapshots to keep (older ones are deleted) |
+| `AZURE_STORAGE_CONNECTION_STRING` | _(empty)_                             | Azure Blob Storage connection string                 |
+| `AZURE_STORAGE_CONTAINER`         | _(empty)_                             | Azure Blob Storage container name                    |
+| `AZURE_BLOB_PREFIX`               | `hriv-backups`                        | Blob name prefix (folder) inside the container       |
 
 ### Local-Only Mode
 
@@ -128,6 +128,7 @@ curl -X PUT "https://<host>/api/admin/maintenance?enabled=false" -H "Authorizati
 ```
 
 > **Note:** Auth endpoints are blocked during maintenance, so the admin JWT must still be valid. If the JWT expires while maintenance is active, remove the flag file directly:
+>
 > ```bash
 > kubectl exec -n hriv deploy/hriv-backup -- rm /data/.maintenance
 > ```
@@ -151,6 +152,7 @@ docker compose up -d
 ```
 
 The restore command will:
+
 1. Enable maintenance mode (frontend shows overlay)
 2. Download the snapshot from Azure Blob Storage (or use local `/backups` volume)
 3. Drop and recreate all database tables from the `pg_dump`

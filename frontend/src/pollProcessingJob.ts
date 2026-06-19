@@ -10,34 +10,34 @@
  */
 
 export interface SourceImageStatus {
-    /** Backend-reported status — any string is tolerated; only the three
-     * recognized values below trigger callbacks. */
-    status: string
-    /** Integer 0–100. */
-    progress: number
-    status_message?: string | null
-    error_message?: string | null
-    image_id?: number | null
+  /** Backend-reported status — any string is tolerated; only the three
+   * recognized values below trigger callbacks. */
+  status: string
+  /** Integer 0–100. */
+  progress: number
+  status_message?: string | null
+  error_message?: string | null
+  image_id?: number | null
 }
 
 export interface PollProcessingJobCallbacks {
-    /** Fetch the current status of the job.  Rejections are treated as
-     * transient errors and the poll is retried after `pollIntervalMs`. */
-    fetchStatus: (jobId: number) => Promise<SourceImageStatus>
-    /** Called exactly once when the backend reports `status === "completed"`. */
-    onCompleted: (imageId: number | null) => void | Promise<void>
-    /** Called exactly once when the backend reports `status === "failed"`. */
-    onFailed: (progress: number, errorMessage: string | null) => void
-    /** Called on every poll that reports a non-terminal status. */
-    onProgress: (progress: number, statusMessage: string | null) => void
-    /** Interval between polls, in milliseconds.  Defaults to 3000. */
-    pollIntervalMs?: number
+  /** Fetch the current status of the job.  Rejections are treated as
+   * transient errors and the poll is retried after `pollIntervalMs`. */
+  fetchStatus: (jobId: number) => Promise<SourceImageStatus>
+  /** Called exactly once when the backend reports `status === "completed"`. */
+  onCompleted: (imageId: number | null) => void | Promise<void>
+  /** Called exactly once when the backend reports `status === "failed"`. */
+  onFailed: (progress: number, errorMessage: string | null) => void
+  /** Called on every poll that reports a non-terminal status. */
+  onProgress: (progress: number, statusMessage: string | null) => void
+  /** Interval between polls, in milliseconds.  Defaults to 3000. */
+  pollIntervalMs?: number
 }
 
 export interface PollHandle {
-    /** Abort any in-flight fetch and cancel the scheduled next poll.
-     * Safe to call multiple times. */
-    cancel(): void
+  /** Abort any in-flight fetch and cancel the scheduled next poll.
+   * Safe to call multiple times. */
+  cancel(): void
 }
 
 const DEFAULT_POLL_INTERVAL_MS = 3000
@@ -51,60 +51,57 @@ const DEFAULT_POLL_INTERVAL_MS = 3000
  * - After `cancel()` no further callbacks fire.
  * - Transient fetch rejections schedule a retry at the same interval.
  */
-export function pollProcessingJob(
-    jobId: number,
-    cb: PollProcessingJobCallbacks,
-): PollHandle {
-    const controller = new AbortController()
-    const interval = cb.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS
-    let timer: ReturnType<typeof setTimeout> | null = null
-    let terminated = false
+export function pollProcessingJob(jobId: number, cb: PollProcessingJobCallbacks): PollHandle {
+  const controller = new AbortController()
+  const interval = cb.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let terminated = false
 
-    const scheduleNext = () => {
-        if (controller.signal.aborted || terminated) return
-        timer = setTimeout(poll, interval)
+  const scheduleNext = () => {
+    if (controller.signal.aborted || terminated) return
+    timer = setTimeout(poll, interval)
+  }
+
+  const poll = async () => {
+    if (controller.signal.aborted || terminated) return
+    try {
+      const src = await cb.fetchStatus(jobId)
+      if (controller.signal.aborted || terminated) return
+
+      if (src.status === 'completed') {
+        // Await the terminal callback *before* flipping `terminated`
+        // so that if it rejects (e.g. a data-refresh network blip),
+        // the outer catch schedules a retry — matching the
+        // pre-extraction behaviour where the whole poll was retried
+        // on any error inside the completion handler.
+        await cb.onCompleted(src.image_id ?? null)
+        terminated = true
+        return
+      }
+      if (src.status === 'failed') {
+        cb.onFailed(src.progress, src.error_message ?? null)
+        terminated = true
+        return
+      }
+
+      cb.onProgress(src.progress, src.status_message ?? null)
+      scheduleNext()
+    } catch {
+      // Transient error — retry on the same schedule.
+      scheduleNext()
     }
+  }
 
-    const poll = async () => {
-        if (controller.signal.aborted || terminated) return
-        try {
-            const src = await cb.fetchStatus(jobId)
-            if (controller.signal.aborted || terminated) return
+  // Kick off the first poll.
+  void poll()
 
-            if (src.status === 'completed') {
-                // Await the terminal callback *before* flipping `terminated`
-                // so that if it rejects (e.g. a data-refresh network blip),
-                // the outer catch schedules a retry — matching the
-                // pre-extraction behaviour where the whole poll was retried
-                // on any error inside the completion handler.
-                await cb.onCompleted(src.image_id ?? null)
-                terminated = true
-                return
-            }
-            if (src.status === 'failed') {
-                cb.onFailed(src.progress, src.error_message ?? null)
-                terminated = true
-                return
-            }
-
-            cb.onProgress(src.progress, src.status_message ?? null)
-            scheduleNext()
-        } catch {
-            // Transient error — retry on the same schedule.
-            scheduleNext()
-        }
-    }
-
-    // Kick off the first poll.
-    void poll()
-
-    return {
-        cancel() {
-            controller.abort()
-            if (timer !== null) {
-                clearTimeout(timer)
-                timer = null
-            }
-        },
-    }
+  return {
+    cancel() {
+      controller.abort()
+      if (timer !== null) {
+        clearTimeout(timer)
+        timer = null
+      }
+    },
+  }
 }

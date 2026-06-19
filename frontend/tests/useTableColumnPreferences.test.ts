@@ -51,11 +51,14 @@ describe('useTableColumnPreferences', () => {
   it('loads stored preferences from localStorage on mount', () => {
     const storageKey = storageKeyFor(1)
     localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
-    localStorage.setItem(storageKey, JSON.stringify({
-      name: false,
-      email: true,
-      role: false,
-    }))
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({
+        name: false,
+        email: true,
+        role: false,
+      }),
+    )
 
     const { result } = renderPreferencesHook()
 

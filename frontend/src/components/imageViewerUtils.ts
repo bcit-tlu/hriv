@@ -50,7 +50,7 @@ export const CSS_PIXEL_UM = 25400 / 96
 /** Known physical units and their micrometre equivalents. */
 const UNIT_TO_UM: Record<string, number> = {
   um: 1,
-  'µm': 1,
+  µm: 1,
   mm: 1000,
   cm: 10000,
   m: 1_000_000,
@@ -108,8 +108,7 @@ export function createMeasurementLabel(): HTMLDivElement {
   label.style.fontWeight = '600'
   label.style.whiteSpace = 'nowrap'
   label.style.pointerEvents = 'none'
-  label.style.textShadow =
-    '-1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff'
+  label.style.textShadow = '-1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff'
   label.style.zIndex = '10'
   label.style.display = 'none'
   return label

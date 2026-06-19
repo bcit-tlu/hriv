@@ -77,10 +77,9 @@ export function useTableColumnPreferences<Key extends string>({
     () => JSON.stringify(loadedVisibility),
     [loadedVisibility],
   )
-  const [visibleColumns, setVisibleColumns] =
-    useState<ColumnVisibilityMap<Key>>(loadedVisibility)
+  const [visibleColumns, setVisibleColumns] = useState<ColumnVisibilityMap<Key>>(loadedVisibility)
   const hasMountedRef = useRef(false)
-  const pendingHydrationRef = useRef<{ storageKey: string, serialized: string } | null>({
+  const pendingHydrationRef = useRef<{ storageKey: string; serialized: string } | null>({
     storageKey,
     serialized: loadedVisibilitySerialized,
   })
@@ -116,10 +115,7 @@ export function useTableColumnPreferences<Key extends string>({
     }
   }, [storageKey, visibleColumns])
 
-  const isColumnVisible = useCallback(
-    (column: Key) => visibleColumns[column],
-    [visibleColumns],
-  )
+  const isColumnVisible = useCallback((column: Key) => visibleColumns[column], [visibleColumns])
 
   const setColumnVisible = useCallback((column: Key, visible: boolean) => {
     setVisibleColumns((prev) => ({ ...prev, [column]: visible }))

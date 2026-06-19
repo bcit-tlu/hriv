@@ -254,6 +254,19 @@ async def test_update_image_success() -> None:
     assert img.name == "updated"
 
 
+async def test_update_image_normalizes_empty_note() -> None:
+    img = _make_image()
+    img.note = "existing note"
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    body = ImageUpdate(note="")
+    await update_image(1, body, _mock_request(), _make_user(), db)
+    assert img.note is None
+
+
 async def test_update_image_not_found() -> None:
     db = AsyncMock()
     db.get = AsyncMock(return_value=None)

@@ -21,13 +21,19 @@ export default function ReportIssueModal({ open, onClose }: ReportIssueModalProp
   const [success, setSuccess] = useState('')
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  useEffect(() => () => {
-    if (timerRef.current) clearTimeout(timerRef.current)
-  }, [])
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+    },
+    [],
+  )
 
   const handleClose = () => {
     if (submitting) return
-    if (timerRef.current) { clearTimeout(timerRef.current); timerRef.current = null }
+    if (timerRef.current) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
     setDescription('')
     setError('')
     setSuccess('')

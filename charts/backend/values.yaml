@@ -4,7 +4,7 @@ image:
   repository: ghcr.io/bcit-tlu/hriv/hriv-backend
   # Defaults to .Chart.AppVersion; set to a specific release tag (e.g.
   # the version from `helm pull --version <ver>`) for reproducible deploys.
-  tag: ""
+  tag: ''
   pullPolicy: IfNotPresent
 
 service:
@@ -39,7 +39,7 @@ backupVersionConfigMap:
 # ``backupVersionConfigMap.enabled=false`` or the mounted file is
 # missing (e.g. local/dev installs without the backup chart deployed).
 # Leave empty to render ``"dev"`` at runtime.
-backupVersion: ""
+backupVersion: ''
 
 # ── OpenTelemetry observability ─────────────────────────────
 # When enabled=true, the backend Deployment renders six OTEL_* env vars
@@ -56,22 +56,22 @@ backupVersion: ""
 observability:
   openTelemetry:
     enabled: false
-    serviceName: "hriv-backend"
+    serviceName: 'hriv-backend'
     exporter:
-      traces: "otlp"
-      metrics: "none"
-      logs: "otlp"
-      endpoint: ""
-      protocol: "http/protobuf"
+      traces: 'otlp'
+      metrics: 'none'
+      logs: 'otlp'
+      endpoint: ''
+      protocol: 'http/protobuf'
     # Comma-delimited regexes passed to OTEL_PYTHON_FASTAPI_EXCLUDED_URLS.
     # Prevents Kubernetes liveness/readiness probes from flooding the
     # trace backend with low-value spans.
-    excludedUrls: "api/health,api/health/ready"
+    excludedUrls: 'api/health,api/health/ready'
     # When "true", the OTEL Python SDK installs a LoggingHandler on the
     # root logger that bridges stdlib logging calls to the OTLP logs
     # exporter.  Without this, OTEL_LOGS_EXPORTER=otlp alone is not
     # enough — logs go to stdout but never reach the collector via OTLP.
-    loggingAutoInstrumentation: "true"
+    loggingAutoInstrumentation: 'true'
   # ── Grafana dashboard provisioning ──────────────────────────
   # When enabled, the chart renders ConfigMaps from JSON files in the
   # dashboards/ directory, labeled for the Grafana sidecar to discover.
@@ -85,7 +85,7 @@ observability:
 # The chart enforces a non-empty JWT_SECRET is supplied to the backend
 # (auto-generated if unset) and sets REQUIRE_JWT_SECRET=true so the pod
 # refuses to start if the secret is missing at runtime.
-jwtSecret: ""
+jwtSecret: ''
 
 # ── OpenID Connect / OAuth 2.0 authentication ───────────────
 # Disabled by default so chart consumers can start with local
@@ -95,31 +95,31 @@ auth:
   openidConnect:
     enabled: false
     # Full issuer URL — backend appends /.well-known/openid-configuration.
-    issuer: ""
+    issuer: ''
     # Public client identifier (safe for ConfigMap; not a secret per OAuth 2.0 spec).
-    clientId: ""
+    clientId: ''
     # Client secret — only used when vault.enabled=false and existingSecret is empty.
     # When existingSecret is set, the chart-managed secret is not created.
-    clientSecret: ""
+    clientSecret: ''
     # Name of a pre-existing K8s Secret that contains 'client-id' and
     # 'client-secret' keys. When set, the chart does not create its own
     # OpenID Connect secret (e.g. kubectl create secret generic <name> ...).
     # Leave empty to let the chart create the secret from clientId/clientSecret.
-    existingSecret: ""
+    existingSecret: ''
     # Backend callback endpoint that the IdP redirects to after authentication.
-    redirectUri: ""
+    redirectUri: ''
     # Space-separated OAuth 2.0 scopes to request from the IdP.
-    scopes: "openid email profile"
+    scopes: 'openid email profile'
     # JSON object mapping IdP group names to HRIV roles (admin/instructor/student).
-    roleMapping: "{}"
+    roleMapping: '{}'
     # Frontend URL to redirect to after successful login.
-    postLoginRedirect: ""
+    postLoginRedirect: ''
     # Trust email from IdP without requiring email_verified claim.
     # Enable when your IdP does not emit the email_verified claim.
     trustEmail: false
     # CORS origins (comma-separated). Used as fallback redirect target when
     # postLoginRedirect is empty.
-    corsOrigins: ""
+    corsOrigins: ''
 
 # ── PostgreSQL database configuration ───────────────────────
 # Set enabled=true to have the chart create an in-cluster CloudNative-PG
@@ -132,7 +132,7 @@ postgres:
   # Defaults to a local/dev-friendly value so `helm template` and
   # `helm lint` render without extra flags; override for real clusters.
   # Example: "postgresql://user:pass@db-host:5432/hriv"
-  uri: "postgresql://hriv:password1234@localhost:5432/hriv"
+  uri: 'postgresql://hriv:password1234@localhost:5432/hriv'
   cluster:
     instances: 1
     image: ghcr.io/cloudnative-pg/postgresql:16
@@ -143,7 +143,7 @@ postgres:
     password: password1234
   persistence:
     # Leave empty to use the cluster default StorageClass.
-    storageClass: ""
+    storageClass: ''
     size: 5Gi
 
 # ── Redis / arq background worker ────────────────────────────
@@ -162,7 +162,7 @@ redis:
   # Full Redis connection URL consumed by the backend (arq + rate limiter).
   # When deploying Redis in-cluster, use the Kubernetes Service DNS name:
   #   redis://hriv-redis:6379
-  url: "redis://hriv-redis:6379"
+  url: 'redis://hriv-redis:6379'
   # Deploy a dedicated arq worker Deployment alongside the API pod.
   # Requires redis.enabled=true.  When false, background tasks fall back
   # to in-process BackgroundTasks (the existing graceful-degradation path).
@@ -171,10 +171,10 @@ redis:
     replicaCount: 1
     resources:
       requests:
-        memory: "512Mi"
-        cpu: "250m"
+        memory: '512Mi'
+        cpu: '250m'
       limits:
-        memory: "4Gi"
+        memory: '4Gi'
     # ── Worker Horizontal Pod Autoscaler ──────────────────────
     # Scales worker replicas based on CPU/memory utilisation so that
     # concurrent image-processing jobs are distributed across pods.
@@ -214,9 +214,9 @@ redis:
 #     --from-literal=token=ghp_YOUR_SCOPED_PAT -n <namespace>
 github-issue:
   enabled: false
-  repository: ""
+  repository: ''
   token:
-    existingSecret: ""
+    existingSecret: ''
 
 # Vault / external secret-management toggle.
 vault:
@@ -234,7 +234,7 @@ tiles:
 persistence:
   enabled: false
   # Leave empty to use the cluster default StorageClass.
-  storageClass: ""
+  storageClass: ''
   size: 10Gi
   # ReadWriteOnce is fine for single-replica dev/staging.
   # Production with redis.worker.enabled=true MUST use ReadWriteMany
@@ -283,8 +283,8 @@ affinity: {}
 # ``auth.openidConnect.roleMapping`` above).
 bootstrapAdmin:
   enabled: true
-  name: "Haruki Tanaka"
-  email: "admin@example.ca"
+  name: 'Haruki Tanaka'
+  email: 'admin@example.ca'
   # bcrypt hash of the bootstrap password.  Defaults to the same
   # development hash shared by docker-compose seed users (intended
   # to be rotated immediately after first login).  Override with
@@ -295,4 +295,4 @@ bootstrapAdmin:
   # Setting this to an empty string while ``enabled: true`` makes
   # ``helm install`` fail loudly at render time rather than silently
   # inserting an unusable empty hash.
-  passwordHash: "$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C"
+  passwordHash: '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C'

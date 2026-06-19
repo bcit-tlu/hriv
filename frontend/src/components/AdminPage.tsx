@@ -35,9 +35,7 @@ import {
   userMessage,
 } from '../api'
 import type { AdminTask } from '../api'
-import ConfirmImportDialog, {
-  type ConfirmImportKind,
-} from './ConfirmImportDialog'
+import ConfirmImportDialog, { type ConfirmImportKind } from './ConfirmImportDialog'
 import ChangelogAdmin from './ChangelogAdmin'
 
 const POLL_INTERVAL = 2000 // ms
@@ -93,8 +91,7 @@ export default function AdminPage() {
     if (el === null) return
     // Treat "within 16px of bottom" as still docked — keeps kinetic
     // scroll/touchpad overshoot from detaching the autoscroll.
-    const distanceFromBottom =
-      el.scrollHeight - el.scrollTop - el.clientHeight
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
     stickToBottomRef.current = distanceFromBottom <= 16
   }, [])
 
@@ -102,7 +99,9 @@ export default function AdminPage() {
   useEffect(() => {
     fetchAdminTasks()
       .then(setTaskHistory)
-      .catch(() => {/* ignore */})
+      .catch(() => {
+        /* ignore */
+      })
   }, [])
 
   // ── Polling ──────────────────────────────────────────────
@@ -125,20 +124,24 @@ export default function AdminPage() {
             const updated = await fetchAdminTask(taskId)
 
             // Update active tasks list
-            setActiveTasks((prev) =>
-              prev.map((t) => (t.id === taskId ? updated : t)),
-            )
+            setActiveTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)))
 
             // Also update the log modal if it's viewing this task
             setLogTask((prev) => (prev?.id === taskId ? updated : prev))
 
-            if (updated.status === 'completed' || updated.status === 'failed' || updated.status === 'cancelled') {
+            if (
+              updated.status === 'completed' ||
+              updated.status === 'failed' ||
+              updated.status === 'cancelled'
+            ) {
               stopPolling(taskId)
               setNotifications((prev) => [...prev, { id: taskId, task: updated }])
               // Refresh history
               fetchAdminTasks()
                 .then(setTaskHistory)
-                .catch(() => {/* ignore */})
+                .catch(() => {
+                  /* ignore */
+                })
             } else {
               schedule()
             }
@@ -189,10 +192,7 @@ export default function AdminPage() {
   // ── Kick-off helpers ─────────────────────────────────────
 
   const kickOff = useCallback(
-    async (
-      taskType: string,
-      starter: () => Promise<AdminTask>,
-    ) => {
+    async (taskType: string, starter: () => Promise<AdminTask>) => {
       setError(null)
       setStarting(taskType)
       try {
@@ -259,9 +259,14 @@ export default function AdminPage() {
 
         const abort = new AbortController()
         uploadAbortRefs.current.set(task.id, abort)
-        await uploadTaskFile(task.id, file, (fraction) => {
-          setUploadProgress((prev) => new Map(prev).set(task!.id, fraction))
-        }, abort.signal)
+        await uploadTaskFile(
+          task.id,
+          file,
+          (fraction) => {
+            setUploadProgress((prev) => new Map(prev).set(task!.id, fraction))
+          },
+          abort.signal,
+        )
         // Upload done — clear local progress; polling picks up the rest.
         setUploadProgress((prev) => {
           const next = new Map(prev)
@@ -336,12 +341,8 @@ export default function AdminPage() {
     }
     try {
       const updated = await cancelAdminTask(taskId)
-      setActiveTasks((prev) =>
-        prev.map((t) => (t.id === taskId ? updated : t)),
-      )
-      setTaskHistory((prev) =>
-        prev.map((t) => (t.id === taskId ? updated : t)),
-      )
+      setActiveTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)))
+      setTaskHistory((prev) => prev.map((t) => (t.id === taskId ? updated : t)))
       if (logTask?.id === taskId) setLogTask(updated)
     } catch {
       setError(force ? 'Failed to force-cancel task' : 'Failed to cancel task')
@@ -355,7 +356,11 @@ export default function AdminPage() {
 
   // Active (in-flight) tasks for the progress banner
   const runningTasks = activeTasks.filter(
-    (t) => t.status === 'uploading' || t.status === 'pending' || t.status === 'running' || t.status === 'cancelling',
+    (t) =>
+      t.status === 'uploading' ||
+      t.status === 'pending' ||
+      t.status === 'running' ||
+      t.status === 'cancelling',
   )
 
   return (
@@ -424,7 +429,9 @@ export default function AdminPage() {
                 task.status === 'cancelling'
                   ? 'indeterminate'
                   : task.status === 'uploading'
-                    ? (uploadProgress.has(task.id) ? 'determinate' : 'indeterminate')
+                    ? uploadProgress.has(task.id)
+                      ? 'determinate'
+                      : 'indeterminate'
                     : 'determinate'
               }
               value={
@@ -452,13 +459,18 @@ export default function AdminPage() {
               Export Database
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Download a JSON snapshot of all categories, images, users, and
-              source image records. The export runs in the background — you will
-              be notified when it is ready to download.
+              Download a JSON snapshot of all categories, images, users, and source image records.
+              The export runs in the background — you will be notified when it is ready to download.
             </Typography>
             <Button
               variant="contained"
-              startIcon={starting === 'db_export' ? <CircularProgress size={18} color="inherit" /> : <DownloadIcon />}
+              startIcon={
+                starting === 'db_export' ? (
+                  <CircularProgress size={18} color="inherit" />
+                ) : (
+                  <DownloadIcon />
+                )
+              }
               onClick={handleExport}
               disabled={busy}
             >
@@ -474,26 +486,25 @@ export default function AdminPage() {
               Import Database
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Upload a previously exported JSON file to replace all current
-              data. This action is destructive — existing records will be
-              overwritten. The import runs in the background.
+              Upload a previously exported JSON file to replace all current data. This action is
+              destructive — existing records will be overwritten. The import runs in the background.
             </Typography>
             <Button
               variant="contained"
               color="warning"
-              startIcon={starting === 'db_import' ? <CircularProgress size={18} color="inherit" /> : <UploadFileIcon />}
+              startIcon={
+                starting === 'db_import' ? (
+                  <CircularProgress size={18} color="inherit" />
+                ) : (
+                  <UploadFileIcon />
+                )
+              }
               onClick={handleImportClick}
               disabled={busy}
             >
               {starting === 'db_import' ? 'Starting…' : 'Import'}
             </Button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".json"
-              hidden
-              onChange={handleFileChange}
-            />
+            <input ref={fileRef} type="file" accept=".json" hidden onChange={handleFileChange} />
           </CardContent>
         </Card>
       </Box>
@@ -513,13 +524,19 @@ export default function AdminPage() {
               Export Files
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Create a compressed archive (.tar.gz) of all image tiles,
-              thumbnails, and uploaded source files. The archive is built in the
-              background — you will be notified when it is ready to download.
+              Create a compressed archive (.tar.gz) of all image tiles, thumbnails, and uploaded
+              source files. The archive is built in the background — you will be notified when it is
+              ready to download.
             </Typography>
             <Button
               variant="contained"
-              startIcon={starting === 'files_export' ? <CircularProgress size={18} color="inherit" /> : <FolderZipIcon />}
+              startIcon={
+                starting === 'files_export' ? (
+                  <CircularProgress size={18} color="inherit" />
+                ) : (
+                  <FolderZipIcon />
+                )
+              }
               onClick={handleExportFiles}
               disabled={busy}
             >
@@ -535,14 +552,20 @@ export default function AdminPage() {
               Import Files
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Upload a previously exported .tar.gz file to replace all tiles
-              and source files on disk. This action is destructive — existing
-              files will be overwritten. The import runs in the background.
+              Upload a previously exported .tar.gz file to replace all tiles and source files on
+              disk. This action is destructive — existing files will be overwritten. The import runs
+              in the background.
             </Typography>
             <Button
               variant="contained"
               color="warning"
-              startIcon={starting === 'files_import' ? <CircularProgress size={18} color="inherit" /> : <UploadFileIcon />}
+              startIcon={
+                starting === 'files_import' ? (
+                  <CircularProgress size={18} color="inherit" />
+                ) : (
+                  <UploadFileIcon />
+                )
+              }
               onClick={handleImportFilesClick}
               disabled={busy}
             >
@@ -600,11 +623,11 @@ export default function AdminPage() {
                   {TASK_LABELS[task.task_type] ?? task.task_type}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  {task.created_at
-                    ? new Date(task.created_at).toLocaleString()
-                    : ''}
+                  {task.created_at ? new Date(task.created_at).toLocaleString() : ''}
                 </Typography>
-                {(task.status === 'uploading' || task.status === 'pending' || task.status === 'running') && (
+                {(task.status === 'uploading' ||
+                  task.status === 'pending' ||
+                  task.status === 'running') && (
                   <IconButton
                     size="small"
                     color="warning"
@@ -633,11 +656,7 @@ export default function AdminPage() {
                     <DownloadIcon fontSize="small" />
                   </IconButton>
                 )}
-                <IconButton
-                  size="small"
-                  onClick={() => setLogTask(task)}
-                  title="View details"
-                >
+                <IconButton size="small" onClick={() => setLogTask(task)} title="View details">
                   <InfoOutlinedIcon fontSize="small" />
                 </IconButton>
               </Box>
@@ -668,7 +687,13 @@ export default function AdminPage() {
           }}
         >
           <Alert
-            severity={n.task.status === 'completed' ? 'success' : n.task.status === 'cancelled' ? 'warning' : 'error'}
+            severity={
+              n.task.status === 'completed'
+                ? 'success'
+                : n.task.status === 'cancelled'
+                  ? 'warning'
+                  : 'error'
+            }
             variant="filled"
             sx={{ width: '100%', alignItems: 'center' }}
             onClose={() => dismissNotification(n.id)}
@@ -696,30 +721,25 @@ export default function AdminPage() {
                 >
                   Details
                 </Link>
-                <IconButton
-                  size="small"
-                  color="inherit"
-                  onClick={() => dismissNotification(n.id)}
-                >
+                <IconButton size="small" color="inherit" onClick={() => dismissNotification(n.id)}>
                   <CloseIcon fontSize="small" />
                 </IconButton>
               </Box>
             }
           >
             {TASK_LABELS[n.task.task_type] ?? n.task.task_type}{' '}
-            {n.task.status === 'completed' ? 'completed' : n.task.status === 'cancelled' ? 'cancelled' : 'failed'}
+            {n.task.status === 'completed'
+              ? 'completed'
+              : n.task.status === 'cancelled'
+                ? 'cancelled'
+                : 'failed'}
             {n.task.error_message ? `: ${n.task.error_message}` : ''}
           </Alert>
         </Snackbar>
       ))}
 
       {/* ── Log viewer modal ──────────────────────────────── */}
-      <Dialog
-        open={logTask !== null}
-        onClose={() => setLogTask(null)}
-        maxWidth="md"
-        fullWidth
-      >
+      <Dialog open={logTask !== null} onClose={() => setLogTask(null)} maxWidth="md" fullWidth>
         {logTask && (
           <>
             <DialogTitle>
@@ -742,7 +762,10 @@ export default function AdminPage() {
               />
             </DialogTitle>
             <DialogContent dividers>
-              {(logTask.status === 'uploading' || logTask.status === 'running' || logTask.status === 'pending' || logTask.status === 'cancelling') && (
+              {(logTask.status === 'uploading' ||
+                logTask.status === 'running' ||
+                logTask.status === 'pending' ||
+                logTask.status === 'cancelling') && (
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
                     {logTask.status === 'cancelling'
@@ -756,7 +779,9 @@ export default function AdminPage() {
                       logTask.status === 'cancelling'
                         ? 'indeterminate'
                         : logTask.status === 'uploading'
-                          ? (uploadProgress.has(logTask.id) ? 'determinate' : 'indeterminate')
+                          ? uploadProgress.has(logTask.id)
+                            ? 'determinate'
+                            : 'indeterminate'
                           : 'determinate'
                     }
                     value={
@@ -799,7 +824,9 @@ export default function AdminPage() {
               </Box>
             </DialogContent>
             <DialogActions>
-              {(logTask.status === 'uploading' || logTask.status === 'pending' || logTask.status === 'running') && (
+              {(logTask.status === 'uploading' ||
+                logTask.status === 'pending' ||
+                logTask.status === 'running') && (
                 <Button
                   color="warning"
                   startIcon={<CancelIcon />}

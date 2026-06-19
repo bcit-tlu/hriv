@@ -1,0 +1,4 @@
+interface:
+  display_name: 'Testing HRIV'
+  short_description: 'Full-stack HRIV browser testing'
+  default_prompt: 'Use $testing-hriv to verify a full HRIV workflow locally.'
