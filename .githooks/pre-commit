@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root/frontend"
+
+if command -v npm >/dev/null 2>&1; then
+  npm run format:staged
+elif command -v nix-shell >/dev/null 2>&1; then
+  nix-shell -p nodejs --run 'npm run format:staged'
+else
+  echo "[hriv] Unable to find npm or nix-shell for format:staged." >&2
+  exit 1
+fi
