@@ -1,0 +1,4 @@
+interface:
+  display_name: "HRIV Frontend UI"
+  short_description: "React UI, hooks, viewer workflows"
+  default_prompt: "Use $hriv-frontend-ui to change an HRIV frontend workflow."

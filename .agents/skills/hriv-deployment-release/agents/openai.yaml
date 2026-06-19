@@ -1,0 +1,4 @@
+interface:
+  display_name: "HRIV Deployment Release"
+  short_description: "Charts, CI, backups, releases"
+  default_prompt: "Use $hriv-deployment-release to update HRIV deployment config."
