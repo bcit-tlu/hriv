@@ -110,6 +110,33 @@ const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
 const MAX_RESULTS = 50
 const CONTEXT_CHARS = 40
 
+function getAnnotationSearchFields(
+  metadataExtra: Record<string, unknown> | null | undefined,
+): Array<{ field: string; value: string }> {
+  const annotations = metadataExtra?.canvas_annotations
+  if (!Array.isArray(annotations)) return []
+
+  const fields: Array<{ field: string; value: string }> = []
+  for (const annotation of annotations) {
+    if (!annotation || typeof annotation !== 'object') continue
+    const candidate = annotation as Record<string, unknown>
+    const type = candidate.type
+    const text = typeof candidate.text === 'string' ? candidate.text.trim() : ''
+    const url = typeof candidate.url === 'string' ? candidate.url.trim() : ''
+
+    if (type === 'text') {
+      if (text) fields.push({ field: 'Annotation', value: text })
+      continue
+    }
+
+    if (type !== 'link') continue
+    if (text) fields.push({ field: 'Link', value: text })
+    if (url) fields.push({ field: 'Link URL', value: url })
+  }
+
+  return fields
+}
+
 function contextSnippet(
   value: string,
   matchIndex: number,
@@ -269,6 +296,7 @@ function addImageMatches(
     { field: 'Name', value: img.name },
     { field: 'Copyright', value: img.copyright },
     { field: 'Note', value: img.note },
+    ...getAnnotationSearchFields(img.metadataExtra),
   ]
   if (parentCat) {
     fields.push({ field: 'Category', value: parentCat.label })

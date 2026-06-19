@@ -79,6 +79,18 @@ Two capability flags in `AuthContext.tsx` drive all gating:
 - Students view locked overlays and annotations read-only; edit mode and
   measurement tools are gated by `canEditContent`.
 
+### Search modal (`SearchModal.test.tsx`)
+
+- Search is client-side over the currently loaded browse data (categories,
+  images, programs, users); it does not call a dedicated backend search
+  endpoint.
+- Image results match on image name, copyright, note, parent category,
+  associated program names, and text-bearing canvas annotations stored in
+  `image.metadataExtra.canvas_annotations`.
+- Only text-bearing annotations are searchable: text annotations, link display
+  text, and link URLs. Shape-only annotations (rect/circle/arrow) do not
+  create search hits.
+
 ---
 
 ## Editor / admin behaviour
