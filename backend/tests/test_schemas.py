@@ -3,7 +3,17 @@
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from app.schemas import ImageOut, ImageUpdate, ProgramCreate, ProgramUpdate, SourceImageOut
+import pytest
+
+from app.schemas import (
+    ImageBulkUpdate,
+    ImageCreate,
+    ImageOut,
+    ImageUpdate,
+    ProgramCreate,
+    ProgramUpdate,
+    SourceImageOut,
+)
 
 
 def test_image_out_from_orm() -> None:
@@ -144,6 +154,61 @@ def test_program_update_oidc_group_valid_string_preserved() -> None:
     assert p.oidc_group == "mlt-group"
 
 
+# ── note validation ──────────────────────────────────────
+
+
+def _image_create_with_note(note: str | None) -> ImageCreate:
+    return ImageCreate(
+        name="test-img",
+        thumb="/thumb.jpg",
+        tile_sources="/tiles/1",
+        note=note,
+    )
+
+
+def _image_update_with_note(note: str | None) -> ImageUpdate:
+    return ImageUpdate(note=note)
+
+
+def _image_bulk_update_with_note(note: str | None) -> ImageBulkUpdate:
+    return ImageBulkUpdate(image_ids=[1], note=note)
+
+
+@pytest.mark.parametrize(
+    ("factory", "note"),
+    [
+        (_image_create_with_note, "x" * 500),
+        (_image_create_with_note, None),
+        (_image_create_with_note, ""),
+        (_image_create_with_note, "short note"),
+        (_image_update_with_note, "x" * 500),
+        (_image_update_with_note, None),
+        (_image_update_with_note, ""),
+        (_image_update_with_note, "short note"),
+        (_image_bulk_update_with_note, "x" * 500),
+        (_image_bulk_update_with_note, None),
+        (_image_bulk_update_with_note, ""),
+        (_image_bulk_update_with_note, "short note"),
+    ],
+)
+def test_image_write_schemas_accept_valid_note_values(factory, note) -> None:
+    schema = factory(note)
+    assert schema.note == note
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        _image_create_with_note,
+        _image_update_with_note,
+        _image_bulk_update_with_note,
+    ],
+)
+def test_image_write_schemas_reject_notes_over_500_characters(factory) -> None:
+    with pytest.raises(ValueError, match="note must be 500 characters or fewer"):
+        factory("x" * 501)
+
+
 # ── locked_overlays validation ────────────────────────────
 
 
@@ -210,9 +275,8 @@ def test_validate_locked_overlays_merge_filters() -> None:
 
 def test_metadata_extra_and_merge_mutually_exclusive() -> None:
     """Providing both metadata_extra and metadata_extra_merge should raise."""
-    import pytest as _pt
 
-    with _pt.raises(Exception, match="mutually exclusive"):
+    with pytest.raises(Exception, match="mutually exclusive"):
         ImageUpdate(
             metadata_extra={"key": "val"},
             metadata_extra_merge={"other": "val"},
