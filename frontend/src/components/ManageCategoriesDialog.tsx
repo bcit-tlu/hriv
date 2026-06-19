@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
+import { useState, useMemo, useCallback, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -36,6 +36,7 @@ import {
 } from './categoryOptionUtils'
 import { collectImagesByParent, interleavedSortOrders } from './manageCategoriesDialogUtils'
 import type { FlatOption } from './manageCategoriesDialogUtils'
+import { useCategoryTreeExpansionPreferences } from '../useCategoryTreeExpansionPreferences'
 
 /** Collect all descendant IDs of a given category from the flat list. */
 function getDescendantIds(options: FlatOption[], dragId: number): Set<number> {
@@ -47,21 +48,6 @@ function getDescendantIds(options: FlatOption[], dragId: number): Set<number> {
     if (options[i].depth <= baseDepth) break
     ids.add(options[i].id)
   }
-  return ids
-}
-
-function getCollapsedDescendantIds(options: FlatOption[], expandedIds: Set<number>): Set<number> {
-  const ids = new Set<number>()
-  const collapsedAtDepth: boolean[] = []
-
-  for (const opt of options) {
-    collapsedAtDepth.length = opt.depth
-    const hiddenByCollapsed = opt.depth > 0 ? (collapsedAtDepth[opt.depth - 1] ?? false) : false
-    if (hiddenByCollapsed) ids.add(opt.id)
-    collapsedAtDepth[opt.depth] =
-      hiddenByCollapsed || (opt.childCount > 0 && !expandedIds.has(opt.id))
-  }
-
   return ids
 }
 
@@ -211,47 +197,14 @@ export default function ManageCategoriesDialog({
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null)
 
   const options = useMemo(() => flattenCategoryOptions(categories) as FlatOption[], [categories])
-  const expandableIds = useMemo(
-    () => new Set(options.filter((opt) => opt.childCount > 0).map((opt) => opt.id)),
-    [options],
-  )
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set(expandableIds))
   const listRef = useRef<HTMLUListElement>(null)
-  const previousExpandableIds = useRef<Set<number> | null>(null)
 
   /** Set of category IDs whose ancestor is hidden (for cascading visibility). */
   const ancestorHiddenIds = useMemo(() => getAncestorHiddenIds(options), [options])
-  const collapsedDescendantIds = useMemo(
-    () => getCollapsedDescendantIds(options, expandedIds),
-    [options, expandedIds],
-  )
-  const visibleOptions = useMemo(
-    () => options.filter((opt) => !collapsedDescendantIds.has(opt.id)),
-    [options, collapsedDescendantIds],
-  )
-
-  useEffect(() => {
-    const priorExpandable = previousExpandableIds.current ?? new Set<number>()
-    previousExpandableIds.current = new Set(expandableIds)
-
-    setExpandedIds((prev) => {
-      const next = new Set<number>()
-
-      prev.forEach((id) => {
-        if (expandableIds.has(id)) next.add(id)
-      })
-      expandableIds.forEach((id) => {
-        if (!priorExpandable.has(id)) next.add(id)
-      })
-
-      if (prev.size === next.size && [...prev].every((id) => next.has(id))) {
-        return prev
-      }
-      return next
-    })
-  }, [expandableIds])
+  const { collapsedDescendantIds, visibleOptions, isExpanded, toggleExpanded } =
+    useCategoryTreeExpansionPreferences(options)
 
   const addSiblingNames = useMemo(
     () => options.filter((o) => o.parentId === addParentId).map((o) => o.label),
@@ -399,18 +352,6 @@ export default function ManageCategoriesDialog({
     },
     [editingCategory, onEditCategory],
   )
-
-  const toggleExpanded = useCallback((categoryId: number) => {
-    setExpandedIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(categoryId)) {
-        next.delete(categoryId)
-      } else {
-        next.add(categoryId)
-      }
-      return next
-    })
-  }, [])
 
   // ── Drag-and-drop handlers ──────────────────────────────
 
@@ -607,7 +548,7 @@ export default function ManageCategoriesDialog({
             {visibleOptions.map((opt) => {
               const inheritedHidden = ancestorHiddenIds.has(opt.id)
               const effectivelyHidden = opt.status === 'hidden' || inheritedHidden
-              const isExpanded = expandedIds.has(opt.id)
+              const isExpandedNow = isExpanded(opt.id)
               const hasChildren = opt.childCount > 0
               return (
                 <ListItem
@@ -705,15 +646,15 @@ export default function ManageCategoriesDialog({
                   }
                 >
                   {hasChildren ? (
-                    <Tooltip title={isExpanded ? 'Collapse category' : 'Expand category'}>
+                    <Tooltip title={isExpandedNow ? 'Collapse category' : 'Expand category'}>
                       <IconButton
                         edge="start"
                         size="small"
-                        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${opt.label}`}
+                        aria-label={`${isExpandedNow ? 'Collapse' : 'Expand'} ${opt.label}`}
                         onClick={() => toggleExpanded(opt.id)}
                         sx={{ mr: 0.5, flexShrink: 0 }}
                       >
-                        {isExpanded ? (
+                        {isExpandedNow ? (
                           <ExpandMoreIcon fontSize="small" />
                         ) : (
                           <ChevronRightIcon fontSize="small" />

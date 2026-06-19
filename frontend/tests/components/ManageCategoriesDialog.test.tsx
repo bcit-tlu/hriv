@@ -16,12 +16,18 @@
  */
 
 import { StrictMode } from 'react'
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ManageCategoriesDialog from '../../src/components/ManageCategoriesDialog'
 import type { Program } from '../../src/types'
+import { resetCategoryTreeExpansionPreferencesForTests } from '../../src/useCategoryTreeExpansionPreferences'
 import { makeCategory, makeImage } from '../helpers/fixtures'
+
+beforeEach(() => {
+  localStorage.clear()
+  resetCategoryTreeExpansionPreferencesForTests()
+})
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -195,7 +201,6 @@ describe('ManageCategoriesDialog — basics', () => {
     expect(screen.getByRole('button', { name: 'Collapse Leaf' })).toBeInTheDocument()
     expect(screen.getByText('Child')).toBeInTheDocument()
   })
-
   it('does not render dialog content when open is false', () => {
     renderDialog({ open: false })
     expect(screen.queryByText('Manage Categories')).not.toBeInTheDocument()
