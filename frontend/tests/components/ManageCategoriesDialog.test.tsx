@@ -15,6 +15,7 @@
  * 11. Category indentation via depth
  */
 
+import { StrictMode } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -157,6 +158,42 @@ describe('ManageCategoriesDialog — basics', () => {
     await user.click(screen.getByRole('button', { name: 'Histology' }))
 
     expect(onCategoryNavigate).toHaveBeenCalledWith(1)
+  })
+
+  it('auto-expands categories that become parents after rerender in StrictMode', () => {
+    const leaf = makeCategory({ id: 1, label: 'Leaf' })
+    const child = makeCategory({ id: 2, label: 'Child', parentId: 1 })
+    const onAddCategory = vi.fn().mockResolvedValue(99)
+    const onDeleteCategory = vi.fn().mockResolvedValue(undefined)
+
+    const { rerender } = render(
+      <StrictMode>
+        <ManageCategoriesDialog
+          open
+          onClose={vi.fn()}
+          categories={[leaf]}
+          onAddCategory={onAddCategory}
+          onDeleteCategory={onDeleteCategory}
+          programs={programs}
+        />
+      </StrictMode>,
+    )
+
+    rerender(
+      <StrictMode>
+        <ManageCategoriesDialog
+          open
+          onClose={vi.fn()}
+          categories={[makeCategory({ ...leaf, children: [child] })]}
+          onAddCategory={onAddCategory}
+          onDeleteCategory={onDeleteCategory}
+          programs={programs}
+        />
+      </StrictMode>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Collapse Leaf' })).toBeInTheDocument()
+    expect(screen.getByText('Child')).toBeInTheDocument()
   })
 
   it('does not render dialog content when open is false', () => {

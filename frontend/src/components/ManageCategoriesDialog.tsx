@@ -219,7 +219,7 @@ export default function ManageCategoriesDialog({
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
   const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set(expandableIds))
   const listRef = useRef<HTMLUListElement>(null)
-  const previousExpandableIds = useRef<Set<number>>(new Set(expandableIds))
+  const previousExpandableIds = useRef<Set<number> | null>(null)
 
   /** Set of category IDs whose ancestor is hidden (for cascading visibility). */
   const ancestorHiddenIds = useMemo(() => getAncestorHiddenIds(options), [options])
@@ -233,9 +233,11 @@ export default function ManageCategoriesDialog({
   )
 
   useEffect(() => {
+    const priorExpandable = previousExpandableIds.current ?? new Set<number>()
+    previousExpandableIds.current = new Set(expandableIds)
+
     setExpandedIds((prev) => {
       const next = new Set<number>()
-      const priorExpandable = previousExpandableIds.current
 
       prev.forEach((id) => {
         if (expandableIds.has(id)) next.add(id)
@@ -244,7 +246,6 @@ export default function ManageCategoriesDialog({
         if (!priorExpandable.has(id)) next.add(id)
       })
 
-      previousExpandableIds.current = new Set(expandableIds)
       if (prev.size === next.size && [...prev].every((id) => next.has(id))) {
         return prev
       }
