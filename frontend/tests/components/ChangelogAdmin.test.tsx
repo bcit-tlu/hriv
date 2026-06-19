@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import ChangelogAdmin from '../../src/components/ChangelogAdmin'
 import * as api from '../../src/api'
@@ -34,6 +34,10 @@ describe('ChangelogAdmin', () => {
     mockFetchChangelogEntries.mockResolvedValue([])
     mockCreateChangelogEntry.mockResolvedValue(fixture)
     mockUpdateChangelogEntry.mockResolvedValue(fixture)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('renders empty state when there are no entries', async () => {
