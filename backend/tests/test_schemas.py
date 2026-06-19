@@ -1,6 +1,8 @@
 """Tests for Pydantic schemas, especially model validators."""
 
+import re
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -10,6 +12,7 @@ from app.schemas import (
     ImageCreate,
     ImageOut,
     ImageUpdate,
+    MAX_NOTE_LENGTH,
     ProgramCreate,
     ProgramUpdate,
     SourceImageOut,
@@ -155,6 +158,18 @@ def test_program_update_oidc_group_valid_string_preserved() -> None:
 
 
 # ── note validation ──────────────────────────────────────
+
+
+def test_frontend_note_limit_matches_backend() -> None:
+    frontend_constants = (
+        Path(__file__).resolve().parents[2] / "frontend" / "src" / "constants.ts"
+    ).read_text()
+    match = re.search(
+        r"export\s+const\s+MAX_NOTE_LENGTH\s*=\s*(\d+)",
+        frontend_constants,
+    )
+    assert match is not None
+    assert int(match.group(1)) == MAX_NOTE_LENGTH
 
 
 def _image_create_with_note(note: str | None) -> ImageCreate:
