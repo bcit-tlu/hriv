@@ -17,6 +17,7 @@ vi.mock('../../src/api', async () => {
 const mockFetchChangelogEntries = vi.mocked(api.fetchChangelogEntries)
 const mockCreateChangelogEntry = vi.mocked(api.createChangelogEntry)
 const mockUpdateChangelogEntry = vi.mocked(api.updateChangelogEntry)
+const mockDeleteChangelogEntry = vi.mocked(api.deleteChangelogEntry)
 
 const fixture: api.ApiChangelogEntry = {
   id: 1,
@@ -42,7 +43,8 @@ describe('ChangelogAdmin', () => {
   })
 
   it('creates a new entry from the dialog', async () => {
-    render(<ChangelogAdmin />)
+    const onEntriesChanged = vi.fn()
+    render(<ChangelogAdmin onEntriesChanged={onEntriesChanged} />)
 
     await waitFor(() => expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(1))
 
@@ -62,6 +64,7 @@ describe('ChangelogAdmin', () => {
       }),
     )
     expect(screen.getByText('v2.5')).toBeInTheDocument()
+    expect(onEntriesChanged).toHaveBeenCalledTimes(1)
   })
 
   it('opens an existing row in republish mode', async () => {
@@ -72,5 +75,77 @@ describe('ChangelogAdmin', () => {
 
     fireEvent.click(screen.getByText('v2.5'))
     expect(screen.getByRole('button', { name: 'Republish' })).toBeInTheDocument()
+  })
+
+  it('notifies when an entry is deleted', async () => {
+    const onEntriesChanged = vi.fn()
+    mockFetchChangelogEntries.mockResolvedValue([fixture])
+    mockDeleteChangelogEntry.mockResolvedValue(undefined)
+    render(<ChangelogAdmin onEntriesChanged={onEntriesChanged} />)
+
+    await waitFor(() => expect(screen.getByText('v2.5')).toBeInTheDocument())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Delete$/ }))
+
+    await waitFor(() => expect(mockDeleteChangelogEntry).toHaveBeenCalledWith(1))
+    expect(onEntriesChanged).toHaveBeenCalledTimes(1)
+  })
+
+  it('renders entries newest-first even if the API returns them oldest-first', async () => {
+    mockFetchChangelogEntries.mockResolvedValue([
+      {
+        ...fixture,
+        id: 1,
+        title: 'v2.4',
+        published_at: '2026-06-15T00:00:00Z',
+        created_at: '2026-06-15T00:00:00Z',
+        updated_at: '2026-06-15T00:00:00Z',
+      },
+      {
+        ...fixture,
+        id: 2,
+        title: 'v2.5',
+        published_at: '2026-06-16T00:00:00Z',
+        created_at: '2026-06-16T00:00:00Z',
+        updated_at: '2026-06-16T00:00:00Z',
+      },
+    ])
+
+    render(<ChangelogAdmin />)
+
+    await waitFor(() => expect(screen.getByText('v2.5')).toBeInTheDocument())
+
+    const rows = screen.getAllByRole('row')
+    expect(rows[1]).toHaveTextContent('v2.5')
+    expect(rows[2]).toHaveTextContent('v2.4')
+  })
+
+  it('shows the new chip only for entries published within the last 7 days', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-06-20T00:00:00Z').getTime())
+    mockFetchChangelogEntries.mockResolvedValue([
+      {
+        ...fixture,
+        id: 1,
+        title: 'Recent entry',
+        published_at: '2026-06-16T00:00:00Z',
+        created_at: '2026-06-16T00:00:00Z',
+        updated_at: '2026-06-16T00:00:00Z',
+      },
+      {
+        ...fixture,
+        id: 2,
+        title: 'Older entry',
+        published_at: '2026-06-10T00:00:00Z',
+        created_at: '2026-06-10T00:00:00Z',
+        updated_at: '2026-06-10T00:00:00Z',
+      },
+    ])
+
+    render(<ChangelogAdmin />)
+
+    expect(await screen.findByText('Recent entry')).toBeInTheDocument()
+    expect(screen.getByText('new')).toBeInTheDocument()
+    expect(screen.getByText('Older entry').closest('tr')).not.toHaveTextContent('new')
   })
 })

@@ -28,6 +28,10 @@ import MarkdownContent from './MarkdownContent'
 
 const BADGE_COLOR = '#f59e0b'
 
+function sortNewestFirst(entries: ApiChangelogEntry[]) {
+  return [...entries].sort((a, b) => b.published_at.localeCompare(a.published_at))
+}
+
 function isUnreadEntry(entry: ApiChangelogEntry, lastReadAt: string | null) {
   if (lastReadAt === null) return true
   const publishedAt = Date.parse(entry.published_at)
@@ -46,6 +50,7 @@ export interface NotificationMenuProps {
   frontendVersion: string | null
   backendVersion: string | null
   backupVersion: string | null
+  changelogVersion: number
 }
 
 export default function NotificationMenu({
@@ -54,6 +59,7 @@ export default function NotificationMenu({
   frontendVersion,
   backendVersion,
   backupVersion,
+  changelogVersion,
 }: NotificationMenuProps) {
   const lsKey = useMemo(() => `hriv_changelog_last_read_${userEmail}`, [userEmail])
   const [entries, setEntries] = useState<ApiChangelogEntry[]>([])
@@ -80,9 +86,10 @@ export default function NotificationMenu({
 
   useEffect(() => {
     let cancelled = false
+    setLoading(true)
     fetchChangelogEntries()
       .then((rows) => {
-        if (!cancelled) setEntries(rows)
+        if (!cancelled) setEntries(sortNewestFirst(rows))
       })
       .catch(() => {
         if (!cancelled) setEntries([])
@@ -93,7 +100,7 @@ export default function NotificationMenu({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [changelogVersion])
 
   const hasUnread =
     !loading && entries.length > 0 && entries.some((entry) => isUnreadEntry(entry, lastReadAt))

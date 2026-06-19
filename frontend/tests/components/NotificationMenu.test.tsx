@@ -42,6 +42,7 @@ describe('NotificationMenu', () => {
         frontendVersion="1.2.3"
         backendVersion="4.5.6"
         backupVersion="7.8.9"
+        changelogVersion={0}
       />,
     )
 
@@ -59,6 +60,7 @@ describe('NotificationMenu', () => {
         frontendVersion="1.2.3"
         backendVersion="4.5.6"
         backupVersion="7.8.9"
+        changelogVersion={0}
       />,
     )
 
@@ -78,6 +80,7 @@ describe('NotificationMenu', () => {
         frontendVersion="1.2.3"
         backendVersion="4.5.6"
         backupVersion="7.8.9"
+        changelogVersion={0}
       />,
     )
 
@@ -106,6 +109,7 @@ describe('NotificationMenu', () => {
         frontendVersion="1.2.3"
         backendVersion="4.5.6"
         backupVersion="7.8.9"
+        changelogVersion={0}
       />,
     )
 
@@ -138,6 +142,7 @@ describe('NotificationMenu', () => {
         frontendVersion="1.2.3"
         backendVersion="4.5.6"
         backupVersion="7.8.9"
+        changelogVersion={0}
       />,
     )
 
@@ -157,6 +162,7 @@ describe('NotificationMenu', () => {
         frontendVersion="1.2.3"
         backendVersion="4.5.6"
         backupVersion="7.8.9"
+        changelogVersion={0}
       />,
     )
 
@@ -177,6 +183,7 @@ describe('NotificationMenu', () => {
         frontendVersion="1.2.3"
         backendVersion="4.5.6"
         backupVersion="7.8.9"
+        changelogVersion={0}
       />,
     )
 
@@ -187,5 +194,88 @@ describe('NotificationMenu', () => {
     expect(localStorage.getItem('hriv_changelog_last_read_instructor@example.ca')).toBe(
       '2026-06-16T13:00:00Z',
     )
+  })
+
+  it('re-fetches changelog entries when the changelog version changes', async () => {
+    const newerEntry: api.ApiChangelogEntry = {
+      ...entry,
+      id: 2,
+      title: 'v2.6',
+      published_at: '2026-06-17T12:00:00Z',
+      created_at: '2026-06-17T12:00:00Z',
+      updated_at: '2026-06-17T12:00:00Z',
+    }
+    mockFetchChangelogEntries.mockResolvedValueOnce([entry]).mockResolvedValueOnce([newerEntry])
+
+    const { rerender } = render(
+      <NotificationMenu
+        userEmail="instructor@example.ca"
+        serverLastReadAt={null}
+        frontendVersion="1.2.3"
+        backendVersion="4.5.6"
+        backupVersion="7.8.9"
+        changelogVersion={0}
+      />,
+    )
+
+    await waitFor(() => expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(1))
+
+    rerender(
+      <NotificationMenu
+        userEmail="instructor@example.ca"
+        serverLastReadAt={null}
+        frontendVersion="1.2.3"
+        backendVersion="4.5.6"
+        backupVersion="7.8.9"
+        changelogVersion={1}
+      />,
+    )
+
+    await waitFor(() => expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(2))
+
+    fireEvent.click(screen.getByLabelText('Notifications'))
+    fireEvent.click(screen.getByText("What's New"))
+
+    expect(await screen.findByText('v2.6')).toBeInTheDocument()
+  })
+
+  it('renders entries newest-first even if the API returns them oldest-first', async () => {
+    mockFetchChangelogEntries.mockResolvedValue([
+      {
+        ...entry,
+        id: 1,
+        title: 'v2.4',
+        published_at: '2026-06-15T12:00:00Z',
+        created_at: '2026-06-15T12:00:00Z',
+        updated_at: '2026-06-15T12:00:00Z',
+      },
+      {
+        ...entry,
+        id: 2,
+        title: 'v2.5',
+        published_at: '2026-06-16T12:00:00Z',
+        created_at: '2026-06-16T12:00:00Z',
+        updated_at: '2026-06-16T12:00:00Z',
+      },
+    ])
+
+    render(
+      <NotificationMenu
+        userEmail="instructor@example.ca"
+        serverLastReadAt={null}
+        frontendVersion="1.2.3"
+        backendVersion="4.5.6"
+        backupVersion="7.8.9"
+        changelogVersion={0}
+      />,
+    )
+
+    await waitFor(() => expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(1))
+
+    fireEvent.click(screen.getByLabelText('Notifications'))
+    fireEvent.click(screen.getByText("What's New"))
+
+    const titles = await screen.findAllByRole('heading', { level: 6 })
+    expect(titles.map((node) => node.textContent)).toEqual(['v2.5', 'v2.4'])
   })
 })

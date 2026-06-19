@@ -170,6 +170,7 @@ export default function App() {
   const [backendVersion, setBackendVersion] = useState<string | null>(null)
   const [backupVersion, setBackupVersion] = useState<string | null>(null)
   const [frontendVersion, setFrontendVersion] = useState<string | null>(null)
+  const [changelogVersion, setChangelogVersion] = useState(0)
 
   // Browse data (categories, images, programs, background refresh)
   const {
@@ -269,6 +270,9 @@ export default function App() {
       .filter((item): item is { id: number; name: string; inherited: boolean } => item != null)
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [ancestorGroupIds, groups, path])
+  const bumpChangelogVersion = useCallback(() => {
+    setChangelogVersion((version) => version + 1)
+  }, [])
   const renderBreadcrumbChips = (
     items: Array<{ id: number; name: string; inherited: boolean }>,
     kind: 'program' | 'group',
@@ -1080,6 +1084,7 @@ export default function App() {
             frontendVersion={frontendVersion}
             backendVersion={backendVersion}
             backupVersion={backupVersion}
+            changelogVersion={changelogVersion}
           />
         ) : null
       }
@@ -1095,7 +1100,7 @@ export default function App() {
       >
         <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
           {page === 'admin' && canManageUsers ? (
-            <AdminPage />
+            <AdminPage onChangelogEntriesChanged={bumpChangelogVersion} />
           ) : page === 'people' && canManageUsers ? (
             <PeoplePage
               programs={programs}

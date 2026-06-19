@@ -53,7 +53,11 @@ interface TaskNotification {
   task: AdminTask
 }
 
-export default function AdminPage() {
+interface AdminPageProps {
+  onChangelogEntriesChanged?: () => void
+}
+
+export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps) {
   const fileRef = useRef<HTMLInputElement>(null)
   const filesRef = useRef<HTMLInputElement>(null)
 
@@ -668,7 +672,7 @@ export default function AdminPage() {
       <Divider sx={{ mb: 4 }} />
 
       {/* ── Changelog Section ─────────────────────────────── */}
-      <ChangelogAdmin />
+      <ChangelogAdmin onEntriesChanged={onChangelogEntriesChanged} />
 
       {/* ── Snackbar notifications ────────────────────────── */}
       {notifications.map((n, index) => (
