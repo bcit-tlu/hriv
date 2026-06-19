@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.25.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.24.0...frontend-v0.25.0) (2026-06-19)
+
+
+### Features
+
+* 667 image note metadata field should allow more characters ([#686](https://github.com/bcit-tlu/hriv/issues/686)) ([2a864f8](https://github.com/bcit-tlu/hriv/commit/2a864f89f877f10e2c179a771c8e8448d1e6c8fd))
+* **frontend:** add manage category tree links ([#726](https://github.com/bcit-tlu/hriv/issues/726)) ([ccc498c](https://github.com/bcit-tlu/hriv/commit/ccc498c8f732373275b7e1dc7dce174a838b2645))
+* **frontend:** search canvas annotation text in search modal ([#706](https://github.com/bcit-tlu/hriv/issues/706)) ([0b63aa3](https://github.com/bcit-tlu/hriv/commit/0b63aa3fca9450b33cc742699d7bafa8423b59df))
+* redesign admin page as tabs ([#728](https://github.com/bcit-tlu/hriv/issues/728)) ([1156603](https://github.com/bcit-tlu/hriv/commit/1156603b81ae682ab2bd7dca03e6234ec736a5db))
+
+
+### Bug Fixes
+
+* 676 breadcrumb depth should be truncated ([#689](https://github.com/bcit-tlu/hriv/issues/689)) ([3a29934](https://github.com/bcit-tlu/hriv/commit/3a29934cddb59152bbe579b3e0c5ad57c7d543be))
+* **frontend:** restore announcement surface and reorder persistence ([#722](https://github.com/bcit-tlu/hriv/issues/722)) ([820fda3](https://github.com/bcit-tlu/hriv/commit/820fda36c53455d58679affe2b24112a083156d4))
+* sync changelog notifications and ordering ([#724](https://github.com/bcit-tlu/hriv/issues/724)) ([cbab606](https://github.com/bcit-tlu/hriv/commit/cbab60636861cf3cd492229523695c38566b0898))
+
 ## [0.24.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.23.0...frontend-v0.24.0) (2026-06-18)
 
 ### Features
