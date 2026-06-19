@@ -90,6 +90,8 @@ Two capability flags in `AuthContext.tsx` drive all gating:
 - Only text-bearing annotations are searchable: text annotations, link display
   text, and link URLs. Shape-only annotations (rect/circle/arrow) do not
   create search hits.
+- Field filters expose dedicated chips for `Annotation`, `Link`, and
+  `Link URL`, so users can keep only annotation-derived image matches visible.
 
 ---
 

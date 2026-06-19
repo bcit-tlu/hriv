@@ -13,11 +13,13 @@ import CategoryIcon from '@mui/icons-material/Folder'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import CopyrightIcon from '@mui/icons-material/Copyright'
 import ImageIcon from '@mui/icons-material/Image'
+import LinkIcon from '@mui/icons-material/Link'
 import NoteIcon from '@mui/icons-material/StickyNote2'
 import PersonIcon from '@mui/icons-material/Person'
 import BadgeIcon from '@mui/icons-material/Badge'
 import SchoolIcon from '@mui/icons-material/School'
 import SearchIcon from '@mui/icons-material/Search'
+import TextFieldsIcon from '@mui/icons-material/TextFields'
 import type { Category, ImageItem, Program } from '../types'
 import type { ApiUser } from '../api'
 
@@ -83,7 +85,13 @@ interface UserPayload {
 // ── Filter definitions ─────────────────────────────────
 
 export type TypeFilter = ResultKind
-type FieldFilter = 'Copyright' | 'Note' | 'Role'
+type FieldFilter =
+  | 'Annotation'
+  | 'Link'
+  | 'Link URL'
+  | 'Copyright'
+  | 'Note'
+  | 'Role'
 
 interface FilterDef<T extends string> {
   key: T
@@ -100,6 +108,9 @@ const TYPE_FILTERS: FilterDef<TypeFilter>[] = [
 ]
 
 const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
+  { key: 'Annotation', label: 'Annotation', icon: <TextFieldsIcon fontSize="small" />, tooltip: 'Text annotations only' },
+  { key: 'Link', label: 'Link', icon: <LinkIcon fontSize="small" />, tooltip: 'Link text only' },
+  { key: 'Link URL', label: 'Link URL', icon: <LinkIcon fontSize="small" />, tooltip: 'Link URLs only' },
   { key: 'Copyright', label: 'Copyright', icon: <CopyrightIcon fontSize="small" />, tooltip: 'Copyright field only' },
   { key: 'Note', label: 'Note', icon: <NoteIcon fontSize="small" />, tooltip: 'Note field only' },
   { key: 'Role', label: 'Role', icon: <BadgeIcon fontSize="small" />, tooltip: 'Role field only' },

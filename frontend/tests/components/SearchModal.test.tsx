@@ -358,6 +358,40 @@ describe("SearchModal", () => {
         expect(card.textContent).toContain("https://atlas.example/liver");
     });
 
+    it("exposes annotation field filter chips", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Atlas");
+
+        expect(screen.getByText("Annotation")).toBeInTheDocument();
+        expect(screen.getByText("Link")).toBeInTheDocument();
+        expect(screen.getByText("Link URL")).toBeInTheDocument();
+    });
+
+    it("filters results to annotation matches when an annotation field chip is selected", async () => {
+        const user = userEvent.setup();
+        render(<SearchModal {...defaultProps} open={true} />);
+
+        const input = screen.getByPlaceholderText(
+            "Search categories, images, programs, people",
+        );
+        await user.type(input, "Atlas");
+        await user.click(screen.getByText("Link"));
+
+        const cards = screen.getAllByText("Liver Section").filter(
+            (el) => el.closest('[class*="MuiCardActionArea"]'),
+        );
+        expect(cards).toHaveLength(1);
+
+        const card = cards[0].closest('[class*="MuiCard"]')!;
+        expect(card.textContent).toContain("Link:");
+        expect(card.textContent).not.toContain("Note:");
+    });
+
     it("ignores text payloads attached to non-text annotations", async () => {
         const user = userEvent.setup();
         render(<SearchModal {...defaultProps} open={true} />);
