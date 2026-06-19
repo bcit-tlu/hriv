@@ -38,7 +38,10 @@ export default function NoteDisplay({ note, collapsedLines = 2 }: NoteDisplayPro
         <Button
           size="small"
           variant="text"
-          onClick={() => setExpanded((s) => !s)}
+          onClick={(e) => {
+            e.stopPropagation()
+            setExpanded((s) => !s)
+          }}
           sx={{ alignSelf: 'flex-start', mt: -0.5 }}
         >
           {expanded ? 'Show less' : 'Show more'}
