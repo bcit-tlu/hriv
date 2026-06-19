@@ -15,6 +15,7 @@
  * 11. Category indentation via depth
  */
 
+import { StrictMode } from 'react'
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -37,17 +38,20 @@ function renderDialog(overrides: Partial<Parameters<typeof ManageCategoriesDialo
   const onEditCategory = overrides.onEditCategory ?? vi.fn().mockResolvedValue(undefined)
   const onToggleVisibility = overrides.onToggleVisibility ?? undefined
   const onReorderCategories = overrides.onReorderCategories ?? undefined
+  const onCategoryNavigate = overrides.onCategoryNavigate ?? undefined
   return {
     onClose,
     onAddCategory,
     onDeleteCategory,
     onEditCategory,
+    onCategoryNavigate,
     ...render(
       <ManageCategoriesDialog
         open={overrides.open ?? true}
         onClose={onClose}
         categories={overrides.categories ?? []}
         uncategorizedImages={overrides.uncategorizedImages}
+        onCategoryNavigate={onCategoryNavigate}
         onAddCategory={onAddCategory}
         onDeleteCategory={onDeleteCategory}
         onEditCategory={onEditCategory}
@@ -114,6 +118,82 @@ describe('ManageCategoriesDialog — basics', () => {
     expect(screen.getByText('Child')).toBeInTheDocument()
     // Child has └ prefix
     expect(screen.getByText('└')).toBeInTheDocument()
+  })
+
+  it('renders expand/collapse controls for categories with children', () => {
+    const categories = [
+      makeCategory({
+        id: 1,
+        label: 'Parent',
+        children: [makeCategory({ id: 2, label: 'Child', parentId: 1 })],
+      }),
+    ]
+    renderDialog({ categories })
+    expect(screen.getByRole('button', { name: 'Collapse Parent' })).toBeInTheDocument()
+  })
+
+  it('collapses child categories when the collapse control is clicked', async () => {
+    const user = userEvent.setup()
+    const categories = [
+      makeCategory({
+        id: 1,
+        label: 'Parent',
+        children: [makeCategory({ id: 2, label: 'Child', parentId: 1 })],
+      }),
+    ]
+    renderDialog({ categories })
+
+    await user.click(screen.getByRole('button', { name: 'Collapse Parent' }))
+
+    expect(screen.queryByText('Child')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expand Parent' })).toBeInTheDocument()
+  })
+
+  it('calls onCategoryNavigate when a category link is clicked', async () => {
+    const user = userEvent.setup()
+    const onCategoryNavigate = vi.fn()
+    const categories = [makeCategory({ id: 1, label: 'Histology' })]
+    renderDialog({ categories, onCategoryNavigate })
+
+    await user.click(screen.getByRole('button', { name: 'Histology' }))
+
+    expect(onCategoryNavigate).toHaveBeenCalledWith(1)
+  })
+
+  it('auto-expands categories that become parents after rerender in StrictMode', () => {
+    const leaf = makeCategory({ id: 1, label: 'Leaf' })
+    const child = makeCategory({ id: 2, label: 'Child', parentId: 1 })
+    const onAddCategory = vi.fn().mockResolvedValue(99)
+    const onDeleteCategory = vi.fn().mockResolvedValue(undefined)
+
+    const { rerender } = render(
+      <StrictMode>
+        <ManageCategoriesDialog
+          open
+          onClose={vi.fn()}
+          categories={[leaf]}
+          onAddCategory={onAddCategory}
+          onDeleteCategory={onDeleteCategory}
+          programs={programs}
+        />
+      </StrictMode>,
+    )
+
+    rerender(
+      <StrictMode>
+        <ManageCategoriesDialog
+          open
+          onClose={vi.fn()}
+          categories={[makeCategory({ ...leaf, children: [child] })]}
+          onAddCategory={onAddCategory}
+          onDeleteCategory={onDeleteCategory}
+          programs={programs}
+        />
+      </StrictMode>,
+    )
+
+    expect(screen.getByRole('button', { name: 'Collapse Leaf' })).toBeInTheDocument()
+    expect(screen.getByText('Child')).toBeInTheDocument()
   })
 
   it('does not render dialog content when open is false', () => {

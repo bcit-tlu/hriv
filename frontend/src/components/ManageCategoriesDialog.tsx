@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Dialog from '@mui/material/Dialog'
@@ -7,15 +7,18 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogContentText from '@mui/material/DialogContentText'
 import DialogTitle from '@mui/material/DialogTitle'
 import IconButton from '@mui/material/IconButton'
+import Link from '@mui/material/Link'
 import List from '@mui/material/List'
 import ListItem from '@mui/material/ListItem'
 import ListItemText from '@mui/material/ListItemText'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator'
 import EditIcon from '@mui/icons-material/Edit'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
 import type { Category, Group, ImageItem, Program } from '../types'
@@ -47,6 +50,21 @@ function getDescendantIds(options: FlatOption[], dragId: number): Set<number> {
   return ids
 }
 
+function getCollapsedDescendantIds(options: FlatOption[], expandedIds: Set<number>): Set<number> {
+  const ids = new Set<number>()
+  const collapsedAtDepth: boolean[] = []
+
+  for (const opt of options) {
+    collapsedAtDepth.length = opt.depth
+    const hiddenByCollapsed = opt.depth > 0 ? (collapsedAtDepth[opt.depth - 1] ?? false) : false
+    if (hiddenByCollapsed) ids.add(opt.id)
+    collapsedAtDepth[opt.depth] =
+      hiddenByCollapsed || (opt.childCount > 0 && !expandedIds.has(opt.id))
+  }
+
+  return ids
+}
+
 interface DropTarget {
   index: number
   depth: number
@@ -58,17 +76,20 @@ interface DropTarget {
  */
 function computeDropTarget(
   options: FlatOption[],
+  collapsedDescendantIds: Set<number>,
   dragId: number,
   listElement: HTMLElement,
   clientY: number,
   clientX: number,
 ): DropTarget | null {
   const descendantIds = getDescendantIds(options, dragId)
-  const visibleOptions = options.filter((o) => o.id !== dragId && !descendantIds.has(o.id))
+  const visibleOptions = options.filter(
+    (o) => !collapsedDescendantIds.has(o.id) && o.id !== dragId && !descendantIds.has(o.id),
+  )
   const listItems = Array.from(listElement.querySelectorAll<HTMLElement>('[data-category-id]'))
   const visibleElements = listItems.filter((el) => {
     const elId = Number(el.dataset.categoryId)
-    return elId !== dragId && !descendantIds.has(elId)
+    return !collapsedDescendantIds.has(elId) && elId !== dragId && !descendantIds.has(elId)
   })
 
   let insertAfterVisIdx = -1
@@ -135,6 +156,7 @@ interface ManageCategoriesDialogProps {
   onClose: () => void
   categories: Category[]
   uncategorizedImages?: ImageItem[]
+  onCategoryNavigate?: (categoryId: number) => void
   onAddCategory: (
     label: string,
     parentId: number | null,
@@ -164,6 +186,7 @@ export default function ManageCategoriesDialog({
   onClose,
   categories,
   uncategorizedImages = [],
+  onCategoryNavigate,
   onAddCategory,
   onDeleteCategory,
   onEditCategory,
@@ -187,14 +210,48 @@ export default function ManageCategoriesDialog({
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editingCategoryId, setEditingCategoryId] = useState<number | null>(null)
 
+  const options = useMemo(() => flattenCategoryOptions(categories) as FlatOption[], [categories])
+  const expandableIds = useMemo(
+    () => new Set(options.filter((opt) => opt.childCount > 0).map((opt) => opt.id)),
+    [options],
+  )
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(() => new Set(expandableIds))
   const listRef = useRef<HTMLUListElement>(null)
-
-  const options = useMemo(() => flattenCategoryOptions(categories) as FlatOption[], [categories])
+  const previousExpandableIds = useRef<Set<number> | null>(null)
 
   /** Set of category IDs whose ancestor is hidden (for cascading visibility). */
   const ancestorHiddenIds = useMemo(() => getAncestorHiddenIds(options), [options])
+  const collapsedDescendantIds = useMemo(
+    () => getCollapsedDescendantIds(options, expandedIds),
+    [options, expandedIds],
+  )
+  const visibleOptions = useMemo(
+    () => options.filter((opt) => !collapsedDescendantIds.has(opt.id)),
+    [options, collapsedDescendantIds],
+  )
+
+  useEffect(() => {
+    const priorExpandable = previousExpandableIds.current ?? new Set<number>()
+    previousExpandableIds.current = new Set(expandableIds)
+
+    setExpandedIds((prev) => {
+      const next = new Set<number>()
+
+      prev.forEach((id) => {
+        if (expandableIds.has(id)) next.add(id)
+      })
+      expandableIds.forEach((id) => {
+        if (!priorExpandable.has(id)) next.add(id)
+      })
+
+      if (prev.size === next.size && [...prev].every((id) => next.has(id))) {
+        return prev
+      }
+      return next
+    })
+  }, [expandableIds])
 
   const addSiblingNames = useMemo(
     () => options.filter((o) => o.parentId === addParentId).map((o) => o.label),
@@ -343,6 +400,18 @@ export default function ManageCategoriesDialog({
     [editingCategory, onEditCategory],
   )
 
+  const toggleExpanded = useCallback((categoryId: number) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(categoryId)) {
+        next.delete(categoryId)
+      } else {
+        next.add(categoryId)
+      }
+      return next
+    })
+  }, [])
+
   // ── Drag-and-drop handlers ──────────────────────────────
 
   const handleDragStart = useCallback((e: React.DragEvent, id: number) => {
@@ -361,10 +430,17 @@ export default function ManageCategoriesDialog({
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
       if (dragId == null || !listRef.current) return
-      const target = computeDropTarget(options, dragId, listRef.current, e.clientY, e.clientX)
+      const target = computeDropTarget(
+        options,
+        collapsedDescendantIds,
+        dragId,
+        listRef.current,
+        e.clientY,
+        e.clientX,
+      )
       setDropTarget(target)
     },
-    [dragId, options],
+    [dragId, options, collapsedDescendantIds],
   )
 
   const handleDrop = useCallback(
@@ -460,7 +536,9 @@ export default function ManageCategoriesDialog({
       return elId !== dragId && !descendantIds.has(elId)
     })
 
-    const visibleOptions = options.filter((o) => o.id !== dragId && !descendantIds.has(o.id))
+    const visibleOptions = options.filter(
+      (o) => !collapsedDescendantIds.has(o.id) && o.id !== dragId && !descendantIds.has(o.id),
+    )
 
     let visibleInsertIdx = visibleOptions.length
     for (let i = 0; i < visibleOptions.length; i++) {
@@ -493,7 +571,7 @@ export default function ManageCategoriesDialog({
       top: topPos,
       left: 16 + dropTarget.depth * 24,
     }
-  }, [dropTarget, dragId, options])
+  }, [dropTarget, dragId, options, collapsedDescendantIds])
   /* eslint-enable react-hooks/refs */
 
   return (
@@ -526,9 +604,11 @@ export default function ManageCategoriesDialog({
               />
             </ListItem>
 
-            {options.map((opt) => {
+            {visibleOptions.map((opt) => {
               const inheritedHidden = ancestorHiddenIds.has(opt.id)
               const effectivelyHidden = opt.status === 'hidden' || inheritedHidden
+              const isExpanded = expandedIds.has(opt.id)
+              const hasChildren = opt.childCount > 0
               return (
                 <ListItem
                   key={opt.id}
@@ -624,6 +704,25 @@ export default function ManageCategoriesDialog({
                     </Box>
                   }
                 >
+                  {hasChildren ? (
+                    <Tooltip title={isExpanded ? 'Collapse category' : 'Expand category'}>
+                      <IconButton
+                        edge="start"
+                        size="small"
+                        aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${opt.label}`}
+                        onClick={() => toggleExpanded(opt.id)}
+                        sx={{ mr: 0.5, flexShrink: 0 }}
+                      >
+                        {isExpanded ? (
+                          <ExpandMoreIcon fontSize="small" />
+                        ) : (
+                          <ChevronRightIcon fontSize="small" />
+                        )}
+                      </IconButton>
+                    </Tooltip>
+                  ) : (
+                    <Box sx={{ width: 30, flexShrink: 0 }} />
+                  )}
                   {onReorderCategories && (
                     <DragIndicatorIcon
                       fontSize="small"
@@ -638,12 +737,34 @@ export default function ManageCategoriesDialog({
                             {'\u2514 '}
                           </Typography>
                         )}
-                        <Typography
-                          component="span"
-                          sx={{ color: effectivelyHidden ? visColors.inactive : undefined }}
-                        >
-                          {opt.label}
-                        </Typography>
+                        {onCategoryNavigate ? (
+                          <Link
+                            component="button"
+                            type="button"
+                            underline="hover"
+                            color={effectivelyHidden ? visColors.inactive : 'inherit'}
+                            onClick={() => onCategoryNavigate(opt.id)}
+                            sx={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              cursor: 'pointer',
+                              p: 0,
+                              border: 0,
+                              background: 'none',
+                              font: 'inherit',
+                              textAlign: 'left',
+                            }}
+                          >
+                            {opt.label}
+                          </Link>
+                        ) : (
+                          <Typography
+                            component="span"
+                            sx={{ color: effectivelyHidden ? visColors.inactive : undefined }}
+                          >
+                            {opt.label}
+                          </Typography>
+                        )}
                         <Typography
                           component="span"
                           variant="body2"
