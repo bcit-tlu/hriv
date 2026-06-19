@@ -14,13 +14,19 @@ describe('CategoryRestrictionIcons', () => {
       />,
     )
 
-    const programIcon = screen.getByLabelText('Restricted to specific programs').querySelector('svg')
-    const groupIcon = screen.getByLabelText('Group restriction inherited from parent').querySelector('svg')
+    const programIcon = screen
+      .getByLabelText('Restricted to specific programs')
+      .querySelector('svg')
+    const groupIcon = screen
+      .getByLabelText('Group restriction inherited from parent')
+      .querySelector('svg')
 
     expect(programIcon).not.toBeNull()
     expect(groupIcon).not.toBeNull()
     expect(getComputedStyle(programIcon as SVGElement).opacity).toBe('1')
     expect(getComputedStyle(groupIcon as SVGElement).opacity).toBe('0.5')
-    expect(getComputedStyle(programIcon as SVGElement).color).toBe(getComputedStyle(groupIcon as SVGElement).color)
+    expect(getComputedStyle(programIcon as SVGElement).color).toBe(
+      getComputedStyle(groupIcon as SVGElement).color,
+    )
   })
 })

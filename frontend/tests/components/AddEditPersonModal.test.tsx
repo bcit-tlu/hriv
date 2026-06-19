@@ -15,7 +15,9 @@ const existingUser: ApiUser = {
   email: 'test@example.ca',
   role: 'student',
   program_ids: [1],
-  program_names: ['Medical Lab'], group_ids: [], group_names: [],
+  program_names: ['Medical Lab'],
+  group_ids: [],
+  group_names: [],
   last_access: null,
   metadata_extra: null,
   created_at: '2026-01-01T00:00:00Z',
@@ -26,14 +28,7 @@ describe('AddEditPersonModal', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('renders "Add Person" title when no user is provided', () => {
-    render(
-      <AddEditPersonModal
-        open
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        programs={programs}
-      />,
-    )
+    render(<AddEditPersonModal open onClose={vi.fn()} onSave={vi.fn()} programs={programs} />)
     expect(screen.getByText('Add Person')).toBeInTheDocument()
   })
 
@@ -65,28 +60,14 @@ describe('AddEditPersonModal', () => {
   })
 
   it('Add button is disabled when required fields are empty', () => {
-    render(
-      <AddEditPersonModal
-        open
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        programs={programs}
-      />,
-    )
+    render(<AddEditPersonModal open onClose={vi.fn()} onSave={vi.fn()} programs={programs} />)
     expect(screen.getByRole('button', { name: 'Add' })).toBeDisabled()
   })
 
   it('calls onSave with form data when adding a new person', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn()
-    render(
-      <AddEditPersonModal
-        open
-        onClose={vi.fn()}
-        onSave={onSave}
-        programs={programs}
-      />,
-    )
+    render(<AddEditPersonModal open onClose={vi.fn()} onSave={onSave} programs={programs} />)
 
     await user.type(screen.getByLabelText(/full name/i), 'New Person')
     await user.type(screen.getByLabelText(/email/i), 'new@example.ca')
@@ -135,29 +116,13 @@ describe('AddEditPersonModal', () => {
   })
 
   it('shows student restriction helper text when role is student', () => {
-    render(
-      <AddEditPersonModal
-        open
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        programs={programs}
-      />,
-    )
-    expect(
-      screen.getByText('Select one or more programs to restrict access'),
-    ).toBeInTheDocument()
+    render(<AddEditPersonModal open onClose={vi.fn()} onSave={vi.fn()} programs={programs} />)
+    expect(screen.getByText('Select one or more programs to restrict access')).toBeInTheDocument()
   })
 
   it('shows non-restrictive helper text when role is instructor', async () => {
     const user = userEvent.setup()
-    render(
-      <AddEditPersonModal
-        open
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        programs={programs}
-      />,
-    )
+    render(<AddEditPersonModal open onClose={vi.fn()} onSave={vi.fn()} programs={programs} />)
 
     // Change role to instructor via MUI Select
     // The first combobox is the Role select, the second is Programs
@@ -166,20 +131,15 @@ describe('AddEditPersonModal', () => {
     await user.click(screen.getByRole('option', { name: 'Instructor' }))
 
     expect(
-      screen.getByText(/Instructors and admins can see all content regardless of program assignment/),
+      screen.getByText(
+        /Instructors and admins can see all content regardless of program assignment/,
+      ),
     ).toBeInTheDocument()
   })
 
   it('shows non-restrictive helper text when role is admin', async () => {
     const user = userEvent.setup()
-    render(
-      <AddEditPersonModal
-        open
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        programs={programs}
-      />,
-    )
+    render(<AddEditPersonModal open onClose={vi.fn()} onSave={vi.fn()} programs={programs} />)
 
     // Change role to admin via MUI Select
     const selects = screen.getAllByRole('combobox')
@@ -187,21 +147,16 @@ describe('AddEditPersonModal', () => {
     await user.click(screen.getByRole('option', { name: 'Admin' }))
 
     expect(
-      screen.getByText(/Instructors and admins can see all content regardless of program assignment/),
+      screen.getByText(
+        /Instructors and admins can see all content regardless of program assignment/,
+      ),
     ).toBeInTheDocument()
   })
 
   it('cancel button calls onClose', async () => {
     const user = userEvent.setup()
     const onClose = vi.fn()
-    render(
-      <AddEditPersonModal
-        open
-        onClose={onClose}
-        onSave={vi.fn()}
-        programs={programs}
-      />,
-    )
+    render(<AddEditPersonModal open onClose={onClose} onSave={vi.fn()} programs={programs} />)
 
     await user.click(screen.getByRole('button', { name: /cancel/i }))
     expect(onClose).toHaveBeenCalledOnce()

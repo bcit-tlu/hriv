@@ -177,9 +177,7 @@ export default function ProgramManagementModal({
                   </Box>
                 ) : (
                   <ListItemText
-                    primary={
-                      <Chip label={p.name} size="small" color="primary" />
-                    }
+                    primary={<Chip label={p.name} size="small" color="primary" />}
                     secondary={p.oidc_group ? `OIDC group: ${p.oidc_group}` : undefined}
                   />
                 )}

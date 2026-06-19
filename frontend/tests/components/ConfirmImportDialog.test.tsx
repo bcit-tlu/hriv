@@ -22,9 +22,7 @@ function makeFile(name = 'snapshot.tar.gz', size = 2 * 1024 * 1024) {
   return file
 }
 
-function renderDialog(
-  overrides: Partial<Parameters<typeof ConfirmImportDialog>[0]> = {},
-) {
+function renderDialog(overrides: Partial<Parameters<typeof ConfirmImportDialog>[0]> = {}) {
   const onCancel = overrides.onCancel ?? vi.fn()
   const onConfirm = overrides.onConfirm ?? vi.fn()
   // ``??`` would overwrite ``file: null`` (which is a valid prop value)
@@ -63,25 +61,17 @@ describe('ConfirmImportDialog', () => {
 
   it('renders the db_import title and copy', () => {
     renderDialog({ kind: 'db_import' })
+    expect(screen.getByRole('heading', { name: /import database\?/i })).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { name: /import database\?/i }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        /all categories, images, users, and source image records/i,
-      ),
+      screen.getByText(/all categories, images, users, and source image records/i),
     ).toBeInTheDocument()
   })
 
   it('renders the files_import title and copy', () => {
     renderDialog({ kind: 'files_import' })
+    expect(screen.getByRole('heading', { name: /import filesystem\?/i })).toBeInTheDocument()
     expect(
-      screen.getByRole('heading', { name: /import filesystem\?/i }),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        /all image tiles, thumbnails, and uploaded source files/i,
-      ),
+      screen.getByText(/all image tiles, thumbnails, and uploaded source files/i),
     ).toBeInTheDocument()
   })
 

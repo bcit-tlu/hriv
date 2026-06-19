@@ -3,4 +3,4 @@ name: hriv-backend
 description: HRIV Backend – FastAPI image library API
 type: application
 version: 0.22.0 # x-release-please-version
-appVersion: "0.22.0" # x-release-please-version
+appVersion: '0.22.0' # x-release-please-version

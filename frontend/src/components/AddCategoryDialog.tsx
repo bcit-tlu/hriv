@@ -24,11 +24,7 @@ const EMPTY_IDS: number[] = []
 interface AddCategoryDialogProps {
   open: boolean
   onClose: () => void
-  onAdd: (
-    label: string,
-    programIds: number[],
-    groupIds: number[],
-  ) => void | Promise<void>
+  onAdd: (label: string, programIds: number[], groupIds: number[]) => void | Promise<void>
   parentLabel?: string
   siblingNames?: string[]
   programs?: Program[]
@@ -157,7 +153,13 @@ export default function AddCategoryDialog({
   }
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth TransitionProps={{ onEntered: handleEntered }}>
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      maxWidth="xs"
+      fullWidth
+      TransitionProps={{ onEntered: handleEntered }}
+    >
       <DialogTitle>{parentLabel ? `New Category in ${parentLabel}` : 'New Category'}</DialogTitle>
       <DialogContent>
         <Autocomplete
@@ -203,20 +205,30 @@ export default function AddCategoryDialog({
               onChange={(e) => setVisibility(e.target.value as 'all' | 'specific')}
             >
               <FormControlLabel value="all" control={<Radio size="small" />} label="All students" />
-              <FormControlLabel value="specific" control={<Radio size="small" />} label="Specific programs" />
+              <FormControlLabel
+                value="specific"
+                control={<Radio size="small" />}
+                label="Specific programs"
+              />
             </RadioGroup>
             {visibility === 'specific' && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
                 {programs.map((p) => {
-                  const disabled = inheritedProgramIds.length > 0 && !inheritedProgramIds.includes(p.id)
-                  const isInheritedOnly = inheritedProgramIds.includes(p.id) && !selectedProgramIds.has(p.id)
+                  const disabled =
+                    inheritedProgramIds.length > 0 && !inheritedProgramIds.includes(p.id)
+                  const isInheritedOnly =
+                    inheritedProgramIds.includes(p.id) && !selectedProgramIds.has(p.id)
                   return (
                     <Chip
                       key={p.id}
                       label={p.name}
                       size="small"
-                      color={selectedProgramIds.has(p.id) || isInheritedOnly ? 'primary' : 'default'}
-                      variant={selectedProgramIds.has(p.id) || isInheritedOnly ? 'filled' : 'outlined'}
+                      color={
+                        selectedProgramIds.has(p.id) || isInheritedOnly ? 'primary' : 'default'
+                      }
+                      variant={
+                        selectedProgramIds.has(p.id) || isInheritedOnly ? 'filled' : 'outlined'
+                      }
                       onClick={disabled ? undefined : () => toggleProgram(p.id)}
                       disabled={disabled}
                       sx={isInheritedOnly ? { opacity: 0.5 } : undefined}
@@ -237,13 +249,18 @@ export default function AddCategoryDialog({
               onChange={(e) => setGroupVisibility(e.target.value as 'all' | 'specific')}
             >
               <FormControlLabel value="all" control={<Radio size="small" />} label="All groups" />
-              <FormControlLabel value="specific" control={<Radio size="small" />} label="Specific groups" />
+              <FormControlLabel
+                value="specific"
+                control={<Radio size="small" />}
+                label="Specific groups"
+              />
             </RadioGroup>
             {groupVisibility === 'specific' && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
                 {groups.map((g) => {
                   const disabled = inheritedGroupIds.length > 0 && !inheritedGroupIds.includes(g.id)
-                  const isInheritedOnly = inheritedGroupIds.includes(g.id) && !selectedGroupIds.has(g.id)
+                  const isInheritedOnly =
+                    inheritedGroupIds.includes(g.id) && !selectedGroupIds.has(g.id)
                   const isSelected = selectedGroupIds.has(g.id)
                   const isActive = isSelected || isInheritedOnly
                   return (
@@ -286,8 +303,8 @@ export default function AddCategoryDialog({
         )}
         {programRestricted && groupRestricted && (
           <Alert severity="info" sx={{ mt: 2 }}>
-            This category is restricted by both program and group. A student must
-            be in a listed program <strong>and</strong> a listed group to see it.
+            This category is restricted by both program and group. A student must be in a listed
+            program <strong>and</strong> a listed group to see it.
           </Alert>
         )}
         {error && (
@@ -297,8 +314,19 @@ export default function AddCategoryDialog({
         )}
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} disabled={saving}>Cancel</Button>
-        <Button onClick={handleSubmit} variant="contained" disabled={!label.trim() || (visibility === 'specific' && selectedProgramIds.size === 0) || (groupVisibility === 'specific' && selectedGroupIds.size === 0) || saving}>
+        <Button onClick={handleClose} disabled={saving}>
+          Cancel
+        </Button>
+        <Button
+          onClick={handleSubmit}
+          variant="contained"
+          disabled={
+            !label.trim() ||
+            (visibility === 'specific' && selectedProgramIds.size === 0) ||
+            (groupVisibility === 'specific' && selectedGroupIds.size === 0) ||
+            saving
+          }
+        >
           Create
         </Button>
       </DialogActions>

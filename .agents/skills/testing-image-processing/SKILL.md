@@ -6,9 +6,11 @@ description: Guide for testing the HRIV image processing pipeline including arq 
 # Testing HRIV Image Processing Pipeline
 
 ## Overview
+
 The HRIV backend processes uploaded images into DZI tiles via pyvips. Processing runs in an arq worker (Redis-backed) or falls back to in-process BackgroundTasks.
 
 ## Devin Secrets Needed
+
 None required for local testing. Default credentials: `admin@example.ca` / `password`.
 
 ## Local Environment Setup
@@ -25,12 +27,12 @@ docker compose ps
 
 pyvips is extremely fast. For progress tracking to be observable (1.5s flush interval), images need to take >1.5s to process.
 
-| Dimensions | File Size | Processing Time | Progress Observable? |
-|-----------|-----------|----------------|---------------------|
-| 2000x2000 | ~11 MB | ~0.14s | No |
-| 4096x4096 | ~48 MB | ~0.55s | No |
-| 8000x8000 | ~183 MB | ~0.74s | No |
-| 20000x20000 | ~1.14 GB | ~4.8s | Yes |
+| Dimensions  | File Size | Processing Time | Progress Observable? |
+| ----------- | --------- | --------------- | -------------------- |
+| 2000x2000   | ~11 MB    | ~0.14s          | No                   |
+| 4096x4096   | ~48 MB    | ~0.55s          | No                   |
+| 8000x8000   | ~183 MB   | ~0.74s          | No                   |
+| 20000x20000 | ~1.14 GB  | ~4.8s           | Yes                  |
 
 Create test images with random noise (incompressible data that forces real work):
 
@@ -85,6 +87,7 @@ For concurrent upload + polling (needed for large files), use threading to uploa
 To verify trace context propagation from API to arq worker:
 
 1. **Enable console exporter** — create `docker-compose.override.yml`:
+
    ```yaml
    services:
      backend:
@@ -98,11 +101,13 @@ To verify trace context propagation from API to arq worker:
    ```
 
 2. **Rebuild and restart:**
+
    ```bash
    docker compose up -d --build backend worker
    ```
 
 3. **Upload an image**, then check logs:
+
    ```bash
    # Find the backend upload span trace_id
    docker compose logs backend | grep '"name": "POST /api/source-images/upload"' -A5
@@ -116,12 +121,12 @@ To verify trace context propagation from API to arq worker:
 
 ### Key spans in the processing pipeline
 
-| Span name | Container | Attributes |
-|-----------|-----------|------------|
-| `POST /api/source-images/upload` | backend | Auto-instrumented by FastAPI |
-| `process_source_image_task` | worker | `source_image.id`, `tiles.duration_ms` |
-| `generate_tiles` | worker | `image.width`, `image.height`, `image.bands`, `tiles.estimated_count`, `tiles.dzsave_duration_ms` |
-| `save_image_record` | worker | Child of `process_source_image_task` |
+| Span name                        | Container | Attributes                                                                                        |
+| -------------------------------- | --------- | ------------------------------------------------------------------------------------------------- |
+| `POST /api/source-images/upload` | backend   | Auto-instrumented by FastAPI                                                                      |
+| `process_source_image_task`      | worker    | `source_image.id`, `tiles.duration_ms`                                                            |
+| `generate_tiles`                 | worker    | `image.width`, `image.height`, `image.bands`, `tiles.estimated_count`, `tiles.dzsave_duration_ms` |
+| `save_image_record`              | worker    | Child of `process_source_image_task`                                                              |
 
 ### OTEL bootstrap and uvicorn --reload
 

@@ -83,7 +83,11 @@ const darkPalette = {
    * light-grey; inactive uses text.primary at 0.6 alpha (#E0DDD999)
    * giving ≈ 4.7 : 1 contrast on dark paper — matching the light ratio.
    */
-  visibility: { active: 'rgba(255,255,255,0.70)', inactive: '#E0DDD999', inactiveChipBg: '#6B6966' },
+  visibility: {
+    active: 'rgba(255,255,255,0.70)',
+    inactive: '#E0DDD999',
+    inactiveChipBg: '#6B6966',
+  },
 }
 
 // ---------------------------------------------------------------------------

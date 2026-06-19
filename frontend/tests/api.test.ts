@@ -14,9 +14,15 @@ vi.stubGlobal('fetch', mockFetch)
 const storage: Record<string, string> = {}
 vi.stubGlobal('localStorage', {
   getItem: (key: string) => storage[key] ?? null,
-  setItem: (key: string, val: string) => { storage[key] = val },
-  removeItem: (key: string) => { delete storage[key] },
-  get length() { return Object.keys(storage).length },
+  setItem: (key: string, val: string) => {
+    storage[key] = val
+  },
+  removeItem: (key: string) => {
+    delete storage[key]
+  },
+  get length() {
+    return Object.keys(storage).length
+  },
   key: (i: number) => Object.keys(storage)[i] ?? null,
 })
 
@@ -170,7 +176,9 @@ const USER_FIXTURE: ApiUser = {
   email: 'admin@example.ca',
   role: 'admin',
   program_ids: [],
-  program_names: [], group_ids: [], group_names: [],
+  program_names: [],
+  group_ids: [],
+  group_names: [],
   last_access: null,
   metadata_extra: null,
   created_at: '2026-01-01T00:00:00Z',
@@ -294,10 +302,16 @@ describe('userMessage', () => {
   })
 
   it('returns fallback for HTML fragment detail', () => {
-    expect(userMessage(new ApiError(400, '<div>Service Unavailable</div>'), 'fallback')).toBe('fallback')
-    expect(userMessage(new ApiError(413, '<h1>413 Request Entity Too Large</h1>'), 'fallback')).toBe('fallback')
+    expect(userMessage(new ApiError(400, '<div>Service Unavailable</div>'), 'fallback')).toBe(
+      'fallback',
+    )
+    expect(
+      userMessage(new ApiError(413, '<h1>413 Request Entity Too Large</h1>'), 'fallback'),
+    ).toBe('fallback')
     expect(userMessage(new ApiError(400, '<pre>Error details</pre>'), 'fallback')).toBe('fallback')
-    expect(userMessage(new ApiError(400, '<table><tr><td>Error</td></tr></table>'), 'fallback')).toBe('fallback')
+    expect(
+      userMessage(new ApiError(400, '<table><tr><td>Error</td></tr></table>'), 'fallback'),
+    ).toBe('fallback')
   })
 })
 
@@ -369,7 +383,10 @@ describe('request helper (via wrapper functions)', () => {
 // ── Status ───────────────────────────────────────────────────────────────
 
 describe('fetchStatus', () => {
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   it('sends GET to /api/status without auth or Content-Type headers', async () => {
@@ -389,7 +406,10 @@ describe('fetchStatus', () => {
 // ── Categories ───────────────────────────────────────────────────────────
 
 describe('Category API', () => {
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   it('fetchCategoryTree sends GET to /api/categories/tree', async () => {
@@ -455,7 +475,10 @@ describe('Category API', () => {
 // ── Images ───────────────────────────────────────────────────────────────
 
 describe('Image API', () => {
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   it('fetchImage sends GET to /api/images/:id', async () => {
@@ -531,12 +554,18 @@ describe('Image API', () => {
 
   it('reorderImages sends PUT with items array', async () => {
     mockFetch.mockReturnValueOnce(noContentResponse())
-    await reorderImages([{ id: 1, sort_order: 0 }, { id: 2, sort_order: 1 }])
+    await reorderImages([
+      { id: 1, sort_order: 0 },
+      { id: 2, sort_order: 1 },
+    ])
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/images/reorder')
     expect(init.method).toBe('PUT')
     expect(JSON.parse(init.body)).toEqual({
-      items: [{ id: 1, sort_order: 0 }, { id: 2, sort_order: 1 }],
+      items: [
+        { id: 1, sort_order: 0 },
+        { id: 2, sort_order: 1 },
+      ],
     })
   })
 })
@@ -544,7 +573,10 @@ describe('Image API', () => {
 // ── OIDC ─────────────────────────────────────────────────────────────────
 
 describe('OIDC API', () => {
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   it('fetchOidcEnabled sends GET to /api/auth/oidc/enabled', async () => {
@@ -562,7 +594,10 @@ describe('OIDC API', () => {
 // ── Users ────────────────────────────────────────────────────────────────
 
 describe('User API', () => {
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   it('fetchUsers sends GET to /api/users/', async () => {
@@ -625,7 +660,10 @@ describe('User API', () => {
 // ── Programs ─────────────────────────────────────────────────────────────
 
 describe('Program API', () => {
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   it('fetchPrograms sends GET', async () => {
@@ -675,7 +713,10 @@ describe('Group API', () => {
   }
   const MEMBER_FIXTURE = { id: 101, name: 'Alice', email: 'alice@bcit.ca', role: 'student' }
 
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   it('fetchGroups sends GET to /api/groups/', async () => {
@@ -759,7 +800,10 @@ describe('Group API', () => {
 // ── Announcement ─────────────────────────────────────────────────────────
 
 describe('Announcement API', () => {
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   it('fetchAnnouncement sends GET', async () => {
@@ -781,7 +825,10 @@ describe('Announcement API', () => {
 // ── Source Images ─────────────────────────────────────────────────────────
 
 describe('Source Image API', () => {
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   it('fetchSourceImage sends GET', async () => {
@@ -812,11 +859,24 @@ describe('Source Image API', () => {
 // ── Bulk Import ──────────────────────────────────────────────────────────
 
 describe('Bulk Import API', () => {
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   it('fetchBulkImportJob sends GET', async () => {
-    const fixture = { id: 5, status: 'completed', category_id: 2, total_count: 3, completed_count: 3, failed_count: 0, errors: null, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' }
+    const fixture = {
+      id: 5,
+      status: 'completed',
+      category_id: 2,
+      total_count: 3,
+      completed_count: 3,
+      failed_count: 0,
+      errors: null,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    }
     mockFetch.mockReturnValueOnce(jsonResponse(fixture))
     const result = await fetchBulkImportJob(5)
     expect(mockFetch.mock.calls[0][0]).toBe('/api/admin/bulk-import/5')
@@ -827,7 +887,10 @@ describe('Bulk Import API', () => {
 // ── Issues ───────────────────────────────────────────────────────────────
 
 describe('Issue API', () => {
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   it('reportIssue sends POST', async () => {
@@ -843,7 +906,10 @@ describe('Issue API', () => {
 // ── Versions ─────────────────────────────────────────────────────────────
 
 describe('Version API', () => {
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   it('fetchVersions sends GET to /api/admin/version', async () => {
@@ -872,7 +938,10 @@ describe('Version API', () => {
 // ── Download ─────────────────────────────────────────────────────────────
 
 describe('downloadAdminTaskResult', () => {
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   it('fetches download token then navigates to download URL', async () => {
@@ -883,8 +952,12 @@ describe('downloadAdminTaskResult', () => {
     Object.defineProperty(window, 'location', {
       value: {
         ...originalLocation,
-        get href() { return assignedHref },
-        set href(val: string) { assignedHref = val },
+        get href() {
+          return assignedHref
+        },
+        set href(val: string) {
+          assignedHref = val
+        },
       },
       writable: true,
       configurable: true,
@@ -910,7 +983,10 @@ describe('downloadAdminTaskResult', () => {
 // ── Admin Tasks ──────────────────────────────────────────────────────────
 
 describe('Admin Tasks API', () => {
-  beforeEach(() => { mockFetch.mockReset(); setToken('jwt') })
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
   afterEach(() => setToken(null))
 
   const TASK_FIXTURE = {
@@ -994,7 +1070,7 @@ describe('XHR upload abort support', () => {
   beforeEach(() => {
     xhrInstances = []
     // Must use `function` keyword (not arrow) so `new XMLHttpRequest()` works.
-    function MockXHR(this: typeof xhrInstances[0]) {
+    function MockXHR(this: (typeof xhrInstances)[0]) {
       const listeners: Record<string, (() => void)[]> = {}
       this.open = vi.fn()
       this.send = vi.fn()
@@ -1003,12 +1079,10 @@ describe('XHR upload abort support', () => {
       })
       this.setRequestHeader = vi.fn()
       this.upload = { addEventListener: vi.fn() }
-      this.addEventListener = vi.fn().mockImplementation(
-        (event: string, cb: () => void) => {
-          if (!listeners[event]) listeners[event] = []
-          listeners[event].push(cb)
-        },
-      )
+      this.addEventListener = vi.fn().mockImplementation((event: string, cb: () => void) => {
+        if (!listeners[event]) listeners[event] = []
+        listeners[event].push(cb)
+      })
       this.status = 200
       this.responseText = '{}'
       this.listeners = listeners
@@ -1023,9 +1097,15 @@ describe('XHR upload abort support', () => {
     vi.stubGlobal('fetch', mockFetch)
     vi.stubGlobal('localStorage', {
       getItem: (key: string) => storage[key] ?? null,
-      setItem: (key: string, val: string) => { storage[key] = val },
-      removeItem: (key: string) => { delete storage[key] },
-      get length() { return Object.keys(storage).length },
+      setItem: (key: string, val: string) => {
+        storage[key] = val
+      },
+      removeItem: (key: string) => {
+        delete storage[key]
+      },
+      get length() {
+        return Object.keys(storage).length
+      },
       key: (i: number) => Object.keys(storage)[i] ?? null,
     })
     vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
@@ -1034,7 +1114,16 @@ describe('XHR upload abort support', () => {
   it('uploadSourceImage rejects with AbortError when signal is aborted', async () => {
     const ac = new AbortController()
     const file = new File(['test'], 'test.png', { type: 'image/png' })
-    const promise = uploadSourceImage(file, undefined, undefined, undefined, undefined, undefined, undefined, ac.signal)
+    const promise = uploadSourceImage(
+      file,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      ac.signal,
+    )
     ac.abort()
     await expect(promise).rejects.toThrow('Upload aborted')
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
@@ -1052,7 +1141,15 @@ describe('XHR upload abort support', () => {
   it('bulkImportImages rejects with AbortError when signal is aborted', async () => {
     const ac = new AbortController()
     const file = new File(['test'], 'test.zip')
-    const promise = bulkImportImages([file], 1, undefined, undefined, undefined, undefined, ac.signal)
+    const promise = bulkImportImages(
+      [file],
+      1,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      ac.signal,
+    )
     ac.abort()
     await expect(promise).rejects.toThrow('Upload aborted')
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
@@ -1070,7 +1167,16 @@ describe('XHR upload abort support', () => {
   it('uploadSourceImage calls xhr.abort() when signal fires', async () => {
     const ac = new AbortController()
     const file = new File(['test'], 'test.png', { type: 'image/png' })
-    const promise = uploadSourceImage(file, undefined, undefined, undefined, undefined, undefined, undefined, ac.signal)
+    const promise = uploadSourceImage(
+      file,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      ac.signal,
+    )
     expect(xhrInstances).toHaveLength(1)
     ac.abort()
     expect(xhrInstances[0].abort).toHaveBeenCalled()
@@ -1088,7 +1194,16 @@ describe('XHR upload abort support', () => {
     const ac = new AbortController()
     ac.abort()
     const file = new File(['test'], 'test.png', { type: 'image/png' })
-    const promise = uploadSourceImage(file, undefined, undefined, undefined, undefined, undefined, undefined, ac.signal)
+    const promise = uploadSourceImage(
+      file,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      ac.signal,
+    )
     await expect(promise).rejects.toThrow('Upload aborted')
     // Rejects directly without calling xhr.abort() (abort before send
     // doesn't fire the abort event per XHR spec).

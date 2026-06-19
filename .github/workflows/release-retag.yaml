@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: "Release tag to retag (e.g. frontend-v1.2.3)"
+        description: 'Release tag to retag (e.g. frontend-v1.2.3)'
         required: true
         type: string
 

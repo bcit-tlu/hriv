@@ -8,7 +8,11 @@ interface AnnouncementBannerProps {
   onDismiss?: () => void
 }
 
-export default function AnnouncementBanner({ message, variant = 'app', onDismiss }: AnnouncementBannerProps) {
+export default function AnnouncementBanner({
+  message,
+  variant = 'app',
+  onDismiss,
+}: AnnouncementBannerProps) {
   if (!message) return null
 
   if (variant === 'login') {
@@ -27,11 +31,7 @@ export default function AnnouncementBanner({ message, variant = 'app', onDismiss
       variant="filled"
       action={
         onDismiss ? (
-          <Button
-            color="inherit"
-            size="small"
-            onClick={onDismiss}
-          >
+          <Button color="inherit" size="small" onClick={onDismiss}>
             Dismiss
           </Button>
         ) : undefined

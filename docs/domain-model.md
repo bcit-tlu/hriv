@@ -2,12 +2,13 @@
 
 A quick reference to the data model before changing schemas or migrations. All
 models live in `backend/app/models.py`. **Alembic is the sole source of truth for
-the schema** — change the model *and* generate a migration in the same PR (see
+the schema** — change the model _and_ generate a migration in the same PR (see
 [`AGENTS.md`](../AGENTS.md) → Database schema changes and `backend/README.md`).
 
 ## Entities
 
 ### User
+
 - **Purpose:** authenticated user with role-based access.
 - **Key fields:** `name`; `email` (unique, **case-insensitive** via
   `ix_users_email_lower`); `password_hash` (nullable — OIDC users have none);
@@ -19,6 +20,7 @@ the schema** — change the model *and* generate a migration in the same PR (see
   `groups.created_by_user_id` are `SET NULL` on delete.
 
 ### Program
+
 - **Purpose:** access-control unit gating category visibility for students
   (admin/OIDC-managed; flat).
 - **Key fields:** `name` (unique); `oidc_group` (nullable, unique — maps an OIDC
@@ -28,6 +30,7 @@ the schema** — change the model *and* generate a migration in the same PR (see
   junctions.
 
 ### Group _(added in `0010_add_groups`)_
+
 - **Purpose:** instructor-managed visibility dimension, independent of programs.
 - **Key fields:** `name` (unique); `description` (nullable);
   `created_by_user_id` (FK to User, **SET NULL** — audit only).
@@ -40,6 +43,7 @@ the schema** — change the model *and* generate a migration in the same PR (see
 - See [Groups](groups.md) for membership/lifecycle invariants.
 
 ### Category
+
 - **Purpose:** hierarchical folder structure for organising images.
 - **Key fields:** `label`; `parent_id` (nullable self-FK, `CASCADE`); `status`
   (`"active"` / `"hidden"`, default `active`); `sort_order`; `version` (integer,
@@ -53,6 +57,7 @@ the schema** — change the model *and* generate a migration in the same PR (see
   images get `category_id = NULL` (`SET NULL`).
 
 ### Image
+
 - **Purpose:** a processed, viewable image served via deep-zoom tiles.
 - **Key fields:** `name`; `thumb`; `tile_sources` (DZI path); `category_id`
   (nullable FK, `SET NULL`); `copyright`; `note`; `active` (boolean — inactive
@@ -62,10 +67,11 @@ the schema** — change the model *and* generate a migration in the same PR (see
   optimistic concurrency); `width`; `height`; `file_size`.
 - **Common mistakes:**
   - `metadata_` is the Python attribute but the DB column is `metadata`.
-  - `Image.active` controls *image* visibility; `Category.status` controls
-    *category* visibility — they are **independent**.
+  - `Image.active` controls _image_ visibility; `Category.status` controls
+    _category_ visibility — they are **independent**.
 
 ### SourceImage
+
 - **Purpose:** original uploaded file before tiling/processing.
 - **Key fields:** `original_filename`; `stored_path`; `status` (`pending` /
   `processing` / `completed` / `failed`); `progress`; `error_message`;
@@ -75,6 +81,7 @@ the schema** — change the model *and* generate a migration in the same PR (see
 - **Relationships:** `image` (nullable).
 
 ### BulkImportJob
+
 - **Purpose:** tracks multi-file upload/import operations.
 - **Key fields:** `status` (`pending` / `processing` / `completed` / `failed`);
   `category_id` (nullable FK, `SET NULL`); `total_count`; `completed_count`;
@@ -82,11 +89,13 @@ the schema** — change the model *and* generate a migration in the same PR (see
 - **Relationships:** `category`.
 
 ### Announcement
+
 - **Purpose:** system-wide banner message.
 - **Key fields:** `message` (text); `enabled` (boolean).
 - **Note:** singleton — only `id=1` is used in practice.
 
 ### AdminTask
+
 - **Purpose:** tracks long-running admin import/export operations.
 - **Key fields:** `task_type` (`db_export` / `db_import` / `files_export` /
   `files_import`); `status` (`uploading` / `pending` / `running` / `completed` /
@@ -97,13 +106,13 @@ the schema** — change the model *and* generate a migration in the same PR (see
 
 ## Junction tables
 
-| Table | Composite PK | FK behaviour | Constraint |
-|-------|--------------|--------------|------------|
-| `user_programs` | `(user_id, program_id)` | both `CASCADE` | — |
-| `category_programs` | `(category_id, program_id)` | both `CASCADE` | — |
-| `group_members` | `(group_id, user_id)` | both `CASCADE` | members must be **students** (422 on mismatch) |
-| `group_instructors` | `(group_id, user_id)` | both `CASCADE` | instructors must be **instructors** (422); last instructor cannot be removed (409) |
-| `category_groups` | `(category_id, group_id)` | both `CASCADE` | group attached to a category cannot be deleted (409) |
+| Table               | Composite PK                | FK behaviour   | Constraint                                                                         |
+| ------------------- | --------------------------- | -------------- | ---------------------------------------------------------------------------------- |
+| `user_programs`     | `(user_id, program_id)`     | both `CASCADE` | —                                                                                  |
+| `category_programs` | `(category_id, program_id)` | both `CASCADE` | —                                                                                  |
+| `group_members`     | `(group_id, user_id)`       | both `CASCADE` | members must be **students** (422 on mismatch)                                     |
+| `group_instructors` | `(group_id, user_id)`       | both `CASCADE` | instructors must be **instructors** (422); last instructor cannot be removed (409) |
+| `category_groups`   | `(category_id, group_id)`   | both `CASCADE` | group attached to a category cannot be deleted (409)                               |
 
 `group_members` and `group_instructors` also carry a `created_at` timestamp.
 

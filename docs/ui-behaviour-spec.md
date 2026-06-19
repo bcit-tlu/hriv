@@ -15,22 +15,23 @@ for where each feature lives.
 ## Role-gated behaviour (who sees what)
 
 Two capability flags in `AuthContext.tsx` drive all gating:
+
 - `canEditContent = role ∈ {admin, instructor}`
 - `canManageUsers = role === admin`
 
 ### Tab / navigation visibility (`AppShell.tsx` — `AppShell.test.tsx`)
 
-| Surface | Student | Instructor | Admin |
-|---|---|---|---|
-| Home | ✓ | ✓ | ✓ |
-| Images tab | — | ✓ | ✓ |
-| Manage dropdown | — | ✓ | ✓ |
-| Manage → Categories | — | ✓ | ✓ |
-| Manage → Programs | — | — | ✓ |
-| Manage → Groups | — | ✓ | ✓ |
-| Manage → Announcement | — | ✓ | ✓ |
-| People tab | — | — | ✓ |
-| Admin tab | — | — | ✓ |
+| Surface               | Student | Instructor | Admin |
+| --------------------- | ------- | ---------- | ----- |
+| Home                  | ✓       | ✓          | ✓     |
+| Images tab            | —       | ✓          | ✓     |
+| Manage dropdown       | —       | ✓          | ✓     |
+| Manage → Categories   | —       | ✓          | ✓     |
+| Manage → Programs     | —       | —          | ✓     |
+| Manage → Groups       | —       | ✓          | ✓     |
+| Manage → Announcement | —       | ✓          | ✓     |
+| People tab            | —       | —          | ✓     |
+| Admin tab             | —       | —          | ✓     |
 
 - **Given** a student is logged in, **When** the app bar renders, **Then** only
   Home is shown (no Images, Manage, People, or Admin).
@@ -40,7 +41,7 @@ Two capability flags in `AuthContext.tsx` drive all gating:
 
 > **This table covers navigation/tab visibility only — not API-level access.**
 > Tab gating and API authorization are independent. Notably, the **People** tab
-> is admin-only (`AppShell.tsx` `canManageUsers`), but instructors *can* still
+> is admin-only (`AppShell.tsx` `canManageUsers`), but instructors _can_ still
 > list users via the API (`GET /api/users/` is gated by
 > `require_role("admin", "instructor")` in `backend/app/routers/users.py`) — the
 > Manage Groups detail panel relies on this. So an instructor not seeing the People
@@ -96,6 +97,7 @@ Two capability flags in `AuthContext.tsx` drive all gating:
 
 The category dialogs enforce **narrowing (intersection)** semantics so a child can
 never widen access an ancestor restricts:
+
 - `narrowProgramIds(ancestors)` / `narrowGroupIds(ancestors)` compute the
   effective allowed set walking top-down.
 - `splitDirectAncestorProgramIds(fullPath)` separates **direct** (editable on
@@ -114,11 +116,11 @@ committed on Save) in the edit modals.
 
 #### Category visibility — 3-state button (breadcrumb bar, EditCategoryDialog)
 
-| State | Button | Behaviour |
-|---|---|---|
-| Visible | Primary "Hide Category" | Clickable — toggles status |
-| Directly hidden | Grey "Show Category" | Clickable — toggles status |
-| Inherited from parent | Disabled "Hidden by Parent" | Not clickable |
+| State                 | Button                      | Behaviour                  |
+| --------------------- | --------------------------- | -------------------------- |
+| Visible               | Primary "Hide Category"     | Clickable — toggles status |
+| Directly hidden       | Grey "Show Category"        | Clickable — toggles status |
+| Inherited from parent | Disabled "Hidden by Parent" | Not clickable              |
 
 - **Given** a category whose ancestor is hidden, **When** the breadcrumb bar
   renders, **Then** the visibility button shows "Hidden by Parent" and is
@@ -129,11 +131,11 @@ committed on Save) in the edit modals.
 
 #### Image visibility — 3-state button (EditImageModal, Image Viewer header)
 
-| State | Button | Behaviour |
-|---|---|---|
-| Active | Primary "Hide Image" | Clickable — toggles `active` locally |
-| Directly hidden | Grey "Show Image" | Clickable — toggles `active` locally |
-| Category hidden | Disabled "Hidden by Category" | Not clickable |
+| State           | Button                        | Behaviour                            |
+| --------------- | ----------------------------- | ------------------------------------ |
+| Active          | Primary "Hide Image"          | Clickable — toggles `active` locally |
+| Directly hidden | Grey "Show Image"             | Clickable — toggles `active` locally |
+| Category hidden | Disabled "Hidden by Category" | Not clickable                        |
 
 - `categoryHidden` is computed reactively inside `EditImageForm` via
   `isCategoryHiddenInTree(categories, categoryId)`, so it updates when the

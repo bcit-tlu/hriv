@@ -1,7 +1,7 @@
 # Category visibility & program restriction
 
 Category (and image) visibility for **students** is governed by a small set of
-rules that are enforced in the backend and *mirrored* — for UX only — in the
+rules that are enforced in the backend and _mirrored_ — for UX only — in the
 frontend. This page is the single reference for those rules. It covers the
 **dual-gate** model: visibility is gated independently by **programs** (admin/
 OIDC-managed) and **groups** (instructor-managed), combined with **AND**.
@@ -24,21 +24,21 @@ visible  ⇔  (category has no programs  OR  category.programs ∩ user.programs
 ```
 
 An empty restriction list on a dimension means **unrestricted** on that
-dimension (visible to everyone) — *not* "no access". Each gate is evaluated the
+dimension (visible to everyone) — _not_ "no access". Each gate is evaluated the
 same way; groups were added as a second, independent dimension alongside the
 pre-existing program gate.
 
 ### Truth table
 
 `P` = program gate result, `G` = group gate result. A gate "passes" if the
-category is unrestricted on that dimension *or* the user overlaps it.
+category is unrestricted on that dimension _or_ the user overlaps it.
 
 | Program gate | Group gate | Visible? |
-|--------------|-----------|----------|
-| pass | pass | ✅ yes |
-| pass | fail | ❌ no |
-| fail | pass | ❌ no |
-| fail | fail | ❌ no |
+| ------------ | ---------- | -------- |
+| pass         | pass       | ✅ yes   |
+| pass         | fail       | ❌ no    |
+| fail         | pass       | ❌ no    |
+| fail         | fail       | ❌ no    |
 
 Both gates must pass. This is implemented by `_passes_gates()` in
 `visibility.py`.
@@ -64,14 +64,14 @@ category and image.
 
 Assume a student in program `P1` and group `G1`.
 
-| Scenario | Parent | Child | Child visible? | Why |
-|----------|--------|-------|----------------|-----|
-| Unrestricted parent / restricted child | (none) | programs `{P1}` | ✅ | Child program gate passes; no group restriction. |
-| Restricted parent / unrestricted child | programs `{P2}` | (none) | ❌ | Parent program gate fails → subtree cascades out. |
-| Hidden parent | `status=hidden` | (any) | ❌ | Hidden subtree rule hides all descendants. |
-| Dual restriction, member of both | programs `{P1}`, groups `{G1}` | (none) | ✅ | Both gates pass. |
-| Dual restriction, group only | programs `{P2}`, groups `{G1}` | (none) | ❌ | Program gate fails even though group gate passes (AND). |
-| Conflicting nested restrictions | programs `{P1}` | programs `{P2}` | ❌ | Ancestor passes, but the child's own program gate fails. |
+| Scenario                               | Parent                         | Child           | Child visible? | Why                                                      |
+| -------------------------------------- | ------------------------------ | --------------- | -------------- | -------------------------------------------------------- |
+| Unrestricted parent / restricted child | (none)                         | programs `{P1}` | ✅             | Child program gate passes; no group restriction.         |
+| Restricted parent / unrestricted child | programs `{P2}`                | (none)          | ❌             | Parent program gate fails → subtree cascades out.        |
+| Hidden parent                          | `status=hidden`                | (any)           | ❌             | Hidden subtree rule hides all descendants.               |
+| Dual restriction, member of both       | programs `{P1}`, groups `{G1}` | (none)          | ✅             | Both gates pass.                                         |
+| Dual restriction, group only           | programs `{P2}`, groups `{G1}` | (none)          | ❌             | Program gate fails even though group gate passes (AND).  |
+| Conflicting nested restrictions        | programs `{P1}`                | programs `{P2}` | ❌             | Ancestor passes, but the child's own program gate fails. |
 
 The "dual restriction, group only" row is exactly the case the
 [`program_group_intersection` warning](groups.md#intersection-warning) advises
@@ -82,11 +82,11 @@ access because the gates are combined with AND.
 
 These are two different concerns and use different code:
 
-- **Backend enforcement** (`visibility.py`) decides what a *student* may see at
+- **Backend enforcement** (`visibility.py`) decides what a _student_ may see at
   request time, using the dual-gate + cascade rules above.
 - **Frontend narrowing** (`frontend/src/categoryUtils.ts`) shapes what an
-  *editor* can pick in the category dialogs. It uses **narrowing / intersection
-  semantics**: a child can never *widen* a restriction beyond what its ancestors
+  _editor_ can pick in the category dialogs. It uses **narrowing / intersection
+  semantics**: a child can never _widen_ a restriction beyond what its ancestors
   allow.
   - `narrowProgramIds(ancestors)` — walks the ordered (top-down) ancestor chain;
     the first ancestor with `programIds` initialises the effective set, and each
@@ -124,16 +124,16 @@ The tree endpoint also supports **conditional requests**:
 
 ## Where this lives
 
-| Concern | Files |
-|---------|-------|
-| Dual-gate + cascade enforcement | `backend/app/visibility.py` |
-| Student guards on tree/images | `backend/app/routers/categories.py`, `backend/app/routers/images.py` |
-| Intersection warning | `backend/app/routers/categories.py` (`_intersection_warnings`) |
-| Frontend narrowing | `frontend/src/categoryUtils.ts` |
-| Frontend visibility cascade helpers | `frontend/src/treeUtils.ts` (`isCategoryHiddenInTree`) |
-| Frontend visibility UI (3-state buttons, desaturation) | `frontend/src/App.tsx`, `EditCategoryDialog`, `EditImageModal`, `CategoryPickerSelect`, `ManageCategoriesDialog`, `ManagePage`, `SortableTileGrid` |
-| Tree → camelCase mapping | `frontend/src/useBrowseData.ts` |
-| Tests | `backend/tests/test_visibility.py`, `test_categories.py`, `test_router_groups.py`, `test_router_images.py`; `frontend/tests/.../categoryUtils.test.ts`, `useBrowseData.test.ts`, `EditImageModal.test.tsx`, `EditCategoryDialog.test.tsx` |
+| Concern                                                | Files                                                                                                                                                                                                                                     |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Dual-gate + cascade enforcement                        | `backend/app/visibility.py`                                                                                                                                                                                                               |
+| Student guards on tree/images                          | `backend/app/routers/categories.py`, `backend/app/routers/images.py`                                                                                                                                                                      |
+| Intersection warning                                   | `backend/app/routers/categories.py` (`_intersection_warnings`)                                                                                                                                                                            |
+| Frontend narrowing                                     | `frontend/src/categoryUtils.ts`                                                                                                                                                                                                           |
+| Frontend visibility cascade helpers                    | `frontend/src/treeUtils.ts` (`isCategoryHiddenInTree`)                                                                                                                                                                                    |
+| Frontend visibility UI (3-state buttons, desaturation) | `frontend/src/App.tsx`, `EditCategoryDialog`, `EditImageModal`, `CategoryPickerSelect`, `ManageCategoriesDialog`, `ManagePage`, `SortableTileGrid`                                                                                        |
+| Tree → camelCase mapping                               | `frontend/src/useBrowseData.ts`                                                                                                                                                                                                           |
+| Tests                                                  | `backend/tests/test_visibility.py`, `test_categories.py`, `test_router_groups.py`, `test_router_images.py`; `frontend/tests/.../categoryUtils.test.ts`, `useBrowseData.test.ts`, `EditImageModal.test.tsx`, `EditCategoryDialog.test.tsx` |
 
 See also: [Groups](groups.md), [Domain model](domain-model.md),
 [`docs/TESTING.md`](TESTING.md), and the

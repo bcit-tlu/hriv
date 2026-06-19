@@ -202,7 +202,13 @@ vi.mock('../src/components/AppShell', () => ({
 }))
 
 vi.mock('../src/components/SortableTileGrid', () => ({
-  default: ({ currentImages, onImageClick }: { currentImages: typeof mockImage[]; onImageClick: (img: typeof mockImage) => void }) => (
+  default: ({
+    currentImages,
+    onImageClick,
+  }: {
+    currentImages: (typeof mockImage)[]
+    onImageClick: (img: typeof mockImage) => void
+  }) => (
     <button type="button" onClick={() => onImageClick(currentImages[0])}>
       Open image
     </button>
@@ -346,8 +352,12 @@ describe('App breadcrumbs', () => {
     const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
     expect(imageBreadcrumb).not.toBeNull()
 
-    const programChip = within(imageBreadcrumb as HTMLElement).getByText('Pathology').closest('.MuiChip-root')
-    const groupChip = within(imageBreadcrumb as HTMLElement).getByText('Lab A2').closest('.MuiChip-root')
+    const programChip = within(imageBreadcrumb as HTMLElement)
+      .getByText('Pathology')
+      .closest('.MuiChip-root')
+    const groupChip = within(imageBreadcrumb as HTMLElement)
+      .getByText('Lab A2')
+      .closest('.MuiChip-root')
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')
 
@@ -395,8 +405,12 @@ describe('App breadcrumbs', () => {
     const imageBreadcrumb = screen.getByLabelText('image breadcrumb').closest('div')
     expect(imageBreadcrumb).not.toBeNull()
 
-    const programChip = within(imageBreadcrumb as HTMLElement).getByText('Pathology').closest('.MuiChip-root')
-    const groupChip = within(imageBreadcrumb as HTMLElement).getByText('Lab A2').closest('.MuiChip-root')
+    const programChip = within(imageBreadcrumb as HTMLElement)
+      .getByText('Pathology')
+      .closest('.MuiChip-root')
+    const groupChip = within(imageBreadcrumb as HTMLElement)
+      .getByText('Lab A2')
+      .closest('.MuiChip-root')
     const hiddenButton = screen.getByRole('button', { name: 'Visibility: Hidden by category' })
     const editButton = screen.getByRole('button', { name: 'Edit Details' })
     const shareButton = screen.getByText('Share View').closest('button')

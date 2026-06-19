@@ -94,9 +94,7 @@ describe('UploadImageModal', () => {
     expect(
       screen.getByText(/Uploaded images are processed into zoomable views/),
     ).toBeInTheDocument()
-    expect(
-      screen.getByText(/ZIP uploads are automatically extracted/),
-    ).toBeInTheDocument()
+    expect(screen.getByText(/ZIP uploads are automatically extracted/)).toBeInTheDocument()
   })
 
   it('renders nothing when closed', () => {

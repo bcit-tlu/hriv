@@ -60,11 +60,22 @@ interface CategoryPickerSelectProps {
   /** Text shown in the collapsed select when value is null. Works with both includeRoot={true} (e.g. BulkEditImagesModal — placeholder shows initially, root option still available in dropdown) and includeRoot={false} (null means "no selection" only). */
   placeholder?: string
   /** When provided, a "+" button appears on each menu item to add a child category. */
-  onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
+  onAddCategory?: (
+    label: string,
+    parentId: number | null,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<number | void>
   /** When provided, a delete button appears on each menu item to delete that category. */
   onDeleteCategory?: (categoryId: number) => Promise<void>
   /** When provided, a pencil button appears on each menu item to rename that category. */
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[], status?: 'active' | 'hidden') => Promise<void>
+  onEditCategory?: (
+    categoryId: number,
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+    status?: 'active' | 'hidden',
+  ) => Promise<void>
   /** When provided, a visibility toggle appears on each menu item. */
   onToggleVisibility?: (categoryId: number) => Promise<void>
   /** Available programs for the add/edit category dialogs. */
@@ -116,7 +127,7 @@ export default function CategoryPickerSelect({
 
   // Derive editingOpt from ID + options so it stays fresh without an extra render
   const editingOpt = useMemo(
-    () => editingOptId != null ? options.find((o) => o.id === editingOptId) ?? null : null,
+    () => (editingOptId != null ? (options.find((o) => o.id === editingOptId) ?? null) : null),
     [editingOptId, options],
   )
 
@@ -158,10 +169,7 @@ export default function CategoryPickerSelect({
     return narrowProgramIds(ancestors)
   }, [editingOpt, options])
 
-  const currentProgramIds = useMemo(
-    () => editingOpt?.programIds ?? [],
-    [editingOpt?.programIds],
-  )
+  const currentProgramIds = useMemo(() => editingOpt?.programIds ?? [], [editingOpt?.programIds])
 
   const addInheritedGroupIds = useMemo(() => {
     if (addParentId == null) return []
@@ -191,10 +199,7 @@ export default function CategoryPickerSelect({
     return narrowGroupIds(ancestors)
   }, [editingOpt, options])
 
-  const currentGroupIds = useMemo(
-    () => editingOpt?.groupIds ?? [],
-    [editingOpt?.groupIds],
-  )
+  const currentGroupIds = useMemo(() => editingOpt?.groupIds ?? [], [editingOpt?.groupIds])
 
   const editAncestorHidden = useMemo(() => {
     if (!editingOpt) return false
@@ -210,20 +215,15 @@ export default function CategoryPickerSelect({
 
   const ancestorHiddenIds = useMemo(() => getAncestorHiddenIds(options), [options])
 
-  const selectValue = value == null
-    ? (placeholder ? '' : (includeRoot ? ROOT_VALUE : ''))
-    : String(value)
+  const selectValue =
+    value == null ? (placeholder ? '' : includeRoot ? ROOT_VALUE : '') : String(value)
 
   const handleChange = (e: SelectChangeEvent<string>) => {
     const val = e.target.value
     onChange(val === '' || val === ROOT_VALUE ? null : Number(val))
   }
 
-  const handleAddClick = (
-    e: React.MouseEvent,
-    parentId: number | null,
-    parentLabel?: string,
-  ) => {
+  const handleAddClick = (e: React.MouseEvent, parentId: number | null, parentLabel?: string) => {
     e.stopPropagation()
     e.preventDefault()
     setAddParentId(parentId)
@@ -231,7 +231,11 @@ export default function CategoryPickerSelect({
     setAddDialogOpen(true)
   }
 
-  const handleAddCategory = async (categoryLabel: string, programIds?: number[], groupIds?: number[]) => {
+  const handleAddCategory = async (
+    categoryLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => {
     if (onAddCategory) {
       const newId = await onAddCategory(categoryLabel, addParentId, programIds, groupIds)
       if (typeof newId === 'number') {
@@ -240,17 +244,19 @@ export default function CategoryPickerSelect({
     }
   }
 
-  const handleEditClick = (
-    e: React.MouseEvent,
-    opt: FlatCategoryOption,
-  ) => {
+  const handleEditClick = (e: React.MouseEvent, opt: FlatCategoryOption) => {
     e.stopPropagation()
     e.preventDefault()
     setEditingOptId(opt.id)
     setEditDialogOpen(true)
   }
 
-  const handleEditSave = async (newLabel: string, programIds?: number[], groupIds?: number[], status?: 'active' | 'hidden') => {
+  const handleEditSave = async (
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+    status?: 'active' | 'hidden',
+  ) => {
     if (editingOpt && onEditCategory) {
       await onEditCategory(editingOpt.id, newLabel, programIds, groupIds, status)
     }
@@ -259,7 +265,9 @@ export default function CategoryPickerSelect({
   return (
     <>
       <FormControl fullWidth variant="outlined">
-        <InputLabel shrink={(value != null || includeRoot || !!placeholder) || undefined}>{label}</InputLabel>
+        <InputLabel shrink={value != null || includeRoot || !!placeholder || undefined}>
+          {label}
+        </InputLabel>
         <Select
           value={selectValue}
           onChange={handleChange}
@@ -323,51 +331,83 @@ export default function CategoryPickerSelect({
                 }}
               >
                 <ListItemText>
-                  {opt.depth > 0 ? '\u2514 ' : ''}<Box component="span" sx={{ color: (opt.status === 'hidden' || ancestorHiddenIds.has(opt.id)) ? visColors.inactive : undefined }}>{opt.label}</Box>
-                  <Typography component="span" variant="body2" color="text.secondary" sx={{ ml: 0.5 }}>
+                  {opt.depth > 0 ? '\u2514 ' : ''}
+                  <Box
+                    component="span"
+                    sx={{
+                      color:
+                        opt.status === 'hidden' || ancestorHiddenIds.has(opt.id)
+                          ? visColors.inactive
+                          : undefined,
+                    }}
+                  >
+                    {opt.label}
+                  </Box>
+                  <Typography
+                    component="span"
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ ml: 0.5 }}
+                  >
                     ({opt.imageCount})
                   </Typography>
                   <CategoryRestrictionIcons
-                    hasProgramRestriction={opt.programIds.length > 0 || opt.inheritedProgramRestriction}
+                    hasProgramRestriction={
+                      opt.programIds.length > 0 || opt.inheritedProgramRestriction
+                    }
                     inheritedProgramRestriction={opt.inheritedProgramRestriction}
                     hasGroupRestriction={opt.groupIds.length > 0 || opt.inheritedGroupRestriction}
                     inheritedGroupRestriction={opt.inheritedGroupRestriction}
                     hidden={opt.status === 'hidden'}
                   />
                 </ListItemText>
-                {onToggleVisibility && (() => {
-                  const inheritedHidden = ancestorHiddenIds.has(opt.id)
-                  if (inheritedHidden) {
+                {onToggleVisibility &&
+                  (() => {
+                    const inheritedHidden = ancestorHiddenIds.has(opt.id)
+                    if (inheritedHidden) {
+                      return (
+                        <Tooltip title="Hidden by parent category">
+                          <span role="img" aria-label="Hidden by parent category">
+                            <VisibilityOff
+                              fontSize="small"
+                              sx={{ color: visColors.inactive, opacity: 0.5 }}
+                            />
+                          </span>
+                        </Tooltip>
+                      )
+                    }
                     return (
-                      <Tooltip title="Hidden by parent category">
-                        <span role="img" aria-label="Hidden by parent category">
-                          <VisibilityOff fontSize="small" sx={{ color: visColors.inactive, opacity: 0.5 }} />
-                        </span>
+                      <Tooltip
+                        title={
+                          opt.status === 'hidden'
+                            ? 'Visibility: Show category'
+                            : 'Visibility: Hide category'
+                        }
+                      >
+                        <IconButton
+                          size="small"
+                          aria-label={
+                            opt.status === 'hidden'
+                              ? 'Visibility: Show category'
+                              : 'Visibility: Hide category'
+                          }
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            e.preventDefault()
+                            onToggleVisibility(opt.id)
+                          }}
+                          sx={{ p: 0.5 }}
+                        >
+                          {opt.status === 'hidden' ? (
+                            <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
+                          ) : (
+                            <Visibility fontSize="small" sx={{ color: visColors.active }} />
+                          )}
+                        </IconButton>
                       </Tooltip>
                     )
-                  }
-                  return (
-                    <Tooltip title={opt.status === 'hidden' ? 'Visibility: Show category' : 'Visibility: Hide category'}>
-                      <IconButton
-                        size="small"
-                        aria-label={opt.status === 'hidden' ? 'Visibility: Show category' : 'Visibility: Hide category'}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          e.preventDefault()
-                          onToggleVisibility(opt.id)
-                        }}
-                        sx={{ p: 0.5 }}
-                      >
-                        {opt.status === 'hidden' ? (
-                          <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
-                        ) : (
-                          <Visibility fontSize="small" sx={{ color: visColors.active }} />
-                        )}
-                      </IconButton>
-                    </Tooltip>
-                  )
-                })()}
+                  })()}
                 {onEditCategory && (
                   <Tooltip title="Edit category">
                     <IconButton
@@ -404,7 +444,15 @@ export default function CategoryPickerSelect({
                       }}
                       sx={{ p: 0.5 }}
                     >
-                      <DeleteIcon fontSize="small" sx={{ color: (opt.status === 'hidden' || ancestorHiddenIds.has(opt.id)) ? visColors.inactive : 'primary.main' }} />
+                      <DeleteIcon
+                        fontSize="small"
+                        sx={{
+                          color:
+                            opt.status === 'hidden' || ancestorHiddenIds.has(opt.id)
+                              ? visColors.inactive
+                              : 'primary.main',
+                        }}
+                      />
                     </IconButton>
                   </Tooltip>
                 )}

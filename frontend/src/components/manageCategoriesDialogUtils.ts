@@ -10,12 +10,18 @@ export function collectImagesByParent(
 ): Map<string, ImageItem[]> {
   const map = new Map<string, ImageItem[]>()
   if (uncategorized.length > 0) {
-    map.set('null', [...uncategorized].sort((a, b) => a.sortOrder - b.sortOrder))
+    map.set(
+      'null',
+      [...uncategorized].sort((a, b) => a.sortOrder - b.sortOrder),
+    )
   }
   function walk(nodes: Category[]) {
     for (const node of nodes) {
       if (node.images.length > 0) {
-        map.set(String(node.id), [...node.images].sort((a, b) => a.sortOrder - b.sortOrder))
+        map.set(
+          String(node.id),
+          [...node.images].sort((a, b) => a.sortOrder - b.sortOrder),
+        )
       }
       walk(node.children)
     }
@@ -89,7 +95,7 @@ export function interleavedSortOrders(
     // Old categories don't carry a meaningful sortOrder in FlatOption,
     // so infer positions: they occupied the gaps left by images in [0, N)
     let catPos = 0
-    const imgSortOrders = new Set(images.map(i => i.sortOrder))
+    const imgSortOrders = new Set(images.map((i) => i.sortOrder))
     for (const slot of oldSlots) {
       if (slot.type === 'cat') {
         while (imgSortOrders.has(catPos)) catPos++

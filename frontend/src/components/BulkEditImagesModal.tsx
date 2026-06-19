@@ -30,8 +30,18 @@ interface BulkEditImagesModalProps {
   selectedCount: number
   programs?: Program[]
   groups?: Group[]
-  onAddCategory?: (label: string, parentId: number | null, programIds?: number[], groupIds?: number[]) => Promise<number | void>
-  onEditCategory?: (categoryId: number, newLabel: string, programIds?: number[], groupIds?: number[]) => Promise<void>
+  onAddCategory?: (
+    label: string,
+    parentId: number | null,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<number | void>
+  onEditCategory?: (
+    categoryId: number,
+    newLabel: string,
+    programIds?: number[],
+    groupIds?: number[],
+  ) => Promise<void>
   onToggleVisibility?: (categoryId: number) => Promise<void>
   /** True when ALL selected images are in hidden categories (disables visibility switch). */
   allCategoryHidden?: boolean
@@ -61,9 +71,8 @@ export default function BulkEditImagesModal({
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const nextCategoryHidden = categoryChanged && categoryId != null
-    ? isCategoryHiddenInTree(categories, categoryId)
-    : false
+  const nextCategoryHidden =
+    categoryChanged && categoryId != null ? isCategoryHiddenInTree(categories, categoryId) : false
   const visibilityDisabled = categoryChanged ? nextCategoryHidden : allCategoryHidden
   const visibilityLabel = visibilityDisabled
     ? 'Visibility (hidden by category)'
@@ -138,13 +147,10 @@ export default function BulkEditImagesModal({
       TransitionProps={{ onEnter: handleEnter }}
     >
       <DialogTitle>Bulk Edit Images</DialogTitle>
-      <DialogContent
-        sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}
-      >
+      <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          Editing {selectedCount} selected{' '}
-          {selectedCount === 1 ? 'image' : 'images'}. Only fields you fill in
-          will be updated.
+          Editing {selectedCount} selected {selectedCount === 1 ? 'image' : 'images'}. Only fields
+          you fill in will be updated.
         </Typography>
 
         <Box>
@@ -219,7 +225,9 @@ export default function BulkEditImagesModal({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} disabled={saving}>Cancel</Button>
+        <Button onClick={handleClose} disabled={saving}>
+          Cancel
+        </Button>
         <Button onClick={handleSave} variant="contained" disabled={saving}>
           {saving ? 'Saving…' : 'Save Changes'}
         </Button>
@@ -227,7 +235,10 @@ export default function BulkEditImagesModal({
       <Snackbar
         open={deleteError !== null}
         autoHideDuration={6000}
-        onClose={(_event, reason) => { if (reason === 'clickaway') return; setDeleteError(null) }}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return
+          setDeleteError(null)
+        }}
       >
         <Alert severity="error" variant="filled" onClose={() => setDeleteError(null)}>
           {deleteError}
@@ -236,7 +247,10 @@ export default function BulkEditImagesModal({
       <Snackbar
         open={saveError !== null}
         autoHideDuration={6000}
-        onClose={(_event, reason) => { if (reason === 'clickaway') return; setSaveError(null) }}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return
+          setSaveError(null)
+        }}
       >
         <Alert severity="error" variant="filled" onClose={() => setSaveError(null)}>
           {saveError}

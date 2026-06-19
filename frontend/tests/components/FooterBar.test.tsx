@@ -9,8 +9,7 @@ function renderFooter(
   overrides: Partial<Parameters<typeof FooterBar>[0]> = {},
   colorMode?: Partial<ColorModeContextValue>,
 ) {
-  const setReportIssueOpen =
-    overrides.setReportIssueOpen ?? vi.fn()
+  const setReportIssueOpen = overrides.setReportIssueOpen ?? vi.fn()
   const modeValue: ColorModeContextValue = {
     mode: colorMode?.mode ?? 'light',
     preference: colorMode?.preference ?? 'auto',
@@ -36,12 +35,14 @@ function renderFooter(
 describe('FooterBar', () => {
   it('renders BCIT link and license link', () => {
     renderFooter()
-    expect(
-      screen.getByRole('link', { name: /teaching and learning unit/i }),
-    ).toHaveAttribute('href', 'https://www.bcit.ca/learning-teaching-centre/')
-    expect(
-      screen.getByRole('link', { name: /mpl-2\.0/i }),
-    ).toHaveAttribute('href', 'https://www.mozilla.org/en-US/MPL/2.0/')
+    expect(screen.getByRole('link', { name: /teaching and learning unit/i })).toHaveAttribute(
+      'href',
+      'https://www.bcit.ca/learning-teaching-centre/',
+    )
+    expect(screen.getByRole('link', { name: /mpl-2\.0/i })).toHaveAttribute(
+      'href',
+      'https://www.mozilla.org/en-US/MPL/2.0/',
+    )
   })
 
   it('renders Report issue button and fires callback', async () => {
@@ -93,19 +94,16 @@ describe('FooterBar', () => {
       backendVersion: '2.0.0',
       backupVersion: '3.0.0',
     })
-    const releaseLinks = screen.getAllByRole('link').filter(
-      (link) => link.getAttribute('href') === 'https://github.com/bcit-tlu/hriv/releases',
-    )
+    const releaseLinks = screen
+      .getAllByRole('link')
+      .filter((link) => link.getAttribute('href') === 'https://github.com/bcit-tlu/hriv/releases')
     expect(releaseLinks.length).toBe(3)
   })
 
   it('links "dev" version to repo root instead of releases', () => {
     renderFooter({ canManageUsers: true })
     const devLink = screen.getByText('dev').closest('a')
-    expect(devLink).toHaveAttribute(
-      'href',
-      'https://github.com/bcit-tlu/hriv',
-    )
+    expect(devLink).toHaveAttribute('href', 'https://github.com/bcit-tlu/hriv')
   })
 
   it('renders in dark mode without errors', () => {

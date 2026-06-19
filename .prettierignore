@@ -1,0 +1,14 @@
+.git
+
+frontend/node_modules
+frontend/dist
+frontend/coverage
+
+backend/.venv
+backend/.pytest_cache
+backend/htmlcov
+
+backup/.venv
+backup/.pytest_cache
+
+charts/**/templates

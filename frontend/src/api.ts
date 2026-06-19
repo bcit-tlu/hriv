@@ -65,7 +65,10 @@ export function userMessage(err: unknown, fallback: string): string {
     }
     if (err.status >= 400 && err.status < 500 && err.detail) {
       const detail = err.detail.trim()
-      const looksLikeHtml = /^<(!doctype|html|head|body|div|p|span|h[1-6]|pre|ul|ol|table|section|article)\b/i.test(detail)
+      const looksLikeHtml =
+        /^<(!doctype|html|head|body|div|p|span|h[1-6]|pre|ul|ol|table|section|article)\b/i.test(
+          detail,
+        )
       if (!looksLikeHtml && detail.length > 0 && detail.length <= 200) {
         return detail
       }
@@ -90,9 +93,12 @@ function parseErrorDetail(text: string): string {
   try {
     const body = JSON.parse(text)
     if (typeof body.detail === 'string') detail = body.detail
-    else if (Array.isArray(body.detail)) detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+    else if (Array.isArray(body.detail))
+      detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
     else if (body.detail !== undefined) detail = String(body.detail)
-  } catch { /* use raw text */ }
+  } catch {
+    /* use raw text */
+  }
   return detail
 }
 
@@ -273,9 +279,7 @@ export function reorderCategories(
 
 // ── Images ───────────────────────────────────────────────
 
-export function reorderImages(
-  items: Array<{ id: number; sort_order: number }>,
-): Promise<void> {
+export function reorderImages(items: Array<{ id: number; sort_order: number }>): Promise<void> {
   return request('/images/reorder', {
     method: 'PUT',
     body: JSON.stringify({ items }),
@@ -339,9 +343,7 @@ export function bulkUpdateImages(body: {
   })
 }
 
-export function bulkDeleteImages(body: {
-  image_ids: number[]
-}): Promise<void> {
+export function bulkDeleteImages(body: { image_ids: number[] }): Promise<void> {
   return request('/images/bulk', {
     method: 'DELETE',
     body: JSON.stringify(body),
@@ -393,9 +395,7 @@ export interface PaginatedUsers {
  * Reads the `X-Total-Count` header to drive page controls; falls back to the
  * returned item count when the header is absent (e.g. unpaginated response).
  */
-export async function fetchUsersPaged(
-  params: UserListParams,
-): Promise<PaginatedUsers> {
+export async function fetchUsersPaged(params: UserListParams): Promise<PaginatedUsers> {
   const qs = new URLSearchParams()
   if (params.role) qs.set('role', params.role)
   for (const id of params.programIds ?? []) qs.append('program_id', String(id))
@@ -472,19 +472,14 @@ export function bulkUpdateUserProgram(body: {
   })
 }
 
-export function bulkUpdateUserRole(body: {
-  user_ids: number[]
-  role: string
-}): Promise<ApiUser[]> {
+export function bulkUpdateUserRole(body: { user_ids: number[]; role: string }): Promise<ApiUser[]> {
   return request('/users/bulk/role', {
     method: 'PATCH',
     body: JSON.stringify(body),
   })
 }
 
-export function bulkDeleteUsers(body: {
-  user_ids: number[]
-}): Promise<void> {
+export function bulkDeleteUsers(body: { user_ids: number[] }): Promise<void> {
   return request('/users/bulk', {
     method: 'DELETE',
     body: JSON.stringify(body),
@@ -497,7 +492,10 @@ export function fetchPrograms(): Promise<ApiProgram[]> {
   return request('/programs/')
 }
 
-export function createProgram(body: { name: string; oidc_group?: string | null }): Promise<ApiProgram> {
+export function createProgram(body: {
+  name: string
+  oidc_group?: string | null
+}): Promise<ApiProgram> {
   return request('/programs/', {
     method: 'POST',
     body: JSON.stringify(body),
@@ -572,40 +570,28 @@ export function removeGroupInstructor(groupId: number, userId: number): Promise<
   return request(`/groups/${groupId}/instructors/${userId}`, { method: 'DELETE' })
 }
 
-export function addGroupMembersBulk(
-  groupId: number,
-  userIds: number[],
-): Promise<ApiGroup> {
+export function addGroupMembersBulk(groupId: number, userIds: number[]): Promise<ApiGroup> {
   return request(`/groups/${groupId}/members/bulk`, {
     method: 'POST',
     body: JSON.stringify({ user_ids: userIds }),
   })
 }
 
-export function removeGroupMembersBulk(
-  groupId: number,
-  userIds: number[],
-): Promise<ApiGroup> {
+export function removeGroupMembersBulk(groupId: number, userIds: number[]): Promise<ApiGroup> {
   return request(`/groups/${groupId}/members/bulk`, {
     method: 'DELETE',
     body: JSON.stringify({ user_ids: userIds }),
   })
 }
 
-export function addGroupInstructorsBulk(
-  groupId: number,
-  userIds: number[],
-): Promise<ApiGroup> {
+export function addGroupInstructorsBulk(groupId: number, userIds: number[]): Promise<ApiGroup> {
   return request(`/groups/${groupId}/instructors/bulk`, {
     method: 'POST',
     body: JSON.stringify({ user_ids: userIds }),
   })
 }
 
-export function removeGroupInstructorsBulk(
-  groupId: number,
-  userIds: number[],
-): Promise<ApiGroup> {
+export function removeGroupInstructorsBulk(groupId: number, userIds: number[]): Promise<ApiGroup> {
   return request(`/groups/${groupId}/instructors/bulk`, {
     method: 'DELETE',
     body: JSON.stringify({ user_ids: userIds }),
@@ -713,7 +699,10 @@ export async function uploadSourceImage(
     })
 
     if (signal) {
-      if (signal.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
+      if (signal.aborted) {
+        reject(new DOMException('Upload aborted', 'AbortError'))
+        return
+      }
       signal.addEventListener('abort', () => xhr.abort(), { once: true })
     }
 
@@ -790,7 +779,10 @@ export async function replaceImage(
     })
 
     if (signal) {
-      if (signal.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
+      if (signal.aborted) {
+        reject(new DOMException('Upload aborted', 'AbortError'))
+        return
+      }
       signal.addEventListener('abort', () => xhr.abort(), { once: true })
     }
 
@@ -868,7 +860,10 @@ export async function bulkImportImages(
     })
 
     if (signal) {
-      if (signal.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
+      if (signal.aborted) {
+        reject(new DOMException('Upload aborted', 'AbortError'))
+        return
+      }
       signal.addEventListener('abort', () => xhr.abort(), { once: true })
     }
 
@@ -942,10 +937,9 @@ export function startFilesExport(): Promise<AdminTask> {
  * user sees the "Uploading" state.  Step 2 is {@link uploadTaskFile}.
  */
 export function initFilesImport(filename: string): Promise<AdminTask> {
-  return request(
-    `/admin/tasks/files-import?filename=${encodeURIComponent(filename)}`,
-    { method: 'POST' },
-  )
+  return request(`/admin/tasks/files-import?filename=${encodeURIComponent(filename)}`, {
+    method: 'POST',
+  })
 }
 
 /**
@@ -1004,7 +998,10 @@ export function uploadTaskFile(
     })
 
     if (signal) {
-      if (signal.aborted) { reject(new DOMException('Upload aborted', 'AbortError')); return }
+      if (signal.aborted) {
+        reject(new DOMException('Upload aborted', 'AbortError'))
+        return
+      }
       signal.addEventListener('abort', () => xhr.abort(), { once: true })
     }
 
@@ -1075,7 +1072,7 @@ export async function fetchFrontendVersion(): Promise<FrontendVersionResponse> {
   // silently fall back to ``"dev"`` even in a managed deploy. This
   // endpoint is served by the frontend's own nginx on the same origin
   // as the SPA regardless of ``VITE_API_URL``.
-  const res = await fetch('/version', { headers: { 'Accept': 'application/json' } })
+  const res = await fetch('/version', { headers: { Accept: 'application/json' } })
   if (!res.ok) {
     throw new Error(`Frontend /version ${res.status}`)
   }
@@ -1085,9 +1082,8 @@ export async function fetchFrontendVersion(): Promise<FrontendVersionResponse> {
 export async function downloadAdminTaskResult(taskId: number): Promise<void> {
   // Obtain a short-lived download token, then navigate the browser to the
   // token-authenticated download URL (no JS buffering needed).
-  const { token } = await request<{ token: string }>(
-    `/admin/tasks/${taskId}/download-token`,
-    { method: 'POST' },
-  )
+  const { token } = await request<{ token: string }>(`/admin/tasks/${taskId}/download-token`, {
+    method: 'POST',
+  })
   window.location.href = `${BASE}/api/admin/tasks/${taskId}/download?token=${encodeURIComponent(token)}`
 }

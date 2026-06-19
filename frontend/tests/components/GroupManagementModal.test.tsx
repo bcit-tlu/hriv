@@ -6,9 +6,8 @@ import type { ApiGroup, ApiProgram, ApiUser, UserListParams } from '../../src/ap
 import type { Group } from '../../src/types'
 
 const mockFetchPrograms = vi.fn<() => Promise<ApiProgram[]>>()
-const mockFetchUsersPaged = vi.fn<
-  (params: UserListParams) => Promise<{ items: ApiUser[]; total: number }>
->()
+const mockFetchUsersPaged =
+  vi.fn<(params: UserListParams) => Promise<{ items: ApiUser[]; total: number }>>()
 const mockAddGroupMembersBulk = vi.fn()
 const mockAddGroupInstructorsBulk = vi.fn()
 const mockRemoveGroupMember = vi.fn()
@@ -193,8 +192,12 @@ describe('GroupManagementModal', () => {
 
     expect(await screen.findByText('CURRENT MEMBERS')).toBeInTheDocument()
 
-    expect(screen.getByRole('button', { name: /create group/i })).toHaveClass('MuiButton-containedSecondary')
-    expect(screen.getByRole('button', { name: /add to group/i })).toHaveClass('MuiButton-containedSecondary')
+    expect(screen.getByRole('button', { name: /create group/i })).toHaveClass(
+      'MuiButton-containedSecondary',
+    )
+    expect(screen.getByRole('button', { name: /add to group/i })).toHaveClass(
+      'MuiButton-containedSecondary',
+    )
   })
 
   it('renders table program chips with the standard primary filled styling', async () => {
@@ -271,7 +274,9 @@ describe('GroupManagementModal', () => {
 
     expect(mockAddGroupMembersBulk).toHaveBeenCalledWith(1, [102])
     await waitFor(() =>
-      expect(onGroupUpdated).toHaveBeenCalledWith(expect.objectContaining({ memberIds: [101, 102] })),
+      expect(onGroupUpdated).toHaveBeenCalledWith(
+        expect.objectContaining({ memberIds: [101, 102] }),
+      ),
     )
     expect(mockFetchUsersPaged).toHaveBeenCalledTimes(fetchCallsBeforeAdd)
   })

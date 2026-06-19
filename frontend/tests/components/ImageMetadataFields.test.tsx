@@ -12,12 +12,7 @@ const defaultValues: ImageMetadataValues = {
 
 describe('ImageMetadataFields', () => {
   it('renders all form fields', () => {
-    render(
-      <ImageMetadataFields
-        values={defaultValues}
-        onChange={vi.fn()}
-      />,
-    )
+    render(<ImageMetadataFields values={defaultValues} onChange={vi.fn()} />)
     expect(screen.getByLabelText(/copyright/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/note/i)).toBeInTheDocument()
     expect(screen.getByLabelText(/visibility/i)).toBeInTheDocument()
@@ -26,62 +21,36 @@ describe('ImageMetadataFields', () => {
   it('calls onChange when copyright text is entered', async () => {
     const onChange = vi.fn()
     const user = userEvent.setup()
-    render(
-      <ImageMetadataFields
-        values={defaultValues}
-        onChange={onChange}
-      />,
-    )
+    render(<ImageMetadataFields values={defaultValues} onChange={onChange} />)
 
     const copyrightField = screen.getByLabelText(/copyright/i)
     await user.type(copyrightField, 'A')
 
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ copyright: 'A' }),
-    )
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ copyright: 'A' }))
   })
 
   it('calls onChange when note text is entered', async () => {
     const onChange = vi.fn()
     const user = userEvent.setup()
-    render(
-      <ImageMetadataFields
-        values={defaultValues}
-        onChange={onChange}
-      />,
-    )
+    render(<ImageMetadataFields values={defaultValues} onChange={onChange} />)
 
     const noteField = screen.getByLabelText(/note/i)
     await user.type(noteField, 'X')
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ note: 'X' }),
-    )
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ note: 'X' }))
   })
 
   it('calls onChange when active toggle is switched', async () => {
     const onChange = vi.fn()
     const user = userEvent.setup()
-    render(
-      <ImageMetadataFields
-        values={defaultValues}
-        onChange={onChange}
-      />,
-    )
+    render(<ImageMetadataFields values={defaultValues} onChange={onChange} />)
 
     const toggle = screen.getByRole('switch', { name: /visibility.*show image/i })
     await user.click(toggle)
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ active: false }),
-    )
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ active: false }))
   })
 
   it('shows "hide image" when active is false', () => {
-    render(
-      <ImageMetadataFields
-        values={{ ...defaultValues, active: false }}
-        onChange={vi.fn()}
-      />,
-    )
+    render(<ImageMetadataFields values={{ ...defaultValues, active: false }} onChange={vi.fn()} />)
 
     expect(screen.getByLabelText(/visibility.*hide image/i)).toBeInTheDocument()
   })
@@ -98,5 +67,4 @@ describe('ImageMetadataFields', () => {
     expect(screen.getByPlaceholderText('custom copyright')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('custom note')).toBeInTheDocument()
   })
-
 })

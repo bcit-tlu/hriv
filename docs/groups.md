@@ -26,12 +26,12 @@ Defined in `backend/app/models.py`; schema lives in migration
 `0010_add_groups`. See [Domain model reference](domain-model.md) for the full
 field list.
 
-| Entity | Purpose |
-|--------|---------|
-| `Group` | A named roster (`name` unique, optional `description`). `created_by_user_id` is a `SET NULL` audit reference only. |
-| `group_members` | M2M junction `(group_id, user_id)` — members are **students**. Both FKs `CASCADE`. |
+| Entity              | Purpose                                                                                                                |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `Group`             | A named roster (`name` unique, optional `description`). `created_by_user_id` is a `SET NULL` audit reference only.     |
+| `group_members`     | M2M junction `(group_id, user_id)` — members are **students**. Both FKs `CASCADE`.                                     |
 | `group_instructors` | M2M junction `(group_id, user_id)` — instructors are **co-owners** with full management authority. Both FKs `CASCADE`. |
-| `category_groups` | M2M junction `(category_id, group_id)` — which categories a group restricts. `CASCADE` on category delete. |
+| `category_groups`   | M2M junction `(category_id, group_id)` — which categories a group restricts. `CASCADE` on category delete.             |
 
 Relationships added to existing models:
 
@@ -44,9 +44,9 @@ Relationships added to existing models:
 
 - **Members must be students; instructors must be instructors.** Adding a user
   of the wrong role returns **422**.
-- **The creator becomes the initial instructor.** When an *instructor* creates a
+- **The creator becomes the initial instructor.** When an _instructor_ creates a
   group they are appended to `instructors` so they can manage it. When an
-  *admin* creates a group it starts with zero instructors (admins manage every
+  _admin_ creates a group it starts with zero instructors (admins manage every
   group regardless).
 - **The last instructor cannot be removed** from a group → **409**. (Admin-owned
   groups with zero instructors are exempt — a no-op removal succeeds.)
@@ -63,7 +63,7 @@ Relationships added to existing models:
 Predicates live in `backend/app/authz.py`. The key separation is **edit
 authority vs. attach/manage authority**:
 
-- **Edit authority is global.** `can_edit_category` returns `True` for *any*
+- **Edit authority is global.** `can_edit_category` returns `True` for _any_
   admin or instructor. Editing a category's label, status, etc. is never gated
   by group ownership.
 - **Manage authority is scoped.** `can_manage_group(user, instructor_ids)` is
@@ -77,37 +77,37 @@ authority vs. attach/manage authority**:
 Every `/api/groups` endpoint requires at least the **instructor** role
 (`require_role("admin", "instructor")`); students receive **403**. Read
 endpoints (`list`/`get`/list members/instructors) are open to any instructor;
-*mutations* additionally require manage authority on that specific group.
+_mutations_ additionally require manage authority on that specific group.
 
 ## API surface
 
 Base path `/api/groups` (router `backend/app/routers/groups.py`,
 `prefix="/groups"`). All endpoints require a JWT bearer token.
 
-| Method | Endpoint | Min role | Notes |
-|--------|----------|----------|-------|
-| GET | `/api/groups/` | instructor | List all groups. |
-| POST | `/api/groups/` | instructor | Create. **409** on duplicate name. Creator (if instructor) becomes initial instructor. |
-| GET | `/api/groups/{id}` | instructor | Fetch one. **404** if missing. |
-| PATCH | `/api/groups/{id}` | instructor + manage | Rename / edit description. **409** on duplicate name. |
-| DELETE | `/api/groups/{id}` | instructor + manage | **409** if attached to any category. |
-| GET | `/api/groups/{id}/members` | instructor | List member students (minimal fields). |
-| POST | `/api/groups/{id}/members/bulk` | instructor + manage | Add many students in one call. **422** on non-student / unknown id. |
-| DELETE | `/api/groups/{id}/members/bulk` | instructor + manage | Remove many students in one call. |
-| POST | `/api/groups/{id}/members/{user_id}` | instructor + manage | Add one student. |
-| DELETE | `/api/groups/{id}/members/{user_id}` | instructor + manage | Remove one student. |
-| GET | `/api/groups/{id}/instructors` | instructor | List co-owner instructors (minimal fields). |
-| POST | `/api/groups/{id}/instructors/bulk` | instructor + manage | Add many co-owners in one call. |
-| DELETE | `/api/groups/{id}/instructors/bulk` | instructor + manage | Remove many co-owners. **409** if it would remove the last instructor. |
-| POST | `/api/groups/{id}/instructors/{user_id}` | instructor + manage | Add one co-owner. |
-| DELETE | `/api/groups/{id}/instructors/{user_id}` | instructor + manage | Remove one co-owner. **409** if last instructor. |
+| Method | Endpoint                                 | Min role            | Notes                                                                                  |
+| ------ | ---------------------------------------- | ------------------- | -------------------------------------------------------------------------------------- |
+| GET    | `/api/groups/`                           | instructor          | List all groups.                                                                       |
+| POST   | `/api/groups/`                           | instructor          | Create. **409** on duplicate name. Creator (if instructor) becomes initial instructor. |
+| GET    | `/api/groups/{id}`                       | instructor          | Fetch one. **404** if missing.                                                         |
+| PATCH  | `/api/groups/{id}`                       | instructor + manage | Rename / edit description. **409** on duplicate name.                                  |
+| DELETE | `/api/groups/{id}`                       | instructor + manage | **409** if attached to any category.                                                   |
+| GET    | `/api/groups/{id}/members`               | instructor          | List member students (minimal fields).                                                 |
+| POST   | `/api/groups/{id}/members/bulk`          | instructor + manage | Add many students in one call. **422** on non-student / unknown id.                    |
+| DELETE | `/api/groups/{id}/members/bulk`          | instructor + manage | Remove many students in one call.                                                      |
+| POST   | `/api/groups/{id}/members/{user_id}`     | instructor + manage | Add one student.                                                                       |
+| DELETE | `/api/groups/{id}/members/{user_id}`     | instructor + manage | Remove one student.                                                                    |
+| GET    | `/api/groups/{id}/instructors`           | instructor          | List co-owner instructors (minimal fields).                                            |
+| POST   | `/api/groups/{id}/instructors/bulk`      | instructor + manage | Add many co-owners in one call.                                                        |
+| DELETE | `/api/groups/{id}/instructors/bulk`      | instructor + manage | Remove many co-owners. **409** if it would remove the last instructor.                 |
+| POST   | `/api/groups/{id}/instructors/{user_id}` | instructor + manage | Add one co-owner.                                                                      |
+| DELETE | `/api/groups/{id}/instructors/{user_id}` | instructor + manage | Remove one co-owner. **409** if last instructor.                                       |
 
 Mutating endpoints return the full updated `GroupOut` (with refreshed
 `member_ids` / `instructor_ids`) so the client can sync local state from the
 response without re-fetching.
 
 > **Route-ordering invariant.** In `groups.py` the `/bulk` routes **must** be
-> registered *before* the parametric `/{user_id}` routes (for both members and
+> registered _before_ the parametric `/{user_id}` routes (for both members and
 > instructors). FastAPI/Starlette resolves on first full match, so registering
 > `/{user_id}` first makes `bulk` match as `user_id` → **422**, silently
 > breaking every bulk endpoint over HTTP. The regression test
@@ -134,7 +134,7 @@ student profile menu.
 
 `routers/categories.py::_intersection_warnings` emits a **non-blocking,
 symmetric** advisory (`CategoryOut.warnings`) whenever a category is restricted
-by both dimensions *and* at least one group member belongs to none of the
+by both dimensions _and_ at least one group member belongs to none of the
 selected programs (and would therefore lose access to the AND-gated category):
 
 ```json
@@ -149,17 +149,17 @@ same way regardless of which dimension was added last.
 
 ## Frontend behaviour
 
-| Concern | Where |
-|---------|-------|
-| Manage → **Groups** entry (admin + instructor only) | `components/AppShell.tsx` |
-| Group list / create / rename / delete and member management modal | `components/GroupManagementModal.tsx` |
-| Group restriction section on category dialogs | `components/AddCategoryDialog.tsx`, `components/EditCategoryDialog.tsx` |
-| Group chips on category tiles | `components/CategoryTile.tsx` |
-| Group chips in the Images table | `components/ManagePage.tsx` |
-| Group chips in the People table | `components/PeoplePage.tsx` |
-| Read-only group chips in the profile menu | `components/AppShell.tsx` |
-| Group API wrappers / types (`ApiGroup`, `fetchUsersPaged`, `addGroupMembersBulk`, …) | `api.ts` |
-| Group chip colours | `theme.ts` (`getGroupChipColors`) |
+| Concern                                                                              | Where                                                                   |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| Manage → **Groups** entry (admin + instructor only)                                  | `components/AppShell.tsx`                                               |
+| Group list / create / rename / delete and member management modal                    | `components/GroupManagementModal.tsx`                                   |
+| Group restriction section on category dialogs                                        | `components/AddCategoryDialog.tsx`, `components/EditCategoryDialog.tsx` |
+| Group chips on category tiles                                                        | `components/CategoryTile.tsx`                                           |
+| Group chips in the Images table                                                      | `components/ManagePage.tsx`                                             |
+| Group chips in the People table                                                      | `components/PeoplePage.tsx`                                             |
+| Read-only group chips in the profile menu                                            | `components/AppShell.tsx`                                               |
+| Group API wrappers / types (`ApiGroup`, `fetchUsersPaged`, `addGroupMembersBulk`, …) | `api.ts`                                                                |
+| Group chip colours                                                                   | `theme.ts` (`getGroupChipColors`)                                       |
 
 ### Manage Groups modal
 
@@ -174,7 +174,7 @@ tabs, each backed by a server-paginated table:
   debounced name/email search box, over a paginated table (10 rows/page). Row
   checkboxes + "select all on page" feed a single **"Add N to group"** bulk call
   (`POST /api/groups/{id}/members/bulk`). The table syncs from the returned
-  `GroupOut`, so added rows flip to a *Member* chip with no re-fetch spinner.
+  `GroupOut`, so added rows flip to a _Member_ chip with no re-fetch spinner.
 - **Instructors tab** — the same searchable, paginated table (no program filter,
   since instructors aren't program-gated) for bulk-adding co-owners
   (`POST /api/groups/{id}/instructors/bulk`).
@@ -196,10 +196,10 @@ for the selected group highlight in the Manage Groups list, lower-emphasis
 inherited/read-only states in the category dialogs, and keeps text contrast at
 WCAG-AA without dimming the entire chip:
 
-| Mode | Full-strength background | Full-strength text | Subtle background | Subtle text |
-|------|--------------------------|--------------------|------------------|-------------|
-| Light | `#7F665D` | `#FFFFFF` | `rgba(127, 102, 93, 0.16)` | `#3E3C3A` |
-| Dark | `#A89288` | `#1E1E1E` | `rgba(168, 146, 136, 0.16)` | `#E0DDD9` |
+| Mode  | Full-strength background | Full-strength text | Subtle background           | Subtle text |
+| ----- | ------------------------ | ------------------ | --------------------------- | ----------- |
+| Light | `#7F665D`                | `#FFFFFF`          | `rgba(127, 102, 93, 0.16)`  | `#3E3C3A`   |
+| Dark  | `#A89288`                | `#1E1E1E`          | `rgba(168, 146, 136, 0.16)` | `#E0DDD9`   |
 
 ## Export / import
 
@@ -209,15 +209,15 @@ and sequence-reset details.
 
 ## Tests
 
-| Area | Files |
-|------|-------|
-| Group endpoints (incl. route-ordering regression) | `backend/tests/test_router_groups.py` |
-| Authorization predicates | `backend/tests/test_authz.py` |
-| Dual-gate visibility | `backend/tests/test_visibility.py` |
-| Category group attach + warnings | `backend/tests/test_categories.py` |
-| Image visibility through group gate | `backend/tests/test_router_images.py` |
-| Export/import round-trip | `backend/tests/test_admin_ops.py` |
-| Frontend group modal | `frontend/tests/components/GroupManagementModal.test.tsx` |
+| Area                                              | Files                                                     |
+| ------------------------------------------------- | --------------------------------------------------------- |
+| Group endpoints (incl. route-ordering regression) | `backend/tests/test_router_groups.py`                     |
+| Authorization predicates                          | `backend/tests/test_authz.py`                             |
+| Dual-gate visibility                              | `backend/tests/test_visibility.py`                        |
+| Category group attach + warnings                  | `backend/tests/test_categories.py`                        |
+| Image visibility through group gate               | `backend/tests/test_router_images.py`                     |
+| Export/import round-trip                          | `backend/tests/test_admin_ops.py`                         |
+| Frontend group modal                              | `frontend/tests/components/GroupManagementModal.test.tsx` |
 
 Local end-to-end setup and walkthroughs live in
 [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md).

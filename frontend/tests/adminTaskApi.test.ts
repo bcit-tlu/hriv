@@ -19,8 +19,12 @@ vi.stubGlobal('fetch', mockFetch)
 const storage: Record<string, string> = {}
 vi.stubGlobal('localStorage', {
   getItem: (key: string) => storage[key] ?? null,
-  setItem: (key: string, val: string) => { storage[key] = val },
-  removeItem: (key: string) => { delete storage[key] },
+  setItem: (key: string, val: string) => {
+    storage[key] = val
+  },
+  removeItem: (key: string) => {
+    delete storage[key]
+  },
 })
 
 // Stub crypto.randomUUID (used for SESSION_ID)
@@ -224,8 +228,12 @@ describe('Background Admin Task API', () => {
       vi.stubGlobal('fetch', mockFetch)
       vi.stubGlobal('localStorage', {
         getItem: (key: string) => storage[key] ?? null,
-        setItem: (key: string, val: string) => { storage[key] = val },
-        removeItem: (key: string) => { delete storage[key] },
+        setItem: (key: string, val: string) => {
+          storage[key] = val
+        },
+        removeItem: (key: string) => {
+          delete storage[key]
+        },
       })
       vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
     })
@@ -315,8 +323,12 @@ describe('Background Admin Task API', () => {
       vi.stubGlobal('fetch', mockFetch)
       vi.stubGlobal('localStorage', {
         getItem: (key: string) => storage[key] ?? null,
-        setItem: (key: string, val: string) => { storage[key] = val },
-        removeItem: (key: string) => { delete storage[key] },
+        setItem: (key: string, val: string) => {
+          storage[key] = val
+        },
+        removeItem: (key: string) => {
+          delete storage[key]
+        },
       })
       vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
     })
@@ -324,14 +336,7 @@ describe('Background Admin Task API', () => {
     it('uploads bulk imports with XHR progress reporting', async () => {
       const onProgress = vi.fn()
       const zip = new File(['zip-data'], 'images.zip', { type: 'application/zip' })
-      const promise = bulkImportImages(
-        [zip],
-        2,
-        'Public Domain',
-        'Note',
-        true,
-        onProgress,
-      )
+      const promise = bulkImportImages([zip], 2, 'Public Domain', 'Note', true, onProgress)
 
       const progressHandler = xhrInstance.upload.addEventListener.mock.calls.find(
         (c: unknown[]) => c[0] === 'progress',
@@ -346,7 +351,10 @@ describe('Background Admin Task API', () => {
       const result = await promise
       expect(onProgress).toHaveBeenCalledWith(0.25)
       expect(xhrInstance.open).toHaveBeenCalledWith('POST', '/api/admin/bulk-import/')
-      expect(xhrInstance.setRequestHeader).toHaveBeenCalledWith('Authorization', 'Bearer test-jwt-token')
+      expect(xhrInstance.setRequestHeader).toHaveBeenCalledWith(
+        'Authorization',
+        'Bearer test-jwt-token',
+      )
       expect(xhrInstance.setRequestHeader).toHaveBeenCalledWith('X-Session-ID', expect.any(String))
       expect(xhrInstance.send).toHaveBeenCalledOnce()
       const form = xhrInstance.send.mock.calls[0][0] as FormData
@@ -403,8 +411,12 @@ describe('Background Admin Task API', () => {
       vi.stubGlobal('fetch', mockFetch)
       vi.stubGlobal('localStorage', {
         getItem: (key: string) => storage[key] ?? null,
-        setItem: (key: string, val: string) => { storage[key] = val },
-        removeItem: (key: string) => { delete storage[key] },
+        setItem: (key: string, val: string) => {
+          storage[key] = val
+        },
+        removeItem: (key: string) => {
+          delete storage[key]
+        },
       })
       vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
     })

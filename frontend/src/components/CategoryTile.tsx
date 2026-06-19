@@ -50,7 +50,6 @@ function countAllImages(cat: Category): number {
   return count
 }
 
-
 interface CategoryTileProps {
   category: Category
   onClick: (category: Category) => void
@@ -90,7 +89,9 @@ export default function CategoryTile({
 
   const detailParts: string[] = []
   if (subCategoryCount > 0) {
-    detailParts.push(`${subCategoryCount} sub-${subCategoryCount === 1 ? 'category' : 'categories'}`)
+    detailParts.push(
+      `${subCategoryCount} sub-${subCategoryCount === 1 ? 'category' : 'categories'}`,
+    )
   }
   if (imageCount > 0) {
     detailParts.push(`${imageCount} ${imageCount === 1 ? 'image' : 'images'}`)
@@ -118,35 +119,47 @@ export default function CategoryTile({
     return e.dataTransfer.types.includes('Files')
   }, [])
 
-  const handleDragEnter = useCallback((e: React.DragEvent) => {
-    if (!isAcceptedDrag(e)) return
-    e.preventDefault()
-    dragCounter.current += 1
-    if (dragCounter.current === 1) setDragOver(true)
-  }, [isAcceptedDrag])
+  const handleDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      if (!isAcceptedDrag(e)) return
+      e.preventDefault()
+      dragCounter.current += 1
+      if (dragCounter.current === 1) setDragOver(true)
+    },
+    [isAcceptedDrag],
+  )
 
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    if (!isAcceptedDrag(e)) return
-    dragCounter.current -= 1
-    if (dragCounter.current === 0) setDragOver(false)
-  }, [isAcceptedDrag])
+  const handleDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      if (!isAcceptedDrag(e)) return
+      dragCounter.current -= 1
+      if (dragCounter.current === 0) setDragOver(false)
+    },
+    [isAcceptedDrag],
+  )
 
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    if (!isAcceptedDrag(e)) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
-  }, [isAcceptedDrag])
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!isAcceptedDrag(e)) return
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'copy'
+    },
+    [isAcceptedDrag],
+  )
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    dragCounter.current = 0
-    setDragOver(false)
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      dragCounter.current = 0
+      setDragOver(false)
 
-    if (e.dataTransfer.types.includes('Files') && onDropFiles) {
-      e.stopPropagation()
-      onDropFiles(category.id, Array.from(e.dataTransfer.files))
-    }
-  }, [category.id, onDropFiles])
+      if (e.dataTransfer.types.includes('Files') && onDropFiles) {
+        e.stopPropagation()
+        onDropFiles(category.id, Array.from(e.dataTransfer.files))
+      }
+    },
+    [category.id, onDropFiles],
+  )
 
   return (
     <>
@@ -235,12 +248,20 @@ export default function CategoryTile({
           <CardContent>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
-              <Typography variant="h6" noWrap sx={{ color: category.status === 'hidden' ? visColors.inactive : 'primary.main' }}>
+              <Typography
+                variant="h6"
+                noWrap
+                sx={{ color: category.status === 'hidden' ? visColors.inactive : 'primary.main' }}
+              >
                 {category.label}
               </Typography>
               {category.status === 'hidden' && (
                 <Tooltip title="Visibility: Hidden">
-                  <span role="img" aria-label="Visibility: Hidden" style={{ display: 'inline-flex' }}>
+                  <span
+                    role="img"
+                    aria-label="Visibility: Hidden"
+                    style={{ display: 'inline-flex' }}
+                  >
                     <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
                   </span>
                 </Tooltip>
@@ -267,24 +288,14 @@ export default function CategoryTile({
             {programChips.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {programChips.map((p) => (
-                  <Chip
-                    key={p.id}
-                    label={p.name}
-                    size="small"
-                    color="primary"
-                  />
+                  <Chip key={p.id} label={p.name} size="small" color="primary" />
                 ))}
               </Box>
             )}
             {groupChips.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {groupChips.map((g) => (
-                  <Chip
-                    key={g.id}
-                    label={g.name}
-                    size="small"
-                    color="secondary"
-                  />
+                  <Chip key={g.id} label={g.name} size="small" color="secondary" />
                 ))}
               </Box>
             )}

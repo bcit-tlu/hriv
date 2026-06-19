@@ -18,16 +18,16 @@ Source files in `frontend/src/` and `backend/app/` are bind-mounted into the con
 
 All seed users share the password `password`.
 
-| **User**                | **Email**            | **Password** | **Role**     |
-|-------------------------|----------------------|--------------|--------------|
-| Haruki Tanaka           | admin@example.ca        | password     | admin        |
-| Carlos Henrique Souza   | instructor@example.ca   | password     | instructor   |
-| Mira Patel              | student@example.ca      | password     | student      |
+| **User**              | **Email**             | **Password** | **Role**   |
+| --------------------- | --------------------- | ------------ | ---------- |
+| Haruki Tanaka         | admin@example.ca      | password     | admin      |
+| Carlos Henrique Souza | instructor@example.ca | password     | instructor |
+| Mira Patel            | student@example.ca    | password     | student    |
 
 ### Role Capabilities
 
 | Capability                      | Admin | Instructor | Student |
-|---------------------------------|-------|------------|---------|
+| ------------------------------- | ----- | ---------- | ------- |
 | Browse categories & view images | Yes   | Yes        | Yes     |
 | Create/update categories        | Yes   | Yes        | No      |
 | Delete categories               | Yes   | Yes        | No      |
@@ -50,7 +50,7 @@ A **program** is a flat, admin/OIDC-managed access-control unit that gates categ
 
 ### Groups
 
-A **group** is an instructor-managed visibility dimension, independent of programs. Any admin or instructor can create a group and add student members (and instructor co-owners); a category restricted to one or more groups is visible to a student only if they belong to at least one of them. Visibility is a **dual gate**: a student sees a category only if it passes *both* the program gate **and** the group gate. Group memberships also surface as read-only chips in the student profile menu. See [docs/groups.md](docs/groups.md) for the model, authorization rules, API, and frontend behaviour, and [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md) for the combined visibility evaluation.
+A **group** is an instructor-managed visibility dimension, independent of programs. Any admin or instructor can create a group and add student members (and instructor co-owners); a category restricted to one or more groups is visible to a student only if they belong to at least one of them. Visibility is a **dual gate**: a student sees a category only if it passes _both_ the program gate **and** the group gate. Group memberships also surface as read-only chips in the student profile menu. See [docs/groups.md](docs/groups.md) for the model, authorization rules, API, and frontend behaviour, and [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md) for the combined visibility evaluation.
 
 ### CLI Access via curl
 
@@ -90,19 +90,19 @@ reconciliation model for both environments.
 
 ## Documentation
 
-| Doc | Covers |
-|-----|--------|
-| [docs/groups.md](docs/groups.md) | Groups model, authorization, API surface, and frontend behaviour |
+| Doc                                                                                  | Covers                                                                          |
+| ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| [docs/groups.md](docs/groups.md)                                                     | Groups model, authorization, API surface, and frontend behaviour                |
 | [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md) | Dual-gate student visibility (programs AND groups), cascade rules, tree loading |
-| [docs/domain-model.md](docs/domain-model.md) | Data model reference (entities, junctions, conventions) |
-| [docs/admin-import-export.md](docs/admin-import-export.md) | Admin import/export task lifecycle and data round-trip |
-| [docs/agent-feature-map.md](docs/agent-feature-map.md) | "Where to change what" map across frontend/backend/tests/docs |
-| [docs/agent-test-matrix.md](docs/agent-test-matrix.md) | "I changed X → run Y" decision tree for targeted test runs |
-| [docs/TESTING.md](docs/TESTING.md) | Test plan, API endpoint → minimum-role table |
-| [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md) | OIDC / auth configuration |
-| [docs/drag-and-drop.md](docs/drag-and-drop.md) | Tile drag-and-drop move-vs-reorder contract |
-| [docs/image-metadata-and-versioning.md](docs/image-metadata-and-versioning.md) | Image metadata, versioning, and optimistic concurrency control |
-| [docs/image-processing-lifecycle.md](docs/image-processing-lifecycle.md) | Image processing pipeline stages, tile generation, and worker configuration |
-| [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md) | UI behaviour spec (role gating, browse, dialogs, viewer, file drop) |
-| [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md) | Release-please + Flux deploy flow |
-| [AGENTS.md](AGENTS.md) | Contributor setup, workflow, and **Critical Invariants** |
+| [docs/domain-model.md](docs/domain-model.md)                                         | Data model reference (entities, junctions, conventions)                         |
+| [docs/admin-import-export.md](docs/admin-import-export.md)                           | Admin import/export task lifecycle and data round-trip                          |
+| [docs/agent-feature-map.md](docs/agent-feature-map.md)                               | "Where to change what" map across frontend/backend/tests/docs                   |
+| [docs/agent-test-matrix.md](docs/agent-test-matrix.md)                               | "I changed X → run Y" decision tree for targeted test runs                      |
+| [docs/TESTING.md](docs/TESTING.md)                                                   | Test plan, API endpoint → minimum-role table                                    |
+| [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md)                                             | OIDC / auth configuration                                                       |
+| [docs/drag-and-drop.md](docs/drag-and-drop.md)                                       | Tile drag-and-drop move-vs-reorder contract                                     |
+| [docs/image-metadata-and-versioning.md](docs/image-metadata-and-versioning.md)       | Image metadata, versioning, and optimistic concurrency control                  |
+| [docs/image-processing-lifecycle.md](docs/image-processing-lifecycle.md)             | Image processing pipeline stages, tile generation, and worker configuration     |
+| [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md)                               | UI behaviour spec (role gating, browse, dialogs, viewer, file drop)             |
+| [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md)                   | Release-please + Flux deploy flow                                               |
+| [AGENTS.md](AGENTS.md)                                                               | Contributor setup, workflow, and **Critical Invariants**                        |

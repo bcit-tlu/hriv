@@ -23,9 +23,7 @@ const baseImage: ApiImage = {
   updated_at: '2026-01-01T00:00:00Z',
 }
 
-function renderModal(
-  overrides: Partial<Parameters<typeof EditImageModal>[0]> = {},
-) {
+function renderModal(overrides: Partial<Parameters<typeof EditImageModal>[0]> = {}) {
   const onClose = overrides.onClose ?? vi.fn()
   const onSave = overrides.onSave ?? vi.fn()
   const onDelete = overrides.onDelete ?? vi.fn()
@@ -69,9 +67,7 @@ describe('EditImageModal – delete error toast', () => {
     await user.click(confirmBtn)
 
     await waitFor(() => {
-      expect(
-        screen.getByText('Failed to delete image. Please try again.'),
-      ).toBeInTheDocument()
+      expect(screen.getByText('Failed to delete image. Please try again.')).toBeInTheDocument()
     })
   })
 
@@ -89,9 +85,7 @@ describe('EditImageModal – delete error toast', () => {
     await waitFor(() => {
       expect(onDelete).toHaveBeenCalledTimes(1)
     })
-    expect(
-      screen.queryByText('Failed to delete image. Please try again.'),
-    ).not.toBeInTheDocument()
+    expect(screen.queryByText('Failed to delete image. Please try again.')).not.toBeInTheDocument()
   })
 })
 
@@ -253,9 +247,7 @@ describe('EditImageModal – form fields and save', () => {
 
     await user.click(screen.getByRole('button', { name: /^save$/i }))
 
-    expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({ copyright: '© BCIT 2026' }),
-    )
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ copyright: '© BCIT 2026' }))
   })
 
   it('updates note field', async () => {
@@ -267,9 +259,7 @@ describe('EditImageModal – form fields and save', () => {
 
     await user.click(screen.getByRole('button', { name: /^save$/i }))
 
-    expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({ note: 'A sample note' }),
-    )
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ note: 'A sample note' }))
   })
 
   it('includes measurement_scale and measurement_unit in metadata_extra', async () => {
@@ -560,9 +550,7 @@ describe('EditImageModal – visibility button states', () => {
 
     // Click Save — onSave should receive active: false
     await user.click(screen.getByRole('button', { name: /^save$/i }))
-    expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({ active: false }),
-    )
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ active: false }))
   })
 
   it('toggling visibility twice reverts to original active value on save', async () => {
@@ -579,9 +567,7 @@ describe('EditImageModal – visibility button states', () => {
     await user.click(screen.getByRole('button', { name: /show to students/i }))
 
     await user.click(screen.getByRole('button', { name: /^save$/i }))
-    expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({ active: true }),
-    )
+    expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ active: true }))
   })
 
   it('shows "Hidden by Category" when image is in a child of a hidden ancestor', () => {
@@ -589,18 +575,20 @@ describe('EditImageModal – visibility button states', () => {
       ...hiddenCategory,
       id: 10,
       label: 'Hidden Parent',
-      children: [{
-        id: 30,
-        label: 'Child Cat',
-        parentId: 10,
-        status: null,
-        sortOrder: 0,
-        version: 1,
-        programIds: [] as number[],
-        groupIds: [] as number[],
-        children: [],
-        images: [],
-      }],
+      children: [
+        {
+          id: 30,
+          label: 'Child Cat',
+          parentId: 10,
+          status: null,
+          sortOrder: 0,
+          version: 1,
+          programIds: [] as number[],
+          groupIds: [] as number[],
+          children: [],
+          images: [],
+        },
+      ],
     }
     renderModal({
       image: { ...baseImage, active: true, category_id: 30 },

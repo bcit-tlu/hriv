@@ -23,13 +23,43 @@ import { makeCategory } from '../helpers/fixtures'
 // ---------------------------------------------------------------------------
 
 const samplePrograms: Program[] = [
-  { id: 10, name: 'Pathology', oidc_group: null, created_at: '2024-01-01', updated_at: '2024-01-01' },
-  { id: 20, name: 'Radiology', oidc_group: null, created_at: '2024-01-01', updated_at: '2024-01-01' },
+  {
+    id: 10,
+    name: 'Pathology',
+    oidc_group: null,
+    created_at: '2024-01-01',
+    updated_at: '2024-01-01',
+  },
+  {
+    id: 20,
+    name: 'Radiology',
+    oidc_group: null,
+    created_at: '2024-01-01',
+    updated_at: '2024-01-01',
+  },
 ]
 
 const sampleGroups: Group[] = [
-  { id: 30, name: 'Lab A2', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '2024-01-01', updatedAt: '2024-01-01' },
-  { id: 40, name: 'Seminar B', description: null, createdByUserId: 1, memberIds: [], instructorIds: [1], createdAt: '2024-01-01', updatedAt: '2024-01-01' },
+  {
+    id: 30,
+    name: 'Lab A2',
+    description: null,
+    createdByUserId: 1,
+    memberIds: [],
+    instructorIds: [1],
+    createdAt: '2024-01-01',
+    updatedAt: '2024-01-01',
+  },
+  {
+    id: 40,
+    name: 'Seminar B',
+    description: null,
+    createdByUserId: 1,
+    memberIds: [],
+    instructorIds: [1],
+    createdAt: '2024-01-01',
+    updatedAt: '2024-01-01',
+  },
 ]
 
 // ---------------------------------------------------------------------------
@@ -184,9 +214,33 @@ describe('CategoryTile', () => {
         <CategoryTile
           category={makeCategory({
             images: [
-              { id: 1, name: 'Img1', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
-              { id: 2, name: 'Img2', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
-              { id: 3, name: 'Img3', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
+              {
+                id: 1,
+                name: 'Img1',
+                thumb: '',
+                tileSources: '',
+                active: true,
+                sortOrder: 0,
+                version: 1,
+              },
+              {
+                id: 2,
+                name: 'Img2',
+                thumb: '',
+                tileSources: '',
+                active: true,
+                sortOrder: 0,
+                version: 1,
+              },
+              {
+                id: 3,
+                name: 'Img3',
+                thumb: '',
+                tileSources: '',
+                active: true,
+                sortOrder: 0,
+                version: 1,
+              },
             ],
           })}
           onClick={vi.fn()}
@@ -201,7 +255,15 @@ describe('CategoryTile', () => {
         <CategoryTile
           category={makeCategory({
             images: [
-              { id: 1, name: 'Img1', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
+              {
+                id: 1,
+                name: 'Img1',
+                thumb: '',
+                tileSources: '',
+                active: true,
+                sortOrder: 0,
+                version: 1,
+              },
             ],
           })}
           onClick={vi.fn()}
@@ -216,15 +278,39 @@ describe('CategoryTile', () => {
         <CategoryTile
           category={makeCategory({
             images: [
-              { id: 1, name: 'Img1', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
+              {
+                id: 1,
+                name: 'Img1',
+                thumb: '',
+                tileSources: '',
+                active: true,
+                sortOrder: 0,
+                version: 1,
+              },
             ],
             children: [
               makeCategory({
                 id: 2,
                 label: 'Child',
                 images: [
-                  { id: 2, name: 'Img2', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
-                  { id: 3, name: 'Img3', thumb: '', tileSources: '', active: true, sortOrder: 0, version: 1 },
+                  {
+                    id: 2,
+                    name: 'Img2',
+                    thumb: '',
+                    tileSources: '',
+                    active: true,
+                    sortOrder: 0,
+                    version: 1,
+                  },
+                  {
+                    id: 3,
+                    name: 'Img3',
+                    thumb: '',
+                    tileSources: '',
+                    active: true,
+                    sortOrder: 0,
+                    version: 1,
+                  },
                 ],
               }),
             ],
@@ -254,13 +340,7 @@ describe('CategoryTile', () => {
     })
 
     it('does not render program chips when programIds is empty', () => {
-      render(
-        <CategoryTile
-          category={makeCategory()}
-          onClick={vi.fn()}
-          programs={samplePrograms}
-        />,
-      )
+      render(<CategoryTile category={makeCategory()} onClick={vi.fn()} programs={samplePrograms} />)
       expect(screen.queryByText('Pathology')).not.toBeInTheDocument()
     })
   })
@@ -284,13 +364,7 @@ describe('CategoryTile', () => {
 
   describe('card image', () => {
     it('renders the folder icon when no card image is set', () => {
-      render(
-        <CategoryTile
-          category={makeCategory()}
-          onClick={vi.fn()}
-          programs={[]}
-        />,
-      )
+      render(<CategoryTile category={makeCategory()} onClick={vi.fn()} programs={[]} />)
       expect(screen.getByTestId('FolderIcon')).toBeInTheDocument()
     })
 
@@ -300,7 +374,15 @@ describe('CategoryTile', () => {
           category={makeCategory({
             cardImageId: 5,
             images: [
-              { id: 5, name: 'Card Img', thumb: '/thumbs/card.jpg', tileSources: '', active: true, sortOrder: 0, version: 1 },
+              {
+                id: 5,
+                name: 'Card Img',
+                thumb: '/thumbs/card.jpg',
+                tileSources: '',
+                active: true,
+                sortOrder: 0,
+                version: 1,
+              },
             ],
           })}
           onClick={vi.fn()}
@@ -317,12 +399,7 @@ describe('CategoryTile', () => {
   describe('move button', () => {
     it('renders the move button when onMove is provided', () => {
       render(
-        <CategoryTile
-          category={makeCategory()}
-          onClick={vi.fn()}
-          programs={[]}
-          onMove={vi.fn()}
-        />,
+        <CategoryTile category={makeCategory()} onClick={vi.fn()} programs={[]} onMove={vi.fn()} />,
       )
       expect(screen.getByLabelText('Move category')).toBeInTheDocument()
     })
@@ -331,27 +408,14 @@ describe('CategoryTile', () => {
       const user = userEvent.setup()
       const category = makeCategory()
       const onMove = vi.fn()
-      render(
-        <CategoryTile
-          category={category}
-          onClick={vi.fn()}
-          programs={[]}
-          onMove={onMove}
-        />,
-      )
+      render(<CategoryTile category={category} onClick={vi.fn()} programs={[]} onMove={onMove} />)
 
       await user.click(screen.getByLabelText('Move category'))
       expect(onMove).toHaveBeenCalledWith(category)
     })
 
     it('does not render the move button when onMove is not provided', () => {
-      render(
-        <CategoryTile
-          category={makeCategory()}
-          onClick={vi.fn()}
-          programs={[]}
-        />,
-      )
+      render(<CategoryTile category={makeCategory()} onClick={vi.fn()} programs={[]} />)
       expect(screen.queryByLabelText('Move category')).not.toBeInTheDocument()
     })
   })
