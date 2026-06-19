@@ -13,11 +13,13 @@ import CategoryIcon from '@mui/icons-material/Folder'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import CopyrightIcon from '@mui/icons-material/Copyright'
 import ImageIcon from '@mui/icons-material/Image'
+import LinkIcon from '@mui/icons-material/Link'
 import NoteIcon from '@mui/icons-material/StickyNote2'
 import PersonIcon from '@mui/icons-material/Person'
 import BadgeIcon from '@mui/icons-material/Badge'
 import SchoolIcon from '@mui/icons-material/School'
 import SearchIcon from '@mui/icons-material/Search'
+import TextFieldsIcon from '@mui/icons-material/TextFields'
 import type { Category, ImageItem, Program } from '../types'
 import type { ApiUser } from '../api'
 
@@ -83,7 +85,7 @@ interface UserPayload {
 // ── Filter definitions ─────────────────────────────────
 
 export type TypeFilter = ResultKind
-type FieldFilter = 'Copyright' | 'Note' | 'Role'
+type FieldFilter = 'Annotation' | 'Link' | 'Link URL' | 'Copyright' | 'Note' | 'Role'
 
 interface FilterDef<T extends string> {
   key: T
@@ -121,6 +123,19 @@ const TYPE_FILTERS: FilterDef<TypeFilter>[] = [
 
 const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
   {
+    key: 'Annotation',
+    label: 'Annotation',
+    icon: <TextFieldsIcon fontSize="small" />,
+    tooltip: 'Text annotations only',
+  },
+  { key: 'Link', label: 'Link', icon: <LinkIcon fontSize="small" />, tooltip: 'Link text only' },
+  {
+    key: 'Link URL',
+    label: 'Link URL',
+    icon: <LinkIcon fontSize="small" />,
+    tooltip: 'Link URLs only',
+  },
+  {
     key: 'Copyright',
     label: 'Copyright',
     icon: <CopyrightIcon fontSize="small" />,
@@ -134,6 +149,33 @@ const FIELD_FILTERS: FilterDef<FieldFilter>[] = [
 
 const MAX_RESULTS = 50
 const CONTEXT_CHARS = 40
+
+function getAnnotationSearchFields(
+  metadataExtra: Record<string, unknown> | null | undefined,
+): Array<{ field: string; value: string }> {
+  const annotations = metadataExtra?.canvas_annotations
+  if (!Array.isArray(annotations)) return []
+
+  const fields: Array<{ field: string; value: string }> = []
+  for (const annotation of annotations) {
+    if (!annotation || typeof annotation !== 'object') continue
+    const candidate = annotation as Record<string, unknown>
+    const type = candidate.type
+    const text = typeof candidate.text === 'string' ? candidate.text.trim() : ''
+    const url = typeof candidate.url === 'string' ? candidate.url.trim() : ''
+
+    if (type === 'text') {
+      if (text) fields.push({ field: 'Annotation', value: text })
+      continue
+    }
+
+    if (type !== 'link') continue
+    if (text) fields.push({ field: 'Link', value: text })
+    if (url) fields.push({ field: 'Link URL', value: url })
+  }
+
+  return fields
+}
 
 function contextSnippet(
   value: string,
@@ -297,6 +339,7 @@ function addImageMatches(
     { field: 'Name', value: img.name },
     { field: 'Copyright', value: img.copyright },
     { field: 'Note', value: img.note },
+    ...getAnnotationSearchFields(img.metadataExtra),
   ]
   if (parentCat) {
     fields.push({ field: 'Category', value: parentCat.label })

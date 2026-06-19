@@ -9,13 +9,15 @@
  * start from the Helm-injected ``APP_VERSION`` env var, and the
  * admin footer fetches it on mount.
  *
- * These tests cover the three externally-visible behaviours of the
+ * These tests cover the externally-visible behaviours of the
  * fetch helper:
- *   1. Success → JSON body is returned verbatim as
+ *   1. Local Vite dev mode → no network request, returns
+ *      ``{frontend: "dev"}`` to avoid console-noisy 404s.
+ *   2. Success → JSON body is returned verbatim as
  *      ``{frontend: "<ver>"}``.
- *   2. Non-``ok`` HTTP response → rejection carrying the status code,
+ *   3. Non-``ok`` HTTP response → rejection carrying the status code,
  *      so the ``App.tsx`` effect can fall back to ``"dev"``.
- *   3. Network error (``fetch`` itself rejects) → propagated rejection,
+ *   4. Network error (``fetch`` itself rejects) → propagated rejection,
  *      same fallback path.
  */
 
@@ -64,6 +66,16 @@ function errorResponse(status: number, statusText: string) {
 describe('fetchFrontendVersion', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubEnv('MODE', 'test')
+  })
+
+  it('returns dev without requesting /version in local Vite dev mode', async () => {
+    vi.stubEnv('MODE', 'development')
+
+    const result = await fetchFrontendVersion()
+
+    expect(mockFetch).not.toHaveBeenCalled()
+    expect(result).toEqual({ frontend: 'dev' })
   })
 
   it('GETs /version (outside the /api prefix) and returns the parsed body', async () => {

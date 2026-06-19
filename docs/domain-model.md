@@ -94,6 +94,16 @@ the schema** — change the model _and_ generate a migration in the same PR (see
 - **Key fields:** `message` (text); `enabled` (boolean).
 - **Note:** singleton — only `id=1` is used in practice.
 
+### ChangelogEntry _(added in `0012_add_changelog_entries`)_
+
+- **Purpose:** admin-authored in-app release notes shown in the **What's New**
+  feed for admin and instructor users.
+- **Key fields:** `title`; `body` (Markdown text rendered by the frontend);
+  `published_at` (defaults to creation time and is bumped on edit/republish).
+- **Relationships:** none — this is a standalone content table.
+- **Deletion:** no cascade targets; deleting an entry only removes that
+  changelog item.
+
 ### AdminTask
 
 - **Purpose:** tracks long-running admin import/export operations.

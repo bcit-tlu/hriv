@@ -18,6 +18,7 @@ import type { Draggable } from '@dnd-kit/abstract'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/react'
 
 import type { Category, Group, ImageItem, Program } from '../types'
+import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
 import ImageTile from './ImageTile'
@@ -221,6 +222,8 @@ export default function SortableTileGrid({
   )
 
   const pathHiddenState = useMemo(() => getCategoryHiddenStateFromPath(path), [path])
+  const inheritedProgramIds = useMemo(() => narrowProgramIds(path), [path])
+  const inheritedGroupIds = useMemo(() => narrowGroupIds(path), [path])
 
   const [items, setItems] = useState<TileItem[]>([])
   const [activeItem, setActiveItem] = useState<TileItem | null>(null)
@@ -392,7 +395,9 @@ export default function SortableTileGrid({
         onSetCardImage={canEditContent ? onSetCardImage : undefined}
         onEditName={canEditContent ? onEditCategoryName : undefined}
         programs={programs}
+        inheritedProgramIds={inheritedProgramIds}
         groups={groups}
+        inheritedGroupIds={inheritedGroupIds}
         parentHidden={pathHiddenState.hidden}
         inheritedHidden={pathHiddenState.hidden}
         onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}

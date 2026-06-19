@@ -86,12 +86,19 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
   const showOidcDefault = oidcEnabled && !showLocalForm
 
   return (
-    <>
+    <Box
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        bgcolor: 'background.paper',
+      }}
+    >
       <Box
         sx={{
-          minHeight: '100vh',
+          flex: '1 1 auto',
+          minHeight: 0,
           display: 'flex',
-          bgcolor: 'background.paper',
           position: 'relative',
         }}
       >
@@ -129,6 +136,7 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
                 mb: 5,
               }}
             >
+              <Box component="img" src="/bcit-logo.svg" alt="BCIT" sx={{ height: 48 }} />
               <Typography variant="h5" sx={{ fontWeight: 400 }}>
                 High Resolution Image Viewer (HRIV) Login
               </Typography>
@@ -304,13 +312,7 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
           }}
         />
       </Box>
-      <FooterBar
-        canManageUsers={false}
-        frontendVersion={undefined}
-        backendVersion={undefined}
-        backupVersion={undefined}
-        setReportIssueOpen={() => {}}
-      />
-    </>
+      <FooterBar canManageUsers={false} />
+    </Box>
   )
 }

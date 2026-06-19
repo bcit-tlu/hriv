@@ -1,3 +1,8 @@
+---
+name: testing-backup-service
+description: Test the HRIV backup service for database and filesystem backup, local archive retention, S3-compatible storage, full restore, PostgreSQL client compatibility, Docker Compose backup profile behavior, and disaster recovery verification.
+---
+
 # Testing the Backup Service
 
 ## Overview

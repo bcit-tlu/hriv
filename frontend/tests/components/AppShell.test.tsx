@@ -53,16 +53,45 @@ describe('AppShell', () => {
       expect(screen.getByTestId('main-content')).toBeInTheDocument()
     })
 
+    it('renders the notification slot when provided', () => {
+      render(
+        <AppShell
+          {...makeProps({
+            notificationSlot: <button type="button">Notifications</button>,
+          })}
+        />,
+      )
+      expect(screen.getByRole('button', { name: 'Notifications' })).toBeInTheDocument()
+    })
+
     it('renders announcement banner when announcement is set', () => {
       render(<AppShell {...makeProps({ announcement: 'Maintenance tonight' })} />)
       expect(screen.getByText('Maintenance tonight')).toBeInTheDocument()
+    })
+
+    it('keeps the announcement banner on the people/admin surface background', () => {
+      render(
+        <AppShell
+          {...makeProps({
+            page: 'people',
+            announcement: 'Maintenance tonight',
+          })}
+        />,
+      )
+
+      expect(screen.getByText('Maintenance tonight').closest('.MuiBox-root')).toHaveStyle({
+        backgroundColor: '#DAC7B5',
+      })
     })
 
     it('renders dismiss link on announcement banner when callback provided', async () => {
       const onDismiss = vi.fn()
       render(
         <AppShell
-          {...makeProps({ announcement: 'Maintenance tonight', onDismissAnnouncement: onDismiss })}
+          {...makeProps({
+            announcement: 'Maintenance tonight',
+            onDismissAnnouncement: onDismiss,
+          })}
         />,
       )
       const link = screen.getByRole('button', { name: 'Dismiss' })
@@ -113,7 +142,14 @@ describe('AppShell', () => {
 
   describe('tabs', () => {
     it('renders Home tab always', () => {
-      render(<AppShell {...makeProps({ canEditContent: false, canManageUsers: false })} />)
+      render(
+        <AppShell
+          {...makeProps({
+            canEditContent: false,
+            canManageUsers: false,
+          })}
+        />,
+      )
       expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
     })
 
@@ -187,7 +223,14 @@ describe('AppShell', () => {
     })
 
     it('hides Programs menu item for non-admin editors', () => {
-      render(<AppShell {...makeProps({ canEditContent: true, canManageUsers: false })} />)
+      render(
+        <AppShell
+          {...makeProps({
+            canEditContent: true,
+            canManageUsers: false,
+          })}
+        />,
+      )
       fireEvent.click(screen.getByRole('tab', { name: 'Manage' }))
       expect(screen.getByRole('menuitem', { name: 'Categories' })).toBeInTheDocument()
       expect(screen.getByRole('menuitem', { name: 'Announcement' })).toBeInTheDocument()
@@ -211,7 +254,14 @@ describe('AppShell', () => {
     })
 
     it('shows Groups menu item for non-admin editors (instructors)', () => {
-      render(<AppShell {...makeProps({ canEditContent: true, canManageUsers: false })} />)
+      render(
+        <AppShell
+          {...makeProps({
+            canEditContent: true,
+            canManageUsers: false,
+          })}
+        />,
+      )
       fireEvent.click(screen.getByRole('tab', { name: 'Manage' }))
       expect(screen.getByRole('menuitem', { name: 'Groups' })).toBeInTheDocument()
     })
@@ -364,7 +414,12 @@ describe('AppShell', () => {
     it('hides View Announcement link when no announcement is enabled', () => {
       render(
         <AppShell
-          {...makeProps({ profileOpen: true, annEnabled: false, annMessage: '', announcement: '' })}
+          {...makeProps({
+            profileOpen: true,
+            annEnabled: false,
+            annMessage: '',
+            announcement: '',
+          })}
         />,
       )
       expect(screen.queryByText('View Announcement')).not.toBeInTheDocument()

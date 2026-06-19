@@ -73,6 +73,11 @@ import {
   removeGroupInstructor,
   fetchAnnouncement,
   updateAnnouncement,
+  fetchChangelogEntries,
+  createChangelogEntry,
+  updateChangelogEntry,
+  deleteChangelogEntry,
+  markChangelogRead,
   fetchSourceImage,
   fetchBulkImportJob,
   reportIssue,
@@ -95,6 +100,7 @@ import {
   type ApiUser,
   type ApiProgram,
   type ApiAnnouncement,
+  type ApiChangelogEntry,
   type ApiSourceImage,
   userMessage,
 } from '../src/api'
@@ -819,6 +825,64 @@ describe('Announcement API', () => {
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/announcement/')
     expect(init.method).toBe('PUT')
+  })
+})
+
+// ── Changelog ────────────────────────────────────────────────────────────
+
+describe('Changelog API', () => {
+  const fixture: ApiChangelogEntry = {
+    id: 1,
+    title: 'v2.5',
+    body: 'Released improvements',
+    published_at: '2026-06-16T00:00:00Z',
+    created_at: '2026-06-16T00:00:00Z',
+    updated_at: '2026-06-16T00:00:00Z',
+  }
+
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+  })
+  afterEach(() => setToken(null))
+
+  it('fetchChangelogEntries sends GET', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse([fixture]))
+    const result = await fetchChangelogEntries()
+    expect(mockFetch.mock.calls[0][0]).toBe('/api/changelog/')
+    expect(result).toEqual([fixture])
+  })
+
+  it('createChangelogEntry sends POST', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(fixture, 201))
+    await createChangelogEntry({ title: 'v2.5', body: 'Released improvements' })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/changelog/')
+    expect(init.method).toBe('POST')
+  })
+
+  it('updateChangelogEntry sends PATCH', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse(fixture))
+    await updateChangelogEntry(1, { title: 'Updated' })
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/changelog/1')
+    expect(init.method).toBe('PATCH')
+  })
+
+  it('deleteChangelogEntry sends DELETE', async () => {
+    mockFetch.mockReturnValueOnce(noContentResponse())
+    await deleteChangelogEntry(1)
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/changelog/1')
+    expect(init.method).toBe('DELETE')
+  })
+
+  it('markChangelogRead sends POST', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ changelog_last_read_at: fixture.published_at }))
+    await markChangelogRead()
+    const [url, init] = mockFetch.mock.calls[0]
+    expect(url).toBe('/api/changelog/mark-read')
+    expect(init.method).toBe('POST')
   })
 })
 

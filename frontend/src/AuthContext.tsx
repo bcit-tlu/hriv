@@ -32,6 +32,7 @@ function toUser(u: ApiUser): User {
     group_ids: u.group_ids ?? [],
     group_names: u.group_names ?? [],
     lastAccess: u.last_access,
+    metadataExtra: u.metadata_extra,
   }
 }
 

@@ -131,6 +131,7 @@ describe('AuthProvider', () => {
           group_ids: [],
           group_names: [],
           last_access: null,
+          metadata_extra: { changelog_last_read_at: '2026-06-17T12:00:00Z' },
         }),
     })
     // The admin user triggers loadUsers
@@ -148,6 +149,53 @@ describe('AuthProvider', () => {
     expect(screen.getByTestId('user').textContent).toBe('admin@example.ca')
     expect(screen.getByTestId('canManage').textContent).toBe('true')
     expect(screen.getByTestId('canEdit').textContent).toBe('true')
+  })
+
+  it('preserves metadata_extra from /auth/me on currentUser', async () => {
+    let authCtx: AuthContextValue | null = null
+
+    currentToken = 'stored-jwt'
+    storage['hriv_user'] = JSON.stringify({
+      id: 1,
+      name: 'Admin',
+      email: 'admin@example.ca',
+      role: 'admin',
+    })
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: () =>
+        Promise.resolve({
+          id: 1,
+          name: 'Admin',
+          email: 'admin@example.ca',
+          role: 'admin',
+          program_ids: [],
+          program_names: [],
+          group_ids: [],
+          group_names: [],
+          last_access: null,
+          metadata_extra: { changelog_last_read_at: '2026-06-17T12:00:00Z' },
+        }),
+    })
+    mockFetchUsers.mockResolvedValueOnce([])
+
+    render(
+      <AuthProvider>
+        <AuthConsumer
+          onContext={(ctx) => {
+            authCtx = ctx
+          }}
+        />
+      </AuthProvider>,
+    )
+
+    await waitFor(() => {
+      expect(authCtx?.currentUser?.metadataExtra).toEqual({
+        changelog_last_read_at: '2026-06-17T12:00:00Z',
+      })
+    })
   })
 
   it('clears session when /auth/me returns 401', async () => {

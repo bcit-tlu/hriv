@@ -2,6 +2,8 @@
 
 ## Setup Commands
 
+- **If a required executable is not on `PATH`, use `nix-shell -p <executable>`** to run it in the project environment instead of assuming the tool is unavailable.
+
 ### Frontend
 
 - Install dependencies: `npm ci`

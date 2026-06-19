@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.23.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.22.0...backend-v0.23.0) (2026-06-18)
+
+### Features
+
+- add changelog notifications for instructors ([#696](https://github.com/bcit-tlu/hriv/issues/696)) ([9f0e365](https://github.com/bcit-tlu/hriv/commit/9f0e3656a3d9fbf09bce0a99bc4f0ea7ae0d314d))
+- add optimistic concurrency control to category mutations ([#672](https://github.com/bcit-tlu/hriv/issues/672)) ([8a55eac](https://github.com/bcit-tlu/hriv/commit/8a55eac89aab08dc00cd19c6b4ef8331b51a307f))
+
+### Bug Fixes
+
+- clean up test fixtures and remove unnecessary fetchStatus headers ([#678](https://github.com/bcit-tlu/hriv/issues/678)) ([cc1d76c](https://github.com/bcit-tlu/hriv/commit/cc1d76cbc47301c52e3698f2c8675ad327a56c3a))
+- filter 4xx HTTPExceptions from OTel span error recording ([#671](https://github.com/bcit-tlu/hriv/issues/671)) ([515f406](https://github.com/bcit-tlu/hriv/commit/515f4066f3829db21eb5a5a18f661f7aac3409fd))
+
 ## [0.22.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.21.0...backend-v0.22.0) (2026-06-10)
 
 ### Features

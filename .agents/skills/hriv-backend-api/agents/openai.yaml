@@ -1,0 +1,4 @@
+interface:
+  display_name: 'HRIV Backend API'
+  short_description: 'Backend routers, models, migrations'
+  default_prompt: 'Use $hriv-backend-api to update a FastAPI endpoint in HRIV.'

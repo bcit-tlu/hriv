@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.24.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.23.0...frontend-v0.24.0) (2026-06-18)
+
+### Features
+
+- add category visibility indicators and cascade to images ([#683](https://github.com/bcit-tlu/hriv/issues/683)) ([52da54e](https://github.com/bcit-tlu/hriv/commit/52da54e76f5d222e3c616888e85182b38ca778b5))
+- add changelog notifications for instructors ([#696](https://github.com/bcit-tlu/hriv/issues/696)) ([9f0e365](https://github.com/bcit-tlu/hriv/commit/9f0e3656a3d9fbf09bce0a99bc4f0ea7ae0d314d))
+- add hidden-by-default metadata columns to image table ([#685](https://github.com/bcit-tlu/hriv/issues/685)) ([5048e58](https://github.com/bcit-tlu/hriv/commit/5048e588f3ce403c512ad181651dbd0d93c2f0c7))
+- add optimistic concurrency control to category mutations ([#672](https://github.com/bcit-tlu/hriv/issues/672)) ([8a55eac](https://github.com/bcit-tlu/hriv/commit/8a55eac89aab08dc00cd19c6b4ef8331b51a307f))
+
+### Bug Fixes
+
+- clean up test fixtures and remove unnecessary fetchStatus headers ([#678](https://github.com/bcit-tlu/hriv/issues/678)) ([cc1d76c](https://github.com/bcit-tlu/hriv/commit/cc1d76cbc47301c52e3698f2c8675ad327a56c3a))
+- from PR572 to avoid merge/rebase errors ([#653](https://github.com/bcit-tlu/hriv/issues/653)) ([cd08f4b](https://github.com/bcit-tlu/hriv/commit/cd08f4b4d452de3dc7f9daa0f899c0b23ffa2062))
+- **frontend:** re-enable react-hooks/refs and set-state-in-effect lint rules ([#677](https://github.com/bcit-tlu/hriv/issues/677)) ([c546a14](https://github.com/bcit-tlu/hriv/commit/c546a1425cb3299b77c7d87031fdc069a716f19a))
+- hydrate changelog read state from auth metadata ([#699](https://github.com/bcit-tlu/hriv/issues/699)) ([6a90bfa](https://github.com/bcit-tlu/hriv/commit/6a90bfa9309fd18291d0e3f1f04ef4aa2193af88))
+- memoize onDragStart and use loop index for search result IDs ([#670](https://github.com/bcit-tlu/hriv/issues/670)) ([c14eb99](https://github.com/bcit-tlu/hriv/commit/c14eb992292538c9a5cdf756f149687dfe426905))
+- standardize inherited restriction shading ([#700](https://github.com/bcit-tlu/hriv/issues/700)) ([5a77dbb](https://github.com/bcit-tlu/hriv/commit/5a77dbb09fce75fcbf358d58fbc4c8c3f1fc797e))
+
 ## [0.23.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.22.0...frontend-v0.23.0) (2026-06-12)
 
 ### Features

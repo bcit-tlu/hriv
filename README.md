@@ -37,6 +37,8 @@ All seed users share the password `password`.
 | Manage groups                   | Yes   | Yes\*      | No      |
 | Restrict categories to groups   | Yes   | Yes\*      | No      |
 | Manage announcement             | Yes   | Yes        | No      |
+| View changelog notifications    | Yes   | Yes        | No      |
+| Manage changelog entries        | Yes   | No         | No      |
 | Admin page (DB import/export)   | Yes   | No         | No      |
 | User management (add/delete)    | Yes   | No         | No      |
 | List users                      | Yes   | Yes        | No      |
@@ -51,6 +53,14 @@ A **program** is a flat, admin/OIDC-managed access-control unit that gates categ
 ### Groups
 
 A **group** is an instructor-managed visibility dimension, independent of programs. Any admin or instructor can create a group and add student members (and instructor co-owners); a category restricted to one or more groups is visible to a student only if they belong to at least one of them. Visibility is a **dual gate**: a student sees a category only if it passes _both_ the program gate **and** the group gate. Group memberships also surface as read-only chips in the student profile menu. See [docs/groups.md](docs/groups.md) for the model, authorization rules, API, and frontend behaviour, and [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md) for the combined visibility evaluation.
+
+### Changelog Notifications
+
+The notification bell is a separate feature from the site-wide announcement
+banner. Admins publish Markdown changelog entries from the Admin page, and
+admins plus instructors can read them from the AppBar bell's **What's New**
+dialog. Read state is tracked per user, and republishing an entry marks it
+unread again. See [docs/changelog-notifications.md](docs/changelog-notifications.md).
 
 ### CLI Access via curl
 
@@ -93,6 +103,7 @@ reconciliation model for both environments.
 | Doc                                                                                  | Covers                                                                          |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
 | [docs/groups.md](docs/groups.md)                                                     | Groups model, authorization, API surface, and frontend behaviour                |
+| [docs/changelog-notifications.md](docs/changelog-notifications.md)                   | Notification bell, What's New feed, changelog CRUD, and unread-state rules      |
 | [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md) | Dual-gate student visibility (programs AND groups), cascade rules, tree loading |
 | [docs/domain-model.md](docs/domain-model.md)                                         | Data model reference (entities, junctions, conventions)                         |
 | [docs/admin-import-export.md](docs/admin-import-export.md)                           | Admin import/export task lifecycle and data round-trip                          |

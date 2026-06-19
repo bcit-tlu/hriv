@@ -37,10 +37,30 @@ const testCategory: Category = {
       tileSources: '/tiles/10.dzi',
       categoryId: 1,
       copyright: '2026 BCIT',
-      note: 'Sample liver tissue',
+      note: 'Reference atlas for liver tissue',
       active: true,
       sortOrder: 0,
       version: 1,
+      metadataExtra: {
+        canvas_annotations: [
+          {
+            id: 'ann-text-1',
+            type: 'text',
+            text: 'Portal triad',
+          },
+          {
+            id: 'ann-link-1',
+            type: 'link',
+            text: 'Reference Atlas',
+            url: 'https://atlas.example/liver',
+          },
+          {
+            id: 'ann-rect-1',
+            type: 'rect',
+            text: 'IgnorePayloadOnly',
+          },
+        ],
+      },
     },
     {
       id: 11,
@@ -53,6 +73,7 @@ const testCategory: Category = {
       active: true,
       sortOrder: 0,
       version: 1,
+      metadataExtra: null,
     },
   ],
   programIds: [1],
@@ -252,6 +273,115 @@ describe('SearchModal', () => {
     expect(screen.getAllByText(/Category:/).length).toBeGreaterThan(0)
   })
 
+  it('finds images by text annotation content', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    await user.type(input, 'Portal')
+
+    const cards = screen
+      .getAllByText('Liver Section')
+      .filter((el) => el.closest('[class*="MuiCardActionArea"]'))
+    expect(cards).toHaveLength(1)
+    const card = cards[0].closest('[class*="MuiCard"]')!
+    expect(card.textContent).toContain('Annotation:')
+    expect(card.textContent).toContain('Portal triad')
+  })
+
+  it('finds images by link annotation display text', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    await user.type(input, 'Atlas')
+
+    const cards = screen
+      .getAllByText('Liver Section')
+      .filter((el) => el.closest('[class*="MuiCardActionArea"]'))
+    expect(cards).toHaveLength(1)
+    const card = cards[0].closest('[class*="MuiCard"]')!
+    expect(card.textContent).toContain('Link:')
+    expect(card.textContent).toContain('Reference Atlas')
+  })
+
+  it('finds images by link annotation URL', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    await user.type(input, 'atlas.example')
+
+    const cards = screen
+      .getAllByText('Liver Section')
+      .filter((el) => el.closest('[class*="MuiCardActionArea"]'))
+    expect(cards).toHaveLength(1)
+    const card = cards[0].closest('[class*="MuiCard"]')!
+    expect(card.textContent).toContain('Link URL:')
+    expect(card.textContent).toContain('https://atlas.example/liver')
+  })
+
+  it('exposes annotation field filter chips', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    await user.type(input, 'Atlas')
+
+    expect(screen.getByText('Annotation')).toBeInTheDocument()
+    expect(screen.getByText('Link')).toBeInTheDocument()
+    expect(screen.getByText('Link URL')).toBeInTheDocument()
+  })
+
+  it('filters results to annotation matches when an annotation field chip is selected', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    await user.type(input, 'Atlas')
+    await user.click(screen.getByText('Link'))
+
+    const cards = screen
+      .getAllByText('Liver Section')
+      .filter((el) => el.closest('[class*="MuiCardActionArea"]'))
+    expect(cards).toHaveLength(1)
+
+    const card = cards[0].closest('[class*="MuiCard"]')!
+    expect(card.textContent).toContain('Link:')
+    expect(card.textContent).not.toContain('Note:')
+  })
+
+  it('ignores text payloads attached to non-text annotations', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    await user.type(input, 'IgnorePayloadOnly')
+
+    expect(screen.getByText(/No results found/)).toBeInTheDocument()
+  })
+
+  it('ignores malformed canvas annotation metadata', async () => {
+    const user = userEvent.setup()
+    const malformedCategory: Category = {
+      ...testCategory,
+      images: [
+        {
+          ...testCategory.images[0],
+          metadataExtra: {
+            canvas_annotations: 'broken',
+          },
+        },
+      ],
+    }
+    render(<SearchModal {...defaultProps} categories={[malformedCategory]} open={true} />)
+
+    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    await user.type(input, 'Portal')
+
+    expect(screen.getByText(/No results found/)).toBeInTheDocument()
+  })
+
   it('finds images by program name of parent category', async () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)
@@ -360,6 +490,23 @@ describe('SearchModal', () => {
     const card = cards[0].closest('[class*="MuiCard"]')!
     expect(card.textContent).toContain('Name:')
     expect(card.textContent).toContain('Copyright:')
+  })
+
+  it('deduplicates image results when note and annotations both match', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    await user.type(input, 'Atlas')
+
+    const cards = screen
+      .getAllByText('Liver Section')
+      .filter((el) => el.closest('[class*="MuiCardActionArea"]'))
+    expect(cards).toHaveLength(1)
+
+    const card = cards[0].closest('[class*="MuiCard"]')!
+    expect(card.textContent).toContain('Note:')
+    expect(card.textContent).toContain('Link:')
   })
 
   it('hides program and people results from student role', async () => {

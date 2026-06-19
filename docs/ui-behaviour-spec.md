@@ -80,6 +80,20 @@ Two capability flags in `AuthContext.tsx` drive all gating:
 - Students view locked overlays and annotations read-only; edit mode and
   measurement tools are gated by `canEditContent`.
 
+### Search modal (`SearchModal.test.tsx`)
+
+- Search is client-side over the currently loaded browse data (categories,
+  images, programs, users); it does not call a dedicated backend search
+  endpoint.
+- Image results match on image name, copyright, note, parent category,
+  associated program names, and text-bearing canvas annotations stored in
+  `image.metadataExtra.canvas_annotations`.
+- Only text-bearing annotations are searchable: text annotations, link display
+  text, and link URLs. Shape-only annotations (rect/circle/arrow) do not
+  create search hits.
+- Field filters expose dedicated chips for `Annotation`, `Link`, and
+  `Link URL`, so users can keep only annotation-derived image matches visible.
+
 ---
 
 ## Editor / admin behaviour
@@ -107,6 +121,20 @@ never widen access an ancestor restricts:
   disabled and only a subset can be selected — selecting outside the inherited
   set is prevented (no widening). A symmetric, **non-blocking** advisory appears
   when a category is restricted by both a program and a group.
+
+#### Direct vs inherited restriction emphasis
+
+Anywhere the UI renders **program** or **group** restrictions as chips or lock
+icons, the same emphasis rule applies:
+
+- **Direct restriction** on the current entity/path segment = normal full-strength
+  primary/secondary treatment.
+- **Inherited restriction** from an ancestor = the same visual treatment at
+  **0.6 opacity**.
+
+This applies to breadcrumb chips, browse tile chips, ManagePage restriction
+chips, inherited-only category dialog chips, and restriction lock icons in
+category pickers / category-management lists.
 
 ### Visibility cascade & indicators (`EditCategoryDialog.test.tsx`, `EditImageModal.test.tsx`, `CategoryPickerSelect.test.tsx`, `ManageCategoriesDialog.test.tsx`)
 

@@ -1,18 +1,29 @@
 const BASE = import.meta.env.VITE_API_URL ?? ''
 
-let _token: string | null = localStorage.getItem('hriv_token')
+function getStorage(): Storage | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return window.localStorage
+  } catch {
+    return null
+  }
+}
+
+let _token: string | null = getStorage()?.getItem('hriv_token') ?? null
 
 // Unique per browser-tab identifier sent on every API call.  Allows the
 // backend audit log to correlate all requests from a single tab, even when
 // many students share the same JWT (shared "student@example.ca" account).
-const SESSION_ID = crypto.randomUUID()
+const SESSION_ID = globalThis.crypto?.randomUUID?.() ?? 'test-session'
 
 export function setToken(token: string | null): void {
   _token = token
+  const storage = getStorage()
+  if (!storage) return
   if (token) {
-    localStorage.setItem('hriv_token', token)
+    storage.setItem('hriv_token', token)
   } else {
-    localStorage.removeItem('hriv_token')
+    storage.removeItem('hriv_token')
   }
 }
 
@@ -30,14 +41,20 @@ export function getToken(): string | null {
  * should survive logout/login cycles for the same browser profile.
  */
 export function clearUserStorage(): void {
+  const storage = getStorage()
+  if (!storage) {
+    _token = null
+    return
+  }
+
   const keysToRemove: string[] = []
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i)
+  for (let i = 0; i < storage.length; i++) {
+    const key = storage.key(i)
     if (key && (key.startsWith('hriv_') || key.startsWith('hriv-'))) {
       keysToRemove.push(key)
     }
   }
-  keysToRemove.forEach((key) => localStorage.removeItem(key))
+  keysToRemove.forEach((key) => storage.removeItem(key))
   _token = null
 }
 
@@ -106,7 +123,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const { headers: initHeaders, ...restInit } = init ?? {}
   const res = await fetch(`${BASE}/api${path}`, {
     ...restInit,
-    headers: { 'Content-Type': 'application/json', ...authHeaders(), ...initHeaders },
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+      ...initHeaders,
+    },
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
@@ -555,7 +576,9 @@ export function addGroupMember(groupId: number, userId: number): Promise<ApiGrou
 }
 
 export function removeGroupMember(groupId: number, userId: number): Promise<ApiGroup> {
-  return request(`/groups/${groupId}/members/${userId}`, { method: 'DELETE' })
+  return request(`/groups/${groupId}/members/${userId}`, {
+    method: 'DELETE',
+  })
 }
 
 export function fetchGroupInstructors(groupId: number): Promise<ApiGroupMember[]> {
@@ -563,11 +586,15 @@ export function fetchGroupInstructors(groupId: number): Promise<ApiGroupMember[]
 }
 
 export function addGroupInstructor(groupId: number, userId: number): Promise<ApiGroup> {
-  return request(`/groups/${groupId}/instructors/${userId}`, { method: 'POST' })
+  return request(`/groups/${groupId}/instructors/${userId}`, {
+    method: 'POST',
+  })
 }
 
 export function removeGroupInstructor(groupId: number, userId: number): Promise<ApiGroup> {
-  return request(`/groups/${groupId}/instructors/${userId}`, { method: 'DELETE' })
+  return request(`/groups/${groupId}/instructors/${userId}`, {
+    method: 'DELETE',
+  })
 }
 
 export function addGroupMembersBulk(groupId: number, userIds: number[]): Promise<ApiGroup> {
@@ -620,6 +647,49 @@ export function updateAnnouncement(body: {
     method: 'PUT',
     body: JSON.stringify(body),
   })
+}
+
+// ── Changelog ────────────────────────────────────────────
+
+export interface ApiChangelogEntry {
+  id: number
+  title: string
+  body: string
+  published_at: string
+  created_at: string
+  updated_at: string
+}
+
+export function fetchChangelogEntries(): Promise<ApiChangelogEntry[]> {
+  return request('/changelog/')
+}
+
+export function createChangelogEntry(body: {
+  title: string
+  body: string
+}): Promise<ApiChangelogEntry> {
+  return request('/changelog/', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
+export function updateChangelogEntry(
+  id: number,
+  body: { title?: string; body?: string },
+): Promise<ApiChangelogEntry> {
+  return request(`/changelog/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
+}
+
+export function deleteChangelogEntry(id: number): Promise<void> {
+  return request(`/changelog/${id}`, { method: 'DELETE' })
+}
+
+export function markChangelogRead(): Promise<{ changelog_last_read_at: string }> {
+  return request('/changelog/mark-read', { method: 'POST' })
 }
 
 // ── Source Images ───────────────────────────────────────
@@ -1065,6 +1135,10 @@ export interface FrontendVersionResponse {
 }
 
 export async function fetchFrontendVersion(): Promise<FrontendVersionResponse> {
+  if (import.meta.env.MODE === 'development') {
+    return { frontend: 'dev' }
+  }
+
   // NB: absolute path, not ``${BASE}/version``. ``BASE`` is
   // ``VITE_API_URL`` (the *backend* base), so if it's ever set to a
   // cross-origin URL (e.g. ``https://api.example.com``) the fetch would
@@ -1072,7 +1146,9 @@ export async function fetchFrontendVersion(): Promise<FrontendVersionResponse> {
   // silently fall back to ``"dev"`` even in a managed deploy. This
   // endpoint is served by the frontend's own nginx on the same origin
   // as the SPA regardless of ``VITE_API_URL``.
-  const res = await fetch('/version', { headers: { Accept: 'application/json' } })
+  const res = await fetch('/version', {
+    headers: { Accept: 'application/json' },
+  })
   if (!res.ok) {
     throw new Error(`Frontend /version ${res.status}`)
   }

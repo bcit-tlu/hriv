@@ -64,6 +64,27 @@ All seed users share the password `password`.
 
 ---
 
+## Test Case 3a: Changelog Notifications (Admin + Instructor)
+
+**Purpose:** Verify the bell badge, What's New feed, and admin-only changelog management.
+
+1. Login as `admin@example.ca` / `password`.
+2. Open the `Admin` tab and scroll to the `Changelog` section.
+3. Create a new entry with title `v2.5` and a short Markdown body.
+4. **Assert:** The new entry appears in the changelog table.
+5. **Assert:** A notification bell is visible in the AppBar with an unread dot.
+6. Open the bell menu.
+7. **Assert:** The unread dot remains until `What's New` is opened.
+8. Click `What's New`.
+9. **Assert:** The dialog lists the new entry and renders the Markdown content.
+10. Close the dialog.
+11. **Assert:** The unread dot is cleared.
+12. Logout and login as `instructor@example.ca` / `password`.
+13. **Assert:** The bell is visible and the entry is readable from `What's New`.
+14. **Assert:** The instructor still has no `Admin` tab and therefore cannot access changelog management controls.
+
+---
+
 ## Test Case 3b: Table Column Preference Persistence Per User
 
 **Purpose:** Verify that table column visibility preferences persist across logout/login for the same user without leaking to other users.
@@ -257,6 +278,11 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | DELETE | /api/groups/{id}/instructors/bulk      | Yes           | instructor † |
 | POST   | /api/groups/{id}/instructors/{user_id} | Yes           | instructor † |
 | DELETE | /api/groups/{id}/instructors/{user_id} | Yes           | instructor † |
+| GET    | /api/changelog/                        | Yes           | instructor   |
+| POST   | /api/changelog/                        | Yes           | admin        |
+| POST   | /api/changelog/mark-read               | Yes           | instructor   |
+| PATCH  | /api/changelog/{id}                    | Yes           | admin        |
+| DELETE | /api/changelog/{id}                    | Yes           | admin        |
 | GET    | /api/admin/export                      | Yes           | admin        |
 | POST   | /api/admin/import                      | Yes           | admin        |
 

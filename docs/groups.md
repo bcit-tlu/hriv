@@ -155,6 +155,7 @@ same way regardless of which dimension was added last.
 | Group list / create / rename / delete and member management modal                    | `components/GroupManagementModal.tsx`                                   |
 | Group restriction section on category dialogs                                        | `components/AddCategoryDialog.tsx`, `components/EditCategoryDialog.tsx` |
 | Group chips on category tiles                                                        | `components/CategoryTile.tsx`                                           |
+| Group chips in browse / viewer breadcrumbs                                           | `App.tsx`                                                               |
 | Group chips in the Images table                                                      | `components/ManagePage.tsx`                                             |
 | Group chips in the People table                                                      | `components/PeoplePage.tsx`                                             |
 | Read-only group chips in the profile menu                                            | `components/AppShell.tsx`                                               |
@@ -192,14 +193,22 @@ Groups now use the app's **secondary** palette as their shared visual identity
 (`theme.ts::getGroupChipColors`). The full-strength variant is used for primary
 group affordances (for example, the action buttons in the Manage Groups modal
 and the read-only group chips in the profile menu). The subtle variant is used
-for the selected group highlight in the Manage Groups list, lower-emphasis
-inherited/read-only states in the category dialogs, and keeps text contrast at
-WCAG-AA without dimming the entire chip:
+for the selected group highlight in the Manage Groups list and other
+lower-emphasis read-only states that are **not** modelling category-restriction
+inheritance:
 
 | Mode  | Full-strength background | Full-strength text | Subtle background           | Subtle text |
 | ----- | ------------------------ | ------------------ | --------------------------- | ----------- |
 | Light | `#7F665D`                | `#FFFFFF`          | `rgba(127, 102, 93, 0.16)`  | `#3E3C3A`   |
 | Dark  | `#A89288`                | `#1E1E1E`          | `rgba(168, 146, 136, 0.16)` | `#E0DDD9`   |
+
+For category restriction rendering, HRIV uses a separate cross-surface rule:
+**direct** program/group restrictions render at full strength, while
+**inherited** restrictions render using the same colour treatment at
+**0.6 opacity**. That shared rule is used for group restriction chips on
+browse-category tiles, breadcrumb rows, ManagePage image rows, and the
+inherited-only category-dialog chips, plus the group lock icon in
+category-picking / category-management lists.
 
 ## Export / import
 
