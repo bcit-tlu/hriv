@@ -104,11 +104,13 @@ Two capability flags in `AuthContext.tsx` drive all gating:
   chips. Parent selection uses `CategoryPickerSelect`.
 - **Move:** `MoveCategoryDialog` reparents a category; a category cannot be moved
   under itself or its own descendant.
-- **Manage Categories dialog:** the category list stays scoped to
-  `ManageCategoriesDialog` (not `CategoryPickerSelect` or `MoveCategoryDialog`),
-  starts expanded, lets editors collapse subtrees that are not relevant, and
-  renders each category label as a link that navigates the app to that category
-  in Browse.
+- **Category tree surfaces:** `ManageCategoriesDialog`, `CategoryPickerSelect`,
+  and flows built on the picker (including `MoveCategoryDialog`) start expanded,
+  allow subtree collapse/expand, and share the same persisted collapse state for
+  the current browser user. Collapsing a branch in one surface keeps it
+  collapsed in the others until it is re-expanded.
+- **Manage Categories dialog:** the list also renders each category label as a
+  link that navigates the app to that category in Browse.
 - **Delete:** confirmation required; deleting a category cascades to children and
   detaches images (`category_id → NULL`). See [domain-model.md](domain-model.md).
 
@@ -201,8 +203,9 @@ committed on Save) in the edit modals.
 
 ### Category picker & direct image counts (`CategoryPickerSelect.test.tsx`)
 
-- `CategoryPickerSelect` flattens the tree into an indented list and shows each
-  category's **direct** image count. Restricted categories render a lock icon —
+- `CategoryPickerSelect` renders the category tree as an indented,
+  collapsible list and shows each category's **direct** image count.
+  Restricted categories render a lock icon —
   per accessibility convention (see [`REVIEW.md`](../REVIEW.md)), the lock is a
   non-interactive `<span role="img" aria-label="…">` **without** `tabIndex`
   (query via `getByLabelText`, not `getByTitle`).

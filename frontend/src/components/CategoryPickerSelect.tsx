@@ -9,8 +9,10 @@ import Select from '@mui/material/Select'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
 import AddIcon from '@mui/icons-material/Add'
+import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
 import type { SelectChangeEvent } from '@mui/material/Select'
@@ -27,6 +29,7 @@ import {
   getAncestorHiddenIds,
   type FlatCategoryOption,
 } from './categoryOptionUtils'
+import { useCategoryTreeExpansionPreferences } from '../useCategoryTreeExpansionPreferences'
 
 function collectDescendantIds(node: Category): Set<number> {
   const ids = new Set<number>([node.id])
@@ -214,6 +217,8 @@ export default function CategoryPickerSelect({
   }, [editingOpt, options])
 
   const ancestorHiddenIds = useMemo(() => getAncestorHiddenIds(options), [options])
+  const { visibleOptions, isExpanded, toggleExpanded } =
+    useCategoryTreeExpansionPreferences(options)
 
   const selectValue =
     value == null ? (placeholder ? '' : includeRoot ? ROOT_VALUE : '') : String(value)
@@ -311,7 +316,7 @@ export default function CategoryPickerSelect({
               </Box>
             </MenuItem>
           )}
-          {options.length === 0 && (
+          {visibleOptions.length === 0 && (
             <MenuItem disabled>
               <ListItemText>
                 <Typography variant="body2" color="text.secondary">
@@ -320,7 +325,7 @@ export default function CategoryPickerSelect({
               </ListItemText>
             </MenuItem>
           )}
-          {options.map((opt) => (
+          {visibleOptions.map((opt) => (
             <MenuItem key={opt.id} value={String(opt.id)} sx={{ pl: 2 + opt.depth * 3 }}>
               <Box
                 sx={{
@@ -330,37 +335,62 @@ export default function CategoryPickerSelect({
                   width: '100%',
                 }}
               >
-                <ListItemText>
-                  {opt.depth > 0 ? '\u2514 ' : ''}
-                  <Box
-                    component="span"
-                    sx={{
-                      color:
-                        opt.status === 'hidden' || ancestorHiddenIds.has(opt.id)
-                          ? visColors.inactive
-                          : undefined,
-                    }}
-                  >
-                    {opt.label}
-                  </Box>
-                  <Typography
-                    component="span"
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ ml: 0.5 }}
-                  >
-                    ({opt.imageCount})
-                  </Typography>
-                  <CategoryRestrictionIcons
-                    hasProgramRestriction={
-                      opt.programIds.length > 0 || opt.inheritedProgramRestriction
-                    }
-                    inheritedProgramRestriction={opt.inheritedProgramRestriction}
-                    hasGroupRestriction={opt.groupIds.length > 0 || opt.inheritedGroupRestriction}
-                    inheritedGroupRestriction={opt.inheritedGroupRestriction}
-                    hidden={opt.status === 'hidden'}
-                  />
-                </ListItemText>
+                <Box sx={{ display: 'flex', alignItems: 'center', minWidth: 0, flexGrow: 1 }}>
+                  {opt.childCount > 0 ? (
+                    <Tooltip title={isExpanded(opt.id) ? 'Collapse category' : 'Expand category'}>
+                      <IconButton
+                        size="small"
+                        aria-label={`${isExpanded(opt.id) ? 'Collapse' : 'Expand'} ${opt.label}`}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          e.preventDefault()
+                          toggleExpanded(opt.id)
+                        }}
+                        sx={{ mr: 0.5, p: 0.5 }}
+                      >
+                        {isExpanded(opt.id) ? (
+                          <ExpandMoreIcon fontSize="small" />
+                        ) : (
+                          <ChevronRightIcon fontSize="small" />
+                        )}
+                      </IconButton>
+                    </Tooltip>
+                  ) : (
+                    <Box sx={{ width: 30, flexShrink: 0 }} />
+                  )}
+                  <ListItemText>
+                    {opt.depth > 0 ? '\u2514 ' : ''}
+                    <Box
+                      component="span"
+                      sx={{
+                        color:
+                          opt.status === 'hidden' || ancestorHiddenIds.has(opt.id)
+                            ? visColors.inactive
+                            : undefined,
+                      }}
+                    >
+                      {opt.label}
+                    </Box>
+                    <Typography
+                      component="span"
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{ ml: 0.5 }}
+                    >
+                      ({opt.imageCount})
+                    </Typography>
+                    <CategoryRestrictionIcons
+                      hasProgramRestriction={
+                        opt.programIds.length > 0 || opt.inheritedProgramRestriction
+                      }
+                      inheritedProgramRestriction={opt.inheritedProgramRestriction}
+                      hasGroupRestriction={opt.groupIds.length > 0 || opt.inheritedGroupRestriction}
+                      inheritedGroupRestriction={opt.inheritedGroupRestriction}
+                      hidden={opt.status === 'hidden'}
+                    />
+                  </ListItemText>
+                </Box>
                 {onToggleVisibility &&
                   (() => {
                     const inheritedHidden = ancestorHiddenIds.has(opt.id)

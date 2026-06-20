@@ -7,11 +7,18 @@
  * 3. Inherited restriction shows correct aria-label
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import CategoryPickerSelect from '../../src/components/CategoryPickerSelect'
+import ManageCategoriesDialog from '../../src/components/ManageCategoriesDialog'
+import { resetCategoryTreeExpansionPreferencesForTests } from '../../src/useCategoryTreeExpansionPreferences'
 import { makeCategory, makeImage } from '../helpers/fixtures'
+
+beforeEach(() => {
+  localStorage.clear()
+  resetCategoryTreeExpansionPreferencesForTests()
+})
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -23,7 +30,7 @@ describe('CategoryPickerSelect — LockIcon', () => {
     const categories = [makeCategory({ id: 1, label: 'Restricted', programIds: [10] })]
     render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
     // Open the select dropdown
-    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getAllByRole('combobox', { hidden: true })[0])
     expect(screen.getByLabelText('Restricted to specific programs')).toBeInTheDocument()
   })
 
@@ -31,7 +38,7 @@ describe('CategoryPickerSelect — LockIcon', () => {
     const user = userEvent.setup()
     const categories = [makeCategory({ id: 1, label: 'Restricted', programIds: [10] })]
     render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
-    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getAllByRole('combobox', { hidden: true })[0])
     const lockElement = screen.getByLabelText('Restricted to specific programs')
     expect(lockElement).toHaveAttribute('role', 'img')
   })
@@ -167,6 +174,72 @@ describe('CategoryPickerSelect — LockIcon', () => {
     await user.click(screen.getByRole('combobox'))
     expect(screen.getByLabelText('Restricted to specific groups')).toBeInTheDocument()
     expect(screen.getByLabelText('Group restriction inherited from parent')).toBeInTheDocument()
+  })
+
+  it('renders expand/collapse controls for categories with children', async () => {
+    const user = userEvent.setup()
+    const categories = [
+      makeCategory({
+        id: 1,
+        label: 'Parent',
+        children: [makeCategory({ id: 2, label: 'Child', parentId: 1 })],
+      }),
+    ]
+    render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox'))
+
+    expect(screen.getByRole('button', { name: 'Collapse Parent' })).toBeInTheDocument()
+  })
+
+  it('collapses child categories from the picker tree', async () => {
+    const user = userEvent.setup()
+    const categories = [
+      makeCategory({
+        id: 1,
+        label: 'Parent',
+        children: [makeCategory({ id: 2, label: 'Child', parentId: 1 })],
+      }),
+    ]
+    render(<CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('button', { name: 'Collapse Parent' }))
+
+    expect(screen.queryByText('Child')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expand Parent' })).toBeInTheDocument()
+  })
+
+  it('shares collapse state with ManageCategoriesDialog while both are mounted', async () => {
+    const user = userEvent.setup()
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    const categories = [
+      makeCategory({
+        id: 1,
+        label: 'Parent',
+        children: [makeCategory({ id: 2, label: 'Child', parentId: 1 })],
+      }),
+    ]
+
+    render(
+      <>
+        <ManageCategoriesDialog
+          open
+          onClose={vi.fn()}
+          categories={categories}
+          onAddCategory={vi.fn().mockResolvedValue(99)}
+          onDeleteCategory={vi.fn().mockResolvedValue(undefined)}
+          onEditCategory={vi.fn().mockResolvedValue(undefined)}
+          programs={[]}
+          groups={[]}
+        />
+        <CategoryPickerSelect categories={categories} value={null} onChange={vi.fn()} />
+      </>,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Collapse Parent' }))
+    await user.click(screen.getAllByRole('combobox', { hidden: true })[0])
+
+    expect(screen.queryByText('Child')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Expand Parent' })).toBeInTheDocument()
   })
 })
 
