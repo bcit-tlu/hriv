@@ -78,19 +78,28 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
-            {{- if .Values.persistence.data.enabled }}
-            - name: data
+            {{- if .Values.persistence.sourceImages.enabled }}
+            - name: source-images
               mountPath: /data
+            {{- end }}
+            {{- if .Values.persistence.tiles.enabled }}
+            - name: tiles
+              mountPath: /data/tiles
             {{- end }}
             {{- if .Values.persistence.backups.enabled }}
             - name: backups
               mountPath: /backups
             {{- end }}
       volumes:
-        {{- if .Values.persistence.data.enabled }}
-        - name: data
+        {{- if .Values.persistence.sourceImages.enabled }}
+        - name: source-images
           persistentVolumeClaim:
-            claimName: {{ .Values.persistence.data.existingClaim | default (printf "%s-data" (include "hriv-backup.fullname" .)) }}
+            claimName: {{ .Values.persistence.sourceImages.existingClaim | default (printf "%s-source-images" (include "hriv-backup.fullname" .)) }}
+        {{- end }}
+        {{- if .Values.persistence.tiles.enabled }}
+        - name: tiles
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.tiles.existingClaim | default (printf "%s-tiles" (include "hriv-backup.fullname" .)) }}
         {{- end }}
         {{- if .Values.persistence.backups.enabled }}
         - name: backups
@@ -105,9 +114,9 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if or .Values.affinity .Values.persistence.data.existingClaim }}
+      {{- if or .Values.affinity .Values.persistence.sourceImages.existingClaim .Values.persistence.tiles.existingClaim }}
       affinity:
-        {{- if .Values.persistence.data.existingClaim }}
+        {{- if or .Values.persistence.sourceImages.existingClaim .Values.persistence.tiles.existingClaim }}
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             - labelSelector:

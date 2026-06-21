@@ -42,3 +42,20 @@ kubectl create secret generic github-report-issue-token \
   --from-literal=token=ghp_YOUR_SCOPED_PAT \
   -n <namespace>
 ```
+
+## Persistence Layout
+
+When `persistence.enabled=true`, the chart now expects two storage concerns:
+
+- `persistence.sourceImages` mounts at `/data`
+- `persistence.tilesPersistence` mounts at `/data/tiles`
+
+The source-images PVC remains the `/data` root on purpose so the backend can
+keep using `/data/.maintenance` and `/data/admin_tasks` without changing the
+runtime paths stored in the database:
+
+- `SOURCE_IMAGES_DIR=/data/source_images`
+- `TILES_DIR=/data/tiles`
+
+For multi-replica API or worker deployments, both PVCs must use
+`ReadWriteMany`.

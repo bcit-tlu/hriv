@@ -64,12 +64,20 @@ vault:
   azureSecretPath: hriv/azure-storage
 
 persistence:
-  data:
+  sourceImages:
     enabled: true
-    existingClaim: '' # Set to backend PVC name to share its data volume
+    existingClaim: '' # Set to the backend source-images PVC to share /data
     # Leave empty to use the cluster default StorageClass.
     storageClass: ''
     size: 5Gi
+    accessModes:
+      - ReadWriteOnce
+  tiles:
+    enabled: true
+    existingClaim: '' # Set to the backend tiles PVC to share /data/tiles
+    # Leave empty to use the cluster default StorageClass.
+    storageClass: ''
+    size: 10Gi
     accessModes:
       - ReadWriteOnce
   backups:

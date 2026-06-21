@@ -7,8 +7,11 @@
 {{- if and (index .Values "github-issue" "enabled") (not (index .Values "github-issue" "token" "existingSecret")) }}
 {{- fail "github-issue.enabled=true requires github-issue.token.existingSecret (secret must contain key 'token')" }}
 {{- end }}
-{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" .Values.persistence.accessModes)) }}
-{{- fail "replicaCount > 1 requires a ReadWriteMany PVC — background admin tasks write result files to the shared volume that any replica must be able to serve" }}
+{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" .Values.persistence.sourceImages.accessModes)) }}
+{{- fail "replicaCount > 1 requires a ReadWriteMany source-images PVC — background admin tasks write result files to the shared /data volume that any replica must be able to serve" }}
+{{- end }}
+{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" .Values.persistence.tilesPersistence.accessModes)) }}
+{{- fail "replicaCount > 1 requires a ReadWriteMany tiles PVC — all replicas must be able to serve generated DZI tiles" }}
 {{- end }}
 apiVersion: apps/v1
 kind: Deployment
@@ -18,7 +21,7 @@ metadata:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  {{- if and .Values.persistence.enabled (has "ReadWriteOnce" .Values.persistence.accessModes) }}
+  {{- if and .Values.persistence.enabled (or (has "ReadWriteOnce" .Values.persistence.sourceImages.accessModes) (has "ReadWriteOnce" .Values.persistence.tilesPersistence.accessModes)) }}
   strategy:
     type: Recreate
   {{- end }}
@@ -168,8 +171,10 @@ spec:
           {{- if or .Values.persistence.enabled .Values.backupVersionConfigMap.enabled }}
           volumeMounts:
             {{- if .Values.persistence.enabled }}
-            - name: data
+            - name: source-images
               mountPath: /data
+            - name: tiles-data
+              mountPath: /data/tiles
             {{- end }}
             {{- if .Values.backupVersionConfigMap.enabled }}
             - name: backup-version
@@ -185,8 +190,11 @@ spec:
               containerPort: {{ .Values.tiles.nginx.port }}
               protocol: TCP
           volumeMounts:
-            - name: data
+            - name: source-images
               mountPath: /data
+              readOnly: true
+            - name: tiles-data
+              mountPath: /data/tiles
               readOnly: true
             - name: nginx-tiles-config
               mountPath: /etc/nginx/conf.d
@@ -211,9 +219,12 @@ spec:
       {{- if or .Values.persistence.enabled .Values.tiles.enabled .Values.backupVersionConfigMap.enabled }}
       volumes:
         {{- if .Values.persistence.enabled }}
-        - name: data
+        - name: source-images
           persistentVolumeClaim:
-            claimName: {{ include "hriv-backend.fullname" . }}-data
+            claimName: {{ .Values.persistence.sourceImages.existingClaim | default (printf "%s-source-images" (include "hriv-backend.fullname" .)) }}
+        - name: tiles-data
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.tilesPersistence.existingClaim | default (printf "%s-tiles" (include "hriv-backend.fullname" .)) }}
         {{- end }}
         {{- if .Values.tiles.enabled }}
         - name: nginx-tiles-config

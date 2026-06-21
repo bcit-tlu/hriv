@@ -233,16 +233,29 @@ tiles:
 
 persistence:
   enabled: false
-  # Leave empty to use the cluster default StorageClass.
-  storageClass: ''
-  size: 10Gi
-  # ReadWriteOnce is fine for single-replica dev/staging.
-  # Production with redis.worker.enabled=true MUST use ReadWriteMany
-  # so that the API pod and worker pod(s) can both access uploaded
-  # source images and generated tiles on the shared data volume.
-  # Use an RWX-capable StorageClass when scaling API/worker pods.
-  accessModes:
-    - ReadWriteOnce
+  # The source-images PVC remains mounted at /data so the backend can
+  # continue using /data/.maintenance and /data/admin_tasks while
+  # preserving SOURCE_IMAGES_DIR=/data/source_images.
+  sourceImages:
+    existingClaim: ''
+    # Leave empty to use the cluster default StorageClass.
+    storageClass: ''
+    size: 10Gi
+    # ReadWriteOnce is fine for single-replica dev/staging.
+    # Production with redis.worker.enabled=true or replicaCount > 1
+    # MUST use ReadWriteMany so the API pod and worker pod(s) can all
+    # access uploaded source images plus shared /data task state.
+    accessModes:
+      - ReadWriteOnce
+  tilesPersistence:
+    existingClaim: ''
+    # Leave empty to use the cluster default StorageClass.
+    storageClass: ''
+    size: 10Gi
+    # Generated tiles must also be RWX when shared across multiple API
+    # or worker replicas.
+    accessModes:
+      - ReadWriteOnce
 
 resources: {}
 

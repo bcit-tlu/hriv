@@ -1,19 +1,39 @@
-{{- if .Values.persistence.enabled }}
+{{- if and .Values.persistence.enabled (not .Values.persistence.sourceImages.existingClaim) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "hriv-backend.fullname" . }}-data
+  name: {{ printf "%s-source-images" (include "hriv-backend.fullname" .) }}
   labels:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
-  {{- if .Values.persistence.storageClass }}
-  storageClassName: {{ .Values.persistence.storageClass }}
+  {{- if .Values.persistence.sourceImages.storageClass }}
+  storageClassName: {{ .Values.persistence.sourceImages.storageClass }}
   {{- end }}
   accessModes:
-    {{- range .Values.persistence.accessModes }}
+    {{- range .Values.persistence.sourceImages.accessModes }}
     - {{ . }}
     {{- end }}
   resources:
     requests:
-      storage: {{ .Values.persistence.size }}
+      storage: {{ .Values.persistence.sourceImages.size }}
+{{- end }}
+---
+{{- if and .Values.persistence.enabled (not .Values.persistence.tilesPersistence.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-tiles" (include "hriv-backend.fullname" .) }}
+  labels:
+    {{- include "hriv-backend.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.persistence.tilesPersistence.storageClass }}
+  storageClassName: {{ .Values.persistence.tilesPersistence.storageClass }}
+  {{- end }}
+  accessModes:
+    {{- range .Values.persistence.tilesPersistence.accessModes }}
+    - {{ . }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.tilesPersistence.size }}
 {{- end }}
