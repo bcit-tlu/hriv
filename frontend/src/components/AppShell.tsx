@@ -132,6 +132,90 @@ export default function AppShell(props: AppShellProps) {
   const contentBg = page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined
   const groupColors = getGroupChipColors(mode)
 
+  // Collapsed-nav menu, built as ordered sections. Empty sections are dropped
+  // and dividers are only inserted *between* non-empty sections, so the menu
+  // stays correct for any role combination (no leading/trailing/double
+  // dividers even if the role invariants change).
+  const renderNavMenuItems = () => {
+    const closeThen = (fn: () => void) => () => {
+      setNavMenuAnchor(null)
+      fn()
+    }
+    const sections: ReactNode[][] = []
+
+    const pages: ReactNode[] = [
+      <MenuItem
+        key="browse"
+        selected={page === 'browse'}
+        onClick={closeThen(() => (page === 'browse' ? onHomeClick() : onTabChange('browse')))}
+      >
+        Home
+      </MenuItem>,
+    ]
+    if (canEditContent) {
+      pages.push(
+        <MenuItem
+          key="manage"
+          selected={page === 'manage'}
+          onClick={closeThen(() => onTabChange('manage'))}
+        >
+          Images
+        </MenuItem>,
+      )
+    }
+    sections.push(pages)
+
+    if (canEditContent) {
+      const manage: ReactNode[] = [
+        <ListSubheader key="manage-header" sx={{ bgcolor: 'transparent', lineHeight: '36px' }}>
+          Manage
+        </ListSubheader>,
+        <MenuItem key="categories" onClick={closeThen(onOpenCategories)}>
+          Categories
+        </MenuItem>,
+      ]
+      if (canManageUsers) {
+        manage.push(
+          <MenuItem key="programs" onClick={closeThen(onOpenPrograms)}>
+            Programs
+          </MenuItem>,
+        )
+      }
+      manage.push(
+        <MenuItem key="groups" onClick={closeThen(onOpenGroups)}>
+          Groups
+        </MenuItem>,
+        <MenuItem key="announcement" onClick={closeThen(onOpenAnnouncement)}>
+          Announcement
+        </MenuItem>,
+      )
+      sections.push(manage)
+    }
+
+    if (canManageUsers) {
+      sections.push([
+        <MenuItem
+          key="people"
+          selected={page === 'people'}
+          onClick={closeThen(() => onTabChange('people'))}
+        >
+          People
+        </MenuItem>,
+        <MenuItem
+          key="admin"
+          selected={page === 'admin'}
+          onClick={closeThen(() => onTabChange('admin'))}
+        >
+          Admin
+        </MenuItem>,
+      ])
+    }
+
+    return sections.flatMap((items, i) =>
+      i === 0 ? items : [<Divider key={`nav-divider-${i}`} />, ...items],
+    )
+  }
+
   return (
     <Box
       sx={{
@@ -195,6 +279,7 @@ export default function AppShell(props: AppShellProps) {
             {canManageUsers && <Tab label="Admin" value="admin" />}
           </Tabs>
           )}
+          {!collapseNav && (
           <Menu
             anchorEl={manageMenuAnchor}
             open={Boolean(manageMenuAnchor)}
@@ -235,6 +320,7 @@ export default function AppShell(props: AppShellProps) {
               Announcement
             </MenuItem>
           </Menu>
+          )}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: appBarClusterGap }}>
             {collapseNav && (
               <Tooltip title="Menu">
@@ -249,105 +335,15 @@ export default function AppShell(props: AppShellProps) {
                 </IconButton>
               </Tooltip>
             )}
-            <Menu
-              anchorEl={navMenuAnchor}
-              open={Boolean(navMenuAnchor)}
-              onClose={() => setNavMenuAnchor(null)}
-            >
-              <MenuItem
-                selected={page === 'browse'}
-                onClick={() => {
-                  setNavMenuAnchor(null)
-                  if (page === 'browse') {
-                    onHomeClick()
-                  } else {
-                    onTabChange('browse')
-                  }
-                }}
+            {collapseNav && (
+              <Menu
+                anchorEl={navMenuAnchor}
+                open={Boolean(navMenuAnchor)}
+                onClose={() => setNavMenuAnchor(null)}
               >
-                Home
-              </MenuItem>
-              {canEditContent && (
-                <MenuItem
-                  selected={page === 'manage'}
-                  onClick={() => {
-                    setNavMenuAnchor(null)
-                    onTabChange('manage')
-                  }}
-                >
-                  Images
-                </MenuItem>
-              )}
-              {canEditContent && <Divider />}
-              {canEditContent && (
-                <ListSubheader sx={{ bgcolor: 'transparent', lineHeight: '36px' }}>
-                  Manage
-                </ListSubheader>
-              )}
-              {canEditContent && (
-                <MenuItem
-                  onClick={() => {
-                    setNavMenuAnchor(null)
-                    onOpenCategories()
-                  }}
-                >
-                  Categories
-                </MenuItem>
-              )}
-              {canEditContent && canManageUsers && (
-                <MenuItem
-                  onClick={() => {
-                    setNavMenuAnchor(null)
-                    onOpenPrograms()
-                  }}
-                >
-                  Programs
-                </MenuItem>
-              )}
-              {canEditContent && (
-                <MenuItem
-                  onClick={() => {
-                    setNavMenuAnchor(null)
-                    onOpenGroups()
-                  }}
-                >
-                  Groups
-                </MenuItem>
-              )}
-              {canEditContent && (
-                <MenuItem
-                  onClick={() => {
-                    setNavMenuAnchor(null)
-                    onOpenAnnouncement()
-                  }}
-                >
-                  Announcement
-                </MenuItem>
-              )}
-              {canManageUsers && <Divider />}
-              {canManageUsers && (
-                <MenuItem
-                  selected={page === 'people'}
-                  onClick={() => {
-                    setNavMenuAnchor(null)
-                    onTabChange('people')
-                  }}
-                >
-                  People
-                </MenuItem>
-              )}
-              {canManageUsers && (
-                <MenuItem
-                  selected={page === 'admin'}
-                  onClick={() => {
-                    setNavMenuAnchor(null)
-                    onTabChange('admin')
-                  }}
-                >
-                  Admin
-                </MenuItem>
-              )}
-            </Menu>
+                {renderNavMenuItems()}
+              </Menu>
+            )}
             <ColorModeToggle iconButtonSx={{ color: 'inherit', ...appBarIconButtonSx }} />
             <Tooltip title="Search">
               <IconButton

@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest'
+import { beforeAll } from 'vitest'
 
 // @dnd-kit/dom requires ResizeObserver which jsdom does not provide.
 if (typeof globalThis.ResizeObserver === 'undefined') {
@@ -57,3 +58,20 @@ for (const name of ['localStorage', 'sessionStorage'] as const) {
     }
   }
 }
+
+// Vitest reuses workers across files, so a single storage instance can persist
+// between test files. Clear it once at the start of each file so state never
+// bleeds across files. (Within a file, suites still isolate via their own
+// beforeEach, matching real jsdom semantics.)
+beforeAll(() => {
+  try {
+    globalThis.localStorage?.clear()
+  } catch {
+    /* ignore */
+  }
+  try {
+    globalThis.sessionStorage?.clear()
+  } catch {
+    /* ignore */
+  }
+})
