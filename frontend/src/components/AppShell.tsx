@@ -243,83 +243,83 @@ export default function AppShell(props: AppShellProps) {
           {collapseNav ? (
             <Box sx={{ flexGrow: 1 }} />
           ) : (
-          <Tabs
-            value={page}
-            onChange={(_, v: Page) => {
-              if (v === 'browse' || v === 'manage' || v === 'people' || v === 'admin') {
-                onTabChange(v)
-              }
-            }}
-            textColor="inherit"
-            TabIndicatorProps={{
-              style: { backgroundColor: 'white' },
-            }}
-            sx={{ flexGrow: 1 }}
-          >
-            <Tab
-              label="Home"
-              value="browse"
-              onClick={() => {
-                // Only fire when already on browse (refresh/reset);
-                // otherwise Tabs onChange handles the page switch.
-                if (page === 'browse') {
-                  onHomeClick()
+            <Tabs
+              value={page}
+              onChange={(_, v: Page) => {
+                if (v === 'browse' || v === 'manage' || v === 'people' || v === 'admin') {
+                  onTabChange(v)
                 }
               }}
-            />
-            {canEditContent && <Tab label="Images" value="manage" />}
-            {canEditContent && (
+              textColor="inherit"
+              TabIndicatorProps={{
+                style: { backgroundColor: 'white' },
+              }}
+              sx={{ flexGrow: 1 }}
+            >
               <Tab
-                label="Manage"
-                value={false}
-                onClick={(e) => setManageMenuAnchor(e.currentTarget)}
+                label="Home"
+                value="browse"
+                onClick={() => {
+                  // Only fire when already on browse (refresh/reset);
+                  // otherwise Tabs onChange handles the page switch.
+                  if (page === 'browse') {
+                    onHomeClick()
+                  }
+                }}
               />
-            )}
-            {canManageUsers && <Tab label="People" value="people" />}
-            {canManageUsers && <Tab label="Admin" value="admin" />}
-          </Tabs>
+              {canEditContent && <Tab label="Images" value="manage" />}
+              {canEditContent && (
+                <Tab
+                  label="Manage"
+                  value={false}
+                  onClick={(e) => setManageMenuAnchor(e.currentTarget)}
+                />
+              )}
+              {canManageUsers && <Tab label="People" value="people" />}
+              {canManageUsers && <Tab label="Admin" value="admin" />}
+            </Tabs>
           )}
           {!collapseNav && (
-          <Menu
-            anchorEl={manageMenuAnchor}
-            open={Boolean(manageMenuAnchor)}
-            onClose={() => setManageMenuAnchor(null)}
-          >
-            <MenuItem
-              onClick={() => {
-                setManageMenuAnchor(null)
-                onOpenCategories()
-              }}
+            <Menu
+              anchorEl={manageMenuAnchor}
+              open={Boolean(manageMenuAnchor)}
+              onClose={() => setManageMenuAnchor(null)}
             >
-              Categories
-            </MenuItem>
-            {canManageUsers && (
               <MenuItem
                 onClick={() => {
                   setManageMenuAnchor(null)
-                  onOpenPrograms()
+                  onOpenCategories()
                 }}
               >
-                Programs
+                Categories
               </MenuItem>
-            )}
-            <MenuItem
-              onClick={() => {
-                setManageMenuAnchor(null)
-                onOpenGroups()
-              }}
-            >
-              Groups
-            </MenuItem>
-            <MenuItem
-              onClick={() => {
-                setManageMenuAnchor(null)
-                onOpenAnnouncement()
-              }}
-            >
-              Announcement
-            </MenuItem>
-          </Menu>
+              {canManageUsers && (
+                <MenuItem
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onOpenPrograms()
+                  }}
+                >
+                  Programs
+                </MenuItem>
+              )}
+              <MenuItem
+                onClick={() => {
+                  setManageMenuAnchor(null)
+                  onOpenGroups()
+                }}
+              >
+                Groups
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setManageMenuAnchor(null)
+                  onOpenAnnouncement()
+                }}
+              >
+                Announcement
+              </MenuItem>
+            </Menu>
           )}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: appBarClusterGap }}>
             {collapseNav && (

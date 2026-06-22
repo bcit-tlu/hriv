@@ -41,8 +41,7 @@ function createMemoryStorage(): Storage {
 
 for (const name of ['localStorage', 'sessionStorage'] as const) {
   const existing = (globalThis as Record<string, unknown>)[name]
-  const usable =
-    existing != null && typeof (existing as Storage).clear === 'function'
+  const usable = existing != null && typeof (existing as Storage).clear === 'function'
   if (usable) continue
   try {
     Object.defineProperty(globalThis, name, {

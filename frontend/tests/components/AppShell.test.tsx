@@ -458,9 +458,7 @@ describe('AppShell', () => {
 
     it('collapses the nav tabs into a hamburger menu', () => {
       render(<AppShell {...makeProps()} />)
-      expect(
-        screen.getByRole('button', { name: 'Open navigation menu' }),
-      ).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Open navigation menu' })).toBeInTheDocument()
       expect(screen.queryByRole('tab', { name: 'Images' })).not.toBeInTheDocument()
       expect(screen.queryByRole('tab', { name: 'Admin' })).not.toBeInTheDocument()
     })
@@ -497,12 +495,8 @@ describe('AppShell', () => {
     })
 
     it('keeps a single Home tab inline for students instead of collapsing', () => {
-      render(
-        <AppShell {...makeProps({ canEditContent: false, canManageUsers: false })} />,
-      )
-      expect(
-        screen.queryByRole('button', { name: 'Open navigation menu' }),
-      ).not.toBeInTheDocument()
+      render(<AppShell {...makeProps({ canEditContent: false, canManageUsers: false })} />)
+      expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument()
       expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
     })
   })
