@@ -103,7 +103,17 @@ Two capability flags in `AuthContext.tsx` drive all gating:
 - **Add/Edit:** dialogs collect label, parent, and program/group restriction
   chips. Parent selection uses `CategoryPickerSelect`.
 - **Move:** `MoveCategoryDialog` reparents a category; a category cannot be moved
-  under itself or its own descendant.
+  under itself or its own descendant. If moving the category would change its
+  **effective** program or group restrictions (because the new ancestor path
+  narrows or widens the inherited set), a `MoveRestrictionConfirmDialog` is
+  shown before the API call is made. The dialog displays the before/after
+  effective restriction sets (programs and/or groups, whichever changed) as
+  named chips and explains that the category's own direct restrictions are
+  preserved — only the inherited context changes. The editor may **Move Anyway**
+  to proceed or **Cancel** to abort. This confirmation applies to both the
+  `MoveCategoryDialog` flow and drag-and-drop of a category tile onto another
+  category (`handleDropCategoryOnCategory`). Drag-and-drop reordering within the
+  same parent never triggers the dialog because the ancestor path is unchanged.
 - **Category tree surfaces:** `ManageCategoriesDialog`, `CategoryPickerSelect`,
   and flows built on the picker (including `MoveCategoryDialog`) start expanded,
   allow subtree collapse/expand, and share the same persisted collapse state for
