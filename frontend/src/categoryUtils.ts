@@ -88,6 +88,68 @@ export function splitDirectAncestorGroupIds(fullPath: ReadonlyArray<{ groupIds: 
 }
 
 /**
+ * Describes the restriction change when a category is moved to a new parent.
+ * Both dimensions (programs and groups) are evaluated independently.
+ *
+ * `hasChange` is true when either the effective program IDs or the effective
+ * group IDs will differ after the move (after applying the category's own
+ * direct restrictions against the new ancestor context).
+ */
+export interface MoveRestrictionChange {
+  /** Whether any restriction dimension changes as a result of the move. */
+  hasChange: boolean
+  /** Effective program IDs at the old location (inherited + direct narrowing). */
+  oldEffectiveProgramIds: number[]
+  /** Effective program IDs at the new location (inherited + direct narrowing). */
+  newEffectiveProgramIds: number[]
+  /** Effective group IDs at the old location (inherited + direct narrowing). */
+  oldEffectiveGroupIds: number[]
+  /** Effective group IDs at the new location (inherited + direct narrowing). */
+  newEffectiveGroupIds: number[]
+}
+
+/**
+ * Compute how effective restrictions change when `category` is moved from its
+ * current parent to the new parent described by `newAncestorPath`.
+ *
+ * `currentAncestorPath` is the ordered (top-down) list of ancestors *above*
+ * the category being moved (i.e. not including the category itself).
+ * `newAncestorPath` is the equivalent ancestor list at the destination.
+ *
+ * The category's own direct `programIds`/`groupIds` are retained but
+ * re-intersected against the new ancestor context — matching the backend
+ * narrowing semantics.
+ */
+export function computeMoveRestrictionChange(
+  category: { programIds: number[]; groupIds: number[] },
+  currentAncestorPath: ReadonlyArray<{ programIds: number[]; groupIds: number[] }>,
+  newAncestorPath: ReadonlyArray<{ programIds: number[]; groupIds: number[] }>,
+): MoveRestrictionChange {
+  const oldEffectiveProgramIds = narrowProgramIds([...currentAncestorPath, category])
+  const newEffectiveProgramIds = narrowProgramIds([...newAncestorPath, category])
+  const oldEffectiveGroupIds = narrowGroupIds([...currentAncestorPath, category])
+  const newEffectiveGroupIds = narrowGroupIds([...newAncestorPath, category])
+
+  const setsEqual = (a: number[], b: number[]): boolean => {
+    if (a.length !== b.length) return false
+    const sb = new Set(b)
+    return a.every((x) => sb.has(x))
+  }
+
+  const hasChange =
+    !setsEqual(oldEffectiveProgramIds, newEffectiveProgramIds) ||
+    !setsEqual(oldEffectiveGroupIds, newEffectiveGroupIds)
+
+  return {
+    hasChange,
+    oldEffectiveProgramIds,
+    newEffectiveProgramIds,
+    oldEffectiveGroupIds,
+    newEffectiveGroupIds,
+  }
+}
+
+/**
  * Walk the category tree along `path` and return the children/images
  * at the terminal node.
  */

@@ -74,6 +74,7 @@ import {
 } from './api'
 import type { ApiUser } from './api'
 import MoveCategoryDialog from './components/MoveCategoryDialog'
+import MoveRestrictionConfirmDialog from './components/MoveRestrictionConfirmDialog'
 import { useProcessingJobs } from './useProcessingJobs'
 import type { Category, Group, ImageItem } from './types'
 import { MAX_DEPTH } from './types'
@@ -844,6 +845,9 @@ export default function App() {
     handleDropImageOnCategory,
     handleDropCategoryOnCategory,
     handleSetCardImage,
+    pendingMoveConfirm,
+    confirmPendingMove,
+    cancelPendingMove,
   } = useCategoryActions({
     categories,
     uncategorizedImages,
@@ -860,6 +864,8 @@ export default function App() {
     setErrorSnack,
     setWarningSnack: setWarnSnack,
     setMoveSnack,
+    programs,
+    groups,
   })
 
   const visibleJobs = getVisibleJobs({
@@ -1843,6 +1849,20 @@ export default function App() {
         programs={programs}
         groups={groups}
       />
+
+      {/* Move restriction confirmation dialog */}
+      {pendingMoveConfirm && (
+        <MoveRestrictionConfirmDialog
+          open
+          onConfirm={confirmPendingMove}
+          onCancel={cancelPendingMove}
+          categoryLabel={pendingMoveConfirm.categoryLabel}
+          destinationLabel={pendingMoveConfirm.destinationLabel}
+          change={pendingMoveConfirm.change}
+          programs={programs}
+          groups={groups}
+        />
+      )}
 
       {/* Image edit modal (viewer page) — no View Image button since we're already viewing */}
       <EditImageModal
