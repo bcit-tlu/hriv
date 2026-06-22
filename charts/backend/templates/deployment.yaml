@@ -1,16 +1,36 @@
 {{- if and .Values.tiles.enabled (not .Values.persistence.enabled) }}
 {{- fail "tiles.enabled requires persistence.enabled — the sidecar serves tiles from the PVC" }}
 {{- end }}
+{{- $sourceImagesStorageClass := .Values.persistence.sourceImages.storageClass -}}
+{{- if and (hasKey .Values.persistence "storageClass") (not $sourceImagesStorageClass) -}}
+  {{- $sourceImagesStorageClass = .Values.persistence.storageClass -}}
+{{- end -}}
+{{- $sourceImagesSize := .Values.persistence.sourceImages.size -}}
+{{- if and (hasKey .Values.persistence "size") .Values.persistence.size (eq .Values.persistence.sourceImages.size "10Gi") -}}
+  {{- $sourceImagesSize = .Values.persistence.size -}}
+{{- end -}}
+{{- $sourceImagesAccessModes := .Values.persistence.sourceImages.accessModes -}}
+{{- if and (hasKey .Values.persistence "accessModes") (gt (len .Values.persistence.accessModes) 0) (eq (len .Values.persistence.sourceImages.accessModes) 1) (eq (index .Values.persistence.sourceImages.accessModes 0) "ReadWriteOnce") -}}
+  {{- $sourceImagesAccessModes = .Values.persistence.accessModes -}}
+{{- end -}}
+{{- $tiles := .Values.persistence.tiles -}}
+{{- if and (not $tiles) .Values.persistence.tilesPersistence -}}
+  {{- $tiles = .Values.persistence.tilesPersistence -}}
+{{- end -}}
+{{- $tilesAccessModes := $tiles.accessModes | default (list "ReadWriteOnce") -}}
+{{- if and (hasKey .Values.persistence "accessModes") (gt (len .Values.persistence.accessModes) 0) (or (not (hasKey $tiles "accessModes")) (eq (len $tilesAccessModes) 1) (eq (index $tilesAccessModes 0) "ReadWriteOnce")) -}}
+  {{- $tilesAccessModes = .Values.persistence.accessModes -}}
+{{- end -}}
 {{- if and (index .Values "github-issue" "enabled") (not (index .Values "github-issue" "repository")) }}
 {{- fail "github-issue.enabled=true requires github-issue.repository" }}
 {{- end }}
 {{- if and (index .Values "github-issue" "enabled") (not (index .Values "github-issue" "token" "existingSecret")) }}
 {{- fail "github-issue.enabled=true requires github-issue.token.existingSecret (secret must contain key 'token')" }}
 {{- end }}
-{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" .Values.persistence.sourceImages.accessModes)) }}
+{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" $sourceImagesAccessModes)) }}
 {{- fail "replicaCount > 1 requires a ReadWriteMany source-images PVC — background admin tasks write result files to the shared /data volume that any replica must be able to serve" }}
 {{- end }}
-{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" .Values.persistence.tilesPersistence.accessModes)) }}
+{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" $tilesAccessModes)) }}
 {{- fail "replicaCount > 1 requires a ReadWriteMany tiles PVC — all replicas must be able to serve generated DZI tiles" }}
 {{- end }}
 apiVersion: apps/v1
@@ -21,7 +41,7 @@ metadata:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  {{- if and .Values.persistence.enabled (or (has "ReadWriteOnce" .Values.persistence.sourceImages.accessModes) (has "ReadWriteOnce" .Values.persistence.tilesPersistence.accessModes)) }}
+  {{- if and .Values.persistence.enabled (or (has "ReadWriteOnce" $sourceImagesAccessModes) (has "ReadWriteOnce" $tilesAccessModes)) }}
   strategy:
     type: Recreate
   {{- end }}
@@ -224,7 +244,7 @@ spec:
             claimName: {{ .Values.persistence.sourceImages.existingClaim | default (printf "%s-source-images" (include "hriv-backend.fullname" .)) }}
         - name: tiles-data
           persistentVolumeClaim:
-            claimName: {{ .Values.persistence.tilesPersistence.existingClaim | default (printf "%s-tiles" (include "hriv-backend.fullname" .)) }}
+            claimName: {{ $tiles.existingClaim | default (printf "%s-tiles" (include "hriv-backend.fullname" .)) }}
         {{- end }}
         {{- if .Values.tiles.enabled }}
         - name: nginx-tiles-config

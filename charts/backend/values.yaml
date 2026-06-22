@@ -233,6 +233,12 @@ tiles:
 
 persistence:
   enabled: false
+  # Deprecated legacy single-PVC keys kept for upgrade compatibility.
+  # When set, templates use them as source-images defaults unless the
+  # new nested keys are explicitly changed from their chart defaults.
+  storageClass: ''
+  size: ''
+  accessModes: []
   # The source-images PVC remains mounted at /data so the backend can
   # continue using /data/.maintenance and /data/admin_tasks while
   # preserving SOURCE_IMAGES_DIR=/data/source_images.
@@ -247,7 +253,7 @@ persistence:
     # access uploaded source images plus shared /data task state.
     accessModes:
       - ReadWriteOnce
-  tilesPersistence:
+  tiles:
     existingClaim: ''
     # Leave empty to use the cluster default StorageClass.
     storageClass: ''
@@ -256,6 +262,9 @@ persistence:
     # or worker replicas.
     accessModes:
       - ReadWriteOnce
+  # Deprecated alias from the first split-PVC iteration. Prefer
+  # ``persistence.tiles`` in all new values files.
+  tilesPersistence: {}
 
 resources: {}
 

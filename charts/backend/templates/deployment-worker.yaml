@@ -1,10 +1,22 @@
+{{- $sourceImagesAccessModes := .Values.persistence.sourceImages.accessModes -}}
+{{- if and (hasKey .Values.persistence "accessModes") (gt (len .Values.persistence.accessModes) 0) (eq (len .Values.persistence.sourceImages.accessModes) 1) (eq (index .Values.persistence.sourceImages.accessModes 0) "ReadWriteOnce") -}}
+  {{- $sourceImagesAccessModes = .Values.persistence.accessModes -}}
+{{- end -}}
+{{- $tiles := .Values.persistence.tiles -}}
+{{- if and (not $tiles) .Values.persistence.tilesPersistence -}}
+  {{- $tiles = .Values.persistence.tilesPersistence -}}
+{{- end -}}
+{{- $tilesAccessModes := $tiles.accessModes | default (list "ReadWriteOnce") -}}
+{{- if and (hasKey .Values.persistence "accessModes") (gt (len .Values.persistence.accessModes) 0) (or (not (hasKey $tiles "accessModes")) (eq (len $tilesAccessModes) 1) (eq (index $tilesAccessModes 0) "ReadWriteOnce")) -}}
+  {{- $tilesAccessModes = .Values.persistence.accessModes -}}
+{{- end -}}
 {{- if and .Values.redis.worker.enabled (not .Values.redis.enabled) }}
 {{- fail "redis.worker.enabled requires redis.enabled — the worker needs a Redis connection" }}
 {{- end }}
-{{- if and .Values.redis.enabled .Values.redis.worker.enabled .Values.persistence.enabled (not (has "ReadWriteMany" .Values.persistence.sourceImages.accessModes)) }}
+{{- if and .Values.redis.enabled .Values.redis.worker.enabled .Values.persistence.enabled (not (has "ReadWriteMany" $sourceImagesAccessModes)) }}
 {{- fail "redis.worker.enabled with persistence requires a ReadWriteMany source-images PVC — the worker and API pods both mount /data" }}
 {{- end }}
-{{- if and .Values.redis.enabled .Values.redis.worker.enabled .Values.persistence.enabled (not (has "ReadWriteMany" .Values.persistence.tilesPersistence.accessModes)) }}
+{{- if and .Values.redis.enabled .Values.redis.worker.enabled .Values.persistence.enabled (not (has "ReadWriteMany" $tilesAccessModes)) }}
 {{- fail "redis.worker.enabled with persistence requires a ReadWriteMany tiles PVC — the worker and API pods both mount /data/tiles" }}
 {{- end }}
 {{- if and .Values.redis.enabled .Values.redis.worker.enabled }}
@@ -19,7 +31,7 @@ spec:
   {{- if not .Values.redis.worker.autoscaling.enabled }}
   replicas: {{ .Values.redis.worker.replicaCount }}
   {{- end }}
-  {{- if and .Values.persistence.enabled (or (has "ReadWriteOnce" .Values.persistence.sourceImages.accessModes) (has "ReadWriteOnce" .Values.persistence.tilesPersistence.accessModes)) }}
+  {{- if and .Values.persistence.enabled (or (has "ReadWriteOnce" $sourceImagesAccessModes) (has "ReadWriteOnce" $tilesAccessModes)) }}
   strategy:
     type: Recreate
   {{- end }}
@@ -87,7 +99,7 @@ spec:
             claimName: {{ .Values.persistence.sourceImages.existingClaim | default (printf "%s-source-images" (include "hriv-backend.fullname" .)) }}
         - name: tiles-data
           persistentVolumeClaim:
-            claimName: {{ .Values.persistence.tilesPersistence.existingClaim | default (printf "%s-tiles" (include "hriv-backend.fullname" .)) }}
+            claimName: {{ $tiles.existingClaim | default (printf "%s-tiles" (include "hriv-backend.fullname" .)) }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

@@ -1,3 +1,31 @@
+{{- $sourceImagesStorageClass := .Values.persistence.sourceImages.storageClass -}}
+{{- if and (hasKey .Values.persistence "storageClass") (not $sourceImagesStorageClass) -}}
+  {{- $sourceImagesStorageClass = .Values.persistence.storageClass -}}
+{{- end -}}
+{{- $sourceImagesSize := .Values.persistence.sourceImages.size -}}
+{{- if and (hasKey .Values.persistence "size") .Values.persistence.size (eq .Values.persistence.sourceImages.size "10Gi") -}}
+  {{- $sourceImagesSize = .Values.persistence.size -}}
+{{- end -}}
+{{- $sourceImagesAccessModes := .Values.persistence.sourceImages.accessModes -}}
+{{- if and (hasKey .Values.persistence "accessModes") (gt (len .Values.persistence.accessModes) 0) (eq (len .Values.persistence.sourceImages.accessModes) 1) (eq (index .Values.persistence.sourceImages.accessModes 0) "ReadWriteOnce") -}}
+  {{- $sourceImagesAccessModes = .Values.persistence.accessModes -}}
+{{- end -}}
+{{- $tiles := .Values.persistence.tiles -}}
+{{- if and (not $tiles) .Values.persistence.tilesPersistence -}}
+  {{- $tiles = .Values.persistence.tilesPersistence -}}
+{{- end -}}
+{{- $tilesStorageClass := $tiles.storageClass | default "" -}}
+{{- if and (hasKey .Values.persistence "storageClass") (not $tilesStorageClass) -}}
+  {{- $tilesStorageClass = .Values.persistence.storageClass -}}
+{{- end -}}
+{{- $tilesSize := $tiles.size | default "10Gi" -}}
+{{- if and (hasKey .Values.persistence "size") .Values.persistence.size (or (not (hasKey $tiles "size")) (eq $tilesSize "10Gi")) -}}
+  {{- $tilesSize = .Values.persistence.size -}}
+{{- end -}}
+{{- $tilesAccessModes := $tiles.accessModes | default (list "ReadWriteOnce") -}}
+{{- if and (hasKey .Values.persistence "accessModes") (gt (len .Values.persistence.accessModes) 0) (or (not (hasKey $tiles "accessModes")) (eq (len $tilesAccessModes) 1) (eq (index $tilesAccessModes 0) "ReadWriteOnce")) -}}
+  {{- $tilesAccessModes = .Values.persistence.accessModes -}}
+{{- end -}}
 {{- if and .Values.persistence.enabled (not .Values.persistence.sourceImages.existingClaim) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -6,19 +34,19 @@ metadata:
   labels:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
-  {{- if .Values.persistence.sourceImages.storageClass }}
-  storageClassName: {{ .Values.persistence.sourceImages.storageClass }}
+  {{- if $sourceImagesStorageClass }}
+  storageClassName: {{ $sourceImagesStorageClass }}
   {{- end }}
   accessModes:
-    {{- range .Values.persistence.sourceImages.accessModes }}
+    {{- range $sourceImagesAccessModes }}
     - {{ . }}
     {{- end }}
   resources:
     requests:
-      storage: {{ .Values.persistence.sourceImages.size }}
+      storage: {{ $sourceImagesSize }}
 {{- end }}
 ---
-{{- if and .Values.persistence.enabled (not .Values.persistence.tilesPersistence.existingClaim) }}
+{{- if and .Values.persistence.enabled (not ($tiles.existingClaim | default "")) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -26,14 +54,14 @@ metadata:
   labels:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
-  {{- if .Values.persistence.tilesPersistence.storageClass }}
-  storageClassName: {{ .Values.persistence.tilesPersistence.storageClass }}
+  {{- if $tilesStorageClass }}
+  storageClassName: {{ $tilesStorageClass }}
   {{- end }}
   accessModes:
-    {{- range .Values.persistence.tilesPersistence.accessModes }}
+    {{- range $tilesAccessModes }}
     - {{ . }}
     {{- end }}
   resources:
     requests:
-      storage: {{ .Values.persistence.tilesPersistence.size }}
+      storage: {{ $tilesSize }}
 {{- end }}

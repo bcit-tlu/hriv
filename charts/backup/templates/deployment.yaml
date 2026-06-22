@@ -4,6 +4,22 @@
 {{- if not .Values.azureSecretName }}
 {{- fail "azureSecretName is required — set it to the name of the K8s Secret containing AZURE_STORAGE_CONNECTION_STRING" }}
 {{- end }}
+{{- $legacyData := .Values.persistence.data | default dict -}}
+{{- $sourceImagesEnabled := .Values.persistence.sourceImages.enabled -}}
+{{- if and (hasKey $legacyData "enabled") $legacyData.enabled -}}
+  {{- $sourceImagesEnabled = $legacyData.enabled -}}
+{{- end -}}
+{{- $sourceImagesExistingClaim := .Values.persistence.sourceImages.existingClaim -}}
+{{- if and (hasKey $legacyData "existingClaim") (not $sourceImagesExistingClaim) -}}
+  {{- $sourceImagesExistingClaim = $legacyData.existingClaim -}}
+{{- end -}}
+{{- $tilesEnabled := .Values.persistence.tiles.enabled -}}
+{{- if and $sourceImagesExistingClaim (not .Values.persistence.tiles.existingClaim) (not (hasKey .Values.persistence.tiles "enabled")) -}}
+  {{- $tilesEnabled = false -}}
+{{- end -}}
+{{- if and $sourceImagesExistingClaim (not .Values.persistence.tiles.existingClaim) (hasKey $legacyData "existingClaim") $legacyData.existingClaim .Values.persistence.tiles.enabled -}}
+  {{- $tilesEnabled = false -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -78,11 +94,11 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           volumeMounts:
-            {{- if .Values.persistence.sourceImages.enabled }}
+            {{- if $sourceImagesEnabled }}
             - name: source-images
               mountPath: /data
             {{- end }}
-            {{- if .Values.persistence.tiles.enabled }}
+            {{- if $tilesEnabled }}
             - name: tiles
               mountPath: /data/tiles
             {{- end }}
@@ -91,12 +107,12 @@ spec:
               mountPath: /backups
             {{- end }}
       volumes:
-        {{- if .Values.persistence.sourceImages.enabled }}
+        {{- if $sourceImagesEnabled }}
         - name: source-images
           persistentVolumeClaim:
-            claimName: {{ .Values.persistence.sourceImages.existingClaim | default (printf "%s-source-images" (include "hriv-backup.fullname" .)) }}
+            claimName: {{ $sourceImagesExistingClaim | default (printf "%s-source-images" (include "hriv-backup.fullname" .)) }}
         {{- end }}
-        {{- if .Values.persistence.tiles.enabled }}
+        {{- if $tilesEnabled }}
         - name: tiles
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.tiles.existingClaim | default (printf "%s-tiles" (include "hriv-backup.fullname" .)) }}
@@ -114,9 +130,9 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if or .Values.affinity .Values.persistence.sourceImages.existingClaim .Values.persistence.tiles.existingClaim }}
+      {{- if or .Values.affinity $sourceImagesExistingClaim (and $tilesEnabled .Values.persistence.tiles.existingClaim) }}
       affinity:
-        {{- if or .Values.persistence.sourceImages.existingClaim .Values.persistence.tiles.existingClaim }}
+        {{- if or $sourceImagesExistingClaim (and $tilesEnabled .Values.persistence.tiles.existingClaim) }}
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
             - labelSelector:

@@ -64,6 +64,8 @@ vault:
   azureSecretPath: hriv/azure-storage
 
 persistence:
+  # Deprecated legacy single-data-PVC keys kept for upgrade compatibility.
+  data: {}
   sourceImages:
     enabled: true
     existingClaim: '' # Set to the backend source-images PVC to share /data
