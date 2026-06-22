@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.25.0...frontend-v0.26.0) (2026-06-22)
+
+
+### Features
+
+* **frontend:** share category picker collapse state ([#729](https://github.com/bcit-tlu/hriv/issues/729)) ([ced2883](https://github.com/bcit-tlu/hriv/commit/ced28839b6c4978dbda9dfa4150aeb2d0a00468c))
+
 ## [0.25.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.24.0...frontend-v0.25.0) (2026-06-19)
 
 
