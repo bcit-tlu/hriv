@@ -301,6 +301,9 @@ export function useCategoryActions({
       }
       await doMoveCategory(categoryId, newParentId)
     },
+    // getAncestorPathForParent is a plain function closed over `categories`; because
+    // `categories` is already in the dep array the callback is recreated (and thus
+    // captures a fresh closure) whenever categories changes — no stale-ref risk.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [categories, doMoveCategory],
   )
@@ -420,6 +423,8 @@ export function useCategoryActions({
       }
       await doDropCategoryOnCategory(draggedCategoryId, targetCategoryId)
     },
+    // Same reasoning as handleMoveCategory above: getAncestorPathForParent closes
+    // over `categories` which is already in the dep array.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [categories, doDropCategoryOnCategory],
   )
