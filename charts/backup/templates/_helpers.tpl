@@ -54,9 +54,6 @@ legacy shared data claim and no explicit split-PVC tiles claim was provided.
   {{- $sourceImagesExistingClaim = $legacyData.existingClaim -}}
 {{- end -}}
 {{- $tilesEnabled := .Values.persistence.tiles.enabled -}}
-{{- if and $sourceImagesExistingClaim (not .Values.persistence.tiles.existingClaim) (not (hasKey .Values.persistence.tiles "enabled")) -}}
-  {{- $tilesEnabled = false -}}
-{{- end -}}
 {{- if and $sourceImagesExistingClaim (not .Values.persistence.tiles.existingClaim) (hasKey $legacyData "existingClaim") $legacyData.existingClaim .Values.persistence.tiles.enabled -}}
   {{- $tilesEnabled = false -}}
 {{- end -}}

@@ -26,6 +26,7 @@
 
 - Lint all charts: `for chart in charts/*/; do helm lint "$chart"; done`
 - Validate all charts: `for chart in charts/*/; do helm template test "$chart" | kubeconform -strict -summary -schema-location default -ignore-missing-schemas; done`
+- Run chart regression checks: `bash scripts/test-helm-chart-regressions.sh`
 
 ### Database schema changes
 

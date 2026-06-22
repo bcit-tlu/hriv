@@ -14,6 +14,8 @@
   {{- $sourceImagesExistingClaim = $legacyData.existingClaim -}}
 {{- end -}}
 {{- $tilesEnabled := eq (include "hriv-backup.tilesEnabled" .) "true" -}}
+{{- $backupsEnabled := .Values.persistence.backups.enabled -}}
+{{- $hasDataVolumes := or $sourceImagesEnabled $tilesEnabled $backupsEnabled -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -87,6 +89,7 @@ spec:
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+          {{- if $hasDataVolumes }}
           volumeMounts:
             {{- if $sourceImagesEnabled }}
             - name: source-images
@@ -96,10 +99,12 @@ spec:
             - name: tiles
               mountPath: /data/tiles
             {{- end }}
-            {{- if .Values.persistence.backups.enabled }}
+            {{- if $backupsEnabled }}
             - name: backups
               mountPath: /backups
             {{- end }}
+          {{- end }}
+      {{- if $hasDataVolumes }}
       volumes:
         {{- if $sourceImagesEnabled }}
         - name: source-images
@@ -111,11 +116,12 @@ spec:
           persistentVolumeClaim:
             claimName: {{ .Values.persistence.tiles.existingClaim | default (printf "%s-tiles" (include "hriv-backup.fullname" .)) }}
         {{- end }}
-        {{- if .Values.persistence.backups.enabled }}
+        {{- if $backupsEnabled }}
         - name: backups
           persistentVolumeClaim:
             claimName: {{ include "hriv-backup.fullname" . }}-backups
         {{- end }}
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

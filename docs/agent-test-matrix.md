@@ -114,6 +114,7 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 - lint: `for chart in charts/*/; do helm lint "$chart"; done`
 - validate: `for chart in charts/*/; do helm template test "$chart" | kubeconform -strict -summary -schema-location default -ignore-missing-schemas; done`
+- regression: `bash scripts/test-helm-chart-regressions.sh`
 
 ### Changed release / CI workflows
 

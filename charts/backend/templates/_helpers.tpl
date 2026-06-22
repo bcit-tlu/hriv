@@ -82,9 +82,6 @@ heuristics used during the split-PVC upgrade.
 */}}
 {{- define "hriv-backend.resolvedTilesPersistence" -}}
 {{- $tiles := .Values.persistence.tiles | default dict -}}
-{{- if and (not $tiles) .Values.persistence.tilesPersistence -}}
-  {{- $tiles = .Values.persistence.tilesPersistence -}}
-{{- end -}}
 {{- $tilesAccessModes := $tiles.accessModes | default (list "ReadWriteOnce") -}}
 {{- $resolvedTiles := dict
       "existingClaim" ($tiles.existingClaim | default "")
@@ -98,7 +95,7 @@ heuristics used during the split-PVC upgrade.
 {{- if and (hasKey .Values.persistence "size") .Values.persistence.size (or (not (hasKey $tiles "size")) (eq (get $resolvedTiles "size") "10Gi")) -}}
   {{- $_ := set $resolvedTiles "size" .Values.persistence.size -}}
 {{- end -}}
-{{- if and (hasKey .Values.persistence "accessModes") (gt (len .Values.persistence.accessModes) 0) (or (not (hasKey $tiles "accessModes")) (eq (len $tilesAccessModes) 1) (eq (index $tilesAccessModes 0) "ReadWriteOnce")) -}}
+{{- if and (hasKey .Values.persistence "accessModes") (gt (len .Values.persistence.accessModes) 0) (or (not (hasKey $tiles "accessModes")) (and (eq (len $tilesAccessModes) 1) (eq (index $tilesAccessModes 0) "ReadWriteOnce"))) -}}
   {{- $_ := set $resolvedTiles "accessModes" .Values.persistence.accessModes -}}
 {{- end -}}
 {{- toYaml $resolvedTiles -}}

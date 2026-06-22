@@ -262,9 +262,6 @@ persistence:
     # or worker replicas.
     accessModes:
       - ReadWriteOnce
-  # Deprecated alias from the first split-PVC iteration. Prefer
-  # ``persistence.tiles`` in all new values files.
-  tilesPersistence: {}
 
 resources: {}
 

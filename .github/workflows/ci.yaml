@@ -112,6 +112,9 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Run Helm chart regression checks
+        run: bash scripts/test-helm-chart-regressions.sh
+
   # Container image builds (reusable workflow)
 
   build-frontend:
