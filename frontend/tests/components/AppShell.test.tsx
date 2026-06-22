@@ -1,8 +1,12 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import AppShell from '../../src/components/AppShell'
 import type { AppShellProps } from '../../src/components/AppShell'
 import { createRef } from 'react'
+import useMediaQuery from '@mui/material/useMediaQuery'
+
+vi.mock('@mui/material/useMediaQuery', () => ({ default: vi.fn(() => false) }))
+const mockUseMediaQuery = vi.mocked(useMediaQuery)
 
 function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
   return {
@@ -441,6 +445,65 @@ describe('AppShell', () => {
       fireEvent.click(screen.getByText('View Announcement'))
       expect(screen.getByText('Announcement')).toBeInTheDocument()
       expect(screen.getByText('Scheduled maintenance')).toBeInTheDocument()
+    })
+  })
+
+  describe('compact viewport navigation', () => {
+    beforeEach(() => {
+      mockUseMediaQuery.mockReturnValue(true)
+    })
+    afterEach(() => {
+      mockUseMediaQuery.mockReturnValue(false)
+    })
+
+    it('collapses the nav tabs into a hamburger menu', () => {
+      render(<AppShell {...makeProps()} />)
+      expect(
+        screen.getByRole('button', { name: 'Open navigation menu' }),
+      ).toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: 'Images' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: 'Admin' })).not.toBeInTheDocument()
+    })
+
+    it('exposes every destination, with Manage flattened, in the menu', () => {
+      render(<AppShell {...makeProps()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      for (const name of [
+        'Home',
+        'Images',
+        'Categories',
+        'Programs',
+        'Groups',
+        'Announcement',
+        'People',
+        'Admin',
+      ]) {
+        expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
+      }
+    })
+
+    it('navigates and opens dialogs from the collapsed menu', () => {
+      const onTabChange = vi.fn()
+      const onOpenCategories = vi.fn()
+      render(<AppShell {...makeProps({ onTabChange, onOpenCategories })} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Admin' }))
+      expect(onTabChange).toHaveBeenCalledWith('admin')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Categories' }))
+      expect(onOpenCategories).toHaveBeenCalled()
+    })
+
+    it('keeps a single Home tab inline for students instead of collapsing', () => {
+      render(
+        <AppShell {...makeProps({ canEditContent: false, canManageUsers: false })} />,
+      )
+      expect(
+        screen.queryByRole('button', { name: 'Open navigation menu' }),
+      ).not.toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
     })
   })
 })

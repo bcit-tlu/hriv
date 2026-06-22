@@ -21,12 +21,23 @@ import Tabs from '@mui/material/Tabs'
 import Toolbar from '@mui/material/Toolbar'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import Divider from '@mui/material/Divider'
+import ListSubheader from '@mui/material/ListSubheader'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import { useTheme } from '@mui/material/styles'
+import MenuIcon from '@mui/icons-material/Menu'
 import SearchIcon from '@mui/icons-material/Search'
 import ColorModeToggle from './ColorModeToggle'
 import FooterBar from './FooterBar'
 import AnnouncementBanner from './AnnouncementBanner'
 import type { Role } from '../types'
-import { getGroupChipColors, getSurfaceVariant } from '../theme'
+import {
+  appBarAvatarSx,
+  appBarClusterGap,
+  appBarIconButtonSx,
+  getGroupChipColors,
+  getSurfaceVariant,
+} from '../theme'
 
 export type Page = 'browse' | 'manage' | 'people' | 'admin'
 
@@ -102,6 +113,14 @@ export default function AppShell(props: AppShellProps) {
     children,
   } = props
   const [manageMenuAnchor, setManageMenuAnchor] = useState<HTMLElement | null>(null)
+  const [navMenuAnchor, setNavMenuAnchor] = useState<HTMLElement | null>(null)
+  const theme = useTheme()
+  // Collapse the nav tabs into a hamburger menu when the viewport is too
+  // narrow to show them inline. Guarded by tab count so a single-tab
+  // (student) layout keeps its inline Home tab instead of a lone hamburger.
+  const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
+  const navTabCount = 1 + (canEditContent ? 2 : 0) + (canManageUsers ? 2 : 0)
+  const collapseNav = isCompactViewport && navTabCount > 1
   const [viewAnnOpen, setViewAnnOpen] = useState(false)
   const [annCollapsed, setAnnCollapsed] = useState(false)
   const [prevAnnouncement, setPrevAnnouncement] = useState(announcement)
@@ -137,6 +156,9 @@ export default function AppShell(props: AppShellProps) {
               HRIV
             </Typography>
           </Box>
+          {collapseNav ? (
+            <Box sx={{ flexGrow: 1 }} />
+          ) : (
           <Tabs
             value={page}
             onChange={(_, v: Page) => {
@@ -172,6 +194,7 @@ export default function AppShell(props: AppShellProps) {
             {canManageUsers && <Tab label="People" value="people" />}
             {canManageUsers && <Tab label="Admin" value="admin" />}
           </Tabs>
+          )}
           <Menu
             anchorEl={manageMenuAnchor}
             open={Boolean(manageMenuAnchor)}
@@ -212,20 +235,134 @@ export default function AppShell(props: AppShellProps) {
               Announcement
             </MenuItem>
           </Menu>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <ColorModeToggle iconButtonSx={{ color: 'inherit' }} />
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: appBarClusterGap }}>
+            {collapseNav && (
+              <Tooltip title="Menu">
+                <IconButton
+                  onClick={(e) => setNavMenuAnchor(e.currentTarget)}
+                  sx={{ color: 'inherit', ...appBarIconButtonSx }}
+                  aria-label="Open navigation menu"
+                  aria-haspopup="true"
+                  aria-expanded={Boolean(navMenuAnchor)}
+                >
+                  <MenuIcon />
+                </IconButton>
+              </Tooltip>
+            )}
+            <Menu
+              anchorEl={navMenuAnchor}
+              open={Boolean(navMenuAnchor)}
+              onClose={() => setNavMenuAnchor(null)}
+            >
+              <MenuItem
+                selected={page === 'browse'}
+                onClick={() => {
+                  setNavMenuAnchor(null)
+                  if (page === 'browse') {
+                    onHomeClick()
+                  } else {
+                    onTabChange('browse')
+                  }
+                }}
+              >
+                Home
+              </MenuItem>
+              {canEditContent && (
+                <MenuItem
+                  selected={page === 'manage'}
+                  onClick={() => {
+                    setNavMenuAnchor(null)
+                    onTabChange('manage')
+                  }}
+                >
+                  Images
+                </MenuItem>
+              )}
+              {canEditContent && <Divider />}
+              {canEditContent && (
+                <ListSubheader sx={{ bgcolor: 'transparent', lineHeight: '36px' }}>
+                  Manage
+                </ListSubheader>
+              )}
+              {canEditContent && (
+                <MenuItem
+                  onClick={() => {
+                    setNavMenuAnchor(null)
+                    onOpenCategories()
+                  }}
+                >
+                  Categories
+                </MenuItem>
+              )}
+              {canEditContent && canManageUsers && (
+                <MenuItem
+                  onClick={() => {
+                    setNavMenuAnchor(null)
+                    onOpenPrograms()
+                  }}
+                >
+                  Programs
+                </MenuItem>
+              )}
+              {canEditContent && (
+                <MenuItem
+                  onClick={() => {
+                    setNavMenuAnchor(null)
+                    onOpenGroups()
+                  }}
+                >
+                  Groups
+                </MenuItem>
+              )}
+              {canEditContent && (
+                <MenuItem
+                  onClick={() => {
+                    setNavMenuAnchor(null)
+                    onOpenAnnouncement()
+                  }}
+                >
+                  Announcement
+                </MenuItem>
+              )}
+              {canManageUsers && <Divider />}
+              {canManageUsers && (
+                <MenuItem
+                  selected={page === 'people'}
+                  onClick={() => {
+                    setNavMenuAnchor(null)
+                    onTabChange('people')
+                  }}
+                >
+                  People
+                </MenuItem>
+              )}
+              {canManageUsers && (
+                <MenuItem
+                  selected={page === 'admin'}
+                  onClick={() => {
+                    setNavMenuAnchor(null)
+                    onTabChange('admin')
+                  }}
+                >
+                  Admin
+                </MenuItem>
+              )}
+            </Menu>
+            <ColorModeToggle iconButtonSx={{ color: 'inherit', ...appBarIconButtonSx }} />
             <Tooltip title="Search">
-              <IconButton onClick={onSearchOpen} sx={{ color: 'inherit' }} aria-label="Search">
+              <IconButton
+                onClick={onSearchOpen}
+                sx={{ color: 'inherit', ...appBarIconButtonSx }}
+                aria-label="Search"
+              >
                 <SearchIcon />
               </IconButton>
             </Tooltip>
             {notificationSlot}
-            <IconButton ref={avatarRef} onClick={() => setProfileOpen(true)} sx={{ p: 0 }}>
+            <IconButton ref={avatarRef} onClick={() => setProfileOpen(true)} sx={{ p: 0, ml: 0.5 }}>
               <Avatar
                 sx={{
-                  width: 34,
-                  height: 34,
-                  fontSize: 14,
+                  ...appBarAvatarSx,
                   bgcolor: 'rgba(255,255,255,0.25)',
                   color: 'white',
                 }}

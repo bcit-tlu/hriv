@@ -24,6 +24,7 @@ import MenuBookIcon from '@mui/icons-material/MenuBook'
 import NotificationsIcon from '@mui/icons-material/Notifications'
 import OpenInNewIcon from '@mui/icons-material/OpenInNew'
 import { fetchChangelogEntries, markChangelogRead, type ApiChangelogEntry } from '../api'
+import { appBarIconButtonSx } from '../theme'
 import MarkdownContent from './MarkdownContent'
 
 const BADGE_COLOR = '#f59e0b'
@@ -137,7 +138,7 @@ export default function NotificationMenu({
         <IconButton
           aria-label="Notifications"
           onClick={(event) => setAnchor(event.currentTarget)}
-          sx={{ color: 'inherit' }}
+          sx={{ color: 'inherit', ...appBarIconButtonSx }}
         >
           <Badge
             variant="dot"
