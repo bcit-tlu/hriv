@@ -62,6 +62,30 @@ All settings are controlled via environment variables in `docker-compose.yml`:
 | `AZURE_STORAGE_CONTAINER`         | _(empty)_                             | Azure Blob Storage container name                    |
 | `AZURE_BLOB_PREFIX`               | `hriv-backups`                        | Blob name prefix (folder) inside the container       |
 
+## Kubernetes Volume Layout
+
+For production-style Helm deployments, the backup chart can mount separate
+claims for source images and generated tiles while keeping the existing runtime
+paths unchanged:
+
+- source-images PVC mounted at `/data`
+- tiles PVC mounted at `/data/tiles`
+- backup archives PVC mounted at `/backups`
+
+The source-images PVC remains the `/data` root so the backup service can still
+share the maintenance-mode flag at `/data/.maintenance` with the backend.
+
+For pre-production migrations, cut over by scaling workloads down, copying
+`/data/source_images` and `/data/tiles` into their new PVCs with a temporary
+pod, updating Helm values, and then starting the workloads again. No image
+reimport should be required as long as the visible paths remain
+`/data/source_images` and `/data/tiles`.
+
+If you are upgrading from the older single-data-PVC layout, update any values
+that still use `persistence.data.*` to the new `persistence.sourceImages.*`
+and `persistence.tiles.*` keys. The old backend chart PVC named
+`{fullname}-data` is not migrated or deleted automatically.
+
 ### Local-Only Mode
 
 If no Azure credentials are provided, snapshots are saved to the `backup_data` volume (`/backups` inside the container). This is useful for development or when using a separate volume backup strategy.

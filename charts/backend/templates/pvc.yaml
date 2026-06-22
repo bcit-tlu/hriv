@@ -1,19 +1,41 @@
-{{- if .Values.persistence.enabled }}
+{{- $sourceImages := include "hriv-backend.resolvedSourceImagesPersistence" . | fromYaml -}}
+{{- $tiles := include "hriv-backend.resolvedTilesPersistence" . | fromYaml -}}
+{{- if and .Values.persistence.enabled (not (get $sourceImages "existingClaim")) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "hriv-backend.fullname" . }}-data
+  name: {{ printf "%s-source-images" (include "hriv-backend.fullname" .) }}
   labels:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
-  {{- if .Values.persistence.storageClass }}
-  storageClassName: {{ .Values.persistence.storageClass }}
+  {{- if get $sourceImages "storageClass" }}
+  storageClassName: {{ get $sourceImages "storageClass" }}
   {{- end }}
   accessModes:
-    {{- range .Values.persistence.accessModes }}
+    {{- range get $sourceImages "accessModes" }}
     - {{ . }}
     {{- end }}
   resources:
     requests:
-      storage: {{ .Values.persistence.size }}
+      storage: {{ get $sourceImages "size" }}
+{{- end }}
+---
+{{- if and .Values.persistence.enabled (not (get $tiles "existingClaim")) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ printf "%s-tiles" (include "hriv-backend.fullname" .) }}
+  labels:
+    {{- include "hriv-backend.labels" . | nindent 4 }}
+spec:
+  {{- if get $tiles "storageClass" }}
+  storageClassName: {{ get $tiles "storageClass" }}
+  {{- end }}
+  accessModes:
+    {{- range get $tiles "accessModes" }}
+    - {{ . }}
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ get $tiles "size" }}
 {{- end }}

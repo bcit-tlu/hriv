@@ -52,3 +52,51 @@ user-chosen build metadata segment) are not mis-matched.
 {{- $tag := .Values.image.tag | default .Chart.AppVersion -}}
 {{- regexReplaceAll "-rc\\.[0-9]{14}\\." $tag "-rc." -}}
 {{- end -}}
+
+{{/*
+Resolve source-images persistence values while preserving legacy flat-key
+fallbacks for overlays that have not moved to the nested split-PVC structure.
+*/}}
+{{- define "hriv-backend.resolvedSourceImagesPersistence" -}}
+{{- $sourceImages := dict
+      "existingClaim" (.Values.persistence.sourceImages.existingClaim | default "")
+      "storageClass" (.Values.persistence.sourceImages.storageClass | default "")
+      "size" .Values.persistence.sourceImages.size
+      "accessModes" .Values.persistence.sourceImages.accessModes
+  -}}
+{{- if and (hasKey .Values.persistence "storageClass") (not (get $sourceImages "storageClass")) -}}
+  {{- $_ := set $sourceImages "storageClass" .Values.persistence.storageClass -}}
+{{- end -}}
+{{- if and (hasKey .Values.persistence "size") .Values.persistence.size (eq .Values.persistence.sourceImages.size "10Gi") -}}
+  {{- $_ := set $sourceImages "size" .Values.persistence.size -}}
+{{- end -}}
+{{- if and (hasKey .Values.persistence "accessModes") (gt (len .Values.persistence.accessModes) 0) (eq (len .Values.persistence.sourceImages.accessModes) 1) (eq (index .Values.persistence.sourceImages.accessModes 0) "ReadWriteOnce") -}}
+  {{- $_ := set $sourceImages "accessModes" .Values.persistence.accessModes -}}
+{{- end -}}
+{{- toYaml $sourceImages -}}
+{{- end -}}
+
+{{/*
+Resolve tiles persistence values while preserving the legacy flat-key fallback
+heuristics used during the split-PVC upgrade.
+*/}}
+{{- define "hriv-backend.resolvedTilesPersistence" -}}
+{{- $tiles := .Values.persistence.tiles | default dict -}}
+{{- $tilesAccessModes := $tiles.accessModes | default (list "ReadWriteOnce") -}}
+{{- $resolvedTiles := dict
+      "existingClaim" ($tiles.existingClaim | default "")
+      "storageClass" ($tiles.storageClass | default "")
+      "size" ($tiles.size | default "10Gi")
+      "accessModes" $tilesAccessModes
+  -}}
+{{- if and (hasKey .Values.persistence "storageClass") (not (get $resolvedTiles "storageClass")) -}}
+  {{- $_ := set $resolvedTiles "storageClass" .Values.persistence.storageClass -}}
+{{- end -}}
+{{- if and (hasKey .Values.persistence "size") .Values.persistence.size (or (not (hasKey $tiles "size")) (eq (get $resolvedTiles "size") "10Gi")) -}}
+  {{- $_ := set $resolvedTiles "size" .Values.persistence.size -}}
+{{- end -}}
+{{- if and (hasKey .Values.persistence "accessModes") (gt (len .Values.persistence.accessModes) 0) (or (not (hasKey $tiles "accessModes")) (and (eq (len $tilesAccessModes) 1) (eq (index $tilesAccessModes 0) "ReadWriteOnce"))) -}}
+  {{- $_ := set $resolvedTiles "accessModes" .Values.persistence.accessModes -}}
+{{- end -}}
+{{- toYaml $resolvedTiles -}}
+{{- end -}}
