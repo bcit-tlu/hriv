@@ -19,6 +19,8 @@ export interface PendingMoveConfirm {
   newParentId: number | null
   destinationLabel: string
   change: MoveRestrictionChange
+  /** Whether the move was initiated from the MoveCategoryDialog or via drag-and-drop. */
+  source: 'dialog' | 'dnd'
 }
 
 export interface UseCategoryActionsDeps {
@@ -293,6 +295,7 @@ export function useCategoryActions({
           newParentId,
           destinationLabel,
           change,
+          source: 'dialog',
         })
         return
       }
@@ -411,6 +414,7 @@ export function useCategoryActions({
           newParentId: targetCategoryId,
           destinationLabel: targetName,
           change,
+          source: 'dnd',
         })
         return
       }
@@ -451,14 +455,14 @@ export function useCategoryActions({
 
   const confirmPendingMove = useCallback(async () => {
     if (!pendingMoveConfirm) return
-    const { categoryId, newParentId } = pendingMoveConfirm
+    const { categoryId, newParentId, source } = pendingMoveConfirm
     setPendingMoveConfirm(null)
-    if (newParentId !== null && findCategoryPath(categories, newParentId) !== null) {
+    if (source === 'dnd' && newParentId !== null) {
       await doDropCategoryOnCategory(categoryId, newParentId)
     } else {
       await doMoveCategory(categoryId, newParentId)
     }
-  }, [pendingMoveConfirm, categories, doDropCategoryOnCategory, doMoveCategory])
+  }, [pendingMoveConfirm, doDropCategoryOnCategory, doMoveCategory])
 
   const cancelPendingMove = useCallback(() => {
     setPendingMoveConfirm(null)

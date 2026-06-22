@@ -947,6 +947,7 @@ describe('useCategoryActions', () => {
       expect(result.current.pendingMoveConfirm?.categoryId).toBe(3)
       expect(result.current.pendingMoveConfirm?.newParentId).toBe(2)
       expect(result.current.pendingMoveConfirm?.change.hasChange).toBe(true)
+      expect(result.current.pendingMoveConfirm?.source).toBe('dialog')
     })
 
     it('proceeds immediately without confirmation when restrictions are unchanged', async () => {
@@ -1006,7 +1007,51 @@ describe('useCategoryActions', () => {
       })
 
       expect(mockUpdateCategory).toHaveBeenCalled()
+      // dialog-initiated: moveCatOpen is closed, no undo snack
+      expect(result.current.moveCatOpen).toBe(false)
+      expect(result.current.movingCategory).toBeNull()
       expect(result.current.pendingMoveConfirm).toBeNull()
+    })
+
+    it('confirmPendingMove from dialog closes the dialog, not the DnD undo snack path', async () => {
+      const parent = makeCategory({ id: 2, label: 'Parent', programIds: [42] })
+      const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [parent, cat] })
+      mockUpdateCategory.mockResolvedValue({
+        id: 3,
+        label: 'Cat',
+        parent_id: 2,
+        program_ids: [],
+        group_ids: [],
+        status: null,
+        sort_order: 0,
+        version: 2,
+        metadata_extra: null,
+        created_at: '',
+        updated_at: '',
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      // Open dialog first so moveCatOpen=true
+      act(() => {
+        result.current.handleRequestMoveCategory(cat)
+      })
+      expect(result.current.moveCatOpen).toBe(true)
+
+      await act(async () => {
+        await result.current.handleMoveCategory(3, 2)
+      })
+      expect(result.current.pendingMoveConfirm?.source).toBe('dialog')
+
+      await act(async () => {
+        await result.current.confirmPendingMove()
+      })
+
+      // doMoveCategory path: dialog closed
+      expect(result.current.moveCatOpen).toBe(false)
+      expect(result.current.movingCategory).toBeNull()
+      // DnD undo snack must NOT have fired
+      expect(deps.setMoveSnack).not.toHaveBeenCalled()
     })
 
     it('cancelPendingMove clears pendingMoveConfirm without moving', async () => {
@@ -1044,6 +1089,7 @@ describe('useCategoryActions', () => {
       expect(result.current.pendingMoveConfirm).not.toBeNull()
       expect(result.current.pendingMoveConfirm?.categoryId).toBe(3)
       expect(result.current.pendingMoveConfirm?.newParentId).toBe(2)
+      expect(result.current.pendingMoveConfirm?.source).toBe('dnd')
     })
 
     it('proceeds immediately when restrictions are unchanged', async () => {
