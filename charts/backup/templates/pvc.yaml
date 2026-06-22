@@ -19,10 +19,7 @@
 {{- if and (hasKey $legacyData "accessModes") (gt (len $legacyData.accessModes) 0) (eq (len .Values.persistence.sourceImages.accessModes) 1) (eq (index .Values.persistence.sourceImages.accessModes 0) "ReadWriteOnce") -}}
   {{- $sourceImagesAccessModes = $legacyData.accessModes -}}
 {{- end -}}
-{{- $tilesEnabled := .Values.persistence.tiles.enabled -}}
-{{- if and $sourceImagesExistingClaim (not .Values.persistence.tiles.existingClaim) (hasKey $legacyData "existingClaim") $legacyData.existingClaim .Values.persistence.tiles.enabled -}}
-  {{- $tilesEnabled = false -}}
-{{- end -}}
+{{- $tilesEnabled := eq (include "hriv-backup.tilesEnabled" .) "true" -}}
 {{- if and $sourceImagesEnabled (not $sourceImagesExistingClaim) }}
 apiVersion: v1
 kind: PersistentVolumeClaim

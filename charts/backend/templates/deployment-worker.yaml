@@ -1,15 +1,7 @@
-{{- $sourceImagesAccessModes := .Values.persistence.sourceImages.accessModes -}}
-{{- if and (hasKey .Values.persistence "accessModes") (gt (len .Values.persistence.accessModes) 0) (eq (len .Values.persistence.sourceImages.accessModes) 1) (eq (index .Values.persistence.sourceImages.accessModes 0) "ReadWriteOnce") -}}
-  {{- $sourceImagesAccessModes = .Values.persistence.accessModes -}}
-{{- end -}}
-{{- $tiles := .Values.persistence.tiles -}}
-{{- if and (not $tiles) .Values.persistence.tilesPersistence -}}
-  {{- $tiles = .Values.persistence.tilesPersistence -}}
-{{- end -}}
-{{- $tilesAccessModes := $tiles.accessModes | default (list "ReadWriteOnce") -}}
-{{- if and (hasKey .Values.persistence "accessModes") (gt (len .Values.persistence.accessModes) 0) (or (not (hasKey $tiles "accessModes")) (eq (len $tilesAccessModes) 1) (eq (index $tilesAccessModes 0) "ReadWriteOnce")) -}}
-  {{- $tilesAccessModes = .Values.persistence.accessModes -}}
-{{- end -}}
+{{- $sourceImages := include "hriv-backend.resolvedSourceImagesPersistence" . | fromYaml -}}
+{{- $tiles := include "hriv-backend.resolvedTilesPersistence" . | fromYaml -}}
+{{- $sourceImagesAccessModes := get $sourceImages "accessModes" -}}
+{{- $tilesAccessModes := get $tiles "accessModes" -}}
 {{- if and .Values.redis.worker.enabled (not .Values.redis.enabled) }}
 {{- fail "redis.worker.enabled requires redis.enabled — the worker needs a Redis connection" }}
 {{- end }}
@@ -96,10 +88,10 @@ spec:
       volumes:
         - name: source-images
           persistentVolumeClaim:
-            claimName: {{ .Values.persistence.sourceImages.existingClaim | default (printf "%s-source-images" (include "hriv-backend.fullname" .)) }}
+            claimName: {{ get $sourceImages "existingClaim" | default (printf "%s-source-images" (include "hriv-backend.fullname" .)) }}
         - name: tiles-data
           persistentVolumeClaim:
-            claimName: {{ $tiles.existingClaim | default (printf "%s-tiles" (include "hriv-backend.fullname" .)) }}
+            claimName: {{ get $tiles "existingClaim" | default (printf "%s-tiles" (include "hriv-backend.fullname" .)) }}
       {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
