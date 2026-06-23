@@ -38,6 +38,7 @@ import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
 import MenuIcon from '@mui/icons-material/Menu'
 import SearchIcon from '@mui/icons-material/Search'
+import CloseIcon from '@mui/icons-material/Close'
 import HomeIcon from '@mui/icons-material/Home'
 import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary'
 import FolderIcon from '@mui/icons-material/Folder'
@@ -402,16 +403,37 @@ export default function AppShell(props: AppShellProps) {
           {collapseNav && (
             <Drawer anchor="left" open={navDrawerOpen} onClose={() => setNavDrawerOpen(false)}>
               <Box sx={{ width: 'min(82vw, 300px)', maxWidth: '100%' }} role="presentation">
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, pt: 2, pb: 1.5 }}>
-                  <Box
-                    component="img"
-                    src="/favicon.svg"
-                    alt="HRIV"
-                    sx={{ height: 32, width: 32 }}
-                  />
-                  <Typography variant="h6" component="span">
-                    HRIV
-                  </Typography>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 1,
+                    pl: 2,
+                    pr: 1,
+                    pt: 1.5,
+                    pb: 1.5,
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box
+                      component="img"
+                      src="/favicon.svg"
+                      alt="HRIV"
+                      sx={{ height: 32, width: 32 }}
+                    />
+                    <Typography variant="h6" component="span">
+                      HRIV
+                    </Typography>
+                  </Box>
+                  <Tooltip title="Close menu">
+                    <IconButton
+                      onClick={() => setNavDrawerOpen(false)}
+                      aria-label="Close navigation menu"
+                    >
+                      <CloseIcon />
+                    </IconButton>
+                  </Tooltip>
                 </Box>
                 <Divider />
                 <MenuList sx={{ pt: 1 }}>{renderNavMenuItems()}</MenuList>

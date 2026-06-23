@@ -553,6 +553,20 @@ describe('AppShell', () => {
       expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
     })
 
+    it('closes the drawer when the close button is clicked', () => {
+      render(<AppShell {...makeProps()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      expect(screen.getByRole('menuitem', { name: 'Home' })).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Close navigation menu' }))
+
+      expect(screen.getByRole('button', { name: 'Open navigation menu' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+      expect(screen.queryByRole('menuitem', { name: 'Home' })).not.toBeInTheDocument()
+    })
+
     it('does not reopen the drawer after a compact → desktop → compact resize', () => {
       const { rerender } = render(<AppShell {...makeProps()} />)
       // Open the drawer on the compact viewport.
