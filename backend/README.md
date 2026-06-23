@@ -169,6 +169,24 @@ re-creating any tables.
 
 ---
 
+## Persistent data directories
+
+The backend reads uploaded source files and generated tile trees from
+two settings-backed directories:
+
+| Setting             | Default path          | Purpose                            |
+| ------------------- | --------------------- | ---------------------------------- |
+| `SOURCE_IMAGES_DIR` | `/data/source_images` | authoritative uploaded source data |
+| `TILES_DIR`         | `/data/tiles`         | generated DZI tiles and thumbnails |
+
+For Kubernetes deployments that split authoritative source data from
+derived tiles, the backend chart keeps the source-images PVC mounted at
+`/data` and mounts the tiles PVC at `/data/tiles`. This preserves the
+existing paths above while still allowing `/data/admin_tasks` and
+`/data/.maintenance` to live on the source-images volume.
+
+---
+
 ## JWT_SECRET
 
 The backend signs access tokens with `JWT_SECRET`. Setting it correctly is
