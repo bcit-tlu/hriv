@@ -82,39 +82,37 @@ try {
     tempFiles.push({ file, tempFile, hadUnstagedChanges: hasUnstagedChanges(file) })
   }
 
-  if (tempFiles.length === 0) {
-    process.exit(0)
-  }
+  if (tempFiles.length > 0) {
+    execFileSync(
+      process.execPath,
+      [
+        prettierCli,
+        '--write',
+        '--config',
+        prettierConfigPath,
+        '--ignore-unknown',
+        '--ignore-path',
+        prettierIgnorePath,
+        ...tempFiles.map(({ tempFile }) => tempFile),
+      ],
+      {
+        cwd: repoRoot,
+        stdio: 'inherit',
+      },
+    )
 
-  execFileSync(
-    process.execPath,
-    [
-      prettierCli,
-      '--write',
-      '--config',
-      prettierConfigPath,
-      '--ignore-unknown',
-      '--ignore-path',
-      prettierIgnorePath,
-      ...tempFiles.map(({ tempFile }) => tempFile),
-    ],
-    {
-      cwd: repoRoot,
-      stdio: 'inherit',
-    },
-  )
+    for (const { file, tempFile, hadUnstagedChanges } of tempFiles) {
+      const blobHash = git(['hash-object', '-w', tempFile])
+      const mode = getIndexMode(file)
 
-  for (const { file, tempFile, hadUnstagedChanges } of tempFiles) {
-    const blobHash = git(['hash-object', '-w', tempFile])
-    const mode = getIndexMode(file)
+      execFileSync('git', ['update-index', '--cacheinfo', `${mode},${blobHash},${file}`], {
+        cwd: repoRoot,
+        stdio: 'inherit',
+      })
 
-    execFileSync('git', ['update-index', '--cacheinfo', `${mode},${blobHash},${file}`], {
-      cwd: repoRoot,
-      stdio: 'inherit',
-    })
-
-    if (!hadUnstagedChanges) {
-      copyFileSync(tempFile, join(repoRoot, file))
+      if (!hadUnstagedChanges) {
+        copyFileSync(tempFile, join(repoRoot, file))
+      }
     }
   }
 } finally {
