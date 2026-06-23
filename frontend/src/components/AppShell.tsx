@@ -13,6 +13,8 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import IconButton from '@mui/material/IconButton'
 import Link from '@mui/material/Link'
+import ListItemIcon from '@mui/material/ListItemIcon'
+import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Popover from '@mui/material/Popover'
@@ -27,6 +29,14 @@ import useMediaQuery from '@mui/material/useMediaQuery'
 import { useTheme } from '@mui/material/styles'
 import MenuIcon from '@mui/icons-material/Menu'
 import SearchIcon from '@mui/icons-material/Search'
+import HomeIcon from '@mui/icons-material/Home'
+import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary'
+import FolderIcon from '@mui/icons-material/Folder'
+import SchoolIcon from '@mui/icons-material/School'
+import GroupsIcon from '@mui/icons-material/Groups'
+import CampaignIcon from '@mui/icons-material/Campaign'
+import PeopleIcon from '@mui/icons-material/People'
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
 import ColorModeToggle from './ColorModeToggle'
 import FooterBar from './FooterBar'
 import AnnouncementBanner from './AnnouncementBanner'
@@ -141,73 +151,96 @@ export default function AppShell(props: AppShellProps) {
       setNavMenuAnchor(null)
       fn()
     }
+    // Icon + text per MUI's Menu composition (ListItemIcon + ListItemText).
+    // Icons give the tappable items a clear visual structure, so the icon-less
+    // uppercased ListSubheader unambiguously reads as a section label.
+    const makeItem = (
+      key: string,
+      label: string,
+      icon: ReactNode,
+      onClick: () => void,
+      selected = false,
+    ) => (
+      <MenuItem key={key} selected={selected} onClick={closeThen(onClick)}>
+        <ListItemIcon sx={{ minWidth: 36 }}>{icon}</ListItemIcon>
+        <ListItemText>{label}</ListItemText>
+      </MenuItem>
+    )
     const sections: ReactNode[][] = []
 
     const pages: ReactNode[] = [
-      <MenuItem
-        key="browse"
-        selected={page === 'browse'}
-        onClick={closeThen(() => (page === 'browse' ? onHomeClick() : onTabChange('browse')))}
-      >
-        Home
-      </MenuItem>,
+      makeItem(
+        'browse',
+        'Home',
+        <HomeIcon fontSize="small" />,
+        () => (page === 'browse' ? onHomeClick() : onTabChange('browse')),
+        page === 'browse',
+      ),
     ]
     if (canEditContent) {
       pages.push(
-        <MenuItem
-          key="manage"
-          selected={page === 'manage'}
-          onClick={closeThen(() => onTabChange('manage'))}
-        >
-          Images
-        </MenuItem>,
+        makeItem(
+          'manage',
+          'Images',
+          <PhotoLibraryIcon fontSize="small" />,
+          () => onTabChange('manage'),
+          page === 'manage',
+        ),
       )
     }
     sections.push(pages)
 
     if (canEditContent) {
       const manage: ReactNode[] = [
-        <ListSubheader key="manage-header" sx={{ bgcolor: 'transparent', lineHeight: '36px' }}>
+        <ListSubheader
+          key="manage-header"
+          sx={{
+            bgcolor: 'transparent',
+            lineHeight: '36px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.14em',
+            fontWeight: 700,
+            fontSize: '0.875rem',
+            color: 'text.secondary',
+          }}
+        >
           Manage
         </ListSubheader>,
-        <MenuItem key="categories" onClick={closeThen(onOpenCategories)}>
-          Categories
-        </MenuItem>,
+        makeItem('categories', 'Categories', <FolderIcon fontSize="small" />, onOpenCategories),
       ]
       if (canManageUsers) {
         manage.push(
-          <MenuItem key="programs" onClick={closeThen(onOpenPrograms)}>
-            Programs
-          </MenuItem>,
+          makeItem('programs', 'Programs', <SchoolIcon fontSize="small" />, onOpenPrograms),
         )
       }
       manage.push(
-        <MenuItem key="groups" onClick={closeThen(onOpenGroups)}>
-          Groups
-        </MenuItem>,
-        <MenuItem key="announcement" onClick={closeThen(onOpenAnnouncement)}>
-          Announcement
-        </MenuItem>,
+        makeItem('groups', 'Groups', <GroupsIcon fontSize="small" />, onOpenGroups),
+        makeItem(
+          'announcement',
+          'Announcement',
+          <CampaignIcon fontSize="small" />,
+          onOpenAnnouncement,
+        ),
       )
       sections.push(manage)
     }
 
     if (canManageUsers) {
       sections.push([
-        <MenuItem
-          key="people"
-          selected={page === 'people'}
-          onClick={closeThen(() => onTabChange('people'))}
-        >
-          People
-        </MenuItem>,
-        <MenuItem
-          key="admin"
-          selected={page === 'admin'}
-          onClick={closeThen(() => onTabChange('admin'))}
-        >
-          Admin
-        </MenuItem>,
+        makeItem(
+          'people',
+          'People',
+          <PeopleIcon fontSize="small" />,
+          () => onTabChange('people'),
+          page === 'people',
+        ),
+        makeItem(
+          'admin',
+          'Admin',
+          <AdminPanelSettingsIcon fontSize="small" />,
+          () => onTabChange('admin'),
+          page === 'admin',
+        ),
       ])
     }
 

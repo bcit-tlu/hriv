@@ -480,6 +480,16 @@ describe('AppShell', () => {
       }
     })
 
+    it('renders the Manage section heading as a distinct uppercased label', () => {
+      render(<AppShell {...makeProps()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      const heading = screen.getByText('Manage')
+      expect(heading).toBeInTheDocument()
+      // Not a clickable menu item — it's a section label.
+      expect(heading).not.toHaveAttribute('role', 'menuitem')
+      expect(heading).toHaveStyle({ textTransform: 'uppercase' })
+    })
+
     it('navigates and opens dialogs from the collapsed menu', () => {
       const onTabChange = vi.fn()
       const onOpenCategories = vi.fn()
