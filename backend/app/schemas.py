@@ -363,6 +363,10 @@ class SourceImageOut(BaseModel):
     active: bool = True
     image_id: int | None = None
     file_size: int | None = None
+    source_checksum: str | None = None
+    tile_settings_hash: str | None = None
+    tiles_generated_at: datetime | None = None
+    tile_cache_status: str
     created_at: datetime
     updated_at: datetime
 

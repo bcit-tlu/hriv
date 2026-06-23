@@ -190,6 +190,13 @@ async def test_process_source_image_success() -> None:
                     await process_source_image(1)
 
     assert src.status == "completed"
+    # Tile-cache provenance is recorded on success.
+    from app.tile_provenance import current_tile_settings_hash
+
+    assert src.tile_settings_hash == current_tile_settings_hash()
+    assert src.tiles_generated_at is not None
+    # The fake stored_path does not exist, so the checksum is best-effort None.
+    assert src.source_checksum is None
 
 
 async def test_process_source_image_failure() -> None:

@@ -24,6 +24,13 @@ from sqlalchemy.sql import func
 
 from .database import async_session, settings
 from .models import Image, SourceImage
+from .tile_provenance import (
+    DZI_OVERLAP,
+    DZI_TILE_SIZE,
+    DZI_TILE_SUFFIX,
+    compute_source_checksum,
+    current_tile_settings_hash,
+)
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -317,7 +324,12 @@ def generate_tiles(
     dzi_basename = "image"
     dzi_output = os.path.join(output_dir, dzi_basename)
     t_dzsave_start = time.monotonic()
-    image.dzsave(dzi_output, tile_size=254, overlap=1, suffix=".jpeg[Q=85]")
+    image.dzsave(
+        dzi_output,
+        tile_size=DZI_TILE_SIZE,
+        overlap=DZI_OVERLAP,
+        suffix=DZI_TILE_SUFFIX,
+    )
     t_dzsave_end = time.monotonic()
 
     dzsave_duration_ms = round((t_dzsave_end - t_dzsave_start) * 1000)
@@ -581,6 +593,15 @@ async def process_source_image(source_image_id: int) -> None:
                 db.add(img)
                 await db.flush()
 
+                # Record tile-cache provenance so currentness can be evaluated
+                # later without filesystem inspection. The checksum is
+                # best-effort and never blocks completion.
+                src.source_checksum = await asyncio.to_thread(
+                    compute_source_checksum, src.stored_path,
+                )
+                src.tile_settings_hash = current_tile_settings_hash()
+                src.tiles_generated_at = datetime.now(timezone.utc)
+
                 src.image_id = img.id
                 src.status = "completed"
                 src.progress = 100
@@ -835,6 +856,15 @@ async def process_replace_image(
                     current_meta["pyramid_level_count"] = pyramid_info.get("level_count")
 
                 img.metadata_ = current_meta if current_meta else {}
+
+                # Record tile-cache provenance for the replacement source so
+                # the new tile tree's currentness is tracked. Best-effort
+                # checksum never blocks completion.
+                src.source_checksum = await asyncio.to_thread(
+                    compute_source_checksum, src.stored_path,
+                )
+                src.tile_settings_hash = current_tile_settings_hash()
+                src.tiles_generated_at = datetime.now(timezone.utc)
 
                 src.image_id = img.id
                 src.status = "completed"

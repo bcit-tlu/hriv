@@ -142,6 +142,23 @@ for the full metadata preservation/clearing rules.
 Tiles are served via FastAPI `StaticFiles` mount at `/api/tiles`. In
 production, nginx or a CDN should serve these directly from the PVC.
 
+## Tile-cache provenance
+
+On successful tile generation (both new uploads and replacements) the
+`SourceImage` records provenance so tile currentness can be evaluated later
+without filesystem inspection:
+
+- `source_checksum` — SHA-256 of the source file (best-effort; never blocks
+  completion).
+- `tile_settings_hash` — fingerprint of the DZI settings + pipeline version.
+- `tiles_generated_at` — generation timestamp.
+
+The effective `tile_cache_status` (`current` / `missing` / `stale` / `failed`)
+is computed from these fields plus the current pipeline settings. The DZI
+parameters live in `app/tile_provenance.py` and feed both `dzsave` and the
+settings hash. See [tile-cache-provenance.md](tile-cache-provenance.md) for the
+staleness rules and API surface.
+
 ## Stale SourceImage reconciliation
 
 `reconcile_stale_source_images()` runs on **backend (API pod) startup** and marks
