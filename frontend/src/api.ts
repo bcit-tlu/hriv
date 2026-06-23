@@ -734,6 +734,10 @@ export interface ApiSourceImage {
   active: boolean
   image_id: number | null
   file_size: number | null
+  source_checksum: string | null
+  tile_settings_hash: string | null
+  tiles_generated_at: string | null
+  tile_cache_status: 'current' | 'missing' | 'stale' | 'failed'
   created_at: string
   updated_at: string
 }
