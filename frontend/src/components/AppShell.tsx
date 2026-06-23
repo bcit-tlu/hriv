@@ -11,12 +11,13 @@ import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
-import Link from '@mui/material/Link'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
+import MenuList from '@mui/material/MenuList'
 import Popover from '@mui/material/Popover'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
@@ -37,10 +38,16 @@ import GroupsIcon from '@mui/icons-material/Groups'
 import CampaignIcon from '@mui/icons-material/Campaign'
 import PeopleIcon from '@mui/icons-material/People'
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
+import LightModeIcon from '@mui/icons-material/LightMode'
+import DarkModeIcon from '@mui/icons-material/DarkMode'
+import BrightnessAutoIcon from '@mui/icons-material/BrightnessAuto'
+import ManageAccountsIcon from '@mui/icons-material/ManageAccounts'
+import LogoutIcon from '@mui/icons-material/Logout'
 import ColorModeToggle from './ColorModeToggle'
 import FooterBar from './FooterBar'
 import AnnouncementBanner from './AnnouncementBanner'
 import type { Role } from '../types'
+import { useColorMode } from '../useColorMode'
 import {
   appBarAvatarSx,
   appBarClusterGap,
@@ -123,7 +130,7 @@ export default function AppShell(props: AppShellProps) {
     children,
   } = props
   const [manageMenuAnchor, setManageMenuAnchor] = useState<HTMLElement | null>(null)
-  const [navMenuAnchor, setNavMenuAnchor] = useState<HTMLElement | null>(null)
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false)
   const theme = useTheme()
   // Collapse the nav tabs into a hamburger menu when the viewport is too
   // narrow to show them inline. Guarded by tab count so a single-tab
@@ -141,6 +148,21 @@ export default function AppShell(props: AppShellProps) {
   const showViewAnnLink = annEnabled && !announcement
   const contentBg = page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined
   const groupColors = getGroupChipColors(mode)
+  const { preference: themePreference, toggleMode } = useColorMode()
+  const themeIcon =
+    themePreference === 'light' ? (
+      <LightModeIcon fontSize="small" />
+    ) : themePreference === 'dark' ? (
+      <DarkModeIcon fontSize="small" />
+    ) : (
+      <BrightnessAutoIcon fontSize="small" />
+    )
+  const themeLabel =
+    themePreference === 'light'
+      ? 'Theme: Light'
+      : themePreference === 'dark'
+        ? 'Theme: Dark'
+        : 'Theme: Auto'
 
   // Collapsed-nav menu, built as ordered sections. Empty sections are dropped
   // and dividers are only inserted *between* non-empty sections, so the menu
@@ -148,7 +170,7 @@ export default function AppShell(props: AppShellProps) {
   // dividers even if the role invariants change).
   const renderNavMenuItems = () => {
     const closeThen = (fn: () => void) => () => {
-      setNavMenuAnchor(null)
+      setNavDrawerOpen(false)
       fn()
     }
     // Icon + text per MUI's Menu composition (ListItemIcon + ListItemText).
@@ -264,10 +286,24 @@ export default function AppShell(props: AppShellProps) {
             sx={{
               display: 'flex',
               alignItems: 'center',
-              gap: 1,
+              gap: 0.75,
               mr: 2,
             }}
           >
+            {collapseNav && (
+              <Tooltip title="Menu">
+                <IconButton
+                  edge="start"
+                  onClick={() => setNavDrawerOpen(true)}
+                  sx={{ color: 'inherit', mr: -1, ...appBarIconButtonSx }}
+                  aria-label="Open navigation menu"
+                  aria-haspopup="true"
+                  aria-expanded={navDrawerOpen}
+                >
+                  <MenuIcon />
+                </IconButton>
+              </Tooltip>
+            )}
             <Box component="img" src="/favicon.svg" alt="HRIV" sx={{ height: 32, width: 32 }} />
             <Typography variant="h6" component="h1">
               HRIV
@@ -354,30 +390,29 @@ export default function AppShell(props: AppShellProps) {
               </MenuItem>
             </Menu>
           )}
+          {collapseNav && (
+            <Drawer anchor="left" open={navDrawerOpen} onClose={() => setNavDrawerOpen(false)}>
+              <Box sx={{ width: 'min(82vw, 300px)', maxWidth: '100%' }} role="presentation">
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 2, pt: 2, pb: 1.5 }}>
+                  <Box
+                    component="img"
+                    src="/favicon.svg"
+                    alt="HRIV"
+                    sx={{ height: 32, width: 32 }}
+                  />
+                  <Typography variant="h6" component="span">
+                    HRIV
+                  </Typography>
+                </Box>
+                <Divider />
+                <MenuList sx={{ pt: 1 }}>{renderNavMenuItems()}</MenuList>
+              </Box>
+            </Drawer>
+          )}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: appBarClusterGap }}>
-            {collapseNav && (
-              <Tooltip title="Menu">
-                <IconButton
-                  onClick={(e) => setNavMenuAnchor(e.currentTarget)}
-                  sx={{ color: 'inherit', ...appBarIconButtonSx }}
-                  aria-label="Open navigation menu"
-                  aria-haspopup="true"
-                  aria-expanded={Boolean(navMenuAnchor)}
-                >
-                  <MenuIcon />
-                </IconButton>
-              </Tooltip>
+            {!collapseNav && (
+              <ColorModeToggle iconButtonSx={{ color: 'inherit', ...appBarIconButtonSx }} />
             )}
-            {collapseNav && (
-              <Menu
-                anchorEl={navMenuAnchor}
-                open={Boolean(navMenuAnchor)}
-                onClose={() => setNavMenuAnchor(null)}
-              >
-                {renderNavMenuItems()}
-              </Menu>
-            )}
-            <ColorModeToggle iconButtonSx={{ color: 'inherit', ...appBarIconButtonSx }} />
             <Tooltip title="Search">
               <IconButton
                 onClick={onSearchOpen}
@@ -388,7 +423,11 @@ export default function AppShell(props: AppShellProps) {
               </IconButton>
             </Tooltip>
             {notificationSlot}
-            <IconButton ref={avatarRef} onClick={() => setProfileOpen(true)} sx={{ p: 0, ml: 0.5 }}>
+            <IconButton
+              ref={avatarRef}
+              onClick={() => setProfileOpen(true)}
+              sx={{ p: 0, minWidth: 40, minHeight: 40 }}
+            >
               <Avatar
                 sx={{
                   ...appBarAvatarSx,
@@ -419,7 +458,7 @@ export default function AppShell(props: AppShellProps) {
               }}
             >
               <Card sx={{ minWidth: 240 }}>
-                <CardContent>
+                <CardContent sx={{ '&:last-child': { pb: 1 } }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                     {currentUser.name}
                   </Typography>
@@ -469,53 +508,49 @@ export default function AppShell(props: AppShellProps) {
                       ))}
                     </Box>
                   )}
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      justifyContent:
-                        canManageUsers || showViewAnnLink ? 'space-between' : 'flex-end',
-                      mt: 2,
-                      gap: 2,
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', gap: 2 }}>
-                      {canManageUsers && (
-                        <Link
-                          component="button"
-                          variant="body2"
-                          onClick={() => {
-                            openEditProfile()
-                          }}
-                        >
-                          Update
-                        </Link>
-                      )}
-                      {showViewAnnLink && (
-                        <Link
-                          component="button"
-                          variant="body2"
-                          onClick={() => {
-                            setProfileOpen(false)
-                            setViewAnnOpen(true)
-                          }}
-                        >
-                          View Announcement
-                        </Link>
-                      )}
-                    </Box>
-                    <Link
-                      component="button"
-                      variant="body2"
-                      color="primary"
+                  <Divider sx={{ mt: 1.5, mx: -2 }} />
+                  <MenuList sx={{ mx: -2, py: 0 }}>
+                    {collapseNav && (
+                      <MenuItem sx={{ py: 1.25 }} onClick={() => toggleMode()}>
+                        <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>{themeIcon}</ListItemIcon>
+                        <ListItemText>{themeLabel}</ListItemText>
+                      </MenuItem>
+                    )}
+                    {canManageUsers && (
+                      <MenuItem sx={{ py: 1.25 }} onClick={() => openEditProfile()}>
+                        <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>
+                          <ManageAccountsIcon fontSize="small" />
+                        </ListItemIcon>
+                        <ListItemText>Update</ListItemText>
+                      </MenuItem>
+                    )}
+                    {showViewAnnLink && (
+                      <MenuItem
+                        sx={{ py: 1.25 }}
+                        onClick={() => {
+                          setProfileOpen(false)
+                          setViewAnnOpen(true)
+                        }}
+                      >
+                        <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>
+                          <CampaignIcon fontSize="small" />
+                        </ListItemIcon>
+                        <ListItemText>View Announcement</ListItemText>
+                      </MenuItem>
+                    )}
+                    <MenuItem
+                      sx={{ py: 1.25, color: 'primary.main' }}
                       onClick={() => {
                         setProfileOpen(false)
                         logout()
                       }}
                     >
-                      Logout
-                    </Link>
-                  </Box>
+                      <ListItemIcon sx={{ minWidth: 0, mr: 1.25, color: 'primary.main' }}>
+                        <LogoutIcon fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Logout</ListItemText>
+                    </MenuItem>
+                  </MenuList>
                 </CardContent>
               </Card>
             </Popover>

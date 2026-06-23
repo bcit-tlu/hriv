@@ -159,14 +159,13 @@ export function getVisibilityColors(mode: 'light' | 'dark'): {
 // each screen size.
 // ---------------------------------------------------------------------------
 
-/** Responsive sizing for app-bar icon buttons (theme toggle, search, bell,
- *  hamburger). Spread into each button's `sx`. Glyphs are larger in the
- *  mobile/compact view (where these are the primary touch targets) and the
- *  hit area grows to match; desktop keeps the standard 40px medium size. */
+/** Sizing for app-bar icon buttons (theme toggle, search, bell, hamburger).
+ *  Spread into each button's `sx`. A uniform 40px box keeps adjacent icons
+ *  evenly and tightly spaced; the glyph is a touch larger on mobile. */
 export const appBarIconButtonSx = {
   p: 0.5,
-  minWidth: { xs: 44, sm: 44, md: 40 },
-  minHeight: { xs: 44, sm: 44, md: 40 },
+  minWidth: 40,
+  minHeight: 40,
   '& .MuiSvgIcon-root': { fontSize: { xs: 26, sm: 24, md: 24 } },
 } as const
 

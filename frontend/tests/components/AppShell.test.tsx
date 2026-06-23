@@ -323,6 +323,16 @@ describe('AppShell', () => {
   })
 
   describe('profile popover', () => {
+    it('keeps the theme toggle in the bar on desktop', () => {
+      render(<AppShell {...makeProps({ profileOpen: false })} />)
+      expect(screen.getByRole('button', { name: 'Toggle theme' })).toBeInTheDocument()
+    })
+
+    it('does not add a theme row to the profile menu on desktop', () => {
+      render(<AppShell {...makeProps({ profileOpen: true })} />)
+      expect(screen.queryByRole('menuitem', { name: /Theme:/ })).not.toBeInTheDocument()
+    })
+
     it('shows user info when profileOpen is true', () => {
       const ref = createRef<HTMLButtonElement>()
       render(
@@ -502,6 +512,36 @@ describe('AppShell', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
       fireEvent.click(screen.getByRole('menuitem', { name: 'Categories' }))
       expect(onOpenCategories).toHaveBeenCalled()
+    })
+
+    it('removes the theme toggle from the bar when collapsed', () => {
+      render(<AppShell {...makeProps({ profileOpen: false })} />)
+      expect(screen.queryByRole('button', { name: 'Toggle theme' })).not.toBeInTheDocument()
+    })
+
+    it('shows a theme row in the profile menu on compact viewports', () => {
+      render(<AppShell {...makeProps({ profileOpen: true })} />)
+      expect(screen.getByRole('menuitem', { name: /Theme:/ })).toBeInTheDocument()
+    })
+
+    it('keeps the role and program/group pills in the profile menu', () => {
+      render(
+        <AppShell
+          {...makeProps({
+            profileOpen: true,
+            currentUser: {
+              name: 'Haruki Tanaka',
+              email: 'admin@example.ca',
+              role: 'admin',
+              program_names: ['Administration'],
+              group_names: [],
+            },
+          })}
+        />,
+      )
+      expect(screen.getByText('admin@example.ca')).toBeInTheDocument()
+      expect(screen.getByText('admin')).toBeInTheDocument()
+      expect(screen.getByText('Administration')).toBeInTheDocument()
     })
 
     it('keeps a single Home tab inline for students instead of collapsing', () => {
