@@ -187,6 +187,27 @@ def _extract_tiff_resolution(img: pyvips.Image, fields: list[str], info: dict) -
             info["mpp_y"] = round(mpp_y, 4)
 
 
+async def _best_effort_source_checksum(source_path: str) -> str | None:
+    """Compute the source checksum off the event loop, never raising.
+
+    ``compute_source_checksum`` already swallows file I/O errors, but the
+    ``asyncio.to_thread`` dispatch itself could in theory fail (e.g. thread
+    pool exhaustion). Provenance must never abort a processing run whose tiles
+    already generated successfully, so any error here degrades to ``None``.
+    """
+    try:
+        return await asyncio.to_thread(compute_source_checksum, source_path)
+    except Exception:
+        logger.debug(
+            "Source checksum dispatch failed (non-critical)",
+            extra={
+                "event": "tiles.checksum_dispatch_failed",
+                "source_path": source_path,
+            },
+        )
+        return None
+
+
 def _get_float_field(img: pyvips.Image, fields: list[str], name: str) -> float | None:
     """Safely extract a numeric metadata field from a vips image."""
     if name not in fields:
@@ -596,8 +617,8 @@ async def process_source_image(source_image_id: int) -> None:
                 # Record tile-cache provenance so currentness can be evaluated
                 # later without filesystem inspection. The checksum is
                 # best-effort and never blocks completion.
-                src.source_checksum = await asyncio.to_thread(
-                    compute_source_checksum, src.stored_path,
+                src.source_checksum = await _best_effort_source_checksum(
+                    src.stored_path,
                 )
                 src.tile_settings_hash = current_tile_settings_hash()
                 src.tiles_generated_at = datetime.now(timezone.utc)
@@ -860,8 +881,8 @@ async def process_replace_image(
                 # Record tile-cache provenance for the replacement source so
                 # the new tile tree's currentness is tracked. Best-effort
                 # checksum never blocks completion.
-                src.source_checksum = await asyncio.to_thread(
-                    compute_source_checksum, src.stored_path,
+                src.source_checksum = await _best_effort_source_checksum(
+                    src.stored_path,
                 )
                 src.tile_settings_hash = current_tile_settings_hash()
                 src.tiles_generated_at = datetime.now(timezone.utc)

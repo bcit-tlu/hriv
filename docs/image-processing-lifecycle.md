@@ -72,13 +72,22 @@ appears as a single distributed trace.
 
 ```python
 # processing.py → generate_tiles()
+# DZI parameters live in tile_provenance.py so they also feed the settings hash.
 image = pyvips.Image.new_from_file(source_path, access="sequential")
-image.dzsave(output, tile_size=254, overlap=1, suffix=".jpeg[Q=85]")
+image.dzsave(
+    output,
+    tile_size=DZI_TILE_SIZE,    # 254
+    overlap=DZI_OVERLAP,        # 1
+    suffix=DZI_TILE_SUFFIX,     # ".jpeg[Q=85]"
+)
 ```
 
 - `access="sequential"` — memory-efficient streaming; the file is read
   once without random access.
-- `tile_size=254`, `overlap=1` — standard DeepZoom parameters.
+- `tile_size=254`, `overlap=1` — standard DeepZoom parameters. These (and the
+  JPEG suffix) are defined as constants in `app/tile_provenance.py`, so the
+  recorded `tile_settings_hash` always reflects the parameters actually used —
+  see [tile-cache-provenance.md](tile-cache-provenance.md).
 - JPEG quality 85 — balance between file size and visual fidelity.
 - Runs via `asyncio.to_thread()` so the event loop is not blocked.
 
