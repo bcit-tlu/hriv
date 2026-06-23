@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.6.1...backup-v0.7.0) (2026-06-23)
+
+
+### Features
+
+* **charts:** split source image and tile pvcs ([#739](https://github.com/bcit-tlu/hriv/issues/739)) ([a29bf53](https://github.com/bcit-tlu/hriv/commit/a29bf53fbc212fd5ca1358328aa7788911ecf4b1))
+
 ## [0.6.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.6.0...backup-v0.6.1) (2026-05-18)
 
 ### Bug Fixes
