@@ -1,4 +1,12 @@
-import { useState, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type RefObject,
+  type SetStateAction,
+} from 'react'
 import Alert from '@mui/material/Alert'
 import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
@@ -138,6 +146,11 @@ export default function AppShell(props: AppShellProps) {
   const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
   const navTabCount = 1 + (canEditContent ? 2 : 0) + (canManageUsers ? 2 : 0)
   const collapseNav = isCompactViewport && navTabCount > 1
+  // Reset the drawer when the nav is no longer collapsed, so a resize
+  // round-trip (compact → desktop → compact) doesn't reopen it on its own.
+  useEffect(() => {
+    if (!collapseNav) setNavDrawerOpen(false)
+  }, [collapseNav])
   const [viewAnnOpen, setViewAnnOpen] = useState(false)
   const [annCollapsed, setAnnCollapsed] = useState(false)
   const [prevAnnouncement, setPrevAnnouncement] = useState(announcement)
@@ -149,20 +162,16 @@ export default function AppShell(props: AppShellProps) {
   const contentBg = page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined
   const groupColors = getGroupChipColors(mode)
   const { preference: themePreference, toggleMode } = useColorMode()
-  const themeIcon =
-    themePreference === 'light' ? (
-      <LightModeIcon fontSize="small" />
-    ) : themePreference === 'dark' ? (
-      <DarkModeIcon fontSize="small" />
-    ) : (
-      <BrightnessAutoIcon fontSize="small" />
-    )
-  const themeLabel =
-    themePreference === 'light'
-      ? 'Theme: Light'
-      : themePreference === 'dark'
-        ? 'Theme: Dark'
-        : 'Theme: Auto'
+  const themeIcon = useMemo(() => {
+    if (themePreference === 'light') return <LightModeIcon fontSize="small" />
+    if (themePreference === 'dark') return <DarkModeIcon fontSize="small" />
+    return <BrightnessAutoIcon fontSize="small" />
+  }, [themePreference])
+  const themeLabel = useMemo(() => {
+    if (themePreference === 'light') return 'Theme: Light'
+    if (themePreference === 'dark') return 'Theme: Dark'
+    return 'Theme: Auto'
+  }, [themePreference])
 
   // Collapsed-nav menu, built as ordered sections. Empty sections are dropped
   // and dividers are only inserted *between* non-empty sections, so the menu

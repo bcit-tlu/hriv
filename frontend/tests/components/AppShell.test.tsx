@@ -463,6 +463,9 @@ describe('AppShell', () => {
       mockUseMediaQuery.mockReturnValue(true)
     })
     afterEach(() => {
+      // Clear call history as well as the implementation, then restore the
+      // file-wide default so later suites start from a desktop viewport.
+      mockUseMediaQuery.mockReset()
       mockUseMediaQuery.mockReturnValue(false)
     })
 
@@ -548,6 +551,26 @@ describe('AppShell', () => {
       render(<AppShell {...makeProps({ canEditContent: false, canManageUsers: false })} />)
       expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument()
       expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
+    })
+
+    it('does not reopen the drawer after a compact → desktop → compact resize', () => {
+      const { rerender } = render(<AppShell {...makeProps()} />)
+      // Open the drawer on the compact viewport.
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      expect(screen.getByRole('menuitem', { name: 'Home' })).toBeInTheDocument()
+
+      // Resize up to desktop (drawer unmounts) and back down to compact.
+      mockUseMediaQuery.mockReturnValue(false)
+      rerender(<AppShell {...makeProps()} />)
+      mockUseMediaQuery.mockReturnValue(true)
+      rerender(<AppShell {...makeProps()} />)
+
+      // The drawer must stay closed — no auto-reopen.
+      expect(screen.getByRole('button', { name: 'Open navigation menu' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+      expect(screen.queryByRole('menuitem', { name: 'Home' })).not.toBeInTheDocument()
     })
   })
 })
