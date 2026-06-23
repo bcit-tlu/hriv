@@ -1,16 +1,20 @@
 {{- if and .Values.tiles.enabled (not .Values.persistence.enabled) }}
 {{- fail "tiles.enabled requires persistence.enabled — the sidecar serves tiles from the PVC" }}
 {{- end }}
+{{- $sourceImages := include "hriv-backend.resolvedSourceImagesPersistence" . | fromYaml -}}
+{{- $tiles := include "hriv-backend.resolvedTilesPersistence" . | fromYaml -}}
+{{- $sourceImagesAccessModes := get $sourceImages "accessModes" -}}
+{{- $tilesAccessModes := get $tiles "accessModes" -}}
 {{- if and (index .Values "github-issue" "enabled") (not (index .Values "github-issue" "repository")) }}
 {{- fail "github-issue.enabled=true requires github-issue.repository" }}
 {{- end }}
 {{- if and (index .Values "github-issue" "enabled") (not (index .Values "github-issue" "token" "existingSecret")) }}
 {{- fail "github-issue.enabled=true requires github-issue.token.existingSecret (secret must contain key 'token')" }}
 {{- end }}
-{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" .Values.persistence.sourceImages.accessModes)) }}
+{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" $sourceImagesAccessModes)) }}
 {{- fail "replicaCount > 1 requires a ReadWriteMany source-images PVC — background admin tasks write result files to the shared /data volume that any replica must be able to serve" }}
 {{- end }}
-{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" .Values.persistence.tilesPersistence.accessModes)) }}
+{{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" $tilesAccessModes)) }}
 {{- fail "replicaCount > 1 requires a ReadWriteMany tiles PVC — all replicas must be able to serve generated DZI tiles" }}
 {{- end }}
 apiVersion: apps/v1
@@ -21,7 +25,7 @@ metadata:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  {{- if and .Values.persistence.enabled (or (has "ReadWriteOnce" .Values.persistence.sourceImages.accessModes) (has "ReadWriteOnce" .Values.persistence.tilesPersistence.accessModes)) }}
+  {{- if and .Values.persistence.enabled (or (has "ReadWriteOnce" $sourceImagesAccessModes) (has "ReadWriteOnce" $tilesAccessModes)) }}
   strategy:
     type: Recreate
   {{- end }}
@@ -221,10 +225,10 @@ spec:
         {{- if .Values.persistence.enabled }}
         - name: source-images
           persistentVolumeClaim:
-            claimName: {{ .Values.persistence.sourceImages.existingClaim | default (printf "%s-source-images" (include "hriv-backend.fullname" .)) }}
+            claimName: {{ get $sourceImages "existingClaim" | default (printf "%s-source-images" (include "hriv-backend.fullname" .)) }}
         - name: tiles-data
           persistentVolumeClaim:
-            claimName: {{ .Values.persistence.tilesPersistence.existingClaim | default (printf "%s-tiles" (include "hriv-backend.fullname" .)) }}
+            claimName: {{ get $tiles "existingClaim" | default (printf "%s-tiles" (include "hriv-backend.fullname" .)) }}
         {{- end }}
         {{- if .Values.tiles.enabled }}
         - name: nginx-tiles-config

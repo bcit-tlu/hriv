@@ -1,4 +1,26 @@
-{{- if and .Values.persistence.sourceImages.enabled (not .Values.persistence.sourceImages.existingClaim) }}
+{{- $legacyData := .Values.persistence.data | default dict -}}
+{{- $sourceImagesEnabled := .Values.persistence.sourceImages.enabled -}}
+{{- if and (hasKey $legacyData "enabled") $legacyData.enabled -}}
+  {{- $sourceImagesEnabled = $legacyData.enabled -}}
+{{- end -}}
+{{- $sourceImagesExistingClaim := .Values.persistence.sourceImages.existingClaim -}}
+{{- if and (hasKey $legacyData "existingClaim") (not $sourceImagesExistingClaim) -}}
+  {{- $sourceImagesExistingClaim = $legacyData.existingClaim -}}
+{{- end -}}
+{{- $sourceImagesStorageClass := .Values.persistence.sourceImages.storageClass -}}
+{{- if and (hasKey $legacyData "storageClass") (not $sourceImagesStorageClass) -}}
+  {{- $sourceImagesStorageClass = $legacyData.storageClass -}}
+{{- end -}}
+{{- $sourceImagesSize := .Values.persistence.sourceImages.size -}}
+{{- if and (hasKey $legacyData "size") $legacyData.size (eq .Values.persistence.sourceImages.size "5Gi") -}}
+  {{- $sourceImagesSize = $legacyData.size -}}
+{{- end -}}
+{{- $sourceImagesAccessModes := .Values.persistence.sourceImages.accessModes -}}
+{{- if and (hasKey $legacyData "accessModes") (gt (len $legacyData.accessModes) 0) (eq (len .Values.persistence.sourceImages.accessModes) 1) (eq (index .Values.persistence.sourceImages.accessModes 0) "ReadWriteOnce") -}}
+  {{- $sourceImagesAccessModes = $legacyData.accessModes -}}
+{{- end -}}
+{{- $tilesEnabled := eq (include "hriv-backup.tilesEnabled" .) "true" -}}
+{{- if and $sourceImagesEnabled (not $sourceImagesExistingClaim) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -6,19 +28,19 @@ metadata:
   labels:
     {{- include "hriv-backup.labels" . | nindent 4 }}
 spec:
-  {{- if .Values.persistence.sourceImages.storageClass }}
-  storageClassName: {{ .Values.persistence.sourceImages.storageClass }}
+  {{- if $sourceImagesStorageClass }}
+  storageClassName: {{ $sourceImagesStorageClass }}
   {{- end }}
   accessModes:
-    {{- range .Values.persistence.sourceImages.accessModes }}
+    {{- range $sourceImagesAccessModes }}
     - {{ . }}
     {{- end }}
   resources:
     requests:
-      storage: {{ .Values.persistence.sourceImages.size }}
+      storage: {{ $sourceImagesSize }}
 {{- end }}
 ---
-{{- if and .Values.persistence.tiles.enabled (not .Values.persistence.tiles.existingClaim) }}
+{{- if and $tilesEnabled (not .Values.persistence.tiles.existingClaim) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

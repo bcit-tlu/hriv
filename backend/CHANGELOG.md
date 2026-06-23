@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.24.0...backend-v0.24.1) (2026-06-23)
+
+
+### Bug Fixes
+
+* **backend:** document split persistence layout ([#745](https://github.com/bcit-tlu/hriv/issues/745)) ([4c1c84d](https://github.com/bcit-tlu/hriv/commit/4c1c84dceaf15e1ba2dd9f046d3c21d9ace62352))
+
 ## [0.24.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.23.0...backend-v0.24.0) (2026-06-19)
 
 

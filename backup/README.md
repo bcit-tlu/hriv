@@ -81,6 +81,11 @@ pod, updating Helm values, and then starting the workloads again. No image
 reimport should be required as long as the visible paths remain
 `/data/source_images` and `/data/tiles`.
 
+If you are upgrading from the older single-data-PVC layout, update any values
+that still use `persistence.data.*` to the new `persistence.sourceImages.*`
+and `persistence.tiles.*` keys. The old backend chart PVC named
+`{fullname}-data` is not migrated or deleted automatically.
+
 ### Local-Only Mode
 
 If no Azure credentials are provided, snapshots are saved to the `backup_data` volume (`/backups` inside the container). This is useful for development or when using a separate volume backup strategy.

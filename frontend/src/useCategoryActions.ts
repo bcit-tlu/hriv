@@ -423,9 +423,6 @@ export function useCategoryActions({
       }
       await doDropCategoryOnCategory(draggedCategoryId, targetCategoryId)
     },
-    // Same reasoning as handleMoveCategory above: getAncestorPathForParent closes
-    // over `categories` which is already in the dep array.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [categories, doDropCategoryOnCategory],
   )
 

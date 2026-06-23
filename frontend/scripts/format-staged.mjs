@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
+import { getFileInfo } from 'prettier'
 
 function git(args, options = {}) {
   return execFileSync('git', args, {
@@ -68,12 +69,22 @@ const prettierConfigPath = join(repoRoot, '.prettierrc.json')
 const prettierIgnorePath = join(repoRoot, '.prettierignore')
 
 try {
-  const tempFiles = stagedFiles.map((file) => {
+  const tempFiles = []
+  for (const file of stagedFiles) {
+    const fileInfo = await getFileInfo(join(repoRoot, file), {
+      ignorePath: prettierIgnorePath,
+    })
+    if (fileInfo.ignored) continue
+
     const tempFile = join(tempRoot, file)
     mkdirSync(dirname(tempFile), { recursive: true })
     writeFileSync(tempFile, gitBuffer(['show', `:${file}`]))
-    return { file, tempFile, hadUnstagedChanges: hasUnstagedChanges(file) }
-  })
+    tempFiles.push({ file, tempFile, hadUnstagedChanges: hasUnstagedChanges(file) })
+  }
+
+  if (tempFiles.length === 0) {
+    process.exit(0)
+  }
 
   execFileSync(
     process.execPath,

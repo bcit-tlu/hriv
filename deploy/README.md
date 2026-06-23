@@ -51,3 +51,18 @@ For an already-running pre-production system, the intended cutover is:
 4. Update Helm values to point at the new claims.
 5. Start the workloads and verify upload/viewer flows before removing the old
    volume.
+
+## Upgrade Notes
+
+This chart change is not an in-place PVC rename. Existing deployments that used
+the old single-PVC layout should plan a manual migration:
+
+- backend chart overrides using `persistence.storageClass`, `persistence.size`,
+  or `persistence.accessModes` must be moved to `persistence.sourceImages.*`
+- backup chart overrides using `persistence.data.*` must be moved to
+  `persistence.sourceImages.*` plus `persistence.tiles.*`
+- the old backend PVC named `{fullname}-data` is not deleted or migrated
+  automatically by Helm
+
+Until the Flux overlays are updated, old flat-key overrides may not express the
+intended split-PVC configuration.
