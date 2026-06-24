@@ -139,7 +139,7 @@ is determined.
 
 - `missing` — only source images whose tile manifest is absent on disk.
 - `stale` — tiles present on disk but generated under an older settings hash.
-- `missing_stale` *(default)* — either of the above.
+- `missing_stale` _(default)_ — either of the above.
 - `all` — force-rebuild every completed, linked source image.
 
 `image_ids` optionally narrows the population to specific images.
@@ -147,7 +147,7 @@ is determined.
 **Filesystem-aware selection.** Selection checks the on-disk `image.dzi`
 manifest directly rather than trusting database provenance, because a DB-only
 restore can leave provenance reporting `current` while the tile files are gone.
-Only the *authoritative* source image for each image (the one referenced by
+Only the _authoritative_ source image for each image (the one referenced by
 `Image.tile_sources`) is rebuilt, so a source superseded by a replacement is
 never resurrected.
 
