@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 import uuid
@@ -16,11 +17,13 @@ from ..admin_ops import (
     run_db_import,
     run_files_export,
     run_files_import,
+    run_rebuild_tiles,
 )
 from ..auth import auth_settings, require_role
 from ..database import get_db
 from ..maintenance import disable_maintenance_mode, enable_maintenance_mode, is_maintenance_mode
 from ..models import AdminTask, User
+from ..schemas import RebuildTilesRequest
 from ..worker import enqueue_admin_task
 
 logger = logging.getLogger(__name__)
@@ -117,6 +120,7 @@ async def _kick_off(
             "db_import": run_db_import,
             "files_export": run_files_export,
             "files_import": run_files_import,
+            "rebuild_tiles": run_rebuild_tiles,
         }[task.task_type]
         bg.add_task(runner, task.id)
 
@@ -171,6 +175,47 @@ async def start_db_import(
 
     try:
         task = await _create_task(db, "db_import", user, input_path=input_path)
+    except Exception:
+        try:
+            os.unlink(input_path)
+        except OSError:
+            pass
+        raise
+    await _kick_off(task, bg)
+    return _task_to_dict(task)
+
+
+@router.post("/tasks/rebuild-tiles")
+async def start_rebuild_tiles(
+    user: Annotated[User, Depends(_admin)],
+    bg: BackgroundTasks,
+    request: RebuildTilesRequest = RebuildTilesRequest(),
+    db: AsyncSession = Depends(get_db),
+):
+    """Kick off a background rebuild of missing or stale tile sets.
+
+    Tiles are derived data that can always be regenerated from the preserved
+    source images, so this is the operator-safe recovery path when a restore
+    brings back the database (and source-image volume) but not the large tile
+    volume, or when a pipeline change makes existing tiles stale. The rebuild
+    skips tile sets that are already current (unless ``scope == "all"``), so it
+    is safe to rerun.
+
+    The parameters are persisted to a small JSON file referenced by the task's
+    ``input_path`` (mirroring the db-import flow) and consumed by the runner.
+    """
+    tasks_dir = _ensure_tasks_dir()
+    input_path = os.path.join(tasks_dir, f"rebuild-{uuid.uuid4().hex}.json")
+    with open(input_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {"scope": request.scope, "image_ids": request.image_ids},
+            f,
+        )
+
+    try:
+        task = await _create_task(
+            db, "rebuild_tiles", user, input_path=input_path,
+        )
     except Exception:
         try:
             os.unlink(input_path)

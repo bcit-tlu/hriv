@@ -14,11 +14,12 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from uuid import uuid4
 
 import pyvips
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import func
 
@@ -1008,3 +1009,208 @@ async def reconcile_stale_source_images(
             },
         )
     return len(ids)
+
+
+# ── Tile rebuild (issue #735) ─────────────────────────────
+#
+# Generated tiles are derived data: they can always be regenerated from the
+# preserved source image. These helpers support an operator-safe rebuild flow
+# for tile sets that are *missing* (e.g. a restore brought back the database
+# but not the tile volume) or *stale* (generated under an older pipeline). They
+# are deliberately filesystem-aware: tile-cache provenance in the database can
+# report ``current`` after a DB-only restore, so on-disk presence is checked
+# directly rather than trusting provenance alone.
+
+# Valid rebuild scopes (see ``select_rebuild_targets``).
+REBUILD_SCOPE_MISSING = "missing"
+REBUILD_SCOPE_STALE = "stale"
+REBUILD_SCOPE_MISSING_STALE = "missing_stale"
+REBUILD_SCOPE_ALL = "all"
+REBUILD_SCOPES = frozenset(
+    {
+        REBUILD_SCOPE_MISSING,
+        REBUILD_SCOPE_STALE,
+        REBUILD_SCOPE_MISSING_STALE,
+        REBUILD_SCOPE_ALL,
+    }
+)
+
+
+def _tile_source_id_from_url(tile_sources: str | None) -> int | None:
+    """Extract the source-image id embedded in a tile-sources URL.
+
+    Tile URLs look like ``/api/tiles/<source_image_id>/image.dzi``; the id is
+    the third path segment. Returns ``None`` if the URL is empty or malformed.
+    """
+    if not tile_sources:
+        return None
+    parts = tile_sources.strip("/").split("/")
+    # Expected: ["api", "tiles", "<id>", "image.dzi"]
+    if len(parts) >= 3 and parts[0] == "api" and parts[1] == "tiles":
+        try:
+            return int(parts[2])
+        except ValueError:
+            return None
+    return None
+
+
+def tiles_present_on_disk(tiles_dir: str, source_image_id: int) -> bool:
+    """Return ``True`` if a generated DZI manifest exists for *source_image_id*.
+
+    The ``image.dzi`` manifest is written last-ish by ``dzsave`` and is the
+    canonical marker that a tile tree exists for a source image. This is the
+    only reliable way to distinguish a *missing* tile set (e.g. a restore that
+    omitted the large tile volume) from a *current* one, because the database
+    provenance can still report ``current`` after a DB-only restore.
+    """
+    manifest = os.path.join(tiles_dir, str(source_image_id), "image.dzi")
+    return os.path.isfile(manifest)
+
+
+async def select_rebuild_targets(
+    session: AsyncSession,
+    *,
+    scope: str = REBUILD_SCOPE_MISSING_STALE,
+    image_ids: list[int] | None = None,
+) -> list[SourceImage]:
+    """Resolve the set of source images whose tiles should be rebuilt.
+
+    Only the *authoritative* source image for each linked :class:`Image` is
+    considered — the one whose id is embedded in ``Image.tile_sources`` — so a
+    rebuild never repoints an image at an older source left behind by a
+    replacement. Selection is filesystem-aware:
+
+    - ``missing`` — no tile manifest on disk.
+    - ``stale`` — tiles present but generated under a different settings hash.
+    - ``missing_stale`` — either of the above (the default).
+    - ``all`` — every completed, linked source image (force rebuild).
+
+    *image_ids* optionally narrows the population to those :class:`Image` ids.
+    Already-current tile sets are skipped unless ``scope == "all"``, which keeps
+    the operation idempotent and safe to rerun.
+    """
+    if scope not in REBUILD_SCOPES:
+        raise ValueError(f"Unknown rebuild scope: {scope!r}")
+
+    stmt = (
+        select(SourceImage)
+        .where(
+            SourceImage.status == "completed",
+            SourceImage.image_id.is_not(None),
+        )
+        .order_by(SourceImage.id)
+    )
+    if image_ids:
+        stmt = stmt.where(SourceImage.image_id.in_(image_ids))
+
+    sources = (await session.execute(stmt)).scalars().all()
+    current_hash = current_tile_settings_hash()
+    targets: list[SourceImage] = []
+
+    for src in sources:
+        img = await session.get(Image, src.image_id)
+        if img is None:
+            continue
+        # Only rebuild the source that the image actually points at, so a
+        # superseded source from a prior replacement is never resurrected.
+        authoritative_id = _tile_source_id_from_url(img.tile_sources)
+        if authoritative_id is not None and authoritative_id != src.id:
+            continue
+
+        present = tiles_present_on_disk(settings.tiles_dir, src.id)
+        stale = src.tile_settings_hash != current_hash
+
+        if scope == REBUILD_SCOPE_ALL:
+            include = True
+        elif scope == REBUILD_SCOPE_MISSING:
+            include = not present
+        elif scope == REBUILD_SCOPE_STALE:
+            include = present and stale
+        else:  # REBUILD_SCOPE_MISSING_STALE
+            include = (not present) or stale
+
+        if include:
+            targets.append(src)
+
+    return targets
+
+
+async def rebuild_source_image_tiles(
+    session: AsyncSession, src: SourceImage,
+) -> None:
+    """Regenerate the DZI tile tree for one existing source image.
+
+    Tiles are generated into a temporary directory and then atomically swapped
+    into place, so a failure mid-generation can never leave a half-written tile
+    tree where good tiles used to be. On success the source's tile-cache
+    provenance (``source_checksum``, ``tile_settings_hash``,
+    ``tiles_generated_at``) and the linked image's geometry / tile URLs are
+    updated and committed.
+
+    Raises :class:`FileNotFoundError` when the preserved source file is missing
+    so the batch runner can record a per-image failure and continue. Image
+    metadata (annotations, overlays, measurement scale) is intentionally left
+    untouched because the geometry is unchanged by a regeneration from the same
+    source bytes.
+    """
+    span = trace.get_current_span()
+    span.set_attribute("source_image.id", src.id)
+
+    if not src.stored_path or not await asyncio.to_thread(
+        os.path.isfile, src.stored_path,
+    ):
+        raise FileNotFoundError(
+            f"Source image file not found for source #{src.id}: {src.stored_path!r}"
+        )
+
+    img = await session.get(Image, src.image_id) if src.image_id else None
+
+    output_dir = os.path.join(settings.tiles_dir, str(src.id))
+    tmp_dir = os.path.join(
+        settings.tiles_dir, f".rebuild-{src.id}-{uuid4().hex}",
+    )
+
+    try:
+        with tracer.start_as_current_span("rebuild_generate_tiles"):
+            dzi_rel, thumb_rel, img_width, img_height = await asyncio.to_thread(
+                generate_tiles, src.stored_path, tmp_dir,
+            )
+
+        def _swap() -> None:
+            # Remove the old tree (if any) then move the freshly generated one
+            # into place. os.replace on the directory would fail if the target
+            # is a non-empty dir, so the rmtree must happen first.
+            if os.path.isdir(output_dir):
+                shutil.rmtree(output_dir, ignore_errors=True)
+            os.replace(tmp_dir, output_dir)
+
+        await asyncio.to_thread(_swap)
+    except Exception:
+        await asyncio.to_thread(shutil.rmtree, tmp_dir, True)
+        raise
+
+    source_checksum = await _best_effort_source_checksum(src.stored_path)
+
+    src.source_checksum = source_checksum
+    src.tile_settings_hash = current_tile_settings_hash()
+    src.tiles_generated_at = datetime.now(timezone.utc)
+
+    if img is not None:
+        img.tile_sources = f"/api/tiles/{src.id}/{dzi_rel}"
+        img.thumb = f"/api/tiles/{src.id}/{thumb_rel}"
+        img.width = img_width
+        img.height = img_height
+        # Bump the version so viewers refetch tiles rather than serving a
+        # browser-cached copy of the previous (missing/stale) tree.
+        img.version = img.version + 1
+
+    await session.commit()
+
+    logger.info(
+        "Rebuilt tiles for source image",
+        extra={
+            "event": "tiles.rebuilt",
+            "source_image_id": src.id,
+            "image_id": src.image_id,
+        },
+    )

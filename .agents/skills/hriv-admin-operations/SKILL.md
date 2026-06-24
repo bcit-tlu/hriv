@@ -29,6 +29,13 @@ Use this skill for administrator-facing operations and long-running task flows.
 - Reset PostgreSQL sequences after import.
 - `reconcile_stale_tasks` must remain multi-replica safe by using freshness on
   `updated_at`.
+- `rebuild_tiles` regenerates tiles from preserved source images. Selection is
+  filesystem-aware (checks the on-disk `image.dzi`, not just DB provenance),
+  only rebuilds the authoritative source per image, generates into a temp dir
+  then atomically swaps, commits per image, isolates per-image failures, and is
+  idempotent (skips already-current tiles unless `scope = all`). See
+  `../../../docs/admin-import-export.md#rebuild-tiles` and
+  `../../../docs/tile-cache-provenance.md`.
 
 ## Validation
 

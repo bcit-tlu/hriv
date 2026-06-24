@@ -16,7 +16,7 @@ In the frontend admin UI, these controls live under the Admin page's
 ## Task lifecycle
 
 `AdminTask.task_type` is one of `db_export`, `db_import`, `files_export`,
-`files_import`. `AdminTask.status` transitions:
+`files_import`, `rebuild_tiles`. `AdminTask.status` transitions:
 
 ```
 uploading ──▶ pending ──▶ running ──▶ completed
@@ -117,6 +117,50 @@ Filesystem imports use a two-step flow to stream a potentially large archive:
    `uploading → pending` (a guarded `UPDATE ... WHERE status = 'uploading'`, so a
    concurrent cancel is respected). Wrong-state uploads return **409**.
 
+## Rebuild tiles
+
+`rebuild_tiles` regenerates DZI tile trees from the **preserved source images**.
+Tiles are derived data, so this is the operator-safe recovery path when a
+restore brings back the database (and source-image volume) but **not** the
+large tile volume, or when a pipeline change makes existing tiles stale. See
+[Tile-cache provenance](tile-cache-provenance.md) for how `missing` vs `stale`
+is determined.
+
+- Endpoint: `POST /admin/tasks/rebuild-tiles` (admin only). Optional JSON body
+  `{ "scope": "missing_stale", "image_ids": [..] }`.
+- Runner: `run_rebuild_tiles` in `admin_ops.py`; per-image work lives in
+  `processing.rebuild_source_image_tiles` and target selection in
+  `processing.select_rebuild_targets`.
+- Parameters are persisted to a small JSON file referenced by the task's
+  `input_path` (mirroring the db-import staging pattern) and deleted when the
+  task reaches a terminal state.
+
+**Scopes** (`scope`):
+
+- `missing` — only source images whose tile manifest is absent on disk.
+- `stale` — tiles present on disk but generated under an older settings hash.
+- `missing_stale` *(default)* — either of the above.
+- `all` — force-rebuild every completed, linked source image.
+
+`image_ids` optionally narrows the population to specific images.
+
+**Filesystem-aware selection.** Selection checks the on-disk `image.dzi`
+manifest directly rather than trusting database provenance, because a DB-only
+restore can leave provenance reporting `current` while the tile files are gone.
+Only the *authoritative* source image for each image (the one referenced by
+`Image.tile_sources`) is rebuilt, so a source superseded by a replacement is
+never resurrected.
+
+**Idempotent and resilient.**
+
+- Tiles are generated into a temp directory and atomically swapped into place,
+  so a mid-generation failure never destroys a good tile tree.
+- Each image commits independently; a per-image failure is logged and the batch
+  continues. The task only ends `failed` for a fatal setup error (e.g. an
+  unreadable parameters file), never because one image failed.
+- A rerun skips tile sets that are already current (unless `scope = all`), so
+  the operation is safe to run repeatedly.
+
 ## Stale task reconciliation
 
 `reconcile_stale_tasks` runs on **backend startup**. It marks any task stuck in
@@ -132,9 +176,11 @@ newly starting pod won't clobber it.
 ## Tests to run after touching this area
 
 - `backend/tests/test_admin_ops.py` — runner logic, export/import round-trip,
-  reconciliation.
+  reconciliation, `run_rebuild_tiles` batch behaviour.
 - `backend/tests/test_router_admin.py` — endpoint behaviour, cancellation,
-  upload phase, concurrency guard.
+  upload phase, concurrency guard, rebuild-tiles request handling.
+- `backend/tests/test_processing.py` — `select_rebuild_targets`,
+  `rebuild_source_image_tiles`, and the tile-presence helpers.
 
 See also: [Domain model](domain-model.md), [Groups](groups.md),
 [agent feature map](agent-feature-map.md).

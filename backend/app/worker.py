@@ -327,13 +327,20 @@ async def admin_task_runner(
     trace_headers: dict[str, str] | None = None,
 ) -> None:
     """arq task wrapper for background admin import/export operations."""
-    from .admin_ops import run_db_export, run_db_import, run_files_export, run_files_import
+    from .admin_ops import (
+        run_db_export,
+        run_db_import,
+        run_files_export,
+        run_files_import,
+        run_rebuild_tiles,
+    )
 
     runners = {
         "db_export": run_db_export,
         "db_import": run_db_import,
         "files_export": run_files_export,
         "files_import": run_files_import,
+        "rebuild_tiles": run_rebuild_tiles,
     }
     runner = runners.get(task_type)
     if runner is None:

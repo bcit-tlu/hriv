@@ -116,6 +116,7 @@ async def test_admin_task_runner_db_export() -> None:
     fake_admin_ops.run_db_import = AsyncMock()  # type: ignore[attr-defined]
     fake_admin_ops.run_files_export = AsyncMock()  # type: ignore[attr-defined]
     fake_admin_ops.run_files_import = AsyncMock()  # type: ignore[attr-defined]
+    fake_admin_ops.run_rebuild_tiles = AsyncMock()  # type: ignore[attr-defined]
 
     with patch.dict(sys.modules, {"app.admin_ops": fake_admin_ops}):
         await admin_task_runner({}, 42, "db_export")
@@ -131,6 +132,7 @@ async def test_admin_task_runner_files_import() -> None:
     fake_admin_ops.run_db_import = AsyncMock()  # type: ignore[attr-defined]
     fake_admin_ops.run_files_export = AsyncMock()  # type: ignore[attr-defined]
     fake_admin_ops.run_files_import = mock_run  # type: ignore[attr-defined]
+    fake_admin_ops.run_rebuild_tiles = AsyncMock()  # type: ignore[attr-defined]
 
     with patch.dict(sys.modules, {"app.admin_ops": fake_admin_ops}):
         await admin_task_runner({}, 10, "files_import")
@@ -145,6 +147,7 @@ async def test_admin_task_runner_unknown_type() -> None:
     fake_admin_ops.run_db_import = AsyncMock()  # type: ignore[attr-defined]
     fake_admin_ops.run_files_export = AsyncMock()  # type: ignore[attr-defined]
     fake_admin_ops.run_files_import = AsyncMock()  # type: ignore[attr-defined]
+    fake_admin_ops.run_rebuild_tiles = AsyncMock()  # type: ignore[attr-defined]
 
     with patch.dict(sys.modules, {"app.admin_ops": fake_admin_ops}):
         await admin_task_runner({}, 1, "unknown_type")
@@ -189,6 +192,7 @@ async def test_admin_task_runner_records_exception_on_span() -> None:
     fake_admin_ops.run_db_import = AsyncMock()  # type: ignore[attr-defined]
     fake_admin_ops.run_files_export = AsyncMock()  # type: ignore[attr-defined]
     fake_admin_ops.run_files_import = AsyncMock()  # type: ignore[attr-defined]
+    fake_admin_ops.run_rebuild_tiles = AsyncMock()  # type: ignore[attr-defined]
 
     mock_span = MagicMock()
     with (
