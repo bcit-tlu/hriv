@@ -26,6 +26,7 @@ from app.admin_ops import (
     run_db_import,
     run_files_export,
     run_files_import,
+    run_rebuild_tiles,
 )
 
 
@@ -1390,3 +1391,169 @@ async def test_run_db_export_includes_groups(tmp_path) -> None:
     assert dump["groups"][0]["member_ids"] == [2]
     assert dump["groups"][0]["instructor_ids"] == [1]
     assert dump["changelog_entries"][0]["title"] == "Release 1"
+
+
+# ── run_rebuild_tiles tests (issue #735) ───────────────────
+
+
+def _rebuild_task(input_path=None):
+    return SimpleNamespace(
+        id=1, task_type="rebuild_tiles", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=input_path,
+        error_message=None,
+    )
+
+
+def _rebuild_factory(task):
+    """Single-session factory mock for run_rebuild_tiles tests."""
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=task)
+    session.refresh = AsyncMock()
+    session.commit = AsyncMock()
+    session.rollback = AsyncMock()
+    factory = MagicMock()
+    factory.return_value.__aenter__ = AsyncMock(return_value=session)
+    factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    return session, factory
+
+
+async def test_run_rebuild_tiles_task_not_found() -> None:
+    """A missing task id logs and returns without raising."""
+    session, factory = _rebuild_factory(None)
+    with patch("app.admin_ops.get_async_session", return_value=factory):
+        await run_rebuild_tiles(999)
+
+
+async def test_run_rebuild_tiles_noop_when_nothing_selected() -> None:
+    """When no tile sets need rebuilding the task completes with a no-op log."""
+    task = _rebuild_task()
+    session, factory = _rebuild_factory(task)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch("app.processing.select_rebuild_targets", AsyncMock(return_value=[])),
+        patch("app.processing.rebuild_source_image_tiles", AsyncMock()) as mock_rebuild,
+    ):
+        await run_rebuild_tiles(1)
+
+    assert task.status == "completed"
+    assert task.progress == 100
+    assert "Nothing to rebuild" in task.log
+    mock_rebuild.assert_not_awaited()
+
+
+async def test_run_rebuild_tiles_reports_per_image_failures() -> None:
+    """A failing image is logged but does not abort the batch.
+
+    The runner re-fetches each ``SourceImage`` by id every iteration so a
+    per-image ``session.rollback()`` (which expires the identity map) cannot
+    break later images — verified here by asserting one ``session.get`` per
+    target source id.
+    """
+    task = _rebuild_task()
+    session, factory = _rebuild_factory(task)
+    targets = [
+        SimpleNamespace(id=1, image_id=10),
+        SimpleNamespace(id=2, image_id=20),
+        SimpleNamespace(id=3, image_id=30),
+    ]
+    source_get_ids: list[int] = []
+
+    def get_side_effect(model, ident):
+        # AdminTask lookups return the task; SourceImage lookups return a
+        # fresh ORM-like object, mirroring a real re-fetch after rollback.
+        if getattr(model, "__name__", "") == "SourceImage":
+            source_get_ids.append(ident)
+            return SimpleNamespace(id=ident, image_id=ident * 10)
+        return task
+
+    session.get = AsyncMock(side_effect=get_side_effect)
+    # Source #2 fails; #1 and #3 succeed.
+    rebuild_mock = AsyncMock(side_effect=[None, RuntimeError("vips boom"), None])
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch(
+            "app.processing.select_rebuild_targets",
+            AsyncMock(return_value=targets),
+        ),
+        patch("app.processing.rebuild_source_image_tiles", rebuild_mock),
+    ):
+        await run_rebuild_tiles(1)
+
+    assert task.status == "completed"
+    assert task.progress == 100
+    assert "Rebuilt 2 of 3 tile set(s); 1 failed." in task.log
+    assert "ERROR rebuilding source #2" in task.log
+    assert rebuild_mock.await_count == 3
+    # Each source is re-fetched exactly once, even after the failure rollback.
+    assert source_get_ids == [1, 2, 3]
+
+
+async def test_run_rebuild_tiles_skips_source_deleted_mid_batch() -> None:
+    """A source that vanishes mid-batch is skipped, not rebuilt."""
+    task = _rebuild_task()
+    session, factory = _rebuild_factory(task)
+    targets = [SimpleNamespace(id=1, image_id=10), SimpleNamespace(id=2, image_id=20)]
+
+    def get_side_effect(model, ident):
+        if getattr(model, "__name__", "") == "SourceImage":
+            # Source #2 was deleted after selection.
+            return None if ident == 2 else SimpleNamespace(id=ident, image_id=ident * 10)
+        return task
+
+    session.get = AsyncMock(side_effect=get_side_effect)
+    rebuild_mock = AsyncMock(return_value=None)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch(
+            "app.processing.select_rebuild_targets",
+            AsyncMock(return_value=targets),
+        ),
+        patch("app.processing.rebuild_source_image_tiles", rebuild_mock),
+    ):
+        await run_rebuild_tiles(1)
+
+    assert task.status == "completed"
+    assert "Rebuilt 1 of 2 tile set(s); 1 failed." in task.log
+    assert "Skipped source #2: no longer exists." in task.log
+    assert rebuild_mock.await_count == 1
+
+
+async def test_run_rebuild_tiles_logs_explicit_empty_image_ids() -> None:
+    """An explicit empty image_ids list is shown in the log (not omitted)."""
+    task = _rebuild_task(input_path="/tmp/rebuild-params.json")
+    session, factory = _rebuild_factory(task)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch("app.admin_ops.os.path.exists", return_value=True),
+        patch(
+            "app.admin_ops._read_file",
+            return_value='{"scope": "missing_stale", "image_ids": []}',
+        ),
+        patch("app.admin_ops.os.unlink"),
+        patch("app.processing.select_rebuild_targets", AsyncMock(return_value=[])),
+    ):
+        await run_rebuild_tiles(1)
+
+    assert task.status == "completed"
+    assert "image_ids: []" in task.log
+
+
+async def test_run_rebuild_tiles_invalid_scope_fails_task() -> None:
+    """An invalid scope in the params file fails the task fatally."""
+    task = _rebuild_task(input_path="/tmp/rebuild-params.json")
+    session, factory = _rebuild_factory(task)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch("app.admin_ops.os.path.exists", return_value=True),
+        patch("app.admin_ops._read_file", return_value='{"scope": "bogus"}'),
+        patch("app.admin_ops.os.unlink"),
+    ):
+        await run_rebuild_tiles(1)
+
+    assert task.status == "failed"
+    assert "Unknown rebuild scope" in (task.error_message or "")

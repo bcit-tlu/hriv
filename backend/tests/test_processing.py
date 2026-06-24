@@ -4,6 +4,8 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 # Ensure pyvips can be imported even when libvips is not installed (CI)
 if "pyvips" not in sys.modules:
     sys.modules["pyvips"] = MagicMock()
@@ -11,16 +13,24 @@ if "pyvips" not in sys.modules:
 
 from app.processing import (
     ProgressTracker,
+    REBUILD_SCOPE_ALL,
+    REBUILD_SCOPE_MISSING,
+    REBUILD_SCOPE_MISSING_STALE,
+    REBUILD_SCOPE_STALE,
     _best_effort_source_checksum,
     _estimate_tile_count,
     _detect_openslide_pyramid,
     _detect_tiff_pyramid,
     _extract_tiff_resolution,
     _get_float_field,
+    _tile_source_id_from_url,
     detect_pyramid_info,
     generate_tiles,
     process_source_image,
+    rebuild_source_image_tiles,
     reconcile_stale_source_images,
+    select_rebuild_targets,
+    tiles_present_on_disk,
 )
 
 
@@ -622,3 +632,246 @@ async def test_process_source_image_with_pyramid_metadata() -> None:
     assert meta["mpp_x"] == 0.2525
     assert meta["pyramid_detected"] is True
     assert meta["pyramid_level_count"] == 4
+
+
+# ── Tile rebuild helpers (issue #735) ─────────────────────
+
+
+def test_tile_source_id_from_url_valid() -> None:
+    """The source id is the third path segment of a tile URL."""
+    assert _tile_source_id_from_url("/api/tiles/42/image.dzi") == 42
+
+
+def test_tile_source_id_from_url_none_and_empty() -> None:
+    """Empty / None inputs yield None rather than raising."""
+    assert _tile_source_id_from_url(None) is None
+    assert _tile_source_id_from_url("") is None
+
+
+def test_tile_source_id_from_url_malformed() -> None:
+    """A non-numeric or unexpected URL shape yields None."""
+    assert _tile_source_id_from_url("/api/tiles/abc/image.dzi") is None
+    assert _tile_source_id_from_url("/static/foo/bar") is None
+
+
+def test_tiles_present_on_disk(tmp_path) -> None:
+    """Presence is keyed on the image.dzi manifest under <tiles_dir>/<id>."""
+    assert tiles_present_on_disk(str(tmp_path), 7) is False
+    src_dir = tmp_path / "7"
+    src_dir.mkdir()
+    (src_dir / "image.dzi").write_text("<Image/>")
+    assert tiles_present_on_disk(str(tmp_path), 7) is True
+
+
+def _rebuild_session(sources, images):
+    """Build a mock async session for select_rebuild_targets tests.
+
+    *images* maps image_id -> Image-like object returned by ``session.get``.
+    """
+    session = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.scalars.return_value.all.return_value = sources
+    session.execute = AsyncMock(return_value=exec_result)
+    session.get = AsyncMock(side_effect=lambda model, id_val: images.get(id_val))
+    return session
+
+
+async def test_select_rebuild_targets_missing_only() -> None:
+    """Scope 'missing' selects only sources without on-disk tiles."""
+    current = "current-hash"
+    src_present = SimpleNamespace(id=1, image_id=10, tile_settings_hash=current)
+    src_missing = SimpleNamespace(id=2, image_id=20, tile_settings_hash=current)
+    images = {
+        10: SimpleNamespace(tile_sources="/api/tiles/1/image.dzi"),
+        20: SimpleNamespace(tile_sources="/api/tiles/2/image.dzi"),
+    }
+    session = _rebuild_session([src_present, src_missing], images)
+
+    def present(_tiles_dir, src_id):
+        return src_id == 1  # only #1 has tiles on disk
+
+    with (
+        patch("app.processing.current_tile_settings_hash", return_value=current),
+        patch("app.processing.tiles_present_on_disk", side_effect=present),
+        patch("app.processing.settings") as ms,
+    ):
+        ms.tiles_dir = "/data/tiles"
+        targets = await select_rebuild_targets(session, scope=REBUILD_SCOPE_MISSING)
+
+    assert [t.id for t in targets] == [2]
+
+
+async def test_select_rebuild_targets_stale_only() -> None:
+    """Scope 'stale' selects present sources whose settings hash differs."""
+    current = "current-hash"
+    src_fresh = SimpleNamespace(id=1, image_id=10, tile_settings_hash=current)
+    src_stale = SimpleNamespace(id=2, image_id=20, tile_settings_hash="old")
+    images = {
+        10: SimpleNamespace(tile_sources="/api/tiles/1/image.dzi"),
+        20: SimpleNamespace(tile_sources="/api/tiles/2/image.dzi"),
+    }
+    session = _rebuild_session([src_fresh, src_stale], images)
+
+    with (
+        patch("app.processing.current_tile_settings_hash", return_value=current),
+        patch("app.processing.tiles_present_on_disk", return_value=True),
+        patch("app.processing.settings") as ms,
+    ):
+        ms.tiles_dir = "/data/tiles"
+        targets = await select_rebuild_targets(session, scope=REBUILD_SCOPE_STALE)
+
+    assert [t.id for t in targets] == [2]
+
+
+async def test_select_rebuild_targets_skips_superseded_source() -> None:
+    """A source not referenced by its image (e.g. after a replace) is skipped."""
+    current = "current-hash"
+    # Image points at source #2, so the stale, missing source #1 is superseded.
+    old_src = SimpleNamespace(id=1, image_id=10, tile_settings_hash="old")
+    new_src = SimpleNamespace(id=2, image_id=10, tile_settings_hash=current)
+    images = {10: SimpleNamespace(tile_sources="/api/tiles/2/image.dzi")}
+    session = _rebuild_session([old_src, new_src], images)
+
+    with (
+        patch("app.processing.current_tile_settings_hash", return_value=current),
+        patch("app.processing.tiles_present_on_disk", return_value=True),
+        patch("app.processing.settings") as ms,
+    ):
+        ms.tiles_dir = "/data/tiles"
+        targets = await select_rebuild_targets(
+            session, scope=REBUILD_SCOPE_MISSING_STALE,
+        )
+
+    # #1 is superseded (excluded); #2 is current (skipped) → nothing to do.
+    assert targets == []
+
+
+async def test_select_rebuild_targets_all_scope_includes_current() -> None:
+    """Scope 'all' force-includes even present + fresh tile sets."""
+    current = "current-hash"
+    src = SimpleNamespace(id=1, image_id=10, tile_settings_hash=current)
+    images = {10: SimpleNamespace(tile_sources="/api/tiles/1/image.dzi")}
+    session = _rebuild_session([src], images)
+
+    with (
+        patch("app.processing.current_tile_settings_hash", return_value=current),
+        patch("app.processing.tiles_present_on_disk", return_value=True),
+        patch("app.processing.settings") as ms,
+    ):
+        ms.tiles_dir = "/data/tiles"
+        targets = await select_rebuild_targets(session, scope=REBUILD_SCOPE_ALL)
+
+    assert [t.id for t in targets] == [1]
+
+
+async def test_select_rebuild_targets_invalid_scope_raises() -> None:
+    """An unknown scope is rejected."""
+    session = _rebuild_session([], {})
+    with pytest.raises(ValueError, match="Unknown rebuild scope"):
+        await select_rebuild_targets(session, scope="bogus")
+
+
+async def test_rebuild_source_image_tiles_success() -> None:
+    """A successful rebuild updates provenance and the linked image record."""
+    src = SimpleNamespace(
+        id=5, image_id=10, stored_path="/data/source_images/5.tiff",
+        source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+    )
+    img = SimpleNamespace(
+        tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
+        version=3,
+    )
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=img)
+    session.commit = AsyncMock()
+
+    with (
+        patch(
+            "app.processing.generate_tiles",
+            return_value=("image.dzi", "thumbnail.jpeg", 1024, 768),
+        ),
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.settings") as ms,
+        patch("app.processing.os.path.isfile", return_value=True),
+        patch("app.processing.os.path.isdir", return_value=False),
+        patch("app.processing.os.replace") as mock_replace,
+    ):
+        ms.tiles_dir = "/data/tiles"
+        await rebuild_source_image_tiles(session, src)
+
+    from app.tile_provenance import current_tile_settings_hash
+
+    assert src.tile_settings_hash == current_tile_settings_hash()
+    assert src.tiles_generated_at is not None
+    assert img.tile_sources == "/api/tiles/5/image.dzi"
+    assert img.thumb == "/api/tiles/5/thumbnail.jpeg"
+    assert img.width == 1024
+    assert img.height == 768
+    assert img.version == 4
+    session.commit.assert_awaited()
+    mock_replace.assert_called_once()
+
+
+async def test_rebuild_source_image_tiles_restores_old_tree_on_swap_failure() -> None:
+    """If promoting the new tree fails, the previous tree is moved back."""
+    src = SimpleNamespace(
+        id=5, image_id=10, stored_path="/data/source_images/5.tiff",
+        source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+    )
+    img = SimpleNamespace(
+        tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
+        version=3,
+    )
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=img)
+    session.commit = AsyncMock()
+
+    # Sequence: move existing aside (ok), promote new (fails), restore (ok).
+    replace_calls = []
+
+    def replace_side_effect(srcpath, dstpath):
+        replace_calls.append((srcpath, dstpath))
+        if len(replace_calls) == 2:
+            raise OSError("promote failed")
+
+    with (
+        patch(
+            "app.processing.generate_tiles",
+            return_value=("image.dzi", "thumbnail.jpeg", 1024, 768),
+        ),
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.settings") as ms,
+        patch("app.processing.os.path.isfile", return_value=True),
+        patch("app.processing.os.path.isdir", return_value=True),
+        patch("app.processing.os.replace", side_effect=replace_side_effect),
+        patch("app.processing.shutil.rmtree"),
+    ):
+        ms.tiles_dir = "/data/tiles"
+        with pytest.raises(OSError, match="promote failed"):
+            await rebuild_source_image_tiles(session, src)
+
+    # Three renames: aside, failed promote, restore. Provenance untouched.
+    assert len(replace_calls) == 3
+    assert src.tile_settings_hash is None
+    session.commit.assert_not_awaited()
+
+
+async def test_rebuild_source_image_tiles_missing_source_raises() -> None:
+    """A missing source file raises FileNotFoundError without generating."""
+    src = SimpleNamespace(
+        id=5, image_id=10, stored_path="/data/source_images/gone.tiff",
+        source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+    )
+    session = AsyncMock()
+
+    with (
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.settings") as ms,
+        patch("app.processing.os.path.isfile", return_value=False),
+        patch("app.processing.generate_tiles") as mock_gen,
+    ):
+        ms.tiles_dir = "/data/tiles"
+        with pytest.raises(FileNotFoundError):
+            await rebuild_source_image_tiles(session, src)
+
+    mock_gen.assert_not_called()

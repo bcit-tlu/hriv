@@ -373,6 +373,33 @@ class SourceImageOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# ── Tile Rebuild (issue #735) ─────────────────────────────
+
+class RebuildTilesRequest(BaseModel):
+    """Parameters for an operator-triggered tile rebuild.
+
+    ``scope`` selects which tile sets to rebuild; ``image_ids`` optionally
+    narrows the population to specific images. Already-current tile sets are
+    skipped unless ``scope == "all"``, keeping the operation idempotent.
+    """
+
+    scope: str = "missing_stale"
+    image_ids: list[int] | None = None
+
+    @field_validator("scope")
+    @classmethod
+    def _validate_scope(cls, value: str) -> str:
+        # Mirrors ``processing.REBUILD_SCOPES`` — duplicated deliberately so this
+        # schema does not import ``processing`` (which pulls in pyvips at parse
+        # time). Keep the two in sync; the runner re-validates as a backstop.
+        allowed = {"missing", "stale", "missing_stale", "all"}
+        if value not in allowed:
+            raise ValueError(
+                f"scope must be one of {sorted(allowed)}, got {value!r}"
+            )
+        return value
+
+
 # ── Bulk Import Job ──────────────────────────────────────
 
 class BulkImportJobOut(BaseModel):

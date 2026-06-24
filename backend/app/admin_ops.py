@@ -797,6 +797,230 @@ def _read_file(path: str | None) -> str:
         return f.read()
 
 
+# ── Tile Rebuild (issue #735) ──────────────────────────────
+
+
+async def run_rebuild_tiles(task_id: int) -> None:
+    """Rebuild missing or stale tile sets from preserved source images.
+
+    The rebuild parameters (``scope`` and optional ``image_ids``) are read from
+    the small JSON file referenced by ``AdminTask.input_path``. Each source
+    image is regenerated independently and committed as it completes, so the
+    operation is safe to rerun: a rerun simply skips tile sets that are already
+    current (unless ``scope == "all"``). A per-image failure is logged and the
+    batch continues; the task only ends in ``failed`` for a fatal setup error
+    (e.g. unreadable parameters), never because an individual image failed.
+    """
+    # Imported lazily so the heavy pyvips import in ``processing`` is not paid
+    # at module import time (and so tests can patch ``app.processing`` symbols).
+    from . import processing
+
+    async with get_async_session()() as session:
+        task = await session.get(AdminTask, task_id)
+        if task is None:
+            logger.error("AdminTask %d not found", task_id)
+            return
+
+        input_path = task.input_path
+        failures = 0
+        rebuilt = 0
+        try:
+            await _update_task(
+                session, task,
+                status="running", progress=0,
+                log_line="Starting tile rebuild…",
+                check_cancelled=True,
+            )
+
+            # Parse rebuild parameters (best-effort: default to missing+stale).
+            scope = processing.REBUILD_SCOPE_MISSING_STALE
+            image_ids: list[int] | None = None
+            if input_path and os.path.exists(input_path):
+                raw = await asyncio.to_thread(_read_file, input_path)
+                params = json.loads(raw)
+                if not isinstance(params, dict):
+                    raise ValueError("Expected a JSON object for rebuild parameters")
+                scope = params.get("scope", scope)
+                ids = params.get("image_ids")
+                # Preserve an explicit (possibly empty) list so it narrows the
+                # population; only a missing/null value means "all images".
+                if ids is not None:
+                    image_ids = [int(i) for i in ids]
+            if scope not in processing.REBUILD_SCOPES:
+                raise ValueError(f"Unknown rebuild scope: {scope!r}")
+
+            await _update_task(
+                session, task,
+                log_line=(
+                    f"Scope: {scope}"
+                    + (
+                        f"; image_ids: {image_ids}"
+                        if image_ids is not None
+                        else ""
+                    )
+                ),
+                progress=5,
+            )
+
+            targets = await processing.select_rebuild_targets(
+                session, scope=scope, image_ids=image_ids,
+            )
+            total = len(targets)
+
+            if total == 0:
+                await _update_task(
+                    session, task,
+                    status="completed", progress=100,
+                    log_line="Nothing to rebuild — all targeted tile sets are current.",
+                )
+                logger.info(
+                    "Tile rebuild found nothing to do",
+                    extra={"event": "admin_task.rebuild_tiles_noop", "task_id": task_id},
+                )
+                return
+
+            await _update_task(
+                session, task,
+                log_line=f"Rebuilding {total} tile set(s)…",
+                progress=10,
+            )
+
+            # Capture target ids up front: a per-image ``session.rollback()``
+            # expires *every* ORM object in the session's identity map (this
+            # happens regardless of ``expire_on_commit``), so we must not depend
+            # on the original ``SourceImage`` instances surviving across
+            # iterations — accessing an expired attribute under AsyncSession
+            # would raise ``MissingGreenlet``. Re-fetching by id each iteration
+            # keeps per-image isolation intact and also handles a source image
+            # that is deleted while the batch is running.
+            target_ids = [src.id for src in targets]
+
+            for index, src_id in enumerate(target_ids):
+                # Observe cancellation requests between images so a long batch
+                # can be stopped without corrupting an in-flight regeneration.
+                await _update_task(
+                    session, task,
+                    log_line=f"[{index + 1}/{total}] Rebuilding source #{src_id}…",
+                    check_cancelled=True,
+                )
+                try:
+                    src = await session.get(SourceImage, src_id)
+                    if src is None:
+                        failures += 1
+                        await _update_task(
+                            session, task,
+                            log_line=(
+                                f"[{index + 1}/{total}] Skipped source #{src_id}: "
+                                "no longer exists."
+                            ),
+                        )
+                    else:
+                        await processing.rebuild_source_image_tiles(session, src)
+                        rebuilt += 1
+                        await _update_task(
+                            session, task,
+                            log_line=f"[{index + 1}/{total}] Rebuilt source #{src_id}.",
+                        )
+                except TaskCancelled:
+                    raise
+                except Exception as exc:  # noqa: BLE001 — per-image isolation
+                    failures += 1
+                    # The per-image commit never ran, so roll back any partial
+                    # session state before continuing to the next image.
+                    await session.rollback()
+                    refreshed = await session.get(AdminTask, task_id)
+                    if refreshed is not None:
+                        task = refreshed
+                    logger.warning(
+                        "Tile rebuild failed for one source image",
+                        extra={
+                            "event": "admin_task.rebuild_tiles_image_failed",
+                            "task_id": task_id,
+                            "source_image_id": src_id,
+                        },
+                    )
+                    await _update_task(
+                        session, task,
+                        log_line=(
+                            f"[{index + 1}/{total}] ERROR rebuilding source "
+                            f"#{src_id}: {exc}"
+                        ),
+                    )
+
+                # Progress spans the 10–100 % band across the batch.
+                progress = 10 + int((index + 1) / total * 90)
+                await _update_task(session, task, progress=progress)
+
+            summary = (
+                f"Rebuilt {rebuilt} of {total} tile set(s); {failures} failed."
+            )
+            await _update_task(
+                session, task,
+                status="completed", progress=100,
+                log_line=f"Tile rebuild complete. {summary}",
+            )
+            logger.info(
+                "Background tile rebuild completed",
+                extra={
+                    "event": "admin_task.rebuild_tiles_done",
+                    "task_id": task_id,
+                    "rebuilt": rebuilt,
+                    "failed": failures,
+                    "total": total,
+                },
+            )
+
+        except TaskCancelled:
+            logger.info(
+                "Background tile rebuild cancelled",
+                extra={"event": "admin_task.rebuild_tiles_cancelled", "task_id": task_id},
+            )
+            await session.rollback()
+            refreshed = await session.get(AdminTask, task_id)
+            if refreshed is not None:
+                task = refreshed
+            await _update_task(
+                session, task,
+                status="cancelled",
+                log_line=(
+                    f"Task cancelled. Rebuilt {rebuilt} tile set(s) before "
+                    "cancellation; already-completed rebuilds are retained."
+                ),
+            )
+
+        except Exception as exc:
+            span = trace.get_current_span()
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
+            logger.exception(
+                "Background tile rebuild failed",
+                extra={"event": "admin_task.rebuild_tiles_failed", "task_id": task_id},
+            )
+            await session.rollback()
+            refreshed = await session.get(AdminTask, task_id)
+            if refreshed is not None:
+                task = refreshed
+            await _update_task(
+                session, task,
+                status="failed", progress=0,
+                log_line=f"ERROR: {exc}",
+                error_message=str(exc),
+            )
+        finally:
+            # Clean up the small parameters file once the task is terminal. A
+            # cleanup failure is non-fatal — the task result is unaffected — but
+            # is logged so an orphaned file can be diagnosed.
+            if input_path and os.path.exists(input_path):
+                try:
+                    os.unlink(input_path)
+                except OSError:
+                    logger.debug(
+                        "Failed to remove rebuild params file %s",
+                        input_path,
+                        exc_info=True,
+                    )
+
+
 # ── Filesystem Export ──────────────────────────────────────
 
 

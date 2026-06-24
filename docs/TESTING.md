@@ -288,6 +288,7 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | DELETE | /api/changelog/{id}                    | Yes           | admin        |
 | GET    | /api/admin/export                      | Yes           | admin        |
 | POST   | /api/admin/import                      | Yes           | admin        |
+| POST   | /api/admin/tasks/rebuild-tiles         | Yes           | admin        |
 
 All `/api/groups/` endpoints require the `admin` or `instructor` role (read
 endpoints are open to any instructor). Rows marked **†** are mutations that

@@ -72,11 +72,25 @@ UI can evaluate currentness without manual filesystem inspection.
 
 ## Backup / restore relevance
 
-`source_checksum` lets a future rebuild operation
-([#735](https://github.com/bcit-tlu/hriv/issues/735)) verify that a regenerated
-tile tree came from the same source bytes. Because effective status is computed,
-a restore that brings back the database but not the (very large) tile volume
-will correctly report tiles as `missing` rather than falsely `current`.
+`source_checksum` lets the rebuild operation verify that a regenerated tile tree
+came from the same source bytes.
+
+## Rebuild operation ([#735](https://github.com/bcit-tlu/hriv/issues/735))
+
+Because tiles are derived data, missing or stale tile trees are regenerated from
+the preserved source images by the `rebuild_tiles` admin task
+(`POST /admin/tasks/rebuild-tiles`). See
+[Admin import / export & task lifecycle](admin-import-export.md#rebuild-tiles)
+for scopes, the API, and lifecycle.
+
+One important nuance: a DB-only restore (database back, tile volume gone) leaves
+the stored provenance intact, so `tile_cache_status` can still report `current`
+even though the tile files are missing. The computed property cannot see the
+filesystem. The rebuild operation therefore checks the on-disk `image.dzi`
+manifest directly (`processing.tiles_present_on_disk`) when selecting `missing`
+targets, rather than trusting provenance alone — provenance answers "were these
+tiles built under the current pipeline?", while disk presence answers "do the
+tile files still exist?".
 
 ## Related
 

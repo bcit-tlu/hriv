@@ -65,7 +65,8 @@ before opening a PR; the targeted subsets are for fast inner-loop iteration.
 
 ### Changed admin import/export
 
-- backend: `poetry run pytest tests/test_admin_ops.py tests/test_router_admin.py`
+- backend: `poetry run pytest tests/test_admin_ops.py tests/test_router_admin.py tests/test_processing.py`
+- note: include `tests/test_processing.py` when touching the rebuild-tiles task — `select_rebuild_targets` / `rebuild_source_image_tiles` live in `processing.py`.
 - skill: [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md) (admin export/import section)
 - See [admin-import-export.md](admin-import-export.md).
 

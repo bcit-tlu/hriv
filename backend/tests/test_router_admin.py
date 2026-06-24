@@ -8,6 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
+import json
+
 from app.routers.admin import (
     _create_task,
     _kick_off,
@@ -17,6 +19,7 @@ from app.routers.admin import (
     start_db_import,
     start_files_export,
     start_files_import,
+    start_rebuild_tiles,
     upload_task_file,
     list_tasks,
     get_task,
@@ -24,6 +27,7 @@ from app.routers.admin import (
     create_task_download_token,
     download_task_result,
 )
+from app.schemas import RebuildTilesRequest
 
 
 def _make_admin_task(
@@ -270,6 +274,52 @@ async def test_start_db_export() -> None:
 
     assert result["task_type"] == "db_export"
     assert result["status"] == "pending"
+
+
+async def test_start_rebuild_tiles_creates_task(tmp_path) -> None:
+    """The rebuild endpoint persists params and creates a pending task."""
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+
+    mock_exec_result = MagicMock()
+    mock_exec_result.scalars.return_value.first.return_value = None
+    db.execute = AsyncMock(return_value=mock_exec_result)
+
+    task = _make_admin_task(task_type="rebuild_tiles")
+
+    async def mock_refresh(obj):
+        for k, v in vars(task).items():
+            setattr(obj, k, v)
+
+    db.refresh = AsyncMock(side_effect=mock_refresh)
+
+    tasks_dir = str(tmp_path / "admin_tasks")
+    request = RebuildTilesRequest(scope="missing", image_ids=[7, 9])
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+    ):
+        result = await start_rebuild_tiles(user, bg, request=request, db=db)
+
+    assert result["task_type"] == "rebuild_tiles"
+    assert result["status"] == "pending"
+
+    # The params file was written with the requested scope and image_ids.
+    param_files = [f for f in os.listdir(tasks_dir) if f.startswith("rebuild-")]
+    assert len(param_files) == 1
+    with open(os.path.join(tasks_dir, param_files[0])) as f:
+        params = json.load(f)
+    assert params == {"scope": "missing", "image_ids": [7, 9]}
+
+
+def test_rebuild_tiles_request_defaults_and_validation() -> None:
+    """The request model defaults to missing_stale and rejects bad scopes."""
+    assert RebuildTilesRequest().scope == "missing_stale"
+    assert RebuildTilesRequest().image_ids is None
+    with pytest.raises(ValueError, match="scope must be one of"):
+        RebuildTilesRequest(scope="nonsense")
 
 
 async def test_start_db_import_rejects_non_json() -> None:
