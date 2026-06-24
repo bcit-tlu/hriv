@@ -15,7 +15,10 @@ import type { Category, ImageItem } from './types'
  *
  * A child can never widen the restriction beyond what its ancestors allow.
  */
-export function narrowProgramIds(ancestors: ReadonlyArray<{ programIds: number[] }>): number[] {
+function narrowProgramsWithState(ancestors: ReadonlyArray<{ programIds: number[] }>): {
+  ids: number[]
+  initialized: boolean
+} {
   let effective: number[] = []
   let initialized = false
   for (const node of ancestors) {
@@ -26,7 +29,11 @@ export function narrowProgramIds(ancestors: ReadonlyArray<{ programIds: number[]
       initialized = true
     }
   }
-  return effective
+  return { ids: effective, initialized }
+}
+
+export function narrowProgramIds(ancestors: ReadonlyArray<{ programIds: number[] }>): number[] {
+  return narrowProgramsWithState(ancestors).ids
 }
 
 /**
@@ -35,7 +42,10 @@ export function narrowProgramIds(ancestors: ReadonlyArray<{ programIds: number[]
  * (narrowing) semantics: a child can never widen its group restriction beyond
  * what its ancestors allow.
  */
-export function narrowGroupIds(ancestors: ReadonlyArray<{ groupIds: number[] }>): number[] {
+function narrowGroupsWithState(ancestors: ReadonlyArray<{ groupIds: number[] }>): {
+  ids: number[]
+  initialized: boolean
+} {
   let effective: number[] = []
   let initialized = false
   for (const node of ancestors) {
@@ -46,7 +56,11 @@ export function narrowGroupIds(ancestors: ReadonlyArray<{ groupIds: number[] }>)
       initialized = true
     }
   }
-  return effective
+  return { ids: effective, initialized }
+}
+
+export function narrowGroupIds(ancestors: ReadonlyArray<{ groupIds: number[] }>): number[] {
+  return narrowGroupsWithState(ancestors).ids
 }
 
 /**
@@ -85,6 +99,82 @@ export function splitDirectAncestorGroupIds(fullPath: ReadonlyArray<{ groupIds: 
   const direct = effective.filter((gid) => directIds.has(gid))
   const ancestor = effective.filter((gid) => !directIds.has(gid))
   return { direct, ancestor }
+}
+
+/**
+ * Describes the restriction change when a category is moved to a new parent.
+ * Both dimensions (programs and groups) are evaluated independently.
+ *
+ * `hasChange` is true when either the effective program IDs or the effective
+ * group IDs will differ after the move (after applying the category's own
+ * direct restrictions against the new ancestor context).
+ */
+export interface MoveRestrictionChange {
+  /** Whether any restriction dimension changes as a result of the move. */
+  hasChange: boolean
+  /** Effective program IDs at the old location (inherited + direct narrowing). */
+  oldEffectiveProgramIds: number[]
+  /** Whether any program restriction applied at the old location. */
+  oldProgramsInitialized: boolean
+  /** Effective program IDs at the new location (inherited + direct narrowing). */
+  newEffectiveProgramIds: number[]
+  /** Whether any program restriction applies at the new location. */
+  newProgramsInitialized: boolean
+  /** Effective group IDs at the old location (inherited + direct narrowing). */
+  oldEffectiveGroupIds: number[]
+  /** Whether any group restriction applied at the old location. */
+  oldGroupsInitialized: boolean
+  /** Effective group IDs at the new location (inherited + direct narrowing). */
+  newEffectiveGroupIds: number[]
+  /** Whether any group restriction applies at the new location. */
+  newGroupsInitialized: boolean
+}
+
+/**
+ * Compute how effective restrictions change when `category` is moved from its
+ * current parent to the new parent described by `newAncestorPath`.
+ *
+ * `currentAncestorPath` is the ordered (top-down) list of ancestors *above*
+ * the category being moved (i.e. not including the category itself).
+ * `newAncestorPath` is the equivalent ancestor list at the destination.
+ *
+ * The category's own direct `programIds`/`groupIds` are retained but
+ * re-intersected against the new ancestor context — matching the backend
+ * narrowing semantics.
+ */
+export function computeMoveRestrictionChange(
+  category: { programIds: number[]; groupIds: number[] },
+  currentAncestorPath: ReadonlyArray<{ programIds: number[]; groupIds: number[] }>,
+  newAncestorPath: ReadonlyArray<{ programIds: number[]; groupIds: number[] }>,
+): MoveRestrictionChange {
+  const oldPrograms = narrowProgramsWithState([...currentAncestorPath, category])
+  const newPrograms = narrowProgramsWithState([...newAncestorPath, category])
+  const oldGroups = narrowGroupsWithState([...currentAncestorPath, category])
+  const newGroups = narrowGroupsWithState([...newAncestorPath, category])
+
+  const setsEqual = (a: number[], b: number[]): boolean => {
+    if (a.length !== b.length) return false
+    const sb = new Set(b)
+    return a.every((x) => sb.has(x))
+  }
+
+  const hasChange =
+    oldPrograms.initialized !== newPrograms.initialized ||
+    oldGroups.initialized !== newGroups.initialized ||
+    !setsEqual(oldPrograms.ids, newPrograms.ids) ||
+    !setsEqual(oldGroups.ids, newGroups.ids)
+
+  return {
+    hasChange,
+    oldEffectiveProgramIds: oldPrograms.ids,
+    oldProgramsInitialized: oldPrograms.initialized,
+    newEffectiveProgramIds: newPrograms.ids,
+    newProgramsInitialized: newPrograms.initialized,
+    oldEffectiveGroupIds: oldGroups.ids,
+    oldGroupsInitialized: oldGroups.initialized,
+    newEffectiveGroupIds: newGroups.ids,
+    newGroupsInitialized: newGroups.initialized,
+  }
 }
 
 /**
