@@ -147,10 +147,17 @@ export default function AppShell(props: AppShellProps) {
   const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
   const navTabCount = 1 + (canEditContent ? 2 : 0) + (canManageUsers ? 2 : 0)
   const collapseNav = isCompactViewport && navTabCount > 1
-  // Reset the drawer when the nav is no longer collapsed, so a resize
-  // round-trip (compact → desktop → compact) doesn't reopen it on its own.
+  // Reset the breakpoint-specific menus on a viewport transition so a resize
+  // round-trip doesn't leave one open against an unmounted trigger:
+  //  - desktop → the drawer can't apply, so close it;
+  //  - compact → the Manage tab (and its dropdown) unmount, so drop the stale
+  //    anchor that would otherwise reopen the menu against a detached node.
   useEffect(() => {
-    if (!collapseNav) setNavDrawerOpen(false)
+    if (collapseNav) {
+      setManageMenuAnchor(null)
+    } else {
+      setNavDrawerOpen(false)
+    }
   }, [collapseNav])
   const [viewAnnOpen, setViewAnnOpen] = useState(false)
   const [annCollapsed, setAnnCollapsed] = useState(false)

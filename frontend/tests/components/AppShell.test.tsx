@@ -587,4 +587,27 @@ describe('AppShell', () => {
       expect(screen.queryByRole('menuitem', { name: 'Home' })).not.toBeInTheDocument()
     })
   })
+
+  describe('viewport transitions', () => {
+    afterEach(() => {
+      mockUseMediaQuery.mockReset()
+      mockUseMediaQuery.mockReturnValue(false)
+    })
+
+    it('closes the Manage dropdown after a desktop → compact → desktop resize', () => {
+      mockUseMediaQuery.mockReturnValue(false) // desktop: inline tabs
+      const { rerender } = render(<AppShell {...makeProps()} />)
+      fireEvent.click(screen.getByRole('tab', { name: 'Manage' }))
+      expect(screen.getByRole('menuitem', { name: 'Categories' })).toBeInTheDocument()
+
+      // Resize into compact (tab + dropdown unmount) and back to desktop.
+      mockUseMediaQuery.mockReturnValue(true)
+      rerender(<AppShell {...makeProps()} />)
+      mockUseMediaQuery.mockReturnValue(false)
+      rerender(<AppShell {...makeProps()} />)
+
+      // The dropdown must not reopen against the unmounted tab.
+      expect(screen.queryByRole('menuitem', { name: 'Categories' })).not.toBeInTheDocument()
+    })
+  })
 })
