@@ -389,6 +389,9 @@ class RebuildTilesRequest(BaseModel):
     @field_validator("scope")
     @classmethod
     def _validate_scope(cls, value: str) -> str:
+        # Mirrors ``processing.REBUILD_SCOPES`` — duplicated deliberately so this
+        # schema does not import ``processing`` (which pulls in pyvips at parse
+        # time). Keep the two in sync; the runner re-validates as a backstop.
         allowed = {"missing", "stale", "missing_stale", "all"}
         if value not in allowed:
             raise ValueError(

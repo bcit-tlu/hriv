@@ -1471,6 +1471,27 @@ async def test_run_rebuild_tiles_reports_per_image_failures() -> None:
     assert rebuild_mock.await_count == 3
 
 
+async def test_run_rebuild_tiles_logs_explicit_empty_image_ids() -> None:
+    """An explicit empty image_ids list is shown in the log (not omitted)."""
+    task = _rebuild_task(input_path="/tmp/rebuild-params.json")
+    session, factory = _rebuild_factory(task)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch("app.admin_ops.os.path.exists", return_value=True),
+        patch(
+            "app.admin_ops._read_file",
+            return_value='{"scope": "missing_stale", "image_ids": []}',
+        ),
+        patch("app.admin_ops.os.unlink"),
+        patch("app.processing.select_rebuild_targets", AsyncMock(return_value=[])),
+    ):
+        await run_rebuild_tiles(1)
+
+    assert task.status == "completed"
+    assert "image_ids: []" in task.log
+
+
 async def test_run_rebuild_tiles_invalid_scope_fails_task() -> None:
     """An invalid scope in the params file fails the task fatally."""
     task = _rebuild_task(input_path="/tmp/rebuild-params.json")

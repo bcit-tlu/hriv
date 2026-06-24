@@ -853,7 +853,11 @@ async def run_rebuild_tiles(task_id: int) -> None:
                 session, task,
                 log_line=(
                     f"Scope: {scope}"
-                    + (f"; image_ids: {image_ids}" if image_ids else "")
+                    + (
+                        f"; image_ids: {image_ids}"
+                        if image_ids is not None
+                        else ""
+                    )
                 ),
                 progress=5,
             )
