@@ -864,8 +864,6 @@ export default function App() {
     setErrorSnack,
     setWarningSnack: setWarnSnack,
     setMoveSnack,
-    programs,
-    groups,
   })
 
   const visibleJobs = getVisibleJobs({

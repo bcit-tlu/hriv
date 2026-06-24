@@ -11,7 +11,7 @@ import {
 import { computeMoveRestrictionChange } from './categoryUtils'
 import type { MoveRestrictionChange } from './categoryUtils'
 import { findImageInTree, findCategoryPath } from './treeUtils'
-import type { Category, ImageItem, Program, Group } from './types'
+import type { Category, ImageItem } from './types'
 
 export interface PendingMoveConfirm {
   categoryId: number
@@ -21,6 +21,11 @@ export interface PendingMoveConfirm {
   change: MoveRestrictionChange
   /** Whether the move was initiated from the MoveCategoryDialog or via drag-and-drop. */
   source: 'dialog' | 'dnd'
+}
+
+function moveDestinationLabel(parentId: number | null, ancestorPath: Category[]): string {
+  if (parentId === null) return 'root'
+  return ancestorPath.at(-1)?.label ?? 'category'
 }
 
 export interface UseCategoryActionsDeps {
@@ -40,8 +45,6 @@ export interface UseCategoryActionsDeps {
   /** Surfaces non-blocking category advisories (e.g. program/group intersection). */
   setWarningSnack?: React.Dispatch<React.SetStateAction<string | null>>
   setMoveSnack: React.Dispatch<React.SetStateAction<{ message: string; onUndo: () => void } | null>>
-  programs?: Program[]
-  groups?: Group[]
 }
 
 type CategoryStatusUpdate = 'active' | 'hidden'
@@ -62,13 +65,14 @@ export function useCategoryActions({
   setErrorSnack,
   setWarningSnack,
   setMoveSnack,
-  programs = [],
-  groups = [],
 }: UseCategoryActionsDeps) {
-  function getAncestorPathForParent(parentId: number | null): Category[] {
-    if (parentId === null) return []
-    return findCategoryPath(categories, parentId) ?? []
-  }
+  const getAncestorPathForParent = useCallback(
+    (parentId: number | null): Category[] => {
+      if (parentId === null) return []
+      return findCategoryPath(categories, parentId) ?? []
+    },
+    [categories],
+  )
   const [moveCatOpen, setMoveCatOpen] = useState(false)
   const [movingCategory, setMovingCategory] = useState<Category | null>(null)
   const [pendingMoveConfirm, setPendingMoveConfirm] = useState<PendingMoveConfirm | null>(null)
@@ -287,13 +291,11 @@ export function useCategoryActions({
       const newAncestors = getAncestorPathForParent(newParentId)
       const change = computeMoveRestrictionChange(category, currentAncestors, newAncestors)
       if (change.hasChange) {
-        const destPath = newParentId !== null ? findCategoryPath(categories, newParentId) : null
-        const destinationLabel = destPath?.at(-1)?.label ?? 'root'
         setPendingMoveConfirm({
           categoryId,
           categoryLabel: category.label,
           newParentId,
-          destinationLabel,
+          destinationLabel: moveDestinationLabel(newParentId, newAncestors),
           change,
           source: 'dialog',
         })
@@ -301,11 +303,7 @@ export function useCategoryActions({
       }
       await doMoveCategory(categoryId, newParentId)
     },
-    // getAncestorPathForParent is a plain function closed over `categories`; because
-    // `categories` is already in the dep array the callback is recreated (and thus
-    // captures a fresh closure) whenever categories changes — no stale-ref risk.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [categories, doMoveCategory],
+    [categories, doMoveCategory, getAncestorPathForParent],
   )
 
   const handleRequestMoveCategory = useCallback((cat: Category) => {
@@ -360,8 +358,8 @@ export function useCategoryActions({
         const prevParentId =
           draggedPath && draggedPath.length >= 2 ? draggedPath[draggedPath.length - 2].id : null
         const draggedName = draggedPath?.at(-1)?.label ?? 'category'
-        const targetName =
-          findCategoryPath(categories, targetCategoryId)?.at(-1)?.label ?? 'category'
+        const targetPath = findCategoryPath(categories, targetCategoryId)
+        const targetName = targetPath?.at(-1)?.label ?? 'category'
         const draggedVersion = draggedPath?.at(-1)?.version
         const resp = await apiUpdateCategory(
           draggedCategoryId,
@@ -409,13 +407,11 @@ export function useCategoryActions({
       const newAncestors = findCategoryPath(categories, targetCategoryId) ?? []
       const change = computeMoveRestrictionChange(category, currentAncestors, newAncestors)
       if (change.hasChange) {
-        const targetName =
-          findCategoryPath(categories, targetCategoryId)?.at(-1)?.label ?? 'category'
         setPendingMoveConfirm({
           categoryId: draggedCategoryId,
           categoryLabel: category.label,
           newParentId: targetCategoryId,
-          destinationLabel: targetName,
+          destinationLabel: moveDestinationLabel(targetCategoryId, newAncestors),
           change,
           source: 'dnd',
         })
@@ -470,16 +466,36 @@ export function useCategoryActions({
     setPendingMoveConfirm(null)
   }, [])
 
+  const currentPendingMoveConfirm = useMemo(() => {
+    if (!pendingMoveConfirm) return null
+    const catPath = findCategoryPath(categories, pendingMoveConfirm.categoryId)
+    const category = catPath?.at(-1)
+    if (!catPath || !category) return pendingMoveConfirm
+
+    const newAncestors = getAncestorPathForParent(pendingMoveConfirm.newParentId)
+    if (pendingMoveConfirm.newParentId !== null && newAncestors.length === 0) {
+      return pendingMoveConfirm
+    }
+
+    const change = computeMoveRestrictionChange(category, catPath.slice(0, -1), newAncestors)
+    if (!change.hasChange) return pendingMoveConfirm
+
+    return {
+      ...pendingMoveConfirm,
+      categoryLabel: category.label,
+      destinationLabel: moveDestinationLabel(pendingMoveConfirm.newParentId, newAncestors),
+      change,
+    }
+  }, [categories, getAncestorPathForParent, pendingMoveConfirm])
+
   return {
     moveCatOpen,
     setMoveCatOpen,
     movingCategory,
     setMovingCategory,
-    pendingMoveConfirm,
+    pendingMoveConfirm: currentPendingMoveConfirm,
     confirmPendingMove,
     cancelPendingMove,
-    programs,
-    groups,
     editCategoryContext,
     addCategoryInline,
     deleteCategoryInline,

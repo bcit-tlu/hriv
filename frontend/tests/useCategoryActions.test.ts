@@ -950,6 +950,28 @@ describe('useCategoryActions', () => {
       expect(result.current.pendingMoveConfirm?.source).toBe('dialog')
     })
 
+    it('refreshes pendingMoveConfirm when categories change while dialog is open', async () => {
+      const parent = makeCategory({ id: 2, label: 'Parent', programIds: [42] })
+      const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [parent, cat] })
+      const { result, rerender } = renderHook(
+        ({ hookDeps }: { hookDeps: UseCategoryActionsDeps }) => useCategoryActions(hookDeps),
+        { initialProps: { hookDeps: deps } },
+      )
+
+      await act(async () => {
+        await result.current.handleMoveCategory(3, 2)
+      })
+
+      const refreshedParent = makeCategory({ id: 2, label: 'Renamed Parent', programIds: [7] })
+      const refreshedCat = makeCategory({ id: 3, label: 'Renamed Cat', programIds: [] })
+      rerender({ hookDeps: { ...deps, categories: [refreshedParent, refreshedCat] } })
+
+      expect(result.current.pendingMoveConfirm?.categoryLabel).toBe('Renamed Cat')
+      expect(result.current.pendingMoveConfirm?.destinationLabel).toBe('Renamed Parent')
+      expect(result.current.pendingMoveConfirm?.change.newEffectiveProgramIds).toEqual([7])
+    })
+
     it('proceeds immediately without confirmation when restrictions are unchanged', async () => {
       const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
       const deps = makeDeps({ categories: [cat] })
