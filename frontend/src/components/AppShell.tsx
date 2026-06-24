@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type Dispatch,
   type ReactNode,
@@ -152,7 +153,14 @@ export default function AppShell(props: AppShellProps) {
   //  - desktop → the drawer can't apply, so close it;
   //  - compact → the Manage tab (and its dropdown) unmount, so drop the stale
   //    anchor that would otherwise reopen the menu against a detached node.
+  const isInitialViewportRun = useRef(true)
   useEffect(() => {
+    // Skip the initial mount — state already matches the viewport. Only act on
+    // an actual breakpoint transition.
+    if (isInitialViewportRun.current) {
+      isInitialViewportRun.current = false
+      return
+    }
     if (collapseNav) {
       setManageMenuAnchor(null)
     } else {
