@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.27.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.26.0...frontend-v0.27.0) (2026-06-24)
+
+
+### Features
+
+* **backend:** track tile-cache provenance and staleness ([#747](https://github.com/bcit-tlu/hriv/issues/747)) ([44d2c23](https://github.com/bcit-tlu/hriv/commit/44d2c2354ef4020744c39ee19e5e72ab48eecb4d))
+
+
+### Bug Fixes
+
+* move category restriction reset ([#741](https://github.com/bcit-tlu/hriv/issues/741)) ([b7f8e9a](https://github.com/bcit-tlu/hriv/commit/b7f8e9a2719c3c598bb68ebe0ad20a16b8eb4ce9))
+
 ## [0.26.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.25.0...frontend-v0.26.0) (2026-06-22)
 
 
