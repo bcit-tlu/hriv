@@ -2,6 +2,8 @@
 
 from datetime import datetime, timezone
 
+import pytest
+
 from app.models import SourceImage
 from app.tile_provenance import (
     TILE_CACHE_CURRENT,
@@ -38,7 +40,10 @@ def test_v1_settings_hash_is_pinned() -> None:
     while the version is still 1, this guards against a silent mismatch.
     """
     if TILE_GENERATION_VERSION != 1:
-        return
+        pytest.skip(
+            "TILE_GENERATION_VERSION bumped past 1 — add a new pinned hash "
+            "assertion (and migration backfill constant) for the new version."
+        )
     assert current_tile_settings_hash() == (
         "60d0d2d69b3dbe1fe4af0f7318b771da937f8743822710339fd1fe97413d082f"
     )

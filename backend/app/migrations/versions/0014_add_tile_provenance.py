@@ -60,6 +60,11 @@ def upgrade() -> None:
     # mark them ``current`` instead of leaving them to evaluate as ``missing``.
     # ``source_checksum`` is intentionally left NULL — it can't be recomputed
     # here without reading source files, and it isn't used for status.
+    #
+    # ``updated_at`` is only an approximation of the real generation time (it is
+    # auto-bumped on any later row change), but the exact timestamp doesn't
+    # affect status: ``tile_settings_hash`` is what gates current-vs-stale, and a
+    # non-NULL ``tiles_generated_at`` is all that's needed for current-vs-missing.
     op.execute(
         sa.text(
             """
