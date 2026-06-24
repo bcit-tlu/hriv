@@ -14,8 +14,13 @@ Implementation lives in `backend/app/tile_provenance.py`.
 
 ## Provenance fields (`source_images`)
 
-Added in migration `0014_add_tile_provenance`. All columns are nullable so
-pre-existing rows are untouched (and evaluate as `missing`).
+Added in migration `0014_add_tile_provenance`. All columns are nullable. The
+migration backfills already-`completed` source images (`tiles_generated_at =
+updated_at`, `tile_settings_hash` = the v1 settings hash) so their existing,
+known-good tiles report as `current` rather than `missing`; `source_checksum`
+stays `NULL` for those rows since it can't be recomputed without re-reading the
+source files. Rows in any other state are left untouched and evaluate as
+`missing` (or `failed`).
 
 | Field                | Type          | Meaning                                                         |
 | -------------------- | ------------- | --------------------------------------------------------------- |

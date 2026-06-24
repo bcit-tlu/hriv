@@ -30,6 +30,20 @@ def test_settings_hash_is_sha256_hex() -> None:
     int(value, 16)  # raises if not valid hex
 
 
+def test_v1_settings_hash_is_pinned() -> None:
+    """Pin the v1 hash so the 0014 migration backfill constant can't drift.
+
+    Migration ``0014_add_tile_provenance`` hardcodes this digest to backfill
+    pre-existing completed rows. If the settings-hash payload format changes
+    while the version is still 1, this guards against a silent mismatch.
+    """
+    if TILE_GENERATION_VERSION != 1:
+        return
+    assert current_tile_settings_hash() == (
+        "60d0d2d69b3dbe1fe4af0f7318b771da937f8743822710339fd1fe97413d082f"
+    )
+
+
 def test_settings_hash_changes_with_version(monkeypatch) -> None:
     """Bumping the generation version changes the settings hash."""
     baseline = current_tile_settings_hash()

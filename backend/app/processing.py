@@ -239,7 +239,7 @@ class ProgressTracker:
             return self._progress, self._message
 
 
-def _estimate_tile_count(width: int, height: int, tile_size: int = 254) -> int:
+def _estimate_tile_count(width: int, height: int, tile_size: int = DZI_TILE_SIZE) -> int:
     """Estimate the total number of DZI tiles across all pyramid levels."""
     total = 0
     w, h = width, height
