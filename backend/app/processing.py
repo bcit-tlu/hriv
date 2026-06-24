@@ -24,6 +24,13 @@ from sqlalchemy.sql import func
 
 from .database import async_session, settings
 from .models import Image, SourceImage
+from .tile_provenance import (
+    DZI_OVERLAP,
+    DZI_TILE_SIZE,
+    DZI_TILE_SUFFIX,
+    compute_source_checksum,
+    current_tile_settings_hash,
+)
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -180,6 +187,27 @@ def _extract_tiff_resolution(img: pyvips.Image, fields: list[str], info: dict) -
             info["mpp_y"] = round(mpp_y, 4)
 
 
+async def _best_effort_source_checksum(source_path: str) -> str | None:
+    """Compute the source checksum off the event loop, never raising.
+
+    ``compute_source_checksum`` already swallows file I/O errors, but the
+    ``asyncio.to_thread`` dispatch itself could in theory fail (e.g. thread
+    pool exhaustion). Provenance must never abort a processing run whose tiles
+    already generated successfully, so any error here degrades to ``None``.
+    """
+    try:
+        return await asyncio.to_thread(compute_source_checksum, source_path)
+    except Exception:
+        logger.debug(
+            "Source checksum dispatch failed (non-critical)",
+            extra={
+                "event": "tiles.checksum_dispatch_failed",
+                "source_path": source_path,
+            },
+        )
+        return None
+
+
 def _get_float_field(img: pyvips.Image, fields: list[str], name: str) -> float | None:
     """Safely extract a numeric metadata field from a vips image."""
     if name not in fields:
@@ -211,7 +239,7 @@ class ProgressTracker:
             return self._progress, self._message
 
 
-def _estimate_tile_count(width: int, height: int, tile_size: int = 254) -> int:
+def _estimate_tile_count(width: int, height: int, tile_size: int = DZI_TILE_SIZE) -> int:
     """Estimate the total number of DZI tiles across all pyramid levels."""
     total = 0
     w, h = width, height
@@ -317,7 +345,12 @@ def generate_tiles(
     dzi_basename = "image"
     dzi_output = os.path.join(output_dir, dzi_basename)
     t_dzsave_start = time.monotonic()
-    image.dzsave(dzi_output, tile_size=254, overlap=1, suffix=".jpeg[Q=85]")
+    image.dzsave(
+        dzi_output,
+        tile_size=DZI_TILE_SIZE,
+        overlap=DZI_OVERLAP,
+        suffix=DZI_TILE_SUFFIX,
+    )
     t_dzsave_end = time.monotonic()
 
     dzsave_duration_ms = round((t_dzsave_end - t_dzsave_start) * 1000)
@@ -507,6 +540,12 @@ async def process_source_image(source_image_id: int) -> None:
             src.status_message = "Tiles generated"
             await db.commit()
 
+            # Compute the provenance checksum now, while the session is in a
+            # committed (idle) state. This reads the full source file (multi-GB
+            # for histology slides), so doing it here keeps that I/O out of the
+            # later flush→commit window and avoids holding a transaction open.
+            source_checksum = await _best_effort_source_checksum(src.stored_path)
+
             logger.info(
                 "Tile generation completed",
                 extra={
@@ -580,6 +619,14 @@ async def process_source_image(source_image_id: int) -> None:
                 )
                 db.add(img)
                 await db.flush()
+
+                # Record tile-cache provenance so currentness can be evaluated
+                # later without filesystem inspection. The checksum was computed
+                # above (outside this transaction) and is best-effort, so it
+                # never blocks completion.
+                src.source_checksum = source_checksum
+                src.tile_settings_hash = current_tile_settings_hash()
+                src.tiles_generated_at = datetime.now(timezone.utc)
 
                 src.image_id = img.id
                 src.status = "completed"
@@ -766,6 +813,12 @@ async def process_replace_image(
             src.status_message = "Tiles generated"
             await db.commit()
 
+            # Compute the provenance checksum now, while the session is in a
+            # committed (idle) state. This reads the full source file (multi-GB
+            # for histology slides), so doing it here keeps that I/O out of the
+            # later flush/commit window and avoids holding a transaction open.
+            source_checksum = await _best_effort_source_checksum(src.stored_path)
+
             # Capture old tile directory path before updating Image record
             old_tile_dir: str | None = None
             old_tile_sources = img.tile_sources  # e.g. /api/tiles/42/image.dzi
@@ -835,6 +888,14 @@ async def process_replace_image(
                     current_meta["pyramid_level_count"] = pyramid_info.get("level_count")
 
                 img.metadata_ = current_meta if current_meta else {}
+
+                # Record tile-cache provenance for the replacement source so
+                # the new tile tree's currentness is tracked. The checksum was
+                # computed above (outside this transaction) and is best-effort,
+                # so it never blocks completion.
+                src.source_checksum = source_checksum
+                src.tile_settings_hash = current_tile_settings_hash()
+                src.tiles_generated_at = datetime.now(timezone.utc)
 
                 src.image_id = img.id
                 src.status = "completed"

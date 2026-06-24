@@ -8,8 +8,25 @@ import {
   updateImage as apiUpdateImage,
   userMessage,
 } from './api'
+import { computeMoveRestrictionChange } from './categoryUtils'
+import type { MoveRestrictionChange } from './categoryUtils'
 import { findImageInTree, findCategoryPath } from './treeUtils'
 import type { Category, ImageItem } from './types'
+
+export interface PendingMoveConfirm {
+  categoryId: number
+  categoryLabel: string
+  newParentId: number | null
+  destinationLabel: string
+  change: MoveRestrictionChange
+  /** Whether the move was initiated from the MoveCategoryDialog or via drag-and-drop. */
+  source: 'dialog' | 'dnd'
+}
+
+function moveDestinationLabel(parentId: number | null, ancestorPath: Category[]): string {
+  if (parentId === null) return 'root'
+  return ancestorPath.at(-1)?.label ?? 'category'
+}
 
 export interface UseCategoryActionsDeps {
   categories: Category[]
@@ -49,8 +66,16 @@ export function useCategoryActions({
   setWarningSnack,
   setMoveSnack,
 }: UseCategoryActionsDeps) {
+  const getAncestorPathForParent = useCallback(
+    (parentId: number | null): Category[] => {
+      if (parentId === null) return []
+      return findCategoryPath(categories, parentId) ?? []
+    },
+    [categories],
+  )
   const [moveCatOpen, setMoveCatOpen] = useState(false)
   const [movingCategory, setMovingCategory] = useState<Category | null>(null)
+  const [pendingMoveConfirm, setPendingMoveConfirm] = useState<PendingMoveConfirm | null>(null)
 
   const editCategoryContext = useMemo(() => {
     const fallback = {
@@ -237,7 +262,7 @@ export function useCategoryActions({
     [setErrorSnack],
   )
 
-  const handleMoveCategory = useCallback(
+  const doMoveCategory = useCallback(
     async (categoryId: number, newParentId: number | null) => {
       try {
         const catPath = findCategoryPath(categories, categoryId)
@@ -252,6 +277,33 @@ export function useCategoryActions({
       }
     },
     [categories, loadCategories, setErrorSnack],
+  )
+
+  const handleMoveCategory = useCallback(
+    async (categoryId: number, newParentId: number | null) => {
+      const catPath = findCategoryPath(categories, categoryId)
+      const category = catPath?.at(-1)
+      if (!category) {
+        await doMoveCategory(categoryId, newParentId)
+        return
+      }
+      const currentAncestors = catPath ? catPath.slice(0, -1) : []
+      const newAncestors = getAncestorPathForParent(newParentId)
+      const change = computeMoveRestrictionChange(category, currentAncestors, newAncestors)
+      if (change.hasChange) {
+        setPendingMoveConfirm({
+          categoryId,
+          categoryLabel: category.label,
+          newParentId,
+          destinationLabel: moveDestinationLabel(newParentId, newAncestors),
+          change,
+          source: 'dialog',
+        })
+        return
+      }
+      await doMoveCategory(categoryId, newParentId)
+    },
+    [categories, doMoveCategory, getAncestorPathForParent],
   )
 
   const handleRequestMoveCategory = useCallback((cat: Category) => {
@@ -299,15 +351,15 @@ export function useCategoryActions({
     ],
   )
 
-  const handleDropCategoryOnCategory = useCallback(
+  const doDropCategoryOnCategory = useCallback(
     async (draggedCategoryId: number, targetCategoryId: number) => {
       try {
         const draggedPath = findCategoryPath(categories, draggedCategoryId)
         const prevParentId =
           draggedPath && draggedPath.length >= 2 ? draggedPath[draggedPath.length - 2].id : null
         const draggedName = draggedPath?.at(-1)?.label ?? 'category'
-        const targetName =
-          findCategoryPath(categories, targetCategoryId)?.at(-1)?.label ?? 'category'
+        const targetPath = findCategoryPath(categories, targetCategoryId)
+        const targetName = targetPath?.at(-1)?.label ?? 'category'
         const draggedVersion = draggedPath?.at(-1)?.version
         const resp = await apiUpdateCategory(
           draggedCategoryId,
@@ -343,6 +395,33 @@ export function useCategoryActions({
     [categories, loadCategories, setMoveSnack, setErrorSnack],
   )
 
+  const handleDropCategoryOnCategory = useCallback(
+    async (draggedCategoryId: number, targetCategoryId: number) => {
+      const draggedPath = findCategoryPath(categories, draggedCategoryId)
+      const category = draggedPath?.at(-1)
+      if (!category) {
+        await doDropCategoryOnCategory(draggedCategoryId, targetCategoryId)
+        return
+      }
+      const currentAncestors = draggedPath ? draggedPath.slice(0, -1) : []
+      const newAncestors = findCategoryPath(categories, targetCategoryId) ?? []
+      const change = computeMoveRestrictionChange(category, currentAncestors, newAncestors)
+      if (change.hasChange) {
+        setPendingMoveConfirm({
+          categoryId: draggedCategoryId,
+          categoryLabel: category.label,
+          newParentId: targetCategoryId,
+          destinationLabel: moveDestinationLabel(targetCategoryId, newAncestors),
+          change,
+          source: 'dnd',
+        })
+        return
+      }
+      await doDropCategoryOnCategory(draggedCategoryId, targetCategoryId)
+    },
+    [categories, doDropCategoryOnCategory],
+  )
+
   const handleSetCardImage = useCallback(
     async (categoryId: number, imageId: number | null) => {
       try {
@@ -372,11 +451,50 @@ export function useCategoryActions({
     [loadCategories, categories, setErrorSnack],
   )
 
+  const confirmPendingMove = useCallback(async () => {
+    if (!pendingMoveConfirm) return
+    const { categoryId, newParentId, source } = pendingMoveConfirm
+    setPendingMoveConfirm(null)
+    if (source === 'dnd' && newParentId !== null) {
+      await doDropCategoryOnCategory(categoryId, newParentId)
+    } else {
+      await doMoveCategory(categoryId, newParentId)
+    }
+  }, [pendingMoveConfirm, doDropCategoryOnCategory, doMoveCategory])
+
+  const cancelPendingMove = useCallback(() => {
+    setPendingMoveConfirm(null)
+  }, [])
+
+  const currentPendingMoveConfirm = useMemo(() => {
+    if (!pendingMoveConfirm) return null
+    const catPath = findCategoryPath(categories, pendingMoveConfirm.categoryId)
+    const category = catPath?.at(-1)
+    if (!catPath || !category) return pendingMoveConfirm
+
+    const newAncestors = getAncestorPathForParent(pendingMoveConfirm.newParentId)
+    if (pendingMoveConfirm.newParentId !== null && newAncestors.length === 0) {
+      return pendingMoveConfirm
+    }
+
+    const change = computeMoveRestrictionChange(category, catPath.slice(0, -1), newAncestors)
+
+    return {
+      ...pendingMoveConfirm,
+      categoryLabel: category.label,
+      destinationLabel: moveDestinationLabel(pendingMoveConfirm.newParentId, newAncestors),
+      change,
+    }
+  }, [categories, getAncestorPathForParent, pendingMoveConfirm])
+
   return {
     moveCatOpen,
     setMoveCatOpen,
     movingCategory,
     setMovingCategory,
+    pendingMoveConfirm: currentPendingMoveConfirm,
+    confirmPendingMove,
+    cancelPendingMove,
     editCategoryContext,
     addCategoryInline,
     deleteCategoryInline,

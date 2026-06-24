@@ -25,6 +25,9 @@ vi.stubGlobal('localStorage', {
   removeItem: (key: string) => {
     delete storage[key]
   },
+  clear: () => {
+    for (const key of Object.keys(storage)) delete storage[key]
+  },
 })
 
 // Stub crypto.randomUUID (used for SESSION_ID)
@@ -234,6 +237,9 @@ describe('Background Admin Task API', () => {
         removeItem: (key: string) => {
           delete storage[key]
         },
+        clear: () => {
+          for (const key of Object.keys(storage)) delete storage[key]
+        },
       })
       vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
     })
@@ -329,6 +335,9 @@ describe('Background Admin Task API', () => {
         removeItem: (key: string) => {
           delete storage[key]
         },
+        clear: () => {
+          for (const key of Object.keys(storage)) delete storage[key]
+        },
       })
       vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
     })
@@ -416,6 +425,9 @@ describe('Background Admin Task API', () => {
         },
         removeItem: (key: string) => {
           delete storage[key]
+        },
+        clear: () => {
+          for (const key of Object.keys(storage)) delete storage[key]
         },
       })
       vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })

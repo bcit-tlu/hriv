@@ -84,6 +84,10 @@ def test_source_image_out_from_orm() -> None:
         active=True,
         image_id=5,
         file_size=1048576,
+        source_checksum="a" * 64,
+        tile_settings_hash="b" * 64,
+        tiles_generated_at=now,
+        tile_cache_status="current",
         created_at=now,
         updated_at=now,
     )
@@ -91,6 +95,8 @@ def test_source_image_out_from_orm() -> None:
     assert out.progress == 100
     assert out.file_size == 1048576
     assert out.image_id == 5
+    assert out.tile_cache_status == "current"
+    assert out.tiles_generated_at == now
 
 
 def test_source_image_out_from_dict() -> None:
@@ -106,12 +112,15 @@ def test_source_image_out_from_dict() -> None:
         "note": None,
         "active": True,
         "image_id": None,
+        "tile_cache_status": "missing",
         "created_at": now,
         "updated_at": now,
     }
     out = SourceImageOut.model_validate(data)
     assert out.original_filename == "dict.png"
     assert out.status == "pending"
+    assert out.tile_cache_status == "missing"
+    assert out.source_checksum is None
 
 
 # ── oidc_group normalization ─────────────────────────────

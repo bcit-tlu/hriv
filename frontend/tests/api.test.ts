@@ -20,6 +20,9 @@ vi.stubGlobal('localStorage', {
   removeItem: (key: string) => {
     delete storage[key]
   },
+  clear: () => {
+    for (const key of Object.keys(storage)) delete storage[key]
+  },
   get length() {
     return Object.keys(storage).length
   },
@@ -910,6 +913,10 @@ describe('Source Image API', () => {
       active: true,
       image_id: 10,
       file_size: 5000,
+      source_checksum: 'a'.repeat(64),
+      tile_settings_hash: 'b'.repeat(64),
+      tiles_generated_at: '2026-01-01T00:00:00Z',
+      tile_cache_status: 'current',
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
     }
@@ -1166,6 +1173,9 @@ describe('XHR upload abort support', () => {
       },
       removeItem: (key: string) => {
         delete storage[key]
+      },
+      clear: () => {
+        for (const key of Object.keys(storage)) delete storage[key]
       },
       get length() {
         return Object.keys(storage).length

@@ -78,6 +78,12 @@ the schema** — change the model _and_ generate a migration in the same PR (see
   `status_message`; `name`; `category_id` (`SET NULL`); `copyright`; `note`;
   `active`; `image_id` (FK to Image, `SET NULL` — linked after processing);
   `file_size` (BigInteger).
+- **Tile-cache provenance** _(added in `0014_add_tile_provenance`)_:
+  `source_checksum` (SHA-256 of the source file), `tile_settings_hash`
+  (settings/version fingerprint), `tiles_generated_at`. The effective
+  `tile_cache_status` (`current` / `missing` / `stale` / `failed`) is a
+  **computed property**, not a column, so it can't drift from the live pipeline
+  version. See [`tile-cache-provenance.md`](tile-cache-provenance.md).
 - **Relationships:** `image` (nullable).
 
 ### BulkImportJob

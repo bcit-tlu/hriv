@@ -47,8 +47,13 @@ const localStorageMock = {
   removeItem: vi.fn((key: string) => {
     delete storage[key]
   }),
+  clear: vi.fn(() => {
+    for (const key of Object.keys(storage)) delete storage[key]
+  }),
 }
-Object.defineProperty(window, 'localStorage', { value: localStorageMock, writable: true })
+// Saved so afterEach can restore the original (the setup.ts polyfill), per
+// REVIEW.md's rule that tests modifying browser globals must restore them.
+const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(window, 'localStorage')
 
 // Mock fetch for /auth/me calls
 const mockFetch = vi.fn()
@@ -77,6 +82,11 @@ function AuthConsumer({ onContext }: { onContext: (ctx: AuthContextValue) => voi
 
 describe('AuthProvider', () => {
   beforeEach(() => {
+    Object.defineProperty(window, 'localStorage', {
+      value: localStorageMock,
+      configurable: true,
+      writable: true,
+    })
     vi.clearAllMocks()
     currentToken = null
     Object.keys(storage).forEach((k) => delete storage[k])
@@ -93,6 +103,11 @@ describe('AuthProvider', () => {
   afterEach(() => {
     currentToken = null
     Object.keys(storage).forEach((k) => delete storage[k])
+    if (originalLocalStorageDescriptor) {
+      Object.defineProperty(window, 'localStorage', originalLocalStorageDescriptor)
+    } else {
+      delete (window as { localStorage?: Storage }).localStorage
+    }
   })
 
   it('renders children and finishes loading when no token is stored', async () => {
