@@ -1170,6 +1170,9 @@ describe('XHR upload abort support', () => {
       removeItem: (key: string) => {
         delete storage[key]
       },
+      clear: () => {
+        for (const key of Object.keys(storage)) delete storage[key]
+      },
       get length() {
         return Object.keys(storage).length
       },

@@ -65,6 +65,20 @@ function createMemoryStorage(): Storage {
       }
       return Reflect.deleteProperty(target, prop)
     },
+    ownKeys() {
+      return Array.from(store.keys())
+    },
+    getOwnPropertyDescriptor(target, prop) {
+      if (typeof prop === 'string' && store.has(prop)) {
+        return {
+          configurable: true,
+          enumerable: true,
+          value: store.get(prop),
+          writable: true,
+        }
+      }
+      return Reflect.getOwnPropertyDescriptor(target, prop)
+    },
   }) as Storage
 }
 
