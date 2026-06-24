@@ -972,6 +972,26 @@ describe('useCategoryActions', () => {
       expect(result.current.pendingMoveConfirm?.change.newEffectiveProgramIds).toEqual([7])
     })
 
+    it('refreshes pendingMoveConfirm when category changes remove the restriction diff', async () => {
+      const parent = makeCategory({ id: 2, label: 'Parent', programIds: [42] })
+      const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [parent, cat] })
+      const { result, rerender } = renderHook(
+        ({ hookDeps }: { hookDeps: UseCategoryActionsDeps }) => useCategoryActions(hookDeps),
+        { initialProps: { hookDeps: deps } },
+      )
+
+      await act(async () => {
+        await result.current.handleMoveCategory(3, 2)
+      })
+
+      const unrestrictedParent = makeCategory({ id: 2, label: 'Parent', programIds: [] })
+      rerender({ hookDeps: { ...deps, categories: [unrestrictedParent, cat] } })
+
+      expect(result.current.pendingMoveConfirm?.change.hasChange).toBe(false)
+      expect(result.current.pendingMoveConfirm?.change.newEffectiveProgramIds).toEqual([])
+    })
+
     it('proceeds immediately without confirmation when restrictions are unchanged', async () => {
       const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
       const deps = makeDeps({ categories: [cat] })

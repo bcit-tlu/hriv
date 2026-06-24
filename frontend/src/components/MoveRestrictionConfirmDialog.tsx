@@ -89,16 +89,25 @@ export default function MoveRestrictionConfirmDialog({
     change.oldGroupsInitialized !== change.newGroupsInitialized ||
     oldGroups.length !== newGroups.length ||
     !oldGroups.every((id) => newGroups.includes(id))
+  const hasRestrictionChange = hasProgramChange || hasGroupChange
 
   return (
     <Dialog open={open} onClose={onCancel} maxWidth="sm" fullWidth>
       <DialogTitle>Confirm Move</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <Typography variant="body2">
-          Moving <strong>&ldquo;{categoryLabel}&rdquo;</strong> to{' '}
-          <strong>&ldquo;{destinationLabel}&rdquo;</strong> will change its effective access
-          restrictions.
-        </Typography>
+        {hasRestrictionChange ? (
+          <Typography variant="body2">
+            Moving <strong>&ldquo;{categoryLabel}&rdquo;</strong> to{' '}
+            <strong>&ldquo;{destinationLabel}&rdquo;</strong> will change its effective access
+            restrictions.
+          </Typography>
+        ) : (
+          <Typography variant="body2">
+            Moving <strong>&ldquo;{categoryLabel}&rdquo;</strong> to{' '}
+            <strong>&ldquo;{destinationLabel}&rdquo;</strong> no longer changes effective access
+            restrictions.
+          </Typography>
+        )}
 
         {hasProgramChange && (
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -144,15 +153,19 @@ export default function MoveRestrictionConfirmDialog({
           </Box>
         )}
 
-        <Alert severity="info">
-          The category&rsquo;s own direct restrictions are preserved; the effective access shown
-          above reflects how its restrictions combine with the new ancestor&rsquo;s restrictions.
-        </Alert>
+        {hasRestrictionChange ? (
+          <Alert severity="info">
+            The category&rsquo;s own direct restrictions are preserved; the effective access shown
+            above reflects how its restrictions combine with the new ancestor&rsquo;s restrictions.
+          </Alert>
+        ) : (
+          <Alert severity="success">Restrictions are no longer affected by this move.</Alert>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onCancel}>Cancel</Button>
         <Button onClick={onConfirm} variant="contained">
-          Move Anyway
+          {hasRestrictionChange ? 'Move Anyway' : 'Move'}
         </Button>
       </DialogActions>
     </Dialog>

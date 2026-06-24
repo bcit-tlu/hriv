@@ -478,7 +478,6 @@ export function useCategoryActions({
     }
 
     const change = computeMoveRestrictionChange(category, catPath.slice(0, -1), newAncestors)
-    if (!change.hasChange) return pendingMoveConfirm
 
     return {
       ...pendingMoveConfirm,

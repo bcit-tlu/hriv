@@ -193,6 +193,26 @@ describe('MoveRestrictionConfirmDialog', () => {
     expect(screen.queryByText('Group restriction')).not.toBeInTheDocument()
   })
 
+  it('shows resolved-change state when restrictions no longer change', async () => {
+    const user = userEvent.setup()
+    const onConfirm = vi.fn()
+    render(
+      <MoveRestrictionConfirmDialog
+        open
+        onConfirm={onConfirm}
+        onCancel={vi.fn()}
+        categoryLabel="C"
+        destinationLabel="A"
+        change={makeChange({ hasChange: false })}
+      />,
+    )
+
+    expect(screen.getByText(/no longer changes effective access restrictions/i)).toBeInTheDocument()
+    expect(screen.getByText(/Restrictions are no longer affected/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^move$/i }))
+    expect(onConfirm).toHaveBeenCalledOnce()
+  })
+
   it('falls back to ID string when program is not in programs list', () => {
     render(
       <MoveRestrictionConfirmDialog
