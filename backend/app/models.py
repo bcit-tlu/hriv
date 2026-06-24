@@ -224,6 +224,14 @@ class SourceImage(Base):
         ForeignKey("images.id", ondelete="SET NULL"), nullable=True
     )
     file_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Tile-cache provenance (see app/tile_provenance.py and docs/tile-cache-provenance.md).
+    # Recorded when tiles are generated so currentness can be evaluated after a
+    # restore, replacement, or pipeline change without inspecting the filesystem.
+    source_checksum: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tile_settings_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tiles_generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -232,6 +240,23 @@ class SourceImage(Base):
     )
 
     image: Mapped["Image | None"] = relationship("Image")
+
+    @property
+    def tile_cache_status(self) -> str:
+        """Effective tile-cache status (``current``/``missing``/``stale``/``failed``).
+
+        Derived from the stored provenance fields plus the current pipeline
+        settings; see :func:`app.tile_provenance.evaluate_tile_cache_status`.
+        Computed (not stored) so it can never drift from the live settings hash
+        when the tile-generation version changes.
+        """
+        from .tile_provenance import evaluate_tile_cache_status
+
+        return evaluate_tile_cache_status(
+            processing_status=self.status,
+            tiles_generated_at=self.tiles_generated_at,
+            tile_settings_hash=self.tile_settings_hash,
+        )
 
 
 class BulkImportJob(Base):
