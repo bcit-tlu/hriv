@@ -91,8 +91,6 @@ try {
         '--config',
         prettierConfigPath,
         '--ignore-unknown',
-        '--ignore-path',
-        prettierIgnorePath,
         ...tempFiles.map(({ tempFile }) => tempFile),
       ],
       {
