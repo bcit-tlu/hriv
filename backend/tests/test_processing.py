@@ -812,6 +812,50 @@ async def test_rebuild_source_image_tiles_success() -> None:
     mock_replace.assert_called_once()
 
 
+async def test_rebuild_source_image_tiles_restores_old_tree_on_swap_failure() -> None:
+    """If promoting the new tree fails, the previous tree is moved back."""
+    src = SimpleNamespace(
+        id=5, image_id=10, stored_path="/data/source_images/5.tiff",
+        source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+    )
+    img = SimpleNamespace(
+        tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
+        version=3,
+    )
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=img)
+    session.commit = AsyncMock()
+
+    # Sequence: move existing aside (ok), promote new (fails), restore (ok).
+    replace_calls = []
+
+    def replace_side_effect(srcpath, dstpath):
+        replace_calls.append((srcpath, dstpath))
+        if len(replace_calls) == 2:
+            raise OSError("promote failed")
+
+    with (
+        patch(
+            "app.processing.generate_tiles",
+            return_value=("image.dzi", "thumbnail.jpeg", 1024, 768),
+        ),
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.settings") as ms,
+        patch("app.processing.os.path.isfile", return_value=True),
+        patch("app.processing.os.path.isdir", return_value=True),
+        patch("app.processing.os.replace", side_effect=replace_side_effect),
+        patch("app.processing.shutil.rmtree"),
+    ):
+        ms.tiles_dir = "/data/tiles"
+        with pytest.raises(OSError, match="promote failed"):
+            await rebuild_source_image_tiles(session, src)
+
+    # Three renames: aside, failed promote, restore. Provenance untouched.
+    assert len(replace_calls) == 3
+    assert src.tile_settings_hash is None
+    session.commit.assert_not_awaited()
+
+
 async def test_rebuild_source_image_tiles_missing_source_raises() -> None:
     """A missing source file raises FileNotFoundError without generating."""
     src = SimpleNamespace(

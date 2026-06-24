@@ -1100,7 +1100,10 @@ async def select_rebuild_targets(
         )
         .order_by(SourceImage.id)
     )
-    if image_ids:
+    if image_ids is not None:
+        # An explicit (possibly empty) list narrows to those images; an empty
+        # list therefore selects nothing rather than silently meaning "all".
+        # ``None`` (the default) leaves the population unrestricted.
         stmt = stmt.where(SourceImage.image_id.in_(image_ids))
 
     sources = (await session.execute(stmt)).scalars().all()
@@ -1177,12 +1180,25 @@ async def rebuild_source_image_tiles(
             )
 
         def _swap() -> None:
-            # Remove the old tree (if any) then move the freshly generated one
-            # into place. os.replace on the directory would fail if the target
-            # is a non-empty dir, so the rmtree must happen first.
-            if os.path.isdir(output_dir):
-                shutil.rmtree(output_dir, ignore_errors=True)
-            os.replace(tmp_dir, output_dir)
+            # Rename-based swap so the previous tile tree stays recoverable
+            # until the new one is promoted: move any existing tree aside, then
+            # rename the freshly generated tree into place (the target no longer
+            # exists, so the directory rename succeeds), then delete the old
+            # tree. If promotion fails, the old tree is restored so we never end
+            # up serving no tiles at all. Each step is a single rename, so the
+            # window where ``output_dir`` is absent is as small as possible.
+            backup_dir = f"{output_dir}.old-{uuid4().hex}"
+            had_existing = os.path.isdir(output_dir)
+            if had_existing:
+                os.replace(output_dir, backup_dir)
+            try:
+                os.replace(tmp_dir, output_dir)
+            except Exception:
+                if had_existing:
+                    os.replace(backup_dir, output_dir)
+                raise
+            if had_existing:
+                shutil.rmtree(backup_dir, ignore_errors=True)
 
         await asyncio.to_thread(_swap)
     except Exception:

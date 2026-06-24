@@ -842,7 +842,9 @@ async def run_rebuild_tiles(task_id: int) -> None:
                     raise ValueError("Expected a JSON object for rebuild parameters")
                 scope = params.get("scope", scope)
                 ids = params.get("image_ids")
-                if ids:
+                # Preserve an explicit (possibly empty) list so it narrows the
+                # population; only a missing/null value means "all images".
+                if ids is not None:
                     image_ids = [int(i) for i in ids]
             if scope not in processing.REBUILD_SCOPES:
                 raise ValueError(f"Unknown rebuild scope: {scope!r}")
@@ -980,12 +982,18 @@ async def run_rebuild_tiles(task_id: int) -> None:
                 error_message=str(exc),
             )
         finally:
-            # Clean up the small parameters file once the task is terminal.
+            # Clean up the small parameters file once the task is terminal. A
+            # cleanup failure is non-fatal — the task result is unaffected — but
+            # is logged so an orphaned file can be diagnosed.
             if input_path and os.path.exists(input_path):
                 try:
                     os.unlink(input_path)
                 except OSError:
-                    pass
+                    logger.debug(
+                        "Failed to remove rebuild params file %s",
+                        input_path,
+                        exc_info=True,
+                    )
 
 
 # ── Filesystem Export ──────────────────────────────────────

@@ -217,10 +217,17 @@ async def start_rebuild_tiles(
             db, "rebuild_tiles", user, input_path=input_path,
         )
     except Exception:
+        # Roll back the staged params file if task creation failed. Failing to
+        # remove it is non-fatal (the original error is re-raised), but record
+        # it so an orphaned file is diagnosable.
         try:
             os.unlink(input_path)
         except OSError:
-            pass
+            logger.warning(
+                "Failed to remove rebuild params file %s after task-creation error",
+                input_path,
+                exc_info=True,
+            )
         raise
     await _kick_off(task, bg)
     return _task_to_dict(task)
