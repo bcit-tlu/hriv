@@ -913,6 +913,10 @@ describe('Source Image API', () => {
       active: true,
       image_id: 10,
       file_size: 5000,
+      source_checksum: 'a'.repeat(64),
+      tile_settings_hash: 'b'.repeat(64),
+      tiles_generated_at: '2026-01-01T00:00:00Z',
+      tile_cache_status: 'current',
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
     }

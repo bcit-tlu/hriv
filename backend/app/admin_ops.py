@@ -333,6 +333,9 @@ async def run_db_export(task_id: int) -> None:
                         "active": s.active,
                         "image_id": s.image_id,
                         "file_size": s.file_size,
+                        "source_checksum": s.source_checksum,
+                        "tile_settings_hash": s.tile_settings_hash,
+                        "tiles_generated_at": dt(s.tiles_generated_at),
                         "created_at": dt(s.created_at),
                         "updated_at": dt(s.updated_at),
                     }
@@ -672,6 +675,9 @@ async def run_db_import(task_id: int) -> None:
                         active=s.get("active", True),
                         image_id=s.get("image_id"),
                         file_size=s.get("file_size"),
+                        source_checksum=s.get("source_checksum"),
+                        tile_settings_hash=s.get("tile_settings_hash"),
+                        tiles_generated_at=_parse_dt(s.get("tiles_generated_at")),
                         created_at=_parse_dt(s.get("created_at")),
                         updated_at=_parse_dt(s.get("updated_at")),
                     )

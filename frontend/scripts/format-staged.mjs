@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
+import { getFileInfo } from 'prettier'
 
 function git(args, options = {}) {
   return execFileSync('git', args, {
@@ -68,42 +69,48 @@ const prettierConfigPath = join(repoRoot, '.prettierrc.json')
 const prettierIgnorePath = join(repoRoot, '.prettierignore')
 
 try {
-  const tempFiles = stagedFiles.map((file) => {
+  const tempFiles = []
+  for (const file of stagedFiles) {
+    const fileInfo = await getFileInfo(join(repoRoot, file), {
+      ignorePath: prettierIgnorePath,
+    })
+    if (fileInfo.ignored) continue
+
     const tempFile = join(tempRoot, file)
     mkdirSync(dirname(tempFile), { recursive: true })
     writeFileSync(tempFile, gitBuffer(['show', `:${file}`]))
-    return { file, tempFile, hadUnstagedChanges: hasUnstagedChanges(file) }
-  })
+    tempFiles.push({ file, tempFile, hadUnstagedChanges: hasUnstagedChanges(file) })
+  }
 
-  execFileSync(
-    process.execPath,
-    [
-      prettierCli,
-      '--write',
-      '--config',
-      prettierConfigPath,
-      '--ignore-unknown',
-      '--ignore-path',
-      prettierIgnorePath,
-      ...tempFiles.map(({ tempFile }) => tempFile),
-    ],
-    {
-      cwd: repoRoot,
-      stdio: 'inherit',
-    },
-  )
+  if (tempFiles.length > 0) {
+    execFileSync(
+      process.execPath,
+      [
+        prettierCli,
+        '--write',
+        '--config',
+        prettierConfigPath,
+        '--ignore-unknown',
+        ...tempFiles.map(({ tempFile }) => tempFile),
+      ],
+      {
+        cwd: repoRoot,
+        stdio: 'inherit',
+      },
+    )
 
-  for (const { file, tempFile, hadUnstagedChanges } of tempFiles) {
-    const blobHash = git(['hash-object', '-w', tempFile])
-    const mode = getIndexMode(file)
+    for (const { file, tempFile, hadUnstagedChanges } of tempFiles) {
+      const blobHash = git(['hash-object', '-w', tempFile])
+      const mode = getIndexMode(file)
 
-    execFileSync('git', ['update-index', '--cacheinfo', `${mode},${blobHash},${file}`], {
-      cwd: repoRoot,
-      stdio: 'inherit',
-    })
+      execFileSync('git', ['update-index', '--cacheinfo', `${mode},${blobHash},${file}`], {
+        cwd: repoRoot,
+        stdio: 'inherit',
+      })
 
-    if (!hadUnstagedChanges) {
-      copyFileSync(tempFile, join(repoRoot, file))
+      if (!hadUnstagedChanges) {
+        copyFileSync(tempFile, join(repoRoot, file))
+      }
     }
   }
 } finally {

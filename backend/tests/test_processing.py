@@ -11,6 +11,7 @@ if "pyvips" not in sys.modules:
 
 from app.processing import (
     ProgressTracker,
+    _best_effort_source_checksum,
     _estimate_tile_count,
     _detect_openslide_pyramid,
     _detect_tiff_pyramid,
@@ -190,6 +191,13 @@ async def test_process_source_image_success() -> None:
                     await process_source_image(1)
 
     assert src.status == "completed"
+    # Tile-cache provenance is recorded on success.
+    from app.tile_provenance import current_tile_settings_hash
+
+    assert src.tile_settings_hash == current_tile_settings_hash()
+    assert src.tiles_generated_at is not None
+    # The fake stored_path does not exist, so the checksum is best-effort None.
+    assert src.source_checksum is None
 
 
 async def test_process_source_image_failure() -> None:
@@ -230,6 +238,28 @@ async def test_process_source_image_failure() -> None:
 
     assert src.status == "failed"
     assert src.error_message is not None
+
+
+# ── _best_effort_source_checksum tests ───────────────────
+
+
+async def test_best_effort_source_checksum_returns_value(tmp_path) -> None:
+    """Returns the underlying checksum when computation succeeds."""
+    path = tmp_path / "src.bin"
+    path.write_bytes(b"data")
+    result = await _best_effort_source_checksum(str(path))
+    assert result is not None
+    assert len(result) == 64
+
+
+async def test_best_effort_source_checksum_swallows_dispatch_error() -> None:
+    """A to_thread dispatch failure degrades to None rather than raising."""
+    with patch(
+        "app.processing.asyncio.to_thread",
+        side_effect=RuntimeError("thread pool exhausted"),
+    ):
+        result = await _best_effort_source_checksum("/whatever")
+    assert result is None
 
 
 # ── reconcile_stale_source_images tests ──────────────────

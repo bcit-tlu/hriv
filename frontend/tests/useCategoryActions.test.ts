@@ -918,6 +918,250 @@ describe('useCategoryActions', () => {
     })
   })
 
+  describe('handleMoveCategory restriction confirmation', () => {
+    it('sets pendingMoveConfirm instead of moving when restrictions change (to restricted parent)', async () => {
+      const parent = makeCategory({ id: 2, label: 'Parent', programIds: [42] })
+      const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [parent, cat] })
+      mockUpdateCategory.mockResolvedValue({
+        id: 3,
+        label: 'Cat',
+        parent_id: 2,
+        program_ids: [],
+        group_ids: [],
+        status: null,
+        sort_order: 0,
+        version: 2,
+        metadata_extra: null,
+        created_at: '',
+        updated_at: '',
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        await result.current.handleMoveCategory(3, 2)
+      })
+
+      expect(mockUpdateCategory).not.toHaveBeenCalled()
+      expect(result.current.pendingMoveConfirm).not.toBeNull()
+      expect(result.current.pendingMoveConfirm?.categoryId).toBe(3)
+      expect(result.current.pendingMoveConfirm?.newParentId).toBe(2)
+      expect(result.current.pendingMoveConfirm?.change.hasChange).toBe(true)
+      expect(result.current.pendingMoveConfirm?.source).toBe('dialog')
+    })
+
+    it('refreshes pendingMoveConfirm when categories change while dialog is open', async () => {
+      const parent = makeCategory({ id: 2, label: 'Parent', programIds: [42] })
+      const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [parent, cat] })
+      const { result, rerender } = renderHook(
+        ({ hookDeps }: { hookDeps: UseCategoryActionsDeps }) => useCategoryActions(hookDeps),
+        { initialProps: { hookDeps: deps } },
+      )
+
+      await act(async () => {
+        await result.current.handleMoveCategory(3, 2)
+      })
+
+      const refreshedParent = makeCategory({ id: 2, label: 'Renamed Parent', programIds: [7] })
+      const refreshedCat = makeCategory({ id: 3, label: 'Renamed Cat', programIds: [] })
+      rerender({ hookDeps: { ...deps, categories: [refreshedParent, refreshedCat] } })
+
+      expect(result.current.pendingMoveConfirm?.categoryLabel).toBe('Renamed Cat')
+      expect(result.current.pendingMoveConfirm?.destinationLabel).toBe('Renamed Parent')
+      expect(result.current.pendingMoveConfirm?.change.newEffectiveProgramIds).toEqual([7])
+    })
+
+    it('refreshes pendingMoveConfirm when category changes remove the restriction diff', async () => {
+      const parent = makeCategory({ id: 2, label: 'Parent', programIds: [42] })
+      const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [parent, cat] })
+      const { result, rerender } = renderHook(
+        ({ hookDeps }: { hookDeps: UseCategoryActionsDeps }) => useCategoryActions(hookDeps),
+        { initialProps: { hookDeps: deps } },
+      )
+
+      await act(async () => {
+        await result.current.handleMoveCategory(3, 2)
+      })
+
+      const unrestrictedParent = makeCategory({ id: 2, label: 'Parent', programIds: [] })
+      rerender({ hookDeps: { ...deps, categories: [unrestrictedParent, cat] } })
+
+      expect(result.current.pendingMoveConfirm?.change.hasChange).toBe(false)
+      expect(result.current.pendingMoveConfirm?.change.newEffectiveProgramIds).toEqual([])
+    })
+
+    it('proceeds immediately without confirmation when restrictions are unchanged', async () => {
+      const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [cat] })
+      mockUpdateCategory.mockResolvedValue({
+        id: 3,
+        label: 'Cat',
+        parent_id: null,
+        program_ids: [],
+        group_ids: [],
+        status: null,
+        sort_order: 0,
+        version: 2,
+        metadata_extra: null,
+        created_at: '',
+        updated_at: '',
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        await result.current.handleMoveCategory(3, null)
+      })
+
+      expect(mockUpdateCategory).toHaveBeenCalledWith(3, { parent_id: null }, 1)
+      expect(result.current.pendingMoveConfirm).toBeNull()
+    })
+
+    it('confirmPendingMove executes the move and clears pendingMoveConfirm', async () => {
+      const parent = makeCategory({ id: 2, label: 'Parent', programIds: [42] })
+      const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [parent, cat] })
+      mockUpdateCategory.mockResolvedValue({
+        id: 3,
+        label: 'Cat',
+        parent_id: 2,
+        program_ids: [],
+        group_ids: [],
+        status: null,
+        sort_order: 0,
+        version: 2,
+        metadata_extra: null,
+        created_at: '',
+        updated_at: '',
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      // Trigger the pending confirm
+      await act(async () => {
+        await result.current.handleMoveCategory(3, 2)
+      })
+      expect(result.current.pendingMoveConfirm).not.toBeNull()
+
+      // Confirm
+      await act(async () => {
+        await result.current.confirmPendingMove()
+      })
+
+      expect(mockUpdateCategory).toHaveBeenCalled()
+      // dialog-initiated: moveCatOpen is closed, no undo snack
+      expect(result.current.moveCatOpen).toBe(false)
+      expect(result.current.movingCategory).toBeNull()
+      expect(result.current.pendingMoveConfirm).toBeNull()
+    })
+
+    it('confirmPendingMove from dialog closes the dialog, not the DnD undo snack path', async () => {
+      const parent = makeCategory({ id: 2, label: 'Parent', programIds: [42] })
+      const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [parent, cat] })
+      mockUpdateCategory.mockResolvedValue({
+        id: 3,
+        label: 'Cat',
+        parent_id: 2,
+        program_ids: [],
+        group_ids: [],
+        status: null,
+        sort_order: 0,
+        version: 2,
+        metadata_extra: null,
+        created_at: '',
+        updated_at: '',
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      // Open dialog first so moveCatOpen=true
+      act(() => {
+        result.current.handleRequestMoveCategory(cat)
+      })
+      expect(result.current.moveCatOpen).toBe(true)
+
+      await act(async () => {
+        await result.current.handleMoveCategory(3, 2)
+      })
+      expect(result.current.pendingMoveConfirm?.source).toBe('dialog')
+
+      await act(async () => {
+        await result.current.confirmPendingMove()
+      })
+
+      // doMoveCategory path: dialog closed
+      expect(result.current.moveCatOpen).toBe(false)
+      expect(result.current.movingCategory).toBeNull()
+      // DnD undo snack must NOT have fired
+      expect(deps.setMoveSnack).not.toHaveBeenCalled()
+    })
+
+    it('cancelPendingMove clears pendingMoveConfirm without moving', async () => {
+      const parent = makeCategory({ id: 2, label: 'Parent', programIds: [42] })
+      const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [parent, cat] })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        await result.current.handleMoveCategory(3, 2)
+      })
+      expect(result.current.pendingMoveConfirm).not.toBeNull()
+
+      act(() => {
+        result.current.cancelPendingMove()
+      })
+
+      expect(mockUpdateCategory).not.toHaveBeenCalled()
+      expect(result.current.pendingMoveConfirm).toBeNull()
+    })
+  })
+
+  describe('handleDropCategoryOnCategory restriction confirmation', () => {
+    it('sets pendingMoveConfirm instead of moving when restrictions change', async () => {
+      const target = makeCategory({ id: 2, label: 'Target', programIds: [7] })
+      const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [target, cat] })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        await result.current.handleDropCategoryOnCategory(3, 2)
+      })
+
+      expect(mockUpdateCategory).not.toHaveBeenCalled()
+      expect(result.current.pendingMoveConfirm).not.toBeNull()
+      expect(result.current.pendingMoveConfirm?.categoryId).toBe(3)
+      expect(result.current.pendingMoveConfirm?.newParentId).toBe(2)
+      expect(result.current.pendingMoveConfirm?.source).toBe('dnd')
+    })
+
+    it('proceeds immediately when restrictions are unchanged', async () => {
+      const target = makeCategory({ id: 2, label: 'Target', programIds: [] })
+      const cat = makeCategory({ id: 3, label: 'Cat', programIds: [] })
+      const deps = makeDeps({ categories: [target, cat] })
+      mockUpdateCategory.mockResolvedValue({
+        id: 3,
+        label: 'Cat',
+        parent_id: 2,
+        program_ids: [],
+        group_ids: [],
+        status: null,
+        sort_order: 0,
+        version: 2,
+        metadata_extra: null,
+        created_at: '',
+        updated_at: '',
+      })
+      const { result } = renderHook(() => useCategoryActions(deps))
+
+      await act(async () => {
+        await result.current.handleDropCategoryOnCategory(3, 2)
+      })
+
+      expect(mockUpdateCategory).toHaveBeenCalledWith(3, { parent_id: 2 }, 1)
+      expect(result.current.pendingMoveConfirm).toBeNull()
+    })
+  })
+
   describe('editCategoryContext', () => {
     it('returns fallback when editNameCategory is null', () => {
       const deps = makeDeps()
