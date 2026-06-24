@@ -240,9 +240,7 @@ export default function SortableTileGrid({
   useLayoutEffect(() => {
     currentCategoriesRef.current = currentCategories
     visibleImagesRef.current = visibleImages
-  }, [currentCategories, visibleImages])
 
-  useLayoutEffect(() => {
     if (
       syncedCategoriesRef.current === currentCategories &&
       syncedVisibleImagesRef.current === visibleImages
