@@ -391,13 +391,13 @@ class AdminTask(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     task_type: Mapped[str] = mapped_column(
         String(50), nullable=False,
-    )  # db_export, db_import, files_export, files_import
+    )  # db_export, db_import, files_export, files_import, rebuild_tiles
     status: Mapped[str] = mapped_column(
         String(50),
         nullable=False,
         default="pending",
         server_default=text("'pending'"),
-    )  # pending, running, completed, failed
+    )  # uploading, pending, running, cancelling, cancelled, completed, failed
     progress: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0",
     )
