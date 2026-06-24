@@ -1443,7 +1443,13 @@ async def test_run_rebuild_tiles_noop_when_nothing_selected() -> None:
 
 
 async def test_run_rebuild_tiles_reports_per_image_failures() -> None:
-    """A failing image is logged but does not abort the batch."""
+    """A failing image is logged but does not abort the batch.
+
+    The runner re-fetches each ``SourceImage`` by id every iteration so a
+    per-image ``session.rollback()`` (which expires the identity map) cannot
+    break later images — verified here by asserting one ``session.get`` per
+    target source id.
+    """
     task = _rebuild_task()
     session, factory = _rebuild_factory(task)
     targets = [
@@ -1451,6 +1457,17 @@ async def test_run_rebuild_tiles_reports_per_image_failures() -> None:
         SimpleNamespace(id=2, image_id=20),
         SimpleNamespace(id=3, image_id=30),
     ]
+    source_get_ids: list[int] = []
+
+    def get_side_effect(model, ident):
+        # AdminTask lookups return the task; SourceImage lookups return a
+        # fresh ORM-like object, mirroring a real re-fetch after rollback.
+        if getattr(model, "__name__", "") == "SourceImage":
+            source_get_ids.append(ident)
+            return SimpleNamespace(id=ident, image_id=ident * 10)
+        return task
+
+    session.get = AsyncMock(side_effect=get_side_effect)
     # Source #2 fails; #1 and #3 succeed.
     rebuild_mock = AsyncMock(side_effect=[None, RuntimeError("vips boom"), None])
 
@@ -1469,6 +1486,39 @@ async def test_run_rebuild_tiles_reports_per_image_failures() -> None:
     assert "Rebuilt 2 of 3 tile set(s); 1 failed." in task.log
     assert "ERROR rebuilding source #2" in task.log
     assert rebuild_mock.await_count == 3
+    # Each source is re-fetched exactly once, even after the failure rollback.
+    assert source_get_ids == [1, 2, 3]
+
+
+async def test_run_rebuild_tiles_skips_source_deleted_mid_batch() -> None:
+    """A source that vanishes mid-batch is skipped, not rebuilt."""
+    task = _rebuild_task()
+    session, factory = _rebuild_factory(task)
+    targets = [SimpleNamespace(id=1, image_id=10), SimpleNamespace(id=2, image_id=20)]
+
+    def get_side_effect(model, ident):
+        if getattr(model, "__name__", "") == "SourceImage":
+            # Source #2 was deleted after selection.
+            return None if ident == 2 else SimpleNamespace(id=ident, image_id=ident * 10)
+        return task
+
+    session.get = AsyncMock(side_effect=get_side_effect)
+    rebuild_mock = AsyncMock(return_value=None)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch(
+            "app.processing.select_rebuild_targets",
+            AsyncMock(return_value=targets),
+        ),
+        patch("app.processing.rebuild_source_image_tiles", rebuild_mock),
+    ):
+        await run_rebuild_tiles(1)
+
+    assert task.status == "completed"
+    assert "Rebuilt 1 of 2 tile set(s); 1 failed." in task.log
+    assert "Skipped source #2: no longer exists." in task.log
+    assert rebuild_mock.await_count == 1
 
 
 async def test_run_rebuild_tiles_logs_explicit_empty_image_ids() -> None:

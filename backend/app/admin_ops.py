@@ -885,21 +885,42 @@ async def run_rebuild_tiles(task_id: int) -> None:
                 progress=10,
             )
 
-            for index, src in enumerate(targets):
+            # Capture target ids up front: a per-image ``session.rollback()``
+            # expires *every* ORM object in the session's identity map (this
+            # happens regardless of ``expire_on_commit``), so we must not depend
+            # on the original ``SourceImage`` instances surviving across
+            # iterations — accessing an expired attribute under AsyncSession
+            # would raise ``MissingGreenlet``. Re-fetching by id each iteration
+            # keeps per-image isolation intact and also handles a source image
+            # that is deleted while the batch is running.
+            target_ids = [src.id for src in targets]
+
+            for index, src_id in enumerate(target_ids):
                 # Observe cancellation requests between images so a long batch
                 # can be stopped without corrupting an in-flight regeneration.
                 await _update_task(
                     session, task,
-                    log_line=f"[{index + 1}/{total}] Rebuilding source #{src.id}…",
+                    log_line=f"[{index + 1}/{total}] Rebuilding source #{src_id}…",
                     check_cancelled=True,
                 )
                 try:
-                    await processing.rebuild_source_image_tiles(session, src)
-                    rebuilt += 1
-                    await _update_task(
-                        session, task,
-                        log_line=f"[{index + 1}/{total}] Rebuilt source #{src.id}.",
-                    )
+                    src = await session.get(SourceImage, src_id)
+                    if src is None:
+                        failures += 1
+                        await _update_task(
+                            session, task,
+                            log_line=(
+                                f"[{index + 1}/{total}] Skipped source #{src_id}: "
+                                "no longer exists."
+                            ),
+                        )
+                    else:
+                        await processing.rebuild_source_image_tiles(session, src)
+                        rebuilt += 1
+                        await _update_task(
+                            session, task,
+                            log_line=f"[{index + 1}/{total}] Rebuilt source #{src_id}.",
+                        )
                 except TaskCancelled:
                     raise
                 except Exception as exc:  # noqa: BLE001 — per-image isolation
@@ -915,14 +936,14 @@ async def run_rebuild_tiles(task_id: int) -> None:
                         extra={
                             "event": "admin_task.rebuild_tiles_image_failed",
                             "task_id": task_id,
-                            "source_image_id": src.id,
+                            "source_image_id": src_id,
                         },
                     )
                     await _update_task(
                         session, task,
                         log_line=(
                             f"[{index + 1}/{total}] ERROR rebuilding source "
-                            f"#{src.id}: {exc}"
+                            f"#{src_id}: {exc}"
                         ),
                     )
 
