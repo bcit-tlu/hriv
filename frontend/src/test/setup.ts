@@ -17,7 +17,7 @@ if (typeof globalThis.ResizeObserver === 'undefined') {
 // in-memory implementation. (No-op effect where jsdom's storage already works.)
 function createMemoryStorage(): Storage {
   const store = new Map<string, string>()
-  return {
+  const api = {
     get length() {
       return store.size
     },
@@ -25,18 +25,47 @@ function createMemoryStorage(): Storage {
       store.clear()
     },
     getItem(key: string) {
-      return store.has(key) ? (store.get(key) as string) : null
+      return store.has(String(key)) ? (store.get(String(key)) as string) : null
     },
     key(index: number) {
       return Array.from(store.keys())[index] ?? null
     },
     removeItem(key: string) {
-      store.delete(key)
+      store.delete(String(key))
     },
     setItem(key: string, value: string) {
-      store.set(key, String(value))
+      store.set(String(key), String(value))
     },
-  } as Storage
+  }
+  // Proxy so bracket/property access (storage['k'], storage.k) hits the same
+  // backing store as the method API, matching the real Storage index signature.
+  // Known members and symbols pass through to the method API; anything else is
+  // treated as a stored key.
+  return new Proxy(api, {
+    get(target, prop, receiver) {
+      if (typeof prop === 'symbol' || prop in target) {
+        return Reflect.get(target, prop, receiver)
+      }
+      return store.has(prop) ? store.get(prop) : undefined
+    },
+    set(target, prop, value, receiver) {
+      if (typeof prop === 'symbol' || prop in target) {
+        return Reflect.set(target, prop, value, receiver)
+      }
+      store.set(prop, String(value))
+      return true
+    },
+    has(target, prop) {
+      return prop in target || (typeof prop === 'string' && store.has(prop))
+    },
+    deleteProperty(target, prop) {
+      if (typeof prop === 'string' && store.has(prop)) {
+        store.delete(prop)
+        return true
+      }
+      return Reflect.deleteProperty(target, prop)
+    },
+  }) as Storage
 }
 
 for (const name of ['localStorage', 'sessionStorage'] as const) {

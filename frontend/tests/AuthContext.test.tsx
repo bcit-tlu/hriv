@@ -47,6 +47,9 @@ const localStorageMock = {
   removeItem: vi.fn((key: string) => {
     delete storage[key]
   }),
+  clear: vi.fn(() => {
+    for (const key of Object.keys(storage)) delete storage[key]
+  }),
 }
 Object.defineProperty(window, 'localStorage', { value: localStorageMock, writable: true })
 
