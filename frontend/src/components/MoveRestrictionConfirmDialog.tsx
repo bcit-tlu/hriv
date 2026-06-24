@@ -33,13 +33,19 @@ function RestrictionRow({
   label,
   ids,
   names,
-  empty,
+  initialized,
+  unrestricted,
+  conflicting,
 }: {
   label: string
   ids: number[]
   names: string[]
-  empty: string
+  initialized: boolean
+  unrestricted: string
+  conflicting: string
 }) {
+  const emptyLabel = initialized ? conflicting : unrestricted
+
   return (
     <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
       <Typography variant="body2" sx={{ minWidth: 80, pt: 0.25, color: 'text.secondary' }}>
@@ -47,7 +53,7 @@ function RestrictionRow({
       </Typography>
       {ids.length === 0 ? (
         <Typography variant="body2" sx={{ fontStyle: 'italic', color: 'text.disabled' }}>
-          {empty}
+          {emptyLabel}
         </Typography>
       ) : (
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
@@ -76,10 +82,13 @@ export default function MoveRestrictionConfirmDialog({
   const newGroups = change.newEffectiveGroupIds
 
   const hasProgramChange =
+    change.oldProgramsInitialized !== change.newProgramsInitialized ||
     oldPrograms.length !== newPrograms.length ||
     !oldPrograms.every((id) => newPrograms.includes(id))
   const hasGroupChange =
-    oldGroups.length !== newGroups.length || !oldGroups.every((id) => newGroups.includes(id))
+    change.oldGroupsInitialized !== change.newGroupsInitialized ||
+    oldGroups.length !== newGroups.length ||
+    !oldGroups.every((id) => newGroups.includes(id))
 
   return (
     <Dialog open={open} onClose={onCancel} maxWidth="sm" fullWidth>
@@ -98,13 +107,17 @@ export default function MoveRestrictionConfirmDialog({
               label="Before:"
               ids={oldPrograms}
               names={oldPrograms.map((id) => programName(id, programs))}
-              empty="Unrestricted (all programs)"
+              initialized={change.oldProgramsInitialized}
+              unrestricted="Unrestricted (all programs)"
+              conflicting="No programs (conflicting restrictions)"
             />
             <RestrictionRow
               label="After:"
               ids={newPrograms}
               names={newPrograms.map((id) => programName(id, programs))}
-              empty="Unrestricted (all programs)"
+              initialized={change.newProgramsInitialized}
+              unrestricted="Unrestricted (all programs)"
+              conflicting="No programs (conflicting restrictions)"
             />
           </Box>
         )}
@@ -116,13 +129,17 @@ export default function MoveRestrictionConfirmDialog({
               label="Before:"
               ids={oldGroups}
               names={oldGroups.map((id) => groupName(id, groups))}
-              empty="Unrestricted (all groups)"
+              initialized={change.oldGroupsInitialized}
+              unrestricted="Unrestricted (all groups)"
+              conflicting="No groups (conflicting restrictions)"
             />
             <RestrictionRow
               label="After:"
               ids={newGroups}
               names={newGroups.map((id) => groupName(id, groups))}
-              empty="Unrestricted (all groups)"
+              initialized={change.newGroupsInitialized}
+              unrestricted="Unrestricted (all groups)"
+              conflicting="No groups (conflicting restrictions)"
             />
           </Box>
         )}

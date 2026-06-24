@@ -15,7 +15,10 @@ import type { Category, ImageItem } from './types'
  *
  * A child can never widen the restriction beyond what its ancestors allow.
  */
-export function narrowProgramIds(ancestors: ReadonlyArray<{ programIds: number[] }>): number[] {
+function narrowProgramsWithState(ancestors: ReadonlyArray<{ programIds: number[] }>): {
+  ids: number[]
+  initialized: boolean
+} {
   let effective: number[] = []
   let initialized = false
   for (const node of ancestors) {
@@ -26,7 +29,11 @@ export function narrowProgramIds(ancestors: ReadonlyArray<{ programIds: number[]
       initialized = true
     }
   }
-  return effective
+  return { ids: effective, initialized }
+}
+
+export function narrowProgramIds(ancestors: ReadonlyArray<{ programIds: number[] }>): number[] {
+  return narrowProgramsWithState(ancestors).ids
 }
 
 /**
@@ -35,7 +42,10 @@ export function narrowProgramIds(ancestors: ReadonlyArray<{ programIds: number[]
  * (narrowing) semantics: a child can never widen its group restriction beyond
  * what its ancestors allow.
  */
-export function narrowGroupIds(ancestors: ReadonlyArray<{ groupIds: number[] }>): number[] {
+function narrowGroupsWithState(ancestors: ReadonlyArray<{ groupIds: number[] }>): {
+  ids: number[]
+  initialized: boolean
+} {
   let effective: number[] = []
   let initialized = false
   for (const node of ancestors) {
@@ -46,7 +56,11 @@ export function narrowGroupIds(ancestors: ReadonlyArray<{ groupIds: number[] }>)
       initialized = true
     }
   }
-  return effective
+  return { ids: effective, initialized }
+}
+
+export function narrowGroupIds(ancestors: ReadonlyArray<{ groupIds: number[] }>): number[] {
+  return narrowGroupsWithState(ancestors).ids
 }
 
 /**
@@ -100,12 +114,20 @@ export interface MoveRestrictionChange {
   hasChange: boolean
   /** Effective program IDs at the old location (inherited + direct narrowing). */
   oldEffectiveProgramIds: number[]
+  /** Whether any program restriction applied at the old location. */
+  oldProgramsInitialized: boolean
   /** Effective program IDs at the new location (inherited + direct narrowing). */
   newEffectiveProgramIds: number[]
+  /** Whether any program restriction applies at the new location. */
+  newProgramsInitialized: boolean
   /** Effective group IDs at the old location (inherited + direct narrowing). */
   oldEffectiveGroupIds: number[]
+  /** Whether any group restriction applied at the old location. */
+  oldGroupsInitialized: boolean
   /** Effective group IDs at the new location (inherited + direct narrowing). */
   newEffectiveGroupIds: number[]
+  /** Whether any group restriction applies at the new location. */
+  newGroupsInitialized: boolean
 }
 
 /**
@@ -125,10 +147,10 @@ export function computeMoveRestrictionChange(
   currentAncestorPath: ReadonlyArray<{ programIds: number[]; groupIds: number[] }>,
   newAncestorPath: ReadonlyArray<{ programIds: number[]; groupIds: number[] }>,
 ): MoveRestrictionChange {
-  const oldEffectiveProgramIds = narrowProgramIds([...currentAncestorPath, category])
-  const newEffectiveProgramIds = narrowProgramIds([...newAncestorPath, category])
-  const oldEffectiveGroupIds = narrowGroupIds([...currentAncestorPath, category])
-  const newEffectiveGroupIds = narrowGroupIds([...newAncestorPath, category])
+  const oldPrograms = narrowProgramsWithState([...currentAncestorPath, category])
+  const newPrograms = narrowProgramsWithState([...newAncestorPath, category])
+  const oldGroups = narrowGroupsWithState([...currentAncestorPath, category])
+  const newGroups = narrowGroupsWithState([...newAncestorPath, category])
 
   const setsEqual = (a: number[], b: number[]): boolean => {
     if (a.length !== b.length) return false
@@ -137,15 +159,21 @@ export function computeMoveRestrictionChange(
   }
 
   const hasChange =
-    !setsEqual(oldEffectiveProgramIds, newEffectiveProgramIds) ||
-    !setsEqual(oldEffectiveGroupIds, newEffectiveGroupIds)
+    oldPrograms.initialized !== newPrograms.initialized ||
+    oldGroups.initialized !== newGroups.initialized ||
+    !setsEqual(oldPrograms.ids, newPrograms.ids) ||
+    !setsEqual(oldGroups.ids, newGroups.ids)
 
   return {
     hasChange,
-    oldEffectiveProgramIds,
-    newEffectiveProgramIds,
-    oldEffectiveGroupIds,
-    newEffectiveGroupIds,
+    oldEffectiveProgramIds: oldPrograms.ids,
+    oldProgramsInitialized: oldPrograms.initialized,
+    newEffectiveProgramIds: newPrograms.ids,
+    newProgramsInitialized: newPrograms.initialized,
+    oldEffectiveGroupIds: oldGroups.ids,
+    oldGroupsInitialized: oldGroups.initialized,
+    newEffectiveGroupIds: newGroups.ids,
+    newGroupsInitialized: newGroups.initialized,
   }
 }
 

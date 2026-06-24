@@ -270,7 +270,9 @@ describe('computeMoveRestrictionChange', () => {
     const result = computeMoveRestrictionChange(cat, [], [])
     expect(result.hasChange).toBe(false)
     expect(result.oldEffectiveProgramIds).toEqual([])
+    expect(result.oldProgramsInitialized).toBe(false)
     expect(result.newEffectiveProgramIds).toEqual([])
+    expect(result.newProgramsInitialized).toBe(false)
   })
 
   it('hasChange=true when moving from restricted parent to unrestricted root', () => {
@@ -278,7 +280,9 @@ describe('computeMoveRestrictionChange', () => {
     const result = computeMoveRestrictionChange(cat, [node([1, 2])], [])
     expect(result.hasChange).toBe(true)
     expect(result.oldEffectiveProgramIds).toEqual([1, 2])
+    expect(result.oldProgramsInitialized).toBe(true)
     expect(result.newEffectiveProgramIds).toEqual([])
+    expect(result.newProgramsInitialized).toBe(false)
   })
 
   it('hasChange=true when moving from unrestricted root into restricted parent', () => {
@@ -286,7 +290,9 @@ describe('computeMoveRestrictionChange', () => {
     const result = computeMoveRestrictionChange(cat, [], [node([3])])
     expect(result.hasChange).toBe(true)
     expect(result.oldEffectiveProgramIds).toEqual([])
+    expect(result.oldProgramsInitialized).toBe(false)
     expect(result.newEffectiveProgramIds).toEqual([3])
+    expect(result.newProgramsInitialized).toBe(true)
   })
 
   it('hasChange=false when category has own restrictions and parent is unrestricted in both locations', () => {
@@ -311,7 +317,35 @@ describe('computeMoveRestrictionChange', () => {
     const result = computeMoveRestrictionChange(cat, [node([], [10])], [])
     expect(result.hasChange).toBe(true)
     expect(result.oldEffectiveGroupIds).toEqual([10])
+    expect(result.oldGroupsInitialized).toBe(true)
     expect(result.newEffectiveGroupIds).toEqual([])
+    expect(result.newGroupsInitialized).toBe(false)
+  })
+
+  it('distinguishes unrestricted empty results from conflicting empty intersections', () => {
+    const cat = node([10], [20])
+    const result = computeMoveRestrictionChange(cat, [], [node([30], [40])])
+    expect(result.hasChange).toBe(true)
+    expect(result.oldEffectiveProgramIds).toEqual([10])
+    expect(result.newEffectiveProgramIds).toEqual([])
+    expect(result.newProgramsInitialized).toBe(true)
+    expect(result.oldEffectiveGroupIds).toEqual([20])
+    expect(result.newEffectiveGroupIds).toEqual([])
+    expect(result.newGroupsInitialized).toBe(true)
+  })
+
+  it('flags change when empty effective IDs switch between unrestricted and conflicting', () => {
+    const cat = node([])
+    const result = computeMoveRestrictionChange(cat, [], [node([30], [40]), node([50], [60])])
+    expect(result.hasChange).toBe(true)
+    expect(result.oldEffectiveProgramIds).toEqual([])
+    expect(result.oldProgramsInitialized).toBe(false)
+    expect(result.newEffectiveProgramIds).toEqual([])
+    expect(result.newProgramsInitialized).toBe(true)
+    expect(result.oldEffectiveGroupIds).toEqual([])
+    expect(result.oldGroupsInitialized).toBe(false)
+    expect(result.newEffectiveGroupIds).toEqual([])
+    expect(result.newGroupsInitialized).toBe(true)
   })
 
   it('hasChange=false when both program and group restrictions stay the same', () => {

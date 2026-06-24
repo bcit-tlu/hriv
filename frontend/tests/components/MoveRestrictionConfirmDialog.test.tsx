@@ -27,9 +27,13 @@ function makeChange(overrides: Partial<MoveRestrictionChange> = {}): MoveRestric
   return {
     hasChange: true,
     oldEffectiveProgramIds: [],
+    oldProgramsInitialized: false,
     newEffectiveProgramIds: [],
+    newProgramsInitialized: false,
     oldEffectiveGroupIds: [],
+    oldGroupsInitialized: false,
     newEffectiveGroupIds: [],
+    newGroupsInitialized: false,
     ...overrides,
   }
 }
@@ -103,6 +107,26 @@ describe('MoveRestrictionConfirmDialog', () => {
     expect(screen.getAllByText(/unrestricted/i).length).toBeGreaterThan(0)
   })
 
+  it('distinguishes conflicting empty program intersections from unrestricted access', () => {
+    render(
+      <MoveRestrictionConfirmDialog
+        open
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+        categoryLabel="C"
+        destinationLabel="A"
+        change={makeChange({
+          oldEffectiveProgramIds: [],
+          oldProgramsInitialized: false,
+          newEffectiveProgramIds: [],
+          newProgramsInitialized: true,
+        })}
+      />,
+    )
+    expect(screen.getByText('Unrestricted (all programs)')).toBeInTheDocument()
+    expect(screen.getByText('No programs (conflicting restrictions)')).toBeInTheDocument()
+  })
+
   it('shows group restriction section with names when groups change', () => {
     render(
       <MoveRestrictionConfirmDialog
@@ -117,6 +141,26 @@ describe('MoveRestrictionConfirmDialog', () => {
     )
     expect(screen.getByText('Group restriction')).toBeInTheDocument()
     expect(screen.getByText('Group A')).toBeInTheDocument()
+  })
+
+  it('distinguishes conflicting empty group intersections from unrestricted access', () => {
+    render(
+      <MoveRestrictionConfirmDialog
+        open
+        onConfirm={vi.fn()}
+        onCancel={vi.fn()}
+        categoryLabel="C"
+        destinationLabel="A"
+        change={makeChange({
+          oldEffectiveGroupIds: [],
+          oldGroupsInitialized: false,
+          newEffectiveGroupIds: [],
+          newGroupsInitialized: true,
+        })}
+      />,
+    )
+    expect(screen.getByText('Unrestricted (all groups)')).toBeInTheDocument()
+    expect(screen.getByText('No groups (conflicting restrictions)')).toBeInTheDocument()
   })
 
   it('does not show program section when programs are unchanged', () => {
