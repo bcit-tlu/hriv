@@ -1,6 +1,6 @@
 # HRIV Disaster Recovery Backup Service
 
-Standalone service that snapshots the HRIV PostgreSQL database and image filesystem on a configurable cron schedule, stores archives in Azure Blob Storage, and supports full restore after a fresh redeployment.
+Standalone service that snapshots the HRIV PostgreSQL database and image filesystem on a configurable cron schedule, stores archives in Azure Blob Storage, and supports full restore after a fresh redeployment. In production deployments the service is intentionally narrowed to backing up the database and authoritative source images; generated DZI tiles are treated as derived data that should be protected by the storage layer (Longhorn snapshots/backups) or rebuilt from source images.
 
 ## Quick Start
 
@@ -42,25 +42,62 @@ docker compose --profile backup run --rm backup restore hriv-backup-20260101-020
 
 Each snapshot is a `.tar.gz` archive containing:
 
-| File            | Description                                                       |
-| --------------- | ----------------------------------------------------------------- |
-| `db.sql`        | Full PostgreSQL dump (`pg_dump --no-owner --no-acl`)              |
-| `data/`         | Complete copy of the image filesystem (source images + DZI tiles) |
-| `manifest.json` | Metadata: timestamp, file listing with SHA-256 checksums          |
+| File            | Description                                                                                                 |
+| --------------- | ----------------------------------------------------------------------------------------------------------- |
+| `db.sql`        | Full PostgreSQL dump (`pg_dump --no-owner --no-acl`)                                                        |
+| `data/`         | Image filesystem (source images + DZI tiles in development mode; source images only in production mode)   |
+| `manifest.json` | Metadata: timestamp, backup mode, file listing with SHA-256 checksums                                       |
+
+## Production Role
+
+In production deployments, the Python backup service is **not** the primary protection for the large generated tile tree. Its supported production role is:
+
+- **Database + source images:** the service archives and restores the PostgreSQL dump and the `/data/source_images` filesystem.
+- **Tiles excluded:** generated DZI tiles under `/data/tiles` are excluded from HRIV backups.
+- **Why:** tiles are derived data. They can be rebuilt from the authoritative source images using the `rebuild-tiles` admin task (see [`docs/admin-import-export.md`](docs/admin-import-export.md)), or protected independently by the storage layer.
+
+Set `BACKUP_MODE=production` to enable this mode. The default is `development`, which preserves the historical behavior of archiving the full `/data` tree including tiles.
+
+### Longhorn protection policy
+
+For Longhorn-backed Kubernetes deployments, protect each volume according to its role:
+
+| Volume | Recommended protection | Recovery path |
+| ------ | ---------------------- | ------------- |
+| Database (PostgreSQL PVC) | Longhorn snapshot + backup | Restore from Longhorn or replay from HRIV DB dump |
+| Source images (`/data/source_images` PVC) | Longhorn snapshot + backup | Restore from Longhorn or HRIV backup archive |
+| Generated tiles (`/data/tiles` PVC) | Longhorn snapshot + backup (optional) | Prefer tile rebuild from source images; restore from Longhorn only when the snapshot is newer than the last tile-pipeline change |
+| Backup archives (Azure / local PVC) | Azure Blob Storage replication or Longhorn snapshot of the backup PVC | Azure Blob Storage or Longhorn restore of the backup PVC |
+
+### Rebuild vs restore tiles
+
+- **Rebuild** when the database and source images are recovered but the tile volume is missing or stale. The `rebuild-tiles` admin task regenerates tiles for missing or stale sources using the current pipeline settings.
+- **Restore from Longhorn** when the tile volume is intact and you want to avoid the CPU cost of regeneration.
+- **Do not** rely on routine `.tar.gz` backups of the full tile tree. Walking and checksumming millions of tile files is slow, produces enormous archives, and competes with the storage layer's own efficient block-level snapshots.
+
+### Restore responsibilities
+
+| Data | Restore source |
+| ---- | -------------- |
+| Database | HRIV backup archive (`db.sql`) or Longhorn restore |
+| Source images | HRIV backup archive or Longhorn restore |
+| Generated tiles | `rebuild-tiles` admin task or Longhorn restore |
+| Backup archives | Azure Blob Storage or Longhorn restore of the backup PVC |
 
 ## Configuration
 
-All settings are controlled via environment variables in `docker-compose.yml`:
+All settings are controlled via environment variables in `docker-compose.yml` or the Helm chart:
 
-| Variable                          | Default                               | Description                                          |
-| --------------------------------- | ------------------------------------- | ---------------------------------------------------- |
-| `DATABASE_URL`                    | `postgresql://hriv:hriv@db:5432/hriv` | PostgreSQL connection string                         |
-| `DATA_DIR`                        | `/data`                               | Path to the image data volume                        |
-| `BACKUP_CRON_SCHEDULE`            | `0 2 * * *`                           | Cron expression for scheduled backups                |
-| `BACKUP_RETENTION_COUNT`          | `30`                                  | Number of snapshots to keep (older ones are deleted) |
-| `AZURE_STORAGE_CONNECTION_STRING` | _(empty)_                             | Azure Blob Storage connection string                 |
-| `AZURE_STORAGE_CONTAINER`         | _(empty)_                             | Azure Blob Storage container name                    |
-| `AZURE_BLOB_PREFIX`               | `hriv-backups`                        | Blob name prefix (folder) inside the container       |
+| Variable                          | Default                               | Description                                                                 |
+| --------------------------------- | ------------------------------------- | --------------------------------------------------------------------------- |
+| `DATABASE_URL`                    | `postgresql://hriv:hriv@db:5432/hriv` | PostgreSQL connection string                                                |
+| `DATA_DIR`                        | `/data`                               | Path to the image data volume                                               |
+| `BACKUP_CRON_SCHEDULE`            | `0 2 * * *`                           | Cron expression for scheduled backups                                       |
+| `BACKUP_RETENTION_COUNT`          | `30`                                  | Number of snapshots to keep (older ones are deleted)                      |
+| `BACKUP_MODE`                     | `development`                         | `development` = DB + source images + tiles; `production` = DB + source images only |
+| `AZURE_STORAGE_CONNECTION_STRING` | _(empty)_                             | Azure Blob Storage connection string                                        |
+| `AZURE_STORAGE_CONTAINER`         | _(empty)_                             | Azure Blob Storage container name                                           |
+| `AZURE_BLOB_PREFIX`               | `hriv-backups`                        | Blob name prefix (folder) inside the container                              |
 
 ## Kubernetes Volume Layout
 
@@ -121,7 +158,7 @@ The restore command automatically:
 1. **Enables maintenance mode** — writes a flag file to the shared data volume. The backend middleware returns `503 Service Unavailable` on all non-health endpoints, and the frontend shows a "Maintenance in Progress" overlay.
 2. **Downloads** the snapshot archive from Azure Blob Storage (or uses a local archive).
 3. **Drops all tables** in the PostgreSQL database and restores from the `db.sql` dump.
-4. **Replaces all files** in the data volume (source images and DZI tiles).
+4. **Replaces files** in the data volume. In `development` mode this includes source images and DZI tiles. In `production` mode the tile tree is preserved and left untouched; regenerate tiles afterward with the `rebuild-tiles` admin task if needed.
 5. **Disables maintenance mode** — removes the flag file. The frontend automatically detects the change and reloads within 10 seconds.
 
 If the restore fails, maintenance mode is still disabled automatically so the previous state remains accessible.
@@ -168,7 +205,7 @@ docker compose up -d db
 # 2. Wait for it to be healthy
 docker compose exec db pg_isready -U hriv
 
-# 3. Restore the latest snapshot (database + filesystem)
+# 3. Restore the latest snapshot (database + source images; tiles are excluded in production mode)
 docker compose --profile backup run --rm backup restore
 
 # 4. Start the rest of the stack
@@ -180,7 +217,7 @@ The restore command will:
 1. Enable maintenance mode (frontend shows overlay)
 2. Download the snapshot from Azure Blob Storage (or use local `/backups` volume)
 3. Drop and recreate all database tables from the `pg_dump`
-4. Restore all image files (source images and DZI tiles) to the data volume
+4. Restore image files to the data volume. In `production` mode source images are restored and the existing tile tree is preserved; use the `rebuild-tiles` admin task or a Longhorn tile-volume restore to bring tiles back
 5. Disable maintenance mode (frontend recovers automatically)
 
 ## Maintenance Mode
@@ -196,7 +233,7 @@ The backup service and the backend share a file-based maintenance flag at `<DATA
 The backup service works alongside the admin page's database import/export feature:
 
 - **Admin Export** (`GET /api/admin/export`): Exports a JSON document with categories, images, users, programs, and announcements. This is useful for quick manual backups of database records.
-- **Backup Service**: Creates comprehensive snapshots that include the full `pg_dump` (all tables, sequences, indexes) **and** the image filesystem. This provides a complete point-in-time recovery that the admin export alone cannot achieve.
+- **Backup Service**: In `development` mode, creates comprehensive snapshots that include the full `pg_dump` (all tables, sequences, indexes) **and** the image filesystem. In `production` mode it backs up the `pg_dump` and source images only; generated tiles are recovered from Longhorn snapshots or regenerated with the `rebuild-tiles` admin task.
 
 For maximum safety, the admin export can be used for quick application-level backups, while the backup service handles full disaster recovery including the image filesystem.
 
