@@ -42,11 +42,11 @@ docker compose --profile backup run --rm backup restore hriv-backup-20260101-020
 
 Each snapshot is a `.tar.gz` archive containing:
 
-| File            | Description                                                                                                 |
-| --------------- | ----------------------------------------------------------------------------------------------------------- |
-| `db.sql`        | Full PostgreSQL dump (`pg_dump --no-owner --no-acl`)                                                        |
-| `data/`         | Image filesystem (source images + DZI tiles in development mode; source images only in production mode)   |
-| `manifest.json` | Metadata: timestamp, backup mode, file listing with SHA-256 checksums                                       |
+| File            | Description                                                                                             |
+| --------------- | ------------------------------------------------------------------------------------------------------- |
+| `db.sql`        | Full PostgreSQL dump (`pg_dump --no-owner --no-acl`)                                                    |
+| `data/`         | Image filesystem (source images + DZI tiles in development mode; source images only in production mode) |
+| `manifest.json` | Metadata: timestamp, backup mode, file listing with SHA-256 checksums                                   |
 
 ## Production Role
 
@@ -62,12 +62,12 @@ Set `BACKUP_MODE=production` to enable this mode. The default is `development`, 
 
 For Longhorn-backed Kubernetes deployments, protect each volume according to its role:
 
-| Volume | Recommended protection | Recovery path |
-| ------ | ---------------------- | ------------- |
-| Database (PostgreSQL PVC) | Longhorn snapshot + backup | Restore from Longhorn or replay from HRIV DB dump |
-| Source images (`/data/source_images` PVC) | Longhorn snapshot + backup | Restore from Longhorn or HRIV backup archive |
-| Generated tiles (`/data/tiles` PVC) | Longhorn snapshot + backup (optional) | Prefer tile rebuild from source images; restore from Longhorn only when the snapshot is newer than the last tile-pipeline change |
-| Backup archives (Azure / local PVC) | Azure Blob Storage replication or Longhorn snapshot of the backup PVC | Azure Blob Storage or Longhorn restore of the backup PVC |
+| Volume                                    | Recommended protection                                                | Recovery path                                                                                                                    |
+| ----------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Database (PostgreSQL PVC)                 | Longhorn snapshot + backup                                            | Restore from Longhorn or replay from HRIV DB dump                                                                                |
+| Source images (`/data/source_images` PVC) | Longhorn snapshot + backup                                            | Restore from Longhorn or HRIV backup archive                                                                                     |
+| Generated tiles (`/data/tiles` PVC)       | Longhorn snapshot + backup (optional)                                 | Prefer tile rebuild from source images; restore from Longhorn only when the snapshot is newer than the last tile-pipeline change |
+| Backup archives (Azure / local PVC)       | Azure Blob Storage replication or Longhorn snapshot of the backup PVC | Azure Blob Storage or Longhorn restore of the backup PVC                                                                         |
 
 ### Rebuild vs restore tiles
 
@@ -77,27 +77,27 @@ For Longhorn-backed Kubernetes deployments, protect each volume according to its
 
 ### Restore responsibilities
 
-| Data | Restore source |
-| ---- | -------------- |
-| Database | HRIV backup archive (`db.sql`) or Longhorn restore |
-| Source images | HRIV backup archive or Longhorn restore |
-| Generated tiles | `rebuild-tiles` admin task or Longhorn restore |
+| Data            | Restore source                                           |
+| --------------- | -------------------------------------------------------- |
+| Database        | HRIV backup archive (`db.sql`) or Longhorn restore       |
+| Source images   | HRIV backup archive or Longhorn restore                  |
+| Generated tiles | `rebuild-tiles` admin task or Longhorn restore           |
 | Backup archives | Azure Blob Storage or Longhorn restore of the backup PVC |
 
 ## Configuration
 
 All settings are controlled via environment variables in `docker-compose.yml` or the Helm chart:
 
-| Variable                          | Default                               | Description                                                                 |
-| --------------------------------- | ------------------------------------- | --------------------------------------------------------------------------- |
-| `DATABASE_URL`                    | `postgresql://hriv:hriv@db:5432/hriv` | PostgreSQL connection string                                                |
-| `DATA_DIR`                        | `/data`                               | Path to the image data volume                                               |
-| `BACKUP_CRON_SCHEDULE`            | `0 2 * * *`                           | Cron expression for scheduled backups                                       |
-| `BACKUP_RETENTION_COUNT`          | `30`                                  | Number of snapshots to keep (older ones are deleted)                      |
+| Variable                          | Default                                                   | Description                                                                        |
+| --------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `DATABASE_URL`                    | `postgresql://hriv:hriv@db:5432/hriv`                     | PostgreSQL connection string                                                       |
+| `DATA_DIR`                        | `/data`                                                   | Path to the image data volume                                                      |
+| `BACKUP_CRON_SCHEDULE`            | `0 2 * * *`                                               | Cron expression for scheduled backups                                              |
+| `BACKUP_RETENTION_COUNT`          | `30`                                                      | Number of snapshots to keep (older ones are deleted)                               |
 | `BACKUP_MODE`                     | `development` (docker-compose), `production` (Helm chart) | `development` = DB + source images + tiles; `production` = DB + source images only |
-| `AZURE_STORAGE_CONNECTION_STRING` | _(empty)_                             | Azure Blob Storage connection string                                        |
-| `AZURE_STORAGE_CONTAINER`         | _(empty)_                             | Azure Blob Storage container name                                           |
-| `AZURE_BLOB_PREFIX`               | `hriv-backups`                        | Blob name prefix (folder) inside the container                              |
+| `AZURE_STORAGE_CONNECTION_STRING` | _(empty)_                                                 | Azure Blob Storage connection string                                               |
+| `AZURE_STORAGE_CONTAINER`         | _(empty)_                                                 | Azure Blob Storage container name                                                  |
+| `AZURE_BLOB_PREFIX`               | `hriv-backups`                                            | Blob name prefix (folder) inside the container                                     |
 
 ## Kubernetes Volume Layout
 
