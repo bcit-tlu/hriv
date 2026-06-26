@@ -59,7 +59,7 @@ tiles claim was provided.
 {{- if eq $backupMode "production" -}}
   {{- $tilesEnabled = false -}}
 {{- end -}}
-{{- if and $sourceImagesExistingClaim (not .Values.persistence.tiles.existingClaim) (hasKey $legacyData "existingClaim") $legacyData.existingClaim .Values.persistence.tiles.enabled -}}
+{{- if and $sourceImagesExistingClaim (not .Values.persistence.tiles.existingClaim) (hasKey $legacyData "existingClaim") $legacyData.existingClaim $tilesEnabled -}}
   {{- $tilesEnabled = false -}}
 {{- end -}}
 {{- $tilesEnabled -}}
