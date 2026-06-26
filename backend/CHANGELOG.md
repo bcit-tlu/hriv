@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.25.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.24.1...backend-v0.25.0) (2026-06-24)
+
+
+### Features
+
+* **backend:** add rebuild-tiles admin task for missing or stale tiles ([#751](https://github.com/bcit-tlu/hriv/issues/751)) ([e91aa6b](https://github.com/bcit-tlu/hriv/commit/e91aa6b0664a55aa14a4a81fa0c1dd83a43f3201))
+* **backend:** track tile-cache provenance and staleness ([#747](https://github.com/bcit-tlu/hriv/issues/747)) ([44d2c23](https://github.com/bcit-tlu/hriv/commit/44d2c2354ef4020744c39ee19e5e72ab48eecb4d))
+
 ## [0.24.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.24.0...backend-v0.24.1) (2026-06-23)
 
 
