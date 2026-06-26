@@ -524,9 +524,18 @@ def _restore_from_archive(archive_path: Path) -> bool:
 
         # Read manifest
         manifest_path = snapshot_dir / "manifest.json"
+        archive_backup_mode = None
         if manifest_path.exists():
             manifest = json.loads(manifest_path.read_text())
+            archive_backup_mode = manifest.get("backup_mode")
             log.info("Snapshot: %s (created %s)", manifest.get("snapshot_name", "?"), manifest.get("created_at", "?"))
+            if archive_backup_mode and archive_backup_mode != BACKUP_MODE:
+                log.warning(
+                    "Backup mode mismatch: archive was created in %r but current BACKUP_MODE is %r. "
+                    "Tiles will be handled according to the current mode; rebuild tiles from source images if needed.",
+                    archive_backup_mode,
+                    BACKUP_MODE,
+                )
 
         # 1. Restore database ---------------------------------------------------
         dump_path = snapshot_dir / "db.sql"

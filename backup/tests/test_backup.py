@@ -1,6 +1,7 @@
 """Unit tests for the HRIV backup service."""
 
 import importlib
+import json
 import os
 import shutil
 import sys
@@ -15,19 +16,39 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import backup  # noqa: E402
 
 
-class BackupModeTestCase(unittest.TestCase):
-    """Tests for BACKUP_MODE handling."""
+class _BackupTestCase(unittest.TestCase):
+    """Base test case that isolates os.environ and reloads the backup module."""
+
+    _ENV_KEYS = (
+        "BACKUP_MODE",
+        "BACKUP_CRON_SCHEDULE",
+        "BACKUP_RETENTION_COUNT",
+        "AZURE_STORAGE_CONNECTION_STRING",
+        "AZURE_STORAGE_CONTAINER",
+    )
+
+    def setUp(self):
+        self._saved_env = {key: os.environ.get(key) for key in self._ENV_KEYS}
+
+    def tearDown(self):
+        # Restore env and reload the module to a consistent, valid state.
+        for key, value in self._saved_env.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+        importlib.reload(backup)
 
     def _reload(self, env):
-        for key in list(os.environ.keys()):
-            if key.startswith("BACKUP_") or key in (
-                "AZURE_STORAGE_CONNECTION_STRING",
-                "AZURE_STORAGE_CONTAINER",
-            ):
-                os.environ.pop(key, None)
+        for key in self._ENV_KEYS:
+            os.environ.pop(key, None)
         for key, value in env.items():
             os.environ[key] = value
         importlib.reload(backup)
+
+
+class BackupModeTestCase(_BackupTestCase):
+    """Tests for BACKUP_MODE handling."""
 
     def test_default_mode_is_development(self):
         self._reload({})
@@ -63,10 +84,11 @@ class TarFilterTestCase(unittest.TestCase):
         self.assertIsNotNone(f(self._make_info("snap/db.sql")))
 
 
-class RestoreTestCase(unittest.TestCase):
+class RestoreTestCase(_BackupTestCase):
     """Tests for restore behavior in development and production modes."""
 
     def setUp(self):
+        super().setUp()
         self._tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmpdir.cleanup)
         self.tmp = Path(self._tmpdir.name)
@@ -77,22 +99,19 @@ class RestoreTestCase(unittest.TestCase):
         (self.data_dir / "tiles").mkdir()
         (self.data_dir / "tiles" / "existing.dzi").write_bytes(b"existing tiles")
 
-    def _reload(self, env):
-        for key in list(os.environ.keys()):
-            if key.startswith("BACKUP_") or key in (
-                "AZURE_STORAGE_CONNECTION_STRING",
-                "AZURE_STORAGE_CONTAINER",
-            ):
-                os.environ.pop(key, None)
-        for key, value in env.items():
-            os.environ[key] = value
-        importlib.reload(backup)
-
-    def _build_archive(self, data_subtree):
+    def _build_archive(self, data_subtree, backup_mode="development"):
         snapshot_dir = self.tmp / "snapshot"
         snapshot_dir.mkdir()
         (snapshot_dir / "db.sql").write_text("dump")
         shutil.copytree(data_subtree, snapshot_dir / "data")
+        manifest = {
+            "snapshot_name": snapshot_dir.name,
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "backup_mode": backup_mode,
+            "tiles_excluded": backup_mode == "production",
+            "files": {},
+        }
+        (snapshot_dir / "manifest.json").write_text(json.dumps(manifest))
         archive_path = self.tmp / "backup.tar.gz"
         with tarfile.open(archive_path, "w:gz") as tar:
             tar.add(snapshot_dir, arcname="snapshot")
@@ -107,7 +126,7 @@ class RestoreTestCase(unittest.TestCase):
         (archive_data / "source_images" / "restored.jpg").write_bytes(b"restored source")
         (archive_data / "tiles").mkdir()
         (archive_data / "tiles" / "restored.dzi").write_bytes(b"restored tiles")
-        archive = self._build_archive(archive_data)
+        archive = self._build_archive(archive_data, backup_mode="development")
 
         self.assertTrue(backup._restore_from_archive(archive))
         self.assertEqual(
@@ -129,7 +148,7 @@ class RestoreTestCase(unittest.TestCase):
         (archive_data / "source_images" / "restored.jpg").write_bytes(b"restored source")
         (archive_data / "tiles").mkdir()
         (archive_data / "tiles" / "restored.dzi").write_bytes(b"restored tiles")
-        archive = self._build_archive(archive_data)
+        archive = self._build_archive(archive_data, backup_mode="development")
 
         self.assertTrue(backup._restore_from_archive(archive))
         self.assertEqual(
@@ -143,11 +162,28 @@ class RestoreTestCase(unittest.TestCase):
         )
         self.assertFalse((self.data_dir / "tiles" / "restored.dzi").exists())
 
+    @patch("backup.subprocess.run", return_value=MagicMock(returncode=0))
+    def test_restore_warns_on_backup_mode_mismatch(self, _mock_run):
+        self._reload({"BACKUP_MODE": "production", "DATA_DIR": str(self.data_dir)})
+        archive_data = self.tmp / "archive_data"
+        archive_data.mkdir()
+        (archive_data / "source_images").mkdir()
+        (archive_data / "source_images" / "restored.jpg").write_bytes(b"restored source")
+        archive = self._build_archive(archive_data, backup_mode="development")
 
-class BackupRunTestCase(unittest.TestCase):
+        with self.assertLogs("hriv-backup", level="WARNING") as cm:
+            self.assertTrue(backup._restore_from_archive(archive))
+        self.assertTrue(
+            any("mismatch" in msg.lower() for msg in cm.output),
+            f"Expected mismatch warning, got: {cm.output}",
+        )
+
+
+class BackupRunTestCase(_BackupTestCase):
     """Tests for a full backup run."""
 
     def setUp(self):
+        super().setUp()
         self._tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmpdir.cleanup)
         self.tmp = Path(self._tmpdir.name)
@@ -157,17 +193,6 @@ class BackupRunTestCase(unittest.TestCase):
         (self.data_dir / "source_images" / "img.jpg").write_bytes(b"source")
         (self.data_dir / "tiles").mkdir()
         (self.data_dir / "tiles" / "img.dzi").write_bytes(b"tiles")
-
-    def _reload(self, env):
-        for key in list(os.environ.keys()):
-            if key.startswith("BACKUP_") or key in (
-                "AZURE_STORAGE_CONNECTION_STRING",
-                "AZURE_STORAGE_CONTAINER",
-            ):
-                os.environ.pop(key, None)
-        for key, value in env.items():
-            os.environ[key] = value
-        importlib.reload(backup)
 
     def test_run_backup_excludes_tiles_in_production(self):
         self._reload(
