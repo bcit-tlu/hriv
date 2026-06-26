@@ -25,6 +25,7 @@ class _BackupTestCase(unittest.TestCase):
         "BACKUP_RETENTION_COUNT",
         "AZURE_STORAGE_CONNECTION_STRING",
         "AZURE_STORAGE_CONTAINER",
+        "DATABASE_URL",
         "DATA_DIR",
     )
 
