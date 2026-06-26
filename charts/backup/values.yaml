@@ -82,8 +82,8 @@ persistence:
     accessModes:
       - ReadWriteOnce
   tiles:
-    enabled: true
-    existingClaim: '' # Set to the backend tiles PVC to share /data/tiles
+    enabled: true # Ignored while BACKUP_MODE=production (the chart default).
+    existingClaim: '' # Set to the backend tiles PVC to share /data/tiles in development mode.
     # Leave empty to use the cluster default StorageClass.
     storageClass: ''
     size: 10Gi

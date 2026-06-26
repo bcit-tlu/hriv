@@ -101,13 +101,18 @@ All settings are controlled via environment variables in `docker-compose.yml` or
 
 ## Kubernetes Volume Layout
 
-For production-style Helm deployments, the backup chart can mount separate
-claims for source images and generated tiles while keeping the existing runtime
-paths unchanged:
+For production-style Helm deployments, the backup chart keeps the existing
+runtime paths unchanged while mounting only the volumes the backup service
+actively uses by default:
 
 - source-images PVC mounted at `/data`
-- tiles PVC mounted at `/data/tiles`
 - backup archives PVC mounted at `/backups`
+
+When `BACKUP_MODE=production` (the Helm chart default), the backup pod does
+not mount or provision the tiles PVC because generated tiles are excluded from
+backup and restore. If you override the chart to `BACKUP_MODE=development` for
+manual or local-style use, the tiles PVC is mounted at `/data/tiles` again so
+the service can include tiles in the archive.
 
 The source-images PVC remains the `/data` root so the backup service can still
 share the maintenance-mode flag at `/data/.maintenance` with the backend.
