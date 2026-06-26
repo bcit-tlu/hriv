@@ -94,7 +94,7 @@ All settings are controlled via environment variables in `docker-compose.yml` or
 | `DATA_DIR`                        | `/data`                               | Path to the image data volume                                               |
 | `BACKUP_CRON_SCHEDULE`            | `0 2 * * *`                           | Cron expression for scheduled backups                                       |
 | `BACKUP_RETENTION_COUNT`          | `30`                                  | Number of snapshots to keep (older ones are deleted)                      |
-| `BACKUP_MODE`                     | `development`                         | `development` = DB + source images + tiles; `production` = DB + source images only |
+| `BACKUP_MODE`                     | `development` (docker-compose), `production` (Helm chart) | `development` = DB + source images + tiles; `production` = DB + source images only |
 | `AZURE_STORAGE_CONNECTION_STRING` | _(empty)_                             | Azure Blob Storage connection string                                        |
 | `AZURE_STORAGE_CONTAINER`         | _(empty)_                             | Azure Blob Storage container name                                           |
 | `AZURE_BLOB_PREFIX`               | `hriv-backups`                        | Blob name prefix (folder) inside the container                              |
