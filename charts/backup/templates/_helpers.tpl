@@ -44,8 +44,9 @@ committed Chart.yaml `appVersion: "0.1.0"`.
 {{- end -}}
 
 {{/*
-Disable a separate tiles PVC when the backup chart is still pointed at the
-legacy shared data claim and no explicit split-PVC tiles claim was provided.
+Disable the tiles PVC when the backup chart is in production mode, or when it
+is still pointed at the legacy shared data claim and no explicit split-PVC
+tiles claim was provided.
 */}}
 {{- define "hriv-backup.tilesEnabled" -}}
 {{- $legacyData := .Values.persistence.data | default dict -}}
@@ -54,7 +55,11 @@ legacy shared data claim and no explicit split-PVC tiles claim was provided.
   {{- $sourceImagesExistingClaim = $legacyData.existingClaim -}}
 {{- end -}}
 {{- $tilesEnabled := .Values.persistence.tiles.enabled -}}
-{{- if and $sourceImagesExistingClaim (not .Values.persistence.tiles.existingClaim) (hasKey $legacyData "existingClaim") $legacyData.existingClaim .Values.persistence.tiles.enabled -}}
+{{- $backupMode := lower (.Values.env.BACKUP_MODE | default "development") -}}
+{{- if eq $backupMode "production" -}}
+  {{- $tilesEnabled = false -}}
+{{- end -}}
+{{- if and $sourceImagesExistingClaim (not .Values.persistence.tiles.existingClaim) (hasKey $legacyData "existingClaim") $legacyData.existingClaim $tilesEnabled -}}
   {{- $tilesEnabled = false -}}
 {{- end -}}
 {{- $tilesEnabled -}}

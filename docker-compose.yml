@@ -184,6 +184,10 @@ services:
       - DATA_DIR=/data
       - BACKUP_CRON_SCHEDULE=0 2 * * *
       - BACKUP_RETENTION_COUNT=30
+      # BACKUP_MODE: development (default) backs up DB + source images + tiles.
+      #              production backs up DB + source images only; tiles are
+      #              protected by the storage layer (e.g. Longhorn) or rebuilt.
+      - BACKUP_MODE=development
       # Azure Blob Storage – uncomment and fill in to enable cloud storage:
       # - AZURE_STORAGE_CONNECTION_STRING=DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net
       # - AZURE_STORAGE_CONTAINER=hriv-backups

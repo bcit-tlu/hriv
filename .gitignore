@@ -97,6 +97,11 @@ backend/tests/**/__pycache__/
 backend/tests/**/*.pyc
 !frontend/tests/
 !frontend/tests/**
+!backup/tests/
+!backup/tests/**
+# Re-ignore build artifacts inside the re-included backup/tests tree.
+backup/tests/**/__pycache__/
+backup/tests/**/*.pyc
 database/
 dump.rdb
 src/git_ignored_folder

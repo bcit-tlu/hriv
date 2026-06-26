@@ -26,6 +26,7 @@ import sys
 import tarfile
 import tempfile
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -64,6 +65,19 @@ AZURE_BLOB_PREFIX: str = _env("AZURE_BLOB_PREFIX", "hriv-backups")
 # Schedule & retention
 BACKUP_CRON_SCHEDULE: str = _env("BACKUP_CRON_SCHEDULE", "0 2 * * *")
 BACKUP_RETENTION_COUNT: int = int(_env("BACKUP_RETENTION_COUNT", "30"))
+
+# Operating mode: "development" backs up DB + source images + tiles.
+# "production" backs up DB + source images only; tiles are excluded and
+# must be protected by Longhorn snapshots or rebuilt from source images.
+BACKUP_MODE: str = _env("BACKUP_MODE", "development").lower()
+if BACKUP_MODE not in ("development", "production"):
+    log.error("BACKUP_MODE must be 'development' or 'production', got %s", BACKUP_MODE)
+    sys.exit(1)
+
+
+def _exclude_tiles() -> bool:
+    """Return True when the service is configured for production mode."""
+    return BACKUP_MODE == "production"
 
 
 # ---------------------------------------------------------------------------
@@ -124,6 +138,22 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
+def _tar_filter(
+    exclude_tiles: bool,
+    tiles_arcname: str,
+) -> Callable[[tarfile.TarInfo], tarfile.TarInfo | None]:
+    """Return a tar filter that drops the generated tile tree when requested."""
+
+    def _filter(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        if not exclude_tiles:
+            return tarinfo
+        if tarinfo.name == tiles_arcname or tarinfo.name.startswith(tiles_arcname + "/"):
+            return None
+        return tarinfo
+
+    return _filter
+
+
 def run_backup() -> Path | None:
     """Create a snapshot archive and upload it to Azure Blob Storage.
 
@@ -171,12 +201,15 @@ def run_backup() -> Path | None:
             log.warning("Data directory %s is empty or missing – skipping filesystem snapshot", DATA_DIR)
 
         # 3. Manifest ----------------------------------------------------------
+        tiles_path = Path(DATA_DIR) / "tiles"
         manifest = {
             "snapshot_name": snapshot_name,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "database_url_host": db["host"],
             "database_name": db["dbname"],
             "data_dir": DATA_DIR,
+            "backup_mode": BACKUP_MODE,
+            "tiles_excluded": _exclude_tiles(),
             "files": {},
         }
 
@@ -193,6 +226,8 @@ def run_backup() -> Path | None:
             log.info("Computing checksums for filesystem data …")
             for fpath in sorted(data_src.rglob("*")):
                 if fpath.is_file():
+                    if _exclude_tiles() and fpath.is_relative_to(tiles_path):
+                        continue
                     rel = "data/" + str(fpath.relative_to(data_src))
                     manifest["files"][rel] = {
                         "size": fpath.stat().st_size,
@@ -206,13 +241,15 @@ def run_backup() -> Path | None:
         archive_name = f"{snapshot_name}.tar.gz"
         archive_path = Path(tmpdir) / archive_name
         log.info("Creating archive %s …", archive_name)
+        tiles_arcname = f"{snapshot_name}/data/tiles"
+        filter_func = _tar_filter(_exclude_tiles(), tiles_arcname)
         with tarfile.open(str(archive_path), "w:gz") as tar:
             # Add db dump and manifest from the work directory
-            tar.add(str(work), arcname=snapshot_name)
+            tar.add(str(work), arcname=snapshot_name, filter=filter_func)
             # Stream filesystem data directly into the archive (avoids 2x disk copy)
             if has_data:
                 log.info("Streaming filesystem data from %s into archive …", DATA_DIR)
-                tar.add(str(data_src), arcname=f"{snapshot_name}/data")
+                tar.add(str(data_src), arcname=f"{snapshot_name}/data", filter=filter_func)
         archive_size = archive_path.stat().st_size
         log.info("Archive created: %s (%s bytes)", archive_name, archive_size)
 
@@ -451,6 +488,23 @@ def _run_restore_inner(snapshot_name: str | None = None) -> bool:
         return _restore_from_archive(archive_path)
 
 
+def _restore_ignore_tiles(
+    data_archive: Path,
+    exclude_tiles: bool,
+) -> Callable[[str, list[str]], set[str]] | None:
+    """Return an ignore function for shutil.copytree that preserves the tiles tree in production mode."""
+
+    if not exclude_tiles:
+        return None
+
+    def _ignore(_dir: str, names: list[str]) -> set[str]:
+        if Path(_dir) == data_archive and "tiles" in names:
+            return {"tiles"}
+        return set()
+
+    return _ignore
+
+
 def _restore_from_archive(archive_path: Path) -> bool:
     """Extract an archive and restore database + filesystem."""
     log.info("Restoring from %s …", archive_path.name)
@@ -470,9 +524,18 @@ def _restore_from_archive(archive_path: Path) -> bool:
 
         # Read manifest
         manifest_path = snapshot_dir / "manifest.json"
+        archive_backup_mode = None
         if manifest_path.exists():
             manifest = json.loads(manifest_path.read_text())
+            archive_backup_mode = manifest.get("backup_mode")
             log.info("Snapshot: %s (created %s)", manifest.get("snapshot_name", "?"), manifest.get("created_at", "?"))
+            if archive_backup_mode and archive_backup_mode != BACKUP_MODE:
+                log.warning(
+                    "Backup mode mismatch: archive was created in %r but current BACKUP_MODE is %r. "
+                    "Tiles will be handled according to the current mode; rebuild tiles from source images if needed.",
+                    archive_backup_mode,
+                    BACKUP_MODE,
+                )
 
         # 1. Restore database ---------------------------------------------------
         dump_path = snapshot_dir / "db.sql"
@@ -537,10 +600,13 @@ END $$;
             data_dest = Path(DATA_DIR)
             log.info("Restoring filesystem data to %s …", DATA_DIR)
 
-            # Clear existing data (preserve the maintenance flag)
+            exclude_tiles = _exclude_tiles()
+            # Clear existing data (preserve the maintenance flag and, in production, the tiles tree)
             if data_dest.exists():
                 for child in data_dest.iterdir():
                     if child.name == _MAINTENANCE_FILENAME:
+                        continue
+                    if exclude_tiles and child.name == "tiles":
                         continue
                     if child.is_dir():
                         shutil.rmtree(str(child))
@@ -548,7 +614,11 @@ END $$;
                         child.unlink()
 
             # Copy restored data
-            shutil.copytree(str(data_archive), str(data_dest), dirs_exist_ok=True)
+            ignore = _restore_ignore_tiles(data_archive, exclude_tiles)
+            if ignore:
+                shutil.copytree(str(data_archive), str(data_dest), dirs_exist_ok=True, ignore=ignore)
+            else:
+                shutil.copytree(str(data_archive), str(data_dest), dirs_exist_ok=True)
             log.info("Filesystem data restored")
         else:
             log.warning("No data/ directory in snapshot – skipping filesystem restore")
@@ -578,6 +648,7 @@ def run_cron() -> None:
     log.info("HRIV Backup Service started")
     log.info("  Schedule : %s", BACKUP_CRON_SCHEDULE)
     log.info("  Retention: %d snapshots", BACKUP_RETENTION_COUNT)
+    log.info("  Mode     : %s", BACKUP_MODE)
     log.info("  Azure container: %s", AZURE_STORAGE_CONTAINER or "(not configured – local only)")
     log.info("  Data dir : %s", DATA_DIR)
 

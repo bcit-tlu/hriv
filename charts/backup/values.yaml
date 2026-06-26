@@ -30,6 +30,13 @@ env:
   DATA_DIR: /data
   BACKUP_CRON_SCHEDULE: '0 2 * * *'
   BACKUP_RETENTION_COUNT: '30'
+  # BACKUP_MODE controls what the Python backup service archives and restores:
+  # - development: DB + source images + generated tiles (for local/manual use)
+  # - production:  DB + source images only; generated tiles are excluded and
+  #                must be protected by Longhorn snapshots/backups or rebuilt
+  #                from source images using the rebuild-tiles admin task.
+  # The chart default is production; override to development for local or manual use.
+  BACKUP_MODE: 'production'
   AZURE_STORAGE_CONTAINER: ''
   AZURE_BLOB_PREFIX: hriv-backups
 
@@ -75,8 +82,8 @@ persistence:
     accessModes:
       - ReadWriteOnce
   tiles:
-    enabled: true
-    existingClaim: '' # Set to the backend tiles PVC to share /data/tiles
+    enabled: true # Ignored while BACKUP_MODE=production (the chart default).
+    existingClaim: '' # Set to the backend tiles PVC to share /data/tiles in development mode.
     # Leave empty to use the cluster default StorageClass.
     storageClass: ''
     size: 10Gi
