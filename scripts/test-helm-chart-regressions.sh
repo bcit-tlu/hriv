@@ -74,7 +74,8 @@ assert_not_contains "$backup_legacy_manifest" "claimName: test-hriv-backup-tiles
 backup_explicit_tiles_manifest="$(helm template test charts/backup \
   --set persistence.data.enabled=true \
   --set persistence.data.existingClaim=hriv-backend-data \
-  --set persistence.tiles.existingClaim=hriv-backend-tiles)"
+  --set persistence.tiles.existingClaim=hriv-backend-tiles \
+  --set env.BACKUP_MODE=development)"
 
 assert_contains "$backup_explicit_tiles_manifest" "mountPath: /data/tiles" \
   "backup chart should keep the tiles mount when an explicit split-PVC tiles claim is provided"
