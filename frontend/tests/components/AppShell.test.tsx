@@ -1,8 +1,12 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import AppShell from '../../src/components/AppShell'
 import type { AppShellProps } from '../../src/components/AppShell'
 import { createRef } from 'react'
+import useMediaQuery from '@mui/material/useMediaQuery'
+
+vi.mock('@mui/material/useMediaQuery', () => ({ default: vi.fn(() => false) }))
+const mockUseMediaQuery = vi.mocked(useMediaQuery)
 
 function makeProps(overrides: Partial<AppShellProps> = {}): AppShellProps {
   return {
@@ -319,6 +323,16 @@ describe('AppShell', () => {
   })
 
   describe('profile popover', () => {
+    it('keeps the theme toggle in the bar on desktop', () => {
+      render(<AppShell {...makeProps({ profileOpen: false })} />)
+      expect(screen.getByRole('button', { name: 'Toggle theme' })).toBeInTheDocument()
+    })
+
+    it('does not add a theme row to the profile menu on desktop', () => {
+      render(<AppShell {...makeProps({ profileOpen: true })} />)
+      expect(screen.queryByRole('menuitem', { name: /Theme:/ })).not.toBeInTheDocument()
+    })
+
     it('shows user info when profileOpen is true', () => {
       const ref = createRef<HTMLButtonElement>()
       render(
@@ -441,6 +455,159 @@ describe('AppShell', () => {
       fireEvent.click(screen.getByText('View Announcement'))
       expect(screen.getByText('Announcement')).toBeInTheDocument()
       expect(screen.getByText('Scheduled maintenance')).toBeInTheDocument()
+    })
+  })
+
+  describe('compact viewport navigation', () => {
+    beforeEach(() => {
+      mockUseMediaQuery.mockReturnValue(true)
+    })
+    afterEach(() => {
+      // Clear call history as well as the implementation, then restore the
+      // file-wide default so later suites start from a desktop viewport.
+      mockUseMediaQuery.mockReset()
+      mockUseMediaQuery.mockReturnValue(false)
+    })
+
+    it('collapses the nav tabs into a hamburger menu', () => {
+      render(<AppShell {...makeProps()} />)
+      expect(screen.getByRole('button', { name: 'Open navigation menu' })).toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: 'Images' })).not.toBeInTheDocument()
+      expect(screen.queryByRole('tab', { name: 'Admin' })).not.toBeInTheDocument()
+    })
+
+    it('exposes every destination, with Manage flattened, in the menu', () => {
+      render(<AppShell {...makeProps()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      for (const name of [
+        'Home',
+        'Images',
+        'Categories',
+        'Programs',
+        'Groups',
+        'Announcement',
+        'People',
+        'Admin',
+      ]) {
+        expect(screen.getByRole('menuitem', { name })).toBeInTheDocument()
+      }
+    })
+
+    it('renders the Manage section heading as a distinct uppercased label', () => {
+      render(<AppShell {...makeProps()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      const heading = screen.getByText('Manage')
+      expect(heading).toBeInTheDocument()
+      // Not a clickable menu item — it's a section label.
+      expect(heading).not.toHaveAttribute('role', 'menuitem')
+      expect(heading).toHaveStyle({ textTransform: 'uppercase' })
+    })
+
+    it('navigates and opens dialogs from the collapsed menu', () => {
+      const onTabChange = vi.fn()
+      const onOpenCategories = vi.fn()
+      render(<AppShell {...makeProps({ onTabChange, onOpenCategories })} />)
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Admin' }))
+      expect(onTabChange).toHaveBeenCalledWith('admin')
+
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: 'Categories' }))
+      expect(onOpenCategories).toHaveBeenCalled()
+    })
+
+    it('removes the theme toggle from the bar when collapsed', () => {
+      render(<AppShell {...makeProps({ profileOpen: false })} />)
+      expect(screen.queryByRole('button', { name: 'Toggle theme' })).not.toBeInTheDocument()
+    })
+
+    it('shows a theme row in the profile menu on compact viewports', () => {
+      render(<AppShell {...makeProps({ profileOpen: true })} />)
+      expect(screen.getByRole('menuitem', { name: /Theme:/ })).toBeInTheDocument()
+    })
+
+    it('keeps the role and program/group pills in the profile menu', () => {
+      render(
+        <AppShell
+          {...makeProps({
+            profileOpen: true,
+            currentUser: {
+              name: 'Haruki Tanaka',
+              email: 'admin@example.ca',
+              role: 'admin',
+              program_names: ['Administration'],
+              group_names: [],
+            },
+          })}
+        />,
+      )
+      expect(screen.getByText('admin@example.ca')).toBeInTheDocument()
+      expect(screen.getByText('admin')).toBeInTheDocument()
+      expect(screen.getByText('Administration')).toBeInTheDocument()
+    })
+
+    it('keeps a single Home tab inline for students instead of collapsing', () => {
+      render(<AppShell {...makeProps({ canEditContent: false, canManageUsers: false })} />)
+      expect(screen.queryByRole('button', { name: 'Open navigation menu' })).not.toBeInTheDocument()
+      expect(screen.getByRole('tab', { name: 'Home' })).toBeInTheDocument()
+    })
+
+    it('closes the drawer when the close button is clicked', () => {
+      render(<AppShell {...makeProps()} />)
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      expect(screen.getByRole('menuitem', { name: 'Home' })).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: 'Close navigation menu' }))
+
+      expect(screen.getByRole('button', { name: 'Open navigation menu' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+      expect(screen.queryByRole('menuitem', { name: 'Home' })).not.toBeInTheDocument()
+    })
+
+    it('does not reopen the drawer after a compact → desktop → compact resize', () => {
+      const { rerender } = render(<AppShell {...makeProps()} />)
+      // Open the drawer on the compact viewport.
+      fireEvent.click(screen.getByRole('button', { name: 'Open navigation menu' }))
+      expect(screen.getByRole('menuitem', { name: 'Home' })).toBeInTheDocument()
+
+      // Resize up to desktop (drawer unmounts) and back down to compact.
+      mockUseMediaQuery.mockReturnValue(false)
+      rerender(<AppShell {...makeProps()} />)
+      mockUseMediaQuery.mockReturnValue(true)
+      rerender(<AppShell {...makeProps()} />)
+
+      // The drawer must stay closed — no auto-reopen.
+      expect(screen.getByRole('button', { name: 'Open navigation menu' })).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      )
+      expect(screen.queryByRole('menuitem', { name: 'Home' })).not.toBeInTheDocument()
+    })
+  })
+
+  describe('viewport transitions', () => {
+    afterEach(() => {
+      mockUseMediaQuery.mockReset()
+      mockUseMediaQuery.mockReturnValue(false)
+    })
+
+    it('closes the Manage dropdown after a desktop → compact → desktop resize', () => {
+      mockUseMediaQuery.mockReturnValue(false) // desktop: inline tabs
+      const { rerender } = render(<AppShell {...makeProps()} />)
+      fireEvent.click(screen.getByRole('tab', { name: 'Manage' }))
+      expect(screen.getByRole('menuitem', { name: 'Categories' })).toBeInTheDocument()
+
+      // Resize into compact (tab + dropdown unmount) and back to desktop.
+      mockUseMediaQuery.mockReturnValue(true)
+      rerender(<AppShell {...makeProps()} />)
+      mockUseMediaQuery.mockReturnValue(false)
+      rerender(<AppShell {...makeProps()} />)
+
+      // The dropdown must not reopen against the unmounted tab.
+      expect(screen.queryByRole('menuitem', { name: 'Categories' })).not.toBeInTheDocument()
     })
   })
 })

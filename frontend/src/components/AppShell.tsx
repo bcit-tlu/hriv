@@ -1,4 +1,13 @@
-import { useState, type Dispatch, type ReactNode, type RefObject, type SetStateAction } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type RefObject,
+  type SetStateAction,
+} from 'react'
 import Alert from '@mui/material/Alert'
 import AppBar from '@mui/material/AppBar'
 import Avatar from '@mui/material/Avatar'
@@ -11,22 +20,51 @@ import Chip from '@mui/material/Chip'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
+import Drawer from '@mui/material/Drawer'
 import IconButton from '@mui/material/IconButton'
-import Link from '@mui/material/Link'
+import ListItemIcon from '@mui/material/ListItemIcon'
+import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
+import MenuList from '@mui/material/MenuList'
 import Popover from '@mui/material/Popover'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import Toolbar from '@mui/material/Toolbar'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import Divider from '@mui/material/Divider'
+import ListSubheader from '@mui/material/ListSubheader'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import { useTheme } from '@mui/material/styles'
+import MenuIcon from '@mui/icons-material/Menu'
 import SearchIcon from '@mui/icons-material/Search'
+import CloseIcon from '@mui/icons-material/Close'
+import HomeIcon from '@mui/icons-material/Home'
+import PhotoLibraryIcon from '@mui/icons-material/PhotoLibrary'
+import FolderIcon from '@mui/icons-material/Folder'
+import SchoolIcon from '@mui/icons-material/School'
+import GroupsIcon from '@mui/icons-material/Groups'
+import CampaignIcon from '@mui/icons-material/Campaign'
+import PeopleIcon from '@mui/icons-material/People'
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
+import LightModeIcon from '@mui/icons-material/LightMode'
+import DarkModeIcon from '@mui/icons-material/DarkMode'
+import BrightnessAutoIcon from '@mui/icons-material/BrightnessAuto'
+import ManageAccountsIcon from '@mui/icons-material/ManageAccounts'
+import LogoutIcon from '@mui/icons-material/Logout'
 import ColorModeToggle from './ColorModeToggle'
 import FooterBar from './FooterBar'
 import AnnouncementBanner from './AnnouncementBanner'
 import type { Role } from '../types'
-import { getGroupChipColors, getSurfaceVariant } from '../theme'
+import { useColorMode } from '../useColorMode'
+import {
+  appBarAvatarSx,
+  appBarClusterGap,
+  appBarIconButtonSx,
+  getGroupChipColors,
+  getSurfaceVariant,
+} from '../theme'
 
 export type Page = 'browse' | 'manage' | 'people' | 'admin'
 
@@ -102,6 +140,33 @@ export default function AppShell(props: AppShellProps) {
     children,
   } = props
   const [manageMenuAnchor, setManageMenuAnchor] = useState<HTMLElement | null>(null)
+  const [navDrawerOpen, setNavDrawerOpen] = useState(false)
+  const theme = useTheme()
+  // Collapse the nav tabs into a hamburger menu when the viewport is too
+  // narrow to show them inline. Guarded by tab count so a single-tab
+  // (student) layout keeps its inline Home tab instead of a lone hamburger.
+  const isCompactViewport = useMediaQuery(theme.breakpoints.down('md'))
+  const navTabCount = 1 + (canEditContent ? 2 : 0) + (canManageUsers ? 2 : 0)
+  const collapseNav = isCompactViewport && navTabCount > 1
+  // Reset the breakpoint-specific menus on a viewport transition so a resize
+  // round-trip doesn't leave one open against an unmounted trigger:
+  //  - desktop → the drawer can't apply, so close it;
+  //  - compact → the Manage tab (and its dropdown) unmount, so drop the stale
+  //    anchor that would otherwise reopen the menu against a detached node.
+  const isInitialViewportRun = useRef(true)
+  useEffect(() => {
+    // Skip the initial mount — state already matches the viewport. Only act on
+    // an actual breakpoint transition.
+    if (isInitialViewportRun.current) {
+      isInitialViewportRun.current = false
+      return
+    }
+    if (collapseNav) {
+      setManageMenuAnchor(null)
+    } else {
+      setNavDrawerOpen(false)
+    }
+  }, [collapseNav])
   const [viewAnnOpen, setViewAnnOpen] = useState(false)
   const [annCollapsed, setAnnCollapsed] = useState(false)
   const [prevAnnouncement, setPrevAnnouncement] = useState(announcement)
@@ -112,6 +177,124 @@ export default function AppShell(props: AppShellProps) {
   const showViewAnnLink = annEnabled && !announcement
   const contentBg = page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined
   const groupColors = getGroupChipColors(mode)
+  const { preference: themePreference, toggleMode } = useColorMode()
+  const themeIcon = useMemo(() => {
+    if (themePreference === 'light') return <LightModeIcon fontSize="small" />
+    if (themePreference === 'dark') return <DarkModeIcon fontSize="small" />
+    return <BrightnessAutoIcon fontSize="small" />
+  }, [themePreference])
+  const themeLabel = useMemo(() => {
+    if (themePreference === 'light') return 'Theme: Light'
+    if (themePreference === 'dark') return 'Theme: Dark'
+    return 'Theme: Auto'
+  }, [themePreference])
+
+  // Collapsed-nav menu, built as ordered sections. Empty sections are dropped
+  // and dividers are only inserted *between* non-empty sections, so the menu
+  // stays correct for any role combination (no leading/trailing/double
+  // dividers even if the role invariants change).
+  const renderNavMenuItems = () => {
+    const closeThen = (fn: () => void) => () => {
+      setNavDrawerOpen(false)
+      fn()
+    }
+    // Icon + text per MUI's Menu composition (ListItemIcon + ListItemText).
+    // Icons give the tappable items a clear visual structure, so the icon-less
+    // uppercased ListSubheader unambiguously reads as a section label.
+    const makeItem = (
+      key: string,
+      label: string,
+      icon: ReactNode,
+      onClick: () => void,
+      selected = false,
+    ) => (
+      <MenuItem key={key} selected={selected} onClick={closeThen(onClick)}>
+        <ListItemIcon sx={{ minWidth: 36 }}>{icon}</ListItemIcon>
+        <ListItemText>{label}</ListItemText>
+      </MenuItem>
+    )
+    const sections: ReactNode[][] = []
+
+    const pages: ReactNode[] = [
+      makeItem(
+        'browse',
+        'Home',
+        <HomeIcon fontSize="small" />,
+        () => (page === 'browse' ? onHomeClick() : onTabChange('browse')),
+        page === 'browse',
+      ),
+    ]
+    if (canEditContent) {
+      pages.push(
+        makeItem(
+          'manage',
+          'Images',
+          <PhotoLibraryIcon fontSize="small" />,
+          () => onTabChange('manage'),
+          page === 'manage',
+        ),
+      )
+    }
+    sections.push(pages)
+
+    if (canEditContent) {
+      const manage: ReactNode[] = [
+        <ListSubheader
+          key="manage-header"
+          sx={{
+            bgcolor: 'transparent',
+            lineHeight: '36px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.14em',
+            fontWeight: 700,
+            fontSize: '0.875rem',
+            color: 'text.secondary',
+          }}
+        >
+          Manage
+        </ListSubheader>,
+        makeItem('categories', 'Categories', <FolderIcon fontSize="small" />, onOpenCategories),
+      ]
+      if (canManageUsers) {
+        manage.push(
+          makeItem('programs', 'Programs', <SchoolIcon fontSize="small" />, onOpenPrograms),
+        )
+      }
+      manage.push(
+        makeItem('groups', 'Groups', <GroupsIcon fontSize="small" />, onOpenGroups),
+        makeItem(
+          'announcement',
+          'Announcement',
+          <CampaignIcon fontSize="small" />,
+          onOpenAnnouncement,
+        ),
+      )
+      sections.push(manage)
+    }
+
+    if (canManageUsers) {
+      sections.push([
+        makeItem(
+          'people',
+          'People',
+          <PeopleIcon fontSize="small" />,
+          () => onTabChange('people'),
+          page === 'people',
+        ),
+        makeItem(
+          'admin',
+          'Admin',
+          <AdminPanelSettingsIcon fontSize="small" />,
+          () => onTabChange('admin'),
+          page === 'admin',
+        ),
+      ])
+    }
+
+    return sections.flatMap((items, i) =>
+      i === 0 ? items : [<Divider key={`nav-divider-${i}`} />, ...items],
+    )
+  }
 
   return (
     <Box
@@ -128,104 +311,172 @@ export default function AppShell(props: AppShellProps) {
             sx={{
               display: 'flex',
               alignItems: 'center',
-              gap: 1,
+              gap: 0.75,
               mr: 2,
             }}
           >
+            {collapseNav && (
+              <Tooltip title="Menu">
+                <IconButton
+                  edge="start"
+                  onClick={() => setNavDrawerOpen(true)}
+                  sx={{ color: 'inherit', mr: -1, ...appBarIconButtonSx }}
+                  aria-label="Open navigation menu"
+                  aria-haspopup="true"
+                  aria-expanded={navDrawerOpen}
+                >
+                  <MenuIcon />
+                </IconButton>
+              </Tooltip>
+            )}
             <Box component="img" src="/favicon.svg" alt="HRIV" sx={{ height: 32, width: 32 }} />
             <Typography variant="h6" component="h1">
               HRIV
             </Typography>
           </Box>
-          <Tabs
-            value={page}
-            onChange={(_, v: Page) => {
-              if (v === 'browse' || v === 'manage' || v === 'people' || v === 'admin') {
-                onTabChange(v)
-              }
-            }}
-            textColor="inherit"
-            TabIndicatorProps={{
-              style: { backgroundColor: 'white' },
-            }}
-            sx={{ flexGrow: 1 }}
-          >
-            <Tab
-              label="Home"
-              value="browse"
-              onClick={() => {
-                // Only fire when already on browse (refresh/reset);
-                // otherwise Tabs onChange handles the page switch.
-                if (page === 'browse') {
-                  onHomeClick()
+          {collapseNav ? (
+            <Box sx={{ flexGrow: 1 }} />
+          ) : (
+            <Tabs
+              value={page}
+              onChange={(_, v: Page) => {
+                if (v === 'browse' || v === 'manage' || v === 'people' || v === 'admin') {
+                  onTabChange(v)
                 }
               }}
-            />
-            {canEditContent && <Tab label="Images" value="manage" />}
-            {canEditContent && (
-              <Tab
-                label="Manage"
-                value={false}
-                onClick={(e) => setManageMenuAnchor(e.currentTarget)}
-              />
-            )}
-            {canManageUsers && <Tab label="People" value="people" />}
-            {canManageUsers && <Tab label="Admin" value="admin" />}
-          </Tabs>
-          <Menu
-            anchorEl={manageMenuAnchor}
-            open={Boolean(manageMenuAnchor)}
-            onClose={() => setManageMenuAnchor(null)}
-          >
-            <MenuItem
-              onClick={() => {
-                setManageMenuAnchor(null)
-                onOpenCategories()
+              textColor="inherit"
+              TabIndicatorProps={{
+                style: { backgroundColor: 'white' },
               }}
+              sx={{ flexGrow: 1 }}
             >
-              Categories
-            </MenuItem>
-            {canManageUsers && (
+              <Tab
+                label="Home"
+                value="browse"
+                onClick={() => {
+                  // Only fire when already on browse (refresh/reset);
+                  // otherwise Tabs onChange handles the page switch.
+                  if (page === 'browse') {
+                    onHomeClick()
+                  }
+                }}
+              />
+              {canEditContent && <Tab label="Images" value="manage" />}
+              {canEditContent && (
+                <Tab
+                  label="Manage"
+                  value={false}
+                  onClick={(e) => setManageMenuAnchor(e.currentTarget)}
+                />
+              )}
+              {canManageUsers && <Tab label="People" value="people" />}
+              {canManageUsers && <Tab label="Admin" value="admin" />}
+            </Tabs>
+          )}
+          {!collapseNav && (
+            <Menu
+              anchorEl={manageMenuAnchor}
+              open={Boolean(manageMenuAnchor)}
+              onClose={() => setManageMenuAnchor(null)}
+            >
               <MenuItem
                 onClick={() => {
                   setManageMenuAnchor(null)
-                  onOpenPrograms()
+                  onOpenCategories()
                 }}
               >
-                Programs
+                Categories
               </MenuItem>
+              {canManageUsers && (
+                <MenuItem
+                  onClick={() => {
+                    setManageMenuAnchor(null)
+                    onOpenPrograms()
+                  }}
+                >
+                  Programs
+                </MenuItem>
+              )}
+              <MenuItem
+                onClick={() => {
+                  setManageMenuAnchor(null)
+                  onOpenGroups()
+                }}
+              >
+                Groups
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setManageMenuAnchor(null)
+                  onOpenAnnouncement()
+                }}
+              >
+                Announcement
+              </MenuItem>
+            </Menu>
+          )}
+          {collapseNav && (
+            <Drawer anchor="left" open={navDrawerOpen} onClose={() => setNavDrawerOpen(false)}>
+              <Box sx={{ width: 'min(82vw, 300px)', maxWidth: '100%' }} role="presentation">
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 1,
+                    pl: 2,
+                    pr: 1,
+                    pt: 1.5,
+                    pb: 1.5,
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box
+                      component="img"
+                      src="/favicon.svg"
+                      alt="HRIV"
+                      sx={{ height: 32, width: 32 }}
+                    />
+                    <Typography variant="h6" component="span">
+                      HRIV
+                    </Typography>
+                  </Box>
+                  <Tooltip title="Close menu">
+                    <IconButton
+                      onClick={() => setNavDrawerOpen(false)}
+                      aria-label="Close navigation menu"
+                    >
+                      <CloseIcon />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+                <Divider />
+                <MenuList sx={{ pt: 1 }}>{renderNavMenuItems()}</MenuList>
+              </Box>
+            </Drawer>
+          )}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: appBarClusterGap }}>
+            {!collapseNav && (
+              <ColorModeToggle iconButtonSx={{ color: 'inherit', ...appBarIconButtonSx }} />
             )}
-            <MenuItem
-              onClick={() => {
-                setManageMenuAnchor(null)
-                onOpenGroups()
-              }}
-            >
-              Groups
-            </MenuItem>
-            <MenuItem
-              onClick={() => {
-                setManageMenuAnchor(null)
-                onOpenAnnouncement()
-              }}
-            >
-              Announcement
-            </MenuItem>
-          </Menu>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <ColorModeToggle iconButtonSx={{ color: 'inherit' }} />
             <Tooltip title="Search">
-              <IconButton onClick={onSearchOpen} sx={{ color: 'inherit' }} aria-label="Search">
+              <IconButton
+                onClick={onSearchOpen}
+                sx={{ color: 'inherit', ...appBarIconButtonSx }}
+                aria-label="Search"
+              >
                 <SearchIcon />
               </IconButton>
             </Tooltip>
             {notificationSlot}
-            <IconButton ref={avatarRef} onClick={() => setProfileOpen(true)} sx={{ p: 0 }}>
+            <IconButton
+              ref={avatarRef}
+              onClick={() => setProfileOpen(true)}
+              sx={{ p: 0, minWidth: 40, minHeight: 40 }}
+            >
               <Avatar
                 sx={{
-                  width: 34,
-                  height: 34,
-                  fontSize: 14,
+                  ...appBarAvatarSx,
                   bgcolor: 'rgba(255,255,255,0.25)',
                   color: 'white',
                 }}
@@ -253,7 +504,7 @@ export default function AppShell(props: AppShellProps) {
               }}
             >
               <Card sx={{ minWidth: 240 }}>
-                <CardContent>
+                <CardContent sx={{ '&:last-child': { pb: 1 } }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                     {currentUser.name}
                   </Typography>
@@ -303,53 +554,49 @@ export default function AppShell(props: AppShellProps) {
                       ))}
                     </Box>
                   )}
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      justifyContent:
-                        canManageUsers || showViewAnnLink ? 'space-between' : 'flex-end',
-                      mt: 2,
-                      gap: 2,
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <Box sx={{ display: 'flex', gap: 2 }}>
-                      {canManageUsers && (
-                        <Link
-                          component="button"
-                          variant="body2"
-                          onClick={() => {
-                            openEditProfile()
-                          }}
-                        >
-                          Update
-                        </Link>
-                      )}
-                      {showViewAnnLink && (
-                        <Link
-                          component="button"
-                          variant="body2"
-                          onClick={() => {
-                            setProfileOpen(false)
-                            setViewAnnOpen(true)
-                          }}
-                        >
-                          View Announcement
-                        </Link>
-                      )}
-                    </Box>
-                    <Link
-                      component="button"
-                      variant="body2"
-                      color="primary"
+                  <Divider sx={{ mt: 1.5, mx: -2 }} />
+                  <MenuList sx={{ mx: -2, py: 0 }}>
+                    {collapseNav && (
+                      <MenuItem sx={{ py: 1.25 }} onClick={() => toggleMode()}>
+                        <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>{themeIcon}</ListItemIcon>
+                        <ListItemText>{themeLabel}</ListItemText>
+                      </MenuItem>
+                    )}
+                    {canManageUsers && (
+                      <MenuItem sx={{ py: 1.25 }} onClick={() => openEditProfile()}>
+                        <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>
+                          <ManageAccountsIcon fontSize="small" />
+                        </ListItemIcon>
+                        <ListItemText>Update</ListItemText>
+                      </MenuItem>
+                    )}
+                    {showViewAnnLink && (
+                      <MenuItem
+                        sx={{ py: 1.25 }}
+                        onClick={() => {
+                          setProfileOpen(false)
+                          setViewAnnOpen(true)
+                        }}
+                      >
+                        <ListItemIcon sx={{ minWidth: 0, mr: 1.25 }}>
+                          <CampaignIcon fontSize="small" />
+                        </ListItemIcon>
+                        <ListItemText>View Announcement</ListItemText>
+                      </MenuItem>
+                    )}
+                    <MenuItem
+                      sx={{ py: 1.25, color: 'primary.main' }}
                       onClick={() => {
                         setProfileOpen(false)
                         logout()
                       }}
                     >
-                      Logout
-                    </Link>
-                  </Box>
+                      <ListItemIcon sx={{ minWidth: 0, mr: 1.25, color: 'primary.main' }}>
+                        <LogoutIcon fontSize="small" />
+                      </ListItemIcon>
+                      <ListItemText>Logout</ListItemText>
+                    </MenuItem>
+                  </MenuList>
                 </CardContent>
               </Card>
             </Popover>

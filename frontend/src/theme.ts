@@ -151,3 +151,30 @@ export function getVisibilityColors(mode: 'light' | 'dark'): {
 } {
   return mode === 'dark' ? darkPalette.visibility : lightPalette.visibility
 }
+
+// ---------------------------------------------------------------------------
+// App-bar control sizing. Compact on mobile (xs), a step up on tablet (sm),
+// full size on desktop (md+). Keyed by MUI breakpoints so the toolbar icons,
+// the notification bell and the avatar all scale together and stay legible at
+// each screen size.
+// ---------------------------------------------------------------------------
+
+/** Sizing for app-bar icon buttons (theme toggle, search, bell, hamburger).
+ *  Spread into each button's `sx`. A uniform 40px box keeps adjacent icons
+ *  evenly and tightly spaced; the glyph is a touch larger on mobile. */
+export const appBarIconButtonSx = {
+  p: 0.5,
+  minWidth: 40,
+  minHeight: 40,
+  '& .MuiSvgIcon-root': { fontSize: { xs: 26, sm: 24, md: 24 } },
+} as const
+
+/** Responsive avatar dimensions matching {@link appBarIconButtonSx}. */
+export const appBarAvatarSx = {
+  width: { xs: 30, sm: 32, md: 34 },
+  height: { xs: 30, sm: 32, md: 34 },
+  fontSize: { xs: 13, sm: 13, md: 14 },
+} as const
+
+/** Responsive gap between the app-bar's right-hand controls. */
+export const appBarClusterGap = { xs: 0.25, sm: 0.5, md: 1 } as const
