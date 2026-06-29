@@ -50,11 +50,15 @@ Each snapshot is a `.tar.gz` archive containing:
 
 ## Production Role
 
+> **See also:** [`docs/backup-and-disaster-recovery.md`](../docs/backup-and-disaster-recovery.md)
+> for the full production strategy — data classification, Longhorn policies,
+> restore order, and the DR runbook.
+
 In production deployments, the Python backup service is **not** the primary protection for the large generated tile tree. Its supported production role is:
 
 - **Database + source images:** the service archives and restores the PostgreSQL dump and the `/data/source_images` filesystem.
 - **Tiles excluded:** generated DZI tiles under `/data/tiles` are excluded from HRIV backups.
-- **Why:** tiles are derived data. They can be rebuilt from the authoritative source images using the `rebuild-tiles` admin task (see [`docs/admin-import-export.md`](docs/admin-import-export.md)), or protected independently by the storage layer.
+- **Why:** tiles are derived data. They can be rebuilt from the authoritative source images using the `rebuild-tiles` admin task (see [`docs/admin-import-export.md`](../docs/admin-import-export.md)), or protected independently by the storage layer.
 
 Set `BACKUP_MODE=production` to enable this mode. The default is `development`, which preserves the historical behavior of archiving the full `/data` tree including tiles.
 
