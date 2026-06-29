@@ -53,9 +53,12 @@ category visibility; do not add image-level program visibility.
 - `require_role(*allowed_roles)` in `backend/app/auth.py` returns FastAPI
   dependencies for coarse role gates. Student visibility is enforced in backend
   query/tree logic — frontend filtering is UX only, never security.
-- `ancestorProgramIds` / `getInheritedProgramIds` compute effective program
+- `ancestorProgramIds` lives in `frontend/src/useBrowseData.ts`; `getInheritedProgramIds`
+  lives in `frontend/src/components/ManagePage.tsx`. They compute effective program
   restrictions by walking the category tree. Always pass `user_group_ids` to
-  visibility helpers for student-scoped category/image calls.
+  visibility helpers for student-scoped category/image calls. The narrowing
+  helpers they build on are in `frontend/src/categoryUtils.ts`
+  (`narrowProgramIds`, `narrowGroupIds`, `splitDirectAncestorProgramIds`).
 - Frontend flags: `canManageUsers` is `true` only for admins (controls
   People/Admin tabs); `canEditContent` is `true` for admins or instructors
   (controls edit buttons, upload, Images tab, Manage dropdown).
