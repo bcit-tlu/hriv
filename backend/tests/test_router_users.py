@@ -271,8 +271,11 @@ async def test_update_user_success() -> None:
     result = await update_user(1, body, MagicMock(), db)
 
     assert user.name == "Updated"
-    # Post-commit refresh must reload groups too (see create_user guard).
-    assert db.refresh.await_args_list[-1].args[1] == ["programs", "groups"]
+    # Post-commit refresh must reload all expired attributes (no attribute list)
+    # so that scalar columns like updated_at are not left expired, which would
+    # cause MissingGreenlet when user_to_out() accesses them.
+    last_refresh_call = db.refresh.await_args_list[-1]
+    assert len(last_refresh_call.args) == 1  # only the user object, no attr list
     assert result["group_ids"] == []
 
 

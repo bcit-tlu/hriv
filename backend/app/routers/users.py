@@ -241,7 +241,7 @@ async def update_user(
     if program_ids is not None:
         await _set_user_programs(db, user, program_ids)
     await db.commit()
-    await db.refresh(user, ["programs", "groups"])
+    await db.refresh(user)
     return user_to_out(user)
 
 

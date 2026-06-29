@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Chip from '@mui/material/Chip'
+import CircularProgress from '@mui/material/CircularProgress'
 import Dialog from '@mui/material/Dialog'
 import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
@@ -16,6 +18,7 @@ import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import type { Role, Program } from '../types'
 import type { ApiUser } from '../api'
+import { userMessage } from '../api'
 
 interface PersonFormData {
   name: string
@@ -28,7 +31,7 @@ interface PersonFormData {
 interface AddEditPersonModalProps {
   open: boolean
   onClose: () => void
-  onSave: (data: PersonFormData) => void
+  onSave: (data: PersonFormData) => Promise<void>
   programs: Program[]
   /** If provided, we are editing; otherwise adding. */
   user?: ApiUser | null
@@ -46,8 +49,10 @@ function AddEditPersonForm({
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<Role>((user?.role as Role) ?? 'student')
   const [programIds, setProgramIds] = useState<number[]>(user?.program_ids ?? [])
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const trimmedName = name.trim()
     const trimmedEmail = email.trim()
     const trimmedPassword = password.trim()
@@ -63,7 +68,14 @@ function AddEditPersonForm({
     if (trimmedPassword) {
       data.password = trimmedPassword
     }
-    onSave(data)
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await onSave(data)
+    } catch (err) {
+      setSaveError(userMessage(err, 'Failed to save. Please try again.'))
+      setSaving(false)
+    }
   }
 
   const handleRoleChange = (e: SelectChangeEvent) => {
@@ -75,14 +87,31 @@ function AddEditPersonForm({
     setProgramIds(typeof val === 'string' ? [] : val)
   }
 
-  const canSave = isEdit
-    ? name.trim() !== '' && email.trim() !== ''
-    : name.trim() !== '' && email.trim() !== '' && password.trim() !== ''
+  const canSave =
+    !saving &&
+    (isEdit
+      ? name.trim() !== '' && email.trim() !== ''
+      : name.trim() !== '' && email.trim() !== '' && password.trim() !== '')
+
+  // Build the full list of programs to show in the dropdown: active programs
+  // plus any programs the user is currently assigned to that may have been
+  // deleted (so they can be deselected). Deleted entries are shown as disabled.
+  const activeProgramIds = new Set(programs.map((p) => p.id))
+  const orphanedProgramIds = programIds.filter((id) => !activeProgramIds.has(id))
+  const allDropdownPrograms: Array<{ id: number; name: string; deleted: boolean }> = [
+    ...programs.map((p) => ({ id: p.id, name: p.name, deleted: false })),
+    ...orphanedProgramIds.map((id) => ({ id, name: `Program #${id} (deleted)`, deleted: true })),
+  ]
 
   return (
     <>
       <DialogTitle>{isEdit ? 'Edit Person' : 'Add Person'}</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+        {saveError && (
+          <Alert severity="error" onClose={() => setSaveError(null)}>
+            {saveError}
+          </Alert>
+        )}
         <TextField
           autoFocus
           label="Full name"
@@ -130,14 +159,21 @@ function AddEditPersonForm({
               ) : (
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                   {selected.map((id) => {
-                    const prog = programs.find((p) => p.id === id)
-                    return <Chip key={id} label={prog?.name ?? id} size="small" color="primary" />
+                    const prog = allDropdownPrograms.find((p) => p.id === id)
+                    return (
+                      <Chip
+                        key={id}
+                        label={prog?.name ?? `Program #${id}`}
+                        size="small"
+                        color={prog?.deleted ? 'default' : 'primary'}
+                      />
+                    )
                   })}
                 </Box>
               )
             }
           >
-            {programs.map((p) => (
+            {allDropdownPrograms.map((p) => (
               <MenuItem key={p.id} value={p.id}>
                 {p.name}
               </MenuItem>
@@ -151,8 +187,15 @@ function AddEditPersonForm({
         </FormControl>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose}>Cancel</Button>
-        <Button onClick={handleSave} variant="contained" disabled={!canSave}>
+        <Button onClick={onClose} disabled={saving}>
+          Cancel
+        </Button>
+        <Button
+          onClick={handleSave}
+          variant="contained"
+          disabled={!canSave}
+          startIcon={saving ? <CircularProgress size={16} color="inherit" /> : undefined}
+        >
           {isEdit ? 'Save' : 'Add'}
         </Button>
       </DialogActions>
