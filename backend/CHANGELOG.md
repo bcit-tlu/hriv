@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.25.0...backend-v0.25.1) (2026-06-29)
+
+
+### Bug Fixes
+
+* **people:** resolve user update 500, save feedback, deleted program UX, delete dialog UX ([#758](https://github.com/bcit-tlu/hriv/issues/758)) ([e591388](https://github.com/bcit-tlu/hriv/commit/e5913889ca8298614258538438d34d5ba8982bf1))
+
 ## [0.25.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.24.1...backend-v0.25.0) (2026-06-24)
 
 
