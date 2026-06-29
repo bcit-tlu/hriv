@@ -21,6 +21,18 @@ Helm charts for hriv's components remain in this repository under `charts/`:
 
 Charts are automatically packaged and published as OCI artifacts to `oci://ghcr.io/bcit-tlu/hriv/charts` by the CI pipeline on every push to `main` and on release tags.
 
+## Production backup and disaster recovery
+
+See [`docs/backup-and-disaster-recovery.md`](../docs/backup-and-disaster-recovery.md)
+for the full production backup and DR strategy, including:
+
+- Data classification (authoritative vs derived)
+- Longhorn volume layout and snapshot policies
+- Restore order and decision points (DB → source images → tiles)
+- Tile rebuild vs Longhorn restore guidance
+- Full disaster recovery runbook
+- RTO/RPO expectations and known risks
+
 ## Production Storage Split
 
 For Kubernetes deployments that need different backup/retention behavior for

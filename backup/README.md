@@ -50,6 +50,10 @@ Each snapshot is a `.tar.gz` archive containing:
 
 ## Production Role
 
+> **See also:** [`docs/backup-and-disaster-recovery.md`](../docs/backup-and-disaster-recovery.md)
+> for the full production strategy — data classification, Longhorn policies,
+> restore order, and the DR runbook.
+
 In production deployments, the Python backup service is **not** the primary protection for the large generated tile tree. Its supported production role is:
 
 - **Database + source images:** the service archives and restores the PostgreSQL dump and the `/data/source_images` filesystem.
