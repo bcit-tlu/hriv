@@ -81,7 +81,7 @@ mismatch".
 - Backend OIDC router: `backend/app/routers/oidc.py` (Authlib registration,
   `/login`, `/callback`).
 - Startup metadata/connectivity check: `backend/app/main.py`
-  (`check_oidc_metadata`).
+  (`_check_oidc_connectivity`).
 - Auth utilities: `backend/app/auth.py`.
 - OIDC settings: `backend/app/database.py` (`Settings` class, `oidc_*` fields;
   `oidc_scopes` defaults to `"openid email profile"`).

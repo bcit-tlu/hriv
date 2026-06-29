@@ -59,7 +59,10 @@
      `failed`.
    - `pyvips.Image.new_from_file(source_path, access="sequential")` for
      memory-efficient streaming; `pyvips.dzsave()` generates DZI tiles
-     (`tile_size=254`, `overlap=1`, JPEG Q=85).
+     (`tile_size=254`, `overlap=1`, suffix `.jpeg[Q=85]` — the JPEG quality is
+     encoded in the libvips suffix string, not a separate `Q=` argument). These
+     constants live in `backend/app/tile_provenance.py` (`DZI_TILE_SIZE`,
+     `DZI_OVERLAP`, `DZI_TILE_SUFFIX`).
    - `ProgressTracker` maps pyvips eval callbacks into DB progress updates.
    - Thumbnail is a 256×256 center-cropped square.
    - CPU/image work runs via `asyncio.to_thread()` to keep the event loop free.
