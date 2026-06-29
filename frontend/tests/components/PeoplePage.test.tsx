@@ -63,6 +63,14 @@ const USERS = [
   },
 ]
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
+
 describe('PeoplePage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -541,6 +549,51 @@ describe('PeoplePage', () => {
 
     await waitFor(() => {
       expect(updateUser).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('keeps the people table visible while refetching after an edit save', async () => {
+    const user = userEvent.setup()
+    const refreshedUsers = [
+      {
+        ...USERS[0],
+        name: 'Updated Admin',
+      },
+      USERS[1],
+    ]
+    const refreshRequest = createDeferred<typeof refreshedUsers>()
+
+    vi.mocked(fetchUsers)
+      .mockResolvedValueOnce(USERS)
+      .mockImplementationOnce(() => refreshRequest.promise)
+    vi.mocked(updateUser).mockResolvedValue(refreshedUsers[0])
+
+    render(<PeoplePage programs={programs} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByText('Admin User'))
+    const nameInput = screen.getByDisplayValue('Admin User')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Updated Admin')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    await waitFor(() => {
+      expect(updateUser).toHaveBeenCalledTimes(1)
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Edit Person' })).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('Admin User')).toBeInTheDocument()
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+
+    refreshRequest.resolve(refreshedUsers)
+
+    await waitFor(() => {
+      expect(screen.getByText('Updated Admin')).toBeInTheDocument()
     })
   })
 
