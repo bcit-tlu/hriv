@@ -318,6 +318,10 @@ export default function NotificationMenu({
             >
               Mozilla Public License 2.0
             </Link>
+            . Built with{' '}
+            <Link href="/THIRD-PARTY-LICENSES.txt" target="_blank" rel="noopener noreferrer">
+              third-party open-source software
+            </Link>
             .
           </Typography>
         </DialogContent>

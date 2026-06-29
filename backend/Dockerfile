@@ -137,6 +137,8 @@ COPY --from=builder /usr/local/bin/uvicorn /usr/local/bin/arq /usr/local/bin/ale
 
 COPY app ./app
 COPY alembic.ini ./alembic.ini
+# Ship third-party license notices for the bundled Python packages.
+COPY THIRD-PARTY-LICENSES.txt ./THIRD-PARTY-LICENSES.txt
 
 # ── OpenTelemetry disable-by-default ────────────────────────
 # ``opentelemetry-distro`` (via OpenTelemetryDistro._configure) calls

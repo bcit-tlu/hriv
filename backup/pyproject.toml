@@ -3,6 +3,7 @@ name = "hriv-backup"
 version = "0.7.0"
 description = "HRIV Disaster Recovery Backup Service"
 authors = ["Devin AI"]
+license = "MPL-2.0"
 
 [tool.poetry.dependencies]
 python = "^3.11"

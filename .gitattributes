@@ -3,3 +3,6 @@
 *.scss linguist-vendored
 *.js linguist-vendored
 CHANGELOG.md export-ignore
+
+# Generated license notices are always LF so `licenses:check` is deterministic.
+THIRD-PARTY-LICENSES.txt text eol=lf
