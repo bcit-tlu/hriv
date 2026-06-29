@@ -74,6 +74,7 @@ function AddEditPersonForm({
       await onSave(data)
     } catch (err) {
       setSaveError(userMessage(err, 'Failed to save. Please try again.'))
+    } finally {
       setSaving(false)
     }
   }
@@ -95,7 +96,8 @@ function AddEditPersonForm({
 
   // Build the full list of programs to show in the dropdown: active programs
   // plus any programs the user is currently assigned to that may have been
-  // deleted (so they can be deselected). Deleted entries are shown as disabled.
+  // deleted (so they can be deselected). Deleted entries are visually
+  // distinguished by chip colour but remain selectable so users can remove them.
   const activeProgramIds = new Set(programs.map((p) => p.id))
   const orphanedProgramIds = programIds.filter((id) => !activeProgramIds.has(id))
   const allDropdownPrograms: Array<{ id: number; name: string; deleted: boolean }> = [
