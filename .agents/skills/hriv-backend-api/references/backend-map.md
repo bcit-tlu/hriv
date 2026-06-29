@@ -107,10 +107,11 @@ if pool is None:
 `/api/categories/tree` (`_load_tree()` in `routers/categories.py`) is **O(2)
 queries** regardless of tree depth:
 
-1. Fetch ALL categories. 2. Fetch ALL images. 3. Index images by `category_id`
-   and categories by `parent_id` in Python dicts. 4. Assemble the tree recursively
-   in memory (no further DB calls). For students, hidden categories and inactive
-   images are filtered out during assembly.
+1. Fetch ALL categories in one query.
+2. Fetch ALL images in one query.
+3. Index images by `category_id` and categories by `parent_id` in Python dicts.
+4. Assemble the tree recursively in memory (no further DB calls). For students,
+   hidden categories and inactive images are filtered out during assembly.
 
 ETag caching: the endpoint computes an MD5 of the serialized JSON, returns
 `304 Not Modified` on a matching `If-None-Match`, and sets
@@ -120,9 +121,9 @@ keep the flat-query + in-memory-assembly approach working.
 ## Migration And Import/Export Compatibility Safety
 
 HRIV is deployed to Kubernetes `latest` and `stable` overlays (`stable` via
-flux-fleet). Treat production/stable data as potentially real unless Kyle
-confirms otherwise for the task. (This supersedes any older "not yet in
-production" guidance.)
+flux-fleet). Treat production/stable data as potentially real unless a
+maintainer confirms otherwise for the task. (This supersedes any older "not yet
+in production" guidance.)
 
 - Prefer forward-compatible Alembic migrations that preserve or migrate existing
   data.

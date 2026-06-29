@@ -107,8 +107,11 @@ programs (the stacked groups refactor is complete — cohort removal #601, backe
 
 ## Local Test Credentials
 
-All seeded local test users use password `password`: `admin@bcit.ca`,
-`instructor@bcit.ca`, `student@bcit.ca`.
+The seeded local users (`db/seed.sql`) are `admin@example.ca`,
+`instructor@example.ca`, and `student@example.ca`, all sharing the password
+`password`. `../../../../README.md` ("Test Credentials") and
+`../../../../docs/TESTING.md` are the canonical source — these are dev-only seed
+accounts and must never be reused outside local development.
 
 ## Docs And Tests
 
