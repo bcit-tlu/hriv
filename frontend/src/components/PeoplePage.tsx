@@ -1062,7 +1062,10 @@ export default function PeoplePage({
       <Snackbar
         open={successSnack !== null}
         autoHideDuration={4000}
-        onClose={() => setSuccessSnack(null)}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return
+          setSuccessSnack(null)
+        }}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         <Alert severity="success" onClose={() => setSuccessSnack(null)} variant="filled">
