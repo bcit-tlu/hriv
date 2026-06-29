@@ -46,7 +46,7 @@
 - Auth tokens: stored in `localStorage` as `hriv_token` / `hriv_user`. OIDC
   tokens arrive via URL fragment (`#oidc_token=...`) to avoid server logs, then
   are stripped from the URL. Session is validated on mount via
-  `GET /api/auth/me`. Logout calls `clearHrivStorage()`, which removes all
+  `GET /api/auth/me`. Logout calls `clearUserStorage()`, which removes all
   `hriv_*` and `hriv-*` localStorage keys.
 - Vite dev proxy: `/api` proxies to `http://backend:8000` (Docker service name);
   for non-Docker local dev set `VITE_API_URL`.
