@@ -125,8 +125,8 @@ export default function PeoplePage({
 
   // Filter state — text filters for name/email/role, chip sets for program/group
   const [filters, setFilters] = useState<Record<string, string>>({})
-  const [selectedPrograms, setSelectedPrograms] = useState<Set<string>>(new Set())
-  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set())
+  const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(new Set())
+  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(new Set())
   const hasActiveFilters =
     Object.values(filters).some((v) => v !== '') ||
     selectedPrograms.size > 0 ||
@@ -222,12 +222,12 @@ export default function PeoplePage({
       const roleFilter = filters['role']
       if (roleFilter && user.role !== roleFilter) return false
       if (selectedPrograms.size > 0) {
-        const userProgramSet = new Set(user.program_names)
-        if (![...selectedPrograms].some((p) => userProgramSet.has(p))) return false
+        const userProgramSet = new Set(user.program_ids)
+        if (![...selectedPrograms].some((id) => userProgramSet.has(id))) return false
       }
       if (selectedGroups.size > 0) {
-        const userGroupSet = new Set(user.group_names)
-        if (![...selectedGroups].some((g) => userGroupSet.has(g))) return false
+        const userGroupSet = new Set(user.group_ids)
+        if (![...selectedGroups].some((id) => userGroupSet.has(id))) return false
       }
       return true
     })
@@ -738,7 +738,7 @@ export default function PeoplePage({
                     <TableCell>
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                         {programs.map((p) => {
-                          const active = selectedPrograms.has(p.name)
+                          const active = selectedPrograms.has(p.id)
                           return (
                             <Chip
                               key={p.id}
@@ -749,10 +749,10 @@ export default function PeoplePage({
                               onClick={() => {
                                 setSelectedPrograms((prev) => {
                                   const next = new Set(prev)
-                                  if (next.has(p.name)) {
-                                    next.delete(p.name)
+                                  if (next.has(p.id)) {
+                                    next.delete(p.id)
                                   } else {
-                                    next.add(p.name)
+                                    next.add(p.id)
                                   }
                                   return next
                                 })
@@ -769,7 +769,7 @@ export default function PeoplePage({
                     <TableCell>
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                         {groups.map((g) => {
-                          const active = selectedGroups.has(g.name)
+                          const active = selectedGroups.has(g.id)
                           return (
                             <Chip
                               key={g.id}
@@ -780,10 +780,10 @@ export default function PeoplePage({
                               onClick={() => {
                                 setSelectedGroups((prev) => {
                                   const next = new Set(prev)
-                                  if (next.has(g.name)) {
-                                    next.delete(g.name)
+                                  if (next.has(g.id)) {
+                                    next.delete(g.id)
                                   } else {
-                                    next.add(g.name)
+                                    next.add(g.id)
                                   }
                                   return next
                                 })
