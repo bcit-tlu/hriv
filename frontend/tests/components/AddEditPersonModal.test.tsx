@@ -187,7 +187,10 @@ describe('AddEditPersonModal', () => {
     const user = userEvent.setup()
     let resolveSave!: () => void
     const onSave = vi.fn(
-      () => new Promise<void>((resolve) => { resolveSave = resolve }),
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve
+        }),
     )
     const onClose = vi.fn()
     render(
