@@ -231,7 +231,7 @@ export default function PeoplePage({
       }
       return true
     })
-  }, [users, filters, selectedPrograms, selectedGroups, hasActiveFilters])
+  }, [users, filters, selectedPrograms, selectedGroups])
 
   const sortedUsers = useMemo(() => {
     const sorted = [...filteredUsers]
