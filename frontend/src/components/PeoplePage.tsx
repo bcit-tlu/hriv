@@ -164,20 +164,24 @@ export default function PeoplePage({
   // Success snackbar
   const [successSnack, setSuccessSnack] = useState<string | null>(null)
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async ({ showLoading = false }: { showLoading?: boolean } = {}) => {
     try {
-      setLoading(true)
+      if (showLoading) {
+        setLoading(true)
+      }
       const usersData = await fetchUsers()
       setUsers(usersData)
     } catch (err) {
       console.error('Failed to load data', err)
     } finally {
-      setLoading(false)
+      if (showLoading) {
+        setLoading(false)
+      }
     }
   }, [])
 
   useEffect(() => {
-    loadData() // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on dependency change
+    loadData({ showLoading: true }) // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on dependency change
   }, [loadData])
 
   useEffect(() => {
