@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
-"""Generate THIRD-PARTY-LICENSES.txt for the backend's runtime dependencies.
+"""Generate THIRD-PARTY-LICENSES.txt for this component's runtime dependencies.
 
-The backend Docker image installs and redistributes these packages, so their
-license notices ship with it. This enumerates the ``main`` Poetry dependency
-group (runtime only, no dev/test tooling) and reproduces each package's license
-text from its installed metadata.
+This component's Docker image installs and redistributes these packages, so
+their license notices ship with it. This enumerates the ``main`` Poetry
+dependency group (runtime only, no dev/test tooling) and reproduces each
+package's license text from its installed metadata.
 
     poetry run python scripts/generate_third_party_licenses.py            # write
     poetry run python scripts/generate_third_party_licenses.py --check    # verify
 
-Run from the backend/ directory with the main dependency group installed
-(``poetry install --only main``).
+Run from the component's directory (backend/ or backup/) with the main
+dependency group installed (``poetry install --only main``).
 """
 
 from __future__ import annotations
@@ -21,14 +21,14 @@ import subprocess
 import sys
 from pathlib import Path
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent
-OUTPUT = BACKEND_DIR / "THIRD-PARTY-LICENSES.txt"
+ROOT_DIR = Path(__file__).resolve().parent.parent
+OUTPUT = ROOT_DIR / "THIRD-PARTY-LICENSES.txt"
 
 
 def _project_name() -> str:
-    pyproject = (BACKEND_DIR / "pyproject.toml").read_text(encoding="utf-8")
+    pyproject = (ROOT_DIR / "pyproject.toml").read_text(encoding="utf-8")
     m = re.search(r'(?m)^name\s*=\s*"([^"]+)"', pyproject)
-    return m.group(1) if m else BACKEND_DIR.name
+    return m.group(1) if m else ROOT_DIR.name
 
 
 APP_NAME = _project_name()
@@ -45,7 +45,7 @@ def runtime_package_names() -> list[str]:
     """Authoritative runtime set: the resolved ``main`` Poetry group."""
     out = subprocess.check_output(
         ["poetry", "show", "--only=main", "--no-ansi"],
-        cwd=BACKEND_DIR,
+        cwd=ROOT_DIR,
         text=True,
     )
     names: list[str] = []
