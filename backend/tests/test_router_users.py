@@ -271,9 +271,13 @@ async def test_update_user_success() -> None:
     result = await update_user(1, body, MagicMock(), db)
 
     assert user.name == "Updated"
-    # Post-commit refresh must reload all expired attributes (no attribute list)
-    # so that scalar columns like updated_at are not left expired, which would
-    # cause MissingGreenlet when user_to_out() accesses them.
+    # Post-commit refresh must reload all attributes (no attribute list).
+    # The session uses expire_on_commit=False, so attributes are not expired
+    # after commit. However, onupdate=func.now() on updated_at causes the DB
+    # to generate a new server-side timestamp during UPDATE that the Python
+    # object never sees without a full refresh. Passing an attribute list
+    # (e.g. ["programs", "groups"]) would only reload those relationships,
+    # leaving updated_at stale. db.refresh(user) reloads everything.
     last_refresh_call = db.refresh.await_args_list[-1]
     assert len(last_refresh_call.args) == 1  # only the user object, no attr list
     assert result["group_ids"] == []

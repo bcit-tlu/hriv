@@ -746,7 +746,7 @@ export default function PeoplePage({
                               size="small"
                               color={active ? 'primary' : 'default'}
                               variant={active ? 'filled' : 'outlined'}
-                              onClick={() =>
+                              onClick={() => {
                                 setSelectedPrograms((prev) => {
                                   const next = new Set(prev)
                                   if (next.has(p.name)) {
@@ -754,10 +754,10 @@ export default function PeoplePage({
                                   } else {
                                     next.add(p.name)
                                   }
-                                  setCurrentPage(0)
                                   return next
                                 })
-                              }
+                                setCurrentPage(0)
+                              }}
                               sx={{ cursor: 'pointer', fontSize: '0.7rem' }}
                             />
                           )
@@ -777,7 +777,7 @@ export default function PeoplePage({
                               size="small"
                               color={active ? 'secondary' : 'default'}
                               variant={active ? 'filled' : 'outlined'}
-                              onClick={() =>
+                              onClick={() => {
                                 setSelectedGroups((prev) => {
                                   const next = new Set(prev)
                                   if (next.has(g.name)) {
@@ -785,10 +785,10 @@ export default function PeoplePage({
                                   } else {
                                     next.add(g.name)
                                   }
-                                  setCurrentPage(0)
                                   return next
                                 })
-                              }
+                                setCurrentPage(0)
+                              }}
                               sx={{ cursor: 'pointer', fontSize: '0.7rem' }}
                             />
                           )
