@@ -44,6 +44,8 @@ COPY pyproject.toml poetry.lock* ./
 RUN poetry install --no-root --no-interaction
 
 COPY backup.py ./
+# Ship third-party license notices for the bundled Python packages.
+COPY THIRD-PARTY-LICENSES.txt ./THIRD-PARTY-LICENSES.txt
 
 # No build-time ``ARG APP_VERSION``. ``backup.py`` doesn't consume
 # ``APP_VERSION`` at runtime — the backup version reported via

@@ -2,6 +2,7 @@
   "name": "frontend",
   "private": true,
   "version": "0.27.0",
+  "license": "MPL-2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,6 +11,8 @@
     "format:check": "prettier --check .. --ignore-path ../.prettierignore",
     "format:staged": "node scripts/format-staged.mjs",
     "lint": "eslint .",
+    "licenses:generate": "node scripts/generate-third-party-licenses.mjs",
+    "licenses:check": "node scripts/generate-third-party-licenses.mjs --check",
     "prepare": "node scripts/install-git-hooks.mjs",
     "preview": "vite preview",
     "test": "vitest run",

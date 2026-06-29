@@ -120,3 +120,23 @@ reconciliation model for both environments.
 | [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md)                               | UI behaviour spec (role gating, browse, dialogs, viewer, file drop)             |
 | [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md)                   | Release-please + Flux deploy flow                                               |
 | [AGENTS.md](AGENTS.md)                                                               | Contributor setup, workflow, and **Critical Invariants**                        |
+
+## License
+
+HRIV is licensed under the [Mozilla Public License 2.0](LICENSE) (`MPL-2.0`).
+
+Third-party open-source software distributed with HRIV is acknowledged in
+per-component `THIRD-PARTY-LICENSES.txt` files, generated from each component's
+production/runtime dependency tree:
+
+| Component | Notices file                                                                           | Regenerate                                                                 |
+| --------- | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| Frontend  | [`frontend/public/THIRD-PARTY-LICENSES.txt`](frontend/public/THIRD-PARTY-LICENSES.txt) | `cd frontend && npm run licenses:generate`                                 |
+| Backend   | [`backend/THIRD-PARTY-LICENSES.txt`](backend/THIRD-PARTY-LICENSES.txt)                 | `cd backend && poetry run python scripts/generate_third_party_licenses.py` |
+| Backup    | [`backup/THIRD-PARTY-LICENSES.txt`](backup/THIRD-PARTY-LICENSES.txt)                   | `cd backup && poetry run python scripts/generate_third_party_licenses.py`  |
+
+The frontend file is bundled into the production image and served at
+`/THIRD-PARTY-LICENSES.txt` (linked from the in-app About dialog); the backend
+and backup files are copied into their respective images. Regenerate and commit
+the relevant file whenever dependencies change — CI verifies the frontend file
+is in sync (`npm run licenses:check`).

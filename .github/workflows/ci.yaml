@@ -77,6 +77,11 @@ jobs:
       - name: Check formatting (Prettier)
         run: npm run format:check
 
+      # Fails if the committed THIRD-PARTY-LICENSES.txt drifts from the
+      # production dependency tree (run `npm run licenses:generate` to refresh).
+      - name: Verify third-party license notices
+        run: npm run licenses:check
+
       # Advisory until pre-existing lint errors are resolved.
       - name: Lint (ESLint)
         continue-on-error: true
