@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -9,6 +10,7 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
+import Snackbar from '@mui/material/Snackbar'
 import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
@@ -41,6 +43,7 @@ import {
   bulkUpdateUserProgram,
   bulkUpdateUserRole,
   bulkDeleteUsers,
+  userMessage,
 } from '../api'
 import type { ApiUser } from '../api'
 import type { Role, Program } from '../types'
@@ -153,6 +156,13 @@ export default function PeoplePage({
   // Individual delete confirmation (separate open flag preserves content during exit animation)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [deleteConfirmUser, setDeleteConfirmUser] = useState<ApiUser | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null)
+
+  // Success snackbar
+  const [successSnack, setSuccessSnack] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     try {
@@ -339,25 +349,22 @@ export default function PeoplePage({
     password?: string
     program_ids?: number[]
   }) => {
-    try {
-      if (editingUser) {
-        await updateUser(editingUser.id, data)
-      } else {
-        if (!data.password) return
-        await createUser({
-          name: data.name,
-          email: data.email,
-          role: data.role,
-          password: data.password,
-          program_ids: data.program_ids,
-        })
-      }
-      setAddEditOpen(false)
-      setEditingUser(null)
-      await loadData()
-    } catch (err) {
-      console.error('Failed to save person', err)
+    if (editingUser) {
+      await updateUser(editingUser.id, data)
+    } else {
+      if (!data.password) return
+      await createUser({
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        password: data.password,
+        program_ids: data.program_ids,
+      })
     }
+    setAddEditOpen(false)
+    setEditingUser(null)
+    setSuccessSnack(editingUser ? 'Person updated.' : 'Person added.')
+    await loadData()
   }
 
   // Bulk edit program handler
@@ -393,6 +400,8 @@ export default function PeoplePage({
 
   // Bulk delete handler
   const handleBulkDelete = async () => {
+    setBulkDeleting(true)
+    setBulkDeleteError(null)
     try {
       await bulkDeleteUsers({
         user_ids: Array.from(selected),
@@ -402,6 +411,9 @@ export default function PeoplePage({
       await loadData()
     } catch (err) {
       console.error('Failed to bulk delete', err)
+      setBulkDeleteError(userMessage(err, 'Failed to delete. Please try again.'))
+    } finally {
+      setBulkDeleting(false)
     }
   }
 
@@ -909,19 +921,36 @@ export default function PeoplePage({
       {/* Bulk Delete Confirmation Dialog */}
       <Dialog
         open={bulkDeleteOpen}
-        onClose={() => setBulkDeleteOpen(false)}
+        onClose={() => {
+          if (!bulkDeleting) {
+            setBulkDeleteOpen(false)
+            setBulkDeleteError(null)
+          }
+        }}
         maxWidth="xs"
         fullWidth
       >
         <DialogTitle>Delete Users</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          {bulkDeleteError && (
+            <Alert severity="error" onClose={() => setBulkDeleteError(null)}>
+              {bulkDeleteError}
+            </Alert>
+          )}
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
             You are about to delete <strong>{selected.size}</strong>{' '}
             {selected.size === 1 ? 'user' : 'users'}.
           </Typography>
           <Divider />
           <Box>
-            <Button color="error" variant="contained" onClick={handleBulkDelete} fullWidth>
+            <Button
+              color="error"
+              variant="contained"
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              startIcon={bulkDeleting ? <CircularProgress size={16} color="inherit" /> : undefined}
+              fullWidth
+            >
               Delete {selected.size} {selected.size === 1 ? 'User' : 'Users'}
             </Button>
             <Typography
@@ -934,20 +963,43 @@ export default function PeoplePage({
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setBulkDeleteOpen(false)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              setBulkDeleteOpen(false)
+              setBulkDeleteError(null)
+            }}
+            disabled={bulkDeleting}
+          >
+            Cancel
+          </Button>
         </DialogActions>
       </Dialog>
 
       {/* Individual Delete Confirmation Dialog */}
       <Dialog
         open={deleteConfirmOpen}
-        onClose={() => setDeleteConfirmOpen(false)}
-        TransitionProps={{ onExited: () => setDeleteConfirmUser(null) }}
+        onClose={() => {
+          if (!deleting) {
+            setDeleteConfirmOpen(false)
+            setDeleteError(null)
+          }
+        }}
+        TransitionProps={{
+          onExited: () => {
+            setDeleteConfirmUser(null)
+            setDeleteError(null)
+          },
+        }}
         maxWidth="xs"
         fullWidth
       >
         <DialogTitle>Delete Person</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          {deleteError && (
+            <Alert severity="error" onClose={() => setDeleteError(null)}>
+              {deleteError}
+            </Alert>
+          )}
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
             Are you sure you want to delete{' '}
             <strong>{deleteConfirmUser?.name || deleteConfirmUser?.email}</strong>?
@@ -959,6 +1011,8 @@ export default function PeoplePage({
               variant="contained"
               onClick={async () => {
                 if (deleteConfirmUser) {
+                  setDeleting(true)
+                  setDeleteError(null)
                   try {
                     await deleteUser(deleteConfirmUser.id)
                     setSelected((prev) => {
@@ -970,9 +1024,14 @@ export default function PeoplePage({
                     setDeleteConfirmOpen(false)
                   } catch (err) {
                     console.error('Failed to delete person', err)
+                    setDeleteError(userMessage(err, 'Failed to delete. Please try again.'))
+                  } finally {
+                    setDeleting(false)
                   }
                 }
               }}
+              disabled={deleting}
+              startIcon={deleting ? <CircularProgress size={16} color="inherit" /> : undefined}
               fullWidth
             >
               Delete
@@ -987,9 +1046,32 @@ export default function PeoplePage({
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              setDeleteConfirmOpen(false)
+              setDeleteError(null)
+            }}
+            disabled={deleting}
+          >
+            Cancel
+          </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Success snackbar */}
+      <Snackbar
+        open={successSnack !== null}
+        autoHideDuration={4000}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return
+          setSuccessSnack(null)
+        }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="success" onClose={() => setSuccessSnack(null)} variant="filled">
+          {successSnack}
+        </Alert>
+      </Snackbar>
     </Box>
   )
 }
