@@ -48,10 +48,80 @@ AND
 Then apply hidden-subtree and ancestor-cascade exclusions. Images inherit
 category visibility; do not add image-level program visibility.
 
+## Backend And Frontend Enforcement
+
+- `require_role(*allowed_roles)` in `backend/app/auth.py` returns FastAPI
+  dependencies for coarse role gates. Student visibility is enforced in backend
+  query/tree logic — frontend filtering is UX only, never security.
+- `ancestorProgramIds` lives in `frontend/src/useBrowseData.ts`; `getInheritedProgramIds`
+  lives in `frontend/src/components/ManagePage.tsx`. They compute effective program
+  restrictions by walking the category tree. Always pass `user_group_ids` to
+  visibility helpers for student-scoped category/image calls. The narrowing
+  helpers they build on are in `frontend/src/categoryUtils.ts`
+  (`narrowProgramIds`, `narrowGroupIds`, `splitDirectAncestorProgramIds`).
+- Frontend flags: `canManageUsers` is `true` only for admins (controls
+  People/Admin tabs); `canEditContent` is `true` for admins or instructors
+  (controls edit buttons, upload, Images tab, Manage dropdown).
+- Tab visibility by role: all roles see Home; admin + instructor also see Images
+  and Manage (Categories, Groups, Announcements); admin-only adds People, Admin,
+  and Programs inside Manage; students see Home only.
+- Tab visibility ≠ API access: the People tab is admin-only, but instructors may
+  call `GET /api/users/` (group-management pickers). Instructors get a minimal
+  projection (`id`, `name`, `email`, `role`); admins get full `UserOut`.
+
+## Endpoint Role Map
+
+| Minimum role | Endpoints                                                                                                                                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| No auth      | `POST /api/auth/login`, `GET /api/health`                                                                                                                                                        |
+| student      | `GET /api/categories/*`, `GET /api/images/*`                                                                                                                                                     |
+| instructor   | Category/image create, patch, reorder, upload, delete; `GET /api/users/` (instructor-scoped projection/filter); `/api/groups/*`; editor admin tasks such as bulk import routed through `_editor` |
+| admin        | User mutations (`POST/PATCH/DELETE /api/users/*`), `/api/admin/*`, `/api/programs/*`, and unrestricted group/program attachment                                                                  |
+
+Keep this in sync with `../../../../docs/TESTING.md` (the canonical endpoint →
+minimum-role table) when endpoints, roles, or auth rules change.
+
+## Groups Invariants And Gotchas
+
+Groups are a first-class, instructor-managed visibility dimension independent of
+programs (the stacked groups refactor is complete — cohort removal #601, backend
+#604, frontend #645 are merged; do not treat groups as "not started").
+
+- Group membership is role-enforced: members must be students, instructors must
+  be instructors (422 on mismatch). A group's last instructor cannot be removed
+  (409); a group attached to categories cannot be deleted (409).
+- `program_group_intersection` warnings are non-blocking and symmetric.
+- `created_by_user_id` is audit-only (`SET NULL`); role changes after membership
+  are not retroactively cleaned up.
+- Frontend uses the integrated `GroupManagementModal` (selection/create/rename/
+  delete + student and instructor co-owner management, server-paginated search,
+  program filters, bulk add, inline removal) — not the removed
+  `GroupMembersDialog`.
+- `GET /api/users/` accepts optional `?role=`; instructors are constrained to
+  `student` or `instructor`.
+- In `routers/groups.py`, register `/bulk` routes **before** parametric
+  `/{user_id}` routes, or FastAPI matches `bulk` as `user_id` and returns 422.
+- Preserve regression tests for route ordering, dual-gate visibility, group
+  management, and admin export/import when touching this area.
+- Backend models/files: `models.py` (`Group`, `group_members`,
+  `group_instructors`, `category_groups`), `authz.py`, `visibility.py`,
+  `routers/groups.py`, `routers/categories.py`, `routers/users.py`,
+  `routers/images.py`, `admin_ops.py`.
+
+## Local Test Credentials
+
+The seeded local users (`db/seed.sql`) are `admin@example.ca`,
+`instructor@example.ca`, and `student@example.ca`, all sharing the password
+`password`. `../../../../README.md` ("Test Credentials") and
+`../../../../docs/TESTING.md` are the canonical source — these are dev-only seed
+accounts and must never be reused outside local development.
+
 ## Docs And Tests
 
 - Read `../../../../docs/category-visibility-and-programs.md`.
 - Read `../../../../docs/groups.md`.
 - Read `../../../../docs/OIDC_SETUP.md` for IdP group and role mapping.
+- Read `oidc-vault-idp.md` (in this folder) for the Vault→Azure AD OIDC chain,
+  issuer/redirect requirements, and troubleshooting.
 - Update `../../../../README.md` and `../../../../docs/TESTING.md` when roles,
   credentials, endpoint permissions, or auth rules change.
