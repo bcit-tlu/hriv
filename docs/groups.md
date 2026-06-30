@@ -158,6 +158,7 @@ same way regardless of which dimension was added last.
 | Group chips in browse / viewer breadcrumbs                                           | `App.tsx`                                                               |
 | Group chips in the Images table                                                      | `components/ManagePage.tsx`                                             |
 | Group chips in the People table                                                      | `components/PeoplePage.tsx`                                             |
+| Bulk add selected people to one or more groups (People table)                        | `components/BulkGroupModal.tsx`, `components/PeoplePage.tsx`            |
 | Read-only group chips in the profile menu                                            | `components/AppShell.tsx`                                               |
 | Group API wrappers / types (`ApiGroup`, `fetchUsersPaged`, `addGroupMembersBulk`, …) | `api.ts`                                                                |
 | Group chip colours                                                                   | `theme.ts` (`getGroupChipColors`)                                       |
@@ -227,6 +228,7 @@ and sequence-reset details.
 | Image visibility through group gate               | `backend/tests/test_router_images.py`                     |
 | Export/import round-trip                          | `backend/tests/test_admin_ops.py`                         |
 | Frontend group modal                              | `frontend/tests/components/GroupManagementModal.test.tsx` |
+| Frontend bulk add-to-groups modal                 | `frontend/tests/components/BulkGroupModal.test.tsx`       |
 
 Local end-to-end setup and walkthroughs live in
 [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md).
