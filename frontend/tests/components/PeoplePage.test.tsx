@@ -26,6 +26,7 @@ import {
   bulkUpdateUserRole,
   bulkDeleteUsers,
   addGroupMembersBulk,
+  ApiError,
 } from '../../src/api'
 import type { ApiGroup } from '../../src/api'
 import type { Program, Group } from '../../src/types'
@@ -36,7 +37,16 @@ const programs: Program[] = [
 ]
 
 const groups: Group[] = [
-  { id: 7, name: 'Lab A2', description: null, createdByUserId: null, memberIds: [], instructorIds: [], createdAt: '', updatedAt: '' },
+  {
+    id: 7,
+    name: 'Lab A2',
+    description: null,
+    createdByUserId: null,
+    memberIds: [],
+    instructorIds: [],
+    createdAt: '',
+    updatedAt: '',
+  },
 ]
 
 const USERS = [
@@ -650,5 +660,32 @@ describe('PeoplePage', () => {
     await user.click(screen.getByRole('button', { name: 'Add to Groups' }))
 
     expect(addGroupMembersBulk).toHaveBeenCalledWith(7, [1])
+  })
+
+  it('keeps bulk groups dialog open and shows an error when the save fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(addGroupMembersBulk).mockRejectedValue(new ApiError(422, 'Group add failed'))
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    await user.click(screen.getByText('Bulk Groups (1)'))
+    expect(screen.getByText('Bulk Add to Groups')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'Lab A2' }))
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Add to Groups' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Bulk Add to Groups')).toBeInTheDocument()
+      expect(screen.getByText(/Failed to add person to 1 of 1 group/i)).toBeInTheDocument()
+      expect(screen.getByText(/Group add failed/i)).toBeInTheDocument()
+    })
   })
 })

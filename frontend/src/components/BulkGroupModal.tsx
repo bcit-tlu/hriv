@@ -18,7 +18,7 @@ import type { Group } from '../types'
 interface BulkGroupModalProps {
   open: boolean
   onClose: () => void
-  onSave: (groupIds: number[]) => void
+  onSave: (groupIds: number[]) => Promise<void>
   groups: Group[]
   selectedCount: number
 }
@@ -37,9 +37,13 @@ export default function BulkGroupModal({
     setGroupIds(typeof val === 'string' ? [] : val)
   }
 
-  const handleSave = () => {
-    onSave(groupIds)
-    setGroupIds([])
+  const handleSave = async () => {
+    try {
+      await onSave(groupIds)
+      setGroupIds([])
+    } catch {
+      return
+    }
   }
 
   const handleClose = () => {

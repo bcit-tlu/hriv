@@ -171,6 +171,7 @@ export default function PeoplePage({
 
   // Success snackbar
   const [successSnack, setSuccessSnack] = useState<string | null>(null)
+  const [errorSnack, setErrorSnack] = useState<string | null>(null)
 
   const loadData = useCallback(async ({ showLoading = false }: { showLoading?: boolean } = {}) => {
     try {
@@ -411,15 +412,36 @@ export default function PeoplePage({
   // Bulk add-to-group handler
   const handleBulkGroupSave = async (groupIds: number[]) => {
     try {
-      await Promise.all(
+      const results = await Promise.allSettled(
         groupIds.map((groupId) => addGroupMembersBulk(groupId, Array.from(selected))),
       )
+      await loadData()
+
+      const failures = results.filter(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      )
+
+      if (failures.length > 0) {
+        const failure = failures[0]?.reason
+        const failureMessage = userMessage(
+          failure,
+          'Failed to add selected people to groups. Please try again.',
+        )
+        const groupWord = failures.length === 1 ? 'group' : 'groups'
+        const selectionWord = selected.size === 1 ? 'person' : 'people'
+        setErrorSnack(
+          `Failed to add ${selectionWord} to ${failures.length} of ${groupIds.length} ${groupWord}. ${failureMessage}`,
+        )
+        throw failure
+      }
+
       setBulkGroupOpen(false)
       setSelected(new Set())
+      setErrorSnack(null)
       setSuccessSnack('Added to group(s).')
-      await loadData()
     } catch (err) {
       console.error('Failed to bulk add to groups', err)
+      throw err
     }
   }
 
@@ -1133,6 +1155,20 @@ export default function PeoplePage({
       >
         <Alert severity="success" onClose={() => setSuccessSnack(null)} variant="filled">
           {successSnack}
+        </Alert>
+      </Snackbar>
+
+      <Snackbar
+        open={errorSnack !== null}
+        autoHideDuration={6000}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return
+          setErrorSnack(null)
+        }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="error" onClose={() => setErrorSnack(null)} variant="filled">
+          {errorSnack}
         </Alert>
       </Snackbar>
     </Box>
