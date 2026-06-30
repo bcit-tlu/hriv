@@ -177,12 +177,12 @@ describe('PeoplePage', () => {
     render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Medical Lab')).toBeInTheDocument()
+      expect(screen.getAllByText('Medical Lab').length).toBeGreaterThan(0)
     })
 
-    // Program name rendered as a MUI Chip
-    const chip = screen.getByText('Medical Lab').closest('.MuiChip-root')
-    expect(chip).toBeInTheDocument()
+    // Program name rendered as a MUI Chip (filter panel + table row)
+    const chips = screen.getAllByText('Medical Lab').map((el) => el.closest('.MuiChip-root'))
+    expect(chips.some(Boolean)).toBe(true)
   })
 
   it('shows the configured default visible columns', async () => {

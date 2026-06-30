@@ -535,7 +535,7 @@ export default function PeoplePage({
         </Box>
       </Box>
 
-      {showFilters && (programs.length > 0 || groups.length > 0) && (
+      {(programs.length > 0 || groups.length > 0) && (
         <Box
           sx={{
             display: 'flex',
