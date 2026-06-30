@@ -535,6 +535,97 @@ export default function PeoplePage({
         </Box>
       </Box>
 
+      {showFilters && (programs.length > 0 || groups.length > 0) && (
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+            px: 1,
+            py: 1.25,
+            borderRadius: 1,
+            border: 1,
+            borderColor: 'divider',
+            bgcolor: 'background.paper',
+          }}
+        >
+          {programs.length > 0 && (
+            <Box>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: 'block', mb: 0.75 }}
+              >
+                Filter by program
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                {programs.map((p) => {
+                  const active = selectedPrograms.has(p.id)
+                  return (
+                    <Chip
+                      key={p.id}
+                      label={p.name}
+                      size="small"
+                      color={active ? 'primary' : 'default'}
+                      variant={active ? 'filled' : 'outlined'}
+                      onClick={() => {
+                        setSelectedPrograms((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(p.id)) {
+                            next.delete(p.id)
+                          } else {
+                            next.add(p.id)
+                          }
+                          return next
+                        })
+                        setCurrentPage(0)
+                      }}
+                    />
+                  )
+                })}
+              </Box>
+            </Box>
+          )}
+          {groups.length > 0 && (
+            <Box>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ display: 'block', mb: 0.75 }}
+              >
+                Filter by group
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                {groups.map((g) => {
+                  const active = selectedGroups.has(g.id)
+                  return (
+                    <Chip
+                      key={g.id}
+                      label={g.name}
+                      size="small"
+                      color={active ? 'secondary' : 'default'}
+                      variant={active ? 'filled' : 'outlined'}
+                      onClick={() => {
+                        setSelectedGroups((prev) => {
+                          const next = new Set(prev)
+                          if (next.has(g.id)) {
+                            next.delete(g.id)
+                          } else {
+                            next.add(g.id)
+                          }
+                          return next
+                        })
+                        setCurrentPage(0)
+                      }}
+                    />
+                  )
+                })}
+              </Box>
+            </Box>
+          )}
+        </Box>
+      )}
+
       {users.length === 0 ? (
         <Typography variant="body1" color="text.secondary">
           No people found.
@@ -734,68 +825,8 @@ export default function PeoplePage({
                       </FormControl>
                     </TableCell>
                   )}
-                  {isColumnVisible('program') && (
-                    <TableCell>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {programs.map((p) => {
-                          const active = selectedPrograms.has(p.id)
-                          return (
-                            <Chip
-                              key={p.id}
-                              label={p.name}
-                              size="small"
-                              color={active ? 'primary' : 'default'}
-                              variant={active ? 'filled' : 'outlined'}
-                              onClick={() => {
-                                setSelectedPrograms((prev) => {
-                                  const next = new Set(prev)
-                                  if (next.has(p.id)) {
-                                    next.delete(p.id)
-                                  } else {
-                                    next.add(p.id)
-                                  }
-                                  return next
-                                })
-                                setCurrentPage(0)
-                              }}
-                              sx={{ cursor: 'pointer', fontSize: '0.7rem' }}
-                            />
-                          )
-                        })}
-                      </Box>
-                    </TableCell>
-                  )}
-                  {isColumnVisible('group') && (
-                    <TableCell>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {groups.map((g) => {
-                          const active = selectedGroups.has(g.id)
-                          return (
-                            <Chip
-                              key={g.id}
-                              label={g.name}
-                              size="small"
-                              color={active ? 'secondary' : 'default'}
-                              variant={active ? 'filled' : 'outlined'}
-                              onClick={() => {
-                                setSelectedGroups((prev) => {
-                                  const next = new Set(prev)
-                                  if (next.has(g.id)) {
-                                    next.delete(g.id)
-                                  } else {
-                                    next.add(g.id)
-                                  }
-                                  return next
-                                })
-                                setCurrentPage(0)
-                              }}
-                              sx={{ cursor: 'pointer', fontSize: '0.7rem' }}
-                            />
-                          )
-                        })}
-                      </Box>
-                    </TableCell>
-                  )}
+                  {isColumnVisible('program') && <TableCell />}
+                  {isColumnVisible('group') && <TableCell />}
                   {isColumnVisible('last_access') && <TableCell />}
                   {isColumnVisible('created_at') && <TableCell />}
                   <TableCell />
