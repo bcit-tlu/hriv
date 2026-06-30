@@ -27,6 +27,7 @@ import {
   bulkDeleteUsers,
   addGroupMembersBulk,
 } from '../../src/api'
+import type { ApiGroup } from '../../src/api'
 import type { Program, Group } from '../../src/types'
 import PeoplePage from '../../src/components/PeoplePage'
 
@@ -35,7 +36,7 @@ const programs: Program[] = [
 ]
 
 const groups: Group[] = [
-  { id: 7, name: 'Lab A2', description: null, created_at: '', updated_at: '' },
+  { id: 7, name: 'Lab A2', description: null, createdByUserId: null, memberIds: [], instructorIds: [], createdAt: '', updatedAt: '' },
 ]
 
 const USERS = [
@@ -616,15 +617,17 @@ describe('PeoplePage', () => {
 
   it('opens bulk groups dialog and calls addGroupMembersBulk', async () => {
     const user = userEvent.setup()
-    vi.mocked(addGroupMembersBulk).mockResolvedValue({
+    const apiGroup: ApiGroup = {
       id: 7,
       name: 'Lab A2',
       description: null,
+      created_by_user_id: null,
       member_ids: [1, 2],
       instructor_ids: [],
       created_at: '',
       updated_at: '',
-    } as any)
+    }
+    vi.mocked(addGroupMembersBulk).mockResolvedValue(apiGroup)
     render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
