@@ -5,8 +5,26 @@ import BulkGroupModal from '../../src/components/BulkGroupModal'
 import type { Group } from '../../src/types'
 
 const groups: Group[] = [
-  { id: 7, name: 'Lab A2', description: null, createdByUserId: null, memberIds: [], instructorIds: [], createdAt: '', updatedAt: '' },
-  { id: 8, name: 'Lab B1', description: null, createdByUserId: null, memberIds: [], instructorIds: [], createdAt: '', updatedAt: '' },
+  {
+    id: 7,
+    name: 'Lab A2',
+    description: null,
+    createdByUserId: null,
+    memberIds: [],
+    instructorIds: [],
+    createdAt: '',
+    updatedAt: '',
+  },
+  {
+    id: 8,
+    name: 'Lab B1',
+    description: null,
+    createdByUserId: null,
+    memberIds: [],
+    instructorIds: [],
+    createdAt: '',
+    updatedAt: '',
+  },
 ]
 
 describe('BulkGroupModal', () => {
