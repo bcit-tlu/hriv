@@ -25,12 +25,14 @@ import {
   bulkUpdateUserRole,
   bulkDeleteUsers,
 } from '../../src/api'
-import type { Program } from '../../src/types'
+import type { Program, Group } from '../../src/types'
 import PeoplePage from '../../src/components/PeoplePage'
 
 const programs: Program[] = [
   { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
 ]
+
+const groups: Group[] = []
 
 const USERS = [
   {
@@ -76,7 +78,7 @@ describe('PeoplePage', () => {
   })
 
   it('shows loading spinner then renders user table', async () => {
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
     expect(screen.getByRole('progressbar')).toBeInTheDocument()
 
     await waitFor(() => {
@@ -89,7 +91,7 @@ describe('PeoplePage', () => {
 
   it('shows "No people found" when list is empty', async () => {
     vi.mocked(fetchUsers).mockResolvedValue([])
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('No people found.')).toBeInTheDocument()
@@ -97,7 +99,7 @@ describe('PeoplePage', () => {
   })
 
   it('renders Add Person button', async () => {
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
@@ -106,7 +108,7 @@ describe('PeoplePage', () => {
 
   it('opens add modal when Add Person is clicked', async () => {
     const user = userEvent.setup()
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -118,7 +120,7 @@ describe('PeoplePage', () => {
 
   it('opens edit modal when a row is clicked', async () => {
     const user = userEvent.setup()
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -132,7 +134,7 @@ describe('PeoplePage', () => {
   it('calls deleteUser after confirming in the confirmation dialog', async () => {
     const user = userEvent.setup()
     vi.mocked(deleteUser).mockResolvedValue()
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -157,7 +159,7 @@ describe('PeoplePage', () => {
 
   it('shows bulk action buttons when users are selected', async () => {
     const user = userEvent.setup()
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -172,7 +174,7 @@ describe('PeoplePage', () => {
   })
 
   it('displays program names as chips', async () => {
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Medical Lab')).toBeInTheDocument()
@@ -184,7 +186,7 @@ describe('PeoplePage', () => {
   })
 
   it('shows the configured default visible columns', async () => {
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -201,7 +203,7 @@ describe('PeoplePage', () => {
   })
 
   it('displays last accessed date when available', async () => {
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -212,7 +214,7 @@ describe('PeoplePage', () => {
   })
 
   it('renders sortable column headers', async () => {
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -227,7 +229,7 @@ describe('PeoplePage', () => {
 
   it('can hide the Groups column and persists that choice between renders', async () => {
     const user = userEvent.setup()
-    const { unmount } = render(<PeoplePage programs={programs} />)
+    const { unmount } = render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -248,7 +250,7 @@ describe('PeoplePage', () => {
     expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
 
     unmount()
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -259,7 +261,7 @@ describe('PeoplePage', () => {
   it('opens bulk role dialog and calls API', async () => {
     const user = userEvent.setup()
     vi.mocked(bulkUpdateUserRole).mockResolvedValue(USERS)
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -287,7 +289,7 @@ describe('PeoplePage', () => {
   it('opens bulk delete confirmation and calls API', async () => {
     const user = userEvent.setup()
     vi.mocked(bulkDeleteUsers).mockResolvedValue()
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -312,7 +314,7 @@ describe('PeoplePage', () => {
   })
 
   it('renders pagination controls', async () => {
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -327,6 +329,7 @@ describe('PeoplePage', () => {
     render(
       <PeoplePage
         programs={programs}
+        groups={groups}
         initialEditUserId={2}
         onEditUserHandled={handleEditHandled}
       />,
@@ -340,7 +343,7 @@ describe('PeoplePage', () => {
   })
 
   it('does not open edit modal when initialEditUserId is null', async () => {
-    render(<PeoplePage programs={programs} initialEditUserId={null} />)
+    render(<PeoplePage programs={programs} groups={groups} initialEditUserId={null} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -351,7 +354,7 @@ describe('PeoplePage', () => {
 
   it('filter icon changes aria-label and color when panel is toggled', async () => {
     const user = userEvent.setup()
-    render(<PeoplePage programs={programs} initialEditUserId={null} />)
+    render(<PeoplePage programs={programs} groups={groups} initialEditUserId={null} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -371,7 +374,7 @@ describe('PeoplePage', () => {
 
   it('sorts by name column when header is clicked', async () => {
     const user = userEvent.setup()
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -392,7 +395,7 @@ describe('PeoplePage', () => {
 
   it('sorts by email column when header is clicked', async () => {
     const user = userEvent.setup()
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -407,7 +410,7 @@ describe('PeoplePage', () => {
 
   it('filters users by name when filter text is entered', async () => {
     const user = userEvent.setup()
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -428,7 +431,7 @@ describe('PeoplePage', () => {
 
   it('clears filters when clear button is clicked', async () => {
     const user = userEvent.setup()
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -454,7 +457,7 @@ describe('PeoplePage', () => {
   it('opens bulk programs dialog and calls API', async () => {
     const user = userEvent.setup()
     vi.mocked(bulkUpdateUserProgram).mockResolvedValue(USERS)
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -471,7 +474,7 @@ describe('PeoplePage', () => {
 
   it('select-all checkbox selects all page users', async () => {
     const user = userEvent.setup()
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -494,7 +497,7 @@ describe('PeoplePage', () => {
       email: 'new@example.ca',
       role: 'student',
     })
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -522,7 +525,7 @@ describe('PeoplePage', () => {
   it('updates an existing user when Edit Person is submitted', async () => {
     const user = userEvent.setup()
     vi.mocked(updateUser).mockResolvedValue(USERS[0])
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -545,7 +548,7 @@ describe('PeoplePage', () => {
   })
 
   it('displays group names as chips', async () => {
-    render(<PeoplePage programs={programs} />)
+    render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
       expect(screen.getByText('Lab A2')).toBeInTheDocument()
