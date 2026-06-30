@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -216,6 +216,9 @@ export default function AddEditPersonModal({
   user,
 }: AddEditPersonModalProps) {
   const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    if (open) setSaving(false)
+  }, [open])
   // Use key to reset form state when the modal opens or the user changes
   const formKey = user ? `edit-${user.id}` : 'add'
 

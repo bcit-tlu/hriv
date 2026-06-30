@@ -111,7 +111,7 @@ interface PeoplePageProps {
 
 export default function PeoplePage({
   programs,
-  groups = [],
+  groups,
   initialEditUserId,
   onEditUserHandled,
 }: PeoplePageProps) {
