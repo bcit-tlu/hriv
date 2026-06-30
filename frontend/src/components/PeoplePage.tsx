@@ -46,7 +46,7 @@ import {
   userMessage,
 } from '../api'
 import type { ApiUser } from '../api'
-import type { Role, Program } from '../types'
+import type { Role, Program, Group } from '../types'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import AddEditPersonModal from './AddEditPersonModal'
 import BulkEditModal from './BulkEditModal'
@@ -100,18 +100,18 @@ const PEOPLE_COLUMN_FILTER_KEYS: Partial<Record<PeopleTableColumn, string>> = {
   name: 'name',
   email: 'email',
   role: 'role',
-  program: 'program',
-  group: 'group',
 }
 
 interface PeoplePageProps {
   programs: Program[]
+  groups: Group[]
   initialEditUserId?: number | null
   onEditUserHandled?: () => void
 }
 
 export default function PeoplePage({
   programs,
+  groups = [],
   initialEditUserId,
   onEditUserHandled,
 }: PeoplePageProps) {
@@ -123,9 +123,14 @@ export default function PeoplePage({
   const [sortColumn, setSortColumn] = useState<SortableColumn>('name')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
-  // Filter state
+  // Filter state — text filters for name/email/role, chip sets for program/group
   const [filters, setFilters] = useState<Record<string, string>>({})
-  const hasActiveFilters = Object.values(filters).some((v) => v !== '')
+  const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(new Set())
+  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(new Set())
+  const hasActiveFilters =
+    Object.values(filters).some((v) => v !== '') ||
+    selectedPrograms.size > 0 ||
+    selectedGroups.size > 0
 
   // Filter row visibility
   const [showFilters, setShowFilters] = useState(false)
@@ -218,13 +223,19 @@ export default function PeoplePage({
       }
       if (!match('name', user.name)) return false
       if (!match('email', user.email)) return false
-      if (!match('program', user.program_names.join(', '))) return false
-      if (!match('group', user.group_names.join(', '))) return false
       const roleFilter = filters['role']
       if (roleFilter && user.role !== roleFilter) return false
+      if (selectedPrograms.size > 0) {
+        const userProgramSet = new Set(user.program_ids)
+        if (![...selectedPrograms].some((id) => userProgramSet.has(id))) return false
+      }
+      if (selectedGroups.size > 0) {
+        const userGroupSet = new Set(user.group_ids)
+        if (![...selectedGroups].some((id) => userGroupSet.has(id))) return false
+      }
       return true
     })
-  }, [users, filters, hasActiveFilters])
+  }, [users, filters, selectedPrograms, selectedGroups])
 
   const sortedUsers = useMemo(() => {
     const sorted = [...filteredUsers]
@@ -274,6 +285,8 @@ export default function PeoplePage({
 
   const handleClearFilters = () => {
     setFilters({})
+    setSelectedPrograms(new Set())
+    setSelectedGroups(new Set())
     setCurrentPage(0)
   }
 
@@ -282,14 +295,20 @@ export default function PeoplePage({
       const nextVisible = !visibleColumns[column]
       setColumnVisible(column, nextVisible)
       if (!nextVisible) {
-        const filterKey = PEOPLE_COLUMN_FILTER_KEYS[column]
-        if (filterKey) {
-          setFilters((prev) => {
-            if (!prev[filterKey]) return prev
-            const next = { ...prev }
-            delete next[filterKey]
-            return next
-          })
+        if (column === 'program') {
+          setSelectedPrograms(new Set())
+        } else if (column === 'group') {
+          setSelectedGroups(new Set())
+        } else {
+          const filterKey = PEOPLE_COLUMN_FILTER_KEYS[column]
+          if (filterKey) {
+            setFilters((prev) => {
+              if (!prev[filterKey]) return prev
+              const next = { ...prev }
+              delete next[filterKey]
+              return next
+            })
+          }
         }
       }
     },
@@ -721,58 +740,64 @@ export default function PeoplePage({
                   )}
                   {isColumnVisible('program') && (
                     <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['program'] ?? ''}
-                        onChange={(e) => handleFilterChange('program', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['program']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('program', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {programs.map((p) => {
+                          const active = selectedPrograms.has(p.id)
+                          return (
+                            <Chip
+                              key={p.id}
+                              label={p.name}
+                              size="small"
+                              color={active ? 'primary' : 'default'}
+                              variant={active ? 'filled' : 'outlined'}
+                              onClick={() => {
+                                setSelectedPrograms((prev) => {
+                                  const next = new Set(prev)
+                                  if (next.has(p.id)) {
+                                    next.delete(p.id)
+                                  } else {
+                                    next.add(p.id)
+                                  }
+                                  return next
+                                })
+                                setCurrentPage(0)
+                              }}
+                              sx={{ cursor: 'pointer', fontSize: '0.7rem' }}
+                            />
+                          )
+                        })}
+                      </Box>
                     </TableCell>
                   )}
                   {isColumnVisible('group') && (
                     <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['group'] ?? ''}
-                        onChange={(e) => handleFilterChange('group', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['group']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('group', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {groups.map((g) => {
+                          const active = selectedGroups.has(g.id)
+                          return (
+                            <Chip
+                              key={g.id}
+                              label={g.name}
+                              size="small"
+                              color={active ? 'secondary' : 'default'}
+                              variant={active ? 'filled' : 'outlined'}
+                              onClick={() => {
+                                setSelectedGroups((prev) => {
+                                  const next = new Set(prev)
+                                  if (next.has(g.id)) {
+                                    next.delete(g.id)
+                                  } else {
+                                    next.add(g.id)
+                                  }
+                                  return next
+                                })
+                                setCurrentPage(0)
+                              }}
+                              sx={{ cursor: 'pointer', fontSize: '0.7rem' }}
+                            />
+                          )
+                        })}
+                      </Box>
                     </TableCell>
                   )}
                   {isColumnVisible('last_access') && <TableCell />}

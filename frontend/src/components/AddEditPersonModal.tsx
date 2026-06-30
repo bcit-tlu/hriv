@@ -40,9 +40,10 @@ interface AddEditPersonModalProps {
 function AddEditPersonForm({
   onClose,
   onSave,
+  onSavingChange,
   programs,
   user,
-}: Omit<AddEditPersonModalProps, 'open'>) {
+}: Omit<AddEditPersonModalProps, 'open'> & { onSavingChange?: (saving: boolean) => void }) {
   const isEdit = Boolean(user)
   const [name, setName] = useState(user?.name ?? '')
   const [email, setEmail] = useState(user?.email ?? '')
@@ -69,6 +70,7 @@ function AddEditPersonForm({
       data.password = trimmedPassword
     }
     setSaving(true)
+    onSavingChange?.(true)
     setSaveError(null)
     try {
       await onSave(data)
@@ -76,6 +78,7 @@ function AddEditPersonForm({
       setSaveError(userMessage(err, 'Failed to save. Please try again.'))
     } finally {
       setSaving(false)
+      onSavingChange?.(false)
     }
   }
 
@@ -212,15 +215,23 @@ export default function AddEditPersonModal({
   programs,
   user,
 }: AddEditPersonModalProps) {
+  const [saving, setSaving] = useState(false)
   // Use key to reset form state when the modal opens or the user changes
   const formKey = user ? `edit-${user.id}` : 'add'
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+    <Dialog
+      open={open}
+      onClose={saving ? undefined : onClose}
+      disableEscapeKeyDown={saving}
+      maxWidth="xs"
+      fullWidth
+    >
       <AddEditPersonForm
         key={open ? formKey : 'closed'}
         onClose={onClose}
         onSave={onSave}
+        onSavingChange={setSaving}
         programs={programs}
         user={user}
       />

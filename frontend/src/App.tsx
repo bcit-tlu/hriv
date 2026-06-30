@@ -1125,6 +1125,7 @@ export default function App() {
           ) : page === 'people' && canManageUsers ? (
             <PeoplePage
               programs={programs}
+              groups={groups}
               initialEditUserId={editUserId}
               onEditUserHandled={clearEditUserId}
             />

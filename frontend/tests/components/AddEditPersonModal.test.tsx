@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AddEditPersonModal from '../../src/components/AddEditPersonModal'
 import type { Program } from '../../src/types'
+import { ApiError } from '../../src/api'
 import type { ApiUser } from '../../src/api'
 
 const programs: Program[] = [
@@ -160,5 +161,60 @@ describe('AddEditPersonModal', () => {
 
     await user.click(screen.getByRole('button', { name: /cancel/i }))
     expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  it('shows inline error alert when onSave rejects', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn().mockRejectedValue(new ApiError(422, 'Email already in use'))
+    render(
+      <AddEditPersonModal
+        open
+        onClose={vi.fn()}
+        onSave={onSave}
+        programs={programs}
+        user={existingUser}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Email already in use')
+    // Save button should be re-enabled after error
+    expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled()
+  })
+
+  it('Save button is disabled and Escape is blocked while saving', async () => {
+    const user = userEvent.setup()
+    let resolveSave!: () => void
+    const onSave = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveSave = resolve
+        }),
+    )
+    const onClose = vi.fn()
+    render(
+      <AddEditPersonModal
+        open
+        onClose={onClose}
+        onSave={onSave}
+        programs={programs}
+        user={existingUser}
+      />,
+    )
+
+    await user.click(screen.getByRole('button', { name: 'Save' }))
+
+    // While in-flight: Save button disabled
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
+
+    // Escape should not call onClose while saving
+    await user.keyboard('{Escape}')
+    expect(onClose).not.toHaveBeenCalled()
+
+    // Resolve the save and confirm Save is re-enabled
+    resolveSave()
+    await screen.findByRole('button', { name: 'Save' })
+    expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled()
   })
 })
