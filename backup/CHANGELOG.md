@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.7.0...backup-v0.8.0) (2026-06-30)
+
+
+### Features
+
+* **backup:** add BACKUP_MODE for production tile exclusion ([#753](https://github.com/bcit-tlu/hriv/issues/753)) ([1ae8897](https://github.com/bcit-tlu/hriv/commit/1ae8897b304e642bad027aa03931594d5ffac66e))
+
+
+### Documentation
+
+* publish production backup and disaster recovery strategy ([#755](https://github.com/bcit-tlu/hriv/issues/755)) ([c89a210](https://github.com/bcit-tlu/hriv/commit/c89a21035f40ba51a2c8088386035ddd745445ba))
+
 ## [0.7.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.6.1...backup-v0.7.0) (2026-06-23)
 
 
