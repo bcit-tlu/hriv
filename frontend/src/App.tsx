@@ -21,7 +21,12 @@ import Snackbar from '@mui/material/Snackbar'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import { useTheme } from '@mui/material/styles'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
+import MenuBookIcon from '@mui/icons-material/MenuBook'
+import NotesIcon from '@mui/icons-material/Notes'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import CreateNewFolderIcon from '@mui/icons-material/CreateNewFolder'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
@@ -31,6 +36,7 @@ import LinkIcon from '@mui/icons-material/Link'
 import ImageViewer from './components/ImageViewer'
 import SortableTileGrid from './components/SortableTileGrid'
 import NoteDisplay from './components/NoteDisplay'
+import MobileInfoStrip from './components/MobileInfoStrip'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
 import AppShell from './components/AppShell'
@@ -197,6 +203,12 @@ export default function App() {
     ancestorGroupIds,
     currentCategories,
   } = useBrowseData({ path, currentUser })
+
+  const muiTheme = useTheme()
+  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'))
+  const viewerInstruction =
+    'Scroll or tap to zoom, and drag to pan. Buttons in the bottom left corner control the view. ' +
+    'On touch-devices, pinch-turn to rotate. The mini-map in the bottom-right corner shows your current viewport.'
 
   const selectedImageCategoryHidden = useMemo(
     () => getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
@@ -1412,106 +1424,214 @@ export default function App() {
                 />
               </Paper>
 
-              <Box sx={{ mt: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Scroll or tap to zoom, and drag to pan. Buttons in the bottom left corner control
-                  the view. On touch-devices, pinch-turn to rotate. The mini-map in the bottom-right
-                  corner shows your current viewport.
-                </Typography>
-              </Box>
+              {isMobile ? (
+                /* Mobile: collapsible Instruction / Note / Image Details strips */
+                <Box sx={{ mt: 2, mx: -2 }}>
+                  <MobileInfoStrip
+                    label="Instruction"
+                    icon={<MenuBookIcon sx={{ fontSize: 16 }} />}
+                    preview={viewerInstruction}
+                  >
+                    <Typography variant="body2" color="text.primary" sx={{ lineHeight: 1.65 }}>
+                      {viewerInstruction}
+                    </Typography>
+                  </MobileInfoStrip>
+                  {selectedImage.note && (
+                    <MobileInfoStrip
+                      label="Note"
+                      icon={<NotesIcon sx={{ fontSize: 16 }} />}
+                      preview={selectedImage.note}
+                    >
+                      <NoteDisplay key={selectedImage.id} note={selectedImage.note} />
+                    </MobileInfoStrip>
+                  )}
+                  <MobileInfoStrip
+                    label="Image Details"
+                    icon={<InfoOutlinedIcon sx={{ fontSize: 16 }} />}
+                  >
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px' }}>
+                      {(
+                        [
+                          ['Copyright', selectedImage.copyright || null],
+                          [
+                            `Program${ancestorProgramIds.length > 1 ? 's' : ''}`,
+                            ancestorProgramIds.length > 0
+                              ? ancestorProgramIds
+                                  .map((pid) => programs.find((p) => p.id === pid)?.name ?? pid)
+                                  .join(', ')
+                              : null,
+                          ],
+                          [
+                            `Group${ancestorGroupIds.length > 1 ? 's' : ''}`,
+                            ancestorGroupIds.length > 0
+                              ? ancestorGroupIds
+                                  .map((gid) => groups.find((g) => g.id === gid)?.name ?? gid)
+                                  .join(', ')
+                              : null,
+                          ],
+                          [
+                            'Created',
+                            selectedImage.createdAt
+                              ? new Date(selectedImage.createdAt).toLocaleString()
+                              : null,
+                          ],
+                          [
+                            'Modified',
+                            selectedImage.updatedAt
+                              ? new Date(selectedImage.updatedAt).toLocaleString()
+                              : null,
+                          ],
+                          [
+                            'Dimensions',
+                            selectedImage.width != null && selectedImage.height != null
+                              ? `${selectedImage.width} × ${selectedImage.height}`
+                              : null,
+                          ],
+                          [
+                            'Size',
+                            selectedImage.fileSize != null ? `${selectedImage.fileSize} MB` : null,
+                          ],
+                          [
+                            'Measurement',
+                            selectedImageMeasurement
+                              ? selectedImageMeasurement.scale && selectedImageMeasurement.unit
+                                ? `${selectedImageMeasurement.scale} px/${selectedImageMeasurement.unit}`
+                                : selectedImageMeasurement.scale
+                                  ? `${selectedImageMeasurement.scale} px`
+                                  : (selectedImageMeasurement.unit ?? '')
+                              : null,
+                          ],
+                        ] as [string, string | null][]
+                      )
+                        .filter(([, v]) => v)
+                        .map(([key, val]) => (
+                          <Box key={key}>
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              component="p"
+                              sx={{ m: 0 }}
+                            >
+                              {key}
+                            </Typography>
+                            <Typography
+                              variant="body2"
+                              component="p"
+                              sx={{ m: 0, fontWeight: 500 }}
+                            >
+                              {val}
+                            </Typography>
+                          </Box>
+                        ))}
+                    </Box>
+                  </MobileInfoStrip>
+                </Box>
+              ) : (
+                <>
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      {viewerInstruction}
+                    </Typography>
+                  </Box>
 
-              {/* Image metadata */}
-              <Box
-                sx={{
-                  mt: 2,
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: 0,
-                  '& > span': { mr: '2em' },
-                }}
-              >
-                {selectedImage.copyright && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Copyright:</strong> {selectedImage.copyright}
-                  </Typography>
-                )}
-                {ancestorProgramIds.length > 0 && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>
-                      Program
-                      {ancestorProgramIds.length > 1 ? 's' : ''}:
-                    </strong>{' '}
-                    {ancestorProgramIds
-                      .map((pid) => programs.find((p) => p.id === pid)?.name ?? pid)
-                      .join(', ')}
-                  </Typography>
-                )}
-                {ancestorGroupIds.length > 0 && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>
-                      Group
-                      {ancestorGroupIds.length > 1 ? 's' : ''}:
-                    </strong>{' '}
-                    {ancestorGroupIds
-                      .map((gid) => groups.find((g) => g.id === gid)?.name ?? gid)
-                      .join(', ')}
-                  </Typography>
-                )}
-                {selectedImage.note && (
+                  {/* Image metadata */}
                   <Box
                     sx={{
+                      mt: 2,
                       display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: 1,
-                      mt: 1,
-                      width: '100%',
+                      flexWrap: 'wrap',
+                      gap: 0,
+                      '& > span': { mr: '2em' },
                     }}
                   >
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      component="div"
-                      sx={{ whiteSpace: 'nowrap' }}
-                    >
-                      <strong>Note:&nbsp;</strong>
-                    </Typography>
-                    <Box sx={{ flex: '1 1 60%', minWidth: 0, maxWidth: { xs: '100%', sm: '60%' } }}>
-                      <NoteDisplay key={selectedImage.id} note={selectedImage.note} />
-                    </Box>
+                    {selectedImage.copyright && (
+                      <Typography variant="body2" color="text.secondary" component="span">
+                        <strong>Copyright:</strong> {selectedImage.copyright}
+                      </Typography>
+                    )}
+                    {ancestorProgramIds.length > 0 && (
+                      <Typography variant="body2" color="text.secondary" component="span">
+                        <strong>
+                          Program
+                          {ancestorProgramIds.length > 1 ? 's' : ''}:
+                        </strong>{' '}
+                        {ancestorProgramIds
+                          .map((pid) => programs.find((p) => p.id === pid)?.name ?? pid)
+                          .join(', ')}
+                      </Typography>
+                    )}
+                    {ancestorGroupIds.length > 0 && (
+                      <Typography variant="body2" color="text.secondary" component="span">
+                        <strong>
+                          Group
+                          {ancestorGroupIds.length > 1 ? 's' : ''}:
+                        </strong>{' '}
+                        {ancestorGroupIds
+                          .map((gid) => groups.find((g) => g.id === gid)?.name ?? gid)
+                          .join(', ')}
+                      </Typography>
+                    )}
+                    {selectedImage.note && (
+                      <Box
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: 1,
+                          mt: 1,
+                          width: '100%',
+                        }}
+                      >
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          component="div"
+                          sx={{ whiteSpace: 'nowrap' }}
+                        >
+                          <strong>Note:&nbsp;</strong>
+                        </Typography>
+                        <Box
+                          sx={{ flex: '1 1 60%', minWidth: 0, maxWidth: { xs: '100%', sm: '60%' } }}
+                        >
+                          <NoteDisplay key={selectedImage.id} note={selectedImage.note} />
+                        </Box>
+                      </Box>
+                    )}
+                    {selectedImage.createdAt && (
+                      <Typography variant="body2" color="text.secondary" component="span">
+                        <strong>Created:</strong>{' '}
+                        {new Date(selectedImage.createdAt).toLocaleString()}
+                      </Typography>
+                    )}
+                    {selectedImage.updatedAt && (
+                      <Typography variant="body2" color="text.secondary" component="span">
+                        <strong>Modified:</strong>{' '}
+                        {new Date(selectedImage.updatedAt).toLocaleString()}
+                      </Typography>
+                    )}
+                    {selectedImage.width != null && selectedImage.height != null && (
+                      <Typography variant="body2" color="text.secondary" component="span">
+                        <strong>Dimensions:</strong> {selectedImage.width} &times;{' '}
+                        {selectedImage.height}
+                      </Typography>
+                    )}
+                    {selectedImage.fileSize != null && (
+                      <Typography variant="body2" color="text.secondary" component="span">
+                        <strong>Size:</strong> {selectedImage.fileSize} MB
+                      </Typography>
+                    )}
+                    {selectedImageMeasurement && (
+                      <Typography variant="body2" color="text.secondary" component="span">
+                        <strong>Measurement:</strong>{' '}
+                        {selectedImageMeasurement.scale && selectedImageMeasurement.unit
+                          ? `${selectedImageMeasurement.scale} px/${selectedImageMeasurement.unit}`
+                          : selectedImageMeasurement.scale
+                            ? `${selectedImageMeasurement.scale} px`
+                            : (selectedImageMeasurement.unit ?? '')}
+                      </Typography>
+                    )}
                   </Box>
-                )}
-                {selectedImage.createdAt && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Created:</strong> {new Date(selectedImage.createdAt).toLocaleString()}
-                  </Typography>
-                )}
-                {selectedImage.updatedAt && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Modified:</strong> {new Date(selectedImage.updatedAt).toLocaleString()}
-                  </Typography>
-                )}
-                {selectedImage.width != null && selectedImage.height != null && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Dimensions:</strong> {selectedImage.width} &times;{' '}
-                    {selectedImage.height}
-                  </Typography>
-                )}
-                {selectedImage.fileSize != null && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Size:</strong> {selectedImage.fileSize} MB
-                  </Typography>
-                )}
-                {selectedImageMeasurement && (
-                  <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Measurement:</strong>{' '}
-                    {selectedImageMeasurement.scale && selectedImageMeasurement.unit
-                      ? `${selectedImageMeasurement.scale} px/${selectedImageMeasurement.unit}`
-                      : selectedImageMeasurement.scale
-                        ? `${selectedImageMeasurement.scale} px`
-                        : (selectedImageMeasurement.unit ?? '')}
-                  </Typography>
-                )}
-              </Box>
+                </>
+              )}
             </>
           ) : (
             /* ---- Browse mode ---- */

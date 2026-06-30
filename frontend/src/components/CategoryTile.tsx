@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import Box from '@mui/material/Box'
-import { alpha } from '@mui/material/styles'
+import { alpha, useTheme } from '@mui/material/styles'
+import useMediaQuery from '@mui/material/useMediaQuery'
 import Card from '@mui/material/Card'
 import CardActionArea from '@mui/material/CardActionArea'
 import CardContent from '@mui/material/CardContent'
@@ -87,6 +88,8 @@ export default function CategoryTile({
 }: CategoryTileProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
+  const muiTheme = useTheme()
+  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'))
   const [pickerOpen, setPickerOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const dragCounter = useRef(0)
@@ -245,15 +248,14 @@ export default function CategoryTile({
           {cardImage ? (
             <CardMedia
               component="img"
-              height="140"
               image={cardImage.thumb}
               alt={category.label}
-              sx={{ objectFit: 'cover', objectPosition: 'center' }}
+              sx={{ height: { xs: 96, sm: 140 }, objectFit: 'cover', objectPosition: 'center' }}
             />
           ) : (
             <Box
               sx={{
-                height: 140,
+                height: { xs: 96, sm: 140 },
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -261,16 +263,28 @@ export default function CategoryTile({
                 color: 'white',
               }}
             >
-              <FolderIcon sx={{ fontSize: 64, opacity: 0.85 }} />
+              <FolderIcon sx={{ fontSize: { xs: 36, sm: 64 }, opacity: 0.85 }} />
             </Box>
           )}
-          <CardContent>
+          <CardContent sx={{ p: { xs: 1.25, sm: 2 }, '&:last-child': { pb: { xs: 1.25, sm: 2 } } }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
               <Typography
                 variant="h6"
-                noWrap
-                sx={{ color: category.status === 'hidden' ? visColors.inactive : 'primary.main' }}
+                noWrap={!isMobile}
+                sx={{
+                  color: category.status === 'hidden' ? visColors.inactive : 'primary.main',
+                  ...(isMobile && {
+                    fontSize: 14,
+                    fontWeight: 600,
+                    lineHeight: 1.3,
+                    display: '-webkit-box',
+                    WebkitLineClamp: 2,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                    whiteSpace: 'normal',
+                  }),
+                }}
               >
                 {category.label}
               </Typography>
@@ -301,17 +315,23 @@ export default function CategoryTile({
                 </IconButton>
               )}
             </Box>
-            <Typography variant="body2" color="text.secondary">
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ fontSize: { xs: 12, sm: 'inherit' } }}
+            >
               {detailText}
             </Typography>
-            {programChips.length > 0 && (
+            {/* Restriction chips are hidden on mobile to match the compact
+                folder-card design; they remain on desktop. */}
+            {!isMobile && programChips.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {programChips.map((p) => (
                   <Chip key={p.id} label={p.name} size="small" color="primary" />
                 ))}
               </Box>
             )}
-            {inheritedProgramChips.length > 0 && (
+            {!isMobile && inheritedProgramChips.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {inheritedProgramChips.map((p) => (
                   <Chip
@@ -324,14 +344,14 @@ export default function CategoryTile({
                 ))}
               </Box>
             )}
-            {groupChips.length > 0 && (
+            {!isMobile && groupChips.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {groupChips.map((g) => (
                   <Chip key={g.id} label={g.name} size="small" color="secondary" />
                 ))}
               </Box>
             )}
-            {inheritedGroupChips.length > 0 && (
+            {!isMobile && inheritedGroupChips.length > 0 && (
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
                 {inheritedGroupChips.map((g) => (
                   <Chip

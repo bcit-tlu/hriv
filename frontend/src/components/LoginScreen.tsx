@@ -3,6 +3,9 @@ import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import CircularProgress from '@mui/material/CircularProgress'
+import Divider from '@mui/material/Divider'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import { useTheme } from '@mui/material/styles'
 import Dialog from '@mui/material/Dialog'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
@@ -52,6 +55,8 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
   const [showLocalForm, setShowLocalForm] = useState(false)
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false)
   const { oidcError, clearOidcError } = useAuth()
+  const muiTheme = useTheme()
+  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'))
 
   useEffect(() => {
     fetchOidcEnabled()
@@ -127,20 +132,61 @@ export default function LoginScreen({ onLogin, announcement }: LoginScreenProps)
           <Box sx={{ width: '100%', maxWidth: 400 }}>
             {announcement && <AnnouncementBanner message={announcement} variant="login" />}
 
-            {/* BCIT logo + Login heading */}
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1.5,
-                mb: 5,
-              }}
-            >
-              <Box component="img" src="/bcit-logo.svg" alt="BCIT" sx={{ height: 48 }} />
-              <Typography variant="h5" sx={{ fontWeight: 400 }}>
-                High Resolution Image Viewer (HRIV) Login
-              </Typography>
-            </Box>
+            {/* Header — centered "H" brand on mobile, BCIT logo + heading on desktop */}
+            {isMobile ? (
+              <>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 1.25,
+                    mb: 3,
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: '50%',
+                      bgcolor: '#C0392B',
+                      color: '#fff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: 26,
+                      fontWeight: 700,
+                      boxShadow: '0 4px 20px rgba(192,57,43,0.4)',
+                    }}
+                  >
+                    H
+                  </Box>
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography sx={{ fontSize: 17, fontWeight: 700, letterSpacing: '0.06em' }}>
+                      HRIV
+                    </Typography>
+                    <Typography sx={{ mt: '3px', fontSize: 11, color: 'text.secondary' }}>
+                      High Resolution Image Viewer
+                    </Typography>
+                  </Box>
+                </Box>
+                <Divider sx={{ mb: 4 }} />
+              </>
+            ) : (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1.5,
+                  mb: 5,
+                }}
+              >
+                <Box component="img" src="/bcit-logo.svg" alt="BCIT" sx={{ height: 48 }} />
+                <Typography variant="h5" sx={{ fontWeight: 400 }}>
+                  High Resolution Image Viewer (HRIV) Login
+                </Typography>
+              </Box>
+            )}
 
             {oidcErrorMessage && (
               <Alert severity="error" onClose={clearOidcError} sx={{ mb: 2 }}>

@@ -44,6 +44,15 @@ const lightPalette = {
    * at 0.7 alpha (#3E3C3Ab3) giving ≈ 4.7 : 1 contrast on white — WCAG-AA.
    */
   visibility: { active: 'rgba(0,0,0,0.45)', inactive: '#3E3C3Ab3', inactiveChipBg: '#6B6966' },
+  /** Mobile "What's New" announcement banner colours (light mode). */
+  announce: {
+    bg: '#DDEEFF',
+    border: '#93C0E8',
+    fg: '#0D3660',
+    icon: '#1A6BBF',
+    btn: '#1A5CA8',
+    dismiss: '#2A6ABF',
+  },
 }
 
 /** Dark-mode colours – a complementary set that keeps the same brand feel. */
@@ -87,6 +96,15 @@ const darkPalette = {
     active: 'rgba(255,255,255,0.70)',
     inactive: '#E0DDD999',
     inactiveChipBg: '#6B6966',
+  },
+  /** Mobile "What's New" announcement banner colours (dark mode). */
+  announce: {
+    bg: '#0C2340',
+    border: '#1A4A7A',
+    fg: '#C2DFF7',
+    icon: '#5AABF0',
+    btn: '#5AABF0',
+    dismiss: '#4A90C8',
   },
 }
 
@@ -150,6 +168,22 @@ export function getVisibilityColors(mode: 'light' | 'dark'): {
   inactiveChipBg: string
 } {
   return mode === 'dark' ? darkPalette.visibility : lightPalette.visibility
+}
+
+/**
+ * Colours for the mobile "What's New" announcement banner. Mirrors the
+ * info-style blue treatment from the mobile design, theme-aware for
+ * light / dark / auto.
+ */
+export function getAnnounceColors(mode: 'light' | 'dark'): {
+  bg: string
+  border: string
+  fg: string
+  icon: string
+  btn: string
+  dismiss: string
+} {
+  return mode === 'dark' ? darkPalette.announce : lightPalette.announce
 }
 
 // ---------------------------------------------------------------------------

@@ -11,11 +11,15 @@
  * 7. Move button — renders and calls callback
  */
 
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import useMediaQuery from '@mui/material/useMediaQuery'
 import CategoryTile from '../../src/components/CategoryTile'
 import type { Group, Program } from '../../src/types'
+
+vi.mock('@mui/material/useMediaQuery', () => ({ default: vi.fn(() => false) }))
+const mockUseMediaQuery = vi.mocked(useMediaQuery)
 import { makeCategory } from '../helpers/fixtures'
 
 // ---------------------------------------------------------------------------
@@ -481,6 +485,30 @@ describe('CategoryTile', () => {
       })
       fireEvent(card, event)
       expect(onDropFiles).toHaveBeenCalledWith(8, [fakeFile])
+    })
+  })
+
+  describe('mobile (compact viewport)', () => {
+    beforeEach(() => {
+      mockUseMediaQuery.mockReturnValue(true)
+    })
+    afterEach(() => {
+      mockUseMediaQuery.mockReset()
+      mockUseMediaQuery.mockReturnValue(false)
+    })
+
+    it('hides restriction chips on mobile but still shows the name and meta', () => {
+      render(
+        <CategoryTile
+          category={makeCategory({ label: 'Pathology Cases', programIds: [10] })}
+          onClick={vi.fn()}
+          programs={samplePrograms}
+        />,
+      )
+      // Name still renders…
+      expect(screen.getByText('Pathology Cases')).toBeInTheDocument()
+      // …but the program chip is omitted in the compact folder-card layout.
+      expect(screen.queryByText('Pathology')).not.toBeInTheDocument()
     })
   })
 })

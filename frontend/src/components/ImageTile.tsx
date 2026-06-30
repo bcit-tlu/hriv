@@ -6,6 +6,8 @@ import CardContent from '@mui/material/CardContent'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
 import Typography from '@mui/material/Typography'
+import useMediaQuery from '@mui/material/useMediaQuery'
+import { useTheme } from '@mui/material/styles'
 import EditIcon from '@mui/icons-material/Edit'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import type { ImageItem } from '../types'
@@ -28,6 +30,8 @@ export default function ImageTile({
 }: ImageTileProps) {
   const { mode } = useColorMode()
   const visColors = getVisibilityColors(mode)
+  const muiTheme = useTheme()
+  const isMobile = useMediaQuery(muiTheme.breakpoints.down('sm'))
   return (
     <Card
       elevation={2}
@@ -45,17 +49,36 @@ export default function ImageTile({
       >
         <CardMedia
           component="img"
-          height="160"
           image={image.thumb}
           alt={image.name}
-          sx={{ objectFit: 'cover', objectPosition: 'center' }}
+          sx={{ height: { xs: 96, sm: 160 }, objectFit: 'cover', objectPosition: 'center' }}
         />
-        <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
+        <CardContent
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            flexGrow: 1,
+            p: { xs: 1.25, sm: 2 },
+            '&:last-child': { pb: { xs: 1.25, sm: 2 } },
+          }}
+        >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Typography
               variant="h6"
-              noWrap
-              sx={!image.active ? { color: visColors.inactive } : undefined}
+              noWrap={!isMobile}
+              sx={{
+                ...(!image.active && { color: visColors.inactive }),
+                ...(isMobile && {
+                  fontSize: 14,
+                  fontWeight: 600,
+                  lineHeight: 1.3,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  whiteSpace: 'normal',
+                }),
+              }}
             >
               {image.name}
             </Typography>

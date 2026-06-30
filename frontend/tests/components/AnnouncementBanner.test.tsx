@@ -1,7 +1,11 @@
-import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { ThemeProvider, createTheme } from '@mui/material/styles'
+import useMediaQuery from '@mui/material/useMediaQuery'
 import AnnouncementBanner from '../../src/components/AnnouncementBanner'
+
+vi.mock('@mui/material/useMediaQuery', () => ({ default: vi.fn(() => false) }))
+const mockUseMediaQuery = vi.mocked(useMediaQuery)
 
 function renderWithTheme(ui: React.ReactElement, mode: 'light' | 'dark' = 'light') {
   const theme = createTheme({ palette: { mode } })
@@ -54,5 +58,37 @@ describe('AnnouncementBanner', () => {
   it('renders login variant in dark mode', () => {
     renderWithTheme(<AnnouncementBanner message="Dark login" variant="login" />, 'dark')
     expect(screen.getByText('Dark login')).toBeInTheDocument()
+  })
+
+  describe('mobile (compact viewport)', () => {
+    beforeEach(() => {
+      mockUseMediaQuery.mockReturnValue(true)
+    })
+    afterEach(() => {
+      mockUseMediaQuery.mockReset()
+      mockUseMediaQuery.mockReturnValue(false)
+    })
+
+    it('renders the "What\'s New" strip with the message and a dismiss button', () => {
+      const onDismiss = vi.fn()
+      renderWithTheme(<AnnouncementBanner message="ZIP uploads are here" onDismiss={onDismiss} />)
+      expect(screen.getByText("What's New")).toBeInTheDocument()
+      expect(screen.getByText('ZIP uploads are here')).toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+      expect(onDismiss).toHaveBeenCalledTimes(1)
+    })
+
+    it('toggles the body between clamped (more) and expanded (less)', () => {
+      renderWithTheme(<AnnouncementBanner message="Long announcement body" />)
+      expect(screen.getByText('more')).toBeInTheDocument()
+      fireEvent.click(screen.getByText('more'))
+      expect(screen.getByText('less')).toBeInTheDocument()
+    })
+
+    it('renders the strip for the login variant too', () => {
+      renderWithTheme(<AnnouncementBanner message="Login whats new" variant="login" />)
+      expect(screen.getByText("What's New")).toBeInTheDocument()
+      expect(screen.getByText('Login whats new')).toBeInTheDocument()
+    })
   })
 })
