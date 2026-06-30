@@ -198,6 +198,22 @@ export default function PeoplePage({
     }
   }, [initialEditUserId, loading, users, onEditUserHandled])
 
+  useEffect(() => {
+    const validIds = new Set(programs.map((p) => p.id))
+    setSelectedPrograms((prev) => {
+      const pruned = new Set([...prev].filter((id) => validIds.has(id)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [programs])
+
+  useEffect(() => {
+    const validIds = new Set(groups.map((g) => g.id))
+    setSelectedGroups((prev) => {
+      const pruned = new Set([...prev].filter((id) => validIds.has(id)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [groups])
+
   // Sort handler
   const handleSort = (column: SortableColumn) => {
     if (sortColumn === column) {
@@ -547,6 +563,7 @@ export default function PeoplePage({
             border: 1,
             borderColor: 'divider',
             bgcolor: 'background.paper',
+            mb: 2,
           }}
         >
           {programs.length > 0 && (
