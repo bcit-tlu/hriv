@@ -43,6 +43,7 @@ import {
   bulkUpdateUserProgram,
   bulkUpdateUserRole,
   bulkDeleteUsers,
+  addGroupMembersBulk,
   userMessage,
 } from '../api'
 import type { ApiUser } from '../api'
@@ -50,6 +51,7 @@ import type { Role, Program, Group } from '../types'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import AddEditPersonModal from './AddEditPersonModal'
 import BulkEditModal from './BulkEditModal'
+import BulkGroupModal from './BulkGroupModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
 
 type SortableColumn =
@@ -150,6 +152,7 @@ export default function PeoplePage({
   const [addEditOpen, setAddEditOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<ApiUser | null>(null)
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
+  const [bulkGroupOpen, setBulkGroupOpen] = useState(false)
 
   // Bulk role dialog
   const [bulkRoleOpen, setBulkRoleOpen] = useState(false)
@@ -405,6 +408,21 @@ export default function PeoplePage({
     }
   }
 
+  // Bulk add-to-group handler
+  const handleBulkGroupSave = async (groupIds: number[]) => {
+    try {
+      await Promise.all(
+        groupIds.map((groupId) => addGroupMembersBulk(groupId, Array.from(selected))),
+      )
+      setBulkGroupOpen(false)
+      setSelected(new Set())
+      setSuccessSnack('Added to group(s).')
+      await loadData()
+    } catch (err) {
+      console.error('Failed to bulk add to groups', err)
+    }
+  }
+
   // Bulk role update handler
   const handleBulkRoleSave = async () => {
     try {
@@ -514,6 +532,14 @@ export default function PeoplePage({
                 onClick={() => setBulkEditOpen(true)}
               >
                 Bulk Programs ({selected.size})
+              </Button>
+              <Button
+                variant="contained"
+                color="secondary"
+                size="small"
+                onClick={() => setBulkGroupOpen(true)}
+              >
+                Bulk Groups ({selected.size})
               </Button>
               <Button
                 variant="contained"
@@ -916,6 +942,14 @@ export default function PeoplePage({
         onClose={() => setBulkEditOpen(false)}
         onSave={handleBulkSave}
         programs={programs}
+        selectedCount={selected.size}
+      />
+
+      <BulkGroupModal
+        open={bulkGroupOpen}
+        onClose={() => setBulkGroupOpen(false)}
+        onSave={handleBulkGroupSave}
+        groups={groups}
         selectedCount={selected.size}
       />
 

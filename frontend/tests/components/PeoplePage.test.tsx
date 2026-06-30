@@ -13,6 +13,7 @@ vi.mock('../../src/api', async (importOriginal) => {
     bulkUpdateUserProgram: vi.fn(),
     bulkUpdateUserRole: vi.fn(),
     bulkDeleteUsers: vi.fn(),
+    addGroupMembersBulk: vi.fn(),
   }
 })
 
@@ -24,12 +25,17 @@ import {
   bulkUpdateUserProgram,
   bulkUpdateUserRole,
   bulkDeleteUsers,
+  addGroupMembersBulk,
 } from '../../src/api'
-import type { Program } from '../../src/types'
+import type { Program, Group } from '../../src/types'
 import PeoplePage from '../../src/components/PeoplePage'
 
 const programs: Program[] = [
   { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
+]
+
+const groups: Group[] = [
+  { id: 7, name: 'Lab A2', description: null, created_at: '', updated_at: '' },
 ]
 
 const USERS = [
@@ -606,5 +612,40 @@ describe('PeoplePage', () => {
 
     const chip = screen.getByText('Lab A2').closest('.MuiChip-root')
     expect(chip).toBeInTheDocument()
+  })
+
+  it('opens bulk groups dialog and calls addGroupMembersBulk', async () => {
+    const user = userEvent.setup()
+    vi.mocked(addGroupMembersBulk).mockResolvedValue({
+      id: 7,
+      name: 'Lab A2',
+      description: null,
+      member_ids: [1, 2],
+      instructor_ids: [],
+      created_at: '',
+      updated_at: '',
+    } as any)
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    // Select first user
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    // Open bulk groups dialog
+    await user.click(screen.getByText('Bulk Groups (1)'))
+    expect(screen.getByText('Bulk Add to Groups')).toBeInTheDocument()
+
+    // Select group and save
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'Lab A2' }))
+    // Close the dropdown
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Add to Groups' }))
+
+    expect(addGroupMembersBulk).toHaveBeenCalledWith(7, [1])
   })
 })
