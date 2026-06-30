@@ -13,6 +13,7 @@ vi.mock('../../src/api', async (importOriginal) => {
     bulkUpdateUserProgram: vi.fn(),
     bulkUpdateUserRole: vi.fn(),
     bulkDeleteUsers: vi.fn(),
+    addGroupMembersBulk: vi.fn(),
   }
 })
 
@@ -24,7 +25,10 @@ import {
   bulkUpdateUserProgram,
   bulkUpdateUserRole,
   bulkDeleteUsers,
+  addGroupMembersBulk,
+  ApiError,
 } from '../../src/api'
+import type { ApiGroup } from '../../src/api'
 import type { Program, Group } from '../../src/types'
 import PeoplePage from '../../src/components/PeoplePage'
 
@@ -32,7 +36,18 @@ const programs: Program[] = [
   { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
 ]
 
-const groups: Group[] = []
+const groups: Group[] = [
+  {
+    id: 7,
+    name: 'Lab A2',
+    description: null,
+    createdByUserId: null,
+    memberIds: [],
+    instructorIds: [],
+    createdAt: '',
+    updatedAt: '',
+  },
+]
 
 const USERS = [
   {
@@ -64,6 +79,14 @@ const USERS = [
     updated_at: '2026-01-01T00:00:00Z',
   },
 ]
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
 
 describe('PeoplePage', () => {
   beforeEach(() => {
@@ -547,14 +570,129 @@ describe('PeoplePage', () => {
     })
   })
 
+  it('keeps the people table visible while refetching after an edit save', async () => {
+    const user = userEvent.setup()
+    const refreshedUsers = [
+      {
+        ...USERS[0],
+        name: 'Updated Admin',
+      },
+      USERS[1],
+    ]
+    const refreshRequest = createDeferred<typeof refreshedUsers>()
+
+    vi.mocked(fetchUsers)
+      .mockResolvedValueOnce(USERS)
+      .mockImplementationOnce(() => refreshRequest.promise)
+    vi.mocked(updateUser).mockResolvedValue(refreshedUsers[0])
+
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByText('Admin User'))
+    const nameInput = screen.getByDisplayValue('Admin User')
+    await user.clear(nameInput)
+    await user.type(nameInput, 'Updated Admin')
+    await user.click(screen.getByRole('button', { name: /save/i }))
+
+    await waitFor(() => {
+      expect(updateUser).toHaveBeenCalledTimes(1)
+    })
+
+    await waitFor(() => {
+      expect(screen.queryByRole('heading', { name: 'Edit Person' })).not.toBeInTheDocument()
+    })
+    expect(screen.getByText('Admin User')).toBeInTheDocument()
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+
+    refreshRequest.resolve(refreshedUsers)
+
+    await waitFor(() => {
+      expect(screen.getByText('Updated Admin')).toBeInTheDocument()
+    })
+  })
+
   it('displays group names as chips', async () => {
     render(<PeoplePage programs={programs} groups={groups} />)
 
     await waitFor(() => {
-      expect(screen.getByText('Lab A2')).toBeInTheDocument()
+      expect(screen.getByText('Test Student')).toBeInTheDocument()
     })
 
-    const chip = screen.getByText('Lab A2').closest('.MuiChip-root')
-    expect(chip).toBeInTheDocument()
+    const studentRow = screen.getByText('Test Student').closest('tr')
+    expect(studentRow).not.toBeNull()
+    expect(within(studentRow as HTMLElement).getByText('Lab A2')).toBeInTheDocument()
+    expect(
+      within(studentRow as HTMLElement)
+        .getByText('Lab A2')
+        .closest('.MuiChip-root'),
+    ).toBeInTheDocument()
+  })
+
+  it('opens bulk groups dialog and calls addGroupMembersBulk', async () => {
+    const user = userEvent.setup()
+    const apiGroup: ApiGroup = {
+      id: 7,
+      name: 'Lab A2',
+      description: null,
+      created_by_user_id: null,
+      member_ids: [1, 2],
+      instructor_ids: [],
+      created_at: '',
+      updated_at: '',
+    }
+    vi.mocked(addGroupMembersBulk).mockResolvedValue(apiGroup)
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    // Select first user
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    // Open bulk groups dialog
+    await user.click(screen.getByText('Bulk Groups (1)'))
+    expect(screen.getByText('Bulk Add to Groups')).toBeInTheDocument()
+
+    // Select group and save
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'Lab A2' }))
+    // Close the dropdown
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Add to Groups' }))
+
+    expect(addGroupMembersBulk).toHaveBeenCalledWith(7, [1])
+  })
+
+  it('keeps bulk groups dialog open and shows an error when the save fails', async () => {
+    const user = userEvent.setup()
+    vi.mocked(addGroupMembersBulk).mockRejectedValue(new ApiError(422, 'Group add failed'))
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const checkboxes = screen.getAllByRole('checkbox')
+    await user.click(checkboxes[1])
+
+    await user.click(screen.getByText('Bulk Groups (1)'))
+    expect(screen.getByText('Bulk Add to Groups')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'Lab A2' }))
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Add to Groups' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Bulk Add to Groups')).toBeInTheDocument()
+      expect(screen.getByText(/Failed to add person to 1 of 1 group/i)).toBeInTheDocument()
+      expect(screen.getByText(/Group add failed/i)).toBeInTheDocument()
+    })
   })
 })

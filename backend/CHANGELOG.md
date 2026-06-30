@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.26.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.25.1...backend-v0.26.0) (2026-06-30)
+
+
+### Features
+
+* **people:** chip-based program and group filters on People table ([#761](https://github.com/bcit-tlu/hriv/issues/761)) ([62e5e02](https://github.com/bcit-tlu/hriv/commit/62e5e02ec64c9b77cf27566b5320f68cc28ce3d3))
+
 ## [0.25.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.25.0...backend-v0.25.1) (2026-06-29)
 
 

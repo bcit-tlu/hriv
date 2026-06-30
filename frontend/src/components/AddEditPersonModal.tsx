@@ -91,6 +91,11 @@ function AddEditPersonForm({
     setProgramIds(typeof val === 'string' ? [] : val)
   }
 
+  const handleClose = () => {
+    if (saving) return
+    onClose()
+  }
+
   const canSave =
     !saving &&
     (isEdit
@@ -192,7 +197,7 @@ function AddEditPersonForm({
         </FormControl>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
+        <Button onClick={handleClose} disabled={saving}>
           Cancel
         </Button>
         <Button
@@ -217,6 +222,7 @@ export default function AddEditPersonModal({
 }: AddEditPersonModalProps) {
   const [saving, setSaving] = useState(false)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset save state on reopen
     if (open) setSaving(false)
   }, [open])
   // Use key to reset form state when the modal opens or the user changes

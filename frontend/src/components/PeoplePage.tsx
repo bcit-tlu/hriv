@@ -43,6 +43,7 @@ import {
   bulkUpdateUserProgram,
   bulkUpdateUserRole,
   bulkDeleteUsers,
+  addGroupMembersBulk,
   userMessage,
 } from '../api'
 import type { ApiUser } from '../api'
@@ -50,6 +51,7 @@ import type { Role, Program, Group } from '../types'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import AddEditPersonModal from './AddEditPersonModal'
 import BulkEditModal from './BulkEditModal'
+import BulkGroupModal from './BulkGroupModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
 
 type SortableColumn =
@@ -150,6 +152,7 @@ export default function PeoplePage({
   const [addEditOpen, setAddEditOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<ApiUser | null>(null)
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
+  const [bulkGroupOpen, setBulkGroupOpen] = useState(false)
 
   // Bulk role dialog
   const [bulkRoleOpen, setBulkRoleOpen] = useState(false)
@@ -168,21 +171,26 @@ export default function PeoplePage({
 
   // Success snackbar
   const [successSnack, setSuccessSnack] = useState<string | null>(null)
+  const [errorSnack, setErrorSnack] = useState<string | null>(null)
 
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async ({ showLoading = false }: { showLoading?: boolean } = {}) => {
     try {
-      setLoading(true)
+      if (showLoading) {
+        setLoading(true)
+      }
       const usersData = await fetchUsers()
       setUsers(usersData)
     } catch (err) {
       console.error('Failed to load data', err)
     } finally {
-      setLoading(false)
+      if (showLoading) {
+        setLoading(false)
+      }
     }
   }, [])
 
   useEffect(() => {
-    loadData() // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on dependency change
+    loadData({ showLoading: true }) // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on dependency change
   }, [loadData])
 
   useEffect(() => {
@@ -200,6 +208,7 @@ export default function PeoplePage({
 
   useEffect(() => {
     const validIds = new Set(programs.map((p) => p.id))
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available programs
     setSelectedPrograms((prev) => {
       const pruned = new Set([...prev].filter((id) => validIds.has(id)))
       return pruned.size === prev.size ? prev : pruned
@@ -208,6 +217,7 @@ export default function PeoplePage({
 
   useEffect(() => {
     const validIds = new Set(groups.map((g) => g.id))
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available groups
     setSelectedGroups((prev) => {
       const pruned = new Set([...prev].filter((id) => validIds.has(id)))
       return pruned.size === prev.size ? prev : pruned
@@ -226,7 +236,11 @@ export default function PeoplePage({
 
   // Filter/sort/paginate logic
   const filteredUsers = useMemo(() => {
-    if (!hasActiveFilters) return users
+    const activeFilters =
+      Object.values(filters).some((v) => v !== '') ||
+      selectedPrograms.size > 0 ||
+      selectedGroups.size > 0
+    if (!activeFilters) return users
     return users.filter((user) => {
       const match = (field: string, value: string) => {
         const filter = filters[field]
@@ -247,7 +261,7 @@ export default function PeoplePage({
       }
       return true
     })
-  }, [users, filters, hasActiveFilters, selectedPrograms, selectedGroups])
+  }, [users, filters, selectedPrograms, selectedGroups])
 
   const sortedUsers = useMemo(() => {
     const sorted = [...filteredUsers]
@@ -417,6 +431,42 @@ export default function PeoplePage({
     }
   }
 
+  // Bulk add-to-group handler
+  const handleBulkGroupSave = async (groupIds: number[]) => {
+    try {
+      const results = await Promise.allSettled(
+        groupIds.map((groupId) => addGroupMembersBulk(groupId, Array.from(selected))),
+      )
+      await loadData()
+
+      const failures = results.filter(
+        (result): result is PromiseRejectedResult => result.status === 'rejected',
+      )
+
+      if (failures.length > 0) {
+        const failure = failures[0]?.reason
+        const failureMessage = userMessage(
+          failure,
+          'Failed to add selected people to groups. Please try again.',
+        )
+        const groupWord = failures.length === 1 ? 'group' : 'groups'
+        const selectionWord = selected.size === 1 ? 'person' : 'people'
+        setErrorSnack(
+          `Failed to add ${selectionWord} to ${failures.length} of ${groupIds.length} ${groupWord}. ${failureMessage}`,
+        )
+        throw failure
+      }
+
+      setBulkGroupOpen(false)
+      setSelected(new Set())
+      setErrorSnack(null)
+      setSuccessSnack('Added to group(s).')
+    } catch (err) {
+      console.error('Failed to bulk add to groups', err)
+      throw err
+    }
+  }
+
   // Bulk role update handler
   const handleBulkRoleSave = async () => {
     try {
@@ -526,6 +576,14 @@ export default function PeoplePage({
                 onClick={() => setBulkEditOpen(true)}
               >
                 Bulk Programs ({selected.size})
+              </Button>
+              <Button
+                variant="contained"
+                color="secondary"
+                size="small"
+                onClick={() => setBulkGroupOpen(true)}
+              >
+                Bulk Groups ({selected.size})
               </Button>
               <Button
                 variant="contained"
@@ -963,6 +1021,14 @@ export default function PeoplePage({
         selectedCount={selected.size}
       />
 
+      <BulkGroupModal
+        open={bulkGroupOpen}
+        onClose={() => setBulkGroupOpen(false)}
+        onSave={handleBulkGroupSave}
+        groups={groups}
+        selectedCount={selected.size}
+      />
+
       {/* Bulk Role Update Dialog */}
       <Dialog open={bulkRoleOpen} onClose={() => setBulkRoleOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Bulk Update Role</DialogTitle>
@@ -1143,6 +1209,20 @@ export default function PeoplePage({
       >
         <Alert severity="success" onClose={() => setSuccessSnack(null)} variant="filled">
           {successSnack}
+        </Alert>
+      </Snackbar>
+
+      <Snackbar
+        open={errorSnack !== null}
+        autoHideDuration={6000}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return
+          setErrorSnack(null)
+        }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="error" onClose={() => setErrorSnack(null)} variant="filled">
+          {errorSnack}
         </Alert>
       </Snackbar>
     </Box>
