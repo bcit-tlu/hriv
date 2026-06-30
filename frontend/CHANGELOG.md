@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.28.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.27.0...frontend-v0.28.0) (2026-06-30)
+
+
+### Features
+
+* **people:** bulk add selected users to groups from PeoplePage ([#665](https://github.com/bcit-tlu/hriv/issues/665)) ([#766](https://github.com/bcit-tlu/hriv/issues/766)) ([bd45edf](https://github.com/bcit-tlu/hriv/commit/bd45edfe2f300ef9b4f1b22ab556071421e34acc))
+* **people:** chip-based program and group filters on People table ([#761](https://github.com/bcit-tlu/hriv/issues/761)) ([62e5e02](https://github.com/bcit-tlu/hriv/commit/62e5e02ec64c9b77cf27566b5320f68cc28ce3d3))
+
+
+### Bug Fixes
+
+* **people:** avoid save refresh flash ([#764](https://github.com/bcit-tlu/hriv/issues/764)) ([3c78608](https://github.com/bcit-tlu/hriv/commit/3c78608a36d3e155dcd57beb0126f5e8409405e8))
+* **people:** move program/group chip filters above the table ([#767](https://github.com/bcit-tlu/hriv/issues/767)) ([8d5265b](https://github.com/bcit-tlu/hriv/commit/8d5265bd1ef9a8c8568ab6a70a045e34f6d207a6))
+* **people:** resolve user update 500, save feedback, deleted program UX, delete dialog UX ([#758](https://github.com/bcit-tlu/hriv/issues/758)) ([e591388](https://github.com/bcit-tlu/hriv/commit/e5913889ca8298614258538438d34d5ba8982bf1))
+
 ## [0.27.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.26.0...frontend-v0.27.0) (2026-06-24)
 
 
