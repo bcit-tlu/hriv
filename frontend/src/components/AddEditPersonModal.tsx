@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
@@ -89,6 +89,11 @@ function AddEditPersonForm({
   const handleProgramChange = (e: SelectChangeEvent<number[]>) => {
     const val = e.target.value
     setProgramIds(typeof val === 'string' ? [] : val)
+  }
+
+  const handleClose = () => {
+    if (saving) return
+    onClose()
   }
 
   const canSave =
@@ -192,7 +197,7 @@ function AddEditPersonForm({
         </FormControl>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
+        <Button onClick={handleClose} disabled={saving}>
           Cancel
         </Button>
         <Button
@@ -216,6 +221,10 @@ export default function AddEditPersonModal({
   user,
 }: AddEditPersonModalProps) {
   const [saving, setSaving] = useState(false)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset save state on reopen
+    if (open) setSaving(false)
+  }, [open])
   // Use key to reset form state when the modal opens or the user changes
   const formKey = user ? `edit-${user.id}` : 'add'
 
