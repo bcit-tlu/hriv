@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.28.0...frontend-v0.28.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **frontend:** recognise Greek small mu (μ) in measurement units ([#775](https://github.com/bcit-tlu/hriv/issues/775)) ([673aa40](https://github.com/bcit-tlu/hriv/commit/673aa409c1943f9456233440e0dbd0481c175132))
+
 ## [0.28.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.27.0...frontend-v0.28.0) (2026-06-30)
 
 
