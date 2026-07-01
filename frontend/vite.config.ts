@@ -23,6 +23,12 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
     include: ['tests/**/*.test.{ts,tsx}'],
+    // jsdom + MUI + userEvent component tests (e.g. typing through the
+    // Add/Edit Person dialog) run ~1.5-2s locally and can exceed the 5s
+    // default on slower/shared CI runners. Give the suite headroom so genuine
+    // tests don't flake on timeout.
+    testTimeout: 15000,
+    hookTimeout: 15000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'text-summary'],
