@@ -62,7 +62,11 @@ const UNIT_TO_UM: Record<string, number> = {
  * Returns `undefined` for unrecognised units.
  */
 export function unitToMicrons(unit: string): number | undefined {
-  return UNIT_TO_UM[unit.toLowerCase()]
+  // Normalise the Greek small letter mu (U+03BC) to the micro sign (U+00B5)
+  // so pasted values like "μm" match the "µm" alias — microscope software and
+  // scientific sources commonly emit the Greek mu.
+  const normalized = unit.toLowerCase().replace(/\u03bc/g, '\u00b5')
+  return UNIT_TO_UM[normalized]
 }
 
 /**

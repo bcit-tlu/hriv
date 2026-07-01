@@ -169,8 +169,18 @@ describe('unitToMicrons', () => {
     expect(unitToMicrons('um')).toBe(1)
   })
 
-  it('returns 1 for micrometres (µm unicode)', () => {
+  it('returns 1 for micrometres (µm micro sign U+00B5)', () => {
     expect(unitToMicrons('µm')).toBe(1)
+  })
+
+  it('returns 1 for micrometres (μm Greek small mu U+03BC)', () => {
+    // Microscope software and pasted scientific text commonly use the Greek
+    // small letter mu rather than the dedicated micro sign.
+    expect(unitToMicrons('\u03bcm')).toBe(1)
+  })
+
+  it('normalises Greek mu regardless of case', () => {
+    expect(unitToMicrons('\u03bcM')).toBe(1)
   })
 
   it('returns 1000 for millimetres', () => {
@@ -198,6 +208,17 @@ describe('unitToMicrons', () => {
   it('returns undefined for unknown units', () => {
     expect(unitToMicrons('furlongs')).toBeUndefined()
     expect(unitToMicrons('px')).toBeUndefined()
+  })
+})
+
+describe('computeMagnification with Greek mu unit', () => {
+  it('computes the same magnification for μm (Greek) as for µm (micro sign)', () => {
+    const greek: MeasurementConfig = { scale: 8, unit: '\u03bcm' }
+    const micro: MeasurementConfig = { scale: 8, unit: '\u00b5m' }
+    const magGreek = computeMagnification(1, greek, 1)
+    const magMicro = computeMagnification(1, micro, 1)
+    expect(magGreek).toBeDefined()
+    expect(magGreek).toBeCloseTo(magMicro!, 6)
   })
 })
 
