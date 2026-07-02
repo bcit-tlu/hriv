@@ -12,7 +12,9 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
+import Link from '@mui/material/Link'
 import List from '@mui/material/List'
+import ListItem from '@mui/material/ListItem'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
@@ -42,6 +44,7 @@ import {
   addGroupMembersBulk,
   fetchPrograms,
   fetchUsersPaged,
+  attachedCategoriesFromError,
   removeGroupInstructor,
   removeGroupMember,
   userMessage,
@@ -97,6 +100,10 @@ export default function GroupManagementModal({
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null)
   const [menuGroupId, setMenuGroupId] = useState<number | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteBlockedCategories, setDeleteBlockedCategories] = useState<
+    { id: number; label: string }[]
+  >([])
+  const [deleteBlockedCategoriesExpanded, setDeleteBlockedCategoriesExpanded] = useState(false)
 
   const [tab, setTab] = useState<TabKey>('students')
   const [programs, setPrograms] = useState<ApiProgram[]>([])
@@ -187,6 +194,8 @@ export default function GroupManagementModal({
       setMenuAnchorEl(null)
       setMenuGroupId(null)
       setDeleteDialogOpen(false)
+      setDeleteBlockedCategories([])
+      setDeleteBlockedCategoriesExpanded(false)
       setTab('students')
       setSelectedProgramIds([])
       setSearchInput('')
@@ -280,6 +289,8 @@ export default function GroupManagementModal({
 
   const startDelete = () => {
     setGroupActionError(null)
+    setDeleteBlockedCategories([])
+    setDeleteBlockedCategoriesExpanded(false)
     setDeleteDialogOpen(true)
     closeGroupMenu()
   }
@@ -327,8 +338,12 @@ export default function GroupManagementModal({
       }
       setDeleteDialogOpen(false)
       setMenuGroupId(null)
+      setDeleteBlockedCategories([])
+      setDeleteBlockedCategoriesExpanded(false)
     } catch (err) {
       setGroupActionError(userMessage(err, 'Failed to delete group.'))
+      setDeleteBlockedCategories(attachedCategoriesFromError(err) ?? [])
+      setDeleteBlockedCategoriesExpanded(false)
     } finally {
       setGroupPending(false)
     }
@@ -902,6 +917,8 @@ export default function GroupManagementModal({
         onClose={() => {
           setDeleteDialogOpen(false)
           setGroupActionError(null)
+          setDeleteBlockedCategories([])
+          setDeleteBlockedCategoriesExpanded(false)
         }}
         maxWidth="xs"
         fullWidth
@@ -912,6 +929,34 @@ export default function GroupManagementModal({
             <Alert severity="error" sx={{ mb: 2 }}>
               {groupActionError}
             </Alert>
+          )}
+          {deleteBlockedCategories.length > 0 && (
+            <Box sx={{ mb: 1.5 }}>
+              <Link
+                component="button"
+                type="button"
+                variant="body2"
+                onClick={() => setDeleteBlockedCategoriesExpanded((expanded) => !expanded)}
+                aria-expanded={deleteBlockedCategoriesExpanded}
+                aria-controls="delete-group-blocked-categories"
+              >
+                What categories are restricted by this group?
+              </Link>
+              {deleteBlockedCategoriesExpanded && (
+                <List
+                  id="delete-group-blocked-categories"
+                  dense
+                  disablePadding
+                  sx={{ mt: 1, pl: 2.5 }}
+                >
+                  {deleteBlockedCategories.map((category) => (
+                    <ListItem key={category.id} component="li" disableGutters>
+                      <ListItemText primary={category.label} />
+                    </ListItem>
+                  ))}
+                </List>
+              )}
+            </Box>
           )}
           <Alert severity="warning" sx={{ mb: 2 }}>
             This will remove all student and instructor associations for this group. Categories that

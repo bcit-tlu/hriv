@@ -93,11 +93,13 @@ function authHeaders(): Record<string, string> {
 export class ApiError extends Error {
   status: number
   detail: string
-  constructor(status: number, detail: string) {
+  data?: unknown
+  constructor(status: number, detail: string, data?: unknown) {
     super(`API ${status}: ${detail}`)
     this.name = 'ApiError'
     this.status = status
     this.detail = detail
+    this.data = data
   }
 }
 
@@ -136,31 +138,73 @@ export function userMessage(err: unknown, fallback: string): string {
   return fallback
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
 function isMessageDetail(value: unknown): value is { message: string } {
   return (
-    typeof value === 'object' &&
-    value !== null &&
+    isRecord(value) &&
     'message' in value &&
     typeof (value as { message?: unknown }).message === 'string'
   )
 }
 
-function parseErrorDetail(text: string): string {
-  let detail = text
+export interface AttachedCategory {
+  id: number
+  label: string
+}
+
+export interface AttachedCategoriesDetail {
+  message: string
+  category_ids: number[]
+  categories: AttachedCategory[]
+}
+
+function isAttachedCategory(value: unknown): value is AttachedCategory {
+  return isRecord(value) && typeof value.id === 'number' && typeof value.label === 'string'
+}
+
+export function isAttachedCategoriesDetail(value: unknown): value is AttachedCategoriesDetail {
+  return (
+    isRecord(value) &&
+    typeof value.message === 'string' &&
+    Array.isArray(value.category_ids) &&
+    value.category_ids.every((id) => typeof id === 'number') &&
+    Array.isArray(value.categories) &&
+    value.categories.every(isAttachedCategory)
+  )
+}
+
+export function attachedCategoriesFromError(err: unknown): AttachedCategory[] | null {
+  if (err instanceof ApiError && isAttachedCategoriesDetail(err.data)) {
+    return err.data.categories
+  }
+  return null
+}
+
+function parseError(text: string): { message: string; data?: unknown } {
+  let message = text
+  let data: unknown = undefined
   try {
     const body: unknown = JSON.parse(text)
-    if (typeof body === 'object' && body !== null && 'detail' in body) {
-      const bodyDetail = (body as { detail?: unknown }).detail
-      if (typeof bodyDetail === 'string') detail = bodyDetail
+    if (isRecord(body) && 'detail' in body) {
+      const bodyDetail = body.detail
+      data = bodyDetail
+      if (typeof bodyDetail === 'string') message = bodyDetail
       else if (Array.isArray(bodyDetail))
-        detail = bodyDetail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
-      else if (isMessageDetail(bodyDetail)) detail = bodyDetail.message
-      else if (bodyDetail !== undefined) detail = String(bodyDetail)
+        message = bodyDetail
+          .map((e: unknown) =>
+            isRecord(e) && typeof e.msg === 'string' ? e.msg : JSON.stringify(e),
+          )
+          .join('; ')
+      else if (isMessageDetail(bodyDetail)) message = bodyDetail.message
+      else if (bodyDetail !== undefined) message = String(bodyDetail)
     }
   } catch {
     /* use raw text */
   }
-  return detail
+  return { message, data }
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -175,7 +219,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new ApiError(res.status, parseErrorDetail(text))
+    const parsed = parseError(text)
+    throw new ApiError(res.status, parsed.message, parsed.data)
   }
   if (res.status === 204) return undefined as unknown as T
   return res.json() as Promise<T>
@@ -281,7 +326,8 @@ export async function fetchStatus(): Promise<ApiStatus> {
   const res = await fetch(`${BASE}/api/status`)
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new ApiError(res.status, parseErrorDetail(text))
+    const parsed = parseError(text)
+    throw new ApiError(res.status, parsed.message, parsed.data)
   }
   return res.json() as Promise<ApiStatus>
 }
@@ -473,7 +519,8 @@ export async function fetchUsersPaged(params: UserListParams): Promise<Paginated
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new ApiError(res.status, parseErrorDetail(text))
+    const parsed = parseError(text)
+    throw new ApiError(res.status, parsed.message, parsed.data)
   }
   const items = (await res.json()) as ApiUser[]
   const header = res.headers.get('X-Total-Count')
@@ -801,7 +848,8 @@ export async function uploadSourceImage(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
-          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
+          const parsed = parseError(xhr.responseText || xhr.statusText)
+          reject(new ApiError(xhr.status, parsed.message, parsed.data))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
@@ -881,7 +929,8 @@ export async function replaceImage(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
-          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
+          const parsed = parseError(xhr.responseText || xhr.statusText)
+          reject(new ApiError(xhr.status, parsed.message, parsed.data))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse replace response'))
@@ -962,7 +1011,8 @@ export async function bulkImportImages(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as ApiBulkImportJob)
         } else {
-          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
+          const parsed = parseError(xhr.responseText || xhr.statusText)
+          reject(new ApiError(xhr.status, parsed.message, parsed.data))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse bulk import response'))
@@ -1038,7 +1088,8 @@ export async function startDbImport(file: File): Promise<AdminTask> {
   })
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
-    throw new ApiError(res.status, parseErrorDetail(text))
+    const parsed = parseError(text)
+    throw new ApiError(res.status, parsed.message, parsed.data)
   }
   return res.json() as Promise<AdminTask>
 }
@@ -1100,7 +1151,8 @@ export function uploadTaskFile(
         if (xhr.status >= 200 && xhr.status < 300) {
           resolve(JSON.parse(xhr.responseText) as AdminTask)
         } else {
-          reject(new ApiError(xhr.status, parseErrorDetail(xhr.responseText || xhr.statusText)))
+          const parsed = parseError(xhr.responseText || xhr.statusText)
+          reject(new ApiError(xhr.status, parsed.message, parsed.data))
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))

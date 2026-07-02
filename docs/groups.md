@@ -174,7 +174,8 @@ tabs, each backed by a server-paginated table:
 
 - Mutation failures surface backend detail through the shared API error helper
   instead of replacing it with hardcoded copy, so duplicate-name and
-  category-attachment 409s stay specific.
+  category-attachment 409s stay specific; delete-blocked groups also list the
+  attached categories in the confirmation dialog.
 
 - **Students tab** — multi-select program **filter chips** (OR semantics) plus a
   debounced name/email search box, over a paginated table (10 rows/page). Row

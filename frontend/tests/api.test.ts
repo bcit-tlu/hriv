@@ -100,6 +100,7 @@ import {
   type ApiCategory,
   type ApiCategoryTree,
   type ApiImage,
+  attachedCategoriesFromError,
   type ApiUser,
   type ApiProgram,
   type ApiAnnouncement,
@@ -275,6 +276,29 @@ describe('userMessage', () => {
     expect(userMessage(err, 'fallback')).toBe('Group name already exists')
   })
 
+  it('extracts attached categories from structured 409 details', () => {
+    const err = new ApiError(409, 'Group is attached to one or more categories', {
+      message: 'Group is attached to one or more categories',
+      category_ids: [1, 2],
+      categories: [
+        { id: 1, label: 'Italian' },
+        { id: 2, label: 'Gothic' },
+      ],
+    })
+
+    expect(attachedCategoriesFromError(err)).toEqual([
+      { id: 1, label: 'Italian' },
+      { id: 2, label: 'Gothic' },
+    ])
+  })
+
+  it('returns null for non-structured attached categories errors', () => {
+    expect(
+      attachedCategoriesFromError(new ApiError(409, 'Group is attached to one or more categories')),
+    ).toBeNull()
+    expect(attachedCategoriesFromError(new TypeError('nope'))).toBeNull()
+  })
+
   it('returns detail for short 4xx errors', () => {
     const err = new ApiError(422, 'Name already exists')
     expect(userMessage(err, 'fallback')).toBe('Name already exists')
@@ -413,7 +437,10 @@ describe('request helper (via wrapper functions)', () => {
         text: () =>
           Promise.resolve(
             JSON.stringify({
-              detail: { message: 'Group is attached to one or more categories', category_ids: [1] },
+              detail: {
+                message: 'Group is attached to one or more categories',
+                category_ids: [1],
+              },
             }),
           ),
       }),
@@ -422,6 +449,10 @@ describe('request helper (via wrapper functions)', () => {
     await expect(createGroup({ name: 'New Group' })).rejects.toMatchObject({
       status: 409,
       detail: 'Group is attached to one or more categories',
+      data: {
+        message: 'Group is attached to one or more categories',
+        category_ids: [1],
+      },
     })
   })
 })

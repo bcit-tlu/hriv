@@ -299,6 +299,39 @@ describe('GroupManagementModal', () => {
     expect(screen.getByRole('dialog', { name: 'Delete Group' })).toBeInTheDocument()
   })
 
+  it('shows attached categories when delete is blocked by category restrictions', async () => {
+    const user = userEvent.setup()
+    const onDelete = vi.fn().mockRejectedValue(
+      new ApiError(409, 'Group is attached to one or more categories', {
+        message: 'Group is attached to one or more categories',
+        category_ids: [1, 2],
+        categories: [
+          { id: 1, label: 'Italian' },
+          { id: 2, label: 'Gothic' },
+        ],
+      }),
+    )
+    renderModal({ onDelete })
+
+    fireEvent.click(screen.getByLabelText('group actions for Cohort A'))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+
+    expect(
+      await screen.findByText('Group is attached to one or more categories'),
+    ).toBeInTheDocument()
+    const toggle = screen.getByRole('button', {
+      name: 'What categories are restricted by this group?',
+    })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(toggle)
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    expect(await screen.findByText('Italian')).toBeInTheDocument()
+    expect(screen.getByText('Gothic')).toBeInTheDocument()
+  })
+
   it('adds selected available students and propagates the updated group', async () => {
     mockAddGroupMembersBulk.mockResolvedValue(apiGroup({ member_ids: [101, 102] }))
     const { onGroupUpdated } = renderModal()
