@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.27.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.26.0...backend-v0.27.0) (2026-07-02)
+
+
+### Features
+
+* abstract feedback delivery config ([#791](https://github.com/bcit-tlu/hriv/issues/791)) ([67bba5d](https://github.com/bcit-tlu/hriv/commit/67bba5dbad2a998b9e5fd3ecb197cb390dd13c8a))
+
+
+### Bug Fixes
+
+* **backend:** reject blank required strings and harden ORM serializers ([#783](https://github.com/bcit-tlu/hriv/issues/783)) ([b7dcad4](https://github.com/bcit-tlu/hriv/commit/b7dcad4809eb910df4b0751ffd0dfdd7227f431e))
+* **frontend:** disable non-member program chips + name program in attach error ([#629](https://github.com/bcit-tlu/hriv/issues/629)) ([#778](https://github.com/bcit-tlu/hriv/issues/778)) ([8b5f6c8](https://github.com/bcit-tlu/hriv/commit/8b5f6c8179229c7bd8fb532d2bf68463371a0371))
+
 ## [0.26.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.25.1...backend-v0.26.0) (2026-06-30)
 
 
