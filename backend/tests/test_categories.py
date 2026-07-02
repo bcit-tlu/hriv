@@ -348,6 +348,21 @@ async def test_create_category_invalid_program_ids() -> None:
     assert "999" in str(exc.value.detail)
 
 
+async def test_create_category_instructor_cannot_attach_unmanaged_program_name() -> None:
+    body = CategoryCreate(label="C", parent_id=None, program_ids=[10])
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    prog_result = MagicMock()
+    prog_result.scalars.return_value.all.return_value = [_make_program(10, "Biology")]
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[dup, prog_result])
+    with pytest.raises(HTTPException) as exc:
+        await create_category(body, _editor("instructor", id=7, programs=[20]), db=db)
+    assert exc.value.status_code == 403
+    assert "Biology" in exc.value.detail
+    assert db.execute.await_count == 2
+
+
 async def test_update_category_not_found() -> None:
     body = CategoryUpdate(label="Updated")
     db = AsyncMock()

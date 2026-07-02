@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from 'react'
+import { useContext, useState, useRef, useCallback, useMemo } from 'react'
 import Alert from '@mui/material/Alert'
 import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
@@ -14,7 +14,9 @@ import Radio from '@mui/material/Radio'
 import RadioGroup from '@mui/material/RadioGroup'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
+import { AuthContext } from '../authContextValue'
 import type { Group, Program } from '../types'
+import { getAttachableProgramIds } from '../programAttach'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 
 const filter = createFilterOptions<string>()
@@ -53,6 +55,8 @@ export default function AddCategoryDialog({
   const [groupVisibility, setGroupVisibility] = useState<'all' | 'specific'>('all')
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(new Set())
   const inputRef = useRef<HTMLInputElement>(null)
+  const auth = useContext(AuthContext)
+  const restrictProgramIds = getAttachableProgramIds(auth?.currentUser ?? null)
 
   // Pre-populate with parent restrictions when dialog opens (render-time adjustment)
   const [prevDialogOpen, setPrevDialogOpen] = useState(false)
@@ -122,6 +126,16 @@ export default function AddCategoryDialog({
 
   const programRestricted = visibility === 'specific' && selectedProgramIds.size > 0
   const groupRestricted = groupVisibility === 'specific' && selectedGroupIds.size > 0
+  const membershipRestrictedProgram = useMemo(
+    () =>
+      programs.some(
+        (p) =>
+          restrictProgramIds != null &&
+          !restrictProgramIds.includes(p.id) &&
+          !inheritedProgramIds.includes(p.id),
+      ),
+    [inheritedProgramIds, programs, restrictProgramIds],
+  )
 
   const handleSubmit = async () => {
     const trimmed = label.trim()
@@ -209,30 +223,42 @@ export default function AddCategoryDialog({
               />
             </RadioGroup>
             {visibility === 'specific' && (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-                {programs.map((p) => {
-                  const disabled =
-                    inheritedProgramIds.length > 0 && !inheritedProgramIds.includes(p.id)
-                  const isInheritedOnly =
-                    inheritedProgramIds.includes(p.id) && !selectedProgramIds.has(p.id)
-                  return (
-                    <Chip
-                      key={p.id}
-                      label={p.name}
-                      size="small"
-                      color={
-                        selectedProgramIds.has(p.id) || isInheritedOnly ? 'primary' : 'default'
-                      }
-                      variant={
-                        selectedProgramIds.has(p.id) || isInheritedOnly ? 'filled' : 'outlined'
-                      }
-                      onClick={disabled ? undefined : () => toggleProgram(p.id)}
-                      disabled={disabled}
-                      sx={getInheritedRestrictionSx(isInheritedOnly)}
-                    />
-                  )
-                })}
-              </Box>
+              <>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
+                  {programs.map((p) => {
+                    const inheritedDisabled =
+                      inheritedProgramIds.length > 0 && !inheritedProgramIds.includes(p.id)
+                    const disabled =
+                      inheritedDisabled ||
+                      (restrictProgramIds != null &&
+                        !restrictProgramIds.includes(p.id) &&
+                        !inheritedProgramIds.includes(p.id))
+                    const isInheritedOnly =
+                      inheritedProgramIds.includes(p.id) && !selectedProgramIds.has(p.id)
+                    return (
+                      <Chip
+                        key={p.id}
+                        label={p.name}
+                        size="small"
+                        color={
+                          selectedProgramIds.has(p.id) || isInheritedOnly ? 'primary' : 'default'
+                        }
+                        variant={
+                          selectedProgramIds.has(p.id) || isInheritedOnly ? 'filled' : 'outlined'
+                        }
+                        onClick={disabled ? undefined : () => toggleProgram(p.id)}
+                        disabled={disabled}
+                        sx={getInheritedRestrictionSx(isInheritedOnly)}
+                      />
+                    )
+                  })}
+                </Box>
+                {membershipRestrictedProgram && (
+                  <Typography variant="caption" color="text.secondary">
+                    You can only restrict to programs you belong to.
+                  </Typography>
+                )}
+              </>
             )}
           </Box>
         )}
