@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Protocol
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_github_repo(raw: str) -> str:
@@ -102,7 +105,11 @@ class GitHubFeedbackDelivery:
                     timeout=10.0,
                 )
             except Exception:
-                pass
+                logger.warning(
+                    "Failed to apply feedback label on GitHub issue",
+                    extra={"repo": self.repo, "issue_number": issue_number},
+                    exc_info=True,
+                )
 
         return issue_number, data["html_url"]
 

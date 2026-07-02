@@ -147,10 +147,14 @@ async def test_github_feedback_delivery_label_failure_still_succeeds() -> None:
 
     delivery = GitHubFeedbackDelivery(token="fake-token", repo="owner/repo")
 
-    with patch("app.feedback.httpx.AsyncClient", return_value=mock_client):
+    with (
+        patch("app.feedback.httpx.AsyncClient", return_value=mock_client),
+        patch("app.feedback.logger.warning") as mock_warning,
+    ):
         result = await delivery.submit(submission)
 
     assert result.tracking_url == "https://github.com/repo/issues/2"
+    mock_warning.assert_called_once()
 
 
 async def test_github_feedback_delivery_create_error() -> None:
