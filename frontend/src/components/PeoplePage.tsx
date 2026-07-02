@@ -100,6 +100,11 @@ const PEOPLE_COLUMN_FILTER_KEYS: Partial<Record<PeopleTableColumn, string>> = {
   role: 'role',
 }
 
+type AppliedPeopleFilter =
+  | { key: 'name' | 'email' | 'role'; label: string }
+  | { key: `program:${number}`; label: string; programId: number }
+  | { key: `group:${number}`; label: string; groupId: number }
+
 function uniqueSortedStrings(values: Iterable<string>): string[] {
   return [
     ...new Set(Array.from(values, (value) => value.trim()).filter((value) => value.length > 0)),
@@ -189,6 +194,34 @@ export default function PeoplePage({
     () => groups.filter((group) => selectedGroups.has(group.id)),
     [groups, selectedGroups],
   )
+  const appliedFilters = useMemo<AppliedPeopleFilter[]>(() => {
+    const chips: AppliedPeopleFilter[] = []
+    const name = filters['name']?.trim()
+    const email = filters['email']?.trim()
+    const role = filters['role']?.trim()
+
+    if (name) chips.push({ key: 'name', label: `Name: ${name}` })
+    if (email) chips.push({ key: 'email', label: `Email: ${email}` })
+    if (role) chips.push({ key: 'role', label: `Role: ${role}` })
+
+    for (const program of selectedProgramOptions) {
+      chips.push({
+        key: `program:${program.id}`,
+        label: `Program: ${program.name}`,
+        programId: program.id,
+      })
+    }
+
+    for (const group of selectedGroupOptions) {
+      chips.push({
+        key: `group:${group.id}`,
+        label: `Group: ${group.name}`,
+        groupId: group.id,
+      })
+    }
+
+    return chips
+  }, [filters, selectedProgramOptions, selectedGroupOptions])
 
   const loadData = useCallback(async ({ showLoading = false }: { showLoading?: boolean } = {}) => {
     try {
@@ -331,6 +364,32 @@ export default function PeoplePage({
     setSelectedPrograms(new Set())
     setSelectedGroups(new Set())
     setCurrentPage(0)
+  }
+
+  const handleAppliedFilterDelete = (filter: AppliedPeopleFilter) => {
+    if (filter.key === 'name' || filter.key === 'email' || filter.key === 'role') {
+      handleFilterChange(filter.key, '')
+      return
+    }
+
+    if ('programId' in filter) {
+      setSelectedPrograms((prev) => {
+        const next = new Set(prev)
+        next.delete(filter.programId)
+        return next
+      })
+      setCurrentPage(0)
+      return
+    }
+
+    if ('groupId' in filter) {
+      setSelectedGroups((prev) => {
+        const next = new Set(prev)
+        next.delete(filter.groupId)
+        return next
+      })
+      setCurrentPage(0)
+    }
   }
 
   const handleColumnVisibilityToggle = useCallback(
@@ -585,9 +644,18 @@ export default function PeoplePage({
       </Box>
 
       <FilterBar
-        actions={
-          <>
-            {hasActiveFilters && (
+        summary={
+          hasActiveFilters ? (
+            <>
+              {appliedFilters.map((filter) => (
+                <Chip
+                  key={filter.key}
+                  label={filter.label}
+                  size="small"
+                  variant="outlined"
+                  onDelete={() => handleAppliedFilterDelete(filter)}
+                />
+              ))}
               <Button
                 size="small"
                 startIcon={<ClearIcon fontSize="small" />}
@@ -595,7 +663,11 @@ export default function PeoplePage({
               >
                 Clear filters
               </Button>
-            )}
+            </>
+          ) : undefined
+        }
+        actions={
+          <>
             <Button
               size="small"
               startIcon={<ViewColumnIcon fontSize="small" />}
@@ -617,7 +689,13 @@ export default function PeoplePage({
             onChange={(_, value) => handleFilterChange('name', value ?? '')}
             onInputChange={(_, value) => handleFilterChange('name', value)}
             sx={{ width: 180 }}
-            renderInput={(params) => <TextField {...params} label="Name" />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Name"
+                inputProps={{ ...params.inputProps, 'aria-label': 'Name' }}
+              />
+            )}
           />
         )}
         {isColumnVisible('email') && (
@@ -630,7 +708,13 @@ export default function PeoplePage({
             onChange={(_, value) => handleFilterChange('email', value ?? '')}
             onInputChange={(_, value) => handleFilterChange('email', value)}
             sx={{ width: 220 }}
-            renderInput={(params) => <TextField {...params} label="Email" />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Email"
+                inputProps={{ ...params.inputProps, 'aria-label': 'Email' }}
+              />
+            )}
           />
         )}
         {isColumnVisible('role') && (
@@ -640,7 +724,13 @@ export default function PeoplePage({
             value={(filters['role'] as Role | undefined) ?? null}
             onChange={(_, value) => handleFilterChange('role', value ?? '')}
             sx={{ width: 170 }}
-            renderInput={(params) => <TextField {...params} label="Role" />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Role"
+                inputProps={{ ...params.inputProps, 'aria-label': 'Role' }}
+              />
+            )}
           />
         )}
         {isColumnVisible('program') && programs.length > 0 && (
@@ -663,16 +753,14 @@ export default function PeoplePage({
                 {option.name}
               </li>
             )}
-            renderTags={(value) =>
-              value.length > 0
-                ? [
-                    <Typography key="program-summary" variant="body2" color="text.secondary">
-                      {value.length === 1 ? value[0].name : `${value.length} selected`}
-                    </Typography>,
-                  ]
-                : []
-            }
-            renderInput={(params) => <TextField {...params} label="Program" />}
+            renderTags={() => []}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Program"
+                inputProps={{ ...params.inputProps, 'aria-label': 'Program' }}
+              />
+            )}
           />
         )}
         {isColumnVisible('group') && groups.length > 0 && (
@@ -695,16 +783,14 @@ export default function PeoplePage({
                 {option.name}
               </li>
             )}
-            renderTags={(value) =>
-              value.length > 0
-                ? [
-                    <Typography key="group-summary" variant="body2" color="text.secondary">
-                      {value.length === 1 ? value[0].name : `${value.length} selected`}
-                    </Typography>,
-                  ]
-                : []
-            }
-            renderInput={(params) => <TextField {...params} label="Groups" />}
+            renderTags={() => []}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Groups"
+                inputProps={{ ...params.inputProps, 'aria-label': 'Groups' }}
+              />
+            )}
           />
         )}
         {!isColumnVisible('name') &&

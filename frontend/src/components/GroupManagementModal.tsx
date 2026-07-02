@@ -690,18 +690,44 @@ export default function GroupManagementModal({
                     </Alert>
                   )}
                   <FilterBar
-                    actions={
+                    summary={
                       hasActiveMemberFilters ? (
-                        <Button
-                          size="small"
-                          onClick={() => {
-                            setSearchInput('')
-                            setQ('')
-                            setSelectedProgramIds([])
-                          }}
-                        >
-                          Clear filters
-                        </Button>
+                        <>
+                          {searchInput.trim().length > 0 && (
+                            <Chip
+                              label={`Search: ${searchInput.trim()}`}
+                              size="small"
+                              variant="outlined"
+                              onDelete={() => {
+                                setSearchInput('')
+                                setQ('')
+                              }}
+                            />
+                          )}
+                          {selectedProgramOptions.map((program) => (
+                            <Chip
+                              key={program.id}
+                              label={`Program: ${program.name}`}
+                              size="small"
+                              variant="outlined"
+                              onDelete={() =>
+                                setSelectedProgramIds((prev) =>
+                                  prev.filter((programId) => programId !== program.id),
+                                )
+                              }
+                            />
+                          ))}
+                          <Button
+                            size="small"
+                            onClick={() => {
+                              setSearchInput('')
+                              setQ('')
+                              setSelectedProgramIds([])
+                            }}
+                          >
+                            Clear filters
+                          </Button>
+                        </>
                       ) : undefined
                     }
                   >
@@ -717,8 +743,8 @@ export default function GroupManagementModal({
                       renderInput={(params) => (
                         <TextField
                           {...params}
-                          label="Name or email"
                           placeholder="Search name or email"
+                          inputProps={{ ...params.inputProps, 'aria-label': 'Name or email' }}
                         />
                       )}
                     />
@@ -741,20 +767,14 @@ export default function GroupManagementModal({
                             {option.name}
                           </li>
                         )}
-                        renderTags={(value) =>
-                          value.length > 0
-                            ? [
-                                <Typography
-                                  key="program-summary"
-                                  variant="body2"
-                                  color="text.secondary"
-                                >
-                                  {value.length === 1 ? value[0].name : `${value.length} selected`}
-                                </Typography>,
-                              ]
-                            : []
-                        }
-                        renderInput={(params) => <TextField {...params} label="Program" />}
+                        renderTags={() => []}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            placeholder="Program"
+                            inputProps={{ ...params.inputProps, 'aria-label': 'Program' }}
+                          />
+                        )}
                       />
                     )}
                     <Button

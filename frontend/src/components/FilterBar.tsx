@@ -5,52 +5,68 @@ import Typography from '@mui/material/Typography'
 interface FilterBarProps {
   title?: string
   actions?: ReactNode
+  summary?: ReactNode
   children: ReactNode
 }
 
-export default function FilterBar({ title = 'Filter by', actions, children }: FilterBarProps) {
+export default function FilterBar({
+  title = 'Filter by',
+  actions,
+  summary,
+  children,
+}: FilterBarProps) {
   return (
     <Box
       component="section"
       aria-label={title}
       sx={{
-        mb: 1,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 1,
+        mb: 1.25,
         bgcolor: 'transparent',
-        flexWrap: 'nowrap',
-        overflowX: 'auto',
-        overflowY: 'hidden',
       }}
     >
-      <Typography
-        variant="body2"
-        color="text.secondary"
-        sx={{
-          whiteSpace: 'nowrap',
-          fontWeight: 500,
-          lineHeight: 1,
-          py: 0.75,
-        }}
-      >
-        {title}
-      </Typography>
       <Box
         sx={{
           display: 'flex',
-          flex: 1,
-          minWidth: 0,
-          flexWrap: 'nowrap',
-          gap: 1,
           alignItems: 'center',
+          gap: 1.25,
+          flexWrap: 'nowrap',
+          overflowX: 'auto',
+          overflowY: 'hidden',
         }}
       >
-        {children}
+        <Typography
+          variant="body2"
+          color="text.secondary"
+          sx={{
+            whiteSpace: 'nowrap',
+            fontWeight: 600,
+            lineHeight: 1,
+            flex: '0 0 auto',
+          }}
+        >
+          {title}
+        </Typography>
+        <Box
+          sx={{
+            display: 'flex',
+            flex: 1,
+            minWidth: 0,
+            flexWrap: 'nowrap',
+            gap: 1,
+            alignItems: 'center',
+          }}
+        >
+          {children}
+        </Box>
+        {actions ? (
+          <Box sx={{ display: 'flex', flexWrap: 'nowrap', gap: 0.5, alignItems: 'center' }}>
+            {actions}
+          </Box>
+        ) : null}
       </Box>
-      {actions ? (
-        <Box sx={{ display: 'flex', flexWrap: 'nowrap', gap: 0.5, alignItems: 'center' }}>
-          {actions}
+      {summary ? (
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center', pt: 0.75 }}>
+          {summary}
         </Box>
       ) : null}
     </Box>

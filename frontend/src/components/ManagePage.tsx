@@ -844,9 +844,34 @@ export default function ManagePage({
       </Box>
 
       <FilterBar
-        actions={
-          <>
-            {hasActiveFilters && (
+        summary={
+          hasActiveFilters ? (
+            <>
+              {Object.entries(filters)
+                .filter(([, value]) => value.trim().length > 0)
+                .map(([key, value]) => {
+                  const labels: Record<string, string> = {
+                    id: 'ID',
+                    name: 'Name',
+                    category: 'Category',
+                    copyright: 'Copyright',
+                    note: 'Note',
+                    program: 'Program',
+                    group: 'Groups',
+                    active: 'Visibility',
+                  }
+                  const displayValue =
+                    key === 'active' ? (value === 'active' ? 'Visible' : 'Hidden') : value
+                  return (
+                    <Chip
+                      key={key}
+                      label={`${labels[key]}: ${displayValue}`}
+                      size="small"
+                      variant="outlined"
+                      onDelete={() => handleFilterChange(key, '')}
+                    />
+                  )
+                })}
               <Button
                 size="small"
                 startIcon={<ClearIcon fontSize="small" />}
@@ -854,7 +879,11 @@ export default function ManagePage({
               >
                 Clear filters
               </Button>
-            )}
+            </>
+          ) : undefined
+        }
+        actions={
+          <>
             <Button
               size="small"
               startIcon={<ViewColumnIcon fontSize="small" />}
@@ -876,7 +905,13 @@ export default function ManagePage({
             onChange={(_, value) => handleFilterChange('id', value ?? '')}
             onInputChange={(_, value) => handleFilterChange('id', value)}
             sx={{ width: 110 }}
-            renderInput={(params) => <TextField {...params} label="ID" />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="ID"
+                inputProps={{ ...params.inputProps, 'aria-label': 'ID' }}
+              />
+            )}
           />
         )}
         {isColumnVisible('name') && (
@@ -889,7 +924,13 @@ export default function ManagePage({
             onChange={(_, value) => handleFilterChange('name', value ?? '')}
             onInputChange={(_, value) => handleFilterChange('name', value)}
             sx={{ width: 180 }}
-            renderInput={(params) => <TextField {...params} label="Name" />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Name"
+                inputProps={{ ...params.inputProps, 'aria-label': 'Name' }}
+              />
+            )}
           />
         )}
         {isColumnVisible('category') && (
@@ -902,7 +943,13 @@ export default function ManagePage({
             onChange={(_, value) => handleFilterChange('category', value ?? '')}
             onInputChange={(_, value) => handleFilterChange('category', value)}
             sx={{ width: 200 }}
-            renderInput={(params) => <TextField {...params} label="Category" />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Category"
+                inputProps={{ ...params.inputProps, 'aria-label': 'Category' }}
+              />
+            )}
           />
         )}
         {isColumnVisible('copyright') && (
@@ -915,7 +962,13 @@ export default function ManagePage({
             onChange={(_, value) => handleFilterChange('copyright', value ?? '')}
             onInputChange={(_, value) => handleFilterChange('copyright', value)}
             sx={{ width: 180 }}
-            renderInput={(params) => <TextField {...params} label="Copyright" />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Copyright"
+                inputProps={{ ...params.inputProps, 'aria-label': 'Copyright' }}
+              />
+            )}
           />
         )}
         {isColumnVisible('note') && (
@@ -928,7 +981,13 @@ export default function ManagePage({
             onChange={(_, value) => handleFilterChange('note', value ?? '')}
             onInputChange={(_, value) => handleFilterChange('note', value)}
             sx={{ width: 180 }}
-            renderInput={(params) => <TextField {...params} label="Note" />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Note"
+                inputProps={{ ...params.inputProps, 'aria-label': 'Note' }}
+              />
+            )}
           />
         )}
         {isColumnVisible('program') && (
@@ -941,7 +1000,13 @@ export default function ManagePage({
             onChange={(_, value) => handleFilterChange('program', value ?? '')}
             onInputChange={(_, value) => handleFilterChange('program', value)}
             sx={{ width: 180 }}
-            renderInput={(params) => <TextField {...params} label="Program" />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Program"
+                inputProps={{ ...params.inputProps, 'aria-label': 'Program' }}
+              />
+            )}
           />
         )}
         {isColumnVisible('group') && (
@@ -954,7 +1019,13 @@ export default function ManagePage({
             onChange={(_, value) => handleFilterChange('group', value ?? '')}
             onInputChange={(_, value) => handleFilterChange('group', value)}
             sx={{ width: 180 }}
-            renderInput={(params) => <TextField {...params} label="Groups" />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Groups"
+                inputProps={{ ...params.inputProps, 'aria-label': 'Groups' }}
+              />
+            )}
           />
         )}
         {isColumnVisible('active') && (
@@ -976,7 +1047,13 @@ export default function ManagePage({
             isOptionEqualToValue={(option, value) => option.value === value.value}
             onChange={(_, value) => handleFilterChange('active', value?.value ?? '')}
             sx={{ width: 160 }}
-            renderInput={(params) => <TextField {...params} label="Visibility" />}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                placeholder="Visibility"
+                inputProps={{ ...params.inputProps, 'aria-label': 'Visibility' }}
+              />
+            )}
           />
         )}
         {!isColumnVisible('id') &&
