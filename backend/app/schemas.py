@@ -63,8 +63,6 @@ def normalize_optional_nonblank_value(v: str | None) -> str | None:
 class ProgramBase(BaseModel):
     name: str
 
-    _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
-
 
 def _normalize_oidc_group(v: str | None) -> str | None:
     if isinstance(v, str):
@@ -86,6 +84,7 @@ def normalize_note_value(v: str | None) -> str | None:
 class ProgramCreate(ProgramBase):
     oidc_group: str | None = None
 
+    _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
     _norm_oidc = field_validator("oidc_group", mode="before")(_normalize_oidc_group)
 
 
@@ -112,11 +111,9 @@ class GroupBase(BaseModel):
     name: str
     description: str | None = None
 
-    _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
-
 
 class GroupCreate(GroupBase):
-    pass
+    _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
 
 
 class GroupUpdate(BaseModel):
@@ -244,11 +241,9 @@ class CategoryBase(BaseModel):
     sort_order: int = 0
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
 
-    _validate_label = field_validator("label", mode="before")(normalize_nonblank_value)
-
 
 class CategoryCreate(CategoryBase):
-    pass
+    _validate_label = field_validator("label", mode="before")(normalize_nonblank_value)
 
 
 class CategoryUpdate(BaseModel):

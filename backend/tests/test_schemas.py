@@ -137,7 +137,7 @@ def test_group_out_from_orm_populates_relationship_ids() -> None:
     now = datetime.now(timezone.utc)
     orm_obj = SimpleNamespace(
         id=1,
-        name="  Group A  ",
+        name="Group A",
         description="desc",
         created_by_user_id=7,
         members=[SimpleNamespace(id=2), SimpleNamespace(id=3)],
@@ -150,6 +150,7 @@ def test_group_out_from_orm_populates_relationship_ids() -> None:
 
     assert out.name == "Group A"
     assert out.description == "desc"
+    # Out serialization does not mutate stored values.
     assert out.member_ids == [2, 3]
     assert out.instructor_ids == [4]
 
@@ -158,7 +159,7 @@ def test_category_out_from_orm_populates_relationship_ids_and_metadata() -> None
     now = datetime.now(timezone.utc)
     orm_obj = SimpleNamespace(
         id=1,
-        label="  Category A  ",
+        label="Category A",
         parent_id=None,
         programs=[SimpleNamespace(id=10), SimpleNamespace(id=11)],
         groups=[SimpleNamespace(id=20)],
