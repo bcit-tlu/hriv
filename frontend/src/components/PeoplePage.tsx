@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Alert from '@mui/material/Alert'
+import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -12,8 +13,6 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import Snackbar from '@mui/material/Snackbar'
 import FormControl from '@mui/material/FormControl'
-import IconButton from '@mui/material/IconButton'
-import InputAdornment from '@mui/material/InputAdornment'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Select from '@mui/material/Select'
@@ -101,6 +100,12 @@ const PEOPLE_COLUMN_FILTER_KEYS: Partial<Record<PeopleTableColumn, string>> = {
   role: 'role',
 }
 
+function uniqueSortedStrings(values: Iterable<string>): string[] {
+  return [
+    ...new Set(Array.from(values, (value) => value.trim()).filter((value) => value.length > 0)),
+  ].sort((a, b) => a.localeCompare(b))
+}
+
 interface PeoplePageProps {
   programs: Program[]
   groups: Group[]
@@ -167,6 +172,23 @@ export default function PeoplePage({
   // Success snackbar
   const [successSnack, setSuccessSnack] = useState<string | null>(null)
   const [errorSnack, setErrorSnack] = useState<string | null>(null)
+
+  const nameFilterOptions = useMemo(
+    () => uniqueSortedStrings(users.map((user) => user.name)),
+    [users],
+  )
+  const emailFilterOptions = useMemo(
+    () => uniqueSortedStrings(users.map((user) => user.email)),
+    [users],
+  )
+  const selectedProgramOptions = useMemo(
+    () => programs.filter((program) => selectedPrograms.has(program.id)),
+    [programs, selectedPrograms],
+  )
+  const selectedGroupOptions = useMemo(
+    () => groups.filter((group) => selectedGroups.has(group.id)),
+    [groups, selectedGroups],
+  )
 
   const loadData = useCallback(async ({ showLoading = false }: { showLoading?: boolean } = {}) => {
     try {
@@ -586,139 +608,104 @@ export default function PeoplePage({
         }
       >
         {isColumnVisible('name') && (
-          <TextField
+          <Autocomplete
+            freeSolo
             size="small"
-            label="Name"
+            options={nameFilterOptions}
             value={filters['name'] ?? ''}
-            onChange={(e) => handleFilterChange('name', e.target.value)}
-            sx={{ minWidth: 180 }}
-            InputProps={
-              filters['name']
-                ? {
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton size="small" onClick={() => handleFilterChange('name', '')}>
-                          <ClearIcon sx={{ fontSize: 14 }} />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }
-                : undefined
-            }
+            inputValue={filters['name'] ?? ''}
+            onChange={(_, value) => handleFilterChange('name', value ?? '')}
+            onInputChange={(_, value) => handleFilterChange('name', value)}
+            sx={{ width: 180 }}
+            renderInput={(params) => <TextField {...params} label="Name" />}
           />
         )}
         {isColumnVisible('email') && (
-          <TextField
+          <Autocomplete
+            freeSolo
             size="small"
-            label="Email"
+            options={emailFilterOptions}
             value={filters['email'] ?? ''}
-            onChange={(e) => handleFilterChange('email', e.target.value)}
-            sx={{ minWidth: 220 }}
-            InputProps={
-              filters['email']
-                ? {
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton size="small" onClick={() => handleFilterChange('email', '')}>
-                          <ClearIcon sx={{ fontSize: 14 }} />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }
-                : undefined
-            }
+            inputValue={filters['email'] ?? ''}
+            onChange={(_, value) => handleFilterChange('email', value ?? '')}
+            onInputChange={(_, value) => handleFilterChange('email', value)}
+            sx={{ width: 220 }}
+            renderInput={(params) => <TextField {...params} label="Email" />}
           />
         )}
         {isColumnVisible('role') && (
-          <TextField
-            select
+          <Autocomplete
             size="small"
-            label="Role"
-            value={filters['role'] ?? ''}
-            onChange={(e) => handleFilterChange('role', e.target.value)}
-            sx={{ minWidth: 180 }}
-          >
-            <MenuItem value="">All roles</MenuItem>
-            {ROLES.map((r) => (
-              <MenuItem key={r} value={r}>
-                {r}
-              </MenuItem>
-            ))}
-          </TextField>
+            options={ROLES}
+            value={(filters['role'] as Role | undefined) ?? null}
+            onChange={(_, value) => handleFilterChange('role', value ?? '')}
+            sx={{ width: 170 }}
+            renderInput={(params) => <TextField {...params} label="Role" />}
+          />
         )}
         {isColumnVisible('program') && programs.length > 0 && (
-          <Box sx={{ minWidth: 220, flex: 1 }}>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ display: 'block', mb: 0.75 }}
-            >
-              Program
-            </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-              {programs.map((p) => {
-                const active = selectedPrograms.has(p.id)
-                return (
-                  <Chip
-                    key={p.id}
-                    label={p.name}
-                    size="small"
-                    color={active ? 'primary' : 'default'}
-                    variant={active ? 'filled' : 'outlined'}
-                    onClick={() => {
-                      setSelectedPrograms((prev) => {
-                        const next = new Set(prev)
-                        if (next.has(p.id)) {
-                          next.delete(p.id)
-                        } else {
-                          next.add(p.id)
-                        }
-                        return next
-                      })
-                      setCurrentPage(0)
-                    }}
-                  />
-                )
-              })}
-            </Box>
-          </Box>
+          <Autocomplete
+            multiple
+            disableCloseOnSelect
+            size="small"
+            options={programs}
+            value={selectedProgramOptions}
+            isOptionEqualToValue={(option, value) => option.id === value.id}
+            getOptionLabel={(option) => option.name}
+            onChange={(_, values) => {
+              setSelectedPrograms(new Set(values.map((program) => program.id)))
+              setCurrentPage(0)
+            }}
+            sx={{ width: 220 }}
+            renderOption={(props, option, { selected }) => (
+              <li {...props}>
+                <Checkbox size="small" checked={selected} sx={{ mr: 1 }} />
+                {option.name}
+              </li>
+            )}
+            renderTags={(value) =>
+              value.length > 0
+                ? [
+                    <Typography key="program-summary" variant="body2" color="text.secondary">
+                      {value.length === 1 ? value[0].name : `${value.length} selected`}
+                    </Typography>,
+                  ]
+                : []
+            }
+            renderInput={(params) => <TextField {...params} label="Program" />}
+          />
         )}
         {isColumnVisible('group') && groups.length > 0 && (
-          <Box sx={{ minWidth: 220, flex: 1 }}>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              sx={{ display: 'block', mb: 0.75 }}
-            >
-              Groups
-            </Typography>
-            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-              {groups.map((g) => {
-                const active = selectedGroups.has(g.id)
-                return (
-                  <Chip
-                    key={g.id}
-                    label={g.name}
-                    size="small"
-                    color={active ? 'secondary' : 'default'}
-                    variant={active ? 'filled' : 'outlined'}
-                    onClick={() => {
-                      setSelectedGroups((prev) => {
-                        const next = new Set(prev)
-                        if (next.has(g.id)) {
-                          next.delete(g.id)
-                        } else {
-                          next.add(g.id)
-                        }
-                        return next
-                      })
-                      setCurrentPage(0)
-                    }}
-                  />
-                )
-              })}
-            </Box>
-          </Box>
+          <Autocomplete
+            multiple
+            disableCloseOnSelect
+            size="small"
+            options={groups}
+            value={selectedGroupOptions}
+            isOptionEqualToValue={(option, value) => option.id === value.id}
+            getOptionLabel={(option) => option.name}
+            onChange={(_, values) => {
+              setSelectedGroups(new Set(values.map((group) => group.id)))
+              setCurrentPage(0)
+            }}
+            sx={{ width: 220 }}
+            renderOption={(props, option, { selected }) => (
+              <li {...props}>
+                <Checkbox size="small" checked={selected} sx={{ mr: 1 }} />
+                {option.name}
+              </li>
+            )}
+            renderTags={(value) =>
+              value.length > 0
+                ? [
+                    <Typography key="group-summary" variant="body2" color="text.secondary">
+                      {value.length === 1 ? value[0].name : `${value.length} selected`}
+                    </Typography>,
+                  ]
+                : []
+            }
+            renderInput={(params) => <TextField {...params} label="Groups" />}
+          />
         )}
         {!isColumnVisible('name') &&
           !isColumnVisible('email') &&

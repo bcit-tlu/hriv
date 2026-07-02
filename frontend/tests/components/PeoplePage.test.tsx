@@ -259,7 +259,7 @@ describe('PeoplePage', () => {
     })
 
     const filterBar = screen.getByRole('region', { name: 'Filter by' })
-    expect(within(filterBar).getByText('Groups')).toBeInTheDocument()
+    expect(within(filterBar).getByRole('combobox', { name: 'Groups' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Choose columns' }))
@@ -273,7 +273,7 @@ describe('PeoplePage', () => {
     })
 
     expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
-    expect(within(filterBar).queryByText('Groups')).not.toBeInTheDocument()
+    expect(within(filterBar).queryByRole('combobox', { name: 'Groups' })).not.toBeInTheDocument()
 
     unmount()
     render(<PeoplePage programs={programs} groups={groups} />)
@@ -439,8 +439,8 @@ describe('PeoplePage', () => {
     await user.type(screen.getByLabelText('Name'), 'Student')
 
     // Only Test Student should be visible
-    expect(screen.queryByText('Admin User')).not.toBeInTheDocument()
-    expect(screen.getByText('Test Student')).toBeInTheDocument()
+    expect(screen.queryByRole('cell', { name: 'Admin User' })).not.toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Test Student' })).toBeInTheDocument()
   })
 
   it('clears filters when clear button is clicked', async () => {

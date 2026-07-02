@@ -367,12 +367,12 @@ describe('GroupManagementModal', () => {
     expect(mockFetchUsersPaged).toHaveBeenCalledTimes(fetchCallsBeforeAdd)
   })
 
-  it('filters available students by program chip in the redesigned detail panel', async () => {
+  it('filters available students by program dropdown in the redesigned detail panel', async () => {
     const user = userEvent.setup()
     renderModal()
 
-    const programBChips = await screen.findAllByText('Program B')
-    await user.click(programBChips[0])
+    await user.click(await screen.findByRole('combobox', { name: 'Program' }))
+    await user.click(await screen.findByRole('option', { name: 'Program B' }))
 
     await waitFor(() =>
       expect(mockFetchUsersPaged).toHaveBeenLastCalledWith(

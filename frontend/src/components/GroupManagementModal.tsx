@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import Alert from '@mui/material/Alert'
+import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -11,7 +12,6 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
-import InputAdornment from '@mui/material/InputAdornment'
 import Link from '@mui/material/Link'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
@@ -37,7 +37,6 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import CloseIcon from '@mui/icons-material/Close'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import PeopleIcon from '@mui/icons-material/People'
-import SearchIcon from '@mui/icons-material/Search'
 import {
   addGroupInstructorsBulk,
   addGroupMembersBulk,
@@ -78,6 +77,12 @@ type GroupDialogMode = 'create' | 'rename' | null
 const PAGE_SIZE_OPTIONS = [10, 25, 50]
 const DEFAULT_PAGE_SIZE = 25
 const SEARCH_DEBOUNCE_MS = 300
+
+function uniqueSortedStrings(values: Iterable<string>): string[] {
+  return [
+    ...new Set(Array.from(values, (value) => value.trim()).filter((value) => value.length > 0)),
+  ].sort((a, b) => a.localeCompare(b))
+}
 
 export default function GroupManagementModal({
   open,
@@ -254,6 +259,15 @@ export default function GroupManagementModal({
     return names
   }, [programs])
 
+  const selectedProgramOptions = useMemo(
+    () => programs.filter((program) => selectedProgramIds.includes(program.id)),
+    [programs, selectedProgramIds],
+  )
+  const memberSearchOptions = useMemo(
+    () => uniqueSortedStrings(rows.flatMap((row) => [row.name, row.email])),
+    [rows],
+  )
+
   const currentRows = rows.filter((row) => assignedIds.has(row.id))
   const availableRows = rows.filter((row) => !assignedIds.has(row.id))
   const allAvailableSelected =
@@ -355,12 +369,6 @@ export default function GroupManagementModal({
   const selectGroup = (groupId: number) => {
     setSelectedGroupId(groupId)
     setMobileDetailOpen(true)
-  }
-
-  const toggleProgram = (programId: number) => {
-    setSelectedProgramIds((prev) =>
-      prev.includes(programId) ? prev.filter((id) => id !== programId) : [...prev, programId],
-    )
   }
 
   const toggleSelectAllAvailable = () => {
@@ -697,47 +705,57 @@ export default function GroupManagementModal({
                       ) : undefined
                     }
                   >
-                    <TextField
-                      fullWidth
+                    <Autocomplete
+                      freeSolo
                       size="small"
-                      label="Name or email"
-                      placeholder="Search name or email"
+                      options={memberSearchOptions}
                       value={searchInput}
-                      onChange={(event) => setSearchInput(event.target.value)}
-                      sx={{ minWidth: 240, flex: 1 }}
-                      InputProps={{
-                        startAdornment: (
-                          <InputAdornment position="start">
-                            <SearchIcon fontSize="small" />
-                          </InputAdornment>
-                        ),
-                      }}
+                      inputValue={searchInput}
+                      onChange={(_, value) => setSearchInput(value ?? '')}
+                      onInputChange={(_, value) => setSearchInput(value)}
+                      sx={{ width: 240, flex: '1 1 240px' }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          label="Name or email"
+                          placeholder="Search name or email"
+                        />
+                      )}
                     />
                     {tab === 'students' && programs.length > 0 && (
-                      <Box sx={{ minWidth: 220, flex: 1 }}>
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{ display: 'block', mb: 0.75 }}
-                        >
-                          Program
-                        </Typography>
-                        <Stack direction="row" flexWrap="wrap" gap={0.75}>
-                          {programs.map((program) => {
-                            const active = selectedProgramIds.includes(program.id)
-                            return (
-                              <Chip
-                                key={program.id}
-                                label={program.name}
-                                onClick={() => toggleProgram(program.id)}
-                                color={active ? 'primary' : 'default'}
-                                variant={active ? 'filled' : 'outlined'}
-                                size="small"
-                              />
-                            )
-                          })}
-                        </Stack>
-                      </Box>
+                      <Autocomplete
+                        multiple
+                        disableCloseOnSelect
+                        size="small"
+                        options={programs}
+                        value={selectedProgramOptions}
+                        isOptionEqualToValue={(option, value) => option.id === value.id}
+                        getOptionLabel={(option) => option.name}
+                        onChange={(_, values) =>
+                          setSelectedProgramIds(values.map((program) => program.id))
+                        }
+                        sx={{ width: 220 }}
+                        renderOption={(props, option, { selected }) => (
+                          <li {...props}>
+                            <Checkbox size="small" checked={selected} sx={{ mr: 1 }} />
+                            {option.name}
+                          </li>
+                        )}
+                        renderTags={(value) =>
+                          value.length > 0
+                            ? [
+                                <Typography
+                                  key="program-summary"
+                                  variant="body2"
+                                  color="text.secondary"
+                                >
+                                  {value.length === 1 ? value[0].name : `${value.length} selected`}
+                                </Typography>,
+                              ]
+                            : []
+                        }
+                        renderInput={(params) => <TextField {...params} label="Program" />}
+                      />
                     )}
                     <Button
                       variant="contained"

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -9,7 +10,6 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
-import InputAdornment from '@mui/material/InputAdornment'
 import Link from '@mui/material/Link'
 import ListItemIcon from '@mui/material/ListItemIcon'
 import ListItemText from '@mui/material/ListItemText'
@@ -82,6 +82,12 @@ function buildCategoryPaths(
     }
   }
   return map
+}
+
+function uniqueSortedStrings(values: Iterable<string>): string[] {
+  return [
+    ...new Set(Array.from(values, (value) => value.trim()).filter((value) => value.length > 0)),
+  ].sort((a, b) => a.localeCompare(b))
 }
 
 function CategoryBreadcrumb({
@@ -439,6 +445,35 @@ export default function ManagePage({
         .join(', ')
     },
     [groups, getInheritedGroupIds],
+  )
+
+  const idFilterOptions = useMemo(
+    () => uniqueSortedStrings(images.map((image) => String(image.id))),
+    [images],
+  )
+  const nameFilterOptions = useMemo(
+    () => uniqueSortedStrings(images.map((image) => image.name)),
+    [images],
+  )
+  const categoryFilterOptions = useMemo(
+    () => uniqueSortedStrings(images.map((image) => getCategoryLabel(image))),
+    [images, getCategoryLabel],
+  )
+  const copyrightFilterOptions = useMemo(
+    () => uniqueSortedStrings(images.map((image) => image.copyright ?? '')),
+    [images],
+  )
+  const noteFilterOptions = useMemo(
+    () => uniqueSortedStrings(images.map((image) => image.note ?? '')),
+    [images],
+  )
+  const programFilterOptions = useMemo(
+    () => uniqueSortedStrings(programs.map((program) => program.name)),
+    [programs],
+  )
+  const groupFilterOptions = useMemo(
+    () => uniqueSortedStrings(groups.map((group) => group.name)),
+    [groups],
   )
 
   // Filtered and sorted images
@@ -832,175 +867,117 @@ export default function ManagePage({
         }
       >
         {isColumnVisible('id') && (
-          <TextField
+          <Autocomplete
+            freeSolo
             size="small"
-            label="ID"
+            options={idFilterOptions}
             value={filters['id'] ?? ''}
-            onChange={(e) => handleFilterChange('id', e.target.value)}
-            sx={{ minWidth: 120 }}
-            InputProps={
-              filters['id']
-                ? {
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton size="small" onClick={() => handleFilterChange('id', '')}>
-                          <ClearIcon sx={{ fontSize: 14 }} />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }
-                : undefined
-            }
+            inputValue={filters['id'] ?? ''}
+            onChange={(_, value) => handleFilterChange('id', value ?? '')}
+            onInputChange={(_, value) => handleFilterChange('id', value)}
+            sx={{ width: 110 }}
+            renderInput={(params) => <TextField {...params} label="ID" />}
           />
         )}
         {isColumnVisible('name') && (
-          <TextField
+          <Autocomplete
+            freeSolo
             size="small"
-            label="Name"
+            options={nameFilterOptions}
             value={filters['name'] ?? ''}
-            onChange={(e) => handleFilterChange('name', e.target.value)}
-            sx={{ minWidth: 180 }}
-            InputProps={
-              filters['name']
-                ? {
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton size="small" onClick={() => handleFilterChange('name', '')}>
-                          <ClearIcon sx={{ fontSize: 14 }} />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }
-                : undefined
-            }
+            inputValue={filters['name'] ?? ''}
+            onChange={(_, value) => handleFilterChange('name', value ?? '')}
+            onInputChange={(_, value) => handleFilterChange('name', value)}
+            sx={{ width: 180 }}
+            renderInput={(params) => <TextField {...params} label="Name" />}
           />
         )}
         {isColumnVisible('category') && (
-          <TextField
+          <Autocomplete
+            freeSolo
             size="small"
-            label="Category"
+            options={categoryFilterOptions}
             value={filters['category'] ?? ''}
-            onChange={(e) => handleFilterChange('category', e.target.value)}
-            sx={{ minWidth: 200 }}
-            InputProps={
-              filters['category']
-                ? {
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton size="small" onClick={() => handleFilterChange('category', '')}>
-                          <ClearIcon sx={{ fontSize: 14 }} />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }
-                : undefined
-            }
+            inputValue={filters['category'] ?? ''}
+            onChange={(_, value) => handleFilterChange('category', value ?? '')}
+            onInputChange={(_, value) => handleFilterChange('category', value)}
+            sx={{ width: 200 }}
+            renderInput={(params) => <TextField {...params} label="Category" />}
           />
         )}
         {isColumnVisible('copyright') && (
-          <TextField
+          <Autocomplete
+            freeSolo
             size="small"
-            label="Copyright"
+            options={copyrightFilterOptions}
             value={filters['copyright'] ?? ''}
-            onChange={(e) => handleFilterChange('copyright', e.target.value)}
-            sx={{ minWidth: 180 }}
-            InputProps={
-              filters['copyright']
-                ? {
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton
-                          size="small"
-                          onClick={() => handleFilterChange('copyright', '')}
-                        >
-                          <ClearIcon sx={{ fontSize: 14 }} />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }
-                : undefined
-            }
+            inputValue={filters['copyright'] ?? ''}
+            onChange={(_, value) => handleFilterChange('copyright', value ?? '')}
+            onInputChange={(_, value) => handleFilterChange('copyright', value)}
+            sx={{ width: 180 }}
+            renderInput={(params) => <TextField {...params} label="Copyright" />}
           />
         )}
         {isColumnVisible('note') && (
-          <TextField
+          <Autocomplete
+            freeSolo
             size="small"
-            label="Note"
+            options={noteFilterOptions}
             value={filters['note'] ?? ''}
-            onChange={(e) => handleFilterChange('note', e.target.value)}
-            sx={{ minWidth: 180 }}
-            InputProps={
-              filters['note']
-                ? {
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton size="small" onClick={() => handleFilterChange('note', '')}>
-                          <ClearIcon sx={{ fontSize: 14 }} />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }
-                : undefined
-            }
+            inputValue={filters['note'] ?? ''}
+            onChange={(_, value) => handleFilterChange('note', value ?? '')}
+            onInputChange={(_, value) => handleFilterChange('note', value)}
+            sx={{ width: 180 }}
+            renderInput={(params) => <TextField {...params} label="Note" />}
           />
         )}
         {isColumnVisible('program') && (
-          <TextField
+          <Autocomplete
+            freeSolo
             size="small"
-            label="Program"
+            options={programFilterOptions}
             value={filters['program'] ?? ''}
-            onChange={(e) => handleFilterChange('program', e.target.value)}
-            sx={{ minWidth: 180 }}
-            InputProps={
-              filters['program']
-                ? {
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton size="small" onClick={() => handleFilterChange('program', '')}>
-                          <ClearIcon sx={{ fontSize: 14 }} />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }
-                : undefined
-            }
+            inputValue={filters['program'] ?? ''}
+            onChange={(_, value) => handleFilterChange('program', value ?? '')}
+            onInputChange={(_, value) => handleFilterChange('program', value)}
+            sx={{ width: 180 }}
+            renderInput={(params) => <TextField {...params} label="Program" />}
           />
         )}
         {isColumnVisible('group') && (
-          <TextField
+          <Autocomplete
+            freeSolo
             size="small"
-            label="Groups"
+            options={groupFilterOptions}
             value={filters['group'] ?? ''}
-            onChange={(e) => handleFilterChange('group', e.target.value)}
-            sx={{ minWidth: 180 }}
-            InputProps={
-              filters['group']
-                ? {
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton size="small" onClick={() => handleFilterChange('group', '')}>
-                          <ClearIcon sx={{ fontSize: 14 }} />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  }
-                : undefined
-            }
+            inputValue={filters['group'] ?? ''}
+            onChange={(_, value) => handleFilterChange('group', value ?? '')}
+            onInputChange={(_, value) => handleFilterChange('group', value)}
+            sx={{ width: 180 }}
+            renderInput={(params) => <TextField {...params} label="Groups" />}
           />
         )}
         {isColumnVisible('active') && (
-          <TextField
-            select
+          <Autocomplete
             size="small"
-            label="Visibility"
-            value={filters['active'] ?? ''}
-            onChange={(e) => handleFilterChange('active', e.target.value)}
-            sx={{ minWidth: 180 }}
-          >
-            <MenuItem value="">All images</MenuItem>
-            <MenuItem value="active">Visible</MenuItem>
-            <MenuItem value="inactive">Hidden</MenuItem>
-          </TextField>
+            options={[
+              { label: 'Visible', value: 'active' },
+              { label: 'Hidden', value: 'inactive' },
+            ]}
+            getOptionLabel={(option) => option.label}
+            value={
+              filters['active']
+                ? {
+                    label: filters['active'] === 'active' ? 'Visible' : 'Hidden',
+                    value: filters['active'],
+                  }
+                : null
+            }
+            isOptionEqualToValue={(option, value) => option.value === value.value}
+            onChange={(_, value) => handleFilterChange('active', value?.value ?? '')}
+            sx={{ width: 160 }}
+            renderInput={(params) => <TextField {...params} label="Visibility" />}
+          />
         )}
         {!isColumnVisible('id') &&
           !isColumnVisible('name') &&

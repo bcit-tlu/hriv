@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
-import Paper from '@mui/material/Paper'
 import Typography from '@mui/material/Typography'
 
 interface FilterBarProps {
@@ -11,36 +10,49 @@ interface FilterBarProps {
 
 export default function FilterBar({ title = 'Filter by', actions, children }: FilterBarProps) {
   return (
-    <Paper
+    <Box
       component="section"
       aria-label={title}
-      variant="outlined"
       sx={{
-        p: 1.5,
-        mb: 2,
-        bgcolor: 'background.paper',
+        mb: 1,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        bgcolor: 'transparent',
+        flexWrap: 'nowrap',
+        overflowX: 'auto',
+        overflowY: 'hidden',
       }}
     >
+      <Typography
+        variant="body2"
+        color="text.secondary"
+        sx={{
+          whiteSpace: 'nowrap',
+          fontWeight: 500,
+          lineHeight: 1,
+          py: 0.75,
+        }}
+      >
+        {title}
+      </Typography>
       <Box
         sx={{
           display: 'flex',
-          alignItems: { xs: 'flex-start', sm: 'center' },
-          justifyContent: 'space-between',
+          flex: 1,
+          minWidth: 0,
+          flexWrap: 'nowrap',
           gap: 1,
-          mb: 1.25,
-          flexWrap: 'wrap',
+          alignItems: 'center',
         }}
       >
-        <Typography variant="subtitle2">{title}</Typography>
-        {actions ? (
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
-            {actions}
-          </Box>
-        ) : null}
-      </Box>
-      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, alignItems: 'flex-start' }}>
         {children}
       </Box>
-    </Paper>
+      {actions ? (
+        <Box sx={{ display: 'flex', flexWrap: 'nowrap', gap: 0.5, alignItems: 'center' }}>
+          {actions}
+        </Box>
+      ) : null}
+    </Box>
   )
 }
