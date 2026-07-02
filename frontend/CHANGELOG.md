@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.29.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.28.1...frontend-v0.29.0) (2026-07-02)
+
+
+### Features
+
+* abstract feedback delivery config ([#791](https://github.com/bcit-tlu/hriv/issues/791)) ([67bba5d](https://github.com/bcit-tlu/hriv/commit/67bba5dbad2a998b9e5fd3ecb197cb390dd13c8a))
+* **frontend:** warn when parent program restrictions conflict with child restrictions ([#782](https://github.com/bcit-tlu/hriv/issues/782)) ([650fa29](https://github.com/bcit-tlu/hriv/commit/650fa29d4d0d22fbf1d01f53b76657bfd52c1929))
+
+
+### Bug Fixes
+
+* **frontend:** disable non-member program chips + name program in attach error ([#629](https://github.com/bcit-tlu/hriv/issues/629)) ([#778](https://github.com/bcit-tlu/hriv/issues/778)) ([8b5f6c8](https://github.com/bcit-tlu/hriv/commit/8b5f6c8179229c7bd8fb532d2bf68463371a0371))
+* **frontend:** stop dismissed-announcement flash on reload ([#752](https://github.com/bcit-tlu/hriv/issues/752)) ([#794](https://github.com/bcit-tlu/hriv/issues/794)) ([d2851bc](https://github.com/bcit-tlu/hriv/commit/d2851bcf654819c48c10eeacf5102bffd87c9760))
+* **frontend:** surface backend 4xx detail in group error messages ([#790](https://github.com/bcit-tlu/hriv/issues/790)) ([1521ba5](https://github.com/bcit-tlu/hriv/commit/1521ba54134f9d1319e044c90898d9bca635974d))
+
 ## [0.28.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.28.0...frontend-v0.28.1) (2026-07-01)
 
 
