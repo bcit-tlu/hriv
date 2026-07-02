@@ -632,9 +632,12 @@ export default function App() {
         loadGroups()
       }
     }
-    loadAnnouncement()
+    if (!usersLoading) {
+      loadAnnouncement()
+    }
   }, [
     currentUser,
+    usersLoading,
     loadCategories,
     loadUncategorizedImages,
     loadPrograms,
