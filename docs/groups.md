@@ -172,6 +172,11 @@ of several hundred students and keeps the membership table inline rather than
 opening a second dialog. The detail panel has **Students** and **Instructors**
 tabs, each backed by a server-paginated table:
 
+- Mutation failures surface backend detail through the shared API error helper
+  instead of replacing it with hardcoded copy, so duplicate-name and
+  category-attachment 409s stay specific; delete-blocked groups also list the
+  attached categories as links inside the confirmation dialog.
+
 - **Students tab** — multi-select program **filter chips** (OR semantics) plus a
   debounced name/email search box, over a paginated table (10 rows/page). Row
   checkboxes + "select all on page" feed a single **"Add N to group"** bulk call

@@ -12,6 +12,7 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
+import Link from '@mui/material/Link'
 import List from '@mui/material/List'
 import ListItemButton from '@mui/material/ListItemButton'
 import ListItemText from '@mui/material/ListItemText'
@@ -42,8 +43,10 @@ import {
   addGroupMembersBulk,
   fetchPrograms,
   fetchUsersPaged,
+  attachedCategoriesFromError,
   removeGroupInstructor,
   removeGroupMember,
+  userMessage,
 } from '../api'
 import type { ApiProgram, ApiUser } from '../api'
 import { apiGroupToGroup } from '../groupUtils'
@@ -57,6 +60,7 @@ interface GroupManagementModalProps {
   onAdd: (name: string, description: string | null) => void | Promise<void>
   onEdit: (id: number, name: string, description: string | null) => void | Promise<void>
   onDelete: (id: number) => void | Promise<void>
+  onCategoryNavigate?: (categoryId: number) => void
   /** Propagates membership updates back to the parent app state. */
   onGroupUpdated?: (group: Group) => void
   /**
@@ -81,6 +85,7 @@ export default function GroupManagementModal({
   onAdd,
   onEdit,
   onDelete,
+  onCategoryNavigate,
   canManage,
   onGroupUpdated,
 }: GroupManagementModalProps) {
@@ -96,6 +101,10 @@ export default function GroupManagementModal({
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null)
   const [menuGroupId, setMenuGroupId] = useState<number | null>(null)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteBlockedCategories, setDeleteBlockedCategories] = useState<
+    { id: number; label: string }[]
+  >([])
+  const [deleteBlockedCategoriesExpanded, setDeleteBlockedCategoriesExpanded] = useState(false)
 
   const [tab, setTab] = useState<TabKey>('students')
   const [programs, setPrograms] = useState<ApiProgram[]>([])
@@ -186,6 +195,8 @@ export default function GroupManagementModal({
       setMenuAnchorEl(null)
       setMenuGroupId(null)
       setDeleteDialogOpen(false)
+      setDeleteBlockedCategories([])
+      setDeleteBlockedCategoriesExpanded(false)
       setTab('students')
       setSelectedProgramIds([])
       setSearchInput('')
@@ -279,6 +290,8 @@ export default function GroupManagementModal({
 
   const startDelete = () => {
     setGroupActionError(null)
+    setDeleteBlockedCategories([])
+    setDeleteBlockedCategoriesExpanded(false)
     setDeleteDialogOpen(true)
     closeGroupMenu()
   }
@@ -302,9 +315,12 @@ export default function GroupManagementModal({
       setGroupDialogMode(null)
       setGroupNameDraft('')
       setGroupDescriptionDraft('')
-    } catch {
+    } catch (err) {
       setGroupActionError(
-        groupDialogMode === 'create' ? 'Failed to create group.' : 'Failed to rename group.',
+        userMessage(
+          err,
+          groupDialogMode === 'create' ? 'Failed to create group.' : 'Failed to rename group.',
+        ),
       )
     } finally {
       setGroupPending(false)
@@ -323,8 +339,12 @@ export default function GroupManagementModal({
       }
       setDeleteDialogOpen(false)
       setMenuGroupId(null)
-    } catch {
-      setGroupActionError('Failed to delete group. It may still be attached to categories.')
+      setDeleteBlockedCategories([])
+      setDeleteBlockedCategoriesExpanded(false)
+    } catch (err) {
+      setGroupActionError(userMessage(err, 'Failed to delete group.'))
+      setDeleteBlockedCategories(attachedCategoriesFromError(err) ?? [])
+      setDeleteBlockedCategoriesExpanded(false)
     } finally {
       setGroupPending(false)
     }
@@ -387,11 +407,14 @@ export default function GroupManagementModal({
           : await addGroupInstructorsBulk(selectedGroup.id, ids)
       updateGroupFromApi(apiGroupToGroup(updatedGroup))
       setSelectedUserIds(new Set())
-    } catch {
+    } catch (err) {
       setMemberError(
-        tab === 'students'
-          ? 'Failed to add the selected students to the group.'
-          : 'Failed to add the selected instructors to the group.',
+        userMessage(
+          err,
+          tab === 'students'
+            ? 'Failed to add the selected students to the group.'
+            : 'Failed to add the selected instructors to the group.',
+        ),
       )
     } finally {
       setBulkPending(false)
@@ -408,11 +431,14 @@ export default function GroupManagementModal({
           ? await removeGroupMember(selectedGroup.id, user.id)
           : await removeGroupInstructor(selectedGroup.id, user.id)
       updateGroupFromApi(apiGroupToGroup(updatedGroup))
-    } catch {
+    } catch (err) {
       setMemberError(
-        tab === 'students'
-          ? 'Failed to remove the student from the group.'
-          : 'Failed to remove the instructor (a group must keep at least one).',
+        userMessage(
+          err,
+          tab === 'students'
+            ? 'Failed to remove the student from the group.'
+            : 'Failed to remove the instructor (a group must keep at least one).',
+        ),
       )
     } finally {
       setPendingRemoveId(null)
@@ -892,6 +918,8 @@ export default function GroupManagementModal({
         onClose={() => {
           setDeleteDialogOpen(false)
           setGroupActionError(null)
+          setDeleteBlockedCategories([])
+          setDeleteBlockedCategoriesExpanded(false)
         }}
         maxWidth="xs"
         fullWidth
@@ -900,7 +928,52 @@ export default function GroupManagementModal({
         <DialogContent>
           {groupActionError && (
             <Alert severity="error" sx={{ mb: 2 }}>
-              {groupActionError}
+              <Stack spacing={1}>
+                <Box>{groupActionError}</Box>
+                {deleteBlockedCategories.length > 0 && (
+                  <Box>
+                    <Link
+                      component="button"
+                      type="button"
+                      variant="body2"
+                      onClick={() => setDeleteBlockedCategoriesExpanded((expanded) => !expanded)}
+                      aria-expanded={deleteBlockedCategoriesExpanded}
+                      aria-controls="delete-group-blocked-categories"
+                    >
+                      What categories?
+                    </Link>
+                    {deleteBlockedCategoriesExpanded && (
+                      <Box id="delete-group-blocked-categories" sx={{ mt: 1 }}>
+                        {deleteBlockedCategories.map((category, index) => (
+                          <span key={category.id}>
+                            {onCategoryNavigate ? (
+                              <Link
+                                component="button"
+                                type="button"
+                                underline="hover"
+                                onClick={() => onCategoryNavigate(category.id)}
+                                sx={{
+                                  p: 0,
+                                  border: 0,
+                                  background: 'none',
+                                  font: 'inherit',
+                                  textAlign: 'left',
+                                  verticalAlign: 'baseline',
+                                }}
+                              >
+                                {category.label}
+                              </Link>
+                            ) : (
+                              <span>{category.label}</span>
+                            )}
+                            {index < deleteBlockedCategories.length - 1 ? ', ' : ''}
+                          </span>
+                        ))}
+                      </Box>
+                    )}
+                  </Box>
+                )}
+              </Stack>
             </Alert>
           )}
           <Alert severity="warning" sx={{ mb: 2 }}>
