@@ -181,3 +181,25 @@ async def test_github_feedback_delivery_create_error() -> None:
             await delivery.submit(submission)
 
     assert "GitHub API error creating issue: 500" in str(exc.value)
+
+
+async def test_github_feedback_delivery_create_transport_error() -> None:
+    submission = FeedbackSubmission(
+        description="Bug",
+        page_url="http://localhost/page",
+        user_id=790,
+        user_role="admin",
+    )
+
+    mock_client = AsyncMock()
+    mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("request timed out"))
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    delivery = GitHubFeedbackDelivery(token="fake-token", repo="owner/repo")
+
+    with patch("app.feedback.httpx.AsyncClient", return_value=mock_client):
+        with pytest.raises(FeedbackDeliveryError) as exc:
+            await delivery.submit(submission)
+
+    assert "GitHub API request failed:" in str(exc.value)

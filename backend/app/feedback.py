@@ -78,15 +78,20 @@ class GitHubFeedbackDelivery:
         }
 
         async with httpx.AsyncClient() as client:
-            create_resp = await client.post(
-                f"https://api.github.com/repos/{self.repo}/issues",
-                headers=headers,
-                json={
-                    "title": f"feedback: Issue report from {submission.user_role}",
-                    "body": issue_body,
-                },
-                timeout=15.0,
-            )
+            try:
+                create_resp = await client.post(
+                    f"https://api.github.com/repos/{self.repo}/issues",
+                    headers=headers,
+                    json={
+                        "title": f"feedback: Issue report from {submission.user_role}",
+                        "body": issue_body,
+                    },
+                    timeout=15.0,
+                )
+            except httpx.HTTPError as exc:
+                raise FeedbackDeliveryError(
+                    f"GitHub API request failed: {exc}"
+                ) from exc
             if create_resp.status_code != 201:
                 raise FeedbackDeliveryError(
                     f"GitHub API error creating issue: {create_resp.status_code}"
