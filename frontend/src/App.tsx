@@ -2067,6 +2067,10 @@ export default function App() {
         onAdd={handleAddGroup}
         onEdit={handleEditGroup}
         onDelete={handleDeleteGroup}
+        onCategoryNavigate={(id) => {
+          setGroupModalOpen(false)
+          handleManageCategoryNavigate(id)
+        }}
         canManage={canManageGroup}
         onGroupUpdated={handleGroupUpdated}
       />

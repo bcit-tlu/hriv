@@ -61,6 +61,7 @@ interface GroupManagementModalProps {
   onAdd: (name: string, description: string | null) => void | Promise<void>
   onEdit: (id: number, name: string, description: string | null) => void | Promise<void>
   onDelete: (id: number) => void | Promise<void>
+  onCategoryNavigate?: (categoryId: number) => void
   /** Propagates membership updates back to the parent app state. */
   onGroupUpdated?: (group: Group) => void
   /**
@@ -85,6 +86,7 @@ export default function GroupManagementModal({
   onAdd,
   onEdit,
   onDelete,
+  onCategoryNavigate,
   canManage,
   onGroupUpdated,
 }: GroupManagementModalProps) {
@@ -927,36 +929,53 @@ export default function GroupManagementModal({
         <DialogContent>
           {groupActionError && (
             <Alert severity="error" sx={{ mb: 2 }}>
-              {groupActionError}
+              <Stack spacing={1}>
+                <Box>{groupActionError}</Box>
+                {deleteBlockedCategories.length > 0 && (
+                  <Box>
+                    <Link
+                      component="button"
+                      type="button"
+                      variant="body2"
+                      onClick={() => setDeleteBlockedCategoriesExpanded((expanded) => !expanded)}
+                      aria-expanded={deleteBlockedCategoriesExpanded}
+                      aria-controls="delete-group-blocked-categories"
+                    >
+                      What categories?
+                    </Link>
+                    {deleteBlockedCategoriesExpanded && (
+                      <Box id="delete-group-blocked-categories" sx={{ mt: 1 }}>
+                        {deleteBlockedCategories.map((category, index) => (
+                          <span key={category.id}>
+                            {onCategoryNavigate ? (
+                              <Link
+                                component="button"
+                                type="button"
+                                underline="hover"
+                                onClick={() => onCategoryNavigate(category.id)}
+                                sx={{
+                                  p: 0,
+                                  border: 0,
+                                  background: 'none',
+                                  font: 'inherit',
+                                  textAlign: 'left',
+                                  verticalAlign: 'baseline',
+                                }}
+                              >
+                                {category.label}
+                              </Link>
+                            ) : (
+                              <span>{category.label}</span>
+                            )}
+                            {index < deleteBlockedCategories.length - 1 ? ', ' : ''}
+                          </span>
+                        ))}
+                      </Box>
+                    )}
+                  </Box>
+                )}
+              </Stack>
             </Alert>
-          )}
-          {deleteBlockedCategories.length > 0 && (
-            <Box sx={{ mb: 1.5 }}>
-              <Link
-                component="button"
-                type="button"
-                variant="body2"
-                onClick={() => setDeleteBlockedCategoriesExpanded((expanded) => !expanded)}
-                aria-expanded={deleteBlockedCategoriesExpanded}
-                aria-controls="delete-group-blocked-categories"
-              >
-                What categories are restricted by this group?
-              </Link>
-              {deleteBlockedCategoriesExpanded && (
-                <List
-                  id="delete-group-blocked-categories"
-                  dense
-                  disablePadding
-                  sx={{ mt: 1, pl: 2.5 }}
-                >
-                  {deleteBlockedCategories.map((category) => (
-                    <ListItem key={category.id} component="li" disableGutters>
-                      <ListItemText primary={category.label} />
-                    </ListItem>
-                  ))}
-                </List>
-              )}
-            </Box>
           )}
           <Alert severity="warning" sx={{ mb: 2 }}>
             This will remove all student and instructor associations for this group. Categories that

@@ -130,6 +130,7 @@ function renderModal(props: Partial<React.ComponentProps<typeof GroupManagementM
   const onAdd = props.onAdd ?? vi.fn()
   const onEdit = props.onEdit ?? vi.fn()
   const onDelete = props.onDelete ?? vi.fn()
+  const onCategoryNavigate = props.onCategoryNavigate ?? vi.fn()
   const canManage = props.canManage ?? (() => true)
   const onGroupUpdated = props.onGroupUpdated ?? vi.fn()
   const result = render(
@@ -140,11 +141,21 @@ function renderModal(props: Partial<React.ComponentProps<typeof GroupManagementM
       onAdd={onAdd}
       onEdit={onEdit}
       onDelete={onDelete}
+      onCategoryNavigate={onCategoryNavigate}
       canManage={canManage}
       onGroupUpdated={onGroupUpdated}
     />,
   )
-  return { ...result, onClose, onAdd, onEdit, onDelete, canManage, onGroupUpdated }
+  return {
+    ...result,
+    onClose,
+    onAdd,
+    onEdit,
+    onDelete,
+    onCategoryNavigate,
+    canManage,
+    onGroupUpdated,
+  }
 }
 
 describe('GroupManagementModal', () => {
@@ -301,6 +312,7 @@ describe('GroupManagementModal', () => {
 
   it('shows attached categories when delete is blocked by category restrictions', async () => {
     const user = userEvent.setup()
+    const onCategoryNavigate = vi.fn()
     const onDelete = vi.fn().mockRejectedValue(
       new ApiError(409, 'Group is attached to one or more categories', {
         message: 'Group is attached to one or more categories',
@@ -311,7 +323,7 @@ describe('GroupManagementModal', () => {
         ],
       }),
     )
-    renderModal({ onDelete })
+    renderModal({ onDelete, onCategoryNavigate })
 
     fireEvent.click(screen.getByLabelText('group actions for Cohort A'))
     fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
@@ -321,15 +333,20 @@ describe('GroupManagementModal', () => {
       await screen.findByText('Group is attached to one or more categories'),
     ).toBeInTheDocument()
     const toggle = screen.getByRole('button', {
-      name: 'What categories are restricted by this group?',
+      name: 'What categories?',
     })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
 
     await user.click(toggle)
 
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
-    expect(await screen.findByText('Italian')).toBeInTheDocument()
-    expect(screen.getByText('Gothic')).toBeInTheDocument()
+    const italianLink = await screen.findByRole('button', { name: 'Italian' })
+    const gothicLink = screen.getByRole('button', { name: 'Gothic' })
+    expect(italianLink).toBeInTheDocument()
+    expect(gothicLink).toBeInTheDocument()
+
+    await user.click(italianLink)
+    expect(onCategoryNavigate).toHaveBeenCalledWith(1)
   })
 
   it('adds selected available students and propagates the updated group', async () => {
