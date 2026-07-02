@@ -978,7 +978,9 @@ export function fetchBulkImportJob(jobId: number): Promise<ApiBulkImportJob> {
 // ── Issues ──────────────────────────────────────────────
 
 export interface ReportIssueResponse {
-  issue_url: string
+  destination: string
+  tracking_url: string | null
+  issue_url: string | null
 }
 
 export function reportIssue(body: {

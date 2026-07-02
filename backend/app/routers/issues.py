@@ -1,6 +1,5 @@
-"""Router for reporting issues to GitHub."""
+"""Router for submitting in-app feedback."""
 
-import os
 import re
 import time
 import unicodedata
@@ -8,29 +7,20 @@ from collections import defaultdict
 from typing import Annotated
 from urllib.parse import urlparse, urlencode, parse_qs
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
 from ..auth import get_current_user
 from ..database import Settings
+from ..feedback import (
+    FeedbackDeliveryError,
+    FeedbackNotConfiguredError,
+    FeedbackSubmission,
+    get_feedback_delivery,
+)
 from ..models import User
 
 router = APIRouter(tags=["issues"])
-
-GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
-
-
-def _normalize_repo(raw: str) -> str:
-    """Normalize a full GitHub URL to ``owner/repo`` format."""
-    return (
-        raw.removeprefix("https://github.com/")
-        .removeprefix("http://github.com/")
-        .strip("/")
-    )
-
-
-GITHUB_REPO = _normalize_repo(os.environ.get("GITHUB_REPO", ""))
 
 # Per-user rate limiting: max 2 issues per 24-hour window
 _RATE_LIMIT = 2
@@ -169,7 +159,9 @@ class ReportIssueRequest(BaseModel):
 
 
 class ReportIssueResponse(BaseModel):
-    issue_url: str
+    destination: str
+    tracking_url: str | None = None
+    issue_url: str | None = None
 
 
 @router.post(
@@ -181,65 +173,44 @@ async def report_issue(
     body: ReportIssueRequest,
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> ReportIssueResponse:
-    """Create a GitHub issue from a user-submitted report."""
-    if not GITHUB_TOKEN or not GITHUB_REPO:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Issue reporting is not configured",
-        )
-
+    """Submit sanitized feedback through the configured delivery provider."""
     _check_rate_limit(current_user.id)
 
-    # Sanitize inputs before sending to GitHub
+    # Sanitize inputs before sending them to the configured delivery provider.
     page_url = _validate_page_url(body.page_url)
     description = _validate_shape(body.description)
     description = _scrub(description)
     description = _neutralize_markdown(description)
 
-    title = f"feedback: Issue report from {current_user.role}"
-    issue_body = (
-        f"{description}\n\n"
-        f"---\n\n"
-        f"**Reported by:** {current_user.role} (user {_ZWS}#{current_user.id})\n"
-        f"**Page:** {page_url}"
+    try:
+        delivery = get_feedback_delivery()
+    except FeedbackNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    submission = FeedbackSubmission(
+        description=description,
+        page_url=page_url,
+        user_id=current_user.id,
+        user_role=current_user.role,
     )
 
-    gh_headers = {
-        "Authorization": f"Bearer {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
-
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"https://api.github.com/repos/{GITHUB_REPO}/issues",
-            headers=gh_headers,
-            json={"title": title, "body": issue_body},
-            timeout=15.0,
-        )
-
-        if resp.status_code != 201:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"GitHub API error: {resp.status_code}",
-            )
-
-        data = resp.json()
-        issue_number = data["number"]
-
-        # Best-effort label application — don't fail the request if the
-        # label doesn't exist or the token lacks permission.
-        try:
-            await client.post(
-                f"https://api.github.com/repos/{GITHUB_REPO}/issues/{issue_number}/labels",
-                headers=gh_headers,
-                json={"labels": ["feedback"]},
-                timeout=10.0,
-            )
-        except Exception:
-            pass
+    try:
+        result = await delivery.submit(submission)
+    except FeedbackDeliveryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        ) from exc
 
     # Record successful submission for rate limiting
     _user_timestamps[current_user.id].append(time.monotonic())
 
-    return ReportIssueResponse(issue_url=data["html_url"])
+    tracking_url = result.tracking_url
+    return ReportIssueResponse(
+        destination=result.destination,
+        tracking_url=tracking_url,
+        issue_url=tracking_url if result.destination == "github" else None,
+    )

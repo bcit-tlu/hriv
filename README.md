@@ -106,6 +106,7 @@ reconciliation model for both environments.
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- |
 | [docs/groups.md](docs/groups.md)                                                     | Groups model, authorization, API surface, and frontend behaviour                |
 | [docs/changelog-notifications.md](docs/changelog-notifications.md)                   | Notification bell, What's New feed, changelog CRUD, and unread-state rules      |
+| [docs/feedback-subsystem.md](docs/feedback-subsystem.md)                             | In-app feedback routing, provider contract, and environment policy              |
 | [docs/category-visibility-and-programs.md](docs/category-visibility-and-programs.md) | Dual-gate student visibility (programs AND groups), cascade rules, tree loading |
 | [docs/domain-model.md](docs/domain-model.md)                                         | Data model reference (entities, junctions, conventions)                         |
 | [docs/admin-import-export.md](docs/admin-import-export.md)                           | Admin import/export task lifecycle and data round-trip                          |

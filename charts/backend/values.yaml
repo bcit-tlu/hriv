@@ -196,22 +196,39 @@ redis:
       targetCPUUtilizationPercentage: 70
       targetMemoryUtilizationPercentage: 80
 
-# ── GitHub integration (issue reporting) ─────────────────────
-# The backend creates GitHub Issues on behalf of end-users via
-# POST /api/issues/report. It needs a GitHub PAT with Issues
-# read/write scope on the target repository.
+# ── Feedback delivery ────────────────────────────────────────
+# The backend accepts in-app feedback submissions via
+# POST /api/issues/report, then routes them through a provider.
 #
-# When github-issue.enabled=false:
-#   - No GITHUB_* env vars are injected
-#   - No GitHub Secret is referenced
+# Supported providers today:
+#   - "" / disabled
+#   - github
 #
-# When github-issue.enabled=true:
-#   - github-issue.repository is required (e.g. "owner/repo")
-#   - github-issue.token.existingSecret is required and must contain key `token`
+# Providers planned in follow-up work:
+#   - teams
+#   - servicenow
+#
+# To enable GitHub delivery with the new generic config:
+#   feedback:
+#     provider: github
+#     github:
+#       repository: bcit-tlu/hriv
+#       token:
+#         existingSecret: github-report-issue-token
 #
 # To supply a PAT:
 #   kubectl create secret generic github-report-issue-token \
 #     --from-literal=token=ghp_YOUR_SCOPED_PAT -n <namespace>
+feedback:
+  provider: ''
+  github:
+    repository: ''
+    token:
+      existingSecret: ''
+
+# Deprecated legacy GitHub-only config kept for upgrade compatibility.
+# If feedback.provider is empty and github-issue.enabled=true, the chart
+# still configures GitHub feedback delivery from these values.
 github-issue:
   enabled: false
   repository: ''

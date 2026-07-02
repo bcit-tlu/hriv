@@ -965,11 +965,19 @@ describe('Issue API', () => {
   afterEach(() => setToken(null))
 
   it('reportIssue sends POST', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse({ issue_url: 'https://github.com/...' }))
+    mockFetch.mockReturnValueOnce(
+      jsonResponse({
+        destination: 'github',
+        tracking_url: 'https://github.com/...',
+        issue_url: 'https://github.com/...',
+      }),
+    )
     const result = await reportIssue({ description: 'Bug', page_url: 'http://localhost' })
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/issues/report')
     expect(init.method).toBe('POST')
+    expect(result.destination).toBe('github')
+    expect(result.tracking_url).toBe('https://github.com/...')
     expect(result.issue_url).toBe('https://github.com/...')
   })
 })
