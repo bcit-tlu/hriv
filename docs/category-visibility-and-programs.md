@@ -142,6 +142,13 @@ ancestor render using the same visual treatment at **0.6 opacity**. This is
 used in breadcrumb chips, browse tile chips, ManagePage restriction chips,
 inherited-only category dialog chips, and category restriction lock icons.
 
+In the Add/Edit category dialogs, program chips also respect the current
+instructor's membership: chips outside the instructor's programs are disabled,
+while inherited or already-selected/current program chips stay enabled so they
+can still be removed. When the backend rejects an invalid program (or group)
+attach, the error names the program/group instead of only showing its numeric
+ID.
+
 See also: [Groups](groups.md), [Domain model](domain-model.md),
 [`docs/TESTING.md`](TESTING.md), and the
 [agent feature map](agent-feature-map.md).

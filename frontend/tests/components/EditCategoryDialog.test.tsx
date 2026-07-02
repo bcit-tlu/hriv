@@ -1,30 +1,51 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { AuthContext } from '../../src/authContextValue'
+import type { AuthContextValue } from '../../src/authContextValue'
 import EditCategoryDialog from '../../src/components/EditCategoryDialog'
 import { ApiError } from '../../src/api'
+
+function renderDialog(
+  props: Partial<Parameters<typeof EditCategoryDialog>[0]> = {},
+  authValue: AuthContextValue | null = null,
+) {
+  const dialog = (
+    <EditCategoryDialog
+      open
+      onClose={props.onClose ?? vi.fn()}
+      onSave={props.onSave ?? vi.fn()}
+      currentLabel={props.currentLabel ?? 'Architecture'}
+      siblingNames={props.siblingNames}
+      programs={props.programs}
+      currentProgramIds={props.currentProgramIds}
+      inheritedProgramIds={props.inheritedProgramIds}
+      groups={props.groups}
+      currentGroupIds={props.currentGroupIds}
+      inheritedGroupIds={props.inheritedGroupIds}
+      categoryStatus={props.categoryStatus}
+      ancestorHidden={props.ancestorHidden}
+      categoryId={props.categoryId}
+    />
+  )
+  return render(
+    authValue ? <AuthContext.Provider value={authValue}>{dialog}</AuthContext.Provider> : dialog,
+  )
+}
 
 describe('EditCategoryDialog', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('renders title and pre-filled label', () => {
-    render(
-      <EditCategoryDialog open onClose={vi.fn()} onSave={vi.fn()} currentLabel="Architecture" />,
-    )
+    renderDialog()
     expect(screen.getByText('Edit Category')).toBeInTheDocument()
     expect(screen.getByDisplayValue('Architecture')).toBeInTheDocument()
   })
 
   it('uses program-focused wording for access restrictions', () => {
-    render(
-      <EditCategoryDialog
-        open
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        currentLabel="Architecture"
-        programs={[{ id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' }]}
-      />,
-    )
+    renderDialog({
+      programs: [{ id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' }],
+    })
 
     expect(screen.getByText('Restrict access by program')).toBeInTheDocument()
     expect(screen.getByLabelText('All programs')).toBeInTheDocument()
@@ -32,17 +53,13 @@ describe('EditCategoryDialog', () => {
   })
 
   it('Save button is disabled when label is unchanged', () => {
-    render(
-      <EditCategoryDialog open onClose={vi.fn()} onSave={vi.fn()} currentLabel="Architecture" />,
-    )
+    renderDialog()
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
   })
 
   it('Save button is disabled when label is empty', async () => {
     const user = userEvent.setup()
-    render(
-      <EditCategoryDialog open onClose={vi.fn()} onSave={vi.fn()} currentLabel="Architecture" />,
-    )
+    renderDialog()
     const input = screen.getByDisplayValue('Architecture')
     await user.clear(input)
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
@@ -53,9 +70,7 @@ describe('EditCategoryDialog', () => {
     const onSave = vi.fn().mockResolvedValue(undefined)
     const onClose = vi.fn()
 
-    render(
-      <EditCategoryDialog open onClose={onClose} onSave={onSave} currentLabel="Architecture" />,
-    )
+    renderDialog({ onClose, onSave })
 
     const input = screen.getByDisplayValue('Architecture')
     await user.clear(input)
@@ -72,19 +87,14 @@ describe('EditCategoryDialog', () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockResolvedValue(undefined)
 
-    render(
-      <EditCategoryDialog
-        open
-        onClose={vi.fn()}
-        onSave={onSave}
-        currentLabel="Architecture"
-        programs={[
-          { id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' },
-          { id: 2, name: 'Design', oidc_group: null, created_at: '', updated_at: '' },
-        ]}
-        currentProgramIds={[2]}
-      />,
-    )
+    renderDialog({
+      onSave,
+      programs: [
+        { id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' },
+        { id: 2, name: 'Design', oidc_group: null, created_at: '', updated_at: '' },
+      ],
+      currentProgramIds: [2],
+    })
 
     const input = screen.getByDisplayValue('Architecture')
     await user.clear(input)
@@ -100,9 +110,7 @@ describe('EditCategoryDialog', () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockRejectedValue(new ApiError(409, 'Conflict'))
 
-    render(
-      <EditCategoryDialog open onClose={vi.fn()} onSave={onSave} currentLabel="Architecture" />,
-    )
+    renderDialog({ onSave })
 
     const input = screen.getByDisplayValue('Architecture')
     await user.clear(input)
@@ -120,9 +128,7 @@ describe('EditCategoryDialog', () => {
     const user = userEvent.setup()
     const onSave = vi.fn().mockRejectedValue(new Error('Server error'))
 
-    render(
-      <EditCategoryDialog open onClose={vi.fn()} onSave={onSave} currentLabel="Architecture" />,
-    )
+    renderDialog({ onSave })
 
     const input = screen.getByDisplayValue('Architecture')
     await user.clear(input)
@@ -136,15 +142,7 @@ describe('EditCategoryDialog', () => {
 
   it('shows helper text when an exact sibling match is typed', async () => {
     const user = userEvent.setup()
-    render(
-      <EditCategoryDialog
-        open
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        currentLabel="Architecture"
-        siblingNames={['Architecture', 'Panoramas', 'Histology']}
-      />,
-    )
+    renderDialog({ siblingNames: ['Architecture', 'Panoramas', 'Histology'] })
 
     const input = screen.getByDisplayValue('Architecture')
     await user.clear(input)
@@ -157,15 +155,7 @@ describe('EditCategoryDialog', () => {
 
   it('does not show helper text when typing own name', async () => {
     const user = userEvent.setup()
-    render(
-      <EditCategoryDialog
-        open
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        currentLabel="Architecture"
-        siblingNames={['Architecture', 'Panoramas']}
-      />,
-    )
+    renderDialog({ siblingNames: ['Architecture', 'Panoramas'] })
 
     const input = screen.getByDisplayValue('Architecture')
     await user.clear(input)
@@ -176,19 +166,13 @@ describe('EditCategoryDialog', () => {
 
   it('Save button disabled when label cleared but programs changed', async () => {
     const user = userEvent.setup()
-    render(
-      <EditCategoryDialog
-        open
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        currentLabel="Architecture"
-        programs={[
-          { id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' },
-          { id: 2, name: 'Design', oidc_group: null, created_at: '', updated_at: '' },
-        ]}
-        currentProgramIds={[2]}
-      />,
-    )
+    renderDialog({
+      programs: [
+        { id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' },
+        { id: 2, name: 'Design', oidc_group: null, created_at: '', updated_at: '' },
+      ],
+      currentProgramIds: [2],
+    })
 
     const input = screen.getByDisplayValue('Architecture')
     await user.clear(input)
@@ -200,19 +184,13 @@ describe('EditCategoryDialog', () => {
 
   it('Save button disabled when specific programs selected but none chosen', async () => {
     const user = userEvent.setup()
-    render(
-      <EditCategoryDialog
-        open
-        onClose={vi.fn()}
-        onSave={vi.fn()}
-        currentLabel="Architecture"
-        programs={[
-          { id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' },
-          { id: 2, name: 'Design', oidc_group: null, created_at: '', updated_at: '' },
-        ]}
-        currentProgramIds={[2]}
-      />,
-    )
+    renderDialog({
+      programs: [
+        { id: 1, name: 'Admin', oidc_group: null, created_at: '', updated_at: '' },
+        { id: 2, name: 'Design', oidc_group: null, created_at: '', updated_at: '' },
+      ],
+      currentProgramIds: [2],
+    })
 
     // Deselect "Design" so no programs are selected under "Specific programs"
     await user.click(screen.getByText('Design'))
@@ -229,17 +207,12 @@ describe('EditCategoryDialog', () => {
     ]
 
     it('disables programs not in the inherited set', () => {
-      render(
-        <EditCategoryDialog
-          open
-          onClose={vi.fn()}
-          onSave={vi.fn()}
-          currentLabel="Child"
-          programs={allPrograms}
-          currentProgramIds={[]}
-          inheritedProgramIds={[1, 2]}
-        />,
-      )
+      renderDialog({
+        currentLabel: 'Child',
+        programs: allPrograms,
+        currentProgramIds: [],
+        inheritedProgramIds: [1, 2],
+      })
       // "Specific programs" is auto-selected when inheritedProgramIds exist
 
       const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
@@ -252,17 +225,12 @@ describe('EditCategoryDialog', () => {
     })
 
     it('filters out invalid selections on dialog open', () => {
-      render(
-        <EditCategoryDialog
-          open
-          onClose={vi.fn()}
-          onSave={vi.fn()}
-          currentLabel="Child"
-          programs={allPrograms}
-          currentProgramIds={[1, 3]}
-          inheritedProgramIds={[1, 2]}
-        />,
-      )
+      renderDialog({
+        currentLabel: 'Child',
+        programs: allPrograms,
+        currentProgramIds: [1, 3],
+        inheritedProgramIds: [1, 2],
+      })
       // "Specific programs" should be pre-selected since currentProgramIds is non-empty
       const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
       const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
@@ -276,17 +244,12 @@ describe('EditCategoryDialog', () => {
 
     it('allows toggling programs within the inherited set', async () => {
       const user = userEvent.setup()
-      render(
-        <EditCategoryDialog
-          open
-          onClose={vi.fn()}
-          onSave={vi.fn()}
-          currentLabel="Child"
-          programs={allPrograms}
-          currentProgramIds={[1]}
-          inheritedProgramIds={[1, 2]}
-        />,
-      )
+      renderDialog({
+        currentLabel: 'Child',
+        programs: allPrograms,
+        currentProgramIds: [1],
+        inheritedProgramIds: [1, 2],
+      })
 
       const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
       await user.click(chipB)
@@ -342,6 +305,54 @@ describe('EditCategoryDialog', () => {
         // Should save [1] only — Program C (id=3) was filtered out on open
         expect(onSave).toHaveBeenCalledWith('Updated Child', [1], undefined, undefined)
       })
+    })
+
+    it('disables only non-member programs and keeps current programs removable', () => {
+      const authValue = {
+        currentUser: {
+          id: 7,
+          name: 'Instructor',
+          email: 'inst@example.com',
+          role: 'instructor',
+          program_ids: [1],
+          program_names: ['Program A'],
+          group_ids: [],
+          group_names: [],
+        },
+        users: [],
+        loading: false,
+        login: vi.fn(),
+        logout: vi.fn(),
+        addUser: vi.fn(),
+        deleteUser: vi.fn(),
+        refreshUsers: vi.fn(),
+        canManageUsers: false,
+        canEditContent: true,
+        oidcError: null,
+        clearOidcError: vi.fn(),
+      } as unknown as AuthContextValue
+
+      renderDialog(
+        {
+          currentLabel: 'Child',
+          programs: allPrograms,
+          // Instructor is a member of Program A only, but Program B is already
+          // attached (current) — it must stay enabled so it can be removed.
+          currentProgramIds: [2],
+        },
+        authValue,
+      )
+
+      const chipA = screen.getByText('Program A').closest('.MuiChip-root')!
+      const chipB = screen.getByText('Program B').closest('.MuiChip-root')!
+      const chipC = screen.getByText('Program C').closest('.MuiChip-root')!
+
+      expect(chipA).not.toHaveClass('Mui-disabled')
+      expect(chipB).not.toHaveClass('Mui-disabled')
+      expect(chipC).toHaveClass('Mui-disabled')
+      expect(
+        screen.getByText('You can only restrict to programs you belong to.'),
+      ).toBeInTheDocument()
     })
 
     it('shows all programs as enabled when no inherited restrictions exist', () => {

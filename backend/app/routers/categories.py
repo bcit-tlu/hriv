@@ -47,6 +47,7 @@ async def _resolve_programs(
         select(Program).where(Program.id.in_(program_ids))
     )).scalars().all()
     found_ids = {p.id for p in progs}
+    name_by_id = {p.id: p.name for p in progs}
     missing = set(program_ids) - found_ids
     if missing:
         raise HTTPException(422, f"Invalid program IDs: {sorted(missing)}")
@@ -54,7 +55,7 @@ async def _resolve_programs(
         if not can_attach_program_to_category(user, pid):
             raise HTTPException(
                 403,
-                f"You may only attach programs you belong to (program {pid})",
+                f"You may only attach programs you belong to ({name_by_id[pid]})",
             )
     return list(progs)
 
@@ -84,7 +85,7 @@ async def _resolve_groups(
         ):
             raise HTTPException(
                 403,
-                f"You may only attach groups you manage (group {gid})",
+                f"You may only attach groups you manage ({by_id[gid].name})",
             )
     return list(grps)
 

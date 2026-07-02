@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
+import { useContext, useState, useEffect, useRef, useMemo } from 'react'
 import Alert from '@mui/material/Alert'
 import Autocomplete, { createFilterOptions } from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
@@ -16,7 +16,9 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
+import { AuthContext } from '../authContextValue'
 import type { Group, Program } from '../types'
+import { getAttachableProgramIds } from '../programAttach'
 import { getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
@@ -76,6 +78,8 @@ export default function EditCategoryDialog({
   const [groupVisibility, setGroupVisibility] = useState<'all' | 'specific'>('all')
   const [selectedGroupIds, setSelectedGroupIds] = useState<Set<number>>(new Set())
   const [statusHidden, setStatusHidden] = useState(false)
+  const auth = useContext(AuthContext)
+  const restrictProgramIds = getAttachableProgramIds(auth?.currentUser ?? null)
 
   // Populate state from props when dialog opens (false → true transition only)
   const prevOpen = useRef(false)
@@ -190,6 +194,16 @@ export default function EditCategoryDialog({
 
   const programRestricted = visibility === 'specific' && selectedProgramIds.size > 0
   const groupRestricted = groupVisibility === 'specific' && selectedGroupIds.size > 0
+  // Only surface the membership caption when a chip is disabled *specifically*
+  // because of membership — not because of the ancestor narrowing rule
+  // (non-inherited chips) or because it is already-attached/removable.
+  const membershipRestrictedProgram = useMemo(
+    () =>
+      inheritedProgramIds.length === 0 &&
+      restrictProgramIds != null &&
+      programs.some((p) => !restrictProgramIds.includes(p.id) && !currentProgramIds.includes(p.id)),
+    [currentProgramIds, inheritedProgramIds, programs, restrictProgramIds],
+  )
 
   const handleSubmit = async () => {
     const trimmed = label.trim()
@@ -336,30 +350,43 @@ export default function EditCategoryDialog({
               />
             </RadioGroup>
             {visibility === 'specific' && (
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
-                {programs.map((p) => {
-                  const disabled =
-                    inheritedProgramIds.length > 0 && !inheritedProgramIds.includes(p.id)
-                  const isInheritedOnly =
-                    inheritedProgramIds.includes(p.id) && !selectedProgramIds.has(p.id)
-                  return (
-                    <Chip
-                      key={p.id}
-                      label={p.name}
-                      size="small"
-                      color={
-                        selectedProgramIds.has(p.id) || isInheritedOnly ? 'primary' : 'default'
-                      }
-                      variant={
-                        selectedProgramIds.has(p.id) || isInheritedOnly ? 'filled' : 'outlined'
-                      }
-                      onClick={disabled ? undefined : () => toggleProgram(p.id)}
-                      disabled={disabled}
-                      sx={getInheritedRestrictionSx(isInheritedOnly)}
-                    />
-                  )
-                })}
-              </Box>
+              <>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
+                  {programs.map((p) => {
+                    const inheritedDisabled =
+                      inheritedProgramIds.length > 0 && !inheritedProgramIds.includes(p.id)
+                    const disabled =
+                      inheritedDisabled ||
+                      (restrictProgramIds != null &&
+                        !restrictProgramIds.includes(p.id) &&
+                        !inheritedProgramIds.includes(p.id) &&
+                        !currentProgramIds.includes(p.id))
+                    const isInheritedOnly =
+                      inheritedProgramIds.includes(p.id) && !selectedProgramIds.has(p.id)
+                    return (
+                      <Chip
+                        key={p.id}
+                        label={p.name}
+                        size="small"
+                        color={
+                          selectedProgramIds.has(p.id) || isInheritedOnly ? 'primary' : 'default'
+                        }
+                        variant={
+                          selectedProgramIds.has(p.id) || isInheritedOnly ? 'filled' : 'outlined'
+                        }
+                        onClick={disabled ? undefined : () => toggleProgram(p.id)}
+                        disabled={disabled}
+                        sx={getInheritedRestrictionSx(isInheritedOnly)}
+                      />
+                    )
+                  })}
+                </Box>
+                {membershipRestrictedProgram && (
+                  <Typography variant="caption" color="text.secondary">
+                    You can only restrict to programs you belong to.
+                  </Typography>
+                )}
+              </>
             )}
           </Box>
         )}
