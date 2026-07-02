@@ -1258,7 +1258,6 @@ export default function ManagePage({
                               if (onSearchProgram) {
                                 onSearchProgram(name)
                               } else {
-                                setShowFilters(true)
                                 handleFilterChange('program', name)
                               }
                             }
@@ -1320,7 +1319,6 @@ export default function ManagePage({
                             const { direct, ancestor } = getInheritedGroupIds(img)
                             if (direct.length === 0 && ancestor.length === 0) return 'All groups'
                             const chipClick = (name: string) => {
-                              setShowFilters(true)
                               handleFilterChange('group', name)
                             }
                             return (
