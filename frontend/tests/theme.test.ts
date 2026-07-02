@@ -1,9 +1,14 @@
 /**
- * Unit tests for theme.ts – buildTheme(), getVisibilityColors(), and getGroupChipColors().
+ * Unit tests for theme.ts – buildTheme() and getSurfaceVariant().
  */
 
 import { describe, it, expect } from 'vitest'
-import { buildTheme, getGroupChipColors, getVisibilityColors } from '../src/theme'
+import {
+  buildTheme,
+  getGroupChipColors,
+  getSurfaceVariant,
+  getVisibilityColors,
+} from '../src/theme'
 
 describe('buildTheme', () => {
   it("returns a theme with palette.mode === 'light' for light mode", () => {
@@ -39,6 +44,16 @@ describe('buildTheme', () => {
   it('includes typography with Roboto font family', () => {
     const theme = buildTheme('light')
     expect(theme.typography.fontFamily).toContain('Roboto')
+  })
+})
+
+describe('getSurfaceVariant', () => {
+  it('returns #DAC7B5 for light mode', () => {
+    expect(getSurfaceVariant('light')).toBe('#DAC7B5')
+  })
+
+  it('returns #3A3230 for dark mode', () => {
+    expect(getSurfaceVariant('dark')).toBe('#3A3230')
   })
 })
 

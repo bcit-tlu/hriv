@@ -25,6 +25,8 @@ const lightPalette = {
     primary: '#3E3C3A',
     secondary: '#6B6966',
   },
+  /** Custom surface used for the People / Admin pages. */
+  surfaceVariant: '#DAC7B5',
   /**
    * Groups use the secondary palette as their brand colour. The subtle
    * variant is a low-alpha fill with dark text so inherited/read-only states
@@ -63,6 +65,8 @@ const darkPalette = {
     primary: '#E0DDD9',
     secondary: '#A8A5A1',
   },
+  /** Custom surface used for the People / Admin pages. */
+  surfaceVariant: '#3A3230',
   /**
    * Groups use the secondary palette as their brand colour in dark mode too.
    * The subtle variant keeps light text over a low-alpha fill so it remains
@@ -110,6 +114,14 @@ export function buildTheme(mode: 'light' | 'dark') {
     },
     typography: sharedTypography,
   })
+}
+
+/**
+ * Retrieve the custom surfaceVariant colour for the current mode.
+ * Use this for the People / Admin page backgrounds instead of a hard-coded hex.
+ */
+export function getSurfaceVariant(mode: 'light' | 'dark'): string {
+  return mode === 'dark' ? darkPalette.surfaceVariant : lightPalette.surfaceVariant
 }
 
 /**
