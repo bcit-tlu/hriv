@@ -183,6 +183,7 @@ describe('GroupManagementModal', () => {
     expect(screen.getByRole('button', { name: /create group/i })).toBeInTheDocument()
     expect(screen.getAllByText('Cohort A').length).toBeGreaterThan(0)
     expect(screen.getByText('Cohort B')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Filter by' })).toBeInTheDocument()
     expect(await screen.findByText('CURRENT MEMBERS')).toBeInTheDocument()
     expect(screen.getByText('AVAILABLE STUDENTS')).toBeInTheDocument()
     expect(mockFetchUsersPaged).toHaveBeenCalledWith(

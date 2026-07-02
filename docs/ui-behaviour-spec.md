@@ -220,10 +220,21 @@ committed on Save) in the edit modals.
   non-interactive `<span role="img" aria-label="…">` **without** `tabIndex`
   (query via `getByLabelText`, not `getByTitle`).
 
+### People page filtering (`PeoplePage.tsx`)
+
+- The People page now exposes a persistent **Filter by** bar above the table
+  instead of hiding filters behind a toggle button.
+- The filter bar shows only controls for currently visible filterable columns
+  (for example, hiding the `Groups` column also removes the `Groups` filter
+  controls). Hiding a filtered column clears that column's active filter state.
+
 ### Manage page filtering & auto-refresh (`ManagePage.tsx`)
 
 - The Images/Manage page (`ManagePage.tsx`) shows a paginated image table with a
-  toggleable filter row (category, program, status, etc.). Images with no
+  persistent **Filter by** bar above the table (category, program, visibility,
+  etc.) instead of a toggleable filter row. The filter bar only includes
+  controls for visible filterable columns, so the column chooser and filter bar
+  stay in sync. Images with no
   category (`category_id == null`) render as uncategorised (`—`) and can be
   assigned a category via the row's move action.
 - **Auto-refresh:** `ManagePage` reloads (`loadImages`) whenever the

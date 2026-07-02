@@ -93,7 +93,8 @@ All seed users share the password `password`.
 1. Login as `admin@example.ca` / `password`.
 2. Open the `Images` tab.
 3. Open the column chooser and enable the `Program` column.
-4. **Assert:** The Images table now shows the `Program` column.
+4. **Assert:** The Images table now shows the `Program` column, and the
+   persistent `Filter by` bar now includes a `Program` filter control.
 5. Click Logout.
 6. Login again as `admin@example.ca` / `password`.
 7. Open the `Images` tab.
