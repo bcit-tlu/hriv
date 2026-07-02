@@ -43,10 +43,27 @@ def _validate_locked_overlays(meta: dict | None) -> dict | None:
     return meta
 
 
+def normalize_nonblank_value(v: str | None) -> str | None:
+    if isinstance(v, str):
+        v = v.strip()
+        if not v:
+            raise ValueError("must not be blank")
+        return v
+    return v
+
+
+def normalize_optional_nonblank_value(v: str | None) -> str | None:
+    if v is None:
+        return v
+    return normalize_nonblank_value(v)
+
+
 # ── Program ──────────────────────────────────────────────
 
 class ProgramBase(BaseModel):
     name: str
+
+    _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
 
 
 def _normalize_oidc_group(v: str | None) -> str | None:
@@ -76,6 +93,7 @@ class ProgramUpdate(BaseModel):
     name: str | None = None
     oidc_group: str | None = None
 
+    _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
     _norm_oidc = field_validator("oidc_group", mode="before")(_normalize_oidc_group)
 
 
@@ -94,6 +112,8 @@ class GroupBase(BaseModel):
     name: str
     description: str | None = None
 
+    _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
+
 
 class GroupCreate(GroupBase):
     pass
@@ -102,6 +122,8 @@ class GroupCreate(GroupBase):
 class GroupUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
+
+    _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
 
 
 class GroupMemberOut(BaseModel):
@@ -130,16 +152,14 @@ class GroupOut(GroupBase):
     def extract_member_ids(cls, data: object) -> object:
         """Flatten the members/instructors relationships into id lists."""
         if hasattr(data, "members"):
-            return dict(
-                id=data.id,
-                name=data.name,
-                description=data.description,
-                created_by_user_id=data.created_by_user_id,
-                member_ids=[m.id for m in data.members],
-                instructor_ids=[i.id for i in data.instructors],
-                created_at=data.created_at,
-                updated_at=data.updated_at,
-            )
+            result = {
+                name: getattr(data, name)
+                for name in cls.model_fields
+                if hasattr(data, name)
+            }
+            result["member_ids"] = [m.id for m in data.members]
+            result["instructor_ids"] = [i.id for i in data.instructors]
+            return result
         return data
 
 
@@ -165,6 +185,8 @@ class AnnouncementUpdate(BaseModel):
     message: str | None = None
     enabled: bool | None = None
 
+    _validate_message = field_validator("message", mode="before")(normalize_optional_nonblank_value)
+
 
 # ── Changelog ────────────────────────────────────────────
 
@@ -183,10 +205,16 @@ class ChangelogEntryCreate(BaseModel):
     title: str
     body: str
 
+    _validate_title = field_validator("title", mode="before")(normalize_nonblank_value)
+    _validate_body = field_validator("body", mode="before")(normalize_nonblank_value)
+
 
 class ChangelogEntryUpdate(BaseModel):
     title: str | None = None
     body: str | None = None
+
+    _validate_title = field_validator("title", mode="before")(normalize_optional_nonblank_value)
+    _validate_body = field_validator("body", mode="before")(normalize_optional_nonblank_value)
 
 
 class ChangelogMarkReadResponse(BaseModel):
@@ -216,6 +244,8 @@ class CategoryBase(BaseModel):
     sort_order: int = 0
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
 
+    _validate_label = field_validator("label", mode="before")(normalize_nonblank_value)
+
 
 class CategoryCreate(CategoryBase):
     pass
@@ -229,6 +259,8 @@ class CategoryUpdate(BaseModel):
     status: str | None = None
     sort_order: int | None = None
     metadata_extra: dict | None = None
+
+    _validate_label = field_validator("label", mode="before")(normalize_optional_nonblank_value)
 
 
 class CategoryReorderItem(BaseModel):
@@ -255,22 +287,16 @@ class CategoryOut(CategoryBase):
     def extract_program_ids(cls, data: object) -> object:
         """Convert the 'programs'/'groups' relationships into id lists."""
         if hasattr(data, "programs"):
-            program_ids = [p.id for p in data.programs]
-            group_ids = [g.id for g in data.groups]
-            return dict(
-                label=data.label,
-                parent_id=data.parent_id,
-                program_ids=program_ids,
-                group_ids=group_ids,
-                status=data.status,
-                sort_order=data.sort_order,
-                metadata_=data.metadata_,
-                id=data.id,
-                version=data.version,
-                created_at=data.created_at,
-                updated_at=data.updated_at,
-                warnings=getattr(data, "_category_warnings", []),
-            )
+            result = {
+                name: getattr(data, name)
+                for name in cls.model_fields
+                if hasattr(data, name)
+            }
+            result["program_ids"] = [p.id for p in data.programs]
+            result["group_ids"] = [g.id for g in data.groups]
+            result["metadata_extra"] = data.metadata_
+            result["warnings"] = getattr(data, "_category_warnings", [])
+            return result
         return data
 
 
