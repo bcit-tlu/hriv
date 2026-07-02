@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import GroupManagementModal from '../../src/components/GroupManagementModal'
+import { ApiError } from '../../src/api'
 import type { ApiGroup, ApiProgram, ApiUser, UserListParams } from '../../src/api'
 import type { Group } from '../../src/types'
 
@@ -13,14 +14,18 @@ const mockAddGroupInstructorsBulk = vi.fn()
 const mockRemoveGroupMember = vi.fn()
 const mockRemoveGroupInstructor = vi.fn()
 
-vi.mock('../../src/api', () => ({
-  fetchPrograms: () => mockFetchPrograms(),
-  fetchUsersPaged: (params: UserListParams) => mockFetchUsersPaged(params),
-  addGroupMembersBulk: (...args: unknown[]) => mockAddGroupMembersBulk(...args),
-  addGroupInstructorsBulk: (...args: unknown[]) => mockAddGroupInstructorsBulk(...args),
-  removeGroupMember: (...args: unknown[]) => mockRemoveGroupMember(...args),
-  removeGroupInstructor: (...args: unknown[]) => mockRemoveGroupInstructor(...args),
-}))
+vi.mock('../../src/api', async () => {
+  const actual = await vi.importActual<typeof import('../../src/api')>('../../src/api')
+  return {
+    ...actual,
+    fetchPrograms: () => mockFetchPrograms(),
+    fetchUsersPaged: (params: UserListParams) => mockFetchUsersPaged(params),
+    addGroupMembersBulk: (...args: unknown[]) => mockAddGroupMembersBulk(...args),
+    addGroupInstructorsBulk: (...args: unknown[]) => mockAddGroupInstructorsBulk(...args),
+    removeGroupMember: (...args: unknown[]) => mockRemoveGroupMember(...args),
+    removeGroupInstructor: (...args: unknown[]) => mockRemoveGroupInstructor(...args),
+  }
+})
 
 function makeGroup(overrides: Partial<Group> = {}): Group {
   return {
@@ -243,15 +248,29 @@ describe('GroupManagementModal', () => {
   })
 
   it('keeps failed group creation errors visible inside the create dialog', async () => {
-    const onAdd = vi.fn().mockRejectedValue(new Error('duplicate'))
+    const onAdd = vi.fn().mockRejectedValue(new ApiError(409, 'Group name already exists'))
     renderModal({ onAdd })
 
     fireEvent.click(screen.getByRole('button', { name: /create group/i }))
     fireEvent.change(screen.getByLabelText(/group name/i), { target: { value: 'Existing Group' } })
     fireEvent.click(screen.getByRole('button', { name: 'Create' }))
 
-    expect(await screen.findByText('Failed to create group.')).toBeInTheDocument()
+    expect(await screen.findByText('Group name already exists')).toBeInTheDocument()
     expect(screen.getByRole('dialog', { name: 'Create New Group' })).toBeInTheDocument()
+  })
+
+  it('surfaces backend detail when renaming a group fails', async () => {
+    const onEdit = vi.fn().mockRejectedValue(new ApiError(409, 'Group name already exists'))
+    renderModal({ onEdit })
+
+    fireEvent.click(screen.getByLabelText('group actions for Cohort A'))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }))
+    const input = screen.getByLabelText(/group name/i)
+    fireEvent.change(input, { target: { value: 'Cohort A2' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
+
+    expect(await screen.findByText('Group name already exists')).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Rename Group' })).toBeInTheDocument()
   })
 
   it('confirms group deletion from the group actions menu', async () => {
@@ -262,6 +281,22 @@ describe('GroupManagementModal', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
 
     expect(onDelete).toHaveBeenCalledWith(1)
+  })
+
+  it('surfaces backend detail when deleting a group fails', async () => {
+    const onDelete = vi
+      .fn()
+      .mockRejectedValue(new ApiError(409, 'Group is attached to one or more categories'))
+    renderModal({ onDelete })
+
+    fireEvent.click(screen.getByLabelText('group actions for Cohort A'))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Delete' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+
+    expect(
+      await screen.findByText('Group is attached to one or more categories'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('dialog', { name: 'Delete Group' })).toBeInTheDocument()
   })
 
   it('adds selected available students and propagates the updated group', async () => {

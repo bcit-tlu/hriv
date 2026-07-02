@@ -44,6 +44,7 @@ import {
   fetchUsersPaged,
   removeGroupInstructor,
   removeGroupMember,
+  userMessage,
 } from '../api'
 import type { ApiProgram, ApiUser } from '../api'
 import { apiGroupToGroup } from '../groupUtils'
@@ -302,9 +303,12 @@ export default function GroupManagementModal({
       setGroupDialogMode(null)
       setGroupNameDraft('')
       setGroupDescriptionDraft('')
-    } catch {
+    } catch (err) {
       setGroupActionError(
-        groupDialogMode === 'create' ? 'Failed to create group.' : 'Failed to rename group.',
+        userMessage(
+          err,
+          groupDialogMode === 'create' ? 'Failed to create group.' : 'Failed to rename group.',
+        ),
       )
     } finally {
       setGroupPending(false)
@@ -323,8 +327,8 @@ export default function GroupManagementModal({
       }
       setDeleteDialogOpen(false)
       setMenuGroupId(null)
-    } catch {
-      setGroupActionError('Failed to delete group. It may still be attached to categories.')
+    } catch (err) {
+      setGroupActionError(userMessage(err, 'Failed to delete group.'))
     } finally {
       setGroupPending(false)
     }
@@ -387,11 +391,14 @@ export default function GroupManagementModal({
           : await addGroupInstructorsBulk(selectedGroup.id, ids)
       updateGroupFromApi(apiGroupToGroup(updatedGroup))
       setSelectedUserIds(new Set())
-    } catch {
+    } catch (err) {
       setMemberError(
-        tab === 'students'
-          ? 'Failed to add the selected students to the group.'
-          : 'Failed to add the selected instructors to the group.',
+        userMessage(
+          err,
+          tab === 'students'
+            ? 'Failed to add the selected students to the group.'
+            : 'Failed to add the selected instructors to the group.',
+        ),
       )
     } finally {
       setBulkPending(false)
@@ -408,11 +415,14 @@ export default function GroupManagementModal({
           ? await removeGroupMember(selectedGroup.id, user.id)
           : await removeGroupInstructor(selectedGroup.id, user.id)
       updateGroupFromApi(apiGroupToGroup(updatedGroup))
-    } catch {
+    } catch (err) {
       setMemberError(
-        tab === 'students'
-          ? 'Failed to remove the student from the group.'
-          : 'Failed to remove the instructor (a group must keep at least one).',
+        userMessage(
+          err,
+          tab === 'students'
+            ? 'Failed to remove the student from the group.'
+            : 'Failed to remove the instructor (a group must keep at least one).',
+        ),
       )
     } finally {
       setPendingRemoveId(null)

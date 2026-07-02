@@ -103,16 +103,21 @@ export class ApiError extends Error {
 
 export function userMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
+    const detail = err.detail.trim()
+    const looksLikeHtml =
+      /^<(!doctype|html|head|body|div|p|span|h[1-6]|pre|ul|ol|table|section|article)\b/i.test(
+        detail,
+      )
+    const usable = detail.length > 0 && detail.length <= 200 && !looksLikeHtml
+
     if (err.status === 409) {
-      return 'This item was modified by another user. Please refresh and try again.'
+      if (!usable || /modified by another/i.test(detail)) {
+        return 'This item was modified by another user. Please refresh and try again.'
+      }
+      return detail
     }
-    if (err.status >= 400 && err.status < 500 && err.detail) {
-      const detail = err.detail.trim()
-      const looksLikeHtml =
-        /^<(!doctype|html|head|body|div|p|span|h[1-6]|pre|ul|ol|table|section|article)\b/i.test(
-          detail,
-        )
-      if (!looksLikeHtml && detail.length > 0 && detail.length <= 200) {
+    if (err.status >= 400 && err.status < 500) {
+      if (usable) {
         return detail
       }
     }
@@ -131,14 +136,27 @@ export function userMessage(err: unknown, fallback: string): string {
   return fallback
 }
 
+function isMessageDetail(value: unknown): value is { message: string } {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'message' in value &&
+    typeof (value as { message?: unknown }).message === 'string'
+  )
+}
+
 function parseErrorDetail(text: string): string {
   let detail = text
   try {
-    const body = JSON.parse(text)
-    if (typeof body.detail === 'string') detail = body.detail
-    else if (Array.isArray(body.detail))
-      detail = body.detail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
-    else if (body.detail !== undefined) detail = String(body.detail)
+    const body: unknown = JSON.parse(text)
+    if (typeof body === 'object' && body !== null && 'detail' in body) {
+      const bodyDetail = (body as { detail?: unknown }).detail
+      if (typeof bodyDetail === 'string') detail = bodyDetail
+      else if (Array.isArray(bodyDetail))
+        detail = bodyDetail.map((e: { msg?: string }) => e.msg ?? JSON.stringify(e)).join('; ')
+      else if (isMessageDetail(bodyDetail)) detail = bodyDetail.message
+      else if (bodyDetail !== undefined) detail = String(bodyDetail)
+    }
   } catch {
     /* use raw text */
   }

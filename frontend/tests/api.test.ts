@@ -256,11 +256,23 @@ describe('ApiError', () => {
 })
 
 describe('userMessage', () => {
-  it('returns conflict message for 409', () => {
-    const err = new ApiError(409, 'Conflict')
+  it('returns friendly message for concurrency-style 409s', () => {
+    const err = new ApiError(409, 'Resource has been modified by another client')
     expect(userMessage(err, 'fallback')).toBe(
       'This item was modified by another user. Please refresh and try again.',
     )
+  })
+
+  it('returns friendly message for 409s without usable detail', () => {
+    const err = new ApiError(409, '')
+    expect(userMessage(err, 'fallback')).toBe(
+      'This item was modified by another user. Please refresh and try again.',
+    )
+  })
+
+  it('returns specific detail for 409 conflicts with usable backend messages', () => {
+    const err = new ApiError(409, 'Group name already exists')
+    expect(userMessage(err, 'fallback')).toBe('Group name already exists')
   })
 
   it('returns detail for short 4xx errors', () => {
@@ -386,6 +398,31 @@ describe('request helper (via wrapper functions)', () => {
       expect((e as ApiError).status).toBe(500)
       expect((e as ApiError).message).toContain('Internal Server Error')
     }
+  })
+
+  it('surfaces object detail messages from error payloads', async () => {
+    mockFetch.mockReturnValueOnce(
+      Promise.resolve({
+        ok: false,
+        status: 409,
+        statusText: 'Conflict',
+        json: () =>
+          Promise.resolve({
+            detail: { message: 'Group is attached to one or more categories', category_ids: [1] },
+          }),
+        text: () =>
+          Promise.resolve(
+            JSON.stringify({
+              detail: { message: 'Group is attached to one or more categories', category_ids: [1] },
+            }),
+          ),
+      }),
+    )
+
+    await expect(createGroup({ name: 'New Group' })).rejects.toMatchObject({
+      status: 409,
+      detail: 'Group is attached to one or more categories',
+    })
   })
 })
 
