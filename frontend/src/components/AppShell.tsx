@@ -58,13 +58,7 @@ import FooterBar from './FooterBar'
 import AnnouncementBanner from './AnnouncementBanner'
 import type { Role } from '../types'
 import { useColorMode } from '../useColorMode'
-import {
-  appBarAvatarSx,
-  appBarClusterGap,
-  appBarIconButtonSx,
-  getGroupChipColors,
-  getSurfaceVariant,
-} from '../theme'
+import { appBarAvatarSx, appBarClusterGap, appBarIconButtonSx, getGroupChipColors } from '../theme'
 
 export type Page = 'browse' | 'manage' | 'people' | 'admin'
 
@@ -177,7 +171,7 @@ export default function AppShell(props: AppShellProps) {
     if (announcement) setAnnCollapsed(false)
   }
   const showViewAnnLink = annEnabled && !announcement
-  const contentBg = page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined
+  const contentBg = page === 'people' || page === 'admin' ? 'background.paper' : undefined
   const groupColors = getGroupChipColors(mode)
   const { preference: themePreference, toggleMode } = useColorMode()
   const themeIcon = useMemo(() => {

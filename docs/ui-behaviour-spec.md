@@ -254,6 +254,9 @@ committed on Save) in the edit modals.
   collapsible accordion, and destructive import cards at the bottom.
 - Active task alerts remain visible above the tab strip so background export or
   import progress is not hidden while the admin is working in either sub-tab.
+- The `people` and `admin` content areas use the same white paper background
+  as the login screen (`background.paper`) so page transitions keep the shell
+  visually consistent.
 
 ### Image replacement & versioning (`useImageActions.test.ts`, `ImageMetadataFields.test.tsx`)
 

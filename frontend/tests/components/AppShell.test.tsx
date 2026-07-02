@@ -86,7 +86,7 @@ describe('AppShell', () => {
       expect(
         screen.getByText('Maintenance tonight').closest('.MuiContainer-root')?.parentElement,
       ).toHaveStyle({
-        backgroundColor: '#DAC7B5',
+        backgroundColor: 'rgb(255, 255, 255)',
       })
     })
 

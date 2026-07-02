@@ -84,7 +84,7 @@ import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from './categoryUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
-import { getSurfaceVariant, getVisibilityColors } from './theme'
+import { getVisibilityColors } from './theme'
 import { useNavigationHistory, buildNavHistoryState } from './useNavigationHistory'
 import { useShareableImageState } from './useShareableImageState'
 import { useCanvasAnnotations } from './useCanvasAnnotations'
@@ -632,9 +632,12 @@ export default function App() {
         loadGroups()
       }
     }
-    loadAnnouncement()
+    if (!usersLoading) {
+      loadAnnouncement()
+    }
   }, [
     currentUser,
+    usersLoading,
     loadCategories,
     loadUncategorizedImages,
     loadPrograms,
@@ -1116,7 +1119,7 @@ export default function App() {
         sx={{
           flexGrow: 1,
           py: 3,
-          bgcolor: page === 'people' || page === 'admin' ? getSurfaceVariant(mode) : undefined,
+          bgcolor: page === 'people' || page === 'admin' ? 'background.paper' : undefined,
         }}
       >
         <Container maxWidth={false} sx={{ px: { xs: 2, sm: 3, lg: '72px', xl: '120px' } }}>
