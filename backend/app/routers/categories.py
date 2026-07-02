@@ -85,7 +85,7 @@ async def _resolve_groups(
         ):
             raise HTTPException(
                 403,
-                f"You may only attach groups you manage (group {gid})",
+                f"You may only attach groups you manage ({by_id[gid].name})",
             )
     return list(grps)
 

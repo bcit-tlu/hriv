@@ -776,9 +776,12 @@ def _editor(role: str, id: int = 1, programs=None, groups=None) -> SimpleNamespa
     )
 
 
-def _group_ns(id: int, instructors=None, members=None) -> SimpleNamespace:
+def _group_ns(
+    id: int, instructors=None, members=None, name: str = "Cohort",
+) -> SimpleNamespace:
     return SimpleNamespace(
         id=id,
+        name=name,
         instructors=[SimpleNamespace(id=i) for i in (instructors or [])],
         members=members or [],
     )
@@ -803,12 +806,15 @@ async def test_create_category_instructor_cannot_attach_unmanaged_group() -> Non
     dup = MagicMock()
     dup.scalar_one_or_none.return_value = None
     grp_result = MagicMock()
-    grp_result.scalars.return_value.all.return_value = [_group_ns(5, instructors=[99])]
+    grp_result.scalars.return_value.all.return_value = [
+        _group_ns(5, instructors=[99], name="Cohort A")
+    ]
     db = AsyncMock()
     db.execute = AsyncMock(side_effect=[dup, grp_result])
     with pytest.raises(HTTPException) as exc:
         await create_category(body, _editor("instructor", id=7), db=db)
     assert exc.value.status_code == 403
+    assert "Cohort A" in exc.value.detail
 
 
 async def test_create_category_admin_attaches_group() -> None:
