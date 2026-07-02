@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 vi.mock('../../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api')>()
@@ -79,7 +80,7 @@ describe('ManagePage', () => {
       expect(screen.getByText('Blood Smear')).toBeInTheDocument()
     })
 
-    expect(screen.getByText('Groups')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
     const groupChip = screen.getByText('Lab A2').closest('.MuiChip-root')
     expect(groupChip).toBeInTheDocument()
   })
@@ -146,6 +147,30 @@ describe('ManagePage', () => {
     expect(screen.queryByRole('columnheader', { name: 'Dimensions' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'File Size' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Measurement' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the filter bar in sync with visible columns', async () => {
+    const user = userEvent.setup()
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    expect(within(filterBar).getByLabelText('Groups')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Choose columns' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Choose image table columns' })
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Groups' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Done' }))
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: 'Choose image table columns' }),
+      ).not.toBeInTheDocument()
+    })
+
+    expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
+    expect(within(filterBar).queryByLabelText('Groups')).not.toBeInTheDocument()
   })
 
   it('greyscales the thumbnail when an image is inactive', async () => {

@@ -8,7 +8,6 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
-import FormControl from '@mui/material/FormControl'
 import IconButton from '@mui/material/IconButton'
 import InputAdornment from '@mui/material/InputAdornment'
 import Link from '@mui/material/Link'
@@ -17,7 +16,6 @@ import ListItemText from '@mui/material/ListItemText'
 import Menu from '@mui/material/Menu'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
-import Select from '@mui/material/Select'
 import Switch from '@mui/material/Switch'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
@@ -28,18 +26,13 @@ import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
 import TextField from '@mui/material/TextField'
-import ToggleButton from '@mui/material/ToggleButton'
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
-import type { SelectChangeEvent } from '@mui/material/Select'
-import { alpha } from '@mui/material/styles'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
 import ClearIcon from '@mui/icons-material/Clear'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
-import FilterListIcon from '@mui/icons-material/FilterList'
 import InfoIcon from '@mui/icons-material/Info'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import VisibilityIcon from '@mui/icons-material/Visibility'
@@ -66,6 +59,7 @@ import BulkEditImagesModal from './BulkEditImagesModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
+import FilterBar from './FilterBar'
 import MoveImageDialog from './MoveImageDialog'
 import NoteDisplay from './NoteDisplay'
 import UploadImageModal from './UploadImageModal'
@@ -332,8 +326,6 @@ export default function ManagePage({
   const [moveOpen, setMoveOpen] = useState(false)
   const [movingImage, setMovingImage] = useState<ApiImage | null>(null)
 
-  // Filter row visibility
-  const [showFilters, setShowFilters] = useState(false)
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
   const { visibleColumns, isColumnVisible, setColumnVisible } =
     useTableColumnPreferences<ManageTableColumn>({
@@ -353,7 +345,6 @@ export default function ManagePage({
     if (initialProgramFilter) {
       setFilters((prev) => ({ ...prev, program: initialProgramFilter }))
       setColumnVisible('program', true)
-      setShowFilters(true)
       setCurrentPage(0)
       onInitialProgramFilterConsumed?.()
     }
@@ -543,6 +534,7 @@ export default function ManagePage({
       const nextVisible = !visibleColumns[column]
       setColumnVisible(column, nextVisible)
       if (!nextVisible) {
+        setCurrentPage(0)
         const filterKey = MANAGE_COLUMN_FILTER_KEYS[column]
         if (filterKey) {
           setFilters((prev) => {
@@ -796,49 +788,6 @@ export default function ManagePage({
       >
         <Typography variant="h5">Images</Typography>
         <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'center' }}>
-          <ToggleButtonGroup
-            size="small"
-            aria-label="Image table controls"
-            sx={{
-              '& .MuiToggleButton-root': (theme) => ({
-                bgcolor: alpha(theme.palette.text.primary, 0.09),
-                color: theme.palette.text.primary,
-                borderColor: alpha(theme.palette.text.primary, 0.2),
-                '&:hover': {
-                  bgcolor: alpha(theme.palette.text.primary, 0.13),
-                },
-              }),
-              '& .MuiToggleButton-root.Mui-selected': (theme) => ({
-                bgcolor: alpha(theme.palette.text.primary, 0.15),
-                color: theme.palette.text.primary,
-                borderColor: alpha(theme.palette.text.primary, 0.26),
-                '&:hover': {
-                  bgcolor: alpha(theme.palette.text.primary, 0.17),
-                },
-              }),
-            }}
-          >
-            <ToggleButton
-              value="filters"
-              selected={showFilters || hasActiveFilters}
-              size="small"
-              title={showFilters ? 'Hide filters' : 'Show filters'}
-              aria-label={showFilters ? 'Hide filters' : 'Show filters'}
-              onClick={() => setShowFilters((prev) => !prev)}
-            >
-              <FilterListIcon fontSize="small" />
-            </ToggleButton>
-            <ToggleButton
-              value="columns"
-              selected={columnDialogOpen}
-              size="small"
-              title="Choose columns"
-              aria-label="Choose columns"
-              onClick={() => setColumnDialogOpen(true)}
-            >
-              <ViewColumnIcon fontSize="small" />
-            </ToggleButton>
-          </ToggleButtonGroup>
           {selected.size > 0 && (
             <Button
               variant="contained"
@@ -858,6 +807,214 @@ export default function ManagePage({
           </Button>
         </Box>
       </Box>
+
+      <FilterBar
+        actions={
+          <>
+            {hasActiveFilters && (
+              <Button
+                size="small"
+                startIcon={<ClearIcon fontSize="small" />}
+                onClick={handleClearFilters}
+              >
+                Clear filters
+              </Button>
+            )}
+            <Button
+              size="small"
+              startIcon={<ViewColumnIcon fontSize="small" />}
+              aria-label="Choose columns"
+              onClick={() => setColumnDialogOpen(true)}
+            >
+              Choose columns
+            </Button>
+          </>
+        }
+      >
+        {isColumnVisible('id') && (
+          <TextField
+            size="small"
+            label="ID"
+            value={filters['id'] ?? ''}
+            onChange={(e) => handleFilterChange('id', e.target.value)}
+            sx={{ minWidth: 120 }}
+            InputProps={
+              filters['id']
+                ? {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => handleFilterChange('id', '')}>
+                          <ClearIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }
+                : undefined
+            }
+          />
+        )}
+        {isColumnVisible('name') && (
+          <TextField
+            size="small"
+            label="Name"
+            value={filters['name'] ?? ''}
+            onChange={(e) => handleFilterChange('name', e.target.value)}
+            sx={{ minWidth: 180 }}
+            InputProps={
+              filters['name']
+                ? {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => handleFilterChange('name', '')}>
+                          <ClearIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }
+                : undefined
+            }
+          />
+        )}
+        {isColumnVisible('category') && (
+          <TextField
+            size="small"
+            label="Category"
+            value={filters['category'] ?? ''}
+            onChange={(e) => handleFilterChange('category', e.target.value)}
+            sx={{ minWidth: 200 }}
+            InputProps={
+              filters['category']
+                ? {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => handleFilterChange('category', '')}>
+                          <ClearIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }
+                : undefined
+            }
+          />
+        )}
+        {isColumnVisible('copyright') && (
+          <TextField
+            size="small"
+            label="Copyright"
+            value={filters['copyright'] ?? ''}
+            onChange={(e) => handleFilterChange('copyright', e.target.value)}
+            sx={{ minWidth: 180 }}
+            InputProps={
+              filters['copyright']
+                ? {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleFilterChange('copyright', '')}
+                        >
+                          <ClearIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }
+                : undefined
+            }
+          />
+        )}
+        {isColumnVisible('note') && (
+          <TextField
+            size="small"
+            label="Note"
+            value={filters['note'] ?? ''}
+            onChange={(e) => handleFilterChange('note', e.target.value)}
+            sx={{ minWidth: 180 }}
+            InputProps={
+              filters['note']
+                ? {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => handleFilterChange('note', '')}>
+                          <ClearIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }
+                : undefined
+            }
+          />
+        )}
+        {isColumnVisible('program') && (
+          <TextField
+            size="small"
+            label="Program"
+            value={filters['program'] ?? ''}
+            onChange={(e) => handleFilterChange('program', e.target.value)}
+            sx={{ minWidth: 180 }}
+            InputProps={
+              filters['program']
+                ? {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => handleFilterChange('program', '')}>
+                          <ClearIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }
+                : undefined
+            }
+          />
+        )}
+        {isColumnVisible('group') && (
+          <TextField
+            size="small"
+            label="Groups"
+            value={filters['group'] ?? ''}
+            onChange={(e) => handleFilterChange('group', e.target.value)}
+            sx={{ minWidth: 180 }}
+            InputProps={
+              filters['group']
+                ? {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => handleFilterChange('group', '')}>
+                          <ClearIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }
+                : undefined
+            }
+          />
+        )}
+        {isColumnVisible('active') && (
+          <TextField
+            select
+            size="small"
+            label="Visibility"
+            value={filters['active'] ?? ''}
+            onChange={(e) => handleFilterChange('active', e.target.value)}
+            sx={{ minWidth: 180 }}
+          >
+            <MenuItem value="">All images</MenuItem>
+            <MenuItem value="active">Visible</MenuItem>
+            <MenuItem value="inactive">Hidden</MenuItem>
+          </TextField>
+        )}
+        {!isColumnVisible('id') &&
+          !isColumnVisible('name') &&
+          !isColumnVisible('category') &&
+          !isColumnVisible('copyright') &&
+          !isColumnVisible('note') &&
+          !isColumnVisible('program') &&
+          !isColumnVisible('group') &&
+          !isColumnVisible('active') && (
+            <Typography variant="body2" color="text.secondary">
+              Choose a visible filterable column to add controls here.
+            </Typography>
+          )}
+      </FilterBar>
 
       {images.length === 0 ? (
         <Typography variant="body1" color="text.secondary">
@@ -1011,244 +1168,6 @@ export default function ManagePage({
                 {isColumnVisible('measurement') && <TableCell>Measurement</TableCell>}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
-              {showFilters && (
-                <TableRow>
-                  <TableCell padding="checkbox">
-                    {hasActiveFilters && (
-                      <IconButton
-                        size="small"
-                        onClick={handleClearFilters}
-                        title="Clear all filters"
-                      >
-                        <ClearIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                  </TableCell>
-                  {isColumnVisible('thumbnail') && <TableCell />}
-                  {isColumnVisible('id') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['id'] ?? ''}
-                        onChange={(e) => handleFilterChange('id', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['id']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('id', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('name') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['name'] ?? ''}
-                        onChange={(e) => handleFilterChange('name', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['name']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('name', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('category') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['category'] ?? ''}
-                        onChange={(e) => handleFilterChange('category', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['category']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('category', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('copyright') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['copyright'] ?? ''}
-                        onChange={(e) => handleFilterChange('copyright', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['copyright']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('copyright', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('note') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['note'] ?? ''}
-                        onChange={(e) => handleFilterChange('note', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['note']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('note', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('program') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['program'] ?? ''}
-                        onChange={(e) => handleFilterChange('program', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['program']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('program', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('group') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['group'] ?? ''}
-                        onChange={(e) => handleFilterChange('group', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['group']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('group', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('active') && (
-                    <TableCell>
-                      <FormControl size="small" variant="standard" fullWidth>
-                        <Select
-                          value={filters['active'] ?? ''}
-                          onChange={(e: SelectChangeEvent) =>
-                            handleFilterChange('active', e.target.value)
-                          }
-                          displayEmpty
-                          sx={{ fontSize: '0.8rem' }}
-                        >
-                          <MenuItem value="">
-                            <em>All</em>
-                          </MenuItem>
-                          <MenuItem value="active">Active</MenuItem>
-                          <MenuItem value="inactive">Inactive</MenuItem>
-                        </Select>
-                      </FormControl>
-                    </TableCell>
-                  )}
-                  {isColumnVisible('updated_at') && <TableCell />}
-                  {isColumnVisible('created_at') && <TableCell />}
-                  {isColumnVisible('dimensions') && <TableCell />}
-                  {isColumnVisible('file_size') && <TableCell />}
-                  {isColumnVisible('measurement') && <TableCell />}
-                  <TableCell />
-                </TableRow>
-              )}
             </TableHead>
             <TableBody>
               {sortedImages

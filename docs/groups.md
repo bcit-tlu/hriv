@@ -177,13 +177,15 @@ tabs, each backed by a server-paginated table:
   category-attachment 409s stay specific; delete-blocked groups also list the
   attached categories as links inside the confirmation dialog.
 
-- **Students tab** — multi-select program **filter chips** (OR semantics) plus a
-  debounced name/email search box, over a paginated table (10 rows/page). Row
-  checkboxes + "select all on page" feed a single **"Add N to group"** bulk call
+- **Students tab** — a persistent **Filter by** bar combines the debounced
+  name/email search box with multi-select program **filter chips** (OR
+  semantics), over a paginated table (10 rows/page). Row checkboxes + "select
+  all on page" feed a single **"Add N to group"** bulk call
   (`POST /api/groups/{id}/members/bulk`). The table syncs from the returned
   `GroupOut`, so added rows flip to a _Member_ chip with no re-fetch spinner.
-- **Instructors tab** — the same searchable, paginated table (no program filter,
-  since instructors aren't program-gated) for bulk-adding co-owners
+- **Instructors tab** — the same paginated table with the persistent **Filter
+  by** search bar (no program filter, since instructors aren't program-gated)
+  for bulk-adding co-owners
   (`POST /api/groups/{id}/instructors/bulk`).
 
 The table is fed by `fetchUsersPaged({ role, programIds, q, page, pageSize })`,

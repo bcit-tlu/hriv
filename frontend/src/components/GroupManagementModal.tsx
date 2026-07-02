@@ -52,6 +52,7 @@ import type { ApiProgram, ApiUser } from '../api'
 import { apiGroupToGroup } from '../groupUtils'
 import { getGroupChipColors } from '../theme'
 import type { Group } from '../types'
+import FilterBar from './FilterBar'
 
 interface GroupManagementModalProps {
   open: boolean
@@ -259,6 +260,7 @@ export default function GroupManagementModal({
     availableRows.length > 0 && availableRows.every((row) => selectedUserIds.has(row.id))
   const someAvailableSelected = availableRows.some((row) => selectedUserIds.has(row.id))
   const colSpan = tab === 'students' ? 5 : 4
+  const hasActiveMemberFilters = searchInput.trim().length > 0 || selectedProgramIds.length > 0
 
   const openCreateDialog = () => {
     setGroupNameDraft('')
@@ -679,13 +681,30 @@ export default function GroupManagementModal({
                       membership.
                     </Alert>
                   )}
-                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mb: 1.5 }}>
+                  <FilterBar
+                    actions={
+                      hasActiveMemberFilters ? (
+                        <Button
+                          size="small"
+                          onClick={() => {
+                            setSearchInput('')
+                            setQ('')
+                            setSelectedProgramIds([])
+                          }}
+                        >
+                          Clear filters
+                        </Button>
+                      ) : undefined
+                    }
+                  >
                     <TextField
                       fullWidth
                       size="small"
+                      label="Name or email"
                       placeholder="Search name or email"
                       value={searchInput}
                       onChange={(event) => setSearchInput(event.target.value)}
+                      sx={{ minWidth: 240, flex: 1 }}
                       InputProps={{
                         startAdornment: (
                           <InputAdornment position="start">
@@ -694,6 +713,32 @@ export default function GroupManagementModal({
                         ),
                       }}
                     />
+                    {tab === 'students' && programs.length > 0 && (
+                      <Box sx={{ minWidth: 220, flex: 1 }}>
+                        <Typography
+                          variant="caption"
+                          color="text.secondary"
+                          sx={{ display: 'block', mb: 0.75 }}
+                        >
+                          Program
+                        </Typography>
+                        <Stack direction="row" flexWrap="wrap" gap={0.75}>
+                          {programs.map((program) => {
+                            const active = selectedProgramIds.includes(program.id)
+                            return (
+                              <Chip
+                                key={program.id}
+                                label={program.name}
+                                onClick={() => toggleProgram(program.id)}
+                                color={active ? 'primary' : 'default'}
+                                variant={active ? 'filled' : 'outlined'}
+                                size="small"
+                              />
+                            )
+                          })}
+                        </Stack>
+                      </Box>
+                    )}
                     <Button
                       variant="contained"
                       color="secondary"
@@ -704,33 +749,7 @@ export default function GroupManagementModal({
                     >
                       Add {selectedUserIds.size > 0 ? selectedUserIds.size : ''} to Group
                     </Button>
-                  </Stack>
-                  {tab === 'students' && programs.length > 0 && (
-                    <Box>
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ display: 'block', mb: 0.75 }}
-                      >
-                        Filter by program
-                      </Typography>
-                      <Stack direction="row" flexWrap="wrap" gap={0.75}>
-                        {programs.map((program) => {
-                          const active = selectedProgramIds.includes(program.id)
-                          return (
-                            <Chip
-                              key={program.id}
-                              label={program.name}
-                              onClick={() => toggleProgram(program.id)}
-                              color={active ? 'primary' : 'default'}
-                              variant={active ? 'filled' : 'outlined'}
-                              size="small"
-                            />
-                          )
-                        })}
-                      </Stack>
-                    </Box>
-                  )}
+                  </FilterBar>
                 </Box>
 
                 <TableContainer sx={{ flex: 1, minHeight: 0 }}>

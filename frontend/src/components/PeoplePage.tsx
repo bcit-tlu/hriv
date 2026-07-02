@@ -26,13 +26,9 @@ import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
 import TextField from '@mui/material/TextField'
-import ToggleButton from '@mui/material/ToggleButton'
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
-import { alpha } from '@mui/material/styles'
 import ClearIcon from '@mui/icons-material/Clear'
-import FilterListIcon from '@mui/icons-material/FilterList'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import {
@@ -53,6 +49,7 @@ import AddEditPersonModal from './AddEditPersonModal'
 import BulkEditModal from './BulkEditModal'
 import BulkGroupModal from './BulkGroupModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
+import FilterBar from './FilterBar'
 
 type SortableColumn =
   | 'id'
@@ -134,8 +131,6 @@ export default function PeoplePage({
     selectedPrograms.size > 0 ||
     selectedGroups.size > 0
 
-  // Filter row visibility
-  const [showFilters, setShowFilters] = useState(false)
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
   const { visibleColumns, isColumnVisible, setColumnVisible } =
     useTableColumnPreferences<PeopleTableColumn>({
@@ -321,6 +316,7 @@ export default function PeoplePage({
       const nextVisible = !visibleColumns[column]
       setColumnVisible(column, nextVisible)
       if (!nextVisible) {
+        setCurrentPage(0)
         if (column === 'program') {
           setSelectedPrograms(new Set())
         } else if (column === 'group') {
@@ -524,49 +520,6 @@ export default function PeoplePage({
       >
         <Typography variant="h5">People</Typography>
         <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'center' }}>
-          <ToggleButtonGroup
-            size="small"
-            aria-label="People table controls"
-            sx={{
-              '& .MuiToggleButton-root': (theme) => ({
-                bgcolor: alpha(theme.palette.text.primary, 0.09),
-                color: theme.palette.text.primary,
-                borderColor: alpha(theme.palette.text.primary, 0.2),
-                '&:hover': {
-                  bgcolor: alpha(theme.palette.text.primary, 0.13),
-                },
-              }),
-              '& .MuiToggleButton-root.Mui-selected': (theme) => ({
-                bgcolor: alpha(theme.palette.text.primary, 0.15),
-                color: theme.palette.text.primary,
-                borderColor: alpha(theme.palette.text.primary, 0.26),
-                '&:hover': {
-                  bgcolor: alpha(theme.palette.text.primary, 0.17),
-                },
-              }),
-            }}
-          >
-            <ToggleButton
-              value="filters"
-              selected={showFilters || hasActiveFilters}
-              size="small"
-              title={showFilters ? 'Hide filters' : 'Show filters'}
-              aria-label={showFilters ? 'Hide filters' : 'Show filters'}
-              onClick={() => setShowFilters((prev) => !prev)}
-            >
-              <FilterListIcon fontSize="small" />
-            </ToggleButton>
-            <ToggleButton
-              value="columns"
-              selected={columnDialogOpen}
-              size="small"
-              title="Choose columns"
-              aria-label="Choose columns"
-              onClick={() => setColumnDialogOpen(true)}
-            >
-              <ViewColumnIcon fontSize="small" />
-            </ToggleButton>
-          </ToggleButtonGroup>
           {selected.size > 0 && (
             <>
               <Button
@@ -609,97 +562,174 @@ export default function PeoplePage({
         </Box>
       </Box>
 
-      {(programs.length > 0 || groups.length > 0) && (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 1,
-            px: 1,
-            py: 1.25,
-            borderRadius: 1,
-            border: 1,
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-            mb: 2,
-          }}
-        >
-          {programs.length > 0 && (
-            <Box>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ display: 'block', mb: 0.75 }}
+      <FilterBar
+        actions={
+          <>
+            {hasActiveFilters && (
+              <Button
+                size="small"
+                startIcon={<ClearIcon fontSize="small" />}
+                onClick={handleClearFilters}
               >
-                Filter by program
-              </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                {programs.map((p) => {
-                  const active = selectedPrograms.has(p.id)
-                  return (
-                    <Chip
-                      key={p.id}
-                      label={p.name}
-                      size="small"
-                      color={active ? 'primary' : 'default'}
-                      variant={active ? 'filled' : 'outlined'}
-                      onClick={() => {
-                        setSelectedPrograms((prev) => {
-                          const next = new Set(prev)
-                          if (next.has(p.id)) {
-                            next.delete(p.id)
-                          } else {
-                            next.add(p.id)
-                          }
-                          return next
-                        })
-                        setCurrentPage(0)
-                      }}
-                    />
-                  )
-                })}
-              </Box>
+                Clear filters
+              </Button>
+            )}
+            <Button
+              size="small"
+              startIcon={<ViewColumnIcon fontSize="small" />}
+              aria-label="Choose columns"
+              onClick={() => setColumnDialogOpen(true)}
+            >
+              Choose columns
+            </Button>
+          </>
+        }
+      >
+        {isColumnVisible('name') && (
+          <TextField
+            size="small"
+            label="Name"
+            value={filters['name'] ?? ''}
+            onChange={(e) => handleFilterChange('name', e.target.value)}
+            sx={{ minWidth: 180 }}
+            InputProps={
+              filters['name']
+                ? {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => handleFilterChange('name', '')}>
+                          <ClearIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }
+                : undefined
+            }
+          />
+        )}
+        {isColumnVisible('email') && (
+          <TextField
+            size="small"
+            label="Email"
+            value={filters['email'] ?? ''}
+            onChange={(e) => handleFilterChange('email', e.target.value)}
+            sx={{ minWidth: 220 }}
+            InputProps={
+              filters['email']
+                ? {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton size="small" onClick={() => handleFilterChange('email', '')}>
+                          <ClearIcon sx={{ fontSize: 14 }} />
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  }
+                : undefined
+            }
+          />
+        )}
+        {isColumnVisible('role') && (
+          <TextField
+            select
+            size="small"
+            label="Role"
+            value={filters['role'] ?? ''}
+            onChange={(e) => handleFilterChange('role', e.target.value)}
+            sx={{ minWidth: 180 }}
+          >
+            <MenuItem value="">All roles</MenuItem>
+            {ROLES.map((r) => (
+              <MenuItem key={r} value={r}>
+                {r}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
+        {isColumnVisible('program') && programs.length > 0 && (
+          <Box sx={{ minWidth: 220, flex: 1 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block', mb: 0.75 }}
+            >
+              Program
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+              {programs.map((p) => {
+                const active = selectedPrograms.has(p.id)
+                return (
+                  <Chip
+                    key={p.id}
+                    label={p.name}
+                    size="small"
+                    color={active ? 'primary' : 'default'}
+                    variant={active ? 'filled' : 'outlined'}
+                    onClick={() => {
+                      setSelectedPrograms((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(p.id)) {
+                          next.delete(p.id)
+                        } else {
+                          next.add(p.id)
+                        }
+                        return next
+                      })
+                      setCurrentPage(0)
+                    }}
+                  />
+                )
+              })}
             </Box>
-          )}
-          {groups.length > 0 && (
-            <Box>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ display: 'block', mb: 0.75 }}
-              >
-                Filter by group
-              </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                {groups.map((g) => {
-                  const active = selectedGroups.has(g.id)
-                  return (
-                    <Chip
-                      key={g.id}
-                      label={g.name}
-                      size="small"
-                      color={active ? 'secondary' : 'default'}
-                      variant={active ? 'filled' : 'outlined'}
-                      onClick={() => {
-                        setSelectedGroups((prev) => {
-                          const next = new Set(prev)
-                          if (next.has(g.id)) {
-                            next.delete(g.id)
-                          } else {
-                            next.add(g.id)
-                          }
-                          return next
-                        })
-                        setCurrentPage(0)
-                      }}
-                    />
-                  )
-                })}
-              </Box>
+          </Box>
+        )}
+        {isColumnVisible('group') && groups.length > 0 && (
+          <Box sx={{ minWidth: 220, flex: 1 }}>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              sx={{ display: 'block', mb: 0.75 }}
+            >
+              Groups
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+              {groups.map((g) => {
+                const active = selectedGroups.has(g.id)
+                return (
+                  <Chip
+                    key={g.id}
+                    label={g.name}
+                    size="small"
+                    color={active ? 'secondary' : 'default'}
+                    variant={active ? 'filled' : 'outlined'}
+                    onClick={() => {
+                      setSelectedGroups((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(g.id)) {
+                          next.delete(g.id)
+                        } else {
+                          next.add(g.id)
+                        }
+                        return next
+                      })
+                      setCurrentPage(0)
+                    }}
+                  />
+                )
+              })}
             </Box>
+          </Box>
+        )}
+        {!isColumnVisible('name') &&
+          !isColumnVisible('email') &&
+          !isColumnVisible('role') &&
+          !isColumnVisible('program') &&
+          !isColumnVisible('group') && (
+            <Typography variant="body2" color="text.secondary">
+              Choose a visible filterable column to add controls here.
+            </Typography>
           )}
-        </Box>
-      )}
+      </FilterBar>
 
       {users.length === 0 ? (
         <Typography variant="body1" color="text.secondary">
@@ -807,106 +837,6 @@ export default function PeoplePage({
                 )}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
-              {showFilters && (
-                <TableRow>
-                  <TableCell padding="checkbox">
-                    {hasActiveFilters && (
-                      <IconButton
-                        size="small"
-                        onClick={handleClearFilters}
-                        title="Clear all filters"
-                      >
-                        <ClearIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                  </TableCell>
-                  {isColumnVisible('id') && <TableCell />}
-                  {isColumnVisible('name') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['name'] ?? ''}
-                        onChange={(e) => handleFilterChange('name', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['name']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('name', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('email') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['email'] ?? ''}
-                        onChange={(e) => handleFilterChange('email', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['email']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('email', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('role') && (
-                    <TableCell>
-                      <FormControl size="small" variant="standard" fullWidth>
-                        <Select
-                          value={filters['role'] ?? ''}
-                          onChange={(e: SelectChangeEvent) =>
-                            handleFilterChange('role', e.target.value)
-                          }
-                          displayEmpty
-                          sx={{ fontSize: '0.8rem' }}
-                        >
-                          <MenuItem value="">
-                            <em>All</em>
-                          </MenuItem>
-                          {ROLES.map((r) => (
-                            <MenuItem key={r} value={r}>
-                              {r}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </TableCell>
-                  )}
-                  {isColumnVisible('program') && <TableCell />}
-                  {isColumnVisible('group') && <TableCell />}
-                  {isColumnVisible('last_access') && <TableCell />}
-                  {isColumnVisible('created_at') && <TableCell />}
-                  <TableCell />
-                </TableRow>
-              )}
             </TableHead>
             <TableBody>
               {pageUsers.map((user) => (
