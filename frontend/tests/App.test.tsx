@@ -1,6 +1,6 @@
 import { createRef, useEffect, type ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import App from '../src/App'
 
 const mockImage = {
@@ -645,8 +645,7 @@ describe('App breadcrumbs', () => {
 
     render(<App />)
 
-    await waitFor(() => {
-      expect(announcementModalMock.loadAnnouncement).not.toHaveBeenCalled()
-    })
+    await screen.findByRole('progressbar')
+    expect(announcementModalMock.loadAnnouncement).not.toHaveBeenCalled()
   })
 })
