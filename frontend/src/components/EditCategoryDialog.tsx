@@ -194,15 +194,14 @@ export default function EditCategoryDialog({
 
   const programRestricted = visibility === 'specific' && selectedProgramIds.size > 0
   const groupRestricted = groupVisibility === 'specific' && selectedGroupIds.size > 0
+  // Only surface the membership caption when a chip is disabled *specifically*
+  // because of membership — not because of the ancestor narrowing rule
+  // (non-inherited chips) or because it is already-attached/removable.
   const membershipRestrictedProgram = useMemo(
     () =>
-      programs.some(
-        (p) =>
-          restrictProgramIds != null &&
-          !restrictProgramIds.includes(p.id) &&
-          !inheritedProgramIds.includes(p.id) &&
-          !currentProgramIds.includes(p.id),
-      ),
+      inheritedProgramIds.length === 0 &&
+      restrictProgramIds != null &&
+      programs.some((p) => !restrictProgramIds.includes(p.id) && !currentProgramIds.includes(p.id)),
     [currentProgramIds, inheritedProgramIds, programs, restrictProgramIds],
   )
 

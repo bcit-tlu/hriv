@@ -210,7 +210,8 @@ describe('AddCategoryDialog', () => {
     expect(screen.getByLabelText('All students')).toBeChecked()
   })
 
-  it('disables non-member program chips and shows the membership caption', () => {
+  it('disables non-member program chips and shows the membership caption', async () => {
+    const user = userEvent.setup()
     const programs = [
       { id: 1, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' },
       { id: 2, name: 'Dental', oidc_group: null, created_at: '', updated_at: '' },
@@ -239,7 +240,8 @@ describe('AddCategoryDialog', () => {
       clearOidcError: vi.fn(),
     } as unknown as AuthContextValue
 
-    renderDialog({ programs, inheritedProgramIds: [1] }, authValue)
+    renderDialog({ programs }, authValue)
+    await user.click(screen.getByLabelText('Specific programs'))
 
     expect(screen.getByText('Nursing').closest('.MuiChip-root')).not.toHaveClass('Mui-disabled')
     expect(screen.getByText('Dental').closest('.MuiChip-root')).toHaveClass('Mui-disabled')

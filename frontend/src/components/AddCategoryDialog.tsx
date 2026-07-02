@@ -126,14 +126,15 @@ export default function AddCategoryDialog({
 
   const programRestricted = visibility === 'specific' && selectedProgramIds.size > 0
   const groupRestricted = groupVisibility === 'specific' && selectedGroupIds.size > 0
+  // Only surface the membership caption when a chip is disabled *specifically*
+  // because of membership. When ancestor restrictions exist, non-inherited
+  // chips are already disabled by the narrowing rule, so the inheritance
+  // context — not membership — is the reason.
   const membershipRestrictedProgram = useMemo(
     () =>
-      programs.some(
-        (p) =>
-          restrictProgramIds != null &&
-          !restrictProgramIds.includes(p.id) &&
-          !inheritedProgramIds.includes(p.id),
-      ),
+      inheritedProgramIds.length === 0 &&
+      restrictProgramIds != null &&
+      programs.some((p) => !restrictProgramIds.includes(p.id)),
     [inheritedProgramIds, programs, restrictProgramIds],
   )
 

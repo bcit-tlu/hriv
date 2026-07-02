@@ -10,6 +10,10 @@ describe('getAttachableProgramIds', () => {
     expect(getAttachableProgramIds({ role: 'admin', program_ids: [1, 2] })).toBeNull()
   })
 
+  it('returns null for students (they never reach these dialogs)', () => {
+    expect(getAttachableProgramIds({ role: 'student', program_ids: [1, 2] })).toBeNull()
+  })
+
   it('returns null when there is no auth user', () => {
     expect(getAttachableProgramIds(null)).toBeNull()
   })
