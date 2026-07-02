@@ -26,6 +26,7 @@ function renderDialog(
       categoryStatus={props.categoryStatus}
       ancestorHidden={props.ancestorHidden}
       categoryId={props.categoryId}
+      childCategories={props.childCategories}
     />
   )
   return render(
@@ -438,6 +439,82 @@ describe('EditCategoryDialog', () => {
     )
     await user.click(screen.getByRole('button', { name: /cancel/i }))
     expect(onClose).toHaveBeenCalledOnce()
+  })
+
+  describe('incompatible child program restriction warning', () => {
+    const programs = [
+      { id: 1, name: 'Clinical Genetics', oidc_group: null, created_at: '', updated_at: '' },
+      { id: 2, name: 'Medical Radiography', oidc_group: null, created_at: '', updated_at: '' },
+    ]
+
+    const makeChild = (label: string, programIds: number[]) => ({
+      id: 99,
+      label,
+      parentId: 1,
+      programIds,
+      groupIds: [],
+      children: [],
+      images: [],
+      sortOrder: 0,
+      version: 1,
+    })
+
+    it('shows a warning when a child has programs disjoint from the selected parent programs', async () => {
+      const user = userEvent.setup()
+      renderDialog({
+        programs,
+        currentProgramIds: [],
+        childCategories: [makeChild('Slide 2 Skills Assessment', [3, 4])],
+      })
+
+      await user.click(screen.getByLabelText('Specific programs'))
+      await user.click(screen.getByText('Clinical Genetics'))
+
+      await waitFor(() => {
+        expect(screen.getByText(/Slide 2 Skills Assessment/)).toBeInTheDocument()
+      })
+      expect(screen.getByText(/will become hidden from all students/i)).toBeInTheDocument()
+    })
+
+    it('does not show a warning when child programs overlap with selected parent programs', async () => {
+      const user = userEvent.setup()
+      renderDialog({
+        programs,
+        currentProgramIds: [],
+        childCategories: [makeChild('Compatible Child', [1, 3])],
+      })
+
+      await user.click(screen.getByLabelText('Specific programs'))
+      await user.click(screen.getByText('Clinical Genetics'))
+
+      await waitFor(() => {
+        expect(screen.queryByText(/will become hidden from all students/i)).not.toBeInTheDocument()
+      })
+    })
+
+    it('does not show a warning when the child has no own program restrictions', async () => {
+      const user = userEvent.setup()
+      renderDialog({
+        programs,
+        currentProgramIds: [],
+        childCategories: [makeChild('Unrestricted Child', [])],
+      })
+
+      await user.click(screen.getByLabelText('Specific programs'))
+      await user.click(screen.getByText('Clinical Genetics'))
+
+      expect(screen.queryByText(/will become hidden from all students/i)).not.toBeInTheDocument()
+    })
+
+    it('does not show a warning when visibility is set to all programs', () => {
+      renderDialog({
+        programs,
+        currentProgramIds: [],
+        childCategories: [makeChild('Incompatible Child', [3])],
+      })
+
+      expect(screen.queryByText(/will become hidden from all students/i)).not.toBeInTheDocument()
+    })
   })
 
   describe('group restriction', () => {

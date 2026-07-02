@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   computeMoveRestrictionChange,
+  findIncompatibleDescendants,
   narrowGroupIds,
   narrowProgramIds,
   resolvePathNode,
@@ -370,5 +371,66 @@ describe('computeMoveRestrictionChange', () => {
     expect(result.hasChange).toBe(false) // still [2] either way
     expect(result.oldEffectiveProgramIds).toEqual([2])
     expect(result.newEffectiveProgramIds).toEqual([2])
+  })
+})
+
+describe('findIncompatibleDescendants', () => {
+  const leaf = (label: string, programIds: number[]) => ({ label, programIds, children: [] })
+  const parent = (
+    label: string,
+    programIds: number[],
+    children: { label: string; programIds: number[]; children: never[] }[],
+  ) => ({ label, programIds, children })
+
+  it('returns empty array when there are no children', () => {
+    expect(findIncompatibleDescendants([], [1, 2])).toEqual([])
+  })
+
+  it('returns empty array when newParentProgramIds is empty', () => {
+    expect(findIncompatibleDescendants([leaf('Child', [1, 2])], [])).toEqual([])
+  })
+
+  it('returns empty array when a child has no own programs', () => {
+    expect(findIncompatibleDescendants([leaf('Child', [])], [1, 2])).toEqual([])
+  })
+
+  it('returns empty array when all child programs overlap with new parent programs', () => {
+    expect(findIncompatibleDescendants([leaf('Child', [1, 3])], [1, 2])).toEqual([])
+  })
+
+  it('returns the label of a child whose programs are fully disjoint from new parent programs', () => {
+    // Issue scenario: parent adds [Clinical Genetics, Medical Radiography],
+    // child has [Nuclear Medicine, Radiation Therapy] — no overlap
+    expect(
+      findIncompatibleDescendants([leaf('Slide 2 Skills Assessment', [3, 4])], [1, 2]),
+    ).toEqual(['Slide 2 Skills Assessment'])
+  })
+
+  it('returns only the incompatible children, not the compatible ones', () => {
+    const children = [leaf('Compatible', [1, 3]), leaf('Incompatible', [5, 6])]
+    expect(findIncompatibleDescendants(children, [1, 2])).toEqual(['Incompatible'])
+  })
+
+  it('returns multiple incompatible children', () => {
+    const children = [leaf('A', [3]), leaf('B', [4]), leaf('C', [1])]
+    expect(findIncompatibleDescendants(children, [1, 2])).toEqual(['A', 'B'])
+  })
+
+  it('walks into grandchildren (depth-first order)', () => {
+    const grandchild = leaf('Grandchild', [5])
+    const child = parent('Child', [], [grandchild])
+    expect(findIncompatibleDescendants([child], [1, 2])).toEqual(['Grandchild'])
+  })
+
+  it('reports incompatible child and its incompatible grandchild', () => {
+    const grandchild = leaf('Grandchild', [5])
+    const child = parent('Child', [3], [grandchild])
+    expect(findIncompatibleDescendants([child], [1, 2])).toEqual(['Child', 'Grandchild'])
+  })
+
+  it('does not mutate the newParentProgramIds array', () => {
+    const ids = [1, 2]
+    findIncompatibleDescendants([leaf('X', [3])], ids)
+    expect(ids).toEqual([1, 2])
   })
 })
