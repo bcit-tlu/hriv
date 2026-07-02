@@ -1994,6 +1994,7 @@ export default function App() {
         categoryStatus={editNameCategory?.status}
         ancestorHidden={isCategoryHiddenInTree(categories, editNameCategory?.parentId)}
         categoryId={editNameCategory?.id}
+        childCategories={editNameCategory?.children}
       />
 
       {/* Self-edit profile modal */}

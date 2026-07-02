@@ -23,6 +23,7 @@ import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import Visibility from '@mui/icons-material/Visibility'
 import type { Category, Group, ImageItem, Program } from '../types'
 import { narrowGroupIds, narrowProgramIds } from '../categoryUtils'
+import { findCategoryPath } from '../treeUtils'
 import { getVisibilityColors } from '../theme'
 import { MAX_DEPTH } from '../types'
 import { useColorMode } from '../useColorMode'
@@ -305,6 +306,13 @@ export default function ManageCategoriesDialog({
     }
     return false
   }, [editingCategory, options])
+
+  const editingChildCategories = useMemo(() => {
+    if (!editingCategory) return []
+    const path = findCategoryPath(categories, editingCategory.id)
+    const node = path?.[path.length - 1]
+    return node?.children ?? []
+  }, [editingCategory, categories])
 
   const handleAddClick = (parentId: number | null, parentLabel?: string) => {
     setAddParentId(parentId)
@@ -807,6 +815,7 @@ export default function ManageCategoriesDialog({
           categoryId={editingCategory?.id}
           categoryStatus={editingCategory?.status}
           ancestorHidden={editAncestorHidden}
+          childCategories={editingChildCategories}
         />
       )}
 
