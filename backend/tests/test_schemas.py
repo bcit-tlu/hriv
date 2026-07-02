@@ -6,8 +6,18 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
 from app.schemas import (
+    AnnouncementUpdate,
+    CategoryCreate,
+    CategoryOut,
+    CategoryUpdate,
+    ChangelogEntryCreate,
+    ChangelogEntryUpdate,
+    GroupCreate,
+    GroupOut,
+    GroupUpdate,
     ImageBulkUpdate,
     ImageCreate,
     ImageOut,
@@ -16,6 +26,8 @@ from app.schemas import (
     ProgramCreate,
     ProgramUpdate,
     SourceImageOut,
+    UserCreate,
+    UserUpdate,
 )
 
 
@@ -121,6 +133,125 @@ def test_source_image_out_from_dict() -> None:
     assert out.status == "pending"
     assert out.tile_cache_status == "missing"
     assert out.source_checksum is None
+
+
+def test_group_out_from_orm_populates_relationship_ids() -> None:
+    now = datetime.now(timezone.utc)
+    orm_obj = SimpleNamespace(
+        id=1,
+        name="Group A",
+        description="desc",
+        created_by_user_id=7,
+        members=[SimpleNamespace(id=2), SimpleNamespace(id=3)],
+        instructors=[SimpleNamespace(id=4)],
+        created_at=now,
+        updated_at=now,
+    )
+
+    out = GroupOut.model_validate(orm_obj)
+
+    assert out.name == "Group A"
+    assert out.description == "desc"
+    # Out serialization does not mutate stored values.
+    assert out.member_ids == [2, 3]
+    assert out.instructor_ids == [4]
+
+
+def test_category_out_from_orm_populates_relationship_ids_and_metadata() -> None:
+    now = datetime.now(timezone.utc)
+    orm_obj = SimpleNamespace(
+        id=1,
+        label="Category A",
+        parent_id=None,
+        programs=[SimpleNamespace(id=10), SimpleNamespace(id=11)],
+        groups=[SimpleNamespace(id=20)],
+        status="active",
+        sort_order=5,
+        metadata_={"locked_overlays": [{"x": 1, "y": 2, "w": 3, "h": 4}]},
+        version=3,
+        created_at=now,
+        updated_at=now,
+        _category_warnings=[{"code": "warn", "message": "note"}],
+    )
+
+    out = CategoryOut.model_validate(orm_obj)
+
+    assert out.label == "Category A"
+    assert out.program_ids == [10, 11]
+    assert out.group_ids == [20]
+    assert out.metadata_extra == {"locked_overlays": [{"x": 1, "y": 2, "w": 3, "h": 4}]}
+    assert [warning.model_dump() for warning in out.warnings] == [
+        {"code": "warn", "message": "note"}
+    ]
+
+
+def test_required_string_schemas_trim_and_reject_blank_values() -> None:
+    assert ProgramCreate(name="  Program  ").name == "Program"
+    assert GroupCreate(name="  Group  ").name == "Group"
+    assert CategoryCreate(label="  Category  ").label == "Category"
+    entry = ChangelogEntryCreate(title="  Title  ", body="  Body  ")
+    assert entry.title == "Title"
+    assert entry.body == "Body"
+
+    with pytest.raises(ValidationError, match="must not be blank"):
+        ProgramCreate(name="   ")
+    with pytest.raises(ValidationError, match="must not be blank"):
+        GroupCreate(name="   ")
+    with pytest.raises(ValidationError, match="must not be blank"):
+        CategoryCreate(label="   ")
+    with pytest.raises(ValidationError, match="must not be blank"):
+        ChangelogEntryCreate(title="   ", body="body")
+    with pytest.raises(ValidationError, match="must not be blank"):
+        ChangelogEntryCreate(title="title", body="   ")
+
+
+def test_user_create_trims_and_rejects_blank_name_and_email() -> None:
+    user = UserCreate(name="  Alice  ", email="  alice@example.com  ", password="pw")
+    assert user.name == "Alice"
+    assert user.email == "alice@example.com"
+
+    with pytest.raises(ValidationError, match="must not be blank"):
+        UserCreate(name="   ", email="alice@example.com", password="pw")
+    with pytest.raises(ValidationError, match="must not be blank"):
+        UserCreate(name="Alice", email="   ", password="pw")
+
+
+def test_user_update_allows_none_and_rejects_blank_name_and_email() -> None:
+    assert UserUpdate(name=None, email=None).name is None
+    assert UserUpdate(name="  Alice  ").name == "Alice"
+    assert UserUpdate(email="  alice@example.com  ").email == "alice@example.com"
+
+    with pytest.raises(ValidationError, match="must not be blank"):
+        UserUpdate(name="   ")
+    with pytest.raises(ValidationError, match="must not be blank"):
+        UserUpdate(email="   ")
+
+
+def test_update_string_schemas_allow_none_and_trim_or_reject_blank() -> None:
+    assert ProgramUpdate(name=None).name is None
+    assert GroupUpdate(name=None).name is None
+    assert CategoryUpdate(label=None).label is None
+    assert ChangelogEntryUpdate(title=None, body=None).title is None
+    assert AnnouncementUpdate(message=None).message is None
+
+    assert ProgramUpdate(name="  Program  ").name == "Program"
+    assert GroupUpdate(name="  Group  ").name == "Group"
+    assert CategoryUpdate(label="  Category  ").label == "Category"
+    assert ChangelogEntryUpdate(title="  Title  ", body="  Body  ").title == "Title"
+    assert AnnouncementUpdate(message="  Message  ").message == "Message"
+
+    with pytest.raises(ValidationError, match="must not be blank"):
+        ProgramUpdate(name="   ")
+    with pytest.raises(ValidationError, match="must not be blank"):
+        GroupUpdate(name="   ")
+    with pytest.raises(ValidationError, match="must not be blank"):
+        CategoryUpdate(label="   ")
+    with pytest.raises(ValidationError, match="must not be blank"):
+        ChangelogEntryUpdate(title="   ")
+    with pytest.raises(ValidationError, match="must not be blank"):
+        ChangelogEntryUpdate(body="   ")
+    with pytest.raises(ValidationError, match="must not be blank"):
+        AnnouncementUpdate(message="   ")
 
 
 # ── oidc_group normalization ─────────────────────────────
