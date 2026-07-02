@@ -139,7 +139,7 @@ export function userMessage(err: unknown, fallback: string): string {
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function isMessageDetail(value: unknown): value is { message: string } {
