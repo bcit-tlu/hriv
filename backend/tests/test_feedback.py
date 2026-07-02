@@ -61,7 +61,9 @@ def test_get_feedback_delivery_requires_complete_github_config(
 ) -> None:
     monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "github")
     monkeypatch.delenv("FEEDBACK_GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.setenv("FEEDBACK_GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.delenv("GITHUB_REPO", raising=False)
 
     with pytest.raises(FeedbackNotConfiguredError):
         get_feedback_delivery()

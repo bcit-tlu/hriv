@@ -67,6 +67,12 @@ Planned providers tracked in follow-up issues:
 Legacy `github-issue.*` chart values are still accepted as a fallback while
 overlays move to the new config.
 
+For non-chart or transitional environments, the backend also honors legacy
+`GITHUB_TOKEN` plus `GITHUB_REPO` environment variables when
+`FEEDBACK_DELIVERY_PROVIDER` is unset. That implicit GitHub path exists only for
+upgrade compatibility and should not be treated as the preferred long-term
+configuration shape.
+
 ## Planned Issue Split
 
 - `#786` feedback foundation: abstract delivery and config
