@@ -2,16 +2,19 @@
 
 import time
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-import httpx
 import pytest
 from fastapi import HTTPException
 
+from app.feedback import (
+    FeedbackDeliveryError,
+    FeedbackDeliveryResult,
+    FeedbackNotConfiguredError,
+)
 from app.routers.issues import (
     _check_rate_limit,
     _neutralize_markdown,
-    _normalize_repo,
     _scrub,
     _user_timestamps,
     _validate_page_url,
@@ -19,21 +22,6 @@ from app.routers.issues import (
     report_issue,
     ReportIssueRequest,
 )
-
-
-@pytest.mark.parametrize(
-    "raw,expected",
-    [
-        ("owner/repo", "owner/repo"),
-        ("https://github.com/owner/repo", "owner/repo"),
-        ("http://github.com/owner/repo", "owner/repo"),
-        ("https://github.com/owner/repo/", "owner/repo"),
-        ("", ""),
-    ],
-)
-def test_github_repo_normalization(raw: str, expected: str) -> None:
-    """GITHUB_REPO is normalized to owner/repo at module load time."""
-    assert _normalize_repo(raw) == expected
 
 
 def test_check_rate_limit_allows_first_request() -> None:
@@ -73,11 +61,13 @@ async def test_report_issue_not_configured() -> None:
     user = SimpleNamespace(id=1, name="Test", email="t@example.com", role="student")
     body = ReportIssueRequest(description="Bug", page_url="http://localhost/page")
 
-    with patch("app.routers.issues.GITHUB_TOKEN", ""):
-        with patch("app.routers.issues.GITHUB_REPO", ""):
-            with pytest.raises(HTTPException) as exc:
-                await report_issue(body, user)
-            assert exc.value.status_code == 503
+    with patch(
+        "app.routers.issues.get_feedback_delivery",
+        side_effect=FeedbackNotConfiguredError("Feedback delivery is not configured"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await report_issue(body, user)
+        assert exc.value.status_code == 503
 
 
 async def test_report_issue_success() -> None:
@@ -86,103 +76,64 @@ async def test_report_issue_success() -> None:
     user = SimpleNamespace(id=user_id, name="Test User", email="t@example.com", role="student")
     body = ReportIssueRequest(description="Found a bug", page_url="http://localhost/page")
 
-    # First call: issue creation (201). Second call: label application (200).
-    create_resp = MagicMock()
-    create_resp.status_code = 201
-    create_resp.json.return_value = {
-        "html_url": "https://github.com/repo/issues/1",
-        "number": 1,
-    }
-    label_resp = MagicMock()
-    label_resp.status_code = 200
+    delivery = AsyncMock()
+    delivery.submit.return_value = FeedbackDeliveryResult(
+        destination="github",
+        tracking_url="https://github.com/repo/issues/1",
+        external_id="1",
+    )
 
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(side_effect=[create_resp, label_resp])
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
+    with patch("app.routers.issues.get_feedback_delivery", return_value=delivery):
+        result = await report_issue(body, user)
 
-    with patch("app.routers.issues.GITHUB_TOKEN", "fake-token"):
-        with patch("app.routers.issues.GITHUB_REPO", "owner/repo"):
-            with patch("app.routers.issues.httpx.AsyncClient", return_value=mock_client):
-                result = await report_issue(body, user)
-
+    assert result.destination == "github"
+    assert result.tracking_url == "https://github.com/repo/issues/1"
     assert result.issue_url == "https://github.com/repo/issues/1"
-
-    # Verify the issue-creation call (first POST)
-    create_call = mock_client.post.call_args_list[0]
-    payload = create_call.kwargs["json"]
-    assert payload["title"] == "feedback: Issue report from student"
-    assert "labels" not in payload  # labels applied separately
-    # Description appears before the metadata separator
-    body_text = payload["body"]
-    sep_pos = body_text.index("---")
-    assert body_text.index("Found a bug") < sep_pos
-    assert body_text.index("**Reported by:**") > sep_pos
-    assert body_text.index("**Page:**") > sep_pos
-    # PII must not appear in the issue body
-    assert "Test User" not in body_text
-    assert "t@example.com" not in body_text
-    # Non-identifying role and internal ID used instead
-    assert "student (user \u200b#8888)" in body_text
-
-    # Verify the label call (second POST)
-    label_call = mock_client.post.call_args_list[1]
-    assert "/issues/1/labels" in label_call.args[0]
-    assert label_call.kwargs["json"] == {"labels": ["feedback"]}
+    delivery.submit.assert_awaited_once()
+    submission = delivery.submit.await_args.args[0]
+    assert submission.description == "Found a bug"
+    assert submission.page_url == "http://localhost/page"
+    assert submission.user_role == "student"
+    assert submission.user_id == 8888
 
     _user_timestamps.pop(user_id, None)
 
 
-async def test_report_issue_label_failure_still_succeeds() -> None:
-    """Issue is returned even when the label call raises an exception."""
+async def test_report_issue_returns_generic_result_for_non_github_destination() -> None:
     user_id = 8886
     _user_timestamps.pop(user_id, None)
     user = SimpleNamespace(id=user_id, name="Test User", email="t@example.com", role="instructor")
     body = ReportIssueRequest(description="Bug report", page_url="http://localhost/page")
 
-    create_resp = MagicMock()
-    create_resp.status_code = 201
-    create_resp.json.return_value = {
-        "html_url": "https://github.com/repo/issues/2",
-        "number": 2,
-    }
-
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(
-        side_effect=[create_resp, httpx.TimeoutException("label timed out")]
+    delivery = AsyncMock()
+    delivery.submit.return_value = FeedbackDeliveryResult(
+        destination="servicenow",
+        tracking_url="https://servicenow.example/ticket/INC001",
+        external_id="INC001",
     )
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("app.routers.issues.GITHUB_TOKEN", "fake-token"):
-        with patch("app.routers.issues.GITHUB_REPO", "owner/repo"):
-            with patch("app.routers.issues.httpx.AsyncClient", return_value=mock_client):
-                result = await report_issue(body, user)
+    with patch("app.routers.issues.get_feedback_delivery", return_value=delivery):
+        result = await report_issue(body, user)
 
-    assert result.issue_url == "https://github.com/repo/issues/2"
+    assert result.destination == "servicenow"
+    assert result.tracking_url == "https://servicenow.example/ticket/INC001"
+    assert result.issue_url is None
     _user_timestamps.pop(user_id, None)
 
 
-async def test_report_issue_github_error() -> None:
+async def test_report_issue_delivery_error() -> None:
     user_id = 8887
     _user_timestamps.pop(user_id, None)
     user = SimpleNamespace(id=user_id, name="Test", email="t@example.com", role="admin")
     body = ReportIssueRequest(description="Bug", page_url="http://localhost/page")
 
-    mock_resp = MagicMock()
-    mock_resp.status_code = 500
+    delivery = AsyncMock()
+    delivery.submit.side_effect = FeedbackDeliveryError("GitHub API error creating issue: 500")
 
-    mock_client = AsyncMock()
-    mock_client.post = AsyncMock(return_value=mock_resp)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
-
-    with patch("app.routers.issues.GITHUB_TOKEN", "fake-token"):
-        with patch("app.routers.issues.GITHUB_REPO", "owner/repo"):
-            with patch("app.routers.issues.httpx.AsyncClient", return_value=mock_client):
-                with pytest.raises(HTTPException) as exc:
-                    await report_issue(body, user)
-                assert exc.value.status_code == 502
+    with patch("app.routers.issues.get_feedback_delivery", return_value=delivery):
+        with pytest.raises(HTTPException) as exc:
+            await report_issue(body, user)
+        assert exc.value.status_code == 502
     _user_timestamps.pop(user_id, None)
 
 

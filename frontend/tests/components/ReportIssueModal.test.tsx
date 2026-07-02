@@ -39,7 +39,11 @@ describe('ReportIssueModal', () => {
 
   it('calls reportIssue and shows success message', async () => {
     const user = userEvent.setup()
-    vi.mocked(reportIssue).mockResolvedValue({ issue_url: 'https://github.com/...' })
+    vi.mocked(reportIssue).mockResolvedValue({
+      destination: 'github',
+      tracking_url: 'https://github.com/...',
+      issue_url: 'https://github.com/...',
+    })
     render(<ReportIssueModal open onClose={vi.fn()} />)
 
     const textfield = screen.getByRole('textbox')

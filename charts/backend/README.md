@@ -1,38 +1,54 @@
 # hriv-backend chart notes
 
-## GitHub issue reporting (`github-issue.enabled`)
+## Feedback delivery (`feedback.provider`)
 
-The backend can create GitHub issues via `POST /api/issues/report`.
-This integration is now explicitly gated by `github-issue.enabled`.
+The backend accepts in-app feedback via `POST /api/issues/report`, then routes
+the submission through the configured delivery provider. The new generic chart
+config uses `feedback.provider`, with GitHub as the only implemented provider in
+this first foundation step.
 
 ### Values
 
-- `github-issue.enabled` (bool, default `false`)
-- `github-issue.repository` (string, default `""`, format `owner/repo`)
-- `github-issue.token.existingSecret` (string, default `""`)
+- `feedback.provider` (string, default `""`; supported: `github`)
+- `feedback.github.repository` (string, default `""`, format `owner/repo`)
+- `feedback.github.token.existingSecret` (string, default `""`)
+
+Legacy fallback values are still honored for upgrade compatibility:
+
+- `github-issue.enabled`
+- `github-issue.repository`
+- `github-issue.token.existingSecret`
 
 ### Behavior
 
-When `github-issue.enabled: false`:
+When `feedback.provider: ""` and `github-issue.enabled: false`:
 
-- `GITHUB_REPO` is not injected
-- `GITHUB_TOKEN` is not injected
-- No GitHub secret is referenced
+- no feedback delivery env vars are injected
+- no feedback secret is referenced
 
-When `github-issue.enabled: true`:
+When `feedback.provider: github`:
 
-- `GITHUB_REPO` is injected from `github-issue.repository`
-- `GITHUB_TOKEN` is read from secret `github-issue.token.existingSecret`, key `token`
+- `FEEDBACK_DELIVERY_PROVIDER=github` is injected
+- `FEEDBACK_GITHUB_REPOSITORY` is injected from `feedback.github.repository`
+- `FEEDBACK_GITHUB_TOKEN` is read from secret
+  `feedback.github.token.existingSecret`, key `token`
 - chart render fails if either required value is missing
+
+When `feedback.provider` is empty but `github-issue.enabled: true`:
+
+- the chart maps the legacy GitHub-only values into the new generic runtime env
+- this fallback is intended only for upgrade compatibility while overlays move
+  to the `feedback.*` config
 
 ### Example (enabled)
 
 ```yaml
-github-issue:
-  enabled: true
-  repository: bcit-tlu/hriv
-  token:
-    existingSecret: github-report-issue-token
+feedback:
+  provider: github
+  github:
+    repository: bcit-tlu/hriv
+    token:
+      existingSecret: github-report-issue-token
 ```
 
 Create the referenced secret:

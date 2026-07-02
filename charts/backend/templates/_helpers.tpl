@@ -54,6 +54,28 @@ user-chosen build metadata segment) are not mis-matched.
 {{- end -}}
 
 {{/*
+Resolve feedback delivery settings while preserving the legacy github-issue
+values as a fallback during the config migration.
+*/}}
+{{- define "hriv-backend.feedbackConfig" -}}
+{{- $feedback := dict
+      "provider" (.Values.feedback.provider | default "")
+      "githubRepository" (.Values.feedback.github.repository | default "")
+      "githubSecret" (.Values.feedback.github.token.existingSecret | default "")
+  -}}
+{{- if and (not (get $feedback "provider")) (index .Values "github-issue" "enabled") -}}
+  {{- $_ := set $feedback "provider" "github" -}}
+{{- end -}}
+{{- if and (eq (get $feedback "provider") "github") (not (get $feedback "githubRepository")) -}}
+  {{- $_ := set $feedback "githubRepository" ((index .Values "github-issue" "repository") | default "") -}}
+{{- end -}}
+{{- if and (eq (get $feedback "provider") "github") (not (get $feedback "githubSecret")) -}}
+  {{- $_ := set $feedback "githubSecret" ((index .Values "github-issue" "token" "existingSecret") | default "") -}}
+{{- end -}}
+{{- toYaml $feedback -}}
+{{- end -}}
+
+{{/*
 Resolve source-images persistence values while preserving legacy flat-key
 fallbacks for overlays that have not moved to the nested split-PVC structure.
 */}}
