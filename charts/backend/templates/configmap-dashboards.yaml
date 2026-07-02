@@ -10,7 +10,7 @@ metadata:
     {{- include "hriv-backend.labels" $ | nindent 4 }}
     grafana_dashboard: "1"
 data:
-  {{ $path | base | replace " " "-" }}: |
+  {{ $path | base | lower | replace " " "-" }}: |
 {{ $content | toString | indent 4 }}
 {{- end }}
 {{- end }}
