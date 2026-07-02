@@ -26,6 +26,8 @@ from app.schemas import (
     ProgramCreate,
     ProgramUpdate,
     SourceImageOut,
+    UserCreate,
+    UserUpdate,
 )
 
 
@@ -201,6 +203,28 @@ def test_required_string_schemas_trim_and_reject_blank_values() -> None:
         ChangelogEntryCreate(title="   ", body="body")
     with pytest.raises(ValidationError, match="must not be blank"):
         ChangelogEntryCreate(title="title", body="   ")
+
+
+def test_user_create_trims_and_rejects_blank_name_and_email() -> None:
+    user = UserCreate(name="  Alice  ", email="  alice@example.com  ", password="pw")
+    assert user.name == "Alice"
+    assert user.email == "alice@example.com"
+
+    with pytest.raises(ValidationError, match="must not be blank"):
+        UserCreate(name="   ", email="alice@example.com", password="pw")
+    with pytest.raises(ValidationError, match="must not be blank"):
+        UserCreate(name="Alice", email="   ", password="pw")
+
+
+def test_user_update_allows_none_and_rejects_blank_name_and_email() -> None:
+    assert UserUpdate(name=None, email=None).name is None
+    assert UserUpdate(name="  Alice  ").name == "Alice"
+    assert UserUpdate(email="  alice@example.com  ").email == "alice@example.com"
+
+    with pytest.raises(ValidationError, match="must not be blank"):
+        UserUpdate(name="   ")
+    with pytest.raises(ValidationError, match="must not be blank"):
+        UserUpdate(email="   ")
 
 
 def test_update_string_schemas_allow_none_and_trim_or_reject_blank() -> None:

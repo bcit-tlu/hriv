@@ -450,6 +450,9 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str
 
+    _validate_name = field_validator("name", mode="before")(normalize_nonblank_value)
+    _validate_email = field_validator("email", mode="before")(normalize_nonblank_value)
+
 
 class UserUpdate(BaseModel):
     name: str | None = None
@@ -458,6 +461,9 @@ class UserUpdate(BaseModel):
     program_ids: list[int] | None = None
     password: str | None = None
     metadata_extra: dict | None = None
+
+    _validate_name = field_validator("name", mode="before")(normalize_optional_nonblank_value)
+    _validate_email = field_validator("email", mode="before")(normalize_optional_nonblank_value)
 
 
 class UserBulkUpdate(BaseModel):
