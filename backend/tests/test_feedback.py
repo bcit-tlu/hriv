@@ -72,6 +72,17 @@ def test_get_feedback_delivery_requires_complete_github_config(
         get_feedback_delivery()
 
 
+def test_get_feedback_delivery_rejects_domain_only_github_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FEEDBACK_DELIVERY_PROVIDER", "github")
+    monkeypatch.setenv("FEEDBACK_GITHUB_TOKEN", "token")
+    monkeypatch.setenv("FEEDBACK_GITHUB_REPOSITORY", "https://github.com/")
+
+    with pytest.raises(FeedbackNotConfiguredError):
+        get_feedback_delivery()
+
+
 def test_get_feedback_delivery_uses_teams_provider_when_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
