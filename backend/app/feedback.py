@@ -12,6 +12,8 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+_TEAMS_RATE_LIMIT_SIGNAL = "Microsoft Teams endpoint returned HTTP error 429"
+
 
 def normalize_github_repo(raw: str) -> str:
     """Normalize a full GitHub URL to ``owner/repo`` format."""
@@ -194,17 +196,16 @@ class TeamsFeedbackDelivery:
                 raise FeedbackDeliveryError(
                     f"Teams webhook request failed: {exc}"
                 ) from exc
-
-        response_text = response.text.strip()
-        if response.is_success and (
-            "Microsoft Teams endpoint returned HTTP error 429" in response_text
-        ):
-            raise FeedbackDeliveryError("Teams webhook rate limit exceeded")
-        if not response.is_success:
-            detail = f": {response_text}" if response_text else ""
-            raise FeedbackDeliveryError(
-                f"Teams webhook error: {response.status_code}{detail}"
-            )
+            response_text = response.text.strip()
+            # Teams channel webhooks may return HTTP 200 while embedding a
+            # 429-style rate-limit signal in the response body.
+            if response.is_success and _TEAMS_RATE_LIMIT_SIGNAL in response_text:
+                raise FeedbackDeliveryError("Teams webhook rate limit exceeded")
+            if not response.is_success:
+                detail = f": {response_text}" if response_text else ""
+                raise FeedbackDeliveryError(
+                    f"Teams webhook error: {response.status_code}{detail}"
+                )
 
         return FeedbackDeliveryResult(destination="teams")
 

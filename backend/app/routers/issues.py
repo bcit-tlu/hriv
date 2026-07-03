@@ -182,6 +182,8 @@ async def report_issue(
     page_url = _validate_page_url(body.page_url)
     description = _validate_shape(body.description)
     description = _scrub(description)
+    # Keep mention/reference neutralization provider-agnostic so downstream
+    # plain-text destinations cannot accidentally trigger notifications.
     description = _neutralize_markdown(description)
 
     try:
