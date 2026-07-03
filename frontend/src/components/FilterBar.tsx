@@ -25,7 +25,9 @@ export default function FilterBar({
   const titleContent = (
     <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
       <FilterListIcon sx={{ fontSize: 14 }} />
-      <Box component="span">{title}</Box>
+      <Box component="span" sx={{ pl: 0.25 }}>
+        {title}
+      </Box>
     </Box>
   )
 
@@ -127,7 +129,13 @@ export default function FilterBar({
           </Box>
           {summaryActions ? (
             <Box
-              sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, whiteSpace: 'nowrap' }}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                flexShrink: 0,
+                whiteSpace: 'nowrap',
+                pr: 0.5,
+              }}
             >
               {summaryActions}
             </Box>
