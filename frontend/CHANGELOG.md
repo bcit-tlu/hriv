@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.29.0...frontend-v0.30.0) (2026-07-03)
+
+
+### Features
+
+* **frontend:** share table filter bar ([#796](https://github.com/bcit-tlu/hriv/issues/796)) ([2e62957](https://github.com/bcit-tlu/hriv/commit/2e6295759dbbabd03882cdea0b0442fb0cdb7a31))
+
 ## [0.29.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.28.1...frontend-v0.29.0) (2026-07-02)
 
 
