@@ -266,7 +266,8 @@ export default function GroupManagementModal({
     availableRows.length > 0 && availableRows.every((row) => selectedUserIds.has(row.id))
   const someAvailableSelected = availableRows.some((row) => selectedUserIds.has(row.id))
   const colSpan = tab === 'students' ? 5 : 4
-  const hasActiveMemberFilters = searchInput.trim().length > 0 || selectedProgramIds.length > 0
+  const hasActiveProgramFilters = tab === 'students' && selectedProgramIds.length > 0
+  const hasActiveMemberFilters = searchInput.trim().length > 0 || hasActiveProgramFilters
 
   const openCreateDialog = () => {
     setGroupNameDraft('')
@@ -729,30 +730,31 @@ export default function GroupManagementModal({
                               }}
                             />
                           )}
-                          {selectedProgramOptions.map((program) => (
-                            <Chip
-                              key={program.id}
-                              label={`Program: ${program.name}`}
-                              size="small"
-                              onDelete={() =>
-                                setSelectedProgramIds((prev) =>
-                                  prev.filter((programId) => programId !== program.id),
-                                )
-                              }
-                              sx={{
-                                bgcolor: (theme) =>
-                                  theme.palette.mode === 'dark'
-                                    ? 'rgba(165, 36, 56, 0.22)'
-                                    : 'rgba(165, 36, 56, 0.08)',
-                                color: 'secondary.main',
-                                border: '1px solid',
-                                borderColor: 'secondary.main',
-                                '& .MuiChip-deleteIcon': {
+                          {tab === 'students' &&
+                            selectedProgramOptions.map((program) => (
+                              <Chip
+                                key={program.id}
+                                label={`Program: ${program.name}`}
+                                size="small"
+                                onDelete={() =>
+                                  setSelectedProgramIds((prev) =>
+                                    prev.filter((programId) => programId !== program.id),
+                                  )
+                                }
+                                sx={{
+                                  bgcolor: (theme) =>
+                                    theme.palette.mode === 'dark'
+                                      ? 'rgba(165, 36, 56, 0.22)'
+                                      : 'rgba(165, 36, 56, 0.08)',
                                   color: 'secondary.main',
-                                },
-                              }}
-                            />
-                          ))}
+                                  border: '1px solid',
+                                  borderColor: 'secondary.main',
+                                  '& .MuiChip-deleteIcon': {
+                                    color: 'secondary.main',
+                                  },
+                                }}
+                              />
+                            ))}
                         </>
                       ) : undefined
                     }

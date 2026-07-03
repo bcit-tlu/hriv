@@ -298,8 +298,8 @@ export default function ManagePage({
 
   // Filter state
   const [filters, setFilters] = useState<Record<string, string>>({})
-  const [selectedPrograms, setSelectedPrograms] = useState<Set<string>>(new Set())
-  const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set())
+  const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(new Set())
+  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(new Set())
   const [selectedVisibility, setSelectedVisibility] = useState<Set<VisibilityFilterValue>>(
     new Set(),
   )
@@ -355,7 +355,13 @@ export default function ManagePage({
   if (initialProgramFilter !== prevInitialProgramFilter) {
     setPrevInitialProgramFilter(initialProgramFilter)
     if (initialProgramFilter) {
-      setSelectedPrograms(new Set([initialProgramFilter]))
+      setSelectedPrograms(
+        new Set(
+          programs
+            .filter((program) => program.name === initialProgramFilter)
+            .map((program) => program.id),
+        ),
+      )
       setColumnVisible('program', true)
       setCurrentPage(0)
       onInitialProgramFilterConsumed?.()
@@ -485,31 +491,35 @@ export default function ManagePage({
 
   const programFilterOptions = useMemo(
     () =>
-      [
-        ...new Set(
-          Array.from(programs, (program) => program.name.trim()).filter(
-            (value) => value.length > 0,
-          ),
-        ),
-      ].sort((a, b) => a.localeCompare(b)),
+      programs
+        .map((program) => ({ id: program.id, name: program.name.trim() }))
+        .filter((program) => program.name.length > 0)
+        .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id),
     [programs],
   )
   const groupFilterOptions = useMemo(
     () =>
-      [
-        ...new Set(
-          Array.from(groups, (group) => group.name.trim()).filter((value) => value.length > 0),
-        ),
-      ].sort((a, b) => a.localeCompare(b)),
+      groups
+        .map((group) => ({ id: group.id, name: group.name.trim() }))
+        .filter((group) => group.name.length > 0)
+        .sort((a, b) => a.name.localeCompare(b.name) || a.id - b.id),
     [groups],
   )
-  const selectedProgramValues = useMemo(
-    () => programFilterOptions.filter((program) => selectedPrograms.has(program)),
+  const selectedProgramOptions = useMemo(
+    () => programFilterOptions.filter((program) => selectedPrograms.has(program.id)),
     [programFilterOptions, selectedPrograms],
   )
-  const selectedGroupValues = useMemo(
-    () => groupFilterOptions.filter((group) => selectedGroups.has(group)),
+  const selectedGroupOptions = useMemo(
+    () => groupFilterOptions.filter((group) => selectedGroups.has(group.id)),
     [groupFilterOptions, selectedGroups],
+  )
+  const selectedProgramValues = useMemo(
+    () => selectedProgramOptions.map((program) => String(program.id)),
+    [selectedProgramOptions],
+  )
+  const selectedGroupValues = useMemo(
+    () => selectedGroupOptions.map((group) => String(group.id)),
+    [selectedGroupOptions],
   )
   const selectedVisibilityValues = useMemo(
     () =>
@@ -534,11 +544,13 @@ export default function ManagePage({
       if (!match('copyright', img.copyright ?? '')) return false
       if (!match('note', img.note ?? '')) return false
       if (selectedPrograms.size > 0) {
-        const imagePrograms = new Set(getProgramNameList(img))
+        const { direct, ancestor } = getInheritedProgramIds(img)
+        const imagePrograms = new Set([...direct, ...ancestor])
         if (![...selectedPrograms].some((value) => imagePrograms.has(value))) return false
       }
       if (selectedGroups.size > 0) {
-        const imageGroups = new Set(getGroupNameList(img))
+        const { direct, ancestor } = getInheritedGroupIds(img)
+        const imageGroups = new Set([...direct, ...ancestor])
         if (![...selectedGroups].some((value) => imageGroups.has(value))) return false
       }
       if (selectedVisibility.size > 0) {
@@ -550,6 +562,8 @@ export default function ManagePage({
   }, [
     filters,
     getCategoryLabel,
+    getInheritedGroupIds,
+    getInheritedProgramIds,
     getGroupNameList,
     getProgramNameList,
     hasActiveFilters,
@@ -965,15 +979,15 @@ export default function ManagePage({
                     />
                   )
                 })}
-              {selectedProgramValues.map((program) => (
+              {selectedProgramOptions.map((program) => (
                 <Chip
-                  key={`program:${program}`}
-                  label={`Program: ${program}`}
+                  key={`program:${program.id}`}
+                  label={`Program: ${program.name}`}
                   size="small"
                   onDelete={() => {
                     setSelectedPrograms((prev) => {
                       const next = new Set(prev)
-                      next.delete(program)
+                      next.delete(program.id)
                       return next
                     })
                     setCurrentPage(0)
@@ -992,15 +1006,15 @@ export default function ManagePage({
                   }}
                 />
               ))}
-              {selectedGroupValues.map((group) => (
+              {selectedGroupOptions.map((group) => (
                 <Chip
-                  key={`group:${group}`}
-                  label={`Group: ${group}`}
+                  key={`group:${group.id}`}
+                  label={`Group: ${group.name}`}
                   size="small"
                   onDelete={() => {
                     setSelectedGroups((prev) => {
                       const next = new Set(prev)
-                      next.delete(group)
+                      next.delete(group.id)
                       return next
                     })
                     setCurrentPage(0)
@@ -1147,10 +1161,13 @@ export default function ManagePage({
         {isColumnVisible('program') && (
           <FilterPopoverButton label="Program" activeCount={selectedPrograms.size} panelWidth={260}>
             <FilterOptionPanel
-              options={programFilterOptions.map((program) => ({ value: program, label: program }))}
+              options={programFilterOptions.map((program) => ({
+                value: String(program.id),
+                label: program.name,
+              }))}
               selectedValues={selectedProgramValues}
               onChange={(values) => {
-                setSelectedPrograms(new Set(values))
+                setSelectedPrograms(new Set(values.map((value) => Number(value))))
                 setCurrentPage(0)
               }}
             />
@@ -1159,10 +1176,13 @@ export default function ManagePage({
         {isColumnVisible('group') && (
           <FilterPopoverButton label="Group" activeCount={selectedGroups.size} panelWidth={260}>
             <FilterOptionPanel
-              options={groupFilterOptions.map((group) => ({ value: group, label: group }))}
+              options={groupFilterOptions.map((group) => ({
+                value: String(group.id),
+                label: group.name,
+              }))}
               selectedValues={selectedGroupValues}
               onChange={(values) => {
-                setSelectedGroups(new Set(values))
+                setSelectedGroups(new Set(values.map((value) => Number(value))))
                 setCurrentPage(0)
               }}
             />
@@ -1435,11 +1455,11 @@ export default function ManagePage({
                         {(() => {
                           const { direct, ancestor } = getInheritedProgramIds(img)
                           if (direct.length === 0 && ancestor.length === 0) return 'All programs'
-                          const chipClick = (name: string) => {
+                          const chipClick = (id: number) => {
                             if (onSearchProgram) {
-                              onSearchProgram(name)
+                              onSearchProgram(programNameById.get(id) ?? '')
                             } else {
-                              setSelectedPrograms((prev) => new Set(prev).add(name))
+                              setSelectedPrograms((prev) => new Set(prev).add(id))
                               setCurrentPage(0)
                             }
                           }
@@ -1453,7 +1473,7 @@ export default function ManagePage({
                                     key={p.id}
                                     label={p.name}
                                     size="small"
-                                    onClick={() => chipClick(p.name)}
+                                    onClick={() => chipClick(p.id)}
                                     {...(img.active
                                       ? { color: 'primary', sx: { cursor: 'pointer' } }
                                       : {
@@ -1473,7 +1493,7 @@ export default function ManagePage({
                                     key={p.id}
                                     label={p.name}
                                     size="small"
-                                    onClick={() => chipClick(p.name)}
+                                    onClick={() => chipClick(p.id)}
                                     {...(img.active
                                       ? {
                                           color: 'primary',
@@ -1500,8 +1520,8 @@ export default function ManagePage({
                         {(() => {
                           const { direct, ancestor } = getInheritedGroupIds(img)
                           if (direct.length === 0 && ancestor.length === 0) return 'All groups'
-                          const chipClick = (name: string) => {
-                            setSelectedGroups((prev) => new Set(prev).add(name))
+                          const chipClick = (id: number) => {
+                            setSelectedGroups((prev) => new Set(prev).add(id))
                             setCurrentPage(0)
                           }
                           return (
@@ -1515,7 +1535,7 @@ export default function ManagePage({
                                     label={g.name}
                                     size="small"
                                     color="secondary"
-                                    onClick={() => chipClick(g.name)}
+                                    onClick={() => chipClick(g.id)}
                                     sx={{
                                       cursor: 'pointer',
                                       ...(img.active
@@ -1536,7 +1556,7 @@ export default function ManagePage({
                                     label={g.name}
                                     size="small"
                                     color="secondary"
-                                    onClick={() => chipClick(g.name)}
+                                    onClick={() => chipClick(g.id)}
                                     sx={
                                       img.active
                                         ? getInheritedRestrictionSx(true, { cursor: 'pointer' })
