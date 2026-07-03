@@ -22,6 +22,10 @@
 {{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" $tilesAccessModes)) }}
 {{- fail "replicaCount > 1 requires a ReadWriteMany tiles PVC — all replicas must be able to serve generated DZI tiles" }}
 {{- end }}
+{{- $rwoPersistence := and .Values.persistence.enabled (or (has "ReadWriteOnce" $sourceImagesAccessModes) (has "ReadWriteOnce" $tilesAccessModes)) -}}
+{{- if and .Values.updateStrategy $rwoPersistence (ne (get .Values.updateStrategy "type") "Recreate") }}
+{{- fail "ReadWriteOnce PVCs require Recreate; set updateStrategy.type=Recreate or switch to ReadWriteMany" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -30,9 +34,18 @@ metadata:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  {{- if and .Values.persistence.enabled (or (has "ReadWriteOnce" $sourceImagesAccessModes) (has "ReadWriteOnce" $tilesAccessModes)) }}
+  {{- if .Values.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.updateStrategy | nindent 4 }}
+  {{- else if $rwoPersistence }}
   strategy:
     type: Recreate
+  {{- else if and .Values.scheduling.zoneAntiAffinity.enabled (gt (.Values.replicaCount | int) 1) }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   {{- end }}
   selector:
     matchLabels:

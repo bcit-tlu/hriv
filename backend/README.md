@@ -232,6 +232,16 @@ To supply your own pre-existing secret, set `jwtSecret` in `values.yaml` (or
 manage the `<release>-jwt` Secret out-of-band and the chart will honour the
 existing value).
 
+## Deployment rollout strategy
+
+The backend Deployment auto-selects a rollout strategy from chart values.
+Hard zone anti-affinity with `replicaCount > 1` uses
+`maxSurge: 0` / `maxUnavailable: 1` so one zone frees up before its
+replacement schedules, avoiding the two-zone deadlock seen on stable.
+`updateStrategy` can override the Deployment `.spec.strategy` explicitly.
+ReadWriteOnce persistence forces `Recreate`; any explicit `updateStrategy`
+override must also use `type: Recreate`.
+
 ## Grafana dashboards
 
 When `observability.grafanaDashboards.enabled` is set, the chart renders each
