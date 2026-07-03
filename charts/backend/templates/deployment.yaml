@@ -30,9 +30,19 @@ metadata:
     {{- include "hriv-backend.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
-  {{- if and .Values.persistence.enabled (or (has "ReadWriteOnce" $sourceImagesAccessModes) (has "ReadWriteOnce" $tilesAccessModes)) }}
+  {{- $rwoPersistence := and .Values.persistence.enabled (or (has "ReadWriteOnce" $sourceImagesAccessModes) (has "ReadWriteOnce" $tilesAccessModes)) -}}
+  {{- if .Values.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.updateStrategy | nindent 4 }}
+  {{- else if $rwoPersistence }}
   strategy:
     type: Recreate
+  {{- else if and .Values.scheduling.zoneAntiAffinity.enabled (gt (.Values.replicaCount | int) 1) }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
   {{- end }}
   selector:
     matchLabels:
