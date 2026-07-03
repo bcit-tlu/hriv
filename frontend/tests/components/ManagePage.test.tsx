@@ -297,6 +297,101 @@ describe('ManagePage', () => {
     })
   })
 
+  it('adds program chip-click filters instead of replacing the existing selection', async () => {
+    const additivePrograms: Program[] = [
+      { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
+      { id: 2, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' },
+    ]
+    const additiveCategories = [
+      makeCategory({ id: 10, label: 'Microscopy', programIds: [1, 2], groupIds: [7] }),
+      makeCategory({ id: 11, label: 'Histology', programIds: [2], groupIds: [7] }),
+    ]
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        id: 101,
+        name: 'Blood Smear',
+        thumb: '/thumb-a.jpg',
+        tile_sources: '/tile-a.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 102,
+        name: 'Tissue Section',
+        thumb: '/thumb-b.jpg',
+        tile_sources: '/tile-b.dzi',
+        category_id: 11,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 1,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+    localStorage.setItem(
+      'hrivpref:table-columns:manage-images:user:1',
+      JSON.stringify({
+        thumbnail: true,
+        id: false,
+        name: true,
+        category: true,
+        copyright: false,
+        note: false,
+        program: true,
+        group: true,
+        active: true,
+        updated_at: true,
+        created_at: false,
+        dimensions: false,
+        file_size: false,
+        measurement: false,
+      }),
+    )
+
+    const user = userEvent.setup()
+    render(
+      <ManagePage categories={additiveCategories} programs={additivePrograms} groups={groups} />,
+    )
+
+    await screen.findByText('Blood Smear')
+    await screen.findByText('Tissue Section')
+
+    await user.click(screen.getByText('Medical Lab'))
+    await waitFor(() => {
+      expect(screen.getByText('Program: Medical Lab')).toBeInTheDocument()
+      expect(screen.getByText('1 of 2 images')).toBeInTheDocument()
+      expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+      expect(screen.queryByText('Tissue Section')).not.toBeInTheDocument()
+    })
+
+    const bloodSmearRow = screen.getByText('Blood Smear').closest('tr')
+    expect(bloodSmearRow).not.toBeNull()
+    await user.click(within(bloodSmearRow as HTMLElement).getByText('Nursing'))
+    await waitFor(() => {
+      expect(screen.getByText('Program: Medical Lab')).toBeInTheDocument()
+      expect(screen.getByText('Program: Nursing')).toBeInTheDocument()
+      expect(screen.getByText('2 of 2 images')).toBeInTheDocument()
+      expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+      expect(screen.getByText('Tissue Section')).toBeInTheDocument()
+    })
+  })
+
   it('greyscales the thumbnail when an image is inactive', async () => {
     vi.mocked(fetchImages).mockResolvedValue([
       {

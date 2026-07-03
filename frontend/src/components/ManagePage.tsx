@@ -564,8 +564,6 @@ export default function ManagePage({
     getCategoryLabel,
     getInheritedGroupIds,
     getInheritedProgramIds,
-    getGroupNameList,
-    getProgramNameList,
     hasActiveFilters,
     images,
     selectedGroups,
