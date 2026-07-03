@@ -147,9 +147,16 @@ async def test_report_issue_delivery_error() -> None:
     delivery.submit.side_effect = FeedbackDeliveryError("GitHub API error creating issue: 500")
 
     with patch("app.routers.issues.get_feedback_delivery", return_value=delivery):
-        with pytest.raises(HTTPException) as exc:
-            await report_issue(body, user)
-        assert exc.value.status_code == 502
+        with (
+            patch("app.routers.issues.get_feedback_app_version", return_value="0.27.1"),
+            patch(
+                "app.routers.issues.get_feedback_submission_timestamp",
+                return_value="2026-07-03T00:00:00Z",
+            ),
+        ):
+            with pytest.raises(HTTPException) as exc:
+                await report_issue(body, user)
+            assert exc.value.status_code == 502
     _user_timestamps.pop(user_id, None)
 
 

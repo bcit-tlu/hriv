@@ -157,7 +157,11 @@ async def test_github_feedback_delivery_success() -> None:
     assert body_text.index("Found a bug") < sep_pos
     assert body_text.index("**Reported by:**") > sep_pos
     assert body_text.index("**Page:**") > sep_pos
+    assert body_text.index("**App version:**") > sep_pos
+    assert body_text.index("**Submitted:**") > sep_pos
     assert "student (user \u200b#123)" in body_text
+    assert "0.27.1" in body_text
+    assert "2026-07-03T00:00:00Z" in body_text
 
     label_call = mock_client.post.call_args_list[1]
     assert "/issues/1/labels" in label_call.args[0]

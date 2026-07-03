@@ -74,7 +74,9 @@ class GitHubFeedbackDelivery:
             f"{submission.description}\n\n"
             f"---\n\n"
             f"**Reported by:** {submission.user_role} (user \u200b#{submission.user_id})\n"
-            f"**Page:** {submission.page_url}"
+            f"**Page:** {submission.page_url}\n"
+            f"**App version:** {submission.app_version}\n"
+            f"**Submitted:** {submission.submitted_at}"
         )
         headers = {
             "Authorization": f"Bearer {self.token}",
