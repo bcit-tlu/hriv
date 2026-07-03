@@ -242,7 +242,6 @@ def get_feedback_delivery() -> FeedbackDelivery:
         repo = os.environ.get("FEEDBACK_GITHUB_REPOSITORY") or os.environ.get(
             "GITHUB_REPO", ""
         )
-        repo = normalize_github_repo(repo)
         if not token or not repo:
             raise FeedbackNotConfiguredError(
                 "GitHub feedback delivery is not fully configured"
