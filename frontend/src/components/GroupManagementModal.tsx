@@ -756,6 +756,18 @@ export default function GroupManagementModal({
                         </>
                       ) : undefined
                     }
+                    actions={
+                      <Button
+                        variant="contained"
+                        color="secondary"
+                        startIcon={bulkPending ? <CircularProgress size={16} /> : <AddIcon />}
+                        disabled={selectedUserIds.size === 0 || bulkPending || !manageable}
+                        onClick={() => void handleBulkAdd()}
+                        sx={{ minWidth: 160, whiteSpace: 'nowrap' }}
+                      >
+                        Add {selectedUserIds.size > 0 ? selectedUserIds.size : ''} to Group
+                      </Button>
+                    }
                   >
                     <FilterPopoverButton
                       label="Search"
@@ -790,16 +802,6 @@ export default function GroupManagementModal({
                         />
                       </FilterPopoverButton>
                     )}
-                    <Button
-                      variant="contained"
-                      color="secondary"
-                      startIcon={bulkPending ? <CircularProgress size={16} /> : <AddIcon />}
-                      disabled={selectedUserIds.size === 0 || bulkPending || !manageable}
-                      onClick={() => void handleBulkAdd()}
-                      sx={{ minWidth: 160, whiteSpace: 'nowrap' }}
-                    >
-                      Add {selectedUserIds.size > 0 ? selectedUserIds.size : ''} to Group
-                    </Button>
                   </FilterBar>
                 </Box>
 
