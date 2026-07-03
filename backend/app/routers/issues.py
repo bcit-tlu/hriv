@@ -16,7 +16,9 @@ from ..feedback import (
     FeedbackDeliveryError,
     FeedbackNotConfiguredError,
     FeedbackSubmission,
+    get_feedback_app_version,
     get_feedback_delivery,
+    get_feedback_submission_timestamp,
 )
 from ..models import User
 
@@ -195,6 +197,8 @@ async def report_issue(
         page_url=page_url,
         user_id=current_user.id,
         user_role=current_user.role,
+        app_version=get_feedback_app_version(),
+        submitted_at=get_feedback_submission_timestamp(),
     )
 
     try:

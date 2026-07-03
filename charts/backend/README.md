@@ -4,14 +4,14 @@
 
 The backend accepts in-app feedback via `POST /api/issues/report`, then routes
 the submission through the configured delivery provider. The new generic chart
-config uses `feedback.provider`, with GitHub as the only implemented provider in
-this first foundation step.
+config uses `feedback.provider`, with GitHub and Teams currently implemented.
 
 ### Values
 
-- `feedback.provider` (string, default `""`; supported: `github`)
+- `feedback.provider` (string, default `""`; supported: `github`, `teams`)
 - `feedback.github.repository` (string, default `""`, format `owner/repo`)
 - `feedback.github.token.existingSecret` (string, default `""`)
+- `feedback.teams.webhook.existingSecret` (string, default `""`)
 
 Legacy fallback values are still honored for upgrade compatibility:
 
@@ -33,6 +33,13 @@ When `feedback.provider: github`:
 - `FEEDBACK_GITHUB_TOKEN` is read from secret
   `feedback.github.token.existingSecret`, key `token`
 - chart render fails if either required value is missing
+
+When `feedback.provider: teams`:
+
+- `FEEDBACK_DELIVERY_PROVIDER=teams` is injected
+- `FEEDBACK_TEAMS_WEBHOOK_URL` is read from secret
+  `feedback.teams.webhook.existingSecret`, key `url`
+- chart render fails if the webhook secret is missing
 
 When `feedback.provider` is empty but `github-issue.enabled: true`:
 
@@ -56,6 +63,24 @@ Create the referenced secret:
 ```bash
 kubectl create secret generic github-report-issue-token \
   --from-literal=token=ghp_YOUR_SCOPED_PAT \
+  -n <namespace>
+```
+
+### Example (Teams)
+
+```yaml
+feedback:
+  provider: teams
+  teams:
+    webhook:
+      existingSecret: hriv-feedback-teams-webhook
+```
+
+Create the referenced secret:
+
+```bash
+kubectl create secret generic hriv-feedback-teams-webhook \
+  --from-literal=url=https://outlook.office.com/webhook/... \
   -n <namespace>
 ```
 

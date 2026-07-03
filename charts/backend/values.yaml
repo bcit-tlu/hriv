@@ -203,9 +203,9 @@ redis:
 # Supported providers today:
 #   - "" / disabled
 #   - github
+#   - teams
 #
 # Providers planned in follow-up work:
-#   - teams
 #   - servicenow
 #
 # To enable GitHub delivery with the new generic config:
@@ -219,11 +219,24 @@ redis:
 # To supply a PAT:
 #   kubectl create secret generic github-report-issue-token \
 #     --from-literal=token=ghp_YOUR_SCOPED_PAT -n <namespace>
+#
+# To enable Teams delivery with a channel webhook:
+#   feedback:
+#     provider: teams
+#     teams:
+#       webhook:
+#         existingSecret: hriv-feedback-teams-webhook
+#
+#   kubectl create secret generic hriv-feedback-teams-webhook \
+#     --from-literal=url=https://outlook.office.com/webhook/... -n <namespace>
 feedback:
   provider: ''
   github:
     repository: ''
     token:
+      existingSecret: ''
+  teams:
+    webhook:
       existingSecret: ''
 
 # Deprecated legacy GitHub-only config kept for upgrade compatibility.
