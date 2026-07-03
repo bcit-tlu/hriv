@@ -7,14 +7,17 @@
 {{- $sourceImagesAccessModes := get $sourceImages "accessModes" -}}
 {{- $tilesAccessModes := get $tiles "accessModes" -}}
 {{- $feedbackProvider := get $feedback "provider" -}}
-{{- if and $feedbackProvider (ne $feedbackProvider "github") }}
-{{- fail "feedback.provider currently supports only 'github' or empty/disabled while Teams and ServiceNow providers are still unimplemented" }}
+{{- if and $feedbackProvider (not (has $feedbackProvider (list "github" "teams"))) }}
+{{- fail "feedback.provider currently supports only 'github', 'teams', or empty/disabled while ServiceNow is still unimplemented" }}
 {{- end }}
 {{- if and (eq $feedbackProvider "github") (not (get $feedback "githubRepository")) }}
 {{- fail "feedback.provider=github requires feedback.github.repository (or legacy github-issue.repository)" }}
 {{- end }}
 {{- if and (eq $feedbackProvider "github") (not (get $feedback "githubSecret")) }}
 {{- fail "feedback.provider=github requires feedback.github.token.existingSecret (or legacy github-issue.token.existingSecret); secret must contain key 'token'" }}
+{{- end }}
+{{- if and (eq $feedbackProvider "teams") (not (get $feedback "teamsSecret")) }}
+{{- fail "feedback.provider=teams requires feedback.teams.webhook.existingSecret; secret must contain key 'url'" }}
 {{- end }}
 {{- if and .Values.persistence.enabled (gt (.Values.replicaCount | int) 1) (not (has "ReadWriteMany" $sourceImagesAccessModes)) }}
 {{- fail "replicaCount > 1 requires a ReadWriteMany source-images PVC — background admin tasks write result files to the shared /data volume that any replica must be able to serve" }}
@@ -103,6 +106,13 @@ spec:
                   key: token
             - name: FEEDBACK_GITHUB_REPOSITORY
               value: {{ get $feedback "githubRepository" | quote }}
+            {{- end }}
+            {{- if eq $feedbackProvider "teams" }}
+            - name: FEEDBACK_TEAMS_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ get $feedback "teamsSecret" }}
+                  key: url
             {{- end }}
             # Backend component version surfaced by /api/admin/version
             # and the FastAPI `app.version` attribute. Rendered from

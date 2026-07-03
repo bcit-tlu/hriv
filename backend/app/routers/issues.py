@@ -16,7 +16,9 @@ from ..feedback import (
     FeedbackDeliveryError,
     FeedbackNotConfiguredError,
     FeedbackSubmission,
+    get_feedback_app_version,
     get_feedback_delivery,
+    get_feedback_submission_timestamp,
 )
 from ..models import User
 
@@ -180,6 +182,8 @@ async def report_issue(
     page_url = _validate_page_url(body.page_url)
     description = _validate_shape(body.description)
     description = _scrub(description)
+    # Keep mention/reference neutralization provider-agnostic so downstream
+    # plain-text destinations cannot accidentally trigger notifications.
     description = _neutralize_markdown(description)
 
     try:
@@ -195,6 +199,8 @@ async def report_issue(
         page_url=page_url,
         user_id=current_user.id,
         user_role=current_user.role,
+        app_version=get_feedback_app_version(),
+        submitted_at=get_feedback_submission_timestamp(),
     )
 
     try:

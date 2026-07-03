@@ -62,6 +62,7 @@ values as a fallback during the config migration.
       "provider" (.Values.feedback.provider | default "")
       "githubRepository" (.Values.feedback.github.repository | default "")
       "githubSecret" (.Values.feedback.github.token.existingSecret | default "")
+      "teamsSecret" (.Values.feedback.teams.webhook.existingSecret | default "")
   -}}
 {{- if and (not (get $feedback "provider")) (index .Values "github-issue" "enabled") -}}
   {{- $_ := set $feedback "provider" "github" -}}

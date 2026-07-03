@@ -58,10 +58,10 @@ Supported providers today:
 
 - `""` / disabled
 - `github`
+- `teams`
 
 Planned providers tracked in follow-up issues:
 
-- `teams` (`#787`)
 - `servicenow` (`#788`)
 
 Legacy `github-issue.*` chart values are still accepted as a fallback while
@@ -79,6 +79,40 @@ configuration shape.
 - `#787` feedback delivery: add MS Teams provider
 - `#788` feedback delivery: add ServiceNow provider
 - `#789` feedback UX: show submission outcome and tracking link
+
+## MS Teams Provider
+
+Issue `#787` adds a production-oriented Teams provider that posts to a channel
+webhook URL configured in the backend chart. The provider uses a compact
+Adaptive Card payload so the channel receives triage-friendly structure instead
+of an unformatted text blob.
+
+Delivered fields:
+
+- submission text
+- role
+- internal user id
+- page URL
+- deployed app version
+- submission timestamp (UTC)
+
+Chart configuration:
+
+```yaml
+feedback:
+  provider: teams
+  teams:
+    webhook:
+      existingSecret: hriv-feedback-teams-webhook
+```
+
+The referenced secret must expose key `url`, which becomes
+`FEEDBACK_TEAMS_WEBHOOK_URL` in the backend pod.
+
+This implementation targets a Teams channel webhook endpoint. It does not yet
+create a user-visible tracking link, so the frontend still behaves the same as
+before; issue `#789` remains the UI follow-up and issue `#713` is still only
+fully satisfied for destinations that return a safe tracking URL.
 
 ## Notes For Future Providers
 

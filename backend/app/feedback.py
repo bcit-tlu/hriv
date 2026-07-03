@@ -5,11 +5,14 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Protocol
 
 import httpx
 
 logger = logging.getLogger(__name__)
+
+_TEAMS_RATE_LIMIT_SIGNAL = "Microsoft Teams endpoint returned HTTP error 429"
 
 
 def normalize_github_repo(raw: str) -> str:
@@ -27,6 +30,8 @@ class FeedbackSubmission:
     page_url: str
     user_id: int
     user_role: str
+    app_version: str
+    submitted_at: str
 
 
 @dataclass(frozen=True)
@@ -69,7 +74,9 @@ class GitHubFeedbackDelivery:
             f"{submission.description}\n\n"
             f"---\n\n"
             f"**Reported by:** {submission.user_role} (user \u200b#{submission.user_id})\n"
-            f"**Page:** {submission.page_url}"
+            f"**Page:** {submission.page_url}\n"
+            f"**App version:** {submission.app_version}\n"
+            f"**Submitted:** {submission.submitted_at}"
         )
         headers = {
             "Authorization": f"Bearer {self.token}",
@@ -119,6 +126,102 @@ class GitHubFeedbackDelivery:
         return issue_number, data["html_url"]
 
 
+class TeamsFeedbackDelivery:
+    """Deliver feedback by posting a card to a Teams webhook."""
+
+    def __init__(self, *, webhook_url: str) -> None:
+        self.webhook_url = webhook_url
+
+    async def submit(self, submission: FeedbackSubmission) -> FeedbackDeliveryResult:
+        payload = {
+            "type": "message",
+            "attachments": [
+                {
+                    "contentType": "application/vnd.microsoft.card.adaptive",
+                    "content": {
+                        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                        "type": "AdaptiveCard",
+                        "version": "1.2",
+                        "msteams": {"width": "Full"},
+                        "body": [
+                            {
+                                "type": "TextBlock",
+                                "text": "HRIV feedback submitted",
+                                "weight": "Bolder",
+                                "size": "Medium",
+                            },
+                            {
+                                "type": "TextBlock",
+                                "text": submission.description,
+                                "wrap": True,
+                            },
+                            {
+                                "type": "FactSet",
+                                "facts": [
+                                    {"title": "Role", "value": submission.user_role},
+                                    {
+                                        "title": "Internal user id",
+                                        "value": str(submission.user_id),
+                                    },
+                                    {"title": "Page", "value": submission.page_url},
+                                    {
+                                        "title": "App version",
+                                        "value": submission.app_version,
+                                    },
+                                    {
+                                        "title": "Submitted",
+                                        "value": submission.submitted_at,
+                                    },
+                                ],
+                            },
+                        ],
+                        "actions": [
+                            {
+                                "type": "Action.OpenUrl",
+                                "title": "Open reported page",
+                                "url": submission.page_url,
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    self.webhook_url,
+                    json=payload,
+                    timeout=15.0,
+                )
+            except httpx.HTTPError as exc:
+                raise FeedbackDeliveryError(
+                    f"Teams webhook request failed: {exc}"
+                ) from exc
+            response_text = response.text.strip()
+            # Teams channel webhooks may return HTTP 200 while embedding a
+            # 429-style rate-limit signal in the response body.
+            if response.is_success and _TEAMS_RATE_LIMIT_SIGNAL in response_text:
+                raise FeedbackDeliveryError("Teams webhook rate limit exceeded")
+            if not response.is_success:
+                detail = f": {response_text}" if response_text else ""
+                raise FeedbackDeliveryError(
+                    f"Teams webhook error: {response.status_code}{detail}"
+                )
+
+        return FeedbackDeliveryResult(destination="teams")
+
+
+def get_feedback_app_version() -> str:
+    """Return the deployed app version for provider payloads."""
+    return os.environ.get("APP_VERSION", "").strip() or "unknown"
+
+
+def get_feedback_submission_timestamp() -> str:
+    """Return an ISO-8601 UTC timestamp for a feedback submission."""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
 def get_feedback_delivery() -> FeedbackDelivery:
     """Resolve the configured feedback delivery provider."""
     provider = os.environ.get("FEEDBACK_DELIVERY_PROVIDER", "").strip().lower()
@@ -147,6 +250,13 @@ def get_feedback_delivery() -> FeedbackDelivery:
                 "GitHub feedback delivery is not fully configured"
             )
         return GitHubFeedbackDelivery(token=token, repo=repo)
+    if provider == "teams":
+        webhook_url = os.environ.get("FEEDBACK_TEAMS_WEBHOOK_URL", "").strip()
+        if not webhook_url:
+            raise FeedbackNotConfiguredError(
+                "Teams feedback delivery is not fully configured"
+            )
+        return TeamsFeedbackDelivery(webhook_url=webhook_url)
 
     raise FeedbackNotConfiguredError(
         f"Unsupported feedback delivery provider: {provider}"
