@@ -27,7 +27,6 @@ import TableSortLabel from '@mui/material/TableSortLabel'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
-import ClearIcon from '@mui/icons-material/Clear'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import {
@@ -49,6 +48,7 @@ import BulkEditModal from './BulkEditModal'
 import BulkGroupModal from './BulkGroupModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
 import FilterBar from './FilterBar'
+import FilterPopoverButton from './FilterPopoverButton'
 
 type SortableColumn =
   | 'id'
@@ -644,6 +644,18 @@ export default function PeoplePage({
       </Box>
 
       <FilterBar
+        clearAction={
+          hasActiveFilters ? (
+            <Button
+              size="small"
+              color="secondary"
+              onClick={handleClearFilters}
+              sx={{ minWidth: 0, px: 0, fontWeight: 600, textTransform: 'none' }}
+            >
+              Clear all
+            </Button>
+          ) : undefined
+        }
         summary={
           hasActiveFilters ? (
             <>
@@ -652,17 +664,21 @@ export default function PeoplePage({
                   key={filter.key}
                   label={filter.label}
                   size="small"
-                  variant="outlined"
                   onDelete={() => handleAppliedFilterDelete(filter)}
+                  sx={{
+                    bgcolor: (theme) =>
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(165, 36, 56, 0.22)'
+                        : 'rgba(165, 36, 56, 0.08)',
+                    color: 'secondary.main',
+                    border: '1px solid',
+                    borderColor: 'secondary.main',
+                    '& .MuiChip-deleteIcon': {
+                      color: 'secondary.main',
+                    },
+                  }}
                 />
               ))}
-              <Button
-                size="small"
-                startIcon={<ClearIcon fontSize="small" />}
-                onClick={handleClearFilters}
-              >
-                Clear filters
-              </Button>
             </>
           ) : undefined
         }
@@ -680,118 +696,148 @@ export default function PeoplePage({
         }
       >
         {isColumnVisible('name') && (
-          <Autocomplete
-            freeSolo
-            size="small"
-            options={nameFilterOptions}
-            value={filters['name'] ?? ''}
-            inputValue={filters['name'] ?? ''}
-            onChange={(_, value) => handleFilterChange('name', value ?? '')}
-            onInputChange={(_, value) => handleFilterChange('name', value)}
-            sx={{ width: 180 }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Name"
-                inputProps={{ ...params.inputProps, 'aria-label': 'Name' }}
-              />
-            )}
-          />
+          <FilterPopoverButton
+            label="Name"
+            activeCount={filters['name']?.trim() ? 1 : 0}
+            panelWidth={260}
+          >
+            <Autocomplete
+              freeSolo
+              size="small"
+              options={nameFilterOptions}
+              value={filters['name'] ?? ''}
+              inputValue={filters['name'] ?? ''}
+              onChange={(_, value) => handleFilterChange('name', value ?? '')}
+              onInputChange={(_, value) => handleFilterChange('name', value)}
+              sx={{ width: 260 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Search name"
+                  inputProps={{ ...params.inputProps, 'aria-label': 'Name' }}
+                />
+              )}
+            />
+          </FilterPopoverButton>
         )}
         {isColumnVisible('email') && (
-          <Autocomplete
-            freeSolo
-            size="small"
-            options={emailFilterOptions}
-            value={filters['email'] ?? ''}
-            inputValue={filters['email'] ?? ''}
-            onChange={(_, value) => handleFilterChange('email', value ?? '')}
-            onInputChange={(_, value) => handleFilterChange('email', value)}
-            sx={{ width: 220 }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Email"
-                inputProps={{ ...params.inputProps, 'aria-label': 'Email' }}
-              />
-            )}
-          />
+          <FilterPopoverButton
+            label="Email"
+            activeCount={filters['email']?.trim() ? 1 : 0}
+            panelWidth={280}
+          >
+            <Autocomplete
+              freeSolo
+              size="small"
+              options={emailFilterOptions}
+              value={filters['email'] ?? ''}
+              inputValue={filters['email'] ?? ''}
+              onChange={(_, value) => handleFilterChange('email', value ?? '')}
+              onInputChange={(_, value) => handleFilterChange('email', value)}
+              sx={{ width: 280 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Search email"
+                  inputProps={{ ...params.inputProps, 'aria-label': 'Email' }}
+                />
+              )}
+            />
+          </FilterPopoverButton>
         )}
         {isColumnVisible('role') && (
-          <Autocomplete
-            size="small"
-            options={ROLES}
-            value={(filters['role'] as Role | undefined) ?? null}
-            onChange={(_, value) => handleFilterChange('role', value ?? '')}
-            sx={{ width: 170 }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Role"
-                inputProps={{ ...params.inputProps, 'aria-label': 'Role' }}
-              />
-            )}
-          />
+          <FilterPopoverButton
+            label="Role"
+            activeCount={filters['role']?.trim() ? 1 : 0}
+            panelWidth={180}
+          >
+            <Autocomplete
+              size="small"
+              options={ROLES}
+              value={(filters['role'] as Role | undefined) ?? null}
+              onChange={(_, value) => handleFilterChange('role', value ?? '')}
+              sx={{ width: 180 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Select role"
+                  inputProps={{ ...params.inputProps, 'aria-label': 'Role' }}
+                />
+              )}
+            />
+          </FilterPopoverButton>
         )}
         {isColumnVisible('program') && programs.length > 0 && (
-          <Autocomplete
-            multiple
-            disableCloseOnSelect
-            size="small"
-            options={programs}
-            value={selectedProgramOptions}
-            isOptionEqualToValue={(option, value) => option.id === value.id}
-            getOptionLabel={(option) => option.name}
-            onChange={(_, values) => {
-              setSelectedPrograms(new Set(values.map((program) => program.id)))
-              setCurrentPage(0)
-            }}
-            sx={{ width: 220 }}
-            renderOption={(props, option, { selected }) => (
-              <li {...props}>
-                <Checkbox size="small" checked={selected} sx={{ mr: 1 }} />
-                {option.name}
-              </li>
-            )}
-            renderTags={() => []}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Program"
-                inputProps={{ ...params.inputProps, 'aria-label': 'Program' }}
-              />
-            )}
-          />
+          <FilterPopoverButton
+            label="Program"
+            activeCount={selectedProgramOptions.length}
+            panelWidth={280}
+          >
+            <Autocomplete
+              multiple
+              disableCloseOnSelect
+              size="small"
+              options={programs}
+              value={selectedProgramOptions}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              getOptionLabel={(option) => option.name}
+              onChange={(_, values) => {
+                setSelectedPrograms(new Set(values.map((program) => program.id)))
+                setCurrentPage(0)
+              }}
+              sx={{ width: 280 }}
+              renderOption={(props, option, { selected }) => (
+                <li {...props}>
+                  <Checkbox size="small" checked={selected} sx={{ mr: 1 }} />
+                  {option.name}
+                </li>
+              )}
+              renderTags={() => []}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Select programs"
+                  inputProps={{ ...params.inputProps, 'aria-label': 'Program' }}
+                />
+              )}
+            />
+          </FilterPopoverButton>
         )}
         {isColumnVisible('group') && groups.length > 0 && (
-          <Autocomplete
-            multiple
-            disableCloseOnSelect
-            size="small"
-            options={groups}
-            value={selectedGroupOptions}
-            isOptionEqualToValue={(option, value) => option.id === value.id}
-            getOptionLabel={(option) => option.name}
-            onChange={(_, values) => {
-              setSelectedGroups(new Set(values.map((group) => group.id)))
-              setCurrentPage(0)
-            }}
-            sx={{ width: 220 }}
-            renderOption={(props, option, { selected }) => (
-              <li {...props}>
-                <Checkbox size="small" checked={selected} sx={{ mr: 1 }} />
-                {option.name}
-              </li>
-            )}
-            renderTags={() => []}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Groups"
-                inputProps={{ ...params.inputProps, 'aria-label': 'Groups' }}
-              />
-            )}
-          />
+          <FilterPopoverButton
+            label="Group"
+            activeCount={selectedGroupOptions.length}
+            panelWidth={280}
+          >
+            <Autocomplete
+              multiple
+              disableCloseOnSelect
+              size="small"
+              options={groups}
+              value={selectedGroupOptions}
+              isOptionEqualToValue={(option, value) => option.id === value.id}
+              getOptionLabel={(option) => option.name}
+              onChange={(_, values) => {
+                setSelectedGroups(new Set(values.map((group) => group.id)))
+                setCurrentPage(0)
+              }}
+              sx={{ width: 280 }}
+              renderOption={(props, option, { selected }) => (
+                <li {...props}>
+                  <Checkbox size="small" checked={selected} sx={{ mr: 1 }} />
+                  {option.name}
+                </li>
+              )}
+              renderTags={() => []}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Select groups"
+                  inputProps={{ ...params.inputProps, 'aria-label': 'Groups' }}
+                />
+              )}
+            />
+          </FilterPopoverButton>
         )}
         {!isColumnVisible('name') &&
           !isColumnVisible('email') &&

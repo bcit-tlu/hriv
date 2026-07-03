@@ -371,6 +371,7 @@ describe('GroupManagementModal', () => {
     const user = userEvent.setup()
     renderModal()
 
+    await user.click(await screen.findByRole('button', { name: 'Program' }))
     await user.click(await screen.findByRole('combobox', { name: 'Program' }))
     await user.click(await screen.findByRole('option', { name: 'Program B' }))
 

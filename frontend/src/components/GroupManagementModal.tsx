@@ -52,6 +52,7 @@ import { apiGroupToGroup } from '../groupUtils'
 import { getGroupChipColors } from '../theme'
 import type { Group } from '../types'
 import FilterBar from './FilterBar'
+import FilterPopoverButton from './FilterPopoverButton'
 
 interface GroupManagementModalProps {
   open: boolean
@@ -690,6 +691,22 @@ export default function GroupManagementModal({
                     </Alert>
                   )}
                   <FilterBar
+                    clearAction={
+                      hasActiveMemberFilters ? (
+                        <Button
+                          size="small"
+                          color="secondary"
+                          onClick={() => {
+                            setSearchInput('')
+                            setQ('')
+                            setSelectedProgramIds([])
+                          }}
+                          sx={{ minWidth: 0, px: 0, fontWeight: 600, textTransform: 'none' }}
+                        >
+                          Clear all
+                        </Button>
+                      ) : undefined
+                    }
                     summary={
                       hasActiveMemberFilters ? (
                         <>
@@ -697,10 +714,21 @@ export default function GroupManagementModal({
                             <Chip
                               label={`Search: ${searchInput.trim()}`}
                               size="small"
-                              variant="outlined"
                               onDelete={() => {
                                 setSearchInput('')
                                 setQ('')
+                              }}
+                              sx={{
+                                bgcolor: (theme) =>
+                                  theme.palette.mode === 'dark'
+                                    ? 'rgba(165, 36, 56, 0.22)'
+                                    : 'rgba(165, 36, 56, 0.08)',
+                                color: 'secondary.main',
+                                border: '1px solid',
+                                borderColor: 'secondary.main',
+                                '& .MuiChip-deleteIcon': {
+                                  color: 'secondary.main',
+                                },
                               }}
                             />
                           )}
@@ -709,73 +737,86 @@ export default function GroupManagementModal({
                               key={program.id}
                               label={`Program: ${program.name}`}
                               size="small"
-                              variant="outlined"
                               onDelete={() =>
                                 setSelectedProgramIds((prev) =>
                                   prev.filter((programId) => programId !== program.id),
                                 )
                               }
+                              sx={{
+                                bgcolor: (theme) =>
+                                  theme.palette.mode === 'dark'
+                                    ? 'rgba(165, 36, 56, 0.22)'
+                                    : 'rgba(165, 36, 56, 0.08)',
+                                color: 'secondary.main',
+                                border: '1px solid',
+                                borderColor: 'secondary.main',
+                                '& .MuiChip-deleteIcon': {
+                                  color: 'secondary.main',
+                                },
+                              }}
                             />
                           ))}
-                          <Button
-                            size="small"
-                            onClick={() => {
-                              setSearchInput('')
-                              setQ('')
-                              setSelectedProgramIds([])
-                            }}
-                          >
-                            Clear filters
-                          </Button>
                         </>
                       ) : undefined
                     }
                   >
-                    <Autocomplete
-                      freeSolo
-                      size="small"
-                      options={memberSearchOptions}
-                      value={searchInput}
-                      inputValue={searchInput}
-                      onChange={(_, value) => setSearchInput(value ?? '')}
-                      onInputChange={(_, value) => setSearchInput(value)}
-                      sx={{ width: 240, flex: '1 1 240px' }}
-                      renderInput={(params) => (
-                        <TextField
-                          {...params}
-                          placeholder="Search name or email"
-                          inputProps={{ ...params.inputProps, 'aria-label': 'Name or email' }}
-                        />
-                      )}
-                    />
-                    {tab === 'students' && programs.length > 0 && (
+                    <FilterPopoverButton
+                      label="Search"
+                      activeCount={searchInput.trim().length > 0 ? 1 : 0}
+                      panelWidth={280}
+                    >
                       <Autocomplete
-                        multiple
-                        disableCloseOnSelect
+                        freeSolo
                         size="small"
-                        options={programs}
-                        value={selectedProgramOptions}
-                        isOptionEqualToValue={(option, value) => option.id === value.id}
-                        getOptionLabel={(option) => option.name}
-                        onChange={(_, values) =>
-                          setSelectedProgramIds(values.map((program) => program.id))
-                        }
-                        sx={{ width: 220 }}
-                        renderOption={(props, option, { selected }) => (
-                          <li {...props}>
-                            <Checkbox size="small" checked={selected} sx={{ mr: 1 }} />
-                            {option.name}
-                          </li>
-                        )}
-                        renderTags={() => []}
+                        options={memberSearchOptions}
+                        value={searchInput}
+                        inputValue={searchInput}
+                        onChange={(_, value) => setSearchInput(value ?? '')}
+                        onInputChange={(_, value) => setSearchInput(value)}
+                        sx={{ width: 280 }}
                         renderInput={(params) => (
                           <TextField
                             {...params}
-                            placeholder="Program"
-                            inputProps={{ ...params.inputProps, 'aria-label': 'Program' }}
+                            placeholder="Search name or email"
+                            inputProps={{ ...params.inputProps, 'aria-label': 'Name or email' }}
                           />
                         )}
                       />
+                    </FilterPopoverButton>
+                    {tab === 'students' && programs.length > 0 && (
+                      <FilterPopoverButton
+                        label="Program"
+                        activeCount={selectedProgramOptions.length}
+                        panelWidth={280}
+                      >
+                        <Autocomplete
+                          multiple
+                          disableCloseOnSelect
+                          size="small"
+                          options={programs}
+                          value={selectedProgramOptions}
+                          isOptionEqualToValue={(option, value) => option.id === value.id}
+                          getOptionLabel={(option) => option.name}
+                          onChange={(_, values) =>
+                            setSelectedProgramIds(values.map((program) => program.id))
+                          }
+                          sx={{ width: 280 }}
+                          renderOption={(props, option, { selected }) => (
+                            <li {...props}>
+                              <Checkbox size="small" checked={selected} sx={{ mr: 1 }} />
+                              {option.name}
+                            </li>
+                          )}
+                          renderTags={() => []}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              placeholder="Select programs"
+                              inputProps={{ ...params.inputProps, 'aria-label': 'Program' }}
+                            />
+                          )}
+                        />
+                      </FilterPopoverButton>
                     )}
                     <Button
                       variant="contained"

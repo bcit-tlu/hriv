@@ -1,18 +1,23 @@
 import type { ReactNode } from 'react'
 import Box from '@mui/material/Box'
+import Divider from '@mui/material/Divider'
 import Typography from '@mui/material/Typography'
 
 interface FilterBarProps {
   title?: string
   actions?: ReactNode
+  clearAction?: ReactNode
   summary?: ReactNode
+  summaryLabel?: string
   children: ReactNode
 }
 
 export default function FilterBar({
   title = 'Filter by',
   actions,
+  clearAction,
   summary,
+  summaryLabel = 'Filtered by:',
   children,
 }: FilterBarProps) {
   return (
@@ -32,6 +37,7 @@ export default function FilterBar({
           flexWrap: 'nowrap',
           overflowX: 'auto',
           overflowY: 'hidden',
+          minHeight: 28,
         }}
       >
         <Typography
@@ -42,6 +48,7 @@ export default function FilterBar({
             fontWeight: 600,
             lineHeight: 1,
             flex: '0 0 auto',
+            fontSize: '0.8rem',
           }}
         >
           {title}
@@ -63,9 +70,22 @@ export default function FilterBar({
             {actions}
           </Box>
         ) : null}
+        {clearAction ? <Divider orientation="vertical" flexItem /> : null}
+        {clearAction ? (
+          <Box sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center' }}>
+            {clearAction}
+          </Box>
+        ) : null}
       </Box>
       {summary ? (
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center', pt: 0.75 }}>
+          <Typography
+            variant="body2"
+            color="text.secondary"
+            sx={{ fontSize: '0.8rem', fontWeight: 500 }}
+          >
+            {summaryLabel}
+          </Typography>
           {summary}
         </Box>
       ) : null}

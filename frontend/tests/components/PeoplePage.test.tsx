@@ -259,7 +259,7 @@ describe('PeoplePage', () => {
     })
 
     const filterBar = screen.getByRole('region', { name: 'Filter by' })
-    expect(within(filterBar).getByRole('combobox', { name: 'Groups' })).toBeInTheDocument()
+    expect(within(filterBar).getByRole('button', { name: 'Group' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Choose columns' }))
@@ -273,7 +273,7 @@ describe('PeoplePage', () => {
     })
 
     expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
-    expect(within(filterBar).queryByRole('combobox', { name: 'Groups' })).not.toBeInTheDocument()
+    expect(within(filterBar).queryByRole('button', { name: 'Group' })).not.toBeInTheDocument()
 
     unmount()
     render(<PeoplePage programs={programs} groups={groups} />)
@@ -386,8 +386,8 @@ describe('PeoplePage', () => {
     })
 
     const filterBar = screen.getByRole('region', { name: 'Filter by' })
-    expect(within(filterBar).getByLabelText('Name')).toBeInTheDocument()
-    expect(within(filterBar).getByLabelText('Email')).toBeInTheDocument()
+    expect(within(filterBar).getByRole('button', { name: 'Name' })).toBeInTheDocument()
+    expect(within(filterBar).getByRole('button', { name: 'Email' })).toBeInTheDocument()
   })
 
   it('sorts by name column when header is clicked', async () => {
@@ -436,7 +436,11 @@ describe('PeoplePage', () => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
 
-    await user.type(screen.getByLabelText('Name'), 'Student')
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    const nameFilterButton = within(filterBar).getByRole('button', { name: 'Name' })
+    await user.click(nameFilterButton)
+    await user.type(screen.getByPlaceholderText('Search name'), 'Student')
+    await user.click(nameFilterButton)
 
     // Only Test Student should be visible
     expect(screen.queryByRole('cell', { name: 'Admin User' })).not.toBeInTheDocument()
@@ -451,11 +455,15 @@ describe('PeoplePage', () => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
 
-    await user.type(screen.getByLabelText('Name'), 'Student')
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    const nameFilterButton = within(filterBar).getByRole('button', { name: 'Name' })
+    await user.click(nameFilterButton)
+    await user.type(screen.getByPlaceholderText('Search name'), 'Student')
+    await user.click(nameFilterButton)
 
     expect(screen.queryByText('Admin User')).not.toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: 'Clear filters' }))
+    await user.click(within(filterBar).getByRole('button', { name: 'Clear all' }))
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()

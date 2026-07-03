@@ -30,7 +30,6 @@ import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
-import ClearIcon from '@mui/icons-material/Clear'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import InfoIcon from '@mui/icons-material/Info'
@@ -60,6 +59,7 @@ import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVis
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
 import FilterBar from './FilterBar'
+import FilterPopoverButton from './FilterPopoverButton'
 import MoveImageDialog from './MoveImageDialog'
 import NoteDisplay from './NoteDisplay'
 import UploadImageModal from './UploadImageModal'
@@ -844,6 +844,18 @@ export default function ManagePage({
       </Box>
 
       <FilterBar
+        clearAction={
+          hasActiveFilters ? (
+            <Button
+              size="small"
+              color="secondary"
+              onClick={handleClearFilters}
+              sx={{ minWidth: 0, px: 0, fontWeight: 600, textTransform: 'none' }}
+            >
+              Clear all
+            </Button>
+          ) : undefined
+        }
         summary={
           hasActiveFilters ? (
             <>
@@ -867,18 +879,22 @@ export default function ManagePage({
                       key={key}
                       label={`${labels[key]}: ${displayValue}`}
                       size="small"
-                      variant="outlined"
                       onDelete={() => handleFilterChange(key, '')}
+                      sx={{
+                        bgcolor: (theme) =>
+                          theme.palette.mode === 'dark'
+                            ? 'rgba(165, 36, 56, 0.22)'
+                            : 'rgba(165, 36, 56, 0.08)',
+                        color: 'secondary.main',
+                        border: '1px solid',
+                        borderColor: 'secondary.main',
+                        '& .MuiChip-deleteIcon': {
+                          color: 'secondary.main',
+                        },
+                      }}
                     />
                   )
                 })}
-              <Button
-                size="small"
-                startIcon={<ClearIcon fontSize="small" />}
-                onClick={handleClearFilters}
-              >
-                Clear filters
-              </Button>
             </>
           ) : undefined
         }
@@ -896,165 +912,213 @@ export default function ManagePage({
         }
       >
         {isColumnVisible('id') && (
-          <Autocomplete
-            freeSolo
-            size="small"
-            options={idFilterOptions}
-            value={filters['id'] ?? ''}
-            inputValue={filters['id'] ?? ''}
-            onChange={(_, value) => handleFilterChange('id', value ?? '')}
-            onInputChange={(_, value) => handleFilterChange('id', value)}
-            sx={{ width: 110 }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="ID"
-                inputProps={{ ...params.inputProps, 'aria-label': 'ID' }}
-              />
-            )}
-          />
+          <FilterPopoverButton
+            label="ID"
+            activeCount={filters['id']?.trim() ? 1 : 0}
+            panelWidth={160}
+          >
+            <Autocomplete
+              freeSolo
+              size="small"
+              options={idFilterOptions}
+              value={filters['id'] ?? ''}
+              inputValue={filters['id'] ?? ''}
+              onChange={(_, value) => handleFilterChange('id', value ?? '')}
+              onInputChange={(_, value) => handleFilterChange('id', value)}
+              sx={{ width: 160 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Filter by ID"
+                  inputProps={{ ...params.inputProps, 'aria-label': 'ID' }}
+                />
+              )}
+            />
+          </FilterPopoverButton>
         )}
         {isColumnVisible('name') && (
-          <Autocomplete
-            freeSolo
-            size="small"
-            options={nameFilterOptions}
-            value={filters['name'] ?? ''}
-            inputValue={filters['name'] ?? ''}
-            onChange={(_, value) => handleFilterChange('name', value ?? '')}
-            onInputChange={(_, value) => handleFilterChange('name', value)}
-            sx={{ width: 180 }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Name"
-                inputProps={{ ...params.inputProps, 'aria-label': 'Name' }}
-              />
-            )}
-          />
+          <FilterPopoverButton
+            label="Name"
+            activeCount={filters['name']?.trim() ? 1 : 0}
+            panelWidth={260}
+          >
+            <Autocomplete
+              freeSolo
+              size="small"
+              options={nameFilterOptions}
+              value={filters['name'] ?? ''}
+              inputValue={filters['name'] ?? ''}
+              onChange={(_, value) => handleFilterChange('name', value ?? '')}
+              onInputChange={(_, value) => handleFilterChange('name', value)}
+              sx={{ width: 260 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Filter by name"
+                  inputProps={{ ...params.inputProps, 'aria-label': 'Name' }}
+                />
+              )}
+            />
+          </FilterPopoverButton>
         )}
         {isColumnVisible('category') && (
-          <Autocomplete
-            freeSolo
-            size="small"
-            options={categoryFilterOptions}
-            value={filters['category'] ?? ''}
-            inputValue={filters['category'] ?? ''}
-            onChange={(_, value) => handleFilterChange('category', value ?? '')}
-            onInputChange={(_, value) => handleFilterChange('category', value)}
-            sx={{ width: 200 }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Category"
-                inputProps={{ ...params.inputProps, 'aria-label': 'Category' }}
-              />
-            )}
-          />
+          <FilterPopoverButton
+            label="Category"
+            activeCount={filters['category']?.trim() ? 1 : 0}
+            panelWidth={280}
+          >
+            <Autocomplete
+              freeSolo
+              size="small"
+              options={categoryFilterOptions}
+              value={filters['category'] ?? ''}
+              inputValue={filters['category'] ?? ''}
+              onChange={(_, value) => handleFilterChange('category', value ?? '')}
+              onInputChange={(_, value) => handleFilterChange('category', value)}
+              sx={{ width: 280 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Filter by category"
+                  inputProps={{ ...params.inputProps, 'aria-label': 'Category' }}
+                />
+              )}
+            />
+          </FilterPopoverButton>
         )}
         {isColumnVisible('copyright') && (
-          <Autocomplete
-            freeSolo
-            size="small"
-            options={copyrightFilterOptions}
-            value={filters['copyright'] ?? ''}
-            inputValue={filters['copyright'] ?? ''}
-            onChange={(_, value) => handleFilterChange('copyright', value ?? '')}
-            onInputChange={(_, value) => handleFilterChange('copyright', value)}
-            sx={{ width: 180 }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Copyright"
-                inputProps={{ ...params.inputProps, 'aria-label': 'Copyright' }}
-              />
-            )}
-          />
+          <FilterPopoverButton
+            label="Copyright"
+            activeCount={filters['copyright']?.trim() ? 1 : 0}
+            panelWidth={260}
+          >
+            <Autocomplete
+              freeSolo
+              size="small"
+              options={copyrightFilterOptions}
+              value={filters['copyright'] ?? ''}
+              inputValue={filters['copyright'] ?? ''}
+              onChange={(_, value) => handleFilterChange('copyright', value ?? '')}
+              onInputChange={(_, value) => handleFilterChange('copyright', value)}
+              sx={{ width: 260 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Filter by copyright"
+                  inputProps={{ ...params.inputProps, 'aria-label': 'Copyright' }}
+                />
+              )}
+            />
+          </FilterPopoverButton>
         )}
         {isColumnVisible('note') && (
-          <Autocomplete
-            freeSolo
-            size="small"
-            options={noteFilterOptions}
-            value={filters['note'] ?? ''}
-            inputValue={filters['note'] ?? ''}
-            onChange={(_, value) => handleFilterChange('note', value ?? '')}
-            onInputChange={(_, value) => handleFilterChange('note', value)}
-            sx={{ width: 180 }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Note"
-                inputProps={{ ...params.inputProps, 'aria-label': 'Note' }}
-              />
-            )}
-          />
+          <FilterPopoverButton
+            label="Note"
+            activeCount={filters['note']?.trim() ? 1 : 0}
+            panelWidth={260}
+          >
+            <Autocomplete
+              freeSolo
+              size="small"
+              options={noteFilterOptions}
+              value={filters['note'] ?? ''}
+              inputValue={filters['note'] ?? ''}
+              onChange={(_, value) => handleFilterChange('note', value ?? '')}
+              onInputChange={(_, value) => handleFilterChange('note', value)}
+              sx={{ width: 260 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Filter by note"
+                  inputProps={{ ...params.inputProps, 'aria-label': 'Note' }}
+                />
+              )}
+            />
+          </FilterPopoverButton>
         )}
         {isColumnVisible('program') && (
-          <Autocomplete
-            freeSolo
-            size="small"
-            options={programFilterOptions}
-            value={filters['program'] ?? ''}
-            inputValue={filters['program'] ?? ''}
-            onChange={(_, value) => handleFilterChange('program', value ?? '')}
-            onInputChange={(_, value) => handleFilterChange('program', value)}
-            sx={{ width: 180 }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Program"
-                inputProps={{ ...params.inputProps, 'aria-label': 'Program' }}
-              />
-            )}
-          />
+          <FilterPopoverButton
+            label="Program"
+            activeCount={filters['program']?.trim() ? 1 : 0}
+            panelWidth={260}
+          >
+            <Autocomplete
+              freeSolo
+              size="small"
+              options={programFilterOptions}
+              value={filters['program'] ?? ''}
+              inputValue={filters['program'] ?? ''}
+              onChange={(_, value) => handleFilterChange('program', value ?? '')}
+              onInputChange={(_, value) => handleFilterChange('program', value)}
+              sx={{ width: 260 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Filter by program"
+                  inputProps={{ ...params.inputProps, 'aria-label': 'Program' }}
+                />
+              )}
+            />
+          </FilterPopoverButton>
         )}
         {isColumnVisible('group') && (
-          <Autocomplete
-            freeSolo
-            size="small"
-            options={groupFilterOptions}
-            value={filters['group'] ?? ''}
-            inputValue={filters['group'] ?? ''}
-            onChange={(_, value) => handleFilterChange('group', value ?? '')}
-            onInputChange={(_, value) => handleFilterChange('group', value)}
-            sx={{ width: 180 }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Groups"
-                inputProps={{ ...params.inputProps, 'aria-label': 'Groups' }}
-              />
-            )}
-          />
+          <FilterPopoverButton
+            label="Group"
+            activeCount={filters['group']?.trim() ? 1 : 0}
+            panelWidth={260}
+          >
+            <Autocomplete
+              freeSolo
+              size="small"
+              options={groupFilterOptions}
+              value={filters['group'] ?? ''}
+              inputValue={filters['group'] ?? ''}
+              onChange={(_, value) => handleFilterChange('group', value ?? '')}
+              onInputChange={(_, value) => handleFilterChange('group', value)}
+              sx={{ width: 260 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Filter by group"
+                  inputProps={{ ...params.inputProps, 'aria-label': 'Groups' }}
+                />
+              )}
+            />
+          </FilterPopoverButton>
         )}
         {isColumnVisible('active') && (
-          <Autocomplete
-            size="small"
-            options={[
-              { label: 'Visible', value: 'active' },
-              { label: 'Hidden', value: 'inactive' },
-            ]}
-            getOptionLabel={(option) => option.label}
-            value={
-              filters['active']
-                ? {
-                    label: filters['active'] === 'active' ? 'Visible' : 'Hidden',
-                    value: filters['active'],
-                  }
-                : null
-            }
-            isOptionEqualToValue={(option, value) => option.value === value.value}
-            onChange={(_, value) => handleFilterChange('active', value?.value ?? '')}
-            sx={{ width: 160 }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                placeholder="Visibility"
-                inputProps={{ ...params.inputProps, 'aria-label': 'Visibility' }}
-              />
-            )}
-          />
+          <FilterPopoverButton
+            label="Visibility"
+            activeCount={filters['active']?.trim() ? 1 : 0}
+            panelWidth={180}
+          >
+            <Autocomplete
+              size="small"
+              options={[
+                { label: 'Visible', value: 'active' },
+                { label: 'Hidden', value: 'inactive' },
+              ]}
+              getOptionLabel={(option) => option.label}
+              value={
+                filters['active']
+                  ? {
+                      label: filters['active'] === 'active' ? 'Visible' : 'Hidden',
+                      value: filters['active'],
+                    }
+                  : null
+              }
+              isOptionEqualToValue={(option, value) => option.value === value.value}
+              onChange={(_, value) => handleFilterChange('active', value?.value ?? '')}
+              sx={{ width: 180 }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  placeholder="Select visibility"
+                  inputProps={{ ...params.inputProps, 'aria-label': 'Visibility' }}
+                />
+              )}
+            />
+          </FilterPopoverButton>
         )}
         {!isColumnVisible('id') &&
           !isColumnVisible('name') &&

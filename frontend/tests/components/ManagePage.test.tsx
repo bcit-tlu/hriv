@@ -156,7 +156,7 @@ describe('ManagePage', () => {
     await screen.findByText('Blood Smear')
 
     const filterBar = screen.getByRole('region', { name: 'Filter by' })
-    expect(within(filterBar).getByLabelText('Groups')).toBeInTheDocument()
+    expect(within(filterBar).getByRole('button', { name: 'Group' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Choose columns' }))
     const dialog = await screen.findByRole('dialog', { name: 'Choose image table columns' })
@@ -170,7 +170,7 @@ describe('ManagePage', () => {
     })
 
     expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
-    expect(within(filterBar).queryByLabelText('Groups')).not.toBeInTheDocument()
+    expect(within(filterBar).queryByRole('button', { name: 'Group' })).not.toBeInTheDocument()
   })
 
   it('greyscales the thumbnail when an image is inactive', async () => {
