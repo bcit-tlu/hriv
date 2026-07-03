@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.30.0...frontend-v0.30.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* **frontend:** keep Add Images form intact on background refresh and submit on Enter ([#803](https://github.com/bcit-tlu/hriv/issues/803)) ([66d05b3](https://github.com/bcit-tlu/hriv/commit/66d05b3714ec3252ec5f308d2d53cc7ff3797183))
+
 ## [0.30.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.29.0...frontend-v0.30.0) (2026-07-03)
 
 
