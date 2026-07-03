@@ -173,6 +173,40 @@ describe('ManagePage', () => {
     expect(within(filterBar).queryByRole('button', { name: 'Group' })).not.toBeInTheDocument()
   })
 
+  it('shows the filtered result total beside the active chips only when a filter is applied', async () => {
+    const user = userEvent.setup()
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+
+    expect(screen.queryByText('1 of 1 image')).not.toBeInTheDocument()
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Group' }))
+    expect(screen.queryByPlaceholderText('Select groups')).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Lab A2' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('1 of 1 image')).toBeInTheDocument()
+    })
+  })
+
+  it('shows an in-table no-match message when filters exclude all images', async () => {
+    const user = userEvent.setup()
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Name' }))
+    await user.type(screen.getByPlaceholderText('Filter by name'), 'No Match')
+
+    await waitFor(() => {
+      expect(screen.getByText('No images match the selected filters.')).toBeInTheDocument()
+      expect(screen.getByText('0 of 1 image')).toBeInTheDocument()
+    })
+  })
+
   it('greyscales the thumbnail when an image is inactive', async () => {
     vi.mocked(fetchImages).mockResolvedValue([
       {

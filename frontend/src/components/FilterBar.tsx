@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
+import FilterListIcon from '@mui/icons-material/FilterList'
 import Box from '@mui/material/Box'
-import Divider from '@mui/material/Divider'
 import Typography from '@mui/material/Typography'
 
 interface FilterBarProps {
@@ -9,7 +9,7 @@ interface FilterBarProps {
   actions?: ReactNode
   clearAction?: ReactNode
   summary?: ReactNode
-  summaryLabel?: string
+  summaryActions?: ReactNode
   children: ReactNode
 }
 
@@ -19,9 +19,16 @@ export default function FilterBar({
   actions,
   clearAction,
   summary,
-  summaryLabel = 'FILTERED BY:',
+  summaryActions,
   children,
 }: FilterBarProps) {
+  const titleContent = (
+    <Box component="span" sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5 }}>
+      <FilterListIcon sx={{ fontSize: 14 }} />
+      <Box component="span">{title}</Box>
+    </Box>
+  )
+
   return (
     <Box
       component="section"
@@ -55,7 +62,7 @@ export default function FilterBar({
             textTransform: 'uppercase',
           }}
         >
-          {title}
+          {titleContent}
         </Typography>
         <Box
           sx={{
@@ -75,9 +82,6 @@ export default function FilterBar({
           </Box>
         ) : null}
         {actions ? <Box sx={{ flex: 1, minWidth: 0 }} /> : null}
-        {clearAction && actions ? (
-          <Divider orientation="vertical" flexItem sx={{ mx: 0.25 }} />
-        ) : null}
         {actions ? (
           <Box
             sx={{
@@ -93,20 +97,41 @@ export default function FilterBar({
         ) : null}
       </Box>
       {summary ? (
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75, alignItems: 'center', pt: 0.75 }}>
-          <Typography
-            variant="body2"
-            color="text.secondary"
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', pt: 0.75, minWidth: 0 }}>
+          <Box aria-hidden="true" sx={{ visibility: 'hidden', flex: '0 0 auto' }}>
+            <Typography
+              variant="body2"
+              sx={{
+                whiteSpace: 'nowrap',
+                fontWeight: 500,
+                lineHeight: 1,
+                fontSize: '0.75rem',
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+              }}
+            >
+              {titleContent}
+            </Typography>
+          </Box>
+          <Box
             sx={{
-              fontSize: '0.75rem',
-              fontWeight: 500,
-              letterSpacing: '0.08em',
-              textTransform: 'uppercase',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: 0.75,
+              alignItems: 'center',
+              minWidth: 0,
+              flex: 1,
             }}
           >
-            {summaryLabel}
-          </Typography>
-          {summary}
+            {summary}
+          </Box>
+          {summaryActions ? (
+            <Box
+              sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, whiteSpace: 'nowrap' }}
+            >
+              {summaryActions}
+            </Box>
+          ) : null}
         </Box>
       ) : null}
     </Box>

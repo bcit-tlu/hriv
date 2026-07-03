@@ -787,7 +787,6 @@ export default function GroupManagementModal({
                           onChange={(values) =>
                             setSelectedProgramIds(values.map((value) => Number(value)))
                           }
-                          searchPlaceholder="Select programs"
                         />
                       </FilterPopoverButton>
                     )}

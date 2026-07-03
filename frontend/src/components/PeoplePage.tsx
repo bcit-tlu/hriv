@@ -98,11 +98,11 @@ const PEOPLE_COLUMN_FILTER_KEYS: Partial<Record<PeopleTableColumn, keyof Record<
   {
     name: 'name',
     email: 'email',
-    role: 'role',
   }
 
 type AppliedPeopleFilter =
-  | { key: 'name' | 'email' | 'role'; label: string }
+  | { key: 'name' | 'email'; label: string }
+  | { key: `role:${Role}`; label: string; role: Role }
   | { key: `program:${number}`; label: string; programId: number }
   | { key: `group:${number}`; label: string; groupId: number }
 
@@ -127,12 +127,14 @@ export default function PeoplePage({
   const [sortColumn, setSortColumn] = useState<SortableColumn>('name')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
-  // Filter state — text filters for name/email/role, chip sets for program/group
+  // Filter state — text filters for name/email, checkbox sets for role/program/group
   const [filters, setFilters] = useState<Record<string, string>>({})
+  const [selectedRoles, setSelectedRoles] = useState<Set<Role>>(new Set())
   const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(new Set())
   const [selectedGroups, setSelectedGroups] = useState<Set<number>>(new Set())
   const hasActiveFilters =
     Object.values(filters).some((v) => v !== '') ||
+    selectedRoles.size > 0 ||
     selectedPrograms.size > 0 ||
     selectedGroups.size > 0
 
@@ -143,6 +145,10 @@ export default function PeoplePage({
       allColumns: PEOPLE_ALL_COLUMNS,
       defaultVisibleColumns: PEOPLE_DEFAULT_VISIBLE_COLUMNS,
     })
+  const visibleColumnCount = useMemo(
+    () => PEOPLE_ALL_COLUMNS.filter((column) => visibleColumns[column]).length,
+    [visibleColumns],
+  )
 
   // Pagination state
   const [rowsPerPage, setRowsPerPage] = useState(25)
@@ -185,11 +191,12 @@ export default function PeoplePage({
     const chips: AppliedPeopleFilter[] = []
     const name = filters['name']?.trim()
     const email = filters['email']?.trim()
-    const role = filters['role']?.trim()
 
     if (name) chips.push({ key: 'name', label: `Name: ${name}` })
     if (email) chips.push({ key: 'email', label: `Email: ${email}` })
-    if (role) chips.push({ key: 'role', label: `Role: ${role}` })
+    for (const role of ROLES.filter((item) => selectedRoles.has(item))) {
+      chips.push({ key: `role:${role}`, label: `Role: ${role}`, role })
+    }
 
     for (const program of selectedProgramOptions) {
       chips.push({
@@ -208,7 +215,7 @@ export default function PeoplePage({
     }
 
     return chips
-  }, [filters, selectedProgramOptions, selectedGroupOptions])
+  }, [filters, selectedGroupOptions, selectedProgramOptions, selectedRoles])
 
   const loadData = useCallback(async ({ showLoading = false }: { showLoading?: boolean } = {}) => {
     try {
@@ -261,6 +268,15 @@ export default function PeoplePage({
     })
   }, [groups])
 
+  useEffect(() => {
+    const validRoles = new Set(ROLES)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with supported roles
+    setSelectedRoles((prev) => {
+      const pruned = new Set([...prev].filter((role) => validRoles.has(role)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [])
+
   // Sort handler
   const handleSort = (column: SortableColumn) => {
     if (sortColumn === column) {
@@ -275,6 +291,7 @@ export default function PeoplePage({
   const filteredUsers = useMemo(() => {
     const activeFilters =
       Object.values(filters).some((v) => v !== '') ||
+      selectedRoles.size > 0 ||
       selectedPrograms.size > 0 ||
       selectedGroups.size > 0
     if (!activeFilters) return users
@@ -286,8 +303,7 @@ export default function PeoplePage({
       }
       if (!match('name', user.name)) return false
       if (!match('email', user.email)) return false
-      const roleFilter = filters['role']
-      if (roleFilter && user.role !== roleFilter) return false
+      if (selectedRoles.size > 0 && !selectedRoles.has(user.role as Role)) return false
       if (selectedPrograms.size > 0) {
         const userProgramSet = new Set(user.program_ids)
         if (![...selectedPrograms].some((id) => userProgramSet.has(id))) return false
@@ -298,7 +314,7 @@ export default function PeoplePage({
       }
       return true
     })
-  }, [users, filters, selectedPrograms, selectedGroups])
+  }, [filters, selectedGroups, selectedPrograms, selectedRoles, users])
 
   const sortedUsers = useMemo(() => {
     const sorted = [...filteredUsers]
@@ -348,14 +364,25 @@ export default function PeoplePage({
 
   const handleClearFilters = () => {
     setFilters({})
+    setSelectedRoles(new Set())
     setSelectedPrograms(new Set())
     setSelectedGroups(new Set())
     setCurrentPage(0)
   }
 
   const handleAppliedFilterDelete = (filter: AppliedPeopleFilter) => {
-    if (filter.key === 'name' || filter.key === 'email' || filter.key === 'role') {
+    if (filter.key === 'name' || filter.key === 'email') {
       handleFilterChange(filter.key, '')
+      return
+    }
+
+    if ('role' in filter) {
+      setSelectedRoles((prev) => {
+        const next = new Set(prev)
+        next.delete(filter.role)
+        return next
+      })
+      setCurrentPage(0)
       return
     }
 
@@ -389,6 +416,8 @@ export default function PeoplePage({
           setSelectedPrograms(new Set())
         } else if (column === 'group') {
           setSelectedGroups(new Set())
+        } else if (column === 'role') {
+          setSelectedRoles(new Set())
         } else {
           const filterKey = PEOPLE_COLUMN_FILTER_KEYS[column]
           if (filterKey) {
@@ -675,6 +704,13 @@ export default function PeoplePage({
             </>
           ) : undefined
         }
+        summaryActions={
+          hasActiveFilters ? (
+            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+              {`${sortedUsers.length} of ${users.length} ${users.length === 1 ? 'person' : 'people'}`}
+            </Typography>
+          ) : undefined
+        }
         actions={
           <>
             <Button
@@ -719,16 +755,11 @@ export default function PeoplePage({
           </FilterPopoverButton>
         )}
         {isColumnVisible('role') && (
-          <FilterPopoverButton
-            label="Role"
-            activeCount={filters['role']?.trim() ? 1 : 0}
-            panelWidth={180}
-          >
+          <FilterPopoverButton label="Role" activeCount={selectedRoles.size} panelWidth={180}>
             <FilterOptionPanel
               options={ROLES.map((role) => ({ value: role, label: role }))}
-              selectedValues={filters['role'] ? [filters['role']] : []}
-              onChange={(values) => handleFilterChange('role', values[0] ?? '')}
-              multiple={false}
+              selectedValues={ROLES.filter((role) => selectedRoles.has(role))}
+              onChange={(values) => setSelectedRoles(new Set(values as Role[]))}
             />
           </FilterPopoverButton>
         )}
@@ -748,7 +779,6 @@ export default function PeoplePage({
                 setSelectedPrograms(new Set(values.map((value) => Number(value))))
                 setCurrentPage(0)
               }}
-              searchPlaceholder="Select programs"
             />
           </FilterPopoverButton>
         )}
@@ -765,7 +795,6 @@ export default function PeoplePage({
                 setSelectedGroups(new Set(values.map((value) => Number(value))))
                 setCurrentPage(0)
               }}
-              searchPlaceholder="Select groups"
             />
           </FilterPopoverButton>
         )}
@@ -956,6 +985,15 @@ export default function PeoplePage({
                   </TableCell>
                 </TableRow>
               ))}
+              {pageUsers.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={visibleColumnCount + 2} align="center" sx={{ py: 6 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      No people match the selected filters.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
           <TablePagination

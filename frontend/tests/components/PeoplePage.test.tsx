@@ -447,6 +447,41 @@ describe('PeoplePage', () => {
     expect(screen.getByRole('cell', { name: 'Test Student' })).toBeInTheDocument()
   })
 
+  it('uses additive checkbox role filters and shows the filtered result total', async () => {
+    const user = userEvent.setup()
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Role' }))
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'student' }))
+
+    expect(screen.getByRole('cell', { name: 'Test Student' })).toBeInTheDocument()
+    expect(screen.queryByRole('cell', { name: 'Admin User' })).not.toBeInTheDocument()
+    expect(screen.queryByText('0 of 2 people')).not.toBeInTheDocument()
+    expect(screen.getByText('1 of 2 people')).toBeInTheDocument()
+  })
+
+  it('shows an in-table no-match message when filters exclude all people', async () => {
+    const user = userEvent.setup()
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    const nameFilterButton = within(filterBar).getByRole('button', { name: 'Name' })
+    await user.click(nameFilterButton)
+    await user.type(screen.getByPlaceholderText('Search name'), 'Nobody')
+
+    expect(screen.getByText('No people match the selected filters.')).toBeInTheDocument()
+    expect(screen.getByText('0 of 2 people')).toBeInTheDocument()
+  })
+
   it('clears filters when clear button is clicked', async () => {
     const user = userEvent.setup()
     render(<PeoplePage programs={programs} groups={groups} />)

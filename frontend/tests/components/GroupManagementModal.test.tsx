@@ -372,6 +372,7 @@ describe('GroupManagementModal', () => {
     renderModal()
 
     await user.click(await screen.findByRole('button', { name: 'Program' }))
+    expect(screen.queryByPlaceholderText('Select programs')).not.toBeInTheDocument()
     await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Program B' }))
 
     await waitFor(() =>
