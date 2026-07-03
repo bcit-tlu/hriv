@@ -231,3 +231,13 @@ if the Secret is missing or empty.
 To supply your own pre-existing secret, set `jwtSecret` in `values.yaml` (or
 manage the `<release>-jwt` Secret out-of-band and the chart will honour the
 existing value).
+
+## Grafana dashboards
+
+When `observability.grafanaDashboards.enabled` is set, the chart renders each
+`charts/backend/observability/dashboards/*.json` file into a
+`grafana_dashboard` ConfigMap. The ConfigMap data key is derived from the
+file's base name, lowercased with spaces replaced by hyphens
+(`base | lower | replace " " "-"`). Keep dashboard filenames restricted to
+`[-._a-zA-Z0-9]` (no spaces) — Kubernetes rejects ConfigMap data keys
+containing spaces, which fails the whole release install.
