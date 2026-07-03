@@ -882,7 +882,7 @@ export default function ManagePage({
     setDeleting(false)
   }
 
-  if (loading) {
+  if (loading && images.length === 0) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
         <CircularProgress />

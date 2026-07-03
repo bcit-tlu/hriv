@@ -404,6 +404,12 @@ export default function UploadImageModal({
             variant="outlined"
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && files.length > 0 && !uploading) {
+                e.preventDefault()
+                void handleUpload()
+              }
+            }}
             placeholder="Image name (defaults to filename)"
           />
         )}

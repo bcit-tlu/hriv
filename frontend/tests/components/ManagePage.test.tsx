@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../src/api', async (importOriginal) => {
@@ -16,6 +16,7 @@ vi.mock('../../src/api', async (importOriginal) => {
 })
 
 import { fetchImages, updateImage } from '../../src/api'
+import type { ApiImage } from '../../src/api'
 import type { Group, Program } from '../../src/types'
 import { makeCategory } from '../helpers/fixtures'
 import ManagePage from '../../src/components/ManagePage'
@@ -45,6 +46,14 @@ const categories = [
     groupIds: [7],
   }),
 ]
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  const promise = new Promise<T>((res) => {
+    resolve = res
+  })
+  return { promise, resolve }
+}
 
 describe('ManagePage', () => {
   beforeEach(() => {
@@ -454,6 +463,65 @@ describe('ManagePage', () => {
       expect(updateImage).toHaveBeenCalledWith(101, { active: false }, 1)
     })
     expect(fetchImages).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the image table mounted during a background refresh after initial load', async () => {
+    const firstFetch = createDeferred<ApiImage[]>()
+    const secondFetch = createDeferred<ApiImage[]>()
+    const images: ApiImage[] = [
+      {
+        id: 101,
+        name: 'Blood Smear',
+        thumb: '/thumb.jpg',
+        tile_sources: '/tile.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ]
+    vi.mocked(fetchImages)
+      .mockImplementationOnce(() => firstFetch.promise)
+      .mockImplementationOnce(() => secondFetch.promise)
+
+    const { rerender } = render(
+      <ManagePage categories={categories} programs={programs} groups={groups} />,
+    )
+
+    expect(screen.getByRole('progressbar')).toBeInTheDocument()
+
+    await act(async () => {
+      firstFetch.resolve(images)
+    })
+
+    await screen.findByText('Blood Smear')
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+
+    rerender(
+      <ManagePage categories={categories} programs={programs} groups={groups} imagesVersion={1} />,
+    )
+
+    await waitFor(() => {
+      expect(fetchImages).toHaveBeenCalledTimes(2)
+    })
+
+    expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument()
+
+    await act(async () => {
+      secondFetch.resolve(images)
+    })
+    await waitFor(() => {
+      expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+    })
   })
 
   it('persists selected columns between renders', async () => {
