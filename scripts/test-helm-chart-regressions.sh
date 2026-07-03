@@ -92,4 +92,61 @@ assert_not_contains "$backup_no_volumes_manifest" "volumeMounts:" \
 assert_not_contains "$backup_no_volumes_manifest" "volumes:" \
   "backup deployment should omit volumes when every backup chart data volume is disabled"
 
+backend_zone_aa_manifest="$(helm template test charts/backend \
+  --set scheduling.zoneAntiAffinity.enabled=true \
+  --set replicaCount=2 \
+  --set persistence.enabled=true \
+  --set persistence.sourceImages.accessModes[0]=ReadWriteMany \
+  --set persistence.tiles.accessModes[0]=ReadWriteMany)"
+
+backend_zone_aa_deployment="$(extract_yaml_doc "$backend_zone_aa_manifest" "Deployment" "test-hriv-backend")"
+assert_contains "$backend_zone_aa_deployment" "type: RollingUpdate" \
+  "backend deployment should use RollingUpdate when hard zone anti-affinity is enabled with multiple replicas"
+assert_contains "$backend_zone_aa_deployment" "maxSurge: 0" \
+  "backend deployment should set maxSurge: 0 for the zone anti-affinity rollout strategy"
+assert_contains "$backend_zone_aa_deployment" "maxUnavailable: 1" \
+  "backend deployment should set maxUnavailable: 1 for the zone anti-affinity rollout strategy"
+
+backend_rwo_manifest="$(helm template test charts/backend \
+  --set persistence.enabled=true \
+  --set persistence.sourceImages.accessModes[0]=ReadWriteOnce \
+  --set persistence.tiles.accessModes[0]=ReadWriteOnce)"
+
+backend_rwo_deployment="$(extract_yaml_doc "$backend_rwo_manifest" "Deployment" "test-hriv-backend")"
+assert_contains "$backend_rwo_deployment" "type: Recreate" \
+  "backend deployment should force Recreate when ReadWriteOnce persistence is enabled"
+
+backend_default_manifest="$(helm template test charts/backend \
+  --set replicaCount=1)"
+
+backend_default_deployment="$(extract_yaml_doc "$backend_default_manifest" "Deployment" "test-hriv-backend")"
+assert_not_contains "$backend_default_deployment" "strategy:" \
+  "backend deployment should omit strategy when no rollout override is needed"
+
+backend_override_manifest="$(helm template test charts/backend \
+  --set scheduling.zoneAntiAffinity.enabled=true \
+  --set replicaCount=2 \
+  --set persistence.enabled=true \
+  --set persistence.sourceImages.accessModes[0]=ReadWriteMany \
+  --set persistence.tiles.accessModes[0]=ReadWriteMany \
+  --set-json 'updateStrategy={"type":"Recreate"}')"
+
+backend_override_deployment="$(extract_yaml_doc "$backend_override_manifest" "Deployment" "test-hriv-backend")"
+assert_contains "$backend_override_deployment" "type: Recreate" \
+  "backend deployment should honour an explicit Recreate override"
+assert_not_contains "$backend_override_deployment" "type: RollingUpdate" \
+  "backend deployment should not render RollingUpdate when updateStrategy explicitly requests Recreate"
+assert_not_contains "$backend_override_deployment" "maxSurge:" \
+  "backend deployment should not render rollingUpdate settings when updateStrategy explicitly requests Recreate"
+
+if backend_guard_output="$(helm template test charts/backend \
+  --set persistence.enabled=true \
+  --set persistence.sourceImages.accessModes[0]=ReadWriteOnce \
+  --set persistence.tiles.accessModes[0]=ReadWriteOnce \
+  --set-json 'updateStrategy={"type":"RollingUpdate"}' 2>&1)"; then
+  fail "expected ReadWriteOnce persistence with updateStrategy.type=RollingUpdate to be rejected"
+fi
+assert_contains "$backend_guard_output" "Recreate" \
+  "backend deployment should explain that ReadWriteOnce persistence requires Recreate"
+
 echo "Helm chart regression checks passed."

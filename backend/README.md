@@ -239,7 +239,8 @@ Hard zone anti-affinity with `replicaCount > 1` uses
 `maxSurge: 0` / `maxUnavailable: 1` so one zone frees up before its
 replacement schedules, avoiding the two-zone deadlock seen on stable.
 `updateStrategy` can override the Deployment `.spec.strategy` explicitly.
-ReadWriteOnce persistence still forces `Recreate`.
+ReadWriteOnce persistence forces `Recreate`; any explicit `updateStrategy`
+override must also use `type: Recreate`.
 
 ## Grafana dashboards
 
