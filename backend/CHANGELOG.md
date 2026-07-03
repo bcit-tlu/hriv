@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.27.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.27.0...backend-v0.27.1) (2026-07-03)
+
+
+### Bug Fixes
+
+* **backend:** prevent zone anti-affinity rolling-update deadlock ([#798](https://github.com/bcit-tlu/hriv/issues/798)) ([01719a6](https://github.com/bcit-tlu/hriv/commit/01719a6415eb83fa7c444df1c81738b64a448cd3))
+
+
+### Documentation
+
+* **backend:** document Grafana dashboard filename constraint ([#797](https://github.com/bcit-tlu/hriv/issues/797)) ([c2ccf84](https://github.com/bcit-tlu/hriv/commit/c2ccf848c10fbc423380f4fe456c31bed01fe206))
+
 ## [0.27.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.26.0...backend-v0.27.0) (2026-07-02)
 
 
