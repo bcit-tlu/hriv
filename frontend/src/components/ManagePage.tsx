@@ -1,5 +1,4 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -25,7 +24,6 @@ import TableHead from '@mui/material/TableHead'
 import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
-import TextField from '@mui/material/TextField'
 import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
@@ -61,6 +59,7 @@ import type { ImageFormData, ReplaceImageData } from './EditImageModal'
 import FilterBar from './FilterBar'
 import FilterOptionPanel from './FilterOptionPanel'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
+import FilterTextPanel from './FilterTextPanel'
 import MoveImageDialog from './MoveImageDialog'
 import NoteDisplay from './NoteDisplay'
 import UploadImageModal from './UploadImageModal'
@@ -83,12 +82,6 @@ function buildCategoryPaths(
     }
   }
   return map
-}
-
-function uniqueSortedStrings(values: Iterable<string>): string[] {
-  return [
-    ...new Set(Array.from(values, (value) => value.trim()).filter((value) => value.length > 0)),
-  ].sort((a, b) => a.localeCompare(b))
 }
 
 function CategoryBreadcrumb({
@@ -448,32 +441,24 @@ export default function ManagePage({
     [groups, getInheritedGroupIds],
   )
 
-  const idFilterOptions = useMemo(
-    () => uniqueSortedStrings(images.map((image) => String(image.id))),
-    [images],
-  )
-  const nameFilterOptions = useMemo(
-    () => uniqueSortedStrings(images.map((image) => image.name)),
-    [images],
-  )
-  const categoryFilterOptions = useMemo(
-    () => uniqueSortedStrings(images.map((image) => getCategoryLabel(image))),
-    [images, getCategoryLabel],
-  )
-  const copyrightFilterOptions = useMemo(
-    () => uniqueSortedStrings(images.map((image) => image.copyright ?? '')),
-    [images],
-  )
-  const noteFilterOptions = useMemo(
-    () => uniqueSortedStrings(images.map((image) => image.note ?? '')),
-    [images],
-  )
   const programFilterOptions = useMemo(
-    () => uniqueSortedStrings(programs.map((program) => program.name)),
+    () =>
+      [
+        ...new Set(
+          Array.from(programs, (program) => program.name.trim()).filter(
+            (value) => value.length > 0,
+          ),
+        ),
+      ].sort((a, b) => a.localeCompare(b)),
     [programs],
   )
   const groupFilterOptions = useMemo(
-    () => uniqueSortedStrings(groups.map((group) => group.name)),
+    () =>
+      [
+        ...new Set(
+          Array.from(groups, (group) => group.name.trim()).filter((value) => value.length > 0),
+        ),
+      ].sort((a, b) => a.localeCompare(b)),
     [groups],
   )
 
@@ -851,7 +836,13 @@ export default function ManagePage({
               size="small"
               color="secondary"
               onClick={handleClearFilters}
-              sx={{ minWidth: 0, px: 0, fontWeight: 600, textTransform: 'none' }}
+              sx={{
+                minWidth: 0,
+                px: 0,
+                fontWeight: 600,
+                textTransform: 'none',
+                whiteSpace: 'nowrap',
+              }}
             >
               Clear all
             </Button>
@@ -918,22 +909,12 @@ export default function ManagePage({
             activeCount={filters['id']?.trim() ? 1 : 0}
             panelWidth={160}
           >
-            <Autocomplete
-              freeSolo
-              size="small"
-              options={idFilterOptions}
+            <FilterTextPanel
               value={filters['id'] ?? ''}
-              inputValue={filters['id'] ?? ''}
-              onChange={(_, value) => handleFilterChange('id', value ?? '')}
-              onInputChange={(_, value) => handleFilterChange('id', value)}
-              sx={{ width: 160 }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Filter by ID"
-                  inputProps={{ ...params.inputProps, 'aria-label': 'ID' }}
-                />
-              )}
+              onChange={(value) => handleFilterChange('id', value)}
+              placeholder="Filter by ID"
+              ariaLabel="ID"
+              width={160}
             />
           </FilterPopoverButton>
         )}
@@ -943,22 +924,12 @@ export default function ManagePage({
             activeCount={filters['name']?.trim() ? 1 : 0}
             panelWidth={260}
           >
-            <Autocomplete
-              freeSolo
-              size="small"
-              options={nameFilterOptions}
+            <FilterTextPanel
               value={filters['name'] ?? ''}
-              inputValue={filters['name'] ?? ''}
-              onChange={(_, value) => handleFilterChange('name', value ?? '')}
-              onInputChange={(_, value) => handleFilterChange('name', value)}
-              sx={{ width: 260 }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Filter by name"
-                  inputProps={{ ...params.inputProps, 'aria-label': 'Name' }}
-                />
-              )}
+              onChange={(value) => handleFilterChange('name', value)}
+              placeholder="Filter by name"
+              ariaLabel="Name"
+              width={260}
             />
           </FilterPopoverButton>
         )}
@@ -968,22 +939,12 @@ export default function ManagePage({
             activeCount={filters['category']?.trim() ? 1 : 0}
             panelWidth={280}
           >
-            <Autocomplete
-              freeSolo
-              size="small"
-              options={categoryFilterOptions}
+            <FilterTextPanel
               value={filters['category'] ?? ''}
-              inputValue={filters['category'] ?? ''}
-              onChange={(_, value) => handleFilterChange('category', value ?? '')}
-              onInputChange={(_, value) => handleFilterChange('category', value)}
-              sx={{ width: 280 }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Filter by category"
-                  inputProps={{ ...params.inputProps, 'aria-label': 'Category' }}
-                />
-              )}
+              onChange={(value) => handleFilterChange('category', value)}
+              placeholder="Filter by category"
+              ariaLabel="Category"
+              width={280}
             />
           </FilterPopoverButton>
         )}
@@ -993,22 +954,12 @@ export default function ManagePage({
             activeCount={filters['copyright']?.trim() ? 1 : 0}
             panelWidth={260}
           >
-            <Autocomplete
-              freeSolo
-              size="small"
-              options={copyrightFilterOptions}
+            <FilterTextPanel
               value={filters['copyright'] ?? ''}
-              inputValue={filters['copyright'] ?? ''}
-              onChange={(_, value) => handleFilterChange('copyright', value ?? '')}
-              onInputChange={(_, value) => handleFilterChange('copyright', value)}
-              sx={{ width: 260 }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Filter by copyright"
-                  inputProps={{ ...params.inputProps, 'aria-label': 'Copyright' }}
-                />
-              )}
+              onChange={(value) => handleFilterChange('copyright', value)}
+              placeholder="Filter by copyright"
+              ariaLabel="Copyright"
+              width={260}
             />
           </FilterPopoverButton>
         )}
@@ -1018,22 +969,12 @@ export default function ManagePage({
             activeCount={filters['note']?.trim() ? 1 : 0}
             panelWidth={260}
           >
-            <Autocomplete
-              freeSolo
-              size="small"
-              options={noteFilterOptions}
+            <FilterTextPanel
               value={filters['note'] ?? ''}
-              inputValue={filters['note'] ?? ''}
-              onChange={(_, value) => handleFilterChange('note', value ?? '')}
-              onInputChange={(_, value) => handleFilterChange('note', value)}
-              sx={{ width: 260 }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Filter by note"
-                  inputProps={{ ...params.inputProps, 'aria-label': 'Note' }}
-                />
-              )}
+              onChange={(value) => handleFilterChange('note', value)}
+              placeholder="Filter by note"
+              ariaLabel="Note"
+              width={260}
             />
           </FilterPopoverButton>
         )}

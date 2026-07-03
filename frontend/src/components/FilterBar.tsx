@@ -5,6 +5,7 @@ import Typography from '@mui/material/Typography'
 
 interface FilterBarProps {
   title?: string
+  ariaLabel?: string
   actions?: ReactNode
   clearAction?: ReactNode
   summary?: ReactNode
@@ -13,17 +14,18 @@ interface FilterBarProps {
 }
 
 export default function FilterBar({
-  title = 'Filter by',
+  title = 'FILTER BY:',
+  ariaLabel = 'Filter by',
   actions,
   clearAction,
   summary,
-  summaryLabel = 'Filtered by:',
+  summaryLabel = 'FILTERED BY:',
   children,
 }: FilterBarProps) {
   return (
     <Box
       component="section"
-      aria-label={title}
+      aria-label={ariaLabel}
       sx={{
         mb: 1.25,
         bgcolor: 'transparent',
@@ -58,11 +60,11 @@ export default function FilterBar({
         <Box
           sx={{
             display: 'flex',
-            flex: 1,
             minWidth: 0,
             flexWrap: 'nowrap',
             gap: 1,
             alignItems: 'center',
+            flex: '0 1 auto',
           }}
         >
           {children}
@@ -72,9 +74,20 @@ export default function FilterBar({
             {clearAction}
           </Box>
         ) : null}
-        {clearAction && actions ? <Divider orientation="vertical" flexItem /> : null}
+        {actions ? <Box sx={{ flex: 1, minWidth: 0 }} /> : null}
+        {clearAction && actions ? (
+          <Divider orientation="vertical" flexItem sx={{ mx: 0.25 }} />
+        ) : null}
         {actions ? (
-          <Box sx={{ display: 'flex', flexWrap: 'nowrap', gap: 0.5, alignItems: 'center' }}>
+          <Box
+            sx={{
+              display: 'flex',
+              flexWrap: 'nowrap',
+              gap: 0.5,
+              alignItems: 'center',
+              color: 'text.secondary',
+            }}
+          >
             {actions}
           </Box>
         ) : null}

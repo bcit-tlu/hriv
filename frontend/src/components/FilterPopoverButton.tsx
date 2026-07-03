@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown'
 import Box from '@mui/material/Box'
 import ButtonBase from '@mui/material/ButtonBase'
@@ -20,8 +20,8 @@ interface FilterPopoverButtonProps {
 
 export function filterSurfaceBg(theme: Theme): string {
   return theme.palette.mode === 'dark'
-    ? alpha(theme.palette.common.white, 0.06)
-    : alpha(theme.palette.text.secondary, 0.08)
+    ? alpha(theme.palette.common.white, 0.08)
+    : alpha(theme.palette.text.primary, 0.05)
 }
 
 export default function FilterPopoverButton({
@@ -31,6 +31,7 @@ export default function FilterPopoverButton({
   panelWidth = 240,
   sx,
 }: FilterPopoverButtonProps) {
+  const menuId = useId()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const active = activeCount > 0
   const open = Boolean(anchorEl)
@@ -40,6 +41,7 @@ export default function FilterPopoverButton({
       <ButtonBase
         aria-label={label}
         aria-haspopup="menu"
+        aria-controls={open ? menuId : undefined}
         aria-expanded={open ? 'true' : undefined}
         onClick={(event) =>
           setAnchorEl((current) => (current === event.currentTarget ? null : event.currentTarget))
@@ -53,7 +55,7 @@ export default function FilterPopoverButton({
             borderColor: active ? 'secondary.main' : 'divider',
             bgcolor: (theme) =>
               active ? alpha(theme.palette.secondary.main, 0.1) : filterSurfaceBg(theme),
-            color: active ? 'secondary.main' : 'text.primary',
+            color: active ? 'secondary.main' : 'text.secondary',
             display: 'inline-flex',
             alignItems: 'center',
             gap: 0.5,
@@ -103,7 +105,9 @@ export default function FilterPopoverButton({
       >
         <Paper sx={{ mt: 0.75, borderRadius: 2, minWidth: panelWidth, p: 1.25, boxShadow: 4 }}>
           <ClickAwayListener onClickAway={() => setAnchorEl(null)}>
-            <Box>{children}</Box>
+            <Box id={menuId} role="menu">
+              {children}
+            </Box>
           </ClickAwayListener>
         </Paper>
       </Popper>

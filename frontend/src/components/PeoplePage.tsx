@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Alert from '@mui/material/Alert'
-import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -24,7 +23,6 @@ import TableHead from '@mui/material/TableHead'
 import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
-import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
@@ -50,6 +48,7 @@ import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVis
 import FilterBar from './FilterBar'
 import FilterOptionPanel from './FilterOptionPanel'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
+import FilterTextPanel from './FilterTextPanel'
 
 type SortableColumn =
   | 'id'
@@ -95,22 +94,17 @@ const PEOPLE_ALL_COLUMNS: readonly PeopleTableColumn[] = PEOPLE_COLUMN_OPTIONS.m
   (column) => column.key,
 )
 
-const PEOPLE_COLUMN_FILTER_KEYS: Partial<Record<PeopleTableColumn, string>> = {
-  name: 'name',
-  email: 'email',
-  role: 'role',
-}
+const PEOPLE_COLUMN_FILTER_KEYS: Partial<Record<PeopleTableColumn, keyof Record<string, string>>> =
+  {
+    name: 'name',
+    email: 'email',
+    role: 'role',
+  }
 
 type AppliedPeopleFilter =
   | { key: 'name' | 'email' | 'role'; label: string }
   | { key: `program:${number}`; label: string; programId: number }
   | { key: `group:${number}`; label: string; groupId: number }
-
-function uniqueSortedStrings(values: Iterable<string>): string[] {
-  return [
-    ...new Set(Array.from(values, (value) => value.trim()).filter((value) => value.length > 0)),
-  ].sort((a, b) => a.localeCompare(b))
-}
 
 interface PeoplePageProps {
   programs: Program[]
@@ -179,14 +173,6 @@ export default function PeoplePage({
   const [successSnack, setSuccessSnack] = useState<string | null>(null)
   const [errorSnack, setErrorSnack] = useState<string | null>(null)
 
-  const nameFilterOptions = useMemo(
-    () => uniqueSortedStrings(users.map((user) => user.name)),
-    [users],
-  )
-  const emailFilterOptions = useMemo(
-    () => uniqueSortedStrings(users.map((user) => user.email)),
-    [users],
-  )
   const selectedProgramOptions = useMemo(
     () => programs.filter((program) => selectedPrograms.has(program.id)),
     [programs, selectedPrograms],
@@ -651,7 +637,13 @@ export default function PeoplePage({
               size="small"
               color="secondary"
               onClick={handleClearFilters}
-              sx={{ minWidth: 0, px: 0, fontWeight: 600, textTransform: 'none' }}
+              sx={{
+                minWidth: 0,
+                px: 0,
+                fontWeight: 600,
+                textTransform: 'none',
+                whiteSpace: 'nowrap',
+              }}
             >
               Clear all
             </Button>
@@ -702,22 +694,12 @@ export default function PeoplePage({
             activeCount={filters['name']?.trim() ? 1 : 0}
             panelWidth={260}
           >
-            <Autocomplete
-              freeSolo
-              size="small"
-              options={nameFilterOptions}
+            <FilterTextPanel
               value={filters['name'] ?? ''}
-              inputValue={filters['name'] ?? ''}
-              onChange={(_, value) => handleFilterChange('name', value ?? '')}
-              onInputChange={(_, value) => handleFilterChange('name', value)}
-              sx={{ width: 260 }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Search name"
-                  inputProps={{ ...params.inputProps, 'aria-label': 'Name' }}
-                />
-              )}
+              onChange={(value) => handleFilterChange('name', value)}
+              placeholder="Search name"
+              ariaLabel="Name"
+              width={260}
             />
           </FilterPopoverButton>
         )}
@@ -727,22 +709,12 @@ export default function PeoplePage({
             activeCount={filters['email']?.trim() ? 1 : 0}
             panelWidth={280}
           >
-            <Autocomplete
-              freeSolo
-              size="small"
-              options={emailFilterOptions}
+            <FilterTextPanel
               value={filters['email'] ?? ''}
-              inputValue={filters['email'] ?? ''}
-              onChange={(_, value) => handleFilterChange('email', value ?? '')}
-              onInputChange={(_, value) => handleFilterChange('email', value)}
-              sx={{ width: 280 }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Search email"
-                  inputProps={{ ...params.inputProps, 'aria-label': 'Email' }}
-                />
-              )}
+              onChange={(value) => handleFilterChange('email', value)}
+              placeholder="Search email"
+              ariaLabel="Email"
+              width={280}
             />
           </FilterPopoverButton>
         )}

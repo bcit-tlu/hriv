@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import Alert from '@mui/material/Alert'
-import Autocomplete from '@mui/material/Autocomplete'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Checkbox from '@mui/material/Checkbox'
@@ -54,6 +53,7 @@ import type { Group } from '../types'
 import FilterBar from './FilterBar'
 import FilterOptionPanel from './FilterOptionPanel'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
+import FilterTextPanel from './FilterTextPanel'
 
 interface GroupManagementModalProps {
   open: boolean
@@ -79,12 +79,6 @@ type GroupDialogMode = 'create' | 'rename' | null
 const PAGE_SIZE_OPTIONS = [10, 25, 50]
 const DEFAULT_PAGE_SIZE = 25
 const SEARCH_DEBOUNCE_MS = 300
-
-function uniqueSortedStrings(values: Iterable<string>): string[] {
-  return [
-    ...new Set(Array.from(values, (value) => value.trim()).filter((value) => value.length > 0)),
-  ].sort((a, b) => a.localeCompare(b))
-}
 
 export default function GroupManagementModal({
   open,
@@ -264,10 +258,6 @@ export default function GroupManagementModal({
   const selectedProgramOptions = useMemo(
     () => programs.filter((program) => selectedProgramIds.includes(program.id)),
     [programs, selectedProgramIds],
-  )
-  const memberSearchOptions = useMemo(
-    () => uniqueSortedStrings(rows.flatMap((row) => [row.name, row.email])),
-    [rows],
   )
 
   const currentRows = rows.filter((row) => assignedIds.has(row.id))
@@ -702,7 +692,13 @@ export default function GroupManagementModal({
                             setQ('')
                             setSelectedProgramIds([])
                           }}
-                          sx={{ minWidth: 0, px: 0, fontWeight: 600, textTransform: 'none' }}
+                          sx={{
+                            minWidth: 0,
+                            px: 0,
+                            fontWeight: 600,
+                            textTransform: 'none',
+                            whiteSpace: 'nowrap',
+                          }}
                         >
                           Clear all
                         </Button>
@@ -766,22 +762,12 @@ export default function GroupManagementModal({
                       activeCount={searchInput.trim().length > 0 ? 1 : 0}
                       panelWidth={280}
                     >
-                      <Autocomplete
-                        freeSolo
-                        size="small"
-                        options={memberSearchOptions}
+                      <FilterTextPanel
                         value={searchInput}
-                        inputValue={searchInput}
-                        onChange={(_, value) => setSearchInput(value ?? '')}
-                        onInputChange={(_, value) => setSearchInput(value)}
-                        sx={{ width: 280 }}
-                        renderInput={(params) => (
-                          <TextField
-                            {...params}
-                            placeholder="Search name or email"
-                            inputProps={{ ...params.inputProps, 'aria-label': 'Name or email' }}
-                          />
-                        )}
+                        onChange={setSearchInput}
+                        placeholder="Search name or email"
+                        ariaLabel="Name or email"
+                        width={280}
                       />
                     </FilterPopoverButton>
                     {tab === 'students' && programs.length > 0 && (
