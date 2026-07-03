@@ -48,7 +48,8 @@ import BulkEditModal from './BulkEditModal'
 import BulkGroupModal from './BulkGroupModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
 import FilterBar from './FilterBar'
-import FilterPopoverButton from './FilterPopoverButton'
+import FilterOptionPanel from './FilterOptionPanel'
+import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
 
 type SortableColumn =
   | 'id'
@@ -751,19 +752,11 @@ export default function PeoplePage({
             activeCount={filters['role']?.trim() ? 1 : 0}
             panelWidth={180}
           >
-            <Autocomplete
-              size="small"
-              options={ROLES}
-              value={(filters['role'] as Role | undefined) ?? null}
-              onChange={(_, value) => handleFilterChange('role', value ?? '')}
-              sx={{ width: 180 }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Select role"
-                  inputProps={{ ...params.inputProps, 'aria-label': 'Role' }}
-                />
-              )}
+            <FilterOptionPanel
+              options={ROLES.map((role) => ({ value: role, label: role }))}
+              selectedValues={filters['role'] ? [filters['role']] : []}
+              onChange={(values) => handleFilterChange('role', values[0] ?? '')}
+              multiple={false}
             />
           </FilterPopoverButton>
         )}
@@ -773,33 +766,17 @@ export default function PeoplePage({
             activeCount={selectedProgramOptions.length}
             panelWidth={280}
           >
-            <Autocomplete
-              multiple
-              disableCloseOnSelect
-              size="small"
-              options={programs}
-              value={selectedProgramOptions}
-              isOptionEqualToValue={(option, value) => option.id === value.id}
-              getOptionLabel={(option) => option.name}
-              onChange={(_, values) => {
-                setSelectedPrograms(new Set(values.map((program) => program.id)))
+            <FilterOptionPanel
+              options={programs.map((program) => ({
+                value: String(program.id),
+                label: program.name,
+              }))}
+              selectedValues={selectedProgramOptions.map((program) => String(program.id))}
+              onChange={(values) => {
+                setSelectedPrograms(new Set(values.map((value) => Number(value))))
                 setCurrentPage(0)
               }}
-              sx={{ width: 280 }}
-              renderOption={(props, option, { selected }) => (
-                <li {...props}>
-                  <Checkbox size="small" checked={selected} sx={{ mr: 1 }} />
-                  {option.name}
-                </li>
-              )}
-              renderTags={() => []}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Select programs"
-                  inputProps={{ ...params.inputProps, 'aria-label': 'Program' }}
-                />
-              )}
+              searchPlaceholder="Select programs"
             />
           </FilterPopoverButton>
         )}
@@ -809,33 +786,14 @@ export default function PeoplePage({
             activeCount={selectedGroupOptions.length}
             panelWidth={280}
           >
-            <Autocomplete
-              multiple
-              disableCloseOnSelect
-              size="small"
-              options={groups}
-              value={selectedGroupOptions}
-              isOptionEqualToValue={(option, value) => option.id === value.id}
-              getOptionLabel={(option) => option.name}
-              onChange={(_, values) => {
-                setSelectedGroups(new Set(values.map((group) => group.id)))
+            <FilterOptionPanel
+              options={groups.map((group) => ({ value: String(group.id), label: group.name }))}
+              selectedValues={selectedGroupOptions.map((group) => String(group.id))}
+              onChange={(values) => {
+                setSelectedGroups(new Set(values.map((value) => Number(value))))
                 setCurrentPage(0)
               }}
-              sx={{ width: 280 }}
-              renderOption={(props, option, { selected }) => (
-                <li {...props}>
-                  <Checkbox size="small" checked={selected} sx={{ mr: 1 }} />
-                  {option.name}
-                </li>
-              )}
-              renderTags={() => []}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Select groups"
-                  inputProps={{ ...params.inputProps, 'aria-label': 'Groups' }}
-                />
-              )}
+              searchPlaceholder="Select groups"
             />
           </FilterPopoverButton>
         )}
@@ -857,7 +815,9 @@ export default function PeoplePage({
       ) : (
         <TableContainer component={Paper} variant="outlined" sx={{ bgcolor: 'background.paper' }}>
           <Table size="small">
-            <TableHead>
+            <TableHead
+              sx={{ '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme) } }}
+            >
               <TableRow>
                 <TableCell padding="checkbox">
                   <Checkbox

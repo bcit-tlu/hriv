@@ -59,7 +59,8 @@ import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVis
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
 import FilterBar from './FilterBar'
-import FilterPopoverButton from './FilterPopoverButton'
+import FilterOptionPanel from './FilterOptionPanel'
+import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
 import MoveImageDialog from './MoveImageDialog'
 import NoteDisplay from './NoteDisplay'
 import UploadImageModal from './UploadImageModal'
@@ -1042,22 +1043,12 @@ export default function ManagePage({
             activeCount={filters['program']?.trim() ? 1 : 0}
             panelWidth={260}
           >
-            <Autocomplete
-              freeSolo
-              size="small"
-              options={programFilterOptions}
-              value={filters['program'] ?? ''}
-              inputValue={filters['program'] ?? ''}
-              onChange={(_, value) => handleFilterChange('program', value ?? '')}
-              onInputChange={(_, value) => handleFilterChange('program', value)}
-              sx={{ width: 260 }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Filter by program"
-                  inputProps={{ ...params.inputProps, 'aria-label': 'Program' }}
-                />
-              )}
+            <FilterOptionPanel
+              options={programFilterOptions.map((program) => ({ value: program, label: program }))}
+              selectedValues={filters['program'] ? [filters['program']] : []}
+              onChange={(values) => handleFilterChange('program', values[0] ?? '')}
+              multiple={false}
+              searchPlaceholder="Select programs"
             />
           </FilterPopoverButton>
         )}
@@ -1067,22 +1058,12 @@ export default function ManagePage({
             activeCount={filters['group']?.trim() ? 1 : 0}
             panelWidth={260}
           >
-            <Autocomplete
-              freeSolo
-              size="small"
-              options={groupFilterOptions}
-              value={filters['group'] ?? ''}
-              inputValue={filters['group'] ?? ''}
-              onChange={(_, value) => handleFilterChange('group', value ?? '')}
-              onInputChange={(_, value) => handleFilterChange('group', value)}
-              sx={{ width: 260 }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Filter by group"
-                  inputProps={{ ...params.inputProps, 'aria-label': 'Groups' }}
-                />
-              )}
+            <FilterOptionPanel
+              options={groupFilterOptions.map((group) => ({ value: group, label: group }))}
+              selectedValues={filters['group'] ? [filters['group']] : []}
+              onChange={(values) => handleFilterChange('group', values[0] ?? '')}
+              multiple={false}
+              searchPlaceholder="Select groups"
             />
           </FilterPopoverButton>
         )}
@@ -1092,31 +1073,14 @@ export default function ManagePage({
             activeCount={filters['active']?.trim() ? 1 : 0}
             panelWidth={180}
           >
-            <Autocomplete
-              size="small"
+            <FilterOptionPanel
               options={[
                 { label: 'Visible', value: 'active' },
                 { label: 'Hidden', value: 'inactive' },
               ]}
-              getOptionLabel={(option) => option.label}
-              value={
-                filters['active']
-                  ? {
-                      label: filters['active'] === 'active' ? 'Visible' : 'Hidden',
-                      value: filters['active'],
-                    }
-                  : null
-              }
-              isOptionEqualToValue={(option, value) => option.value === value.value}
-              onChange={(_, value) => handleFilterChange('active', value?.value ?? '')}
-              sx={{ width: 180 }}
-              renderInput={(params) => (
-                <TextField
-                  {...params}
-                  placeholder="Select visibility"
-                  inputProps={{ ...params.inputProps, 'aria-label': 'Visibility' }}
-                />
-              )}
+              selectedValues={filters['active'] ? [filters['active']] : []}
+              onChange={(values) => handleFilterChange('active', values[0] ?? '')}
+              multiple={false}
             />
           </FilterPopoverButton>
         )}
@@ -1141,7 +1105,9 @@ export default function ManagePage({
       ) : (
         <TableContainer component={Paper} variant="outlined">
           <Table size="small">
-            <TableHead>
+            <TableHead
+              sx={{ '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme) } }}
+            >
               <TableRow>
                 <TableCell padding="checkbox">
                   <Checkbox

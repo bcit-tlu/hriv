@@ -52,7 +52,8 @@ import { apiGroupToGroup } from '../groupUtils'
 import { getGroupChipColors } from '../theme'
 import type { Group } from '../types'
 import FilterBar from './FilterBar'
-import FilterPopoverButton from './FilterPopoverButton'
+import FilterOptionPanel from './FilterOptionPanel'
+import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
 
 interface GroupManagementModalProps {
   open: boolean
@@ -789,32 +790,18 @@ export default function GroupManagementModal({
                         activeCount={selectedProgramOptions.length}
                         panelWidth={280}
                       >
-                        <Autocomplete
-                          multiple
-                          disableCloseOnSelect
-                          size="small"
-                          options={programs}
-                          value={selectedProgramOptions}
-                          isOptionEqualToValue={(option, value) => option.id === value.id}
-                          getOptionLabel={(option) => option.name}
-                          onChange={(_, values) =>
-                            setSelectedProgramIds(values.map((program) => program.id))
+                        <FilterOptionPanel
+                          options={programs.map((program) => ({
+                            value: String(program.id),
+                            label: program.name,
+                          }))}
+                          selectedValues={selectedProgramOptions.map((program) =>
+                            String(program.id),
+                          )}
+                          onChange={(values) =>
+                            setSelectedProgramIds(values.map((value) => Number(value)))
                           }
-                          sx={{ width: 280 }}
-                          renderOption={(props, option, { selected }) => (
-                            <li {...props}>
-                              <Checkbox size="small" checked={selected} sx={{ mr: 1 }} />
-                              {option.name}
-                            </li>
-                          )}
-                          renderTags={() => []}
-                          renderInput={(params) => (
-                            <TextField
-                              {...params}
-                              placeholder="Select programs"
-                              inputProps={{ ...params.inputProps, 'aria-label': 'Program' }}
-                            />
-                          )}
+                          searchPlaceholder="Select programs"
                         />
                       </FilterPopoverButton>
                     )}
@@ -833,7 +820,11 @@ export default function GroupManagementModal({
 
                 <TableContainer sx={{ flex: 1, minHeight: 0 }}>
                   <Table stickyHeader size="small">
-                    <TableHead>
+                    <TableHead
+                      sx={{
+                        '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme) },
+                      }}
+                    >
                       <TableRow>
                         <TableCell padding="checkbox">
                           <Checkbox

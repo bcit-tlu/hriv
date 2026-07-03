@@ -372,8 +372,7 @@ describe('GroupManagementModal', () => {
     renderModal()
 
     await user.click(await screen.findByRole('button', { name: 'Program' }))
-    await user.click(await screen.findByRole('combobox', { name: 'Program' }))
-    await user.click(await screen.findByRole('option', { name: 'Program B' }))
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Program B' }))
 
     await waitFor(() =>
       expect(mockFetchUsersPaged).toHaveBeenLastCalledWith(

@@ -2,9 +2,11 @@ import { useState } from 'react'
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown'
 import Box from '@mui/material/Box'
 import ButtonBase from '@mui/material/ButtonBase'
-import Popover from '@mui/material/Popover'
+import ClickAwayListener from '@mui/material/ClickAwayListener'
+import Paper from '@mui/material/Paper'
+import Popper from '@mui/material/Popper'
 import Typography from '@mui/material/Typography'
-import { alpha, useTheme } from '@mui/material/styles'
+import { alpha } from '@mui/material/styles'
 import type { SxProps, Theme } from '@mui/material/styles'
 import type { ReactNode } from 'react'
 
@@ -16,6 +18,12 @@ interface FilterPopoverButtonProps {
   sx?: SxProps<Theme>
 }
 
+export function filterSurfaceBg(theme: Theme): string {
+  return theme.palette.mode === 'dark'
+    ? alpha(theme.palette.common.white, 0.06)
+    : alpha(theme.palette.text.secondary, 0.08)
+}
+
 export default function FilterPopoverButton({
   label,
   activeCount = 0,
@@ -23,7 +31,6 @@ export default function FilterPopoverButton({
   panelWidth = 240,
   sx,
 }: FilterPopoverButtonProps) {
-  const theme = useTheme()
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null)
   const active = activeCount > 0
   const open = Boolean(anchorEl)
@@ -32,7 +39,7 @@ export default function FilterPopoverButton({
     <>
       <ButtonBase
         aria-label={label}
-        aria-haspopup="dialog"
+        aria-haspopup="menu"
         aria-expanded={open ? 'true' : undefined}
         onClick={(event) =>
           setAnchorEl((current) => (current === event.currentTarget ? null : event.currentTarget))
@@ -44,7 +51,8 @@ export default function FilterPopoverButton({
             borderRadius: 1.5,
             border: '1px solid',
             borderColor: active ? 'secondary.main' : 'divider',
-            bgcolor: active ? alpha(theme.palette.secondary.main, 0.1) : 'background.paper',
+            bgcolor: (theme) =>
+              active ? alpha(theme.palette.secondary.main, 0.1) : filterSurfaceBg(theme),
             color: active ? 'secondary.main' : 'text.primary',
             display: 'inline-flex',
             alignItems: 'center',
@@ -52,15 +60,16 @@ export default function FilterPopoverButton({
             flexShrink: 0,
             whiteSpace: 'nowrap',
             '&:hover': {
-              bgcolor: active
-                ? alpha(theme.palette.secondary.main, 0.16)
-                : alpha(theme.palette.text.primary, 0.04),
+              bgcolor: (theme) =>
+                active
+                  ? alpha(theme.palette.secondary.main, 0.16)
+                  : alpha(theme.palette.text.primary, 0.06),
             },
           },
           ...(Array.isArray(sx) ? sx : sx ? [sx] : []),
         ]}
       >
-        <Typography variant="caption" sx={{ fontWeight: 600, lineHeight: 1 }}>
+        <Typography variant="caption" sx={{ fontWeight: 400, lineHeight: 1 }}>
           {label}
         </Typography>
         {active ? (
@@ -74,8 +83,8 @@ export default function FilterPopoverButton({
               display: 'inline-flex',
               alignItems: 'center',
               justifyContent: 'center',
-              bgcolor: 'secondary.main',
-              color: 'secondary.contrastText',
+              bgcolor: 'primary.main',
+              color: 'primary.contrastText',
               fontSize: '0.65rem',
               fontWeight: 700,
               lineHeight: 1,
@@ -86,25 +95,18 @@ export default function FilterPopoverButton({
         ) : null}
         <ArrowDropDownIcon sx={{ fontSize: 16, color: 'inherit' }} />
       </ButtonBase>
-      <Popover
+      <Popper
         open={open}
         anchorEl={anchorEl}
-        onClose={() => setAnchorEl(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
-        slotProps={{
-          paper: {
-            sx: {
-              mt: 0.75,
-              borderRadius: 2,
-              minWidth: panelWidth,
-              p: 1.25,
-            },
-          },
-        }}
+        placement="bottom-start"
+        sx={{ zIndex: (theme) => theme.zIndex.modal + 1 }}
       >
-        {children}
-      </Popover>
+        <Paper sx={{ mt: 0.75, borderRadius: 2, minWidth: panelWidth, p: 1.25, boxShadow: 4 }}>
+          <ClickAwayListener onClickAway={() => setAnchorEl(null)}>
+            <Box>{children}</Box>
+          </ClickAwayListener>
+        </Paper>
+      </Popper>
     </>
   )
 }

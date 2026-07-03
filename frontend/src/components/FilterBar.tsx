@@ -45,10 +45,12 @@ export default function FilterBar({
           color="text.secondary"
           sx={{
             whiteSpace: 'nowrap',
-            fontWeight: 600,
+            fontWeight: 500,
             lineHeight: 1,
             flex: '0 0 auto',
-            fontSize: '0.8rem',
+            fontSize: '0.75rem',
+            letterSpacing: '0.08em',
+            textTransform: 'uppercase',
           }}
         >
           {title}
@@ -65,15 +67,15 @@ export default function FilterBar({
         >
           {children}
         </Box>
-        {actions ? (
-          <Box sx={{ display: 'flex', flexWrap: 'nowrap', gap: 0.5, alignItems: 'center' }}>
-            {actions}
-          </Box>
-        ) : null}
-        {clearAction ? <Divider orientation="vertical" flexItem /> : null}
         {clearAction ? (
           <Box sx={{ display: 'flex', flexWrap: 'nowrap', alignItems: 'center' }}>
             {clearAction}
+          </Box>
+        ) : null}
+        {clearAction && actions ? <Divider orientation="vertical" flexItem /> : null}
+        {actions ? (
+          <Box sx={{ display: 'flex', flexWrap: 'nowrap', gap: 0.5, alignItems: 'center' }}>
+            {actions}
           </Box>
         ) : null}
       </Box>
@@ -82,7 +84,12 @@ export default function FilterBar({
           <Typography
             variant="body2"
             color="text.secondary"
-            sx={{ fontSize: '0.8rem', fontWeight: 500 }}
+            sx={{
+              fontSize: '0.75rem',
+              fontWeight: 500,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+            }}
           >
             {summaryLabel}
           </Typography>
