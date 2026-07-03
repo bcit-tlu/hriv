@@ -551,7 +551,6 @@ export default function ManagePage({
     filters,
     getCategoryLabel,
     getGroupNameList,
-    getProgramNames,
     getProgramNameList,
     hasActiveFilters,
     images,

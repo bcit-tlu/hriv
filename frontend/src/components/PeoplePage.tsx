@@ -759,7 +759,10 @@ export default function PeoplePage({
             <FilterOptionPanel
               options={ROLES.map((role) => ({ value: role, label: role }))}
               selectedValues={ROLES.filter((role) => selectedRoles.has(role))}
-              onChange={(values) => setSelectedRoles(new Set(values as Role[]))}
+              onChange={(values) => {
+                setSelectedRoles(new Set(values as Role[]))
+                setCurrentPage(0)
+              }}
             />
           </FilterPopoverButton>
         )}

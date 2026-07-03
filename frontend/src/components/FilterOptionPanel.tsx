@@ -33,6 +33,18 @@ export default function FilterOptionPanel({
   const normalizedQuery = query.trim().toLowerCase()
   const optionRole = multiple ? 'menuitemcheckbox' : 'menuitemradio'
 
+  const toggleOption = (optionValue: string, selected: boolean) => {
+    if (multiple) {
+      onChange(
+        selected
+          ? selectedValues.filter((value) => value !== optionValue)
+          : [...selectedValues, optionValue],
+      )
+    } else {
+      onChange(selected ? [] : [optionValue])
+    }
+  }
+
   const filteredOptions = useMemo(
     () =>
       normalizedQuery.length === 0
@@ -65,15 +77,35 @@ export default function FilterOptionPanel({
                 key={option.value}
                 role={optionRole}
                 aria-checked={selected}
-                onClick={() => {
-                  if (multiple) {
-                    onChange(
-                      selected
-                        ? selectedValues.filter((value) => value !== option.value)
-                        : [...selectedValues, option.value],
-                    )
-                  } else {
-                    onChange(selected ? [] : [option.value])
+                tabIndex={0}
+                onClick={() => toggleOption(option.value, selected)}
+                onKeyDown={(event) => {
+                  if (event.key === ' ' || event.key === 'Enter') {
+                    event.preventDefault()
+                    toggleOption(option.value, selected)
+                    return
+                  }
+
+                  const items = Array.from(
+                    event.currentTarget.parentElement?.querySelectorAll<HTMLElement>(
+                      `[role="${optionRole}"]`,
+                    ) ?? [],
+                  )
+                  const index = items.indexOf(event.currentTarget)
+                  if (index === -1) return
+
+                  if (event.key === 'ArrowDown') {
+                    event.preventDefault()
+                    items[(index + 1) % items.length]?.focus()
+                  } else if (event.key === 'ArrowUp') {
+                    event.preventDefault()
+                    items[(index - 1 + items.length) % items.length]?.focus()
+                  } else if (event.key === 'Home') {
+                    event.preventDefault()
+                    items[0]?.focus()
+                  } else if (event.key === 'End') {
+                    event.preventDefault()
+                    items[items.length - 1]?.focus()
                   }
                 }}
                 sx={{

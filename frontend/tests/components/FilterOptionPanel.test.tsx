@@ -44,6 +44,25 @@ describe('FilterOptionPanel', () => {
     expect(onChange).toHaveBeenCalledWith(['clinical-genetics'])
   })
 
+  it('supports keyboard activation and arrow-key focus movement', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+
+    render(<FilterOptionPanel options={options} selectedValues={[]} onChange={onChange} />)
+
+    const firstOption = screen.getByRole('menuitemcheckbox', { name: 'Clinical Genetics' })
+    const secondOption = screen.getByRole('menuitemcheckbox', { name: 'Digital Design' })
+
+    firstOption.focus()
+    expect(firstOption).toHaveFocus()
+
+    await user.keyboard('{ArrowDown}')
+    expect(secondOption).toHaveFocus()
+
+    await user.keyboard('{Enter}')
+    expect(onChange).toHaveBeenCalledWith(['digital-design'])
+  })
+
   it('filters options by the search query and shows the empty label when needed', async () => {
     const user = userEvent.setup()
 

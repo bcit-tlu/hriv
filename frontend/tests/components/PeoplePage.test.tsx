@@ -465,6 +465,50 @@ describe('PeoplePage', () => {
     expect(screen.getByText('1 of 2 people')).toBeInTheDocument()
   })
 
+  it('resets to the first page when the role filter changes', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchUsers).mockResolvedValue([
+      USERS[0],
+      ...Array.from({ length: 5 }, (_, index) => ({
+        id: index + 2,
+        name: `Student ${index + 1}`,
+        email: `student${index + 1}@example.ca`,
+        role: 'student',
+        program_ids: [1],
+        program_names: ['Medical Lab'],
+        group_ids: [7],
+        group_names: ['Lab A2'],
+        last_access: null,
+        metadata_extra: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      })),
+    ])
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByLabelText('Rows per page:'))
+    await user.click(screen.getByRole('option', { name: '5' }))
+    await user.click(screen.getByLabelText('Go to next page'))
+
+    await waitFor(() => {
+      expect(screen.getByText('6–6 of 6')).toBeInTheDocument()
+      expect(screen.getByText('Student 5')).toBeInTheDocument()
+    })
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Role' }))
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'admin' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('1–1 of 1')).toBeInTheDocument()
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+  })
+
   it('shows an in-table no-match message when filters exclude all people', async () => {
     const user = userEvent.setup()
     render(<PeoplePage programs={programs} groups={groups} />)
