@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.27.1...backend-v0.28.0) (2026-07-03)
+
+
+### Features
+
+* **backend:** add Teams feedback delivery ([#802](https://github.com/bcit-tlu/hriv/issues/802)) ([2fe8ca3](https://github.com/bcit-tlu/hriv/commit/2fe8ca30cc08878356700822e6d4fddd8fe8a2b5))
+
 ## [0.27.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.27.0...backend-v0.27.1) (2026-07-03)
 
 
