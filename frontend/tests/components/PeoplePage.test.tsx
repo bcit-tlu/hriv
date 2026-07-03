@@ -243,11 +243,11 @@ describe('PeoplePage', () => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
 
-    expect(screen.getByText('Name')).toBeInTheDocument()
-    expect(screen.getByText('Email')).toBeInTheDocument()
-    expect(screen.getByText('Role')).toBeInTheDocument()
-    expect(screen.getByText('Program')).toBeInTheDocument()
-    expect(screen.getByText('Last Accessed')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Name' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Email' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Role' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Program' })).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Last Accessed' })).toBeInTheDocument()
   })
 
   it('can hide the Groups column and persists that choice between renders', async () => {
@@ -258,6 +258,8 @@ describe('PeoplePage', () => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
 
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    expect(within(filterBar).getByRole('button', { name: 'Group' })).toBeInTheDocument()
     expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Choose columns' }))
@@ -271,6 +273,7 @@ describe('PeoplePage', () => {
     })
 
     expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
+    expect(within(filterBar).queryByRole('button', { name: 'Group' })).not.toBeInTheDocument()
 
     unmount()
     render(<PeoplePage programs={programs} groups={groups} />)
@@ -375,24 +378,16 @@ describe('PeoplePage', () => {
     expect(screen.queryByText('Edit Person')).not.toBeInTheDocument()
   })
 
-  it('filter icon changes aria-label and color when panel is toggled', async () => {
-    const user = userEvent.setup()
+  it('renders a persistent filter bar with the recommended heading', async () => {
     render(<PeoplePage programs={programs} groups={groups} initialEditUserId={null} />)
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
 
-    // Initially: aria-label is "Show filters"
-    const filterBtn = screen.getByLabelText('Show filters')
-    expect(filterBtn).toBeInTheDocument()
-
-    // Click to expand filter row
-    await user.click(filterBtn)
-
-    // After toggle: aria-label changes to "Hide filters"
-    expect(screen.getByLabelText('Hide filters')).toBeInTheDocument()
-    expect(screen.queryByLabelText('Show filters')).not.toBeInTheDocument()
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    expect(within(filterBar).getByRole('button', { name: 'Name' })).toBeInTheDocument()
+    expect(within(filterBar).getByRole('button', { name: 'Email' })).toBeInTheDocument()
   })
 
   it('sorts by name column when header is clicked', async () => {
@@ -409,7 +404,7 @@ describe('PeoplePage', () => {
     expect(within(firstDataRow).getByText('Admin User')).toBeInTheDocument()
 
     // Click Name header again to toggle to desc
-    await user.click(screen.getByText('Name'))
+    await user.click(within(screen.getByRole('columnheader', { name: 'Name' })).getByRole('button'))
 
     const rowsAfter = screen.getAllByRole('row')
     const firstDataRowAfter = rowsAfter[1]
@@ -424,7 +419,9 @@ describe('PeoplePage', () => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
 
-    await user.click(screen.getByText('Email'))
+    await user.click(
+      within(screen.getByRole('columnheader', { name: 'Email' })).getByRole('button'),
+    )
 
     const rows = screen.getAllByRole('row')
     const firstDataRow = rows[1]
@@ -439,17 +436,94 @@ describe('PeoplePage', () => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
 
-    // Open filter row
-    await user.click(screen.getByLabelText('Show filters'))
-
-    // Type in the name filter
-    const filterInputs = screen.getAllByRole('textbox')
-    // First filter input is for name column
-    await user.type(filterInputs[0], 'Student')
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    const nameFilterButton = within(filterBar).getByRole('button', { name: 'Name' })
+    await user.click(nameFilterButton)
+    await user.type(screen.getByPlaceholderText('Search name'), 'Student')
+    await user.click(nameFilterButton)
 
     // Only Test Student should be visible
-    expect(screen.queryByText('Admin User')).not.toBeInTheDocument()
-    expect(screen.getByText('Test Student')).toBeInTheDocument()
+    expect(screen.queryByRole('cell', { name: 'Admin User' })).not.toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Test Student' })).toBeInTheDocument()
+  })
+
+  it('uses additive checkbox role filters and shows the filtered result total', async () => {
+    const user = userEvent.setup()
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Role' }))
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'student' }))
+
+    expect(screen.getByRole('cell', { name: 'Test Student' })).toBeInTheDocument()
+    expect(screen.queryByRole('cell', { name: 'Admin User' })).not.toBeInTheDocument()
+    expect(screen.queryByText('0 of 2 people')).not.toBeInTheDocument()
+    expect(screen.getByText('1 of 2 people')).toBeInTheDocument()
+  })
+
+  it('resets to the first page when the role filter changes', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchUsers).mockResolvedValue([
+      USERS[0],
+      ...Array.from({ length: 5 }, (_, index) => ({
+        id: index + 2,
+        name: `Student ${index + 1}`,
+        email: `student${index + 1}@example.ca`,
+        role: 'student',
+        program_ids: [1],
+        program_names: ['Medical Lab'],
+        group_ids: [7],
+        group_names: ['Lab A2'],
+        last_access: null,
+        metadata_extra: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      })),
+    ])
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByLabelText('Rows per page:'))
+    await user.click(screen.getByRole('option', { name: '5' }))
+    await user.click(screen.getByLabelText('Go to next page'))
+
+    await waitFor(() => {
+      expect(screen.getByText('6–6 of 6')).toBeInTheDocument()
+      expect(screen.getByText('Student 5')).toBeInTheDocument()
+    })
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Role' }))
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'admin' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('1–1 of 1')).toBeInTheDocument()
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+  })
+
+  it('shows an in-table no-match message when filters exclude all people', async () => {
+    const user = userEvent.setup()
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    const nameFilterButton = within(filterBar).getByRole('button', { name: 'Name' })
+    await user.click(nameFilterButton)
+    await user.type(screen.getByPlaceholderText('Search name'), 'Nobody')
+
+    expect(screen.getByText('No people match the selected filters.')).toBeInTheDocument()
+    expect(screen.getByText('0 of 2 people')).toBeInTheDocument()
   })
 
   it('clears filters when clear button is clicked', async () => {
@@ -460,16 +534,15 @@ describe('PeoplePage', () => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
     })
 
-    // Open filter row and filter
-    await user.click(screen.getByLabelText('Show filters'))
-    const filterInputs = screen.getAllByRole('textbox')
-    await user.type(filterInputs[0], 'Student')
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    const nameFilterButton = within(filterBar).getByRole('button', { name: 'Name' })
+    await user.click(nameFilterButton)
+    await user.type(screen.getByPlaceholderText('Search name'), 'Student')
+    await user.click(nameFilterButton)
 
     expect(screen.queryByText('Admin User')).not.toBeInTheDocument()
 
-    // Clear filters
-    const clearBtn = screen.getByTitle('Clear all filters')
-    await user.click(clearBtn)
+    await user.click(within(filterBar).getByRole('button', { name: 'Clear all' }))
 
     await waitFor(() => {
       expect(screen.getByText('Admin User')).toBeInTheDocument()
@@ -527,18 +600,19 @@ describe('PeoplePage', () => {
     })
 
     await user.click(screen.getByRole('button', { name: /add person/i }))
-    expect(screen.getByRole('heading', { name: 'Add Person' })).toBeInTheDocument()
+    const dialog = screen.getByRole('dialog', { name: 'Add Person' })
+    expect(dialog).toBeInTheDocument()
 
     // Fill in required fields
-    const nameInput = screen.getByLabelText('Full name')
-    const emailInput = screen.getByLabelText('Email')
-    const passwordInput = screen.getByLabelText('Password')
+    const nameInput = within(dialog).getByLabelText('Full name')
+    const emailInput = within(dialog).getByLabelText('Email')
+    const passwordInput = within(dialog).getByLabelText('Password')
 
     await user.type(nameInput, 'New Person')
     await user.type(emailInput, 'new@example.ca')
     await user.type(passwordInput, 'secret123')
 
-    await user.click(screen.getByRole('button', { name: /^add$/i }))
+    await user.click(within(dialog).getByRole('button', { name: /^add$/i }))
 
     await waitFor(() => {
       expect(createUser).toHaveBeenCalledTimes(1)

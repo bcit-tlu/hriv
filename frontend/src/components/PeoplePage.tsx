@@ -12,8 +12,6 @@ import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import Snackbar from '@mui/material/Snackbar'
 import FormControl from '@mui/material/FormControl'
-import IconButton from '@mui/material/IconButton'
-import InputAdornment from '@mui/material/InputAdornment'
 import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Select from '@mui/material/Select'
@@ -25,14 +23,8 @@ import TableHead from '@mui/material/TableHead'
 import TablePagination from '@mui/material/TablePagination'
 import TableRow from '@mui/material/TableRow'
 import TableSortLabel from '@mui/material/TableSortLabel'
-import TextField from '@mui/material/TextField'
-import ToggleButton from '@mui/material/ToggleButton'
-import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import type { SelectChangeEvent } from '@mui/material/Select'
-import { alpha } from '@mui/material/styles'
-import ClearIcon from '@mui/icons-material/Clear'
-import FilterListIcon from '@mui/icons-material/FilterList'
 import PersonAddIcon from '@mui/icons-material/PersonAdd'
 import ViewColumnIcon from '@mui/icons-material/ViewColumn'
 import {
@@ -53,6 +45,10 @@ import AddEditPersonModal from './AddEditPersonModal'
 import BulkEditModal from './BulkEditModal'
 import BulkGroupModal from './BulkGroupModal'
 import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVisibilityDialog'
+import FilterBar from './FilterBar'
+import FilterOptionPanel from './FilterOptionPanel'
+import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
+import FilterTextPanel from './FilterTextPanel'
 
 type SortableColumn =
   | 'id'
@@ -98,11 +94,17 @@ const PEOPLE_ALL_COLUMNS: readonly PeopleTableColumn[] = PEOPLE_COLUMN_OPTIONS.m
   (column) => column.key,
 )
 
-const PEOPLE_COLUMN_FILTER_KEYS: Partial<Record<PeopleTableColumn, string>> = {
-  name: 'name',
-  email: 'email',
-  role: 'role',
-}
+const PEOPLE_COLUMN_FILTER_KEYS: Partial<Record<PeopleTableColumn, keyof Record<string, string>>> =
+  {
+    name: 'name',
+    email: 'email',
+  }
+
+type AppliedPeopleFilter =
+  | { key: 'name' | 'email'; label: string }
+  | { key: `role:${Role}`; label: string; role: Role }
+  | { key: `program:${number}`; label: string; programId: number }
+  | { key: `group:${number}`; label: string; groupId: number }
 
 interface PeoplePageProps {
   programs: Program[]
@@ -125,17 +127,17 @@ export default function PeoplePage({
   const [sortColumn, setSortColumn] = useState<SortableColumn>('name')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
-  // Filter state — text filters for name/email/role, chip sets for program/group
+  // Filter state — text filters for name/email, checkbox sets for role/program/group
   const [filters, setFilters] = useState<Record<string, string>>({})
+  const [selectedRoles, setSelectedRoles] = useState<Set<Role>>(new Set())
   const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(new Set())
   const [selectedGroups, setSelectedGroups] = useState<Set<number>>(new Set())
   const hasActiveFilters =
     Object.values(filters).some((v) => v !== '') ||
+    selectedRoles.size > 0 ||
     selectedPrograms.size > 0 ||
     selectedGroups.size > 0
 
-  // Filter row visibility
-  const [showFilters, setShowFilters] = useState(false)
   const [columnDialogOpen, setColumnDialogOpen] = useState(false)
   const { visibleColumns, isColumnVisible, setColumnVisible } =
     useTableColumnPreferences<PeopleTableColumn>({
@@ -143,6 +145,10 @@ export default function PeoplePage({
       allColumns: PEOPLE_ALL_COLUMNS,
       defaultVisibleColumns: PEOPLE_DEFAULT_VISIBLE_COLUMNS,
     })
+  const visibleColumnCount = useMemo(
+    () => PEOPLE_ALL_COLUMNS.filter((column) => visibleColumns[column]).length,
+    [visibleColumns],
+  )
 
   // Pagination state
   const [rowsPerPage, setRowsPerPage] = useState(25)
@@ -172,6 +178,44 @@ export default function PeoplePage({
   // Success snackbar
   const [successSnack, setSuccessSnack] = useState<string | null>(null)
   const [errorSnack, setErrorSnack] = useState<string | null>(null)
+
+  const selectedProgramOptions = useMemo(
+    () => programs.filter((program) => selectedPrograms.has(program.id)),
+    [programs, selectedPrograms],
+  )
+  const selectedGroupOptions = useMemo(
+    () => groups.filter((group) => selectedGroups.has(group.id)),
+    [groups, selectedGroups],
+  )
+  const appliedFilters = useMemo<AppliedPeopleFilter[]>(() => {
+    const chips: AppliedPeopleFilter[] = []
+    const name = filters['name']?.trim()
+    const email = filters['email']?.trim()
+
+    if (name) chips.push({ key: 'name', label: `Name: ${name}` })
+    if (email) chips.push({ key: 'email', label: `Email: ${email}` })
+    for (const role of ROLES.filter((item) => selectedRoles.has(item))) {
+      chips.push({ key: `role:${role}`, label: `Role: ${role}`, role })
+    }
+
+    for (const program of selectedProgramOptions) {
+      chips.push({
+        key: `program:${program.id}`,
+        label: `Program: ${program.name}`,
+        programId: program.id,
+      })
+    }
+
+    for (const group of selectedGroupOptions) {
+      chips.push({
+        key: `group:${group.id}`,
+        label: `Group: ${group.name}`,
+        groupId: group.id,
+      })
+    }
+
+    return chips
+  }, [filters, selectedGroupOptions, selectedProgramOptions, selectedRoles])
 
   const loadData = useCallback(async ({ showLoading = false }: { showLoading?: boolean } = {}) => {
     try {
@@ -224,6 +268,15 @@ export default function PeoplePage({
     })
   }, [groups])
 
+  useEffect(() => {
+    const validRoles = new Set(ROLES)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with supported roles
+    setSelectedRoles((prev) => {
+      const pruned = new Set([...prev].filter((role) => validRoles.has(role)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [])
+
   // Sort handler
   const handleSort = (column: SortableColumn) => {
     if (sortColumn === column) {
@@ -238,6 +291,7 @@ export default function PeoplePage({
   const filteredUsers = useMemo(() => {
     const activeFilters =
       Object.values(filters).some((v) => v !== '') ||
+      selectedRoles.size > 0 ||
       selectedPrograms.size > 0 ||
       selectedGroups.size > 0
     if (!activeFilters) return users
@@ -249,8 +303,7 @@ export default function PeoplePage({
       }
       if (!match('name', user.name)) return false
       if (!match('email', user.email)) return false
-      const roleFilter = filters['role']
-      if (roleFilter && user.role !== roleFilter) return false
+      if (selectedRoles.size > 0 && !selectedRoles.has(user.role as Role)) return false
       if (selectedPrograms.size > 0) {
         const userProgramSet = new Set(user.program_ids)
         if (![...selectedPrograms].some((id) => userProgramSet.has(id))) return false
@@ -261,7 +314,7 @@ export default function PeoplePage({
       }
       return true
     })
-  }, [users, filters, selectedPrograms, selectedGroups])
+  }, [filters, selectedGroups, selectedPrograms, selectedRoles, users])
 
   const sortedUsers = useMemo(() => {
     const sorted = [...filteredUsers]
@@ -311,9 +364,46 @@ export default function PeoplePage({
 
   const handleClearFilters = () => {
     setFilters({})
+    setSelectedRoles(new Set())
     setSelectedPrograms(new Set())
     setSelectedGroups(new Set())
     setCurrentPage(0)
+  }
+
+  const handleAppliedFilterDelete = (filter: AppliedPeopleFilter) => {
+    if (filter.key === 'name' || filter.key === 'email') {
+      handleFilterChange(filter.key, '')
+      return
+    }
+
+    if ('role' in filter) {
+      setSelectedRoles((prev) => {
+        const next = new Set(prev)
+        next.delete(filter.role)
+        return next
+      })
+      setCurrentPage(0)
+      return
+    }
+
+    if ('programId' in filter) {
+      setSelectedPrograms((prev) => {
+        const next = new Set(prev)
+        next.delete(filter.programId)
+        return next
+      })
+      setCurrentPage(0)
+      return
+    }
+
+    if ('groupId' in filter) {
+      setSelectedGroups((prev) => {
+        const next = new Set(prev)
+        next.delete(filter.groupId)
+        return next
+      })
+      setCurrentPage(0)
+    }
   }
 
   const handleColumnVisibilityToggle = useCallback(
@@ -321,10 +411,13 @@ export default function PeoplePage({
       const nextVisible = !visibleColumns[column]
       setColumnVisible(column, nextVisible)
       if (!nextVisible) {
+        setCurrentPage(0)
         if (column === 'program') {
           setSelectedPrograms(new Set())
         } else if (column === 'group') {
           setSelectedGroups(new Set())
+        } else if (column === 'role') {
+          setSelectedRoles(new Set())
         } else {
           const filterKey = PEOPLE_COLUMN_FILTER_KEYS[column]
           if (filterKey) {
@@ -524,49 +617,6 @@ export default function PeoplePage({
       >
         <Typography variant="h5">People</Typography>
         <Box sx={{ display: 'flex', gap: 2, flexShrink: 0, alignItems: 'center' }}>
-          <ToggleButtonGroup
-            size="small"
-            aria-label="People table controls"
-            sx={{
-              '& .MuiToggleButton-root': (theme) => ({
-                bgcolor: alpha(theme.palette.text.primary, 0.09),
-                color: theme.palette.text.primary,
-                borderColor: alpha(theme.palette.text.primary, 0.2),
-                '&:hover': {
-                  bgcolor: alpha(theme.palette.text.primary, 0.13),
-                },
-              }),
-              '& .MuiToggleButton-root.Mui-selected': (theme) => ({
-                bgcolor: alpha(theme.palette.text.primary, 0.15),
-                color: theme.palette.text.primary,
-                borderColor: alpha(theme.palette.text.primary, 0.26),
-                '&:hover': {
-                  bgcolor: alpha(theme.palette.text.primary, 0.17),
-                },
-              }),
-            }}
-          >
-            <ToggleButton
-              value="filters"
-              selected={showFilters || hasActiveFilters}
-              size="small"
-              title={showFilters ? 'Hide filters' : 'Show filters'}
-              aria-label={showFilters ? 'Hide filters' : 'Show filters'}
-              onClick={() => setShowFilters((prev) => !prev)}
-            >
-              <FilterListIcon fontSize="small" />
-            </ToggleButton>
-            <ToggleButton
-              value="columns"
-              selected={columnDialogOpen}
-              size="small"
-              title="Choose columns"
-              aria-label="Choose columns"
-              onClick={() => setColumnDialogOpen(true)}
-            >
-              <ViewColumnIcon fontSize="small" />
-            </ToggleButton>
-          </ToggleButtonGroup>
           {selected.size > 0 && (
             <>
               <Button
@@ -609,97 +659,158 @@ export default function PeoplePage({
         </Box>
       </Box>
 
-      {(programs.length > 0 || groups.length > 0) && (
-        <Box
-          sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 1,
-            px: 1,
-            py: 1.25,
-            borderRadius: 1,
-            border: 1,
-            borderColor: 'divider',
-            bgcolor: 'background.paper',
-            mb: 2,
-          }}
-        >
-          {programs.length > 0 && (
-            <Box>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ display: 'block', mb: 0.75 }}
-              >
-                Filter by program
-              </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                {programs.map((p) => {
-                  const active = selectedPrograms.has(p.id)
-                  return (
-                    <Chip
-                      key={p.id}
-                      label={p.name}
-                      size="small"
-                      color={active ? 'primary' : 'default'}
-                      variant={active ? 'filled' : 'outlined'}
-                      onClick={() => {
-                        setSelectedPrograms((prev) => {
-                          const next = new Set(prev)
-                          if (next.has(p.id)) {
-                            next.delete(p.id)
-                          } else {
-                            next.add(p.id)
-                          }
-                          return next
-                        })
-                        setCurrentPage(0)
-                      }}
-                    />
-                  )
-                })}
-              </Box>
-            </Box>
+      <FilterBar
+        clearAction={
+          hasActiveFilters ? (
+            <Button
+              size="small"
+              color="secondary"
+              onClick={handleClearFilters}
+              sx={{
+                minWidth: 0,
+                px: 0,
+                fontWeight: 600,
+                textTransform: 'none',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              Clear all
+            </Button>
+          ) : undefined
+        }
+        summary={
+          hasActiveFilters ? (
+            <>
+              {appliedFilters.map((filter) => (
+                <Chip
+                  key={filter.key}
+                  label={filter.label}
+                  size="small"
+                  onDelete={() => handleAppliedFilterDelete(filter)}
+                  sx={{
+                    bgcolor: (theme) =>
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(165, 36, 56, 0.22)'
+                        : 'rgba(165, 36, 56, 0.08)',
+                    color: 'secondary.main',
+                    border: '1px solid',
+                    borderColor: 'secondary.main',
+                    '& .MuiChip-deleteIcon': {
+                      color: 'secondary.main',
+                    },
+                  }}
+                />
+              ))}
+            </>
+          ) : undefined
+        }
+        summaryActions={
+          hasActiveFilters ? (
+            <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+              {`${sortedUsers.length} of ${users.length} ${users.length === 1 ? 'person' : 'people'}`}
+            </Typography>
+          ) : undefined
+        }
+        actions={
+          <>
+            <Button
+              size="small"
+              startIcon={<ViewColumnIcon fontSize="small" />}
+              aria-label="Choose columns"
+              onClick={() => setColumnDialogOpen(true)}
+            >
+              Choose columns
+            </Button>
+          </>
+        }
+      >
+        {isColumnVisible('name') && (
+          <FilterPopoverButton
+            label="Name"
+            activeCount={filters['name']?.trim() ? 1 : 0}
+            panelWidth={260}
+          >
+            <FilterTextPanel
+              value={filters['name'] ?? ''}
+              onChange={(value) => handleFilterChange('name', value)}
+              placeholder="Search name"
+              ariaLabel="Name"
+              width={260}
+            />
+          </FilterPopoverButton>
+        )}
+        {isColumnVisible('email') && (
+          <FilterPopoverButton
+            label="Email"
+            activeCount={filters['email']?.trim() ? 1 : 0}
+            panelWidth={280}
+          >
+            <FilterTextPanel
+              value={filters['email'] ?? ''}
+              onChange={(value) => handleFilterChange('email', value)}
+              placeholder="Search email"
+              ariaLabel="Email"
+              width={280}
+            />
+          </FilterPopoverButton>
+        )}
+        {isColumnVisible('role') && (
+          <FilterPopoverButton label="Role" activeCount={selectedRoles.size} panelWidth={180}>
+            <FilterOptionPanel
+              options={ROLES.map((role) => ({ value: role, label: role }))}
+              selectedValues={ROLES.filter((role) => selectedRoles.has(role))}
+              onChange={(values) => {
+                setSelectedRoles(new Set(values as Role[]))
+                setCurrentPage(0)
+              }}
+            />
+          </FilterPopoverButton>
+        )}
+        {isColumnVisible('program') && programs.length > 0 && (
+          <FilterPopoverButton
+            label="Program"
+            activeCount={selectedProgramOptions.length}
+            panelWidth={280}
+          >
+            <FilterOptionPanel
+              options={programs.map((program) => ({
+                value: String(program.id),
+                label: program.name,
+              }))}
+              selectedValues={selectedProgramOptions.map((program) => String(program.id))}
+              onChange={(values) => {
+                setSelectedPrograms(new Set(values.map((value) => Number(value))))
+                setCurrentPage(0)
+              }}
+            />
+          </FilterPopoverButton>
+        )}
+        {isColumnVisible('group') && groups.length > 0 && (
+          <FilterPopoverButton
+            label="Group"
+            activeCount={selectedGroupOptions.length}
+            panelWidth={280}
+          >
+            <FilterOptionPanel
+              options={groups.map((group) => ({ value: String(group.id), label: group.name }))}
+              selectedValues={selectedGroupOptions.map((group) => String(group.id))}
+              onChange={(values) => {
+                setSelectedGroups(new Set(values.map((value) => Number(value))))
+                setCurrentPage(0)
+              }}
+            />
+          </FilterPopoverButton>
+        )}
+        {!isColumnVisible('name') &&
+          !isColumnVisible('email') &&
+          !isColumnVisible('role') &&
+          !isColumnVisible('program') &&
+          !isColumnVisible('group') && (
+            <Typography variant="body2" color="text.secondary">
+              Choose a visible filterable column to add controls here.
+            </Typography>
           )}
-          {groups.length > 0 && (
-            <Box>
-              <Typography
-                variant="caption"
-                color="text.secondary"
-                sx={{ display: 'block', mb: 0.75 }}
-              >
-                Filter by group
-              </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-                {groups.map((g) => {
-                  const active = selectedGroups.has(g.id)
-                  return (
-                    <Chip
-                      key={g.id}
-                      label={g.name}
-                      size="small"
-                      color={active ? 'secondary' : 'default'}
-                      variant={active ? 'filled' : 'outlined'}
-                      onClick={() => {
-                        setSelectedGroups((prev) => {
-                          const next = new Set(prev)
-                          if (next.has(g.id)) {
-                            next.delete(g.id)
-                          } else {
-                            next.add(g.id)
-                          }
-                          return next
-                        })
-                        setCurrentPage(0)
-                      }}
-                    />
-                  )
-                })}
-              </Box>
-            </Box>
-          )}
-        </Box>
-      )}
+      </FilterBar>
 
       {users.length === 0 ? (
         <Typography variant="body1" color="text.secondary">
@@ -708,7 +819,9 @@ export default function PeoplePage({
       ) : (
         <TableContainer component={Paper} variant="outlined" sx={{ bgcolor: 'background.paper' }}>
           <Table size="small">
-            <TableHead>
+            <TableHead
+              sx={{ '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme) } }}
+            >
               <TableRow>
                 <TableCell padding="checkbox">
                   <Checkbox
@@ -807,106 +920,6 @@ export default function PeoplePage({
                 )}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
-              {showFilters && (
-                <TableRow>
-                  <TableCell padding="checkbox">
-                    {hasActiveFilters && (
-                      <IconButton
-                        size="small"
-                        onClick={handleClearFilters}
-                        title="Clear all filters"
-                      >
-                        <ClearIcon fontSize="small" />
-                      </IconButton>
-                    )}
-                  </TableCell>
-                  {isColumnVisible('id') && <TableCell />}
-                  {isColumnVisible('name') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['name'] ?? ''}
-                        onChange={(e) => handleFilterChange('name', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['name']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('name', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('email') && (
-                    <TableCell>
-                      <TextField
-                        size="small"
-                        variant="standard"
-                        placeholder="Filter"
-                        value={filters['email'] ?? ''}
-                        onChange={(e) => handleFilterChange('email', e.target.value)}
-                        slotProps={{ input: { sx: { fontSize: '0.8rem' } } }}
-                        InputProps={
-                          filters['email']
-                            ? {
-                                endAdornment: (
-                                  <InputAdornment position="end">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleFilterChange('email', '')}
-                                    >
-                                      <ClearIcon sx={{ fontSize: 14 }} />
-                                    </IconButton>
-                                  </InputAdornment>
-                                ),
-                              }
-                            : undefined
-                        }
-                      />
-                    </TableCell>
-                  )}
-                  {isColumnVisible('role') && (
-                    <TableCell>
-                      <FormControl size="small" variant="standard" fullWidth>
-                        <Select
-                          value={filters['role'] ?? ''}
-                          onChange={(e: SelectChangeEvent) =>
-                            handleFilterChange('role', e.target.value)
-                          }
-                          displayEmpty
-                          sx={{ fontSize: '0.8rem' }}
-                        >
-                          <MenuItem value="">
-                            <em>All</em>
-                          </MenuItem>
-                          {ROLES.map((r) => (
-                            <MenuItem key={r} value={r}>
-                              {r}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </FormControl>
-                    </TableCell>
-                  )}
-                  {isColumnVisible('program') && <TableCell />}
-                  {isColumnVisible('group') && <TableCell />}
-                  {isColumnVisible('last_access') && <TableCell />}
-                  {isColumnVisible('created_at') && <TableCell />}
-                  <TableCell />
-                </TableRow>
-              )}
             </TableHead>
             <TableBody>
               {pageUsers.map((user) => (
@@ -975,6 +988,15 @@ export default function PeoplePage({
                   </TableCell>
                 </TableRow>
               ))}
+              {pageUsers.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={visibleColumnCount + 2} align="center" sx={{ py: 6 }}>
+                    <Typography variant="body2" color="text.secondary">
+                      No people match the selected filters.
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
           <TablePagination

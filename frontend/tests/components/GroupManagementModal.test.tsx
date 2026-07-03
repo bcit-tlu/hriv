@@ -183,11 +183,36 @@ describe('GroupManagementModal', () => {
     expect(screen.getByRole('button', { name: /create group/i })).toBeInTheDocument()
     expect(screen.getAllByText('Cohort A').length).toBeGreaterThan(0)
     expect(screen.getByText('Cohort B')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Filter by' })).toBeInTheDocument()
     expect(await screen.findByText('CURRENT MEMBERS')).toBeInTheDocument()
     expect(screen.getByText('AVAILABLE STUDENTS')).toBeInTheDocument()
     expect(mockFetchUsersPaged).toHaveBeenCalledWith(
       expect.objectContaining({ role: 'student', page: 1, pageSize: 25 }),
     )
+  })
+
+  it('hides student-only program filter summary chips on the instructors tab', async () => {
+    const user = userEvent.setup()
+    renderModal()
+
+    expect(await screen.findByText('CURRENT MEMBERS')).toBeInTheDocument()
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Program' }))
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Program A' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('Program: Program A')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Clear all' })).toBeInTheDocument()
+    })
+
+    await user.click(screen.getByRole('tab', { name: /Instructors/ }))
+
+    await waitFor(() => {
+      expect(screen.queryByText('Program: Program A')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument()
+      expect(within(filterBar).queryByRole('button', { name: 'Program' })).not.toBeInTheDocument()
+    })
   })
 
   it('renders the selected group row with the subtle secondary group colour', async () => {
@@ -366,12 +391,13 @@ describe('GroupManagementModal', () => {
     expect(mockFetchUsersPaged).toHaveBeenCalledTimes(fetchCallsBeforeAdd)
   })
 
-  it('filters available students by program chip in the redesigned detail panel', async () => {
+  it('filters available students by program dropdown in the redesigned detail panel', async () => {
     const user = userEvent.setup()
     renderModal()
 
-    const programBChips = await screen.findAllByText('Program B')
-    await user.click(programBChips[0])
+    await user.click(await screen.findByRole('button', { name: 'Program' }))
+    expect(screen.queryByPlaceholderText('Select programs')).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Program B' }))
 
     await waitFor(() =>
       expect(mockFetchUsersPaged).toHaveBeenLastCalledWith(

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 vi.mock('../../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../src/api')>()
@@ -79,7 +80,7 @@ describe('ManagePage', () => {
       expect(screen.getByText('Blood Smear')).toBeInTheDocument()
     })
 
-    expect(screen.getByText('Groups')).toBeInTheDocument()
+    expect(screen.getByRole('columnheader', { name: 'Groups' })).toBeInTheDocument()
     const groupChip = screen.getByText('Lab A2').closest('.MuiChip-root')
     expect(groupChip).toBeInTheDocument()
   })
@@ -146,6 +147,249 @@ describe('ManagePage', () => {
     expect(screen.queryByRole('columnheader', { name: 'Dimensions' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'File Size' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Measurement' })).not.toBeInTheDocument()
+  })
+
+  it('keeps the filter bar in sync with visible columns', async () => {
+    const user = userEvent.setup()
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    expect(within(filterBar).getByRole('button', { name: 'Group' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Choose columns' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Choose image table columns' })
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Groups' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Done' }))
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: 'Choose image table columns' }),
+      ).not.toBeInTheDocument()
+    })
+
+    expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
+    expect(within(filterBar).queryByRole('button', { name: 'Group' })).not.toBeInTheDocument()
+  })
+
+  it('shows the filtered result total beside the active chips only when a filter is applied', async () => {
+    const user = userEvent.setup()
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+
+    expect(screen.queryByText('1 of 1 image')).not.toBeInTheDocument()
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Group' }))
+    expect(screen.queryByPlaceholderText('Select groups')).not.toBeInTheDocument()
+    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Lab A2' }))
+
+    await waitFor(() => {
+      expect(screen.getByText('1 of 1 image')).toBeInTheDocument()
+    })
+  })
+
+  it('shows an in-table no-match message when filters exclude all images', async () => {
+    const user = userEvent.setup()
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Name' }))
+    await user.type(screen.getByPlaceholderText('Filter by name'), 'No Match')
+
+    await waitFor(() => {
+      expect(screen.getByText('No images match the selected filters.')).toBeInTheDocument()
+      expect(screen.getByText('0 of 1 image')).toBeInTheDocument()
+    })
+  })
+
+  it('keeps duplicate program names as distinct filter options keyed by id', async () => {
+    const duplicatePrograms: Program[] = [
+      { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
+      { id: 2, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
+    ]
+    const duplicateCategories = [
+      makeCategory({ id: 10, label: 'Microscopy A', programIds: [1], groupIds: [7] }),
+      makeCategory({ id: 11, label: 'Microscopy B', programIds: [2], groupIds: [7] }),
+    ]
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        id: 101,
+        name: 'Blood Smear',
+        thumb: '/thumb-a.jpg',
+        tile_sources: '/tile-a.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 102,
+        name: 'Urine Slide',
+        thumb: '/thumb-b.jpg',
+        tile_sources: '/tile-b.dzi',
+        category_id: 11,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 1,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+    localStorage.setItem(
+      'hrivpref:table-columns:manage-images:user:1',
+      JSON.stringify({
+        thumbnail: true,
+        id: false,
+        name: true,
+        category: true,
+        copyright: false,
+        note: false,
+        program: true,
+        group: true,
+        active: true,
+        updated_at: true,
+        created_at: false,
+        dimensions: false,
+        file_size: false,
+        measurement: false,
+      }),
+    )
+
+    const user = userEvent.setup()
+    render(
+      <ManagePage categories={duplicateCategories} programs={duplicatePrograms} groups={groups} />,
+    )
+
+    await screen.findByText('Blood Smear')
+    await screen.findByText('Urine Slide')
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(within(filterBar).getByRole('button', { name: 'Program' }))
+
+    const options = await screen.findAllByRole('menuitemcheckbox', { name: 'Medical Lab' })
+    expect(options).toHaveLength(2)
+
+    await user.click(options[0])
+
+    await waitFor(() => {
+      expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+      expect(screen.queryByText('Urine Slide')).not.toBeInTheDocument()
+      expect(screen.getByText('1 of 2 images')).toBeInTheDocument()
+    })
+  })
+
+  it('adds program chip-click filters instead of replacing the existing selection', async () => {
+    const additivePrograms: Program[] = [
+      { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
+      { id: 2, name: 'Nursing', oidc_group: null, created_at: '', updated_at: '' },
+    ]
+    const additiveCategories = [
+      makeCategory({ id: 10, label: 'Microscopy', programIds: [1, 2], groupIds: [7] }),
+      makeCategory({ id: 11, label: 'Histology', programIds: [2], groupIds: [7] }),
+    ]
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        id: 101,
+        name: 'Blood Smear',
+        thumb: '/thumb-a.jpg',
+        tile_sources: '/tile-a.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 102,
+        name: 'Tissue Section',
+        thumb: '/thumb-b.jpg',
+        tile_sources: '/tile-b.dzi',
+        category_id: 11,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 1,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+    localStorage.setItem(
+      'hrivpref:table-columns:manage-images:user:1',
+      JSON.stringify({
+        thumbnail: true,
+        id: false,
+        name: true,
+        category: true,
+        copyright: false,
+        note: false,
+        program: true,
+        group: true,
+        active: true,
+        updated_at: true,
+        created_at: false,
+        dimensions: false,
+        file_size: false,
+        measurement: false,
+      }),
+    )
+
+    const user = userEvent.setup()
+    render(
+      <ManagePage categories={additiveCategories} programs={additivePrograms} groups={groups} />,
+    )
+
+    await screen.findByText('Blood Smear')
+    await screen.findByText('Tissue Section')
+
+    await user.click(screen.getByText('Medical Lab'))
+    await waitFor(() => {
+      expect(screen.getByText('Program: Medical Lab')).toBeInTheDocument()
+      expect(screen.getByText('1 of 2 images')).toBeInTheDocument()
+      expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+      expect(screen.queryByText('Tissue Section')).not.toBeInTheDocument()
+    })
+
+    const bloodSmearRow = screen.getByText('Blood Smear').closest('tr')
+    expect(bloodSmearRow).not.toBeNull()
+    await user.click(within(bloodSmearRow as HTMLElement).getByText('Nursing'))
+    await waitFor(() => {
+      expect(screen.getByText('Program: Medical Lab')).toBeInTheDocument()
+      expect(screen.getByText('Program: Nursing')).toBeInTheDocument()
+      expect(screen.getByText('2 of 2 images')).toBeInTheDocument()
+      expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+      expect(screen.getByText('Tissue Section')).toBeInTheDocument()
+    })
   })
 
   it('greyscales the thumbnail when an image is inactive', async () => {
