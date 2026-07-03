@@ -422,15 +422,30 @@ export default function ManagePage({
     [categoryPaths],
   )
 
-  // Helper to get program names for sorting/filtering
-  const getProgramNames = useCallback(
-    (img: ApiImage): string => {
+  const programNameById = useMemo(
+    () =>
+      new Map(
+        programs
+          .map((program) => [program.id, program.name.trim()] as const)
+          .filter(([, name]) => name.length > 0),
+      ),
+    [programs],
+  )
+
+  const getProgramNameList = useCallback(
+    (img: ApiImage): string[] => {
       const { direct, ancestor } = getInheritedProgramIds(img)
       return [...direct, ...ancestor]
-        .map((pid) => programs.find((p) => p.id === pid)?.name ?? '')
-        .join(', ')
+        .map((pid) => programNameById.get(pid) ?? '')
+        .filter((name) => name.length > 0)
     },
-    [programs, getInheritedProgramIds],
+    [getInheritedProgramIds, programNameById],
+  )
+
+  // Helper to get program names for sorting/filtering
+  const getProgramNames = useCallback(
+    (img: ApiImage): string => getProgramNameList(img).join(', '),
+    [getProgramNameList],
   )
 
   const getInheritedGroupIds = useCallback(
@@ -443,14 +458,29 @@ export default function ManagePage({
     [categoryPaths],
   )
 
-  const getGroupNames = useCallback(
-    (img: ApiImage): string => {
+  const groupNameById = useMemo(
+    () =>
+      new Map(
+        groups
+          .map((group) => [group.id, group.name.trim()] as const)
+          .filter(([, name]) => name.length > 0),
+      ),
+    [groups],
+  )
+
+  const getGroupNameList = useCallback(
+    (img: ApiImage): string[] => {
       const { direct, ancestor } = getInheritedGroupIds(img)
       return [...direct, ...ancestor]
-        .map((gid) => groups.find((g) => g.id === gid)?.name ?? '')
-        .join(', ')
+        .map((gid) => groupNameById.get(gid) ?? '')
+        .filter((name) => name.length > 0)
     },
-    [groups, getInheritedGroupIds],
+    [getInheritedGroupIds, groupNameById],
+  )
+
+  const getGroupNames = useCallback(
+    (img: ApiImage): string => getGroupNameList(img).join(', '),
+    [getGroupNameList],
   )
 
   const programFilterOptions = useMemo(
@@ -504,21 +534,11 @@ export default function ManagePage({
       if (!match('copyright', img.copyright ?? '')) return false
       if (!match('note', img.note ?? '')) return false
       if (selectedPrograms.size > 0) {
-        const imagePrograms = new Set(
-          getProgramNames(img)
-            .split(', ')
-            .map((value) => value.trim())
-            .filter((value) => value.length > 0),
-        )
+        const imagePrograms = new Set(getProgramNameList(img))
         if (![...selectedPrograms].some((value) => imagePrograms.has(value))) return false
       }
       if (selectedGroups.size > 0) {
-        const imageGroups = new Set(
-          getGroupNames(img)
-            .split(', ')
-            .map((value) => value.trim())
-            .filter((value) => value.length > 0),
-        )
+        const imageGroups = new Set(getGroupNameList(img))
         if (![...selectedGroups].some((value) => imageGroups.has(value))) return false
       }
       if (selectedVisibility.size > 0) {
@@ -530,8 +550,9 @@ export default function ManagePage({
   }, [
     filters,
     getCategoryLabel,
-    getGroupNames,
+    getGroupNameList,
     getProgramNames,
+    getProgramNameList,
     hasActiveFilters,
     images,
     selectedGroups,
@@ -923,16 +944,11 @@ export default function ManagePage({
                     category: 'Category',
                     copyright: 'Copyright',
                     note: 'Note',
-                    program: 'Program',
-                    group: 'Groups',
-                    active: 'Visibility',
                   }
-                  const displayValue =
-                    key === 'active' ? (value === 'active' ? 'Visible' : 'Hidden') : value
                   return (
                     <Chip
                       key={key}
-                      label={`${labels[key]}: ${displayValue}`}
+                      label={`${labels[key]}: ${value}`}
                       size="small"
                       onDelete={() => handleFilterChange(key, '')}
                       sx={{

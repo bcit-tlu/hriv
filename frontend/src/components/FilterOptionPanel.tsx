@@ -31,6 +31,7 @@ export default function FilterOptionPanel({
 }: FilterOptionPanelProps) {
   const [query, setQuery] = useState('')
   const normalizedQuery = query.trim().toLowerCase()
+  const optionRole = multiple ? 'menuitemcheckbox' : 'menuitemradio'
 
   const filteredOptions = useMemo(
     () =>
@@ -62,7 +63,7 @@ export default function FilterOptionPanel({
             return (
               <Box
                 key={option.value}
-                role="menuitemcheckbox"
+                role={optionRole}
                 aria-checked={selected}
                 onClick={() => {
                   if (multiple) {
