@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { matchesTextFilter } from '../src/tableFilterUtils'
+import { hasFilterTerms, matchesTextFilter } from '../src/tableFilterUtils'
 
 describe('matchesTextFilter', () => {
+  it('detects whether a filter has any real terms', () => {
+    expect(hasFilterTerms('')).toBe(false)
+    expect(hasFilterTerms('   ')).toBe(false)
+    expect(hasFilterTerms(' , , ')).toBe(false)
+    expect(hasFilterTerms('blood')).toBe(true)
+    expect(hasFilterTerms('blood, ')).toBe(true)
+  })
+
   it('matches a single term', () => {
     expect(matchesTextFilter('Blood Smear', 'smear')).toBe(true)
     expect(matchesTextFilter('Blood Smear', 'urine')).toBe(false)

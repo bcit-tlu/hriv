@@ -64,7 +64,7 @@ import FilterTextPanel from './FilterTextPanel'
 import MoveImageDialog from './MoveImageDialog'
 import NoteDisplay from './NoteDisplay'
 import UploadImageModal from './UploadImageModal'
-import { matchesTextFilter } from '../tableFilterUtils'
+import { hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
 import { useTableFilterPreferences } from '../useTableFilterPreferences'
 
 interface CategoryPathSegment {
@@ -317,7 +317,7 @@ export default function ManagePage({
     new Set(),
   )
   const hasActiveFilters =
-    Object.values(filters).some((v) => v !== '') ||
+    Object.values(filters).some((v) => hasFilterTerms(v)) ||
     selectedPrograms.size > 0 ||
     selectedGroups.size > 0 ||
     selectedVisibility.size > 0
@@ -1028,7 +1028,7 @@ export default function ManagePage({
           hasActiveFilters ? (
             <>
               {Object.entries(filters)
-                .filter(([, value]) => value.trim().length > 0)
+                .filter(([, value]) => hasFilterTerms(value))
                 .map(([key, value]) => {
                   const labels: Record<string, string> = {
                     id: 'ID',
@@ -1165,7 +1165,7 @@ export default function ManagePage({
         {isColumnVisible('id') && (
           <FilterPopoverButton
             label="ID"
-            activeCount={filters['id']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['id'] ?? '') ? 1 : 0}
             panelWidth={160}
           >
             <FilterTextPanel
@@ -1181,7 +1181,7 @@ export default function ManagePage({
         {isColumnVisible('name') && (
           <FilterPopoverButton
             label="Name"
-            activeCount={filters['name']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['name'] ?? '') ? 1 : 0}
             panelWidth={260}
           >
             <FilterTextPanel
@@ -1197,7 +1197,7 @@ export default function ManagePage({
         {isColumnVisible('category') && (
           <FilterPopoverButton
             label="Category"
-            activeCount={filters['category']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['category'] ?? '') ? 1 : 0}
             panelWidth={280}
           >
             <FilterTextPanel
@@ -1213,7 +1213,7 @@ export default function ManagePage({
         {isColumnVisible('copyright') && (
           <FilterPopoverButton
             label="Copyright"
-            activeCount={filters['copyright']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['copyright'] ?? '') ? 1 : 0}
             panelWidth={260}
           >
             <FilterTextPanel
@@ -1229,7 +1229,7 @@ export default function ManagePage({
         {isColumnVisible('note') && (
           <FilterPopoverButton
             label="Note"
-            activeCount={filters['note']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['note'] ?? '') ? 1 : 0}
             panelWidth={260}
           >
             <FilterTextPanel

@@ -40,7 +40,7 @@ import {
 } from '../api'
 import type { ApiUser } from '../api'
 import type { Role, Program, Group } from '../types'
-import { matchesTextFilter } from '../tableFilterUtils'
+import { hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import { useTableFilterPreferences } from '../useTableFilterPreferences'
 import AddEditPersonModal from './AddEditPersonModal'
@@ -135,7 +135,7 @@ export default function PeoplePage({
   const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(new Set())
   const [selectedGroups, setSelectedGroups] = useState<Set<number>>(new Set())
   const hasActiveFilters =
-    Object.values(filters).some((v) => v !== '') ||
+    Object.values(filters).some((v) => hasFilterTerms(v)) ||
     selectedRoles.size > 0 ||
     selectedPrograms.size > 0 ||
     selectedGroups.size > 0
@@ -238,8 +238,8 @@ export default function PeoplePage({
     const name = filters['name']?.trim()
     const email = filters['email']?.trim()
 
-    if (name) chips.push({ key: 'name', label: `Name: ${name}` })
-    if (email) chips.push({ key: 'email', label: `Email: ${email}` })
+    if (hasFilterTerms(name ?? '')) chips.push({ key: 'name', label: `Name: ${name}` })
+    if (hasFilterTerms(email ?? '')) chips.push({ key: 'email', label: `Email: ${email}` })
     for (const role of ROLES.filter((item) => selectedRoles.has(item))) {
       chips.push({ key: `role:${role}`, label: `Role: ${role}`, role })
     }
@@ -772,7 +772,7 @@ export default function PeoplePage({
         {isColumnVisible('name') && (
           <FilterPopoverButton
             label="Name"
-            activeCount={filters['name']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['name'] ?? '') ? 1 : 0}
             panelWidth={260}
           >
             <FilterTextPanel
@@ -788,7 +788,7 @@ export default function PeoplePage({
         {isColumnVisible('email') && (
           <FilterPopoverButton
             label="Email"
-            activeCount={filters['email']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['email'] ?? '') ? 1 : 0}
             panelWidth={280}
           >
             <FilterTextPanel

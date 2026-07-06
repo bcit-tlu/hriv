@@ -285,6 +285,28 @@ describe('ManagePage', () => {
     })
   })
 
+  it('treats comma-only persisted text filters as inactive chrome', async () => {
+    localStorage.setItem(
+      'hrivpref:table-filters:manage-images:user:1',
+      JSON.stringify({
+        text: { name: ' , ,' },
+        programs: [],
+        groups: [],
+        visibility: [],
+      }),
+    )
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+    })
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    expect(within(filterBar).queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument()
+    expect(screen.queryByText('1 of 1 image')).not.toBeInTheDocument()
+  })
+
   it('prunes stale persisted program selections after hydrating filters', async () => {
     localStorage.setItem(
       'hrivpref:table-filters:manage-images:user:1',
