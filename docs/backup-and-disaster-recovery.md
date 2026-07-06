@@ -259,4 +259,6 @@ Actual numbers should be measured during the pre-production DR drill
 - [tile-cache-provenance.md](tile-cache-provenance.md) — provenance fields and staleness rules
 - [admin-import-export.md](admin-import-export.md) — rebuild-tiles admin task API reference
 - [image-processing-lifecycle.md](image-processing-lifecycle.md) — tile generation pipeline
+- [backup-restore-runbook.md](backup-restore-runbook.md) — cold-grab operator checklist for health checks and restores
+- [per-file-restore-design.md](per-file-restore-design.md) — proposal for manifest-browsed single-file restores
 - [RELEASE_AND_DEPLOY_FLOW.md](RELEASE_AND_DEPLOY_FLOW.md) — release and Flux deployment flow
