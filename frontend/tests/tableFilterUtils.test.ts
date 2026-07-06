@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { hasFilterTerms, matchesTextFilter } from '../src/tableFilterUtils'
+import { formatFilterTerms, hasFilterTerms, matchesTextFilter } from '../src/tableFilterUtils'
 
 describe('matchesTextFilter', () => {
   it('detects whether a filter has any real terms', () => {
@@ -31,5 +31,14 @@ describe('matchesTextFilter', () => {
 
   it('matches case-insensitively', () => {
     expect(matchesTextFilter('Blood Smear', 'BLOOD')).toBe(true)
+  })
+})
+
+describe('formatFilterTerms', () => {
+  it('drops empty terms and trailing commas while preserving case and order', () => {
+    expect(formatFilterTerms('blood,')).toBe('blood')
+    expect(formatFilterTerms('blood, ,')).toBe('blood')
+    expect(formatFilterTerms('  Blood , Urine ')).toBe('Blood, Urine')
+    expect(formatFilterTerms(' , , ')).toBe('')
   })
 })

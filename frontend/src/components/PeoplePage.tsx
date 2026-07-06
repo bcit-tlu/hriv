@@ -40,7 +40,7 @@ import {
 } from '../api'
 import type { ApiUser } from '../api'
 import type { Role, Program, Group } from '../types'
-import { hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
+import { formatFilterTerms, hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import { useTableFilterPreferences } from '../useTableFilterPreferences'
 import AddEditPersonModal from './AddEditPersonModal'
@@ -238,8 +238,10 @@ export default function PeoplePage({
     const name = filters['name']?.trim()
     const email = filters['email']?.trim()
 
-    if (hasFilterTerms(name ?? '')) chips.push({ key: 'name', label: `Name: ${name}` })
-    if (hasFilterTerms(email ?? '')) chips.push({ key: 'email', label: `Email: ${email}` })
+    if (hasFilterTerms(name ?? ''))
+      chips.push({ key: 'name', label: `Name: ${formatFilterTerms(name ?? '')}` })
+    if (hasFilterTerms(email ?? ''))
+      chips.push({ key: 'email', label: `Email: ${formatFilterTerms(email ?? '')}` })
     for (const role of ROLES.filter((item) => selectedRoles.has(item))) {
       chips.push({ key: `role:${role}`, label: `Role: ${role}`, role })
     }

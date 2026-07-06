@@ -64,7 +64,7 @@ import FilterTextPanel from './FilterTextPanel'
 import MoveImageDialog from './MoveImageDialog'
 import NoteDisplay from './NoteDisplay'
 import UploadImageModal from './UploadImageModal'
-import { hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
+import { formatFilterTerms, hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
 import { useTableFilterPreferences } from '../useTableFilterPreferences'
 
 interface CategoryPathSegment {
@@ -1062,7 +1062,7 @@ export default function ManagePage({
                   return (
                     <Chip
                       key={key}
-                      label={`${labels[key]}: ${value}`}
+                      label={`${labels[key]}: ${formatFilterTerms(value)}`}
                       size="small"
                       onDelete={() => handleFilterChange(key, '')}
                       sx={{
