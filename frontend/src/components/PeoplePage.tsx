@@ -336,7 +336,7 @@ export default function PeoplePage({
   // Filter/sort/paginate logic
   const filteredUsers = useMemo(() => {
     const activeFilters =
-      Object.values(filters).some((v) => v !== '') ||
+      Object.values(filters).some((v) => hasFilterTerms(v)) ||
       selectedRoles.size > 0 ||
       selectedPrograms.size > 0 ||
       selectedGroups.size > 0
