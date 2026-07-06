@@ -1230,14 +1230,20 @@ async def run_files_export(task_id: int) -> None:
                         try:
                             await asyncio.wait_for(scan_task, timeout=5)
                         except asyncio.TimeoutError:
-                            pass
+                            # Best-effort shutdown timeout; fall through to cancel the scan task.
+                            logger.debug(
+                                "Filesystem export scan did not finish within the shutdown grace period; cancelling task"
+                            )
                         if not scan_task.done():
                             scan_task.cancel()
                         raise poll_exc
                     try:
                         await asyncio.wait_for(scan_task, timeout=5)
                     except asyncio.TimeoutError:
-                        pass
+                        # Best-effort shutdown timeout; fall through to cancel the scan task.
+                        logger.debug(
+                            "Filesystem export scan did not finish within the shutdown grace period; cancelling task"
+                        )
                     if scan_task.done():
                         file_count, total_bytes = scan_task.result()
                     else:
