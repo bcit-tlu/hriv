@@ -169,6 +169,25 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   const isTerminalTask = (task: AdminTask) =>
     task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
 
+  // Stop polling a task that has reached a terminal state, surface a
+  // notification, and refresh history — mirrors the poll loop's terminal
+  // handling so a task finalised outside the poll cycle (e.g. reconciled in
+  // handleCancel) still notifies the operator.
+  const finalizeTerminalTask = useCallback(
+    (task: AdminTask) => {
+      stopPolling(task.id)
+      setNotifications((prev) =>
+        prev.some((n) => n.id === task.id) ? prev : [...prev, { id: task.id, task }],
+      )
+      fetchAdminTasks()
+        .then(setTaskHistory)
+        .catch(() => {
+          /* ignore */
+        })
+    },
+    [stopPolling],
+  )
+
   const handleSessionEnded = useCallback(
     (taskId: number) => {
       stopAllPolling()
@@ -416,14 +435,14 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
       const updated = await cancelAdminTask(taskId)
       syncTask(updated)
       if (isTerminalTask(updated)) {
-        stopPolling(taskId)
+        finalizeTerminalTask(updated)
       }
     } catch {
       try {
         const refreshed = await fetchAdminTask(taskId)
         syncTask(refreshed)
         if (isTerminalTask(refreshed)) {
-          stopPolling(taskId)
+          finalizeTerminalTask(refreshed)
           return
         }
       } catch {
