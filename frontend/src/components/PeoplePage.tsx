@@ -789,7 +789,7 @@ export default function PeoplePage({
         {isColumnVisible('name') && (
           <FilterPopoverButton
             label="Name"
-            activeCount={hasFilterTerms(filters['name'] ?? '') ? 1 : 0}
+            activeCount={getFilterTerms(filters['name'] ?? '').length}
             panelWidth={260}
           >
             <FilterTextPanel
@@ -805,7 +805,7 @@ export default function PeoplePage({
         {isColumnVisible('email') && (
           <FilterPopoverButton
             label="Email"
-            activeCount={hasFilterTerms(filters['email'] ?? '') ? 1 : 0}
+            activeCount={getFilterTerms(filters['email'] ?? '').length}
             panelWidth={280}
           >
             <FilterTextPanel

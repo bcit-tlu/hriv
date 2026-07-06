@@ -1270,7 +1270,7 @@ export default function ManagePage({
         {isColumnVisible('id') && (
           <FilterPopoverButton
             label="ID"
-            activeCount={hasFilterTerms(filters['id'] ?? '') ? 1 : 0}
+            activeCount={getFilterTerms(filters['id'] ?? '').length}
             panelWidth={160}
           >
             <FilterTextPanel
@@ -1286,7 +1286,7 @@ export default function ManagePage({
         {isColumnVisible('name') && (
           <FilterPopoverButton
             label="Name"
-            activeCount={hasFilterTerms(filters['name'] ?? '') ? 1 : 0}
+            activeCount={getFilterTerms(filters['name'] ?? '').length}
             panelWidth={260}
           >
             <FilterTextPanel
@@ -1326,7 +1326,7 @@ export default function ManagePage({
         {isColumnVisible('copyright') && (
           <FilterPopoverButton
             label="Copyright"
-            activeCount={hasFilterTerms(filters['copyright'] ?? '') ? 1 : 0}
+            activeCount={getFilterTerms(filters['copyright'] ?? '').length}
             panelWidth={260}
           >
             <FilterTextPanel
@@ -1342,7 +1342,7 @@ export default function ManagePage({
         {isColumnVisible('note') && (
           <FilterPopoverButton
             label="Note"
-            activeCount={hasFilterTerms(filters['note'] ?? '') ? 1 : 0}
+            activeCount={getFilterTerms(filters['note'] ?? '').length}
             panelWidth={260}
           >
             <FilterTextPanel

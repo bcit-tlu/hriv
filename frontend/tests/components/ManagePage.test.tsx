@@ -784,6 +784,7 @@ describe('ManagePage', () => {
 
     expect(screen.getByText('Blood Smear')).toBeInTheDocument()
     expect(screen.queryByText('Urine Slide')).not.toBeInTheDocument()
+    expect(within(filterBar).getByRole('button', { name: 'Name' })).toHaveTextContent('2')
     expect(within(filterBar).getByText('Name: Blood')).toBeInTheDocument()
     expect(within(filterBar).getByText('Name: Smear')).toBeInTheDocument()
     expect(within(filterBar).queryByText('Name: Blood, Smear')).not.toBeInTheDocument()
