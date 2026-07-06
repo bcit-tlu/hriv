@@ -20,6 +20,7 @@ import type { ApiImage } from '../../src/api'
 import type { Group, Program } from '../../src/types'
 import { makeCategory } from '../helpers/fixtures'
 import ManagePage from '../../src/components/ManagePage'
+import { resetCategoryTreeExpansionPreferencesForTests } from '../../src/useCategoryTreeExpansionPreferences'
 
 const programs: Program[] = [
   { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
@@ -60,6 +61,7 @@ describe('ManagePage', () => {
     vi.clearAllMocks()
     localStorage.clear()
     localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+    resetCategoryTreeExpansionPreferencesForTests()
     vi.mocked(fetchImages).mockResolvedValue([
       {
         id: 101,
@@ -448,7 +450,261 @@ describe('ManagePage', () => {
     expect(screen.getByText('No images match the selected filters.')).toBeInTheDocument()
   })
 
-  it('matches comma-separated name filters with OR semantics', async () => {
+  it('filters images by category subtree and restores selected categories from localStorage', async () => {
+    const user = userEvent.setup()
+    const categoryTree = [
+      makeCategory({
+        id: 1,
+        label: 'Architecture',
+        children: [
+          makeCategory({ id: 4, label: 'American', parentId: 1 }),
+          makeCategory({
+            id: 3,
+            label: 'Italian',
+            parentId: 1,
+            children: [makeCategory({ id: 5, label: 'Gothic', parentId: 3 })],
+          }),
+        ],
+      }),
+      makeCategory({ id: 2, label: 'Panoramas' }),
+    ]
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        id: 101,
+        name: 'Duomo',
+        thumb: '/thumb-a.jpg',
+        tile_sources: '/tile-a.dzi',
+        category_id: 3,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 102,
+        name: 'Duomo Gothic Detail',
+        thumb: '/thumb-b.jpg',
+        tile_sources: '/tile-b.dzi',
+        category_id: 5,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 1,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 103,
+        name: 'Highsmith',
+        thumb: '/thumb-c.jpg',
+        tile_sources: '/tile-c.dzi',
+        category_id: 4,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 2,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 104,
+        name: 'Library of Congress',
+        thumb: '/thumb-d.jpg',
+        tile_sources: '/tile-d.dzi',
+        category_id: 2,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 3,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+
+    const { unmount } = render(
+      <ManagePage categories={categoryTree} programs={programs} groups={groups} />,
+    )
+
+    await screen.findByText('Duomo')
+    await screen.findByText('Duomo Gothic Detail')
+    await screen.findByText('Highsmith')
+    await screen.findByText('Library of Congress')
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(filterBar.querySelector('button[aria-label="Category"]') as HTMLElement)
+    const architectureRow = screen.getAllByRole('menuitemcheckbox', { name: /Architecture/ })[0]
+    await user.click(within(architectureRow).getByRole('checkbox'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Category: Architecture')).toBeInTheDocument()
+      expect(screen.getByText('Duomo')).toBeInTheDocument()
+      expect(screen.getByText('Duomo Gothic Detail')).toBeInTheDocument()
+      expect(screen.getByText('Highsmith')).toBeInTheDocument()
+      expect(screen.queryByText('Library of Congress')).not.toBeInTheDocument()
+      expect(
+        JSON.parse(localStorage.getItem('hrivpref:table-filters:manage-images:user:1') ?? '{}'),
+      ).toMatchObject({ categories: [1] })
+    })
+
+    unmount()
+    render(<ManagePage categories={categoryTree} programs={programs} groups={groups} />)
+
+    await screen.findByText('Duomo')
+    expect(screen.getByText('Category: Architecture')).toBeInTheDocument()
+    expect(screen.queryByText('Library of Congress')).not.toBeInTheDocument()
+  })
+
+  it('deletes one category chip without clearing sibling category selections', async () => {
+    const user = userEvent.setup()
+    const categoryTree = [
+      makeCategory({
+        id: 1,
+        label: 'Architecture',
+        children: [
+          makeCategory({ id: 4, label: 'American', parentId: 1 }),
+          makeCategory({
+            id: 3,
+            label: 'Italian',
+            parentId: 1,
+            children: [makeCategory({ id: 5, label: 'Gothic', parentId: 3 })],
+          }),
+        ],
+      }),
+      makeCategory({ id: 2, label: 'Panoramas' }),
+    ]
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        id: 101,
+        name: 'Duomo',
+        thumb: '/thumb-a.jpg',
+        tile_sources: '/tile-a.dzi',
+        category_id: 3,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 102,
+        name: 'Duomo Gothic Detail',
+        thumb: '/thumb-b.jpg',
+        tile_sources: '/tile-b.dzi',
+        category_id: 5,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 1,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 103,
+        name: 'Highsmith',
+        thumb: '/thumb-c.jpg',
+        tile_sources: '/tile-c.dzi',
+        category_id: 4,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 2,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 104,
+        name: 'Library of Congress',
+        thumb: '/thumb-d.jpg',
+        tile_sources: '/tile-d.dzi',
+        category_id: 2,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 3,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+
+    render(<ManagePage categories={categoryTree} programs={programs} groups={groups} />)
+
+    await screen.findByText('Duomo')
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    await user.click(filterBar.querySelector('button[aria-label="Category"]') as HTMLElement)
+
+    const architectureRow = screen.getAllByRole('menuitemcheckbox', { name: /Architecture/ })[0]
+    const panoramasRow = screen.getAllByRole('menuitemcheckbox', { name: /Panoramas/ })[0]
+    await user.click(within(architectureRow).getByRole('checkbox'))
+    await user.click(within(panoramasRow).getByRole('checkbox'))
+
+    await waitFor(() => {
+      expect(screen.getByText('Category: Architecture')).toBeInTheDocument()
+      expect(screen.getByText('Category: Panoramas')).toBeInTheDocument()
+      expect(screen.getByText('4 of 4 images')).toBeInTheDocument()
+    })
+
+    const architectureChip = screen.getByText('Category: Architecture').closest('.MuiChip-root')
+    expect(architectureChip).not.toBeNull()
+    fireEvent.click(within(architectureChip as HTMLElement).getByTestId('CancelIcon'))
+
+    await waitFor(() => {
+      expect(screen.queryByText('Category: Architecture')).not.toBeInTheDocument()
+      expect(screen.getByText('Category: Panoramas')).toBeInTheDocument()
+      expect(screen.queryByText('Duomo')).not.toBeInTheDocument()
+      expect(screen.queryByText('Duomo Gothic Detail')).not.toBeInTheDocument()
+      expect(screen.queryByText('Highsmith')).not.toBeInTheDocument()
+      expect(screen.getByText('Library of Congress')).toBeInTheDocument()
+      expect(screen.getByText('1 of 4 images')).toBeInTheDocument()
+      expect(
+        JSON.parse(localStorage.getItem('hrivpref:table-filters:manage-images:user:1') ?? '{}'),
+      ).toMatchObject({ categories: [2] })
+    })
+  })
+
+  it('matches comma-separated name filters with AND semantics', async () => {
     const user = userEvent.setup()
     vi.mocked(fetchImages).mockResolvedValue([
       {
@@ -497,12 +753,24 @@ describe('ManagePage', () => {
     const filterBar = screen.getByRole('region', { name: 'Filter by' })
     const nameFilterButton = within(filterBar).getByRole('button', { name: 'Name' })
     await user.click(nameFilterButton)
-    await user.type(screen.getByPlaceholderText('Filter by name'), 'Blood, Urine')
+    await user.type(screen.getByPlaceholderText('Filter by name'), 'Blood, Smear')
     await user.click(nameFilterButton)
 
     expect(screen.getByText('Blood Smear')).toBeInTheDocument()
-    expect(screen.getByText('Urine Slide')).toBeInTheDocument()
-    expect(screen.getByText('2 of 2 images')).toBeInTheDocument()
+    expect(screen.queryByText('Urine Slide')).not.toBeInTheDocument()
+    expect(within(filterBar).getByText('Name: Blood')).toBeInTheDocument()
+    expect(within(filterBar).getByText('Name: Smear')).toBeInTheDocument()
+    expect(within(filterBar).queryByText('Name: Blood, Smear')).not.toBeInTheDocument()
+    expect(screen.getByText('1 of 2 images')).toBeInTheDocument()
+
+    const bloodChip = within(filterBar).getByText('Name: Blood').closest('.MuiChip-root')
+    expect(bloodChip).not.toBeNull()
+    fireEvent.click(within(bloodChip as HTMLElement).getByTestId('CancelIcon'))
+
+    expect(within(filterBar).queryByText('Name: Blood')).not.toBeInTheDocument()
+    expect(within(filterBar).getByText('Name: Smear')).toBeInTheDocument()
+    expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+    expect(screen.getByText('1 of 2 images')).toBeInTheDocument()
   })
 
   it('keeps duplicate program names as distinct filter options keyed by id', async () => {

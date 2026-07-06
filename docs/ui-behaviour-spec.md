@@ -240,7 +240,8 @@ committed on Save) in the edit modals.
 - The filter bar shows only controls for currently visible filterable columns
   (for example, hiding the `Groups` column also removes the `Groups` filter
   controls). Hiding a filtered column clears that column's active filter state.
-- Text filters accept comma-separated terms and match if any term is present.
+- Text filters accept comma-separated terms, render one chip per term, and
+  match only when every term is present.
 - Filter selections persist per user between logins using localStorage, in the
   same style as table column visibility and category-tree collapse preferences.
 
@@ -262,7 +263,12 @@ committed on Save) in the edit modals.
 - The `Annotations` column is available in the column chooser but is off by
   default; it indicates whether an image has canvas edit annotations in
   `metadata_extra.canvas_annotations`.
-- Text filters accept comma-separated terms and match if any term is present.
+- Text filters accept comma-separated terms, render one chip per term, and
+  match only when every term is present.
+- The `Category` filter is a collapsible checkbox tree. Checking a parent
+  matches the whole subtree, the tree shares its expand/collapse state with
+  `ManageCategoriesDialog`, and selected categories persist per user between
+  logins using localStorage.
 - Filter selections persist per user between logins using localStorage, in the
   same style as table column visibility and category-tree collapse preferences.
 - **Pagination controls render at both the top and bottom of the table** so
