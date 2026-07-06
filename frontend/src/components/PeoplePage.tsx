@@ -40,7 +40,9 @@ import {
 } from '../api'
 import type { ApiUser } from '../api'
 import type { Role, Program, Group } from '../types'
+import { matchesTextFilter } from '../tableFilterUtils'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
+import { useTableFilterPreferences } from '../useTableFilterPreferences'
 import AddEditPersonModal from './AddEditPersonModal'
 import BulkEditModal from './BulkEditModal'
 import BulkGroupModal from './BulkGroupModal'
@@ -187,6 +189,50 @@ export default function PeoplePage({
     () => groups.filter((group) => selectedGroups.has(group.id)),
     [groups, selectedGroups],
   )
+  const filterSnapshot = useMemo(
+    () => ({
+      text: filters,
+      roles: [...selectedRoles],
+      programs: [...selectedPrograms],
+      groups: [...selectedGroups],
+    }),
+    [filters, selectedGroups, selectedPrograms, selectedRoles],
+  )
+  const handleFilterHydrate = useCallback((stored: typeof filterSnapshot) => {
+    const storedText = stored?.text
+    if (storedText != null && typeof storedText === 'object' && !Array.isArray(storedText)) {
+      const nextFilters: Record<string, string> = {}
+      for (const [key, value] of Object.entries(storedText)) {
+        if (typeof value === 'string') {
+          nextFilters[key] = value
+        }
+      }
+      setFilters(nextFilters)
+    }
+
+    if (Array.isArray(stored?.roles)) {
+      setSelectedRoles(
+        new Set(stored.roles.filter((value): value is Role => ROLES.includes(value as Role))),
+      )
+    }
+
+    if (Array.isArray(stored?.programs)) {
+      setSelectedPrograms(
+        new Set(stored.programs.filter((value): value is number => Number.isInteger(value))),
+      )
+    }
+
+    if (Array.isArray(stored?.groups)) {
+      setSelectedGroups(
+        new Set(stored.groups.filter((value): value is number => Number.isInteger(value))),
+      )
+    }
+  }, [])
+  useTableFilterPreferences({
+    tableKey: 'people',
+    value: filterSnapshot,
+    onHydrate: handleFilterHydrate,
+  })
   const appliedFilters = useMemo<AppliedPeopleFilter[]>(() => {
     const chips: AppliedPeopleFilter[] = []
     const name = filters['name']?.trim()
@@ -298,8 +344,7 @@ export default function PeoplePage({
     return users.filter((user) => {
       const match = (field: string, value: string) => {
         const filter = filters[field]
-        if (!filter) return true
-        return value.toLowerCase().includes(filter.toLowerCase())
+        return matchesTextFilter(value, filter ?? '')
       }
       if (!match('name', user.name)) return false
       if (!match('email', user.email)) return false
@@ -735,6 +780,7 @@ export default function PeoplePage({
               onChange={(value) => handleFilterChange('name', value)}
               placeholder="Search name"
               ariaLabel="Name"
+              helperText="Separate terms with commas"
               width={260}
             />
           </FilterPopoverButton>
@@ -750,6 +796,7 @@ export default function PeoplePage({
               onChange={(value) => handleFilterChange('email', value)}
               placeholder="Search email"
               ariaLabel="Email"
+              helperText="Separate terms with commas"
               width={280}
             />
           </FilterPopoverButton>

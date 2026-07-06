@@ -20,6 +20,7 @@ describe('FilterTextPanel', () => {
           }}
           placeholder="Filter by name"
           ariaLabel="Name"
+          helperText="Separate terms with commas"
           width={220}
         />
       )
@@ -29,6 +30,7 @@ describe('FilterTextPanel', () => {
 
     const input = screen.getByRole('textbox', { name: 'Name' })
     expect(input).toHaveAttribute('placeholder', 'Filter by name')
+    expect(screen.getByText('Separate terms with commas')).toBeInTheDocument()
 
     await user.type(input, 'Mira')
 
