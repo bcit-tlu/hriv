@@ -308,4 +308,41 @@ describe('AdminPage', () => {
     expect(screen.queryByText(/Failed to force-cancel task/)).not.toBeInTheDocument()
     expect(mockCancelAdminTask).toHaveBeenCalledTimes(1)
   })
+
+  it('shows the session-ended message when a cancel request returns 401', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    // Poll keeps the task in a cancellable state; the cancel request itself
+    // fails with a 401 because the acting account was replaced by an import.
+    mockFetchAdminTask.mockResolvedValue({
+      id: 3,
+      task_type: 'files_export',
+      status: 'cancelling',
+      progress: 62,
+      log: 'Cancellation requested by admin.\n',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-06-19T19:00:00Z',
+      updated_at: '2026-06-19T19:01:00Z',
+    })
+    mockCancelAdminTask.mockRejectedValue(new api.ApiError(401, 'Unauthorized'))
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+    await user.click(screen.getAllByRole('button', { name: 'Export' })[1])
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+    await user.click(screen.getByRole('button', { name: 'Force cancel' }))
+
+    expect(
+      await screen.findByText(/Your session ended because your account was replaced/i),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Failed to force-cancel task/)).not.toBeInTheDocument()
+  })
 })

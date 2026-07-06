@@ -49,6 +49,11 @@ import ChangelogAdmin from './ChangelogAdmin'
 
 const POLL_INTERVAL = 2000 // ms
 
+// A 401/403 during a task interaction means the acting account was replaced
+// (e.g. by a database import) and the current JWT is no longer valid.
+const isAuthFailure = (err: unknown): err is ApiError =>
+  err instanceof ApiError && (err.status === 401 || err.status === 403)
+
 const TASK_LABELS: Record<string, string> = {
   db_export: 'Database Export',
   db_import: 'Database Import',
@@ -202,9 +207,6 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     [stopAllPolling],
   )
 
-  const isAuthFailure = (err: unknown): err is ApiError =>
-    err instanceof ApiError && (err.status === 401 || err.status === 403)
-
   const pollTask = useCallback(
     (taskId: number) => {
       if (pollRefs.current.has(taskId)) return // already polling
@@ -217,19 +219,8 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
             // Update active tasks list
             syncTask(updated)
 
-            if (
-              updated.status === 'completed' ||
-              updated.status === 'failed' ||
-              updated.status === 'cancelled'
-            ) {
-              stopPolling(taskId)
-              setNotifications((prev) => [...prev, { id: taskId, task: updated }])
-              // Refresh history
-              fetchAdminTasks()
-                .then(setTaskHistory)
-                .catch(() => {
-                  /* ignore */
-                })
+            if (isTerminalTask(updated)) {
+              finalizeTerminalTask(updated)
             } else {
               schedule()
             }
@@ -247,7 +238,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
 
       schedule()
     },
-    [handleSessionEnded, stopPolling, syncTask],
+    [finalizeTerminalTask, handleSessionEnded, syncTask],
   )
 
   // Clean up polling on unmount
@@ -437,7 +428,14 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
       if (isTerminalTask(updated)) {
         finalizeTerminalTask(updated)
       }
-    } catch {
+    } catch (err) {
+      // A 401/403 means the session ended (e.g. the acting account was
+      // replaced by an import) — surface that immediately instead of a
+      // misleading "Failed to cancel" error.
+      if (isAuthFailure(err)) {
+        handleSessionEnded(taskId)
+        return
+      }
       try {
         const refreshed = await fetchAdminTask(taskId)
         syncTask(refreshed)
@@ -445,8 +443,12 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
           finalizeTerminalTask(refreshed)
           return
         }
-      } catch {
-        // ignore; fall through to the user-facing error below
+      } catch (refreshErr) {
+        if (isAuthFailure(refreshErr)) {
+          handleSessionEnded(taskId)
+          return
+        }
+        // otherwise fall through to the user-facing error below
       }
       setError(force ? 'Failed to force-cancel task' : 'Failed to cancel task')
     }
