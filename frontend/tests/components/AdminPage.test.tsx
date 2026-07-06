@@ -281,8 +281,13 @@ describe('AdminPage', () => {
       log: 'Cancelled before cleanup completed.\n',
       updated_at: '2026-06-19T19:01:10Z',
     }
-    // The task only flips to terminal once the (rejected) cancel request lands,
-    // so background polls keep the Force cancel affordance visible until then.
+    // Defensive coverage: the current backend returns 200 (no-op) when
+    // cancelling an already-terminal task, so this exact 400 no longer occurs
+    // on the happy path. We still exercise handleCancel's reconcile-on-failure
+    // branch, which must recover for any non-2xx cancel response (a 500, a
+    // network error, or an older backend). The task only flips to terminal once
+    // the (failed) cancel request lands, so background polls keep the Force
+    // cancel affordance visible until then.
     let cancelRequested = false
     mockFetchAdminTask.mockImplementation(async () =>
       cancelRequested ? cancelledTask : cancellingTask,
