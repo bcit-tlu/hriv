@@ -258,6 +258,16 @@ describe('SearchModal', () => {
     expect(screen.getAllByText(/Program:/).length).toBeGreaterThan(0)
   })
 
+  it('renders search result field labels in the secondary bold style', async () => {
+    const user = userEvent.setup()
+    render(<SearchModal {...defaultProps} open={true} />)
+
+    const input = screen.getByPlaceholderText('Search categories, images, programs, people')
+    await user.type(input, 'Kidney')
+
+    expect(screen.getByText('Name:')).toHaveStyle({ fontWeight: '700' })
+  })
+
   it('finds images by parent category name', async () => {
     const user = userEvent.setup()
     render(<SearchModal {...defaultProps} open={true} />)

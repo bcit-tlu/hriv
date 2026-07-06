@@ -91,6 +91,50 @@ describe('CategoryTile', () => {
     })
   })
 
+  describe('title layout', () => {
+    it('clamps the title to three lines and aligns the title row to the top', () => {
+      render(
+        <CategoryTile
+          category={makeCategory({
+            label: 'A very long category title that should wrap across multiple lines',
+          })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+
+      const title = screen.getByText(
+        'A very long category title that should wrap across multiple lines',
+      )
+      const titleRow = title.closest('.MuiBox-root')
+
+      expect(title).toHaveStyle({
+        display: '-webkit-box',
+        WebkitLineClamp: '3',
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+        wordBreak: 'break-word',
+      })
+      expect(titleRow).toHaveStyle({ alignItems: 'flex-start' })
+    })
+
+    it('shows the full category label in a hover tooltip', async () => {
+      const user = userEvent.setup()
+      render(
+        <CategoryTile
+          category={makeCategory({
+            label: 'Tooltip Category',
+          })}
+          onClick={vi.fn()}
+          programs={[]}
+        />,
+      )
+
+      await user.hover(screen.getByText('Tooltip Category'))
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('Tooltip Category')
+    })
+  })
+
   // ─── Hidden indicator ─────────────────────────────────────────────
 
   describe('hidden indicator', () => {

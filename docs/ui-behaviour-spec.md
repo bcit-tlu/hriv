@@ -93,6 +93,8 @@ Two capability flags in `AuthContext.tsx` drive all gating:
   create search hits.
 - Field filters expose dedicated chips for `Annotation`, `Link`, and
   `Link URL`, so users can keep only annotation-derived image matches visible.
+- Search result field labels render in a stronger secondary style so the field
+  name reads as metadata rather than body text.
 
 ---
 
@@ -195,6 +197,16 @@ committed on Save) in the edit modals.
 - Parent visibility overrides child: if a parent is hidden, child tiles always
   appear desaturated regardless of their own status.
 
+#### Tile titles and hover affordances (`CategoryTile.tsx`, `ImageTile.tsx`)
+
+- Category and image tile titles wrap to a maximum of 3 lines before
+  truncating, using a word-breaking clamp so long labels do not expand the
+  tile horizontally.
+- Category tile title rows align their action icons to the top edge of the
+  title block so multi-line labels stay visually balanced.
+- Category tile titles expose the full category name in a hover tooltip.
+- Image tiles expose the full image name in a hover tooltip.
+
 #### ManagePage table row desaturation
 
 - **Given** an image row in the ManagePage table, **When** the image is
@@ -231,6 +243,12 @@ committed on Save) in the edit modals.
 - Text filters accept comma-separated terms and match if any term is present.
 - Filter selections persist per user between logins using localStorage, in the
   same style as table column visibility and category-tree collapse preferences.
+
+### Profile popover memberships (`AppShell.tsx`)
+
+- The profile popover caps its width so long program/group chip lists wrap
+  vertically instead of forcing the menu to grow horizontally. Program and
+  group memberships remain read-only chips.
 
 ### Manage page filtering & auto-refresh (`ManagePage.tsx`)
 

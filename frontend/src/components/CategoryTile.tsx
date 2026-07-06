@@ -265,21 +265,29 @@ export default function CategoryTile({
             </Box>
           )}
           <CardContent>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
               <FolderOutlinedIcon fontSize="small" color="primary" sx={{ flexShrink: 0 }} />
-              <Typography
-                variant="h6"
-                noWrap
-                sx={{ color: category.status === 'hidden' ? visColors.inactive : 'primary.main' }}
-              >
-                {category.label}
-              </Typography>
+              <Tooltip title={category.label}>
+                <Typography
+                  variant="h6"
+                  sx={{
+                    color: category.status === 'hidden' ? visColors.inactive : 'primary.main',
+                    display: '-webkit-box',
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: 'vertical',
+                    overflow: 'hidden',
+                    wordBreak: 'break-word',
+                  }}
+                >
+                  {category.label}
+                </Typography>
+              </Tooltip>
               {category.status === 'hidden' && (
                 <Tooltip title="Visibility: Hidden">
                   <span
                     role="img"
                     aria-label="Visibility: Hidden"
-                    style={{ display: 'inline-flex' }}
+                    style={{ display: 'inline-flex', flexShrink: 0 }}
                   >
                     <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
                   </span>

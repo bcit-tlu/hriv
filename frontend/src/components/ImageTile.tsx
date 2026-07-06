@@ -51,20 +51,28 @@ export default function ImageTile({
           sx={{ objectFit: 'cover', objectPosition: 'center' }}
         />
         <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <Typography
-              variant="h6"
-              noWrap
-              sx={!image.active ? { color: visColors.inactive } : undefined}
-            >
-              {image.name}
-            </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+            <Tooltip title={image.name}>
+              <Typography
+                variant="h6"
+                sx={{
+                  ...(image.active ? {} : { color: visColors.inactive }),
+                  display: '-webkit-box',
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {image.name}
+              </Typography>
+            </Tooltip>
             {!image.active && (
               <Tooltip title="Visibility: Inactive">
                 <span
                   role="img"
                   aria-label="Visibility: Inactive"
-                  style={{ display: 'inline-flex' }}
+                  style={{ display: 'inline-flex', flexShrink: 0 }}
                 >
                   <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
                 </span>
