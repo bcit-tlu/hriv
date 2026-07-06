@@ -33,6 +33,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient, ContainerClient
 from croniter import croniter
 
@@ -138,6 +139,8 @@ def _read_last_success_marker() -> dict | None:
         if not path.exists():
             return None
         return json.loads(path.read_text())
+    except ResourceNotFoundError:
+        return None
     except Exception:
         log.exception("Failed to read last-success marker")
         return None
@@ -239,10 +242,10 @@ def run_backup() -> Path | None:
 
     Returns the local path to the archive, or *None* on failure.
     """
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    created_at = datetime.now(timezone.utc)
+    timestamp = created_at.strftime("%Y%m%d-%H%M%S")
     snapshot_name = f"hriv-backup-{timestamp}"
     log.info("Starting backup: %s", snapshot_name)
-    created_at = datetime.now(timezone.utc)
 
     db = _parse_db_url(DATABASE_URL)
     pg = _pg_env(db)
@@ -507,6 +510,8 @@ def run_status() -> bool:
         stale_after = timedelta(hours=BACKUP_STALE_HOURS)
         stale = age > stale_after
         status_label = "STALE" if stale else "FRESH"
+        if not stale and snapshot_count == 0:
+            status_label = "NO_SNAPSHOTS"
         print(f"Status: {status_label}")
         print(f"Last successful backup: {created_at.isoformat()}")
         print(f"Age: {_format_age(age)}")

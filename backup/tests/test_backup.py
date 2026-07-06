@@ -251,7 +251,7 @@ class BackupRunTestCase(_BackupTestCase):
 class StatusTestCase(_BackupTestCase):
     """Tests for the backup health/status command."""
 
-    def _reload_status(self, *, marker_created_at: datetime | None):
+    def _reload_status(self, *, marker_created_at: datetime | None, snapshots: list | None = None):
         self._reload(
             {
                 "BACKUP_MODE": "production",
@@ -282,20 +282,22 @@ class StatusTestCase(_BackupTestCase):
                 return self._payload
 
         fake_container = MagicMock()
-        fake_container.list_blobs.return_value = [
-            SimpleNamespace(
-                name="hriv-backups/hriv-backup-20260101-020000.tar.gz",
-                size=1234,
-                last_modified=datetime.now(timezone.utc),
-            ),
-            SimpleNamespace(
-                name="hriv-backups/hriv-backup-20260102-020000.tar.gz",
-                size=2345,
-                last_modified=datetime.now(timezone.utc) + timedelta(minutes=1),
-            ),
-        ]
+        if snapshots is None:
+            snapshots = [
+                SimpleNamespace(
+                    name="hriv-backups/hriv-backup-20260101-020000.tar.gz",
+                    size=1234,
+                    last_modified=datetime.now(timezone.utc),
+                ),
+                SimpleNamespace(
+                    name="hriv-backups/hriv-backup-20260102-020000.tar.gz",
+                    size=2345,
+                    last_modified=datetime.now(timezone.utc) + timedelta(minutes=1),
+                ),
+            ]
+        fake_container.list_blobs.return_value = snapshots
         if marker_payload is None:
-            fake_container.download_blob.side_effect = RuntimeError("missing")
+            fake_container.download_blob.side_effect = backup.ResourceNotFoundError("missing")
         else:
             fake_container.download_blob.return_value = _Download(marker_payload)
         return fake_container
@@ -333,6 +335,25 @@ class StatusTestCase(_BackupTestCase):
         output = stdout.getvalue()
         self.assertIn("Status: MISSING", output)
         self.assertIn("Last successful backup: (missing)", output)
+
+    def test_status_reports_no_snapshots_when_marker_fresh(self):
+        marker_created_at = datetime.now(timezone.utc) - timedelta(minutes=10)
+        fake_container = self._reload_status(marker_created_at=marker_created_at, snapshots=[])
+
+        with patch.object(backup, "_blob_container_client", return_value=fake_container), contextlib.redirect_stdout(io.StringIO()) as stdout:
+            self.assertFalse(backup.run_status())
+
+        output = stdout.getvalue()
+        self.assertIn("Status: NO_SNAPSHOTS", output)
+        self.assertIn("Snapshot count: 0", output)
+
+    def test_missing_marker_is_silent(self):
+        self._reload_status(marker_created_at=datetime.now(timezone.utc))
+        fake_container = MagicMock()
+        fake_container.download_blob.side_effect = backup.ResourceNotFoundError("missing")
+
+        with patch.object(backup, "_blob_container_client", return_value=fake_container), self.assertNoLogs("hriv-backup", level="ERROR"):
+            self.assertIsNone(backup._read_last_success_marker())
 
 
 if __name__ == "__main__":

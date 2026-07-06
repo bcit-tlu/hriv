@@ -30,6 +30,7 @@ env:
   DATA_DIR: /data
   BACKUP_CRON_SCHEDULE: '0 2 * * *'
   BACKUP_RETENTION_COUNT: '30'
+  BACKUP_STALE_HOURS: '26'
   # BACKUP_MODE controls what the Python backup service archives and restores:
   # - development: DB + source images + generated tiles (for local/manual use)
   # - production:  DB + source images only; generated tiles are excluded and
