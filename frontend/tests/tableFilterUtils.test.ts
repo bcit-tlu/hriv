@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  formatFilterTerms,
   getFilterTerms,
   hasFilterTerms,
   matchesTextFilter,
@@ -42,22 +41,6 @@ describe('matchesTextFilter', () => {
   })
 })
 
-describe('formatFilterTerms', () => {
-  it('drops empty terms and trailing commas while preserving case and order', () => {
-    expect(formatFilterTerms('blood,')).toBe('blood')
-    expect(formatFilterTerms('blood, ,')).toBe('blood')
-    expect(formatFilterTerms('  Blood , Urine ')).toBe('Blood, Urine')
-    expect(formatFilterTerms(' , , ')).toBe('')
-  })
-})
-
-describe('getFilterTerms', () => {
-  it('drops empty terms and dedupes case-insensitively while preserving first casing', () => {
-    expect(getFilterTerms(' Blood, blood, URINE, urine, , ')).toEqual(['Blood', 'URINE'])
-    expect(getFilterTerms('apple, banana, apple')).toEqual(['apple', 'banana'])
-  })
-})
-
 describe('removeFilterTerm', () => {
   it('removes matching terms case-insensitively and rejoins with commas', () => {
     expect(removeFilterTerm('Blood, Urine, smear', 'urine')).toBe('Blood, smear')
@@ -67,5 +50,12 @@ describe('removeFilterTerm', () => {
   it('handles trailing commas and empty terms', () => {
     expect(removeFilterTerm('Blood, Urine,', 'blood')).toBe('Urine')
     expect(removeFilterTerm(' , Blood , , Urine ', 'blood')).toBe('Urine')
+  })
+})
+
+describe('getFilterTerms', () => {
+  it('drops empty terms and dedupes case-insensitively while preserving first casing', () => {
+    expect(getFilterTerms(' Blood, blood, URINE, urine, , ')).toEqual(['Blood', 'URINE'])
+    expect(getFilterTerms('apple, banana, apple')).toEqual(['apple', 'banana'])
   })
 })

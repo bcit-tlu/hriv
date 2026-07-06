@@ -253,7 +253,7 @@ export default function PeoplePage({
         key: `name:${term}`,
         label: `Name: ${term}`,
         onDelete: () => {
-          setFilters((prev) => ({ ...prev, name: removeFilterTerm(name, term) }))
+          setFilters((prev) => ({ ...prev, name: removeFilterTerm(prev.name ?? '', term) }))
           setCurrentPage(0)
         },
       })
@@ -263,7 +263,7 @@ export default function PeoplePage({
         key: `email:${term}`,
         label: `Email: ${term}`,
         onDelete: () => {
-          setFilters((prev) => ({ ...prev, email: removeFilterTerm(email, term) }))
+          setFilters((prev) => ({ ...prev, email: removeFilterTerm(prev.email ?? '', term) }))
           setCurrentPage(0)
         },
       })

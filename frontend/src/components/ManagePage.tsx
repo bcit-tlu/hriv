@@ -504,6 +504,15 @@ export default function ManagePage({
     })
   }, [groups])
 
+  useEffect(() => {
+    const validIds = new Set(categoryPaths.keys())
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available categories
+    setSelectedCategories((prev) => {
+      const pruned = new Set([...prev].filter((id) => validIds.has(id)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [categoryPaths])
+
   // Sort handler
   const handleSort = (column: SortableColumn) => {
     if (sortColumn === column) {
@@ -684,7 +693,7 @@ export default function ManagePage({
     })
   }, [
     filters,
-    getCategoryLabel,
+    categoryPaths,
     getInheritedGroupIds,
     getInheritedProgramIds,
     hasActiveFilters,

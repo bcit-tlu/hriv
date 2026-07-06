@@ -370,6 +370,32 @@ describe('ManagePage', () => {
     expect(screen.queryByText('No images match the selected filters.')).not.toBeInTheDocument()
   })
 
+  it('prunes stale persisted category selections after hydrating filters', async () => {
+    localStorage.setItem(
+      'hrivpref:table-filters:manage-images:user:1',
+      JSON.stringify({
+        text: {},
+        programs: [],
+        groups: [],
+        visibility: [],
+        categories: [999],
+      }),
+    )
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText('Category:')).not.toBeInTheDocument()
+    await waitFor(() => {
+      expect(
+        JSON.parse(localStorage.getItem('hrivpref:table-filters:manage-images:user:1') ?? '{}'),
+      ).toMatchObject({ categories: [] })
+    })
+  })
+
   it('preserves non-program persisted filters when navigation selects a program', async () => {
     const twoPrograms: Program[] = [
       ...programs,
