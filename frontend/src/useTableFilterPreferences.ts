@@ -3,6 +3,11 @@ import { getStoredUserScope } from './userScope'
 
 interface UseTableFilterPreferencesArgs<T> {
   tableKey: string
+  /**
+   * Current filter snapshot to persist. Callers MUST memoize this (e.g. with
+   * `useMemo`) — persistence is keyed off its serialized form, so passing a new
+   * object reference every render triggers a localStorage write on every render.
+   */
   value: T
 }
 
