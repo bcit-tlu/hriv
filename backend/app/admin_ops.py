@@ -1154,7 +1154,7 @@ def _create_tar_file(
         try:
             os.unlink(dest)
         except OSError:
-            pass
+            logger.debug("Failed to remove incomplete archive %s", dest, exc_info=True)
         raise
     success = False
     try:
