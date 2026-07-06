@@ -1,8 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest'
+import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AdminPage from '../../src/components/AdminPage'
 import * as api from '../../src/api'
+
+const { mockLogout } = vi.hoisted(() => ({
+  mockLogout: vi.fn(),
+}))
 
 vi.mock('../../src/api', async () => {
   const actual = await vi.importActual<typeof api>('../../src/api')
@@ -20,16 +24,109 @@ vi.mock('../../src/api', async () => {
   }
 })
 
+vi.mock('../../src/useAuth', () => ({
+  useAuth: () => ({
+    logout: mockLogout,
+  }),
+}))
+
 vi.mock('../../src/components/ChangelogAdmin', () => ({
   default: () => <div>Changelog admin content</div>,
 }))
 
 const mockFetchAdminTasks = vi.mocked(api.fetchAdminTasks)
+const mockFetchAdminTask = vi.mocked(api.fetchAdminTask)
+const mockStartDbExport = vi.mocked(api.startDbExport)
+const mockStartDbImport = vi.mocked(api.startDbImport)
+const mockStartFilesExport = vi.mocked(api.startFilesExport)
+const mockInitFilesImport = vi.mocked(api.initFilesImport)
+const mockUploadTaskFile = vi.mocked(api.uploadTaskFile)
+const mockCancelAdminTask = vi.mocked(api.cancelAdminTask)
+const mockDownloadAdminTaskResult = vi.mocked(api.downloadAdminTaskResult)
 
 describe('AdminPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockFetchAdminTasks.mockResolvedValue([])
+    mockStartDbExport.mockResolvedValue({
+      id: 1,
+      task_type: 'db_export',
+      status: 'pending',
+      progress: 0,
+      log: '',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    mockStartDbImport.mockResolvedValue({
+      id: 2,
+      task_type: 'db_import',
+      status: 'pending',
+      progress: 0,
+      log: '',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    mockStartFilesExport.mockResolvedValue({
+      id: 3,
+      task_type: 'files_export',
+      status: 'pending',
+      progress: 0,
+      log: '',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    mockInitFilesImport.mockResolvedValue({
+      id: 4,
+      task_type: 'files_import',
+      status: 'uploading',
+      progress: 0,
+      log: 'Awaiting file upload: backup.tar.gz\n',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    mockUploadTaskFile.mockResolvedValue({
+      id: 4,
+      task_type: 'files_import',
+      status: 'pending',
+      progress: 0,
+      log: 'Awaiting file upload: backup.tar.gz\nUpload complete (0.0 MB). Queued for processing.\n',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    mockCancelAdminTask.mockResolvedValue({
+      id: 1,
+      task_type: 'db_export',
+      status: 'cancelled',
+      progress: 0,
+      log: 'cancelled',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    mockDownloadAdminTaskResult.mockResolvedValue()
+    mockFetchAdminTask.mockReset()
+    mockLogout.mockClear()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('opens on the changelog tab by default', async () => {
@@ -84,5 +181,142 @@ describe('AdminPage', () => {
 
     expect(recentTasksToggle).toHaveAttribute('aria-expanded', 'true')
     expect(await screen.findByText('Filesystem Export')).toBeVisible()
+  })
+
+  it('stops polling and shows a session-ended message on 401', async () => {
+    vi.useFakeTimers()
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    mockFetchAdminTask
+      .mockResolvedValueOnce({
+        id: 11,
+        task_type: 'db_export',
+        status: 'pending',
+        progress: 10,
+        log: 'Starting',
+        result_filename: null,
+        error_message: null,
+        created_by: 1,
+        created_at: '2026-06-19T19:00:00Z',
+        updated_at: '2026-06-19T19:01:00Z',
+      })
+      .mockRejectedValueOnce(new api.ApiError(401, 'Unauthorized'))
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+    await user.click(screen.getAllByRole('button', { name: 'Export' })[0])
+
+    expect(await screen.findByText('Database Export')).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+
+    expect(
+      await screen.findByText(/Your session ended because your account was replaced/i),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Log back in/i })).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000)
+    })
+
+    expect(mockFetchAdminTask).toHaveBeenCalledTimes(2)
+
+    await user.click(screen.getByRole('button', { name: /Log back in/i }))
+    expect(mockLogout).toHaveBeenCalledOnce()
+  })
+
+  it('retries polling after a transient network error', async () => {
+    vi.useFakeTimers()
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    mockFetchAdminTask
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({
+        id: 12,
+        task_type: 'db_export',
+        status: 'completed',
+        progress: 100,
+        log: 'done',
+        result_filename: 'files-backup.tar.gz',
+        error_message: null,
+        created_by: 1,
+        created_at: '2026-06-19T19:00:00Z',
+        updated_at: '2026-06-19T19:02:00Z',
+      })
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+    await user.click(screen.getAllByRole('button', { name: 'Export' })[0])
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+
+    expect(mockFetchAdminTask).toHaveBeenCalledTimes(2)
+    expect(
+      screen.queryByText(/Your session ended because your account was replaced/i),
+    ).not.toBeInTheDocument()
+  })
+
+  it('reconciles a force-cancel request that lands after the task is already terminal', async () => {
+    vi.useFakeTimers()
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    mockFetchAdminTask
+      .mockResolvedValueOnce({
+        id: 13,
+        task_type: 'files_export',
+        status: 'cancelling',
+        progress: 62,
+        log: 'Cancellation requested by admin.\n',
+        result_filename: null,
+        error_message: null,
+        created_by: 1,
+        created_at: '2026-06-19T19:00:00Z',
+        updated_at: '2026-06-19T19:01:00Z',
+      })
+      .mockResolvedValueOnce({
+        id: 13,
+        task_type: 'files_export',
+        status: 'cancelled',
+        progress: 62,
+        log: 'Cancelled before cleanup completed.\n',
+        result_filename: null,
+        error_message: null,
+        created_by: 1,
+        created_at: '2026-06-19T19:00:00Z',
+        updated_at: '2026-06-19T19:01:10Z',
+      })
+    mockCancelAdminTask.mockRejectedValueOnce(
+      new api.ApiError(400, "Cannot cancel task in 'cancelled' state"),
+    )
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+    await user.click(screen.getAllByRole('button', { name: 'Export' })[1])
+
+    expect(await screen.findByText('Filesystem Export')).toBeInTheDocument()
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+
+    const forceCancel = await screen.findByRole('button', { name: 'Force cancel' })
+    await user.click(forceCancel)
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Force cancel' })).not.toBeInTheDocument(),
+    )
+    expect(screen.queryByText(/Failed to force-cancel task/)).not.toBeInTheDocument()
+    expect(mockCancelAdminTask).toHaveBeenCalledTimes(1)
+    expect(mockFetchAdminTask).toHaveBeenCalledTimes(2)
   })
 })

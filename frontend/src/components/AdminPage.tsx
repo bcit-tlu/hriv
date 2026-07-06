@@ -30,6 +30,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import CancelIcon from '@mui/icons-material/Cancel'
 import {
+  ApiError,
   startDbExport,
   startDbImport,
   startFilesExport,
@@ -42,6 +43,7 @@ import {
   userMessage,
 } from '../api'
 import type { AdminTask } from '../api'
+import { useAuth } from '../useAuth'
 import ConfirmImportDialog, { type ConfirmImportKind } from './ConfirmImportDialog'
 import ChangelogAdmin from './ChangelogAdmin'
 
@@ -88,6 +90,7 @@ function AdminTabPanel({ children, value, currentValue }: AdminTabPanelProps) {
 }
 
 export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps) {
+  const { logout } = useAuth()
   const fileRef = useRef<HTMLInputElement>(null)
   const filesRef = useRef<HTMLInputElement>(null)
 
@@ -106,6 +109,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
 
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState<string | null>(null) // task_type being kicked off
+  const [sessionEndedMessage, setSessionEndedMessage] = useState<string | null>(null)
 
   const pollRefs = useRef(new Map<number, ReturnType<typeof setTimeout>>())
 
@@ -150,6 +154,38 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     }
   }, [])
 
+  const stopAllPolling = useCallback(() => {
+    for (const taskId of Array.from(pollRefs.current.keys())) {
+      stopPolling(taskId)
+    }
+  }, [stopPolling])
+
+  const syncTask = useCallback((updated: AdminTask) => {
+    setActiveTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
+    setTaskHistory((prev) => prev.map((t) => (t.id === updated.id ? updated : t)))
+    setLogTask((prev) => (prev?.id === updated.id ? updated : prev))
+  }, [])
+
+  const isTerminalTask = (task: AdminTask) =>
+    task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
+
+  const handleSessionEnded = useCallback(
+    (taskId: number) => {
+      stopAllPolling()
+      setStarting(null)
+      setSessionEndedMessage(
+        (prev) =>
+          prev ??
+          'Your session ended because your account was replaced by the imported data. The task is still running on the server and will complete — please log back in, then check Recent Tasks to confirm it finished.',
+      )
+      setNotifications((prev) => prev.filter((n) => n.id !== taskId))
+    },
+    [stopAllPolling],
+  )
+
+  const isAuthFailure = (err: unknown): err is ApiError =>
+    err instanceof ApiError && (err.status === 401 || err.status === 403)
+
   const pollTask = useCallback(
     (taskId: number) => {
       if (pollRefs.current.has(taskId)) return // already polling
@@ -160,10 +196,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
             const updated = await fetchAdminTask(taskId)
 
             // Update active tasks list
-            setActiveTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)))
-
-            // Also update the log modal if it's viewing this task
-            setLogTask((prev) => (prev?.id === taskId ? updated : prev))
+            syncTask(updated)
 
             if (
               updated.status === 'completed' ||
@@ -181,7 +214,11 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
             } else {
               schedule()
             }
-          } catch {
+          } catch (err) {
+            if (isAuthFailure(err)) {
+              handleSessionEnded(taskId)
+              return
+            }
             // Network error — retry
             schedule()
           }
@@ -191,7 +228,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
 
       schedule()
     },
-    [stopPolling],
+    [handleSessionEnded, stopPolling, syncTask],
   )
 
   // Clean up polling on unmount
@@ -377,10 +414,21 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     }
     try {
       const updated = await cancelAdminTask(taskId)
-      setActiveTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)))
-      setTaskHistory((prev) => prev.map((t) => (t.id === taskId ? updated : t)))
-      if (logTask?.id === taskId) setLogTask(updated)
+      syncTask(updated)
+      if (isTerminalTask(updated)) {
+        stopPolling(taskId)
+      }
     } catch {
+      try {
+        const refreshed = await fetchAdminTask(taskId)
+        syncTask(refreshed)
+        if (isTerminalTask(refreshed)) {
+          stopPolling(taskId)
+          return
+        }
+      } catch {
+        // ignore; fall through to the user-facing error below
+      }
       setError(force ? 'Failed to force-cancel task' : 'Failed to cancel task')
     }
   }
@@ -388,7 +436,10 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   // Disable action buttons while a task is being kicked off OR while
   // any task is still uploading (#263 — setStarting(null) fires before
   // the XHR upload completes, so also check for in-flight uploads).
-  const busy = starting !== null || activeTasks.some((t) => t.status === 'uploading')
+  const busy =
+    starting !== null ||
+    sessionEndedMessage !== null ||
+    activeTasks.some((t) => t.status === 'uploading')
 
   // Active (in-flight) tasks for the progress banner
   const runningTasks = activeTasks.filter(
@@ -411,76 +462,91 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
         </Alert>
       )}
 
-      {/* ── Active task progress banners ────────────────── */}
-      {runningTasks.map((task) => (
+      {sessionEndedMessage && (
         <Alert
-          key={task.id}
-          severity={task.status === 'cancelling' ? 'warning' : 'info'}
-          icon={<CircularProgress size={20} />}
+          severity="warning"
           sx={{ mb: 2 }}
           action={
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              {task.status !== 'cancelling' ? (
-                <Button
-                  size="small"
-                  color="warning"
-                  startIcon={<CancelIcon />}
-                  onClick={() => handleCancel(task.id)}
-                >
-                  Cancel
-                </Button>
-              ) : (
-                <Button
-                  size="small"
-                  color="error"
-                  startIcon={<CancelIcon />}
-                  onClick={() => handleCancel(task.id, true)}
-                >
-                  Force cancel
-                </Button>
-              )}
-              <Link
-                component="button"
-                variant="body2"
-                underline="always"
-                sx={{ mr: 1, cursor: 'pointer' }}
-                onClick={() => setLogTask(task)}
-              >
-                Details
-              </Link>
-            </Box>
+            <Button color="inherit" size="small" onClick={logout}>
+              Log back in
+            </Button>
           }
         >
-          <Box sx={{ width: '100%' }}>
-            <Typography variant="body2" sx={{ mb: 0.5 }}>
-              {TASK_LABELS[task.task_type] ?? task.task_type}
-              {task.status === 'cancelling'
-                ? ' — Cancelling…'
-                : task.status === 'uploading'
-                  ? ` — Uploading ${Math.round((uploadProgress.get(task.id) ?? 0) * 100)}%`
-                  : ` — ${task.progress}%`}
-            </Typography>
-            <LinearProgress
-              variant={
-                task.status === 'cancelling'
-                  ? 'indeterminate'
-                  : task.status === 'uploading'
-                    ? uploadProgress.has(task.id)
-                      ? 'determinate'
-                      : 'indeterminate'
-                    : 'determinate'
-              }
-              value={
-                task.status === 'uploading'
-                  ? (uploadProgress.get(task.id) ?? 0) * 100
-                  : task.progress
-              }
-              color={task.status === 'cancelling' ? 'warning' : 'primary'}
-              sx={{ height: 6, borderRadius: 1 }}
-            />
-          </Box>
+          {sessionEndedMessage}
         </Alert>
-      ))}
+      )}
+
+      {/* ── Active task progress banners ────────────────── */}
+      {!sessionEndedMessage &&
+        runningTasks.map((task) => (
+          <Alert
+            key={task.id}
+            severity={task.status === 'cancelling' ? 'warning' : 'info'}
+            icon={<CircularProgress size={20} />}
+            sx={{ mb: 2 }}
+            action={
+              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                {task.status !== 'cancelling' ? (
+                  <Button
+                    size="small"
+                    color="warning"
+                    startIcon={<CancelIcon />}
+                    onClick={() => handleCancel(task.id)}
+                  >
+                    Cancel
+                  </Button>
+                ) : (
+                  <Button
+                    size="small"
+                    color="error"
+                    startIcon={<CancelIcon />}
+                    onClick={() => handleCancel(task.id, true)}
+                  >
+                    Force cancel
+                  </Button>
+                )}
+                <Link
+                  component="button"
+                  variant="body2"
+                  underline="always"
+                  sx={{ mr: 1, cursor: 'pointer' }}
+                  onClick={() => setLogTask(task)}
+                >
+                  Details
+                </Link>
+              </Box>
+            }
+          >
+            <Box sx={{ width: '100%' }}>
+              <Typography variant="body2" sx={{ mb: 0.5 }}>
+                {TASK_LABELS[task.task_type] ?? task.task_type}
+                {task.status === 'cancelling'
+                  ? ' — Cancelling…'
+                  : task.status === 'uploading'
+                    ? ` — Uploading ${Math.round((uploadProgress.get(task.id) ?? 0) * 100)}%`
+                    : ` — ${task.progress}%`}
+              </Typography>
+              <LinearProgress
+                variant={
+                  task.status === 'cancelling'
+                    ? 'indeterminate'
+                    : task.status === 'uploading'
+                      ? uploadProgress.has(task.id)
+                        ? 'determinate'
+                        : 'indeterminate'
+                      : 'determinate'
+                }
+                value={
+                  task.status === 'uploading'
+                    ? (uploadProgress.get(task.id) ?? 0) * 100
+                    : task.progress
+                }
+                color={task.status === 'cancelling' ? 'warning' : 'primary'}
+                sx={{ height: 6, borderRadius: 1 }}
+              />
+            </Box>
+          </Alert>
+        ))}
 
       <Tabs
         value={activeTab}
