@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.8.0...backup-v0.9.0) (2026-07-06)
+
+
+### Features
+
+* **backup:** last-success heartbeat, status command, and operator DR runbook ([#822](https://github.com/bcit-tlu/hriv/issues/822)) ([36bc2d0](https://github.com/bcit-tlu/hriv/commit/36bc2d0c0e8018807662134f1846ed465b20b76c))
+
 ## [0.8.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.7.0...backup-v0.8.0) (2026-06-30)
 
 
