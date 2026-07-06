@@ -296,6 +296,7 @@ export default function PeoplePage({
     }
   }, [initialEditUserId, loading, users, onEditUserHandled])
 
+  // Hydration must register before prune effects so functional updaters see hydrated values.
   useEffect(() => {
     const validIds = new Set(programs.map((p) => p.id))
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available programs

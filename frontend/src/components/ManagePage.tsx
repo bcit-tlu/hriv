@@ -366,6 +366,7 @@ export default function ManagePage({
   // Apply initial program filter from external navigation (e.g. search)
   const [prevInitialProgramFilter, setPrevInitialProgramFilter] = useState(initialProgramFilter)
   const shouldSkipFilterHydrateRef = useRef(false)
+  // Never reset: mount hydration runs once, so nav intent stays ahead of persisted filters.
   if (initialProgramFilter !== prevInitialProgramFilter) {
     setPrevInitialProgramFilter(initialProgramFilter)
     if (initialProgramFilter) {
@@ -458,6 +459,7 @@ export default function ManagePage({
     onHydrate: handleFilterHydrate,
   })
 
+  // Hydration must register before prune effects so functional updaters see hydrated values.
   useEffect(() => {
     const validIds = new Set(programs.map((program) => program.id))
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available programs
