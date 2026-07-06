@@ -750,9 +750,9 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
                     Import Files
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Upload a source-images-only .tar.gz file to replace the filesystem on disk.
-                    This action is destructive — existing files will be overwritten. Generated
-                    tiles are not included and must be regenerated with Rebuild Tiles after import.
+                    Upload a source-images-only .tar.gz file to replace the filesystem on disk. This
+                    action is destructive — existing files will be overwritten. Generated tiles are
+                    not included and must be regenerated with Rebuild Tiles after import.
                   </Typography>
                   <Button
                     variant="contained"
