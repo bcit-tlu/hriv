@@ -42,7 +42,7 @@ import type { ApiUser } from '../api'
 import type { Role, Program, Group } from '../types'
 import { formatFilterTerms, hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
-import { useTableFilterPreferences } from '../useTableFilterPreferences'
+import { loadStoredTableFilters, useTableFilterPreferences } from '../useTableFilterPreferences'
 import AddEditPersonModal from './AddEditPersonModal'
 import BulkEditModal from './BulkEditModal'
 import BulkGroupModal from './BulkGroupModal'
@@ -51,6 +51,54 @@ import FilterBar from './FilterBar'
 import FilterOptionPanel from './FilterOptionPanel'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
 import FilterTextPanel from './FilterTextPanel'
+
+type PeopleStoredFilters = {
+  text?: Record<string, unknown>
+  roles?: unknown[]
+  programs?: unknown[]
+  groups?: unknown[]
+}
+
+function getStoredTextFilters(storedFilters: PeopleStoredFilters | null): Record<string, string> {
+  const storedText = storedFilters?.text
+  if (storedText == null || typeof storedText !== 'object' || Array.isArray(storedText)) {
+    return {}
+  }
+
+  const nextFilters: Record<string, string> = {}
+  for (const [key, value] of Object.entries(storedText)) {
+    if (typeof value === 'string') {
+      nextFilters[key] = value
+    }
+  }
+  return nextFilters
+}
+
+function getStoredRoles(storedFilters: PeopleStoredFilters | null): Set<Role> {
+  const roles = storedFilters?.roles
+  if (!Array.isArray(roles)) return new Set()
+  return new Set(roles.filter((value): value is Role => ROLES.includes(value as Role)))
+}
+
+function getStoredIds(storedFilters: PeopleStoredFilters | null, key: 'programs' | 'groups') {
+  const values = storedFilters?.[key]
+  if (!Array.isArray(values)) return new Set<number>()
+  return new Set(values.filter((value): value is number => Number.isInteger(value)))
+}
+
+function buildPeopleFilterSnapshot(
+  filters: Record<string, string>,
+  selectedRoles: Set<Role>,
+  selectedPrograms: Set<number>,
+  selectedGroups: Set<number>,
+) {
+  return {
+    text: filters,
+    roles: [...selectedRoles],
+    programs: [...selectedPrograms],
+    groups: [...selectedGroups],
+  }
+}
 
 type SortableColumn =
   | 'id'
@@ -130,10 +178,18 @@ export default function PeoplePage({
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
   // Filter state — text filters for name/email, checkbox sets for role/program/group
-  const [filters, setFilters] = useState<Record<string, string>>({})
-  const [selectedRoles, setSelectedRoles] = useState<Set<Role>>(new Set())
-  const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(new Set())
-  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(new Set())
+  const storedFilters = useMemo(() => loadStoredTableFilters<PeopleStoredFilters>('people'), [])
+  // Filter state seeds synchronously from storage.
+  const [filters, setFilters] = useState<Record<string, string>>(() =>
+    getStoredTextFilters(storedFilters),
+  )
+  const [selectedRoles, setSelectedRoles] = useState<Set<Role>>(() => getStoredRoles(storedFilters))
+  const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(() =>
+    getStoredIds(storedFilters, 'programs'),
+  )
+  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(() =>
+    getStoredIds(storedFilters, 'groups'),
+  )
   const hasActiveFilters =
     Object.values(filters).some((v) => hasFilterTerms(v)) ||
     selectedRoles.size > 0 ||
@@ -190,48 +246,12 @@ export default function PeoplePage({
     [groups, selectedGroups],
   )
   const filterSnapshot = useMemo(
-    () => ({
-      text: filters,
-      roles: [...selectedRoles],
-      programs: [...selectedPrograms],
-      groups: [...selectedGroups],
-    }),
+    () => buildPeopleFilterSnapshot(filters, selectedRoles, selectedPrograms, selectedGroups),
     [filters, selectedGroups, selectedPrograms, selectedRoles],
   )
-  const handleFilterHydrate = useCallback((stored: typeof filterSnapshot) => {
-    const storedText = stored?.text
-    if (storedText != null && typeof storedText === 'object' && !Array.isArray(storedText)) {
-      const nextFilters: Record<string, string> = {}
-      for (const [key, value] of Object.entries(storedText)) {
-        if (typeof value === 'string') {
-          nextFilters[key] = value
-        }
-      }
-      setFilters(nextFilters)
-    }
-
-    if (Array.isArray(stored?.roles)) {
-      setSelectedRoles(
-        new Set(stored.roles.filter((value): value is Role => ROLES.includes(value as Role))),
-      )
-    }
-
-    if (Array.isArray(stored?.programs)) {
-      setSelectedPrograms(
-        new Set(stored.programs.filter((value): value is number => Number.isInteger(value))),
-      )
-    }
-
-    if (Array.isArray(stored?.groups)) {
-      setSelectedGroups(
-        new Set(stored.groups.filter((value): value is number => Number.isInteger(value))),
-      )
-    }
-  }, [])
   useTableFilterPreferences({
     tableKey: 'people',
     value: filterSnapshot,
-    onHydrate: handleFilterHydrate,
   })
   const appliedFilters = useMemo<AppliedPeopleFilter[]>(() => {
     const chips: AppliedPeopleFilter[] = []
@@ -298,7 +318,6 @@ export default function PeoplePage({
     }
   }, [initialEditUserId, loading, users, onEditUserHandled])
 
-  // Hydration must register before prune effects so functional updaters see hydrated values.
   useEffect(() => {
     const validIds = new Set(programs.map((p) => p.id))
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available programs

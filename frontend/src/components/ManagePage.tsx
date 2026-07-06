@@ -65,7 +65,7 @@ import MoveImageDialog from './MoveImageDialog'
 import NoteDisplay from './NoteDisplay'
 import UploadImageModal from './UploadImageModal'
 import { formatFilterTerms, hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
-import { useTableFilterPreferences } from '../useTableFilterPreferences'
+import { loadStoredTableFilters, useTableFilterPreferences } from '../useTableFilterPreferences'
 
 interface CategoryPathSegment {
   category: Category
@@ -232,6 +232,66 @@ function hasCanvasAnnotations(img: ApiImage): boolean {
   )
 }
 
+type ManageStoredFilters = {
+  text?: Record<string, unknown>
+  programs?: unknown[]
+  groups?: unknown[]
+  visibility?: unknown[]
+}
+
+function getStoredTextFilters(storedFilters: ManageStoredFilters | null): Record<string, string> {
+  const storedText = storedFilters?.text
+  if (storedText == null || typeof storedText !== 'object' || Array.isArray(storedText)) {
+    return {}
+  }
+
+  const nextFilters: Record<string, string> = {}
+  for (const [key, value] of Object.entries(storedText)) {
+    if (typeof value === 'string') {
+      nextFilters[key] = value
+    }
+  }
+  return nextFilters
+}
+
+function getStoredProgramIds(storedFilters: ManageStoredFilters | null): Set<number> {
+  const programs = storedFilters?.programs
+  if (!Array.isArray(programs)) return new Set()
+  return new Set(programs.filter((value): value is number => Number.isInteger(value)))
+}
+
+function getStoredGroupIds(storedFilters: ManageStoredFilters | null): Set<number> {
+  const groups = storedFilters?.groups
+  if (!Array.isArray(groups)) return new Set()
+  return new Set(groups.filter((value): value is number => Number.isInteger(value)))
+}
+
+function getStoredVisibilityFilters(
+  storedFilters: ManageStoredFilters | null,
+): Set<VisibilityFilterValue> {
+  const visibility = storedFilters?.visibility
+  if (!Array.isArray(visibility)) return new Set()
+  return new Set(
+    visibility.filter(
+      (value): value is VisibilityFilterValue => value === 'active' || value === 'inactive',
+    ),
+  )
+}
+
+function buildManageFilterSnapshot(
+  filters: Record<string, string>,
+  selectedPrograms: Set<number>,
+  selectedGroups: Set<number>,
+  selectedVisibility: Set<VisibilityFilterValue>,
+) {
+  return {
+    text: filters,
+    programs: [...selectedPrograms],
+    groups: [...selectedGroups],
+    visibility: [...selectedVisibility],
+  }
+}
+
 type VisibilityFilterValue = 'active' | 'inactive'
 
 interface ManagePageProps {
@@ -309,12 +369,24 @@ export default function ManagePage({
   const [sortColumn, setSortColumn] = useState<SortableColumn>('id')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
-  // Filter state
-  const [filters, setFilters] = useState<Record<string, string>>({})
-  const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(new Set())
-  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(new Set())
-  const [selectedVisibility, setSelectedVisibility] = useState<Set<VisibilityFilterValue>>(
-    new Set(),
+  const storedFilters = useMemo(
+    () => loadStoredTableFilters<ManageStoredFilters>('manage-images'),
+    [],
+  )
+  // Filter state seeds synchronously from storage unless navigation wins.
+  const [filters, setFilters] = useState<Record<string, string>>(() =>
+    initialProgramFilter ? {} : getStoredTextFilters(storedFilters),
+  )
+  const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(() =>
+    initialProgramFilter ? new Set<number>() : getStoredProgramIds(storedFilters),
+  )
+  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(() =>
+    initialProgramFilter ? new Set<number>() : getStoredGroupIds(storedFilters),
+  )
+  const [selectedVisibility, setSelectedVisibility] = useState<Set<VisibilityFilterValue>>(() =>
+    initialProgramFilter
+      ? new Set<VisibilityFilterValue>()
+      : getStoredVisibilityFilters(storedFilters),
   )
   const hasActiveFilters =
     Object.values(filters).some((v) => hasFilterTerms(v)) ||
@@ -364,13 +436,12 @@ export default function ManagePage({
   const [currentPage, setCurrentPage] = useState(0)
 
   // Apply initial program filter from external navigation (e.g. search)
-  const [prevInitialProgramFilter, setPrevInitialProgramFilter] = useState(initialProgramFilter)
-  const shouldSkipFilterHydrateRef = useRef(false)
-  // Never reset: mount hydration runs once, so nav intent stays ahead of persisted filters.
+  const [prevInitialProgramFilter, setPrevInitialProgramFilter] = useState<string | undefined>(
+    undefined,
+  )
   if (initialProgramFilter !== prevInitialProgramFilter) {
     setPrevInitialProgramFilter(initialProgramFilter)
     if (initialProgramFilter) {
-      shouldSkipFilterHydrateRef.current = true
       setSelectedPrograms(
         new Set(
           programs
@@ -410,56 +481,14 @@ export default function ManagePage({
   }, [loadImages, imagesVersion])
 
   const filterSnapshot = useMemo(
-    () => ({
-      text: filters,
-      programs: [...selectedPrograms],
-      groups: [...selectedGroups],
-      visibility: [...selectedVisibility],
-    }),
+    () => buildManageFilterSnapshot(filters, selectedPrograms, selectedGroups, selectedVisibility),
     [filters, selectedGroups, selectedPrograms, selectedVisibility],
   )
-  const handleFilterHydrate = useCallback((stored: typeof filterSnapshot) => {
-    if (shouldSkipFilterHydrateRef.current) return
-
-    const storedText = stored?.text
-    if (storedText != null && typeof storedText === 'object' && !Array.isArray(storedText)) {
-      const nextFilters: Record<string, string> = {}
-      for (const [key, value] of Object.entries(storedText)) {
-        if (typeof value === 'string') {
-          nextFilters[key] = value
-        }
-      }
-      setFilters(nextFilters)
-    }
-
-    if (Array.isArray(stored?.programs)) {
-      setSelectedPrograms(
-        new Set(stored.programs.filter((value): value is number => Number.isInteger(value))),
-      )
-    }
-
-    if (Array.isArray(stored?.groups)) {
-      setSelectedGroups(
-        new Set(stored.groups.filter((value): value is number => Number.isInteger(value))),
-      )
-    }
-
-    if (Array.isArray(stored?.visibility)) {
-      const validVisibility = new Set<VisibilityFilterValue>(
-        stored.visibility.filter(
-          (value): value is VisibilityFilterValue => value === 'active' || value === 'inactive',
-        ),
-      )
-      setSelectedVisibility(validVisibility)
-    }
-  }, [])
   useTableFilterPreferences({
     tableKey: 'manage-images',
     value: filterSnapshot,
-    onHydrate: handleFilterHydrate,
   })
 
-  // Hydration must register before prune effects so functional updaters see hydrated values.
   useEffect(() => {
     const validIds = new Set(programs.map((program) => program.id))
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available programs

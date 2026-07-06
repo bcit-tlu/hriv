@@ -20,7 +20,6 @@ import type { ApiImage } from '../../src/api'
 import type { Group, Program } from '../../src/types'
 import { makeCategory } from '../helpers/fixtures'
 import ManagePage from '../../src/components/ManagePage'
-import * as tableFilterPreferences from '../../src/useTableFilterPreferences'
 
 const programs: Program[] = [
   { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
@@ -426,51 +425,27 @@ describe('ManagePage', () => {
       }),
     )
 
-    let hydrateCalls = 0
-    const hydrateSpy = vi
-      .spyOn(tableFilterPreferences, 'useTableFilterPreferences')
-      .mockImplementation(({ onHydrate }) => {
-        hydrateCalls += 1
-        if (hydrateCalls === 2) {
-          queueMicrotask(() => {
-            onHydrate({
-              text: { name: 'No Match' },
-              programs: [1],
-              groups: [],
-              visibility: [],
-            })
-          })
-        }
-      })
+    render(
+      <ManagePage
+        categories={twoCategories}
+        programs={twoPrograms}
+        groups={groups}
+        initialProgramFilter="Other Program"
+      />,
+    )
 
-    try {
-      const view = render(
-        <ManagePage categories={twoCategories} programs={twoPrograms} groups={groups} />,
-      )
-      view.rerender(
-        <ManagePage
-          categories={twoCategories}
-          programs={twoPrograms}
-          groups={groups}
-          initialProgramFilter="Other Program"
-        />,
-      )
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: 'Filter by' })).toBeInTheDocument()
+    })
 
-      await waitFor(() => {
-        expect(screen.getByRole('region', { name: 'Filter by' })).toBeInTheDocument()
-      })
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    const nameButton = within(filterBar).getByRole('button', { name: 'Name' })
+    const programButton = within(filterBar).getByRole('button', { name: 'Program' })
 
-      const filterBar = screen.getByRole('region', { name: 'Filter by' })
-      const nameButton = within(filterBar).getByRole('button', { name: 'Name' })
-      const programButton = within(filterBar).getByRole('button', { name: 'Program' })
-
-      expect(programButton).toHaveTextContent('1')
-      expect(nameButton).not.toHaveTextContent('1')
-      expect(screen.queryByText('Persisted Filter Target')).not.toBeInTheDocument()
-      expect(screen.queryByText('No images match the selected filters.')).not.toBeInTheDocument()
-    } finally {
-      hydrateSpy.mockRestore()
-    }
+    expect(programButton).toHaveTextContent('1')
+    expect(nameButton).not.toHaveTextContent('1')
+    expect(screen.queryByText('Persisted Filter Target')).not.toBeInTheDocument()
+    expect(screen.queryByText('No images match the selected filters.')).not.toBeInTheDocument()
   })
 
   it('matches comma-separated name filters with OR semantics', async () => {

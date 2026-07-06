@@ -1,7 +1,7 @@
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
-import { useTableFilterPreferences } from '../src/useTableFilterPreferences'
+import { loadStoredTableFilters, useTableFilterPreferences } from '../src/useTableFilterPreferences'
 
 type TestFilters = {
   text: Record<string, string>
@@ -25,14 +25,10 @@ function storageKeyFor(tableKey: string, userId: number | string) {
 
 function usePreferences(tableKey = 'people', initialValue: TestFilters = defaultValue) {
   const [value, setValue] = useState<TestFilters>(initialValue)
-  const onHydrate = useCallback((nextValue: TestFilters) => {
-    setValue(nextValue)
-  }, [])
 
   useTableFilterPreferences<TestFilters>({
     tableKey,
     value,
-    onHydrate,
   })
 
   return { value, setValue }
@@ -48,21 +44,11 @@ describe('useTableFilterPreferences', () => {
     vi.restoreAllMocks()
   })
 
-  it('returns without calling onHydrate when nothing is stored', () => {
-    const onHydrate = vi.fn()
-    renderHook(() => {
-      const [value] = useState<TestFilters>(defaultValue)
-      useTableFilterPreferences<TestFilters>({
-        tableKey: 'people',
-        value,
-        onHydrate,
-      })
-    })
-
-    expect(onHydrate).not.toHaveBeenCalled()
+  it('returns null when nothing is stored', () => {
+    expect(loadStoredTableFilters<TestFilters>('people')).toBeNull()
   })
 
-  it('calls onHydrate with parsed stored filters on mount', async () => {
+  it('returns parsed stored filters', () => {
     const stored = {
       text: { name: 'blood' },
       roles: ['student'],
@@ -72,11 +58,38 @@ describe('useTableFilterPreferences', () => {
     }
     localStorage.setItem(storageKeyFor('people', 1), JSON.stringify(stored))
 
-    const { result } = renderHook(() => usePreferences())
+    expect(loadStoredTableFilters<TestFilters>('people')).toEqual(stored)
+  })
 
-    await waitFor(() => {
-      expect(result.current.value).toEqual(stored)
+  it('returns null for corrupted JSON', () => {
+    localStorage.setItem(storageKeyFor('people', 1), '{not-json')
+
+    expect(loadStoredTableFilters<TestFilters>('people')).toBeNull()
+  })
+
+  it('isolates stored filters by user-scoped key', () => {
+    localStorage.setItem(
+      storageKeyFor('people', 1),
+      JSON.stringify({
+        text: { name: 'blood' },
+        roles: [],
+        programs: [],
+        groups: [],
+        visibility: [],
+      }),
+    )
+
+    expect(loadStoredTableFilters<TestFilters>('people')).toEqual({
+      text: { name: 'blood' },
+      roles: [],
+      programs: [],
+      groups: [],
+      visibility: [],
     })
+
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 2 }))
+    expect(loadStoredTableFilters<TestFilters>('people')).toBeNull()
+    expect(localStorage.getItem(storageKeyFor('people', 2))).toBeNull()
   })
 
   it('persists filter changes to localStorage', async () => {
@@ -100,31 +113,6 @@ describe('useTableFilterPreferences', () => {
     })
   })
 
-  it('isolates stored filters by user-scoped key', async () => {
-    localStorage.setItem(
-      storageKeyFor('people', 1),
-      JSON.stringify({
-        text: { name: 'blood' },
-        roles: [],
-        programs: [],
-        groups: [],
-        visibility: [],
-      }),
-    )
-
-    const { result } = renderHook(() => usePreferences())
-
-    await waitFor(() => {
-      expect(result.current.value.text).toEqual({ name: 'blood' })
-    })
-
-    localStorage.setItem('hriv_user', JSON.stringify({ id: 2 }))
-    const second = renderHook(() => usePreferences())
-
-    expect(second.result.current.value).toEqual(defaultValue)
-    expect(localStorage.getItem(storageKeyFor('people', 2))).toBeNull()
-  })
-
   it('does not overwrite stored data on mount with empty defaults', async () => {
     const storageKey = storageKeyFor('people', 1)
     const stored = {
@@ -143,12 +131,7 @@ describe('useTableFilterPreferences', () => {
     })
   })
 
-  it('gracefully handles corrupted JSON and unavailable localStorage', () => {
-    localStorage.setItem(storageKeyFor('people', 1), '{not-json')
-
-    const { result } = renderHook(() => usePreferences())
-    expect(result.current.value).toEqual(defaultValue)
-
+  it('gracefully handles unavailable localStorage', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('unavailable')
     })
@@ -156,6 +139,7 @@ describe('useTableFilterPreferences', () => {
       throw new Error('unavailable')
     })
 
+    expect(loadStoredTableFilters<TestFilters>('manage-images')).toBeNull()
     const fallback = renderHook(() => usePreferences('manage-images'))
     expect(fallback.result.current.value).toEqual(defaultValue)
   })
