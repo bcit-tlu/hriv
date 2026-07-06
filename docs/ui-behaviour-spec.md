@@ -198,9 +198,10 @@ committed on Save) in the edit modals.
 #### ManagePage table row desaturation
 
 - **Given** an image row in the ManagePage table, **When** the image is
-  individually hidden **or** its category is hidden, **Then** the row
-  (including thumbnail) is dimmed via `data-dimmed` attribute; the visibility
-  Switch is disabled when hidden by category.
+  individually hidden **or** its category is hidden, **Then** the row's
+  non-interactive cells (and the thumbnail) are dimmed via a per-cell
+  `data-dimmed` attribute (independent of MUI internal class names); the
+  visibility Switch is disabled when hidden by category.
 
 #### Category dropdowns (CategoryPickerSelect, ManageCategoriesDialog)
 
@@ -237,6 +238,10 @@ committed on Save) in the edit modals.
   stay in sync. Images with no
   category (`category_id == null`) render as uncategorised (`—`) and can be
   assigned a category via the row's move action.
+- **Pagination controls render at both the top and bottom of the table** so
+  users can change page or rows-per-page without scrolling to the end of a long
+  list. Both controls are bound to the same page / rows-per-page state, so a
+  change made in one is reflected in the other.
 - **Auto-refresh:** `ManagePage` reloads (`loadImages`) whenever the
   `imagesVersion` prop changes. **Given** a bulk import job completes, **When**
   the app bumps `imagesVersion`, **Then** the table re-fetches so newly imported
