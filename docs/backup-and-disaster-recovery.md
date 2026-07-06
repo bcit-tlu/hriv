@@ -62,6 +62,11 @@ production role is:
 - **Why** — walking and checksumming millions of tile files is slow, produces
   enormous archives, and competes with Longhorn's efficient block-level snapshots.
 
+This same source-only approach is what the Admin UI's Filesystem Export uses.
+Excluding the tile pyramid removes the bulk of the export time; future
+parallel-compression work such as `pigz` or `tar --use-compress-program` may
+reduce wall time further, but that follow-up is not implemented yet.
+
 Set `BACKUP_MODE=production` (the Helm chart default) to enable this mode.
 Use `BACKUP_MODE=development` for local dev or manual exports that include
 the full `/data` tree.

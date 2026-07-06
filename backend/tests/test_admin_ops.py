@@ -159,23 +159,29 @@ def test_extract_and_restore_empty_archive(tmp_path) -> None:
 def test_create_tar_file_on_entry_reports_members(tmp_path) -> None:
     """on_entry callback receives every archive member name."""
     data_dir = tmp_path / "data"
+    source = data_dir / "source_images"
+    source.mkdir(parents=True)
     tiles = data_dir / "tiles"
-    tiles.mkdir(parents=True)
-    (tiles / "a.jpg").write_text("a")
-    (tiles / "b.jpg").write_text("b")
+    tiles.mkdir()
+    tasks = data_dir / "admin_tasks"
+    tasks.mkdir()
+    (source / "a.jpg").write_text("a")
+    (tiles / "tile.jpg").write_text("tile")
+    (tasks / "old.json").write_text("stale")
 
     dest = str(tmp_path / "out.tar.gz")
     entries: list[tuple[str, int]] = []
 
-    with patch("app.admin_ops._TASKS_DIR", str(data_dir / "admin_tasks")):
+    with patch("app.admin_ops._TASKS_DIR", str(tasks)):
         _create_tar_file(
             str(data_dir), dest,
             on_entry=lambda name, size: entries.append((name, size)),
         )
 
     names = [n for n, _ in entries]
-    assert any(n.endswith("a.jpg") for n in names)
-    assert any(n.endswith("b.jpg") for n in names)
+    assert any("source_images" in n and n.endswith("a.jpg") for n in names)
+    assert not any("/tiles/" in n or n.endswith("tiles/") for n in names)
+    assert not any("admin_tasks" in n for n in names)
     # Directory entries should end with /
     assert any(n.endswith("/") for n in names)
     # File entries report their size; directory entries report 0.
@@ -185,12 +191,15 @@ def test_create_tar_file_on_entry_reports_members(tmp_path) -> None:
     assert dir_sizes and all(s == 0 for s in dir_sizes)
 
 
-def test_create_tar_file_excludes_admin_tasks(tmp_path) -> None:
-    """admin_tasks directory must be excluded from the archive."""
+def test_create_tar_file_excludes_admin_tasks_and_tiles(tmp_path) -> None:
+    """admin_tasks and generated tiles must be excluded from the archive."""
     data_dir = tmp_path / "data"
+    source = data_dir / "source_images"
+    source.mkdir(parents=True)
     tiles = data_dir / "tiles"
-    tiles.mkdir(parents=True)
+    tiles.mkdir()
     (tiles / "tile.jpg").write_text("tile")
+    (source / "src.tiff").write_text("source")
     tasks = data_dir / "admin_tasks"
     tasks.mkdir()
     (tasks / "old.json").write_text("stale")
@@ -205,8 +214,10 @@ def test_create_tar_file_excludes_admin_tasks(tmp_path) -> None:
         )
 
     assert not any("admin_tasks" in e for e in entries)
+    assert not any("/tiles/" in e or e.endswith("tiles/") for e in entries)
     with tarfile.open(dest, "r:gz") as tar:
         assert not any("admin_tasks" in m for m in tar.getnames())
+        assert not any("/tiles/" in m or m.endswith("tiles") for m in tar.getnames())
 
 
 def test_create_tar_file_cancel_event_aborts(tmp_path) -> None:
@@ -896,9 +907,12 @@ async def test_run_files_export_empty_data_dir(tmp_path) -> None:
 
 async def test_run_files_export_success(tmp_path) -> None:
     data_dir = tmp_path / "data"
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
     tiles_dir = data_dir / "tiles"
-    tiles_dir.mkdir(parents=True)
-    (tiles_dir / "tile.jpg").write_text("data")
+    tiles_dir.mkdir()
+    (source_dir / "source.jpg").write_text("data")
+    (tiles_dir / "tile.jpg").write_text("derived")
 
     task = SimpleNamespace(
         id=1, task_type="files_export", status="pending", progress=0, log="",
@@ -926,15 +940,23 @@ async def test_run_files_export_success(tmp_path) -> None:
     assert task.progress == 100
     assert task.result_filename is not None
     assert task.result_filename.endswith(".tar.gz")
+    assert "Scan complete" in task.log
+    assert "source file(s)" in task.log
+    with tarfile.open(os.path.join(tasks_dir, task.result_filename), "r:gz") as tar:
+        names = tar.getnames()
+        assert any("source_images" in name for name in names)
+        assert not any("/tiles/" in name or name.endswith("/tiles") for name in names)
 
 
-def test_iter_export_files_skips_admin_tasks(tmp_path) -> None:
-    """``_iter_export_files`` reports sizes and omits ``admin_tasks``."""
+def test_iter_export_files_skips_admin_tasks_and_tiles(tmp_path) -> None:
+    """``_iter_export_files`` reports sizes and omits tiles/admin_tasks."""
     data_dir = tmp_path / "data"
+    source = data_dir / "source_images"
+    source.mkdir(parents=True)
     tiles = data_dir / "tiles"
-    tiles.mkdir(parents=True)
-    (tiles / "a.bin").write_bytes(b"0123456789")  # 10 bytes
-    (tiles / "b.bin").write_bytes(b"xy")          # 2 bytes
+    tiles.mkdir()
+    (source / "a.bin").write_bytes(b"0123456789")  # 10 bytes
+    (tiles / "b.bin").write_bytes(b"xy")          # excluded
     tasks = data_dir / "admin_tasks"
     tasks.mkdir()
     (tasks / "stale.tar.gz").write_bytes(b"A" * 1000)
@@ -943,25 +965,23 @@ def test_iter_export_files_skips_admin_tasks(tmp_path) -> None:
         results = list(_iter_export_files(str(data_dir)))
 
     names = {os.path.basename(p): sz for p, sz in results}
-    assert names == {"a.bin": 10, "b.bin": 2}
+    assert names == {"a.bin": 10}
 
 
 async def test_run_files_export_reports_byte_progress(tmp_path) -> None:
     """Progress advances between 20% and 95% as bytes are archived.
 
-    Previously the bar jumped from 20 to 100 when the tar completed,
-    leaving users staring at a stuck progress indicator during the slow
-    archiving phase.  The new pre-walk + per-entry byte accounting
-    should produce at least one intermediate progress update above 20
-    and below 95.
+    The scan phase establishes the payload size up front, then the
+    per-entry byte accounting should produce at least one intermediate
+    progress update above 20 and below 95.
     """
     data_dir = tmp_path / "data"
-    tiles = data_dir / "tiles"
-    tiles.mkdir(parents=True)
+    source = data_dir / "source_images"
+    source.mkdir(parents=True)
     # Write files large enough that the byte-based progress calculation
     # produces observable motion.
     for i in range(5):
-        (tiles / f"blob{i}.bin").write_bytes(b"X" * 1024)
+        (source / f"blob{i}.bin").write_bytes(b"X" * 1024)
 
     task = SimpleNamespace(
         id=1, task_type="files_export", status="pending", progress=0, log="",
@@ -990,7 +1010,7 @@ async def test_run_files_export_reports_byte_progress(tmp_path) -> None:
         # before the archive finishes.
         patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.0),
     ):
-        mock_settings.tiles_dir = str(tiles)
+        mock_settings.tiles_dir = str(data_dir / "tiles")
         await run_files_export(1)
 
     assert task.status == "completed"
@@ -1005,9 +1025,12 @@ async def test_run_files_export_reports_byte_progress(tmp_path) -> None:
 async def test_run_files_export_verbose_log(tmp_path) -> None:
     """Verbose archive entries appear in the task log."""
     data_dir = tmp_path / "data"
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
     tiles_dir = data_dir / "tiles"
-    tiles_dir.mkdir(parents=True)
-    (tiles_dir / "img.jpg").write_text("pixel")
+    tiles_dir.mkdir()
+    (source_dir / "img.jpg").write_text("pixel")
+    (tiles_dir / "derived.jpg").write_text("derived")
 
     task = SimpleNamespace(
         id=1, task_type="files_export", status="pending", progress=0, log="",
@@ -1042,9 +1065,9 @@ async def test_run_files_export_cancellation(tmp_path) -> None:
     import time
 
     data_dir = tmp_path / "data"
-    tiles_dir = data_dir / "tiles"
-    tiles_dir.mkdir(parents=True)
-    (tiles_dir / "f0.txt").write_text("0")
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
+    (source_dir / "f0.txt").write_text("0")
 
     task = SimpleNamespace(
         id=1, task_type="files_export", status="pending", progress=0, log="",
@@ -1056,10 +1079,9 @@ async def test_run_files_export_cancellation(tmp_path) -> None:
     async def _refresh(obj, attribute_names=None):
         nonlocal refresh_count
         refresh_count += 1
-        # There are 3 check_cancelled=True calls before the archive
-        # starts, so trigger cancellation later to exercise the
-        # during-archiving _flush_and_poll path.
-        if refresh_count >= 6:
+        # Trigger cancellation after the export has entered the archive
+        # phase so this test exercises the tar-thread cancellation path.
+        if refresh_count >= 4:
             task.status = "cancelling"
 
     def _slow_tar(data_dir, dest, *, cancel_event=None, on_entry=None):
@@ -1092,7 +1114,7 @@ async def test_run_files_export_cancellation(tmp_path) -> None:
         patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.05),
         patch("app.admin_ops._create_tar_file", side_effect=_slow_tar),
     ):
-        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.tiles_dir = str(data_dir / "tiles")
         await run_files_export(1)
 
     assert task.status == "cancelled"
@@ -1110,9 +1132,9 @@ async def test_run_files_export_force_cancelled_during_archive(tmp_path) -> None
     import time
 
     data_dir = tmp_path / "data"
-    tiles_dir = data_dir / "tiles"
-    tiles_dir.mkdir(parents=True)
-    (tiles_dir / "f0.txt").write_text("0")
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
+    (source_dir / "f0.txt").write_text("0")
 
     task = SimpleNamespace(
         id=1, task_type="files_export", status="pending", progress=0, log="",
@@ -1156,13 +1178,67 @@ async def test_run_files_export_force_cancelled_during_archive(tmp_path) -> None
         patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.05),
         patch("app.admin_ops._create_tar_file", side_effect=_slow_tar),
     ):
-        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.tiles_dir = str(data_dir / "tiles")
         await run_files_export(1)
 
     # The force-cancel propagates through TaskCancelled handling, which
     # sets the task to ``cancelled``; whichever terminal state wins the
     # race, the point is we exited promptly rather than hung.
     assert task.status == "cancelled"
+
+
+async def test_run_files_export_cancelled_during_scan(tmp_path) -> None:
+    """Cancelling during the scan phase stops before tar creation starts."""
+    import time
+
+    data_dir = tmp_path / "data"
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
+    (source_dir / "scan.dat").write_text("scan")
+
+    task = SimpleNamespace(
+        id=1, task_type="files_export", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=None, error_message=None,
+    )
+
+    refresh_count = 0
+
+    async def _refresh(obj, attribute_names=None):
+        nonlocal refresh_count
+        refresh_count += 1
+        if refresh_count >= 4:
+            task.status = "cancelling"
+
+    def _slow_scan(data_dir, *, cancel_event=None):
+        while cancel_event is not None and not cancel_event.is_set():
+            time.sleep(0.01)
+        raise TaskCancelled("Task cancelled by admin")
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session.refresh = AsyncMock(side_effect=_refresh)
+    mock_session.rollback = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    tasks_dir = str(tmp_path / "admin_tasks")
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.05),
+        patch("app.admin_ops._scan_export_files", side_effect=_slow_scan),
+        patch("app.admin_ops._create_tar_file") as mock_tar,
+    ):
+        mock_settings.tiles_dir = str(data_dir / "tiles")
+        await run_files_export(1)
+
+    assert task.status == "cancelled"
+    mock_tar.assert_not_called()
+    assert "Scanning source files" in task.log
 
 
 # ── run_files_import tests ─────────────────────────────────
@@ -1255,18 +1331,15 @@ def test_extract_and_restore_handles_cross_device_tmpdir(tmp_path, monkeypatch) 
 
 
 async def test_run_files_import_success(tmp_path) -> None:
-    # Create a valid archive
+    # Create a valid source-only archive
     data_dir = tmp_path / "orig"
-    tiles_dir = data_dir / "tiles"
-    tiles_dir.mkdir(parents=True)
     source_dir = data_dir / "source_images"
-    source_dir.mkdir()
-    (tiles_dir / "t.jpg").write_text("tile")
+    source_dir.mkdir(parents=True)
     (source_dir / "s.tiff").write_text("src")
 
     archive = str(tmp_path / "upload.tar.gz")
     with tarfile.open(archive, "w:gz") as tar:
-        tar.add(str(data_dir), arcname="data")
+        tar.add(str(source_dir), arcname="data/source_images")
 
     restore_dir = tmp_path / "restored"
 
@@ -1294,6 +1367,7 @@ async def test_run_files_import_success(tmp_path) -> None:
     assert task.status == "completed"
     assert task.progress == 100
     assert "Restored" in task.log
+    assert "Rebuild Tiles" in task.log
 
 
 async def test_run_db_import_with_groups(tmp_path) -> None:

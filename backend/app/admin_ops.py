@@ -1024,33 +1024,81 @@ async def run_rebuild_tiles(task_id: int) -> None:
 # ── Filesystem Export ──────────────────────────────────────
 
 
-def _iter_export_files(data_dir: str) -> Iterator[tuple[str, int]]:
-    """Yield ``(absolute_path, size_bytes)`` for every file that would
-    be included in a filesystem export of *data_dir*.
+def _iter_export_entries(
+    data_dir: str,
+    *,
+    cancel_event: threading.Event | None = None,
+) -> Iterator[tuple[str, str, int, bool]]:
+    """Yield archive entries for the filesystem export.
 
-    Mirrors the traversal logic in :func:`_create_tar_file` so callers
-    can pre-compute the total payload size for accurate progress
-    reporting without actually opening the tar archive.
+    The traversal excludes the generated tile tree under ``tiles/`` and
+    the ``admin_tasks/`` directory so the UI export stays source-only and
+    does not duplicate prior export artefacts.
+
+    Each yielded tuple is ``(arcname, absolute_path, size_bytes, is_dir)``.
+    ``size_bytes`` is ``0`` for directory entries.  If *cancel_event* is set
+    while walking, :class:`TaskCancelled` is raised promptly.
     """
     tasks_basename = os.path.basename(_TASKS_DIR)
+
+    def _check_cancel() -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            raise TaskCancelled("Task cancelled by admin")
+
     for dirpath, dirnames, filenames in os.walk(data_dir):
+        _check_cancel()
+
         rel = os.path.relpath(dirpath, data_dir)
         top = rel.split(os.sep)[0]
-        if top == tasks_basename:
+        if rel != "." and top in (tasks_basename, "tiles"):
             dirnames.clear()
             continue
-        if tasks_basename in dirnames:
-            dirnames.remove(tasks_basename)
+
+        # Prune admin_tasks and tiles from child dirs so os.walk skips them.
+        for excluded in (tasks_basename, "tiles"):
+            if excluded in dirnames:
+                dirnames.remove(excluded)
+
+        arcname = os.path.join("data", rel) if rel != "." else "data"
+        yield arcname, dirpath, 0, True
+
         for fname in filenames:
+            _check_cancel()
             fpath = os.path.join(dirpath, fname)
+            arc_fpath = os.path.join(arcname, fname)
             try:
                 size = os.path.getsize(fpath)
             except OSError:
                 # Symlink to missing target, race with deletion, etc.
                 # Skip silently — the archive will either include a
                 # zero-byte entry or skip it on its own.
-                continue
-            yield fpath, size
+                size = 0
+            yield arc_fpath, fpath, size, False
+
+
+def _iter_export_files(data_dir: str) -> Iterator[tuple[str, int]]:
+    """Yield ``(absolute_path, size_bytes)`` for exported files only."""
+    for _arcname, path, size, is_dir in _iter_export_entries(data_dir):
+        if not is_dir:
+            yield path, size
+
+
+def _scan_export_files(
+    data_dir: str,
+    *,
+    cancel_event: threading.Event | None = None,
+) -> tuple[int, int]:
+    """Count the exportable files and their total size in bytes."""
+    file_count = 0
+    total_bytes = 0
+    for _arcname, _path, size, is_dir in _iter_export_entries(
+        data_dir,
+        cancel_event=cancel_event,
+    ):
+        if not is_dir:
+            file_count += 1
+            total_bytes += size
+    return file_count, total_bytes
 
 
 def _create_tar_file(
@@ -1072,42 +1120,19 @@ def _create_tar_file(
     callers both a streaming activity feed and byte counts suitable for
     progress estimation.  ``size_bytes`` is ``0`` for directory entries.
     """
-    tasks_basename = os.path.basename(_TASKS_DIR)
-
-    def _check_cancel() -> None:
-        if cancel_event is not None and cancel_event.is_set():
-            raise TaskCancelled("Task cancelled by admin")
-
     with tarfile.open(dest, mode="w:gz") as tar:
-        for dirpath, dirnames, filenames in os.walk(data_dir):
-            _check_cancel()
-
-            rel = os.path.relpath(dirpath, data_dir)
-            top = rel.split(os.sep)[0]
-            if top == tasks_basename:
-                dirnames.clear()
-                continue
-
-            # Prune admin_tasks from child list so os.walk skips it
-            if tasks_basename in dirnames:
-                dirnames.remove(tasks_basename)
-
-            arcname = os.path.join("data", rel) if rel != "." else "data"
-            tar.add(dirpath, arcname=arcname, recursive=False)
-            if on_entry is not None:
-                on_entry(arcname + "/", 0)
-
-            for fname in filenames:
-                _check_cancel()
-                fpath = os.path.join(dirpath, fname)
-                arc_fpath = os.path.join(arcname, fname)
-                try:
-                    size = os.path.getsize(fpath)
-                except OSError:
-                    size = 0
-                tar.add(fpath, arcname=arc_fpath)
+        for arcname, path, size, is_dir in _iter_export_entries(
+            data_dir,
+            cancel_event=cancel_event,
+        ):
+            if is_dir:
+                tar.add(path, arcname=arcname, recursive=False)
                 if on_entry is not None:
-                    on_entry(arc_fpath, size)
+                    on_entry(arcname + "/", 0)
+            else:
+                tar.add(path, arcname=arcname)
+                if on_entry is not None:
+                    on_entry(arcname, size)
 
 
 _LOG_FLUSH_INTERVAL = 2  # seconds between verbose-log DB flushes
@@ -1153,30 +1178,87 @@ async def run_files_export(task_id: int) -> None:
             tmp.close()
             tmp_name = tmp.name
 
-            # Pre-walk to sum total bytes so we can report accurate
-            # progress during archiving (the slow phase — without this
-            # the bar sits at 20% for the duration).  Runs in a thread
-            # because walking millions of files is CPU/IO-bound.
+            cancel_event = threading.Event()
+
+            async def _poll_cancel_only() -> None:
+                while True:
+                    await asyncio.sleep(_LOG_FLUSH_INTERVAL)
+                    await session.refresh(task, attribute_names=["status"])
+                    if task.status in ("cancelling", "cancelled"):
+                        cancel_event.set()
+                        return
+
+            # Scan the export tree first so the UI can report the total
+            # source-only payload size before archiving begins.  The scan
+            # runs in a worker thread and watches the same cancellation
+            # event as the tar writer so a cancel request during the scan
+            # is observed promptly instead of waiting for the archive
+            # stage to start.
             await _update_task(
-                session, task, progress=15,
-                log_line="Calculating total export size…",
+                session,
+                task,
+                progress=15,
+                log_line=(
+                    "Scanning source files (generated tiles and admin_tasks "
+                    "are excluded)…"
+                ),
                 check_cancelled=True,
             )
-            total_bytes = await asyncio.to_thread(
-                lambda: sum(sz for _p, sz in _iter_export_files(str(data_dir)))
+            scan_task = asyncio.ensure_future(
+                asyncio.to_thread(
+                    _scan_export_files,
+                    str(data_dir),
+                    cancel_event=cancel_event,
+                )
             )
+            scan_poll_task = asyncio.ensure_future(_poll_cancel_only())
+            try:
+                done, _pending = await asyncio.wait(
+                    [scan_task, scan_poll_task],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if scan_task in done:
+                    scan_poll_task.cancel()
+                    file_count, total_bytes = scan_task.result()
+                else:
+                    poll_exc = scan_poll_task.exception() if scan_poll_task.done() else None
+                    if poll_exc is not None:
+                        cancel_event.set()
+                        try:
+                            await asyncio.wait_for(scan_task, timeout=5)
+                        except asyncio.TimeoutError:
+                            pass
+                        if not scan_task.done():
+                            scan_task.cancel()
+                        raise poll_exc
+                    try:
+                        await asyncio.wait_for(scan_task, timeout=5)
+                    except asyncio.TimeoutError:
+                        pass
+                    if scan_task.done():
+                        file_count, total_bytes = scan_task.result()
+                    else:
+                        scan_task.cancel()
+                        raise TaskCancelled("Task cancelled by admin")
+            finally:
+                if not scan_task.done():
+                    scan_task.cancel()
+                if not scan_poll_task.done():
+                    scan_poll_task.cancel()
+
             total_mb = total_bytes / (1024 * 1024)
             await _update_task(
-                session, task, progress=20,
+                session,
+                task,
+                progress=20,
                 log_line=(
-                    f"Total to archive: {total_mb:.1f} MB. "
-                    "Creating tar.gz archive…"
+                    f"Scan complete: {file_count} source file(s), {total_mb:.1f} MB "
+                    "to archive. Creating tar.gz archive…"
                 ),
                 check_cancelled=True,
             )
 
             # -- verbose archive with cancellation support --
-            cancel_event = threading.Event()
             entry_queue: queue.Queue[tuple[str, int]] = queue.Queue()
             bytes_added = 0
 
@@ -1711,8 +1793,9 @@ async def run_files_import(task_id: int) -> None:
                             )
 
             summary = (
-                f"Restored {restored['tile_files']} tile files, "
-                f"{restored['source_files']} source files."
+                f"Restored {restored['source_files']} source file(s). "
+                "Tiles are not included in filesystem exports; run Rebuild Tiles "
+                "after import so images have fresh tiles."
             )
             # Do NOT check_cancelled here — files have already been
             # extracted to disk and cannot be rolled back.  Marking the

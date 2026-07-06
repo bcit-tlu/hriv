@@ -559,9 +559,9 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
                     Export Files
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Create a compressed archive (.tar.gz) of all image tiles, thumbnails, and
-                    uploaded source files. The archive is built in the background — you will be
-                    notified when it is ready to download.
+                    Create a source-images-only compressed archive (.tar.gz) of the filesystem.
+                    Generated tiles are excluded and will be rebuilt after import. The archive is
+                    built in the background — you will be notified when it is ready to download.
                   </Typography>
                   <Button
                     variant="contained"
@@ -750,9 +750,9 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
                     Import Files
                   </Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    Upload a previously exported .tar.gz file to replace all tiles and source files
-                    on disk. This action is destructive — existing files will be overwritten. The
-                    import runs in the background.
+                    Upload a source-images-only .tar.gz file to replace the filesystem on disk.
+                    This action is destructive — existing files will be overwritten. Generated
+                    tiles are not included and must be regenerated with Rebuild Tiles after import.
                   </Typography>
                   <Button
                     variant="contained"
