@@ -374,6 +374,27 @@ describe('AppShell', () => {
       expect(screen.getByText('Capstone')).toBeInTheDocument()
     })
 
+    it('caps the profile popover width so chips wrap vertically', () => {
+      render(
+        <AppShell
+          {...makeProps({
+            profileOpen: true,
+            currentUser: {
+              name: 'Stu Dent',
+              email: 'stu@example.com',
+              role: 'student',
+              program_names: ['Program A', 'Program B', 'Program C'],
+              group_names: ['Group A', 'Group B', 'Group C'],
+            },
+          })}
+        />,
+      )
+
+      expect(screen.getByText('stu@example.com').closest('.MuiCard-root')).toHaveStyle({
+        maxWidth: '280px',
+      })
+    })
+
     it('shows Update link when canManageUsers', () => {
       render(<AppShell {...makeProps({ profileOpen: true, canManageUsers: true })} />)
       expect(screen.getByText('Update')).toBeInTheDocument()

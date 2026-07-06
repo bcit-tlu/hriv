@@ -51,11 +51,17 @@ export default function ImageTile({
           sx={{ objectFit: 'cover', objectPosition: 'center' }}
         />
         <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
             <Typography
               variant="h6"
-              noWrap
-              sx={!image.active ? { color: visColors.inactive } : undefined}
+              sx={{
+                ...(image.active ? {} : { color: visColors.inactive }),
+                display: '-webkit-box',
+                WebkitLineClamp: 3,
+                WebkitBoxOrient: 'vertical',
+                overflow: 'hidden',
+                wordBreak: 'break-word',
+              }}
             >
               {image.name}
             </Typography>

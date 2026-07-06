@@ -505,7 +505,7 @@ export default function AppShell(props: AppShellProps) {
                 horizontal: 'right',
               }}
             >
-              <Card sx={{ minWidth: 240 }}>
+              <Card sx={{ minWidth: 240, maxWidth: 280 }}>
                 <CardContent sx={{ '&:last-child': { pb: 1 } }}>
                   <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                     {currentUser.name}

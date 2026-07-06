@@ -83,6 +83,31 @@ describe('ImageTile', () => {
       })
     })
 
+    it('clamps the title to three lines and aligns the title row to the top', () => {
+      render(
+        <ImageTile
+          image={makeImage({
+            name: 'A very long image title that should wrap across multiple lines',
+          })}
+          onClick={vi.fn()}
+        />,
+      )
+
+      const title = screen.getByText(
+        'A very long image title that should wrap across multiple lines',
+      )
+      const titleRow = title.closest('.MuiBox-root')
+
+      expect(title).toHaveStyle({
+        display: '-webkit-box',
+        WebkitLineClamp: '3',
+        WebkitBoxOrient: 'vertical',
+        overflow: 'hidden',
+        wordBreak: 'break-word',
+      })
+      expect(titleRow).toHaveStyle({ alignItems: 'flex-start' })
+    })
+
     it('reduces tile opacity when visibility is inherited from category state', () => {
       render(
         <ImageTile

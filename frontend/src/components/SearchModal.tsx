@@ -801,7 +801,12 @@ export default function SearchModal({
                               color="text.secondary"
                               sx={{ wordBreak: 'break-word' }}
                             >
-                              <Typography variant="caption" color="text.disabled" component="span">
+                              <Typography
+                                variant="caption"
+                                color="text.secondary"
+                                component="span"
+                                sx={{ fontWeight: 700 }}
+                              >
                                 {fm.field}:{' '}
                               </Typography>
                               {before}
