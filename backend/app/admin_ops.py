@@ -1112,7 +1112,9 @@ def _create_tar_file(
 
     The ``admin_tasks`` subdirectory is excluded so that previously
     generated export artefacts (JSON dumps, tar.gz archives) do not
-    bloat successive filesystem exports.
+    bloat successive filesystem exports, and the generated ``tiles``
+    tree is excluded so exports stay source-only (tiles are rebuilt
+    from source images on import via the Rebuild Tiles task).
 
     If *cancel_event* is set while walking the tree, :class:`TaskCancelled`
     is raised so the caller can abort promptly.  *on_entry* is called
