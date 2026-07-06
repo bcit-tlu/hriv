@@ -406,6 +406,54 @@ export default function ManagePage({
     loadImages() // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on dependency change
   }, [loadImages, imagesVersion])
 
+  const filterSnapshot = useMemo(
+    () => ({
+      text: filters,
+      programs: [...selectedPrograms],
+      groups: [...selectedGroups],
+      visibility: [...selectedVisibility],
+    }),
+    [filters, selectedGroups, selectedPrograms, selectedVisibility],
+  )
+  const handleFilterHydrate = useCallback((stored: typeof filterSnapshot) => {
+    const storedText = stored?.text
+    if (storedText != null && typeof storedText === 'object' && !Array.isArray(storedText)) {
+      const nextFilters: Record<string, string> = {}
+      for (const [key, value] of Object.entries(storedText)) {
+        if (typeof value === 'string') {
+          nextFilters[key] = value
+        }
+      }
+      setFilters(nextFilters)
+    }
+
+    if (Array.isArray(stored?.programs)) {
+      setSelectedPrograms(
+        new Set(stored.programs.filter((value): value is number => Number.isInteger(value))),
+      )
+    }
+
+    if (Array.isArray(stored?.groups)) {
+      setSelectedGroups(
+        new Set(stored.groups.filter((value): value is number => Number.isInteger(value))),
+      )
+    }
+
+    if (Array.isArray(stored?.visibility)) {
+      const validVisibility = new Set<VisibilityFilterValue>(
+        stored.visibility.filter(
+          (value): value is VisibilityFilterValue => value === 'active' || value === 'inactive',
+        ),
+      )
+      setSelectedVisibility(validVisibility)
+    }
+  }, [])
+  useTableFilterPreferences({
+    tableKey: 'manage-images',
+    value: filterSnapshot,
+    onHydrate: handleFilterHydrate,
+  })
+
   useEffect(() => {
     const validIds = new Set(programs.map((program) => program.id))
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available programs
@@ -559,53 +607,6 @@ export default function ManagePage({
       ),
     [selectedVisibility],
   )
-  const filterSnapshot = useMemo(
-    () => ({
-      text: filters,
-      programs: [...selectedPrograms],
-      groups: [...selectedGroups],
-      visibility: [...selectedVisibility],
-    }),
-    [filters, selectedGroups, selectedPrograms, selectedVisibility],
-  )
-  const handleFilterHydrate = useCallback((stored: typeof filterSnapshot) => {
-    const storedText = stored?.text
-    if (storedText != null && typeof storedText === 'object' && !Array.isArray(storedText)) {
-      const nextFilters: Record<string, string> = {}
-      for (const [key, value] of Object.entries(storedText)) {
-        if (typeof value === 'string') {
-          nextFilters[key] = value
-        }
-      }
-      setFilters(nextFilters)
-    }
-
-    if (Array.isArray(stored?.programs)) {
-      setSelectedPrograms(
-        new Set(stored.programs.filter((value): value is number => Number.isInteger(value))),
-      )
-    }
-
-    if (Array.isArray(stored?.groups)) {
-      setSelectedGroups(
-        new Set(stored.groups.filter((value): value is number => Number.isInteger(value))),
-      )
-    }
-
-    if (Array.isArray(stored?.visibility)) {
-      const validVisibility = new Set<VisibilityFilterValue>(
-        stored.visibility.filter(
-          (value): value is VisibilityFilterValue => value === 'active' || value === 'inactive',
-        ),
-      )
-      setSelectedVisibility(validVisibility)
-    }
-  }, [])
-  useTableFilterPreferences({
-    tableKey: 'manage-images',
-    value: filterSnapshot,
-    onHydrate: handleFilterHydrate,
-  })
 
   // Filtered and sorted images
   const filteredImages = useMemo(() => {

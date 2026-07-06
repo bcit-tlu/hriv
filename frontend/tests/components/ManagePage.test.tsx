@@ -285,6 +285,26 @@ describe('ManagePage', () => {
     })
   })
 
+  it('prunes stale persisted program selections after hydrating filters', async () => {
+    localStorage.setItem(
+      'hrivpref:table-filters:manage-images:user:1',
+      JSON.stringify({
+        text: {},
+        programs: [999],
+        groups: [],
+        visibility: [],
+      }),
+    )
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText('No images match the selected filters.')).not.toBeInTheDocument()
+  })
+
   it('matches comma-separated name filters with OR semantics', async () => {
     const user = userEvent.setup()
     vi.mocked(fetchImages).mockResolvedValue([
