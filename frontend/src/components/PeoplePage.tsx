@@ -40,7 +40,12 @@ import {
 } from '../api'
 import type { ApiUser } from '../api'
 import type { Role, Program, Group } from '../types'
-import { formatFilterTerms, hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
+import {
+  getFilterTerms,
+  hasFilterTerms,
+  matchesTextFilter,
+  removeFilterTerm,
+} from '../tableFilterUtils'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import {
   getStoredIntSet,
@@ -135,10 +140,11 @@ const PEOPLE_COLUMN_FILTER_KEYS: Partial<Record<PeopleTableColumn, keyof Record<
   }
 
 type AppliedPeopleFilter =
-  | { key: 'name' | 'email'; label: string }
-  | { key: `role:${Role}`; label: string; role: Role }
-  | { key: `program:${number}`; label: string; programId: number }
-  | { key: `group:${number}`; label: string; groupId: number }
+  | { key: `name:${string}`; label: string; onDelete: () => void }
+  | { key: `email:${string}`; label: string; onDelete: () => void }
+  | { key: `role:${Role}`; label: string; onDelete: () => void }
+  | { key: `program:${number}`; label: string; onDelete: () => void }
+  | { key: `group:${number}`; label: string; onDelete: () => void }
 
 interface PeoplePageProps {
   programs: Program[]
@@ -239,22 +245,56 @@ export default function PeoplePage({
   })
   const appliedFilters = useMemo<AppliedPeopleFilter[]>(() => {
     const chips: AppliedPeopleFilter[] = []
-    const name = filters['name']?.trim()
-    const email = filters['email']?.trim()
+    const name = filters['name'] ?? ''
+    const email = filters['email'] ?? ''
 
-    if (hasFilterTerms(name ?? ''))
-      chips.push({ key: 'name', label: `Name: ${formatFilterTerms(name ?? '')}` })
-    if (hasFilterTerms(email ?? ''))
-      chips.push({ key: 'email', label: `Email: ${formatFilterTerms(email ?? '')}` })
+    for (const term of getFilterTerms(name)) {
+      chips.push({
+        key: `name:${term}`,
+        label: `Name: ${term}`,
+        onDelete: () => {
+          setFilters((prev) => ({ ...prev, name: removeFilterTerm(prev.name ?? '', term) }))
+          setCurrentPage(0)
+        },
+      })
+    }
+    for (const term of getFilterTerms(email)) {
+      chips.push({
+        key: `email:${term}`,
+        label: `Email: ${term}`,
+        onDelete: () => {
+          setFilters((prev) => ({ ...prev, email: removeFilterTerm(prev.email ?? '', term) }))
+          setCurrentPage(0)
+        },
+      })
+    }
     for (const role of ROLES.filter((item) => selectedRoles.has(item))) {
-      chips.push({ key: `role:${role}`, label: `Role: ${role}`, role })
+      chips.push({
+        key: `role:${role}`,
+        label: `Role: ${role}`,
+        onDelete: () => {
+          setSelectedRoles((prev) => {
+            const next = new Set(prev)
+            next.delete(role)
+            return next
+          })
+          setCurrentPage(0)
+        },
+      })
     }
 
     for (const program of selectedProgramOptions) {
       chips.push({
         key: `program:${program.id}`,
         label: `Program: ${program.name}`,
-        programId: program.id,
+        onDelete: () => {
+          setSelectedPrograms((prev) => {
+            const next = new Set(prev)
+            next.delete(program.id)
+            return next
+          })
+          setCurrentPage(0)
+        },
       })
     }
 
@@ -262,7 +302,14 @@ export default function PeoplePage({
       chips.push({
         key: `group:${group.id}`,
         label: `Group: ${group.name}`,
-        groupId: group.id,
+        onDelete: () => {
+          setSelectedGroups((prev) => {
+            const next = new Set(prev)
+            next.delete(group.id)
+            return next
+          })
+          setCurrentPage(0)
+        },
       })
     }
 
@@ -419,42 +466,6 @@ export default function PeoplePage({
     setSelectedPrograms(new Set())
     setSelectedGroups(new Set())
     setCurrentPage(0)
-  }
-
-  const handleAppliedFilterDelete = (filter: AppliedPeopleFilter) => {
-    if (filter.key === 'name' || filter.key === 'email') {
-      handleFilterChange(filter.key, '')
-      return
-    }
-
-    if ('role' in filter) {
-      setSelectedRoles((prev) => {
-        const next = new Set(prev)
-        next.delete(filter.role)
-        return next
-      })
-      setCurrentPage(0)
-      return
-    }
-
-    if ('programId' in filter) {
-      setSelectedPrograms((prev) => {
-        const next = new Set(prev)
-        next.delete(filter.programId)
-        return next
-      })
-      setCurrentPage(0)
-      return
-    }
-
-    if ('groupId' in filter) {
-      setSelectedGroups((prev) => {
-        const next = new Set(prev)
-        next.delete(filter.groupId)
-        return next
-      })
-      setCurrentPage(0)
-    }
   }
 
   const handleColumnVisibilityToggle = useCallback(
@@ -737,7 +748,7 @@ export default function PeoplePage({
                   key={filter.key}
                   label={filter.label}
                   size="small"
-                  onDelete={() => handleAppliedFilterDelete(filter)}
+                  onDelete={filter.onDelete}
                   sx={{
                     bgcolor: (theme) =>
                       theme.palette.mode === 'dark'
@@ -778,7 +789,7 @@ export default function PeoplePage({
         {isColumnVisible('name') && (
           <FilterPopoverButton
             label="Name"
-            activeCount={hasFilterTerms(filters['name'] ?? '') ? 1 : 0}
+            activeCount={getFilterTerms(filters['name'] ?? '').length}
             panelWidth={260}
           >
             <FilterTextPanel
@@ -794,7 +805,7 @@ export default function PeoplePage({
         {isColumnVisible('email') && (
           <FilterPopoverButton
             label="Email"
-            activeCount={hasFilterTerms(filters['email'] ?? '') ? 1 : 0}
+            activeCount={getFilterTerms(filters['email'] ?? '').length}
             panelWidth={280}
           >
             <FilterTextPanel

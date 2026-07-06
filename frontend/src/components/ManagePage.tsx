@@ -58,13 +58,19 @@ import ColumnVisibilityDialog, { type ColumnVisibilityOption } from './ColumnVis
 import EditImageModal from './EditImageModal'
 import type { ImageFormData, ReplaceImageData } from './EditImageModal'
 import FilterBar from './FilterBar'
+import CategoryFilterTreePanel from './CategoryFilterTreePanel'
 import FilterOptionPanel from './FilterOptionPanel'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
 import FilterTextPanel from './FilterTextPanel'
 import MoveImageDialog from './MoveImageDialog'
 import NoteDisplay from './NoteDisplay'
 import UploadImageModal from './UploadImageModal'
-import { formatFilterTerms, hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
+import {
+  getFilterTerms,
+  hasFilterTerms,
+  matchesTextFilter,
+  removeFilterTerm,
+} from '../tableFilterUtils'
 import {
   getStoredIntSet,
   getStoredTextFilters,
@@ -225,7 +231,6 @@ const MANAGE_ALL_COLUMNS: readonly ManageTableColumn[] = MANAGE_COLUMN_OPTIONS.m
 const MANAGE_COLUMN_FILTER_KEYS: Partial<Record<ManageTableColumn, string>> = {
   id: 'id',
   name: 'name',
-  category: 'category',
   copyright: 'copyright',
   note: 'note',
 }
@@ -242,6 +247,7 @@ type ManageStoredFilters = {
   programs?: unknown[]
   groups?: unknown[]
   visibility?: unknown[]
+  categories?: unknown[]
 }
 
 function getStoredVisibilityFilters(
@@ -261,12 +267,14 @@ function buildManageFilterSnapshot(
   selectedPrograms: Set<number>,
   selectedGroups: Set<number>,
   selectedVisibility: Set<VisibilityFilterValue>,
+  selectedCategories: Set<number>,
 ) {
   return {
     text: filters,
     programs: [...selectedPrograms],
     groups: [...selectedGroups],
     visibility: [...selectedVisibility],
+    categories: [...selectedCategories],
   }
 }
 
@@ -352,9 +360,11 @@ export default function ManagePage({
     [],
   )
   // Filter state seeds synchronously from storage unless navigation wins.
-  const [filters, setFilters] = useState<Record<string, string>>(() =>
-    getStoredTextFilters(storedFilters),
-  )
+  const [filters, setFilters] = useState<Record<string, string>>(() => {
+    const next = getStoredTextFilters(storedFilters)
+    delete next.category
+    return next
+  })
   const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(() =>
     initialProgramFilter ? new Set<number>() : getStoredIntSet(storedFilters, 'programs'),
   )
@@ -364,11 +374,15 @@ export default function ManagePage({
   const [selectedVisibility, setSelectedVisibility] = useState<Set<VisibilityFilterValue>>(() =>
     getStoredVisibilityFilters(storedFilters),
   )
+  const [selectedCategories, setSelectedCategories] = useState<Set<number>>(() =>
+    getStoredIntSet(storedFilters, 'categories'),
+  )
   const hasActiveFilters =
     Object.values(filters).some((v) => hasFilterTerms(v)) ||
     selectedPrograms.size > 0 ||
     selectedGroups.size > 0 ||
-    selectedVisibility.size > 0
+    selectedVisibility.size > 0 ||
+    selectedCategories.size > 0
 
   const categoryPaths = useMemo(() => buildCategoryPaths(categories), [categories])
 
@@ -457,8 +471,15 @@ export default function ManagePage({
   }, [loadImages, imagesVersion])
 
   const filterSnapshot = useMemo(
-    () => buildManageFilterSnapshot(filters, selectedPrograms, selectedGroups, selectedVisibility),
-    [filters, selectedGroups, selectedPrograms, selectedVisibility],
+    () =>
+      buildManageFilterSnapshot(
+        filters,
+        selectedPrograms,
+        selectedGroups,
+        selectedVisibility,
+        selectedCategories,
+      ),
+    [filters, selectedCategories, selectedGroups, selectedPrograms, selectedVisibility],
   )
   useTableFilterPreferences({
     tableKey: 'manage-images',
@@ -482,6 +503,15 @@ export default function ManagePage({
       return pruned.size === prev.size ? prev : pruned
     })
   }, [groups])
+
+  useEffect(() => {
+    const validIds = new Set(categoryPaths.keys())
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available categories
+    setSelectedCategories((prev) => {
+      const pruned = new Set([...prev].filter((id) => validIds.has(id)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [categoryPaths])
 
   // Sort handler
   const handleSort = (column: SortableColumn) => {
@@ -618,6 +648,13 @@ export default function ManagePage({
       ),
     [selectedVisibility],
   )
+  const selectedCategoryOptions = useMemo(
+    () =>
+      [...selectedCategories]
+        .map((id) => categoryPaths.get(id)?.category)
+        .filter((category): category is Category => category != null),
+    [categoryPaths, selectedCategories],
+  )
 
   // Filtered and sorted images
   const filteredImages = useMemo(() => {
@@ -629,9 +666,15 @@ export default function ManagePage({
       }
       if (!match('id', String(img.id))) return false
       if (!match('name', img.name)) return false
-      if (!match('category', getCategoryLabel(img))) return false
       if (!match('copyright', img.copyright ?? '')) return false
       if (!match('note', img.note ?? '')) return false
+      if (selectedCategories.size > 0) {
+        if (img.category_id == null) return false
+        const seg = categoryPaths.get(img.category_id)
+        if (!seg) return false
+        const candidateIds = new Set<number>([seg.category.id, ...seg.ancestors.map((a) => a.id)])
+        if (![...selectedCategories].some((value) => candidateIds.has(value))) return false
+      }
       if (selectedPrograms.size > 0) {
         const { direct, ancestor } = getInheritedProgramIds(img)
         const imagePrograms = new Set([...direct, ...ancestor])
@@ -650,12 +693,13 @@ export default function ManagePage({
     })
   }, [
     filters,
-    getCategoryLabel,
+    categoryPaths,
     getInheritedGroupIds,
     getInheritedProgramIds,
     hasActiveFilters,
     images,
     selectedGroups,
+    selectedCategories,
     selectedPrograms,
     selectedVisibility,
   ])
@@ -721,11 +765,17 @@ export default function ManagePage({
     setCurrentPage(0)
   }
 
+  const handleRemoveFilterTerm = (column: string, term: string) => {
+    setFilters((prev) => ({ ...prev, [column]: removeFilterTerm(prev[column] ?? '', term) }))
+    setCurrentPage(0)
+  }
+
   const handleClearFilters = () => {
     setFilters({})
     setSelectedPrograms(new Set())
     setSelectedGroups(new Set())
     setSelectedVisibility(new Set())
+    setSelectedCategories(new Set())
     setCurrentPage(0)
   }
 
@@ -741,6 +791,8 @@ export default function ManagePage({
           setSelectedGroups(new Set())
         } else if (column === 'active') {
           setSelectedVisibility(new Set())
+        } else if (column === 'category') {
+          setSelectedCategories(new Set())
         } else {
           const filterKey = MANAGE_COLUMN_FILTER_KEYS[column]
           if (filterKey) {
@@ -1060,16 +1112,15 @@ export default function ManagePage({
                   const labels: Record<string, string> = {
                     id: 'ID',
                     name: 'Name',
-                    category: 'Category',
                     copyright: 'Copyright',
                     note: 'Note',
                   }
-                  return (
+                  return getFilterTerms(value).map((term) => (
                     <Chip
-                      key={key}
-                      label={`${labels[key]}: ${formatFilterTerms(value)}`}
+                      key={`${key}:${term}`}
+                      label={`${labels[key] ?? key}: ${term}`}
                       size="small"
-                      onDelete={() => handleFilterChange(key, '')}
+                      onDelete={() => handleRemoveFilterTerm(key, term)}
                       sx={{
                         bgcolor: (theme) =>
                           theme.palette.mode === 'dark'
@@ -1083,8 +1134,35 @@ export default function ManagePage({
                         },
                       }}
                     />
-                  )
+                  ))
                 })}
+              {selectedCategoryOptions.map((category) => (
+                <Chip
+                  key={`category:${category.id}`}
+                  label={`Category: ${category.label}`}
+                  size="small"
+                  onDelete={() => {
+                    setSelectedCategories((prev) => {
+                      const next = new Set(prev)
+                      next.delete(category.id)
+                      return next
+                    })
+                    setCurrentPage(0)
+                  }}
+                  sx={{
+                    bgcolor: (theme) =>
+                      theme.palette.mode === 'dark'
+                        ? 'rgba(165, 36, 56, 0.22)'
+                        : 'rgba(165, 36, 56, 0.08)',
+                    color: 'secondary.main',
+                    border: '1px solid',
+                    borderColor: 'secondary.main',
+                    '& .MuiChip-deleteIcon': {
+                      color: 'secondary.main',
+                    },
+                  }}
+                />
+              ))}
               {selectedProgramOptions.map((program) => (
                 <Chip
                   key={`program:${program.id}`}
@@ -1192,7 +1270,7 @@ export default function ManagePage({
         {isColumnVisible('id') && (
           <FilterPopoverButton
             label="ID"
-            activeCount={hasFilterTerms(filters['id'] ?? '') ? 1 : 0}
+            activeCount={getFilterTerms(filters['id'] ?? '').length}
             panelWidth={160}
           >
             <FilterTextPanel
@@ -1208,7 +1286,7 @@ export default function ManagePage({
         {isColumnVisible('name') && (
           <FilterPopoverButton
             label="Name"
-            activeCount={hasFilterTerms(filters['name'] ?? '') ? 1 : 0}
+            activeCount={getFilterTerms(filters['name'] ?? '').length}
             panelWidth={260}
           >
             <FilterTextPanel
@@ -1224,23 +1302,31 @@ export default function ManagePage({
         {isColumnVisible('category') && (
           <FilterPopoverButton
             label="Category"
-            activeCount={hasFilterTerms(filters['category'] ?? '') ? 1 : 0}
-            panelWidth={280}
+            activeCount={selectedCategories.size}
+            panelWidth={300}
           >
-            <FilterTextPanel
-              value={filters['category'] ?? ''}
-              onChange={(value) => handleFilterChange('category', value)}
-              placeholder="Filter by category"
-              ariaLabel="Category"
-              helperText="Separate terms with commas"
-              width={280}
+            <CategoryFilterTreePanel
+              categories={categories}
+              selectedIds={selectedCategories}
+              onToggle={(id) => {
+                setSelectedCategories((prev) => {
+                  const next = new Set(prev)
+                  if (next.has(id)) {
+                    next.delete(id)
+                  } else {
+                    next.add(id)
+                  }
+                  return next
+                })
+                setCurrentPage(0)
+              }}
             />
           </FilterPopoverButton>
         )}
         {isColumnVisible('copyright') && (
           <FilterPopoverButton
             label="Copyright"
-            activeCount={hasFilterTerms(filters['copyright'] ?? '') ? 1 : 0}
+            activeCount={getFilterTerms(filters['copyright'] ?? '').length}
             panelWidth={260}
           >
             <FilterTextPanel
@@ -1256,7 +1342,7 @@ export default function ManagePage({
         {isColumnVisible('note') && (
           <FilterPopoverButton
             label="Note"
-            activeCount={hasFilterTerms(filters['note'] ?? '') ? 1 : 0}
+            activeCount={getFilterTerms(filters['note'] ?? '').length}
             panelWidth={260}
           >
             <FilterTextPanel
