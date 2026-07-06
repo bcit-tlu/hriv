@@ -126,6 +126,10 @@ describe('AdminPage', () => {
   })
 
   afterEach(() => {
+    // restoreAllMocks() undoes vi.spyOn (e.g. window.confirm) so a spy from
+    // one test can't leak into the next; module mocks from vi.mock() are
+    // unaffected and re-armed in beforeEach.
+    vi.restoreAllMocks()
     vi.useRealTimers()
   })
 
