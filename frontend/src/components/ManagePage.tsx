@@ -1744,7 +1744,7 @@ export default function ManagePage({
                       </TableCell>
                     )}
                     {isColumnVisible('annotations') && (
-                      <TableCell>
+                      <TableCell {...dimAttr}>
                         {hasCanvasAnnotations(img) ? (
                           <span
                             role="img"
