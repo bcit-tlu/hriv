@@ -126,7 +126,7 @@ For a full cross-environment clone, follow this order:
 2. **Filesystem import**
 3. **Rebuild Tiles**
 
-> Compression is parallelized with `pigz` when the backup container image
+> Compression is parallelized with `pigz` when the backend container image
 > provides it (the backend Dockerfile installs it); otherwise the export falls
 > back to single-threaded gzip automatically.
 
