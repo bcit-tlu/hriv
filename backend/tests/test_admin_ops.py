@@ -1,6 +1,8 @@
 """Tests for the background admin operations module."""
 
 import json
+import gzip
+import io
 import os
 import tarfile
 import tempfile
@@ -156,6 +158,101 @@ def test_extract_and_restore_empty_archive(tmp_path) -> None:
 # ── _create_tar_file tests ─────────────────────────────────
 
 
+class _FakePigzStdin:
+    def __init__(self):
+        self._buffer = bytearray()
+        self.closed = False
+
+    def write(self, data):
+        self._buffer.extend(data)
+        return len(data)
+
+    def flush(self):
+        return None
+
+    def close(self):
+        self.closed = True
+
+    def tell(self):
+        return len(self._buffer)
+
+    def getvalue(self):
+        return bytes(self._buffer)
+
+
+class _FakePigzProcess:
+    def __init__(self, stdout):
+        self.stdin = _FakePigzStdin()
+        self.stdout = stdout
+        self.stderr = io.BytesIO()
+        self.returncode = None
+        self._terminated = False
+        self._killed = False
+
+    def poll(self):
+        return self.returncode
+
+    def wait(self, timeout=None):
+        if self.returncode is not None:
+            return self.returncode
+        if self._terminated:
+            self.returncode = 1
+            return self.returncode
+        if self._killed:
+            self.returncode = -9
+            return self.returncode
+        self.stdout.write(gzip.compress(self.stdin.getvalue()))
+        self.stdout.flush()
+        self.returncode = 0
+        return self.returncode
+
+    def terminate(self):
+        self._terminated = True
+
+    def kill(self):
+        self._killed = True
+
+
+def _make_source_only_tree(tmp_path):
+    data_dir = tmp_path / "data"
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir(parents=True)
+    nested_dir = source_dir / "nested"
+    nested_dir.mkdir()
+    (source_dir / "source.jpg").write_text("data")
+    (nested_dir / "nested.txt").write_text("nested")
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir()
+    (tiles_dir / "tile.jpg").write_text("derived")
+    tasks_dir = data_dir / "admin_tasks"
+    tasks_dir.mkdir()
+    (tasks_dir / "old.tar.gz").write_text("old")
+    return data_dir, tiles_dir, tasks_dir
+
+
+def _normalize_archive_names(names):
+    return {name.rstrip("/") for name in names}
+
+
+def _assert_source_only_archive(path):
+    with tarfile.open(path, "r:gz") as tar:
+        names = tar.getnames()
+    normalized = _normalize_archive_names(names)
+    assert "data" in normalized
+    assert "data/source_images" in normalized
+    assert "data/source_images/nested" in normalized
+    assert "data/source_images/source.jpg" in normalized
+    assert "data/source_images/nested/nested.txt" in normalized
+    assert not any("tiles" in name for name in normalized)
+    assert not any("admin_tasks" in name for name in normalized)
+
+
+def _assert_callback_matches_archive(entries, path):
+    with tarfile.open(path, "r:gz") as tar:
+        names = tar.getnames()
+    assert _normalize_archive_names(name for name, _size in entries) == _normalize_archive_names(names)
+
+
 def test_create_tar_file_on_entry_reports_members(tmp_path) -> None:
     """on_entry callback receives every archive member name."""
     data_dir = tmp_path / "data"
@@ -218,6 +315,59 @@ def test_create_tar_file_excludes_admin_tasks_and_tiles(tmp_path) -> None:
     with tarfile.open(dest, "r:gz") as tar:
         assert not any("admin_tasks" in m for m in tar.getnames())
         assert not any("/tiles/" in m or m.endswith("tiles") for m in tar.getnames())
+
+
+def test_create_tar_file_uses_pigz_when_available(tmp_path) -> None:
+    data_dir, tiles_dir, tasks_dir = _make_source_only_tree(tmp_path)
+    dest = str(tmp_path / "pigz.tar.gz")
+    entries: list[tuple[str, int]] = []
+    processes: list[_FakePigzProcess] = []
+
+    def _fake_popen(*_args, **kwargs):
+        proc = _FakePigzProcess(kwargs["stdout"])
+        processes.append(proc)
+        return proc
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", str(tasks_dir)),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops.shutil.which", return_value="/usr/bin/pigz"),
+        patch("app.admin_ops.subprocess.Popen", side_effect=_fake_popen) as mock_popen,
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        _create_tar_file(
+            str(data_dir), dest,
+            on_entry=lambda name, size: entries.append((name, size)),
+        )
+
+    mock_popen.assert_called_once()
+    assert processes and processes[0].returncode == 0
+    assert os.path.exists(dest)
+    _assert_source_only_archive(dest)
+    _assert_callback_matches_archive(entries, dest)
+
+
+def test_create_tar_file_falls_back_without_pigz(tmp_path) -> None:
+    data_dir, tiles_dir, tasks_dir = _make_source_only_tree(tmp_path)
+    dest = str(tmp_path / "fallback.tar.gz")
+    entries: list[tuple[str, int]] = []
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", str(tasks_dir)),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops.shutil.which", return_value=None),
+        patch("app.admin_ops.subprocess.Popen") as mock_popen,
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        _create_tar_file(
+            str(data_dir), dest,
+            on_entry=lambda name, size: entries.append((name, size)),
+        )
+
+    mock_popen.assert_not_called()
+    assert os.path.exists(dest)
+    _assert_source_only_archive(dest)
+    _assert_callback_matches_archive(entries, dest)
 
 
 def test_create_tar_file_cancel_event_aborts(tmp_path) -> None:

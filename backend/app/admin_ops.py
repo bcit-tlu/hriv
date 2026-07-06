@@ -12,6 +12,7 @@ import logging
 import os
 import queue
 import shutil
+import subprocess
 import tarfile
 import tempfile
 import threading
@@ -1123,19 +1124,76 @@ def _create_tar_file(
     callers both a streaming activity feed and byte counts suitable for
     progress estimation.  ``size_bytes`` is ``0`` for directory entries.
     """
-    with tarfile.open(dest, mode="w:gz") as tar:
-        for arcname, path, size, is_dir in _iter_export_entries(
-            data_dir,
-            cancel_event=cancel_event,
-        ):
-            if is_dir:
-                tar.add(path, arcname=arcname, recursive=False)
-                if on_entry is not None:
-                    on_entry(arcname + "/", 0)
-            else:
-                tar.add(path, arcname=arcname)
-                if on_entry is not None:
-                    on_entry(arcname, size)
+    pigz_path = shutil.which("pigz")
+    if pigz_path is None:
+        with tarfile.open(dest, mode="w:gz") as tar:
+            for arcname, path, size, is_dir in _iter_export_entries(
+                data_dir,
+                cancel_event=cancel_event,
+            ):
+                if is_dir:
+                    tar.add(path, arcname=arcname, recursive=False)
+                    if on_entry is not None:
+                        on_entry(arcname + "/", 0)
+                else:
+                    tar.add(path, arcname=arcname)
+                    if on_entry is not None:
+                        on_entry(arcname, size)
+        return
+
+    archive_fh = open(dest, "wb")
+    proc = subprocess.Popen(
+        [pigz_path, "-c"],
+        stdin=subprocess.PIPE,
+        stdout=archive_fh,
+        stderr=subprocess.PIPE,
+    )
+    success = False
+    try:
+        assert proc.stdin is not None
+        with tarfile.open(fileobj=proc.stdin, mode="w|") as tar:
+            for arcname, path, size, is_dir in _iter_export_entries(
+                data_dir,
+                cancel_event=cancel_event,
+            ):
+                if is_dir:
+                    tar.add(path, arcname=arcname, recursive=False)
+                    if on_entry is not None:
+                        on_entry(arcname + "/", 0)
+                else:
+                    tar.add(path, arcname=arcname)
+                    if on_entry is not None:
+                        on_entry(arcname, size)
+
+        proc.stdin.close()
+        returncode = proc.wait()
+        if returncode != 0:
+            stderr = proc.stderr.read().decode("utf-8", errors="replace").strip() if proc.stderr is not None else ""
+            raise RuntimeError(
+                f"pigz failed with exit code {returncode}"
+                + (f": {stderr}" if stderr else "")
+            )
+        success = True
+    except Exception:
+        if proc.stdin is not None and not proc.stdin.closed:
+            proc.stdin.close()
+        if proc.poll() is None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+        raise
+    finally:
+        if proc.stderr is not None:
+            proc.stderr.close()
+        archive_fh.close()
+        if not success:
+            try:
+                os.unlink(dest)
+            except OSError:
+                pass
 
 
 _LOG_FLUSH_INTERVAL = 2  # seconds between verbose-log DB flushes
