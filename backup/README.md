@@ -26,6 +26,12 @@ The service runs in the background and creates snapshots on the configured sched
 docker compose --profile backup run --rm backup list
 ```
 
+### Check backup freshness
+
+```bash
+docker compose --profile backup run --rm backup status
+```
+
 ### Restore from the latest snapshot
 
 ```bash
@@ -53,6 +59,8 @@ Each snapshot is a `.tar.gz` archive containing:
 > **See also:** [`docs/backup-and-disaster-recovery.md`](../docs/backup-and-disaster-recovery.md)
 > for the full production strategy — data classification, Longhorn policies,
 > restore order, and the DR runbook.
+>
+> **Quick operator checklist:** [`docs/backup-restore-runbook.md`](../docs/backup-restore-runbook.md).
 
 In production deployments, the Python backup service is **not** the primary protection for the large generated tile tree. Its supported production role is:
 
@@ -98,6 +106,7 @@ All settings are controlled via environment variables in `docker-compose.yml` or
 | `DATA_DIR`                        | `/data`                                                   | Path to the image data volume                                                      |
 | `BACKUP_CRON_SCHEDULE`            | `0 2 * * *`                                               | Cron expression for scheduled backups                                              |
 | `BACKUP_RETENTION_COUNT`          | `30`                                                      | Number of snapshots to keep (older ones are deleted)                               |
+| `BACKUP_STALE_HOURS`              | `26`                                                      | Freshness threshold for the `status` command before a backup is considered stale   |
 | `BACKUP_MODE`                     | `development` (docker-compose), `production` (Helm chart) | `development` = DB + source images + tiles; `production` = DB + source images only |
 | `AZURE_STORAGE_CONNECTION_STRING` | _(empty)_                                                 | Azure Blob Storage connection string                                               |
 | `AZURE_STORAGE_CONTAINER`         | _(empty)_                                                 | Azure Blob Storage container name                                                  |

@@ -9,12 +9,14 @@ Usage:
     python backup.py restore          # Restore the latest snapshot
     python backup.py restore <name>   # Restore a specific snapshot
     python backup.py list             # List available snapshots
+    python backup.py status           # Show the last-success heartbeat
     python backup.py cron             # Start the cron scheduler (default)
 """
 
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
 import os
@@ -27,7 +29,7 @@ import tarfile
 import tempfile
 import time
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -65,6 +67,7 @@ AZURE_BLOB_PREFIX: str = _env("AZURE_BLOB_PREFIX", "hriv-backups")
 # Schedule & retention
 BACKUP_CRON_SCHEDULE: str = _env("BACKUP_CRON_SCHEDULE", "0 2 * * *")
 BACKUP_RETENTION_COUNT: int = int(_env("BACKUP_RETENTION_COUNT", "30"))
+BACKUP_STALE_HOURS: int = int(_env("BACKUP_STALE_HOURS", "26"))
 
 # Operating mode: "development" backs up DB + source images + tiles.
 # "production" backs up DB + source images only; tiles are excluded and
@@ -78,6 +81,83 @@ if BACKUP_MODE not in ("development", "production"):
 def _exclude_tiles() -> bool:
     """Return True when the service is configured for production mode."""
     return BACKUP_MODE == "production"
+
+
+def _local_backup_dir() -> Path:
+    return Path("/backups")
+
+
+def _last_success_marker_path() -> Path:
+    return _local_backup_dir() / "LAST_SUCCESS.json"
+
+
+def _last_success_marker_blob_name() -> str:
+    prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
+    return f"{prefix}LAST_SUCCESS.json"
+
+
+def _write_last_success_marker(
+    snapshot_name: str,
+    *,
+    created_at: datetime,
+    archive_size: int | None,
+) -> None:
+    marker = {
+        "snapshot_name": snapshot_name,
+        "created_at": created_at.isoformat(),
+        "archive_size": archive_size,
+        "backup_mode": BACKUP_MODE,
+        "tiles_excluded": _exclude_tiles(),
+    }
+    payload = json.dumps(marker, indent=2).encode()
+
+    try:
+        if _azure_configured():
+            container = _blob_container_client()
+            container.upload_blob(
+                _last_success_marker_blob_name(),
+                io.BytesIO(payload),
+                overwrite=True,
+            )
+        else:
+            path = _last_success_marker_path()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(payload)
+    except Exception:
+        log.exception("Failed to write last-success marker")
+
+
+def _read_last_success_marker() -> dict | None:
+    try:
+        if _azure_configured():
+            container = _blob_container_client()
+            stream = container.download_blob(_last_success_marker_blob_name())
+            return json.loads(stream.readall())
+
+        path = _last_success_marker_path()
+        if not path.exists():
+            return None
+        return json.loads(path.read_text())
+    except Exception:
+        log.exception("Failed to read last-success marker")
+        return None
+
+
+def _format_age(delta: timedelta) -> str:
+    seconds = max(0, int(delta.total_seconds()))
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    parts: list[str] = []
+    if days:
+        parts.append(f"{days}d")
+    if hours or parts:
+        parts.append(f"{hours}h")
+    if minutes or parts:
+        parts.append(f"{minutes}m")
+    if not parts:
+        parts.append(f"{secs}s")
+    return " ".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +242,7 @@ def run_backup() -> Path | None:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     snapshot_name = f"hriv-backup-{timestamp}"
     log.info("Starting backup: %s", snapshot_name)
+    created_at = datetime.now(timezone.utc)
 
     db = _parse_db_url(DATABASE_URL)
     pg = _pg_env(db)
@@ -204,7 +285,7 @@ def run_backup() -> Path | None:
         tiles_path = Path(DATA_DIR) / "tiles"
         manifest = {
             "snapshot_name": snapshot_name,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": created_at.isoformat(),
             "database_url_host": db["host"],
             "database_name": db["dbname"],
             "data_dir": DATA_DIR,
@@ -268,6 +349,11 @@ def run_backup() -> Path | None:
 
             # 6. Enforce retention policy --------------------------------------
             _enforce_retention(container)
+            _write_last_success_marker(
+                snapshot_name,
+                created_at=created_at,
+                archive_size=archive_size,
+            )
         else:
             log.warning(
                 "Azure Blob Storage not configured – archive saved locally at %s only. "
@@ -281,6 +367,11 @@ def run_backup() -> Path | None:
             shutil.copy2(str(archive_path), str(final))
             log.info("Local backup saved to %s", final)
             _enforce_local_retention()
+            _write_last_success_marker(
+                snapshot_name,
+                created_at=created_at,
+                archive_size=final.stat().st_size,
+            )
             return final
 
     log.info("Backup %s completed successfully", snapshot_name)
@@ -387,6 +478,48 @@ def list_snapshots() -> list[dict]:
 
     snapshots.sort(key=lambda s: s["name"], reverse=True)
     return snapshots
+
+
+def run_status() -> bool:
+    """Print the last-success heartbeat and return whether backup health is fresh."""
+    marker = _read_last_success_marker()
+    try:
+        snapshots = list_snapshots()
+    except Exception:
+        log.exception("Failed to list snapshots")
+        snapshots = []
+    newest = snapshots[0]["name"] if snapshots else "(none)"
+    snapshot_count = len(snapshots)
+    now = datetime.now(timezone.utc)
+    print(f"Newest snapshot: {newest}")
+    print(f"Snapshot count: {snapshot_count}")
+
+    if not marker:
+        print("Status: MISSING")
+        print("Last successful backup: (missing)")
+        return False
+
+    try:
+        created_at = datetime.fromisoformat(str(marker["created_at"]))
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        age = now - created_at.astimezone(timezone.utc)
+        stale_after = timedelta(hours=BACKUP_STALE_HOURS)
+        stale = age > stale_after
+        status_label = "STALE" if stale else "FRESH"
+        print(f"Status: {status_label}")
+        print(f"Last successful backup: {created_at.isoformat()}")
+        print(f"Age: {_format_age(age)}")
+        print(f"Backup mode: {marker.get('backup_mode', '?')}")
+        print(f"Tiles excluded: {marker.get('tiles_excluded', '?')}")
+        if stale or snapshot_count == 0:
+            return False
+        return True
+    except Exception:
+        log.exception("Invalid last-success marker payload")
+        print("Status: MISSING")
+        print("Last successful backup: (missing)")
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -704,6 +837,9 @@ def main() -> None:
             for s in snapshots:
                 size_mb = s["size"] / (1024 * 1024)
                 print(f"{s['name']:<45} {size_mb:>10.1f}MB {s['last_modified']:>28} {s['location']:>10}")
+
+    elif command == "status":
+        sys.exit(0 if run_status() else 1)
 
     elif command == "cron":
         run_cron()
