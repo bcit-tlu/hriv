@@ -765,6 +765,11 @@ export default function ManagePage({
     setCurrentPage(0)
   }
 
+  const handleRemoveFilterTerm = (column: string, term: string) => {
+    setFilters((prev) => ({ ...prev, [column]: removeFilterTerm(prev[column] ?? '', term) }))
+    setCurrentPage(0)
+  }
+
   const handleClearFilters = () => {
     setFilters({})
     setSelectedPrograms(new Set())
@@ -1113,9 +1118,9 @@ export default function ManagePage({
                   return getFilterTerms(value).map((term) => (
                     <Chip
                       key={`${key}:${term}`}
-                      label={`${labels[key]}: ${term}`}
+                      label={`${labels[key] ?? key}: ${term}`}
                       size="small"
-                      onDelete={() => handleFilterChange(key, removeFilterTerm(value, term))}
+                      onDelete={() => handleRemoveFilterTerm(key, term)}
                       sx={{
                         bgcolor: (theme) =>
                           theme.palette.mode === 'dark'

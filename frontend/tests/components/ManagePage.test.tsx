@@ -799,6 +799,73 @@ describe('ManagePage', () => {
     expect(screen.getByText('1 of 2 images')).toBeInTheDocument()
   })
 
+  it('removes same-column text chips through the latest filter state', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        id: 101,
+        name: 'Blood Smear',
+        thumb: '/thumb-a.jpg',
+        tile_sources: '/tile-a.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 102,
+        name: 'Urine Slide',
+        thumb: '/thumb-b.jpg',
+        tile_sources: '/tile-b.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 1,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+    await screen.findByText('Urine Slide')
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    const nameFilterButton = within(filterBar).getByRole('button', { name: 'Name' })
+    await user.click(nameFilterButton)
+    await user.type(screen.getByPlaceholderText('Filter by name'), 'Blood, Smear')
+    await user.click(nameFilterButton)
+
+    expect(within(filterBar).getByText('Name: Blood')).toBeInTheDocument()
+    expect(within(filterBar).getByText('Name: Smear')).toBeInTheDocument()
+
+    const deleteIcons = within(filterBar).getAllByTestId('CancelIcon')
+    fireEvent.click(deleteIcons[0])
+    fireEvent.click(deleteIcons[1])
+
+    await waitFor(() => {
+      expect(within(filterBar).queryByText('Name: Blood')).not.toBeInTheDocument()
+      expect(within(filterBar).queryByText('Name: Smear')).not.toBeInTheDocument()
+      expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+      expect(screen.getByText('Urine Slide')).toBeInTheDocument()
+    })
+  })
+
   it('keeps duplicate program names as distinct filter options keyed by id', async () => {
     const duplicatePrograms: Program[] = [
       { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
