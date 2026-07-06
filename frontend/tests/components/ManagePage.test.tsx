@@ -95,6 +95,46 @@ describe('ManagePage', () => {
     expect(groupChip).toBeInTheDocument()
   })
 
+  it('renders pagination controls at both the top and bottom of the table (#668)', async () => {
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+
+    expect(screen.getAllByLabelText('Go to next page')).toHaveLength(2)
+    expect(screen.getAllByLabelText('Go to previous page')).toHaveLength(2)
+  })
+
+  it('marks non-interactive cells of dimmed (inactive) rows with data-dimmed, leaving interactive cells unmarked (#651)', async () => {
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        id: 101,
+        name: 'Blood Smear',
+        thumb: '/thumb.jpg',
+        tile_sources: '/tile.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: false,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    const nameCell = (await screen.findByText('Blood Smear')).closest('td')
+    expect(nameCell).toHaveAttribute('data-dimmed')
+
+    const actionsCell = screen.getByRole('button', { name: 'actions' }).closest('td')
+    expect(actionsCell).not.toHaveAttribute('data-dimmed')
+  })
+
   it('uses reduced opacity for inherited program and group chips', async () => {
     const inheritedCategories = [
       makeCategory({

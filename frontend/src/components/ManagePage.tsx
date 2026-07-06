@@ -757,6 +757,22 @@ export default function ManagePage({
     currentPage * rowsPerPage + rowsPerPage,
   )
 
+  const renderPagination = (position: 'top' | 'bottom') => (
+    <TablePagination
+      rowsPerPageOptions={[5, 10, 25, 50]}
+      component="div"
+      count={sortedImages.length}
+      rowsPerPage={rowsPerPage}
+      page={currentPage}
+      onPageChange={(_, newPage) => setCurrentPage(newPage)}
+      onRowsPerPageChange={(e) => {
+        setRowsPerPage(parseInt(e.target.value, 10))
+        setCurrentPage(0)
+      }}
+      sx={position === 'top' ? { borderBottom: 1, borderColor: 'divider' } : undefined}
+    />
+  )
+
   const selectedInView = useMemo(
     () => pageImages.filter((img) => selected.has(img.id)).length,
     [pageImages, selected],
@@ -1317,6 +1333,7 @@ export default function ManagePage({
         </Typography>
       ) : (
         <TableContainer component={Paper} variant="outlined">
+          {renderPagination('top')}
           <Table size="small">
             <TableHead
               sx={{ '& .MuiTableCell-head': { bgcolor: (theme) => filterSurfaceBg(theme) } }}
@@ -1480,19 +1497,17 @@ export default function ManagePage({
             <TableBody>
               {pageImages.map((img) => {
                 const categoryHidden = isImageCategoryHidden(img)
+                const dimmed = !img.active || categoryHidden
+                const dimAttr = dimmed ? { 'data-dimmed': true } : undefined
                 return (
                   <TableRow
                     key={img.id}
                     hover
                     selected={selected.has(img.id)}
-                    {...((!img.active || categoryHidden) && { 'data-dimmed': true })}
                     sx={{
                       cursor: 'pointer',
-                      '&[data-dimmed] .MuiTableCell-body:not([data-interactive])': {
-                        color: visColors.inactive,
-                      },
-                      '&[data-dimmed] .MuiTableCell-body:not([data-interactive]) a, &[data-dimmed] .MuiTableCell-body:not([data-interactive]) .MuiLink-root':
-                        { color: 'inherit' },
+                      '& td[data-dimmed]': { color: visColors.inactive },
+                      '& td[data-dimmed] a, & td[data-dimmed] button': { color: 'inherit' },
                     }}
                     onClick={() => handleRowClick(img)}
                   >
@@ -1533,10 +1548,10 @@ export default function ManagePage({
                         />
                       </TableCell>
                     )}
-                    {isColumnVisible('id') && <TableCell>{img.id}</TableCell>}
-                    {isColumnVisible('name') && <TableCell>{img.name}</TableCell>}
+                    {isColumnVisible('id') && <TableCell {...dimAttr}>{img.id}</TableCell>}
+                    {isColumnVisible('name') && <TableCell {...dimAttr}>{img.name}</TableCell>}
                     {isColumnVisible('category') && (
-                      <TableCell>
+                      <TableCell {...dimAttr}>
                         <CategoryBreadcrumb
                           categoryId={img.category_id}
                           categoryPaths={categoryPaths}
@@ -1545,14 +1560,16 @@ export default function ManagePage({
                         />
                       </TableCell>
                     )}
-                    {isColumnVisible('copyright') && <TableCell>{img.copyright ?? '—'}</TableCell>}
+                    {isColumnVisible('copyright') && (
+                      <TableCell {...dimAttr}>{img.copyright ?? '—'}</TableCell>
+                    )}
                     {isColumnVisible('note') && (
-                      <TableCell sx={{ maxWidth: 260, minWidth: 180 }}>
+                      <TableCell {...dimAttr} sx={{ maxWidth: 260, minWidth: 180 }}>
                         {img.note ? <NoteDisplay note={img.note} collapsedLines={2} /> : '—'}
                       </TableCell>
                     )}
                     {isColumnVisible('program') && (
-                      <TableCell onClick={(e) => e.stopPropagation()}>
+                      <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
                         {(() => {
                           const { direct, ancestor } = getInheritedProgramIds(img)
                           if (direct.length === 0 && ancestor.length === 0) return 'All programs'
@@ -1617,7 +1634,7 @@ export default function ManagePage({
                       </TableCell>
                     )}
                     {isColumnVisible('group') && (
-                      <TableCell onClick={(e) => e.stopPropagation()}>
+                      <TableCell {...dimAttr} onClick={(e) => e.stopPropagation()}>
                         {(() => {
                           const { direct, ancestor } = getInheritedGroupIds(img)
                           if (direct.length === 0 && ancestor.length === 0) return 'All groups'
@@ -1694,25 +1711,29 @@ export default function ManagePage({
                       </TableCell>
                     )}
                     {isColumnVisible('updated_at') && (
-                      <TableCell>{new Date(img.updated_at).toLocaleDateString()}</TableCell>
+                      <TableCell {...dimAttr}>
+                        {new Date(img.updated_at).toLocaleDateString()}
+                      </TableCell>
                     )}
                     {isColumnVisible('created_at') && (
-                      <TableCell>{new Date(img.created_at).toLocaleDateString()}</TableCell>
+                      <TableCell {...dimAttr}>
+                        {new Date(img.created_at).toLocaleDateString()}
+                      </TableCell>
                     )}
                     {isColumnVisible('dimensions') && (
-                      <TableCell>
+                      <TableCell {...dimAttr}>
                         {img.width != null && img.height != null
                           ? `${img.width} × ${img.height}`
                           : '—'}
                       </TableCell>
                     )}
                     {isColumnVisible('file_size') && (
-                      <TableCell>
+                      <TableCell {...dimAttr}>
                         {img.file_size != null ? formatFileSize(img.file_size) : '—'}
                       </TableCell>
                     )}
                     {isColumnVisible('measurement') && (
-                      <TableCell>
+                      <TableCell {...dimAttr}>
                         {(() => {
                           const meta = img.metadata_extra
                           const scale = meta?.measurement_scale
@@ -1764,18 +1785,7 @@ export default function ManagePage({
               )}
             </TableBody>
           </Table>
-          <TablePagination
-            rowsPerPageOptions={[5, 10, 25, 50]}
-            component="div"
-            count={sortedImages.length}
-            rowsPerPage={rowsPerPage}
-            page={currentPage}
-            onPageChange={(_, newPage) => setCurrentPage(newPage)}
-            onRowsPerPageChange={(e) => {
-              setRowsPerPage(parseInt(e.target.value, 10))
-              setCurrentPage(0)
-            }}
-          />
+          {renderPagination('bottom')}
         </TableContainer>
       )}
 
