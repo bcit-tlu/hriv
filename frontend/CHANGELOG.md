@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.31.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.30.1...frontend-v0.31.0) (2026-07-06)
+
+
+### Features
+
+* **frontend:** AND multi-term filters and category checkbox tree ([#818](https://github.com/bcit-tlu/hriv/issues/818)) ([acb3ae3](https://github.com/bcit-tlu/hriv/commit/acb3ae3ac7661dbc67f1c94ee3f33b4792c3405a))
+* **frontend:** annotations column, persistent + comma-separated table filters ([#809](https://github.com/bcit-tlu/hriv/issues/809)) ([bbcd20e](https://github.com/bcit-tlu/hriv/commit/bbcd20e7dbc07a3945b9a69aabe044fb4b5ef296))
+* **frontend:** paginate ManagePage table top and bottom; dim rows via per-cell data attributes ([#810](https://github.com/bcit-tlu/hriv/issues/810)) ([4d3d614](https://github.com/bcit-tlu/hriv/commit/4d3d614271577469444787cff3485277dbb79c5c))
+
+
+### Bug Fixes
+
+* **frontend:** improve tile titles, search labels, category tooltip, and profile chip wrapping ([#815](https://github.com/bcit-tlu/hriv/issues/815)) ([125f631](https://github.com/bcit-tlu/hriv/commit/125f631dc8677ad66d90fc8210e1e4689c99acd4))
+
 ## [0.30.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.30.0...frontend-v0.30.1) (2026-07-03)
 
 
