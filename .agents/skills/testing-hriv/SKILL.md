@@ -11,6 +11,25 @@ and bulk import. For domain-specific flows see the sibling skills
 `testing-image-processing` (tile pipeline / pyvips) and `testing-backup-service`
 (disaster recovery).
 
+## Quick Start
+
+Fast on-ramp; see the detailed sections below for troubleshooting, rebuilds, and
+per-feature flows.
+
+```bash
+touch backend/.env             # docker-compose references it (create if missing)
+docker compose up -d --build   # frontend :5173, backend :8000, db, redis, worker, seed
+```
+
+- **App:** http://localhost:5173 · **API:** http://localhost:8000 (wait ~10s for the db to seed).
+- **Login:** any seed account (see [Seed Test Accounts](#seed-test-accounts)) with password `password`.
+- **API checks:** grab a bearer token via [Getting an API Auth Token](#getting-an-api-auth-token).
+- **UI / drag-and-drop / upload scripting:** Chrome CDP is on `http://localhost:29229`
+  (see [Browser & Test Environment Tips](#browser--test-environment-tips)).
+
+**Then jump to the section for what you changed:** metadata operations, drag-and-drop,
+admin export/import, image upload, bulk import, image replacement, or canvas annotations.
+
 ## Local Setup
 
 1. Create an empty `backend/.env` file if it doesn't exist (docker-compose references it):
@@ -193,20 +212,6 @@ one or more programs is visible to a student only if they belong to at least one
 - Category tree changes are reflected immediately on Browse without a refresh
   (frontend invalidates the ETag-cached `/api/categories/tree` query).
 
-#### Category Program Visibility
-
-Edit Category dialog has a "Visible to" radio group:
-
-- **All students** (default): no program restriction, chip panel hidden
-- **Specific programs**: shows chip toggle panel to select which programs can see the category
-
-Key behaviors:
-
-- Save/Create disabled when "Specific programs" selected but no chips toggled
-- Save disabled when label is empty (even if programs changed)
-- Inline rename (via category picker in image modals) does NOT show visibility controls
-  and does NOT wipe existing program associations
-
 #### Duplicate Category Name Validation
 
 The backend returns `409 Conflict` when creating or renaming a category to a name
@@ -230,9 +235,7 @@ open for retry.
 3. Click pencil on a category → type an existing sibling name → Save → expect error
 4. **Clean up** any test categories created during step 2 (delete via the trash icon)
 
-###
-
-# Category Program Visibility Picker
+#### Category Program Visibility Picker
 
 The Add/Edit Category dialogs include a "Visible to" radio group:
 
