@@ -126,10 +126,9 @@ For a full cross-environment clone, follow this order:
 2. **Filesystem import**
 3. **Rebuild Tiles**
 
-> Optional future improvement: the source-only export is already much faster
-> because it skips the tile pyramid. Additional compression parallelization
-> such as `pigz` or `tar --use-compress-program` could reduce wall time
-> further, but that work is not implemented yet.
+> Compression is parallelized with `pigz` when the backup container image
+> provides it (the backend Dockerfile installs it); otherwise the export falls
+> back to single-threaded gzip automatically.
 
 > HRIV is **not** in production and has no legacy export archives. Imports do not
 > need to support older export formats — backward-compat code can be removed

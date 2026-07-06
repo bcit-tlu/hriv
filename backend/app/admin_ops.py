@@ -1142,12 +1142,20 @@ def _create_tar_file(
         return
 
     archive_fh = open(dest, "wb")
-    proc = subprocess.Popen(
-        [pigz_path, "-c"],
-        stdin=subprocess.PIPE,
-        stdout=archive_fh,
-        stderr=subprocess.PIPE,
-    )
+    try:
+        proc = subprocess.Popen(
+            [pigz_path, "-c"],
+            stdin=subprocess.PIPE,
+            stdout=archive_fh,
+            stderr=subprocess.PIPE,
+        )
+    except Exception:
+        archive_fh.close()
+        try:
+            os.unlink(dest)
+        except OSError:
+            pass
+        raise
     success = False
     try:
         assert proc.stdin is not None

@@ -1,8 +1,9 @@
 """Tests for the background admin operations module."""
 
-import json
+import builtins
 import gzip
 import io
+import json
 import os
 import tarfile
 import tempfile
@@ -368,6 +369,48 @@ def test_create_tar_file_falls_back_without_pigz(tmp_path) -> None:
     assert os.path.exists(dest)
     _assert_source_only_archive(dest)
     _assert_callback_matches_archive(entries, dest)
+
+
+def test_create_tar_file_cleans_up_when_popen_fails(tmp_path) -> None:
+    data_dir, tiles_dir, tasks_dir = _make_source_only_tree(tmp_path)
+    dest = str(tmp_path / "broken.tar.gz")
+    real_open = builtins.open
+
+    class _TrackedFile:
+        def __init__(self, wrapped):
+            self._wrapped = wrapped
+            self.closed_called = False
+
+        def close(self):
+            self.closed_called = True
+            return self._wrapped.close()
+
+        def __getattr__(self, name):
+            return getattr(self._wrapped, name)
+
+    tracked_files = []
+
+    def _open(path, mode="r", *args, **kwargs):
+        fh = real_open(path, mode, *args, **kwargs)
+        if path == dest and mode == "wb":
+            tracked = _TrackedFile(fh)
+            tracked_files.append(tracked)
+            return tracked
+        return fh
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", str(tasks_dir)),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops.shutil.which", return_value="/usr/bin/pigz"),
+        patch("app.admin_ops.subprocess.Popen", side_effect=OSError("pigz missing")),
+        patch("builtins.open", side_effect=_open),
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        with pytest.raises(OSError):
+            _create_tar_file(str(data_dir), dest)
+
+    assert not os.path.exists(dest)
+    assert tracked_files and tracked_files[0].closed_called
 
 
 def test_create_tar_file_cancel_event_aborts(tmp_path) -> None:
