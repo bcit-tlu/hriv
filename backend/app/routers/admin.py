@@ -493,6 +493,8 @@ async def cancel_task(
             (task.log or "")
             + "Force-cancelled by admin (task was stuck in 'cancelling').\n"
         )
+    elif task.status in ("cancelled", "completed", "failed"):
+        pass
     else:
         raise HTTPException(
             status_code=400,

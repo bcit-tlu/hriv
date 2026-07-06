@@ -492,10 +492,20 @@ async def test_cancel_task_already_completed() -> None:
     task = _make_admin_task(status="completed")
     db = AsyncMock()
     db.get = AsyncMock(return_value=task)
+    db.refresh = AsyncMock()
 
-    with pytest.raises(HTTPException) as exc:
-        await cancel_task(1, MagicMock(), db=db)
-    assert exc.value.status_code == 400
+    result = await cancel_task(1, MagicMock(), db=db)
+    assert result["status"] == "completed"
+
+
+async def test_cancel_task_already_failed() -> None:
+    task = _make_admin_task(status="failed")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    db.refresh = AsyncMock()
+
+    result = await cancel_task(1, MagicMock(), db=db)
+    assert result["status"] == "failed"
 
 
 async def test_cancel_task_pending() -> None:
@@ -525,16 +535,15 @@ async def test_cancel_task_force_transitions_from_cancelling() -> None:
     assert "Force-cancelled by admin" in task.log
 
 
-async def test_cancel_task_already_cancelled_rejected() -> None:
-    """Once a task is terminal (``cancelled``) it cannot be cancelled again."""
+async def test_cancel_task_already_cancelled() -> None:
+    """Cancelling a terminal task is a no-op."""
     task = _make_admin_task(status="cancelled")
     db = AsyncMock()
     db.get = AsyncMock(return_value=task)
+    db.refresh = AsyncMock()
 
-    with pytest.raises(HTTPException) as exc:
-        await cancel_task(1, MagicMock(), db=db)
-    assert exc.value.status_code == 400
-    assert "cancelled" in exc.value.detail
+    result = await cancel_task(1, MagicMock(), db=db)
+    assert result["status"] == "cancelled"
 
 
 async def test_create_task_download_token_success(tmp_path) -> None:
