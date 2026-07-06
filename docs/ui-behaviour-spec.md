@@ -228,6 +228,9 @@ committed on Save) in the edit modals.
 - The filter bar shows only controls for currently visible filterable columns
   (for example, hiding the `Groups` column also removes the `Groups` filter
   controls). Hiding a filtered column clears that column's active filter state.
+- Text filters accept comma-separated terms and match if any term is present.
+- Filter selections persist per user between logins using localStorage, in the
+  same style as table column visibility and category-tree collapse preferences.
 
 ### Manage page filtering & auto-refresh (`ManagePage.tsx`)
 
@@ -238,6 +241,12 @@ committed on Save) in the edit modals.
   stay in sync. Images with no
   category (`category_id == null`) render as uncategorised (`—`) and can be
   assigned a category via the row's move action.
+- The `Annotations` column is available in the column chooser but is off by
+  default; it indicates whether an image has canvas edit annotations in
+  `metadata_extra.canvas_annotations`.
+- Text filters accept comma-separated terms and match if any term is present.
+- Filter selections persist per user between logins using localStorage, in the
+  same style as table column visibility and category-tree collapse preferences.
 - **Pagination controls render at both the top and bottom of the table** so
   users can change page or rows-per-page without scrolling to the end of a long
   list. Both controls are bound to the same page / rows-per-page state, so a

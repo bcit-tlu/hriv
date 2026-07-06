@@ -5,6 +5,7 @@ interface FilterTextPanelProps {
   onChange: (value: string) => void
   placeholder: string
   ariaLabel: string
+  helperText?: string
   width?: number | string
 }
 
@@ -13,6 +14,7 @@ export default function FilterTextPanel({
   onChange,
   placeholder,
   ariaLabel,
+  helperText,
   width = 260,
 }: FilterTextPanelProps) {
   return (
@@ -23,6 +25,7 @@ export default function FilterTextPanel({
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
       inputProps={{ 'aria-label': ariaLabel }}
+      helperText={helperText}
       sx={{ width }}
     />
   )

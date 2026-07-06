@@ -447,6 +447,25 @@ describe('PeoplePage', () => {
     expect(screen.getByRole('cell', { name: 'Test Student' })).toBeInTheDocument()
   })
 
+  it('matches comma-separated name filters with OR semantics', async () => {
+    const user = userEvent.setup()
+    render(<PeoplePage programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Admin User')).toBeInTheDocument()
+    })
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    const nameFilterButton = within(filterBar).getByRole('button', { name: 'Name' })
+    await user.click(nameFilterButton)
+    await user.type(screen.getByPlaceholderText('Search name'), 'Admin, Student')
+    await user.click(nameFilterButton)
+
+    expect(screen.getByRole('cell', { name: 'Admin User' })).toBeInTheDocument()
+    expect(screen.getByRole('cell', { name: 'Test Student' })).toBeInTheDocument()
+    expect(screen.getByText('2 of 2 people')).toBeInTheDocument()
+  })
+
   it('uses additive checkbox role filters and shows the filtered result total', async () => {
     const user = userEvent.setup()
     render(<PeoplePage programs={programs} groups={groups} />)

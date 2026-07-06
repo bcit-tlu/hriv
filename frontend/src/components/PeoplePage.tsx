@@ -40,7 +40,14 @@ import {
 } from '../api'
 import type { ApiUser } from '../api'
 import type { Role, Program, Group } from '../types'
+import { formatFilterTerms, hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
+import {
+  getStoredIntSet,
+  getStoredTextFilters,
+  loadStoredTableFilters,
+  useTableFilterPreferences,
+} from '../useTableFilterPreferences'
 import AddEditPersonModal from './AddEditPersonModal'
 import BulkEditModal from './BulkEditModal'
 import BulkGroupModal from './BulkGroupModal'
@@ -49,6 +56,33 @@ import FilterBar from './FilterBar'
 import FilterOptionPanel from './FilterOptionPanel'
 import FilterPopoverButton, { filterSurfaceBg } from './FilterPopoverButton'
 import FilterTextPanel from './FilterTextPanel'
+
+type PeopleStoredFilters = {
+  text?: Record<string, unknown>
+  roles?: unknown[]
+  programs?: unknown[]
+  groups?: unknown[]
+}
+
+function getStoredRoles(storedFilters: PeopleStoredFilters | null): Set<Role> {
+  const roles = storedFilters?.roles
+  if (!Array.isArray(roles)) return new Set()
+  return new Set(roles.filter((value): value is Role => ROLES.includes(value as Role)))
+}
+
+function buildPeopleFilterSnapshot(
+  filters: Record<string, string>,
+  selectedRoles: Set<Role>,
+  selectedPrograms: Set<number>,
+  selectedGroups: Set<number>,
+) {
+  return {
+    text: filters,
+    roles: [...selectedRoles],
+    programs: [...selectedPrograms],
+    groups: [...selectedGroups],
+  }
+}
 
 type SortableColumn =
   | 'id'
@@ -128,12 +162,20 @@ export default function PeoplePage({
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
   // Filter state — text filters for name/email, checkbox sets for role/program/group
-  const [filters, setFilters] = useState<Record<string, string>>({})
-  const [selectedRoles, setSelectedRoles] = useState<Set<Role>>(new Set())
-  const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(new Set())
-  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(new Set())
+  const storedFilters = useMemo(() => loadStoredTableFilters<PeopleStoredFilters>('people'), [])
+  // Filter state seeds synchronously from storage.
+  const [filters, setFilters] = useState<Record<string, string>>(() =>
+    getStoredTextFilters(storedFilters),
+  )
+  const [selectedRoles, setSelectedRoles] = useState<Set<Role>>(() => getStoredRoles(storedFilters))
+  const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(() =>
+    getStoredIntSet(storedFilters, 'programs'),
+  )
+  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(() =>
+    getStoredIntSet(storedFilters, 'groups'),
+  )
   const hasActiveFilters =
-    Object.values(filters).some((v) => v !== '') ||
+    Object.values(filters).some((v) => hasFilterTerms(v)) ||
     selectedRoles.size > 0 ||
     selectedPrograms.size > 0 ||
     selectedGroups.size > 0
@@ -187,13 +229,23 @@ export default function PeoplePage({
     () => groups.filter((group) => selectedGroups.has(group.id)),
     [groups, selectedGroups],
   )
+  const filterSnapshot = useMemo(
+    () => buildPeopleFilterSnapshot(filters, selectedRoles, selectedPrograms, selectedGroups),
+    [filters, selectedGroups, selectedPrograms, selectedRoles],
+  )
+  useTableFilterPreferences({
+    tableKey: 'people',
+    value: filterSnapshot,
+  })
   const appliedFilters = useMemo<AppliedPeopleFilter[]>(() => {
     const chips: AppliedPeopleFilter[] = []
     const name = filters['name']?.trim()
     const email = filters['email']?.trim()
 
-    if (name) chips.push({ key: 'name', label: `Name: ${name}` })
-    if (email) chips.push({ key: 'email', label: `Email: ${email}` })
+    if (hasFilterTerms(name ?? ''))
+      chips.push({ key: 'name', label: `Name: ${formatFilterTerms(name ?? '')}` })
+    if (hasFilterTerms(email ?? ''))
+      chips.push({ key: 'email', label: `Email: ${formatFilterTerms(email ?? '')}` })
     for (const role of ROLES.filter((item) => selectedRoles.has(item))) {
       chips.push({ key: `role:${role}`, label: `Role: ${role}`, role })
     }
@@ -290,7 +342,7 @@ export default function PeoplePage({
   // Filter/sort/paginate logic
   const filteredUsers = useMemo(() => {
     const activeFilters =
-      Object.values(filters).some((v) => v !== '') ||
+      Object.values(filters).some((v) => hasFilterTerms(v)) ||
       selectedRoles.size > 0 ||
       selectedPrograms.size > 0 ||
       selectedGroups.size > 0
@@ -298,8 +350,7 @@ export default function PeoplePage({
     return users.filter((user) => {
       const match = (field: string, value: string) => {
         const filter = filters[field]
-        if (!filter) return true
-        return value.toLowerCase().includes(filter.toLowerCase())
+        return matchesTextFilter(value, filter ?? '')
       }
       if (!match('name', user.name)) return false
       if (!match('email', user.email)) return false
@@ -727,7 +778,7 @@ export default function PeoplePage({
         {isColumnVisible('name') && (
           <FilterPopoverButton
             label="Name"
-            activeCount={filters['name']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['name'] ?? '') ? 1 : 0}
             panelWidth={260}
           >
             <FilterTextPanel
@@ -735,6 +786,7 @@ export default function PeoplePage({
               onChange={(value) => handleFilterChange('name', value)}
               placeholder="Search name"
               ariaLabel="Name"
+              helperText="Separate terms with commas"
               width={260}
             />
           </FilterPopoverButton>
@@ -742,7 +794,7 @@ export default function PeoplePage({
         {isColumnVisible('email') && (
           <FilterPopoverButton
             label="Email"
-            activeCount={filters['email']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['email'] ?? '') ? 1 : 0}
             panelWidth={280}
           >
             <FilterTextPanel
@@ -750,6 +802,7 @@ export default function PeoplePage({
               onChange={(value) => handleFilterChange('email', value)}
               placeholder="Search email"
               ariaLabel="Email"
+              helperText="Separate terms with commas"
               width={280}
             />
           </FilterPopoverButton>

@@ -167,6 +167,7 @@ describe('ManagePage', () => {
         dimensions: false,
         file_size: false,
         measurement: false,
+        annotations: false,
       }),
     )
 
@@ -196,6 +197,75 @@ describe('ManagePage', () => {
     expect(screen.queryByRole('columnheader', { name: 'Dimensions' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'File Size' })).not.toBeInTheDocument()
     expect(screen.queryByRole('columnheader', { name: 'Measurement' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('columnheader', { name: 'Annotations' })).not.toBeInTheDocument()
+  })
+
+  it('shows the annotations column only after enabling it in the column chooser', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        id: 101,
+        name: 'Annotated Slide',
+        thumb: '/thumb-a.jpg',
+        tile_sources: '/tile-a.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: { canvas_annotations: [{ id: 'annotation-1' }] },
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 102,
+        name: 'Unannotated Slide',
+        thumb: '/thumb-b.jpg',
+        tile_sources: '/tile-b.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 1,
+        metadata_extra: { canvas_annotations: [] },
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Annotated Slide')
+
+    expect(screen.queryByRole('columnheader', { name: 'Annotations' })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Choose columns' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Choose image table columns' })
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Annotations' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Done' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('columnheader', { name: 'Annotations' })).toBeInTheDocument()
+    })
+
+    const annotatedRow = screen.getByText('Annotated Slide').closest('tr')
+    const unannotatedRow = screen.getByText('Unannotated Slide').closest('tr')
+    expect(annotatedRow).not.toBeNull()
+    expect(unannotatedRow).not.toBeNull()
+    expect(
+      within(annotatedRow as HTMLElement).getByLabelText('Has annotations'),
+    ).toBeInTheDocument()
+    expect(
+      within(unannotatedRow as HTMLElement).queryByLabelText('Has annotations'),
+    ).not.toBeInTheDocument()
   })
 
   it('keeps the filter bar in sync with visible columns', async () => {
@@ -254,6 +324,185 @@ describe('ManagePage', () => {
       expect(screen.getByText('No images match the selected filters.')).toBeInTheDocument()
       expect(screen.getByText('0 of 1 image')).toBeInTheDocument()
     })
+  })
+
+  it('treats comma-only persisted text filters as inactive chrome', async () => {
+    localStorage.setItem(
+      'hrivpref:table-filters:manage-images:user:1',
+      JSON.stringify({
+        text: { name: ' , ,' },
+        programs: [],
+        groups: [],
+        visibility: [],
+      }),
+    )
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+    })
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    expect(within(filterBar).queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument()
+    expect(screen.queryByText('1 of 1 image')).not.toBeInTheDocument()
+  })
+
+  it('prunes stale persisted program selections after hydrating filters', async () => {
+    localStorage.setItem(
+      'hrivpref:table-filters:manage-images:user:1',
+      JSON.stringify({
+        text: {},
+        programs: [999],
+        groups: [],
+        visibility: [],
+      }),
+    )
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await waitFor(() => {
+      expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+    })
+
+    expect(screen.queryByText('No images match the selected filters.')).not.toBeInTheDocument()
+  })
+
+  it('preserves non-program persisted filters when navigation selects a program', async () => {
+    const twoPrograms: Program[] = [
+      ...programs,
+      { id: 2, name: 'Other Program', oidc_group: null, created_at: '', updated_at: '' },
+    ]
+    const twoCategories = [
+      makeCategory({ id: 10, label: 'Microscopy A', programIds: [1], groupIds: [7] }),
+      makeCategory({ id: 11, label: 'Microscopy B', programIds: [2], groupIds: [7] }),
+    ]
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        id: 101,
+        name: 'Persisted Filter Target',
+        thumb: '/thumb-a.jpg',
+        tile_sources: '/tile-a.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 102,
+        name: 'Navigation Target',
+        thumb: '/thumb-b.jpg',
+        tile_sources: '/tile-b.dzi',
+        category_id: 11,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 1,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+    localStorage.setItem(
+      'hrivpref:table-filters:manage-images:user:1',
+      JSON.stringify({
+        text: { name: 'Persisted' },
+        programs: [1],
+        groups: [],
+        visibility: [],
+      }),
+    )
+
+    render(
+      <ManagePage
+        categories={twoCategories}
+        programs={twoPrograms}
+        groups={groups}
+        initialProgramFilter="Other Program"
+      />,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: 'Filter by' })).toBeInTheDocument()
+    })
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    const nameButton = within(filterBar).getByRole('button', { name: 'Name' })
+    const programButton = within(filterBar).getByRole('button', { name: 'Program' })
+
+    expect(programButton).toHaveTextContent('1')
+    expect(nameButton).toHaveTextContent('1')
+    expect(screen.queryByText('Navigation Target')).not.toBeInTheDocument()
+    expect(screen.getByText('No images match the selected filters.')).toBeInTheDocument()
+  })
+
+  it('matches comma-separated name filters with OR semantics', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        id: 101,
+        name: 'Blood Smear',
+        thumb: '/thumb-a.jpg',
+        tile_sources: '/tile-a.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 102,
+        name: 'Urine Slide',
+        thumb: '/thumb-b.jpg',
+        tile_sources: '/tile-b.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 1,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+
+    render(<ManagePage categories={categories} programs={programs} groups={groups} />)
+
+    await screen.findByText('Blood Smear')
+    await screen.findByText('Urine Slide')
+
+    const filterBar = screen.getByRole('region', { name: 'Filter by' })
+    const nameFilterButton = within(filterBar).getByRole('button', { name: 'Name' })
+    await user.click(nameFilterButton)
+    await user.type(screen.getByPlaceholderText('Filter by name'), 'Blood, Urine')
+    await user.click(nameFilterButton)
+
+    expect(screen.getByText('Blood Smear')).toBeInTheDocument()
+    expect(screen.getByText('Urine Slide')).toBeInTheDocument()
+    expect(screen.getByText('2 of 2 images')).toBeInTheDocument()
   })
 
   it('keeps duplicate program names as distinct filter options keyed by id', async () => {
@@ -320,6 +569,7 @@ describe('ManagePage', () => {
         dimensions: false,
         file_size: false,
         measurement: false,
+        annotations: false,
       }),
     )
 
@@ -410,6 +660,7 @@ describe('ManagePage', () => {
         dimensions: false,
         file_size: false,
         measurement: false,
+        annotations: false,
       }),
     )
 

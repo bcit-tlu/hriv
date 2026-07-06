@@ -28,6 +28,7 @@ import Tooltip from '@mui/material/Tooltip'
 import Chip from '@mui/material/Chip'
 import Typography from '@mui/material/Typography'
 import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternate'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import DeleteIcon from '@mui/icons-material/Delete'
 import DriveFileMoveIcon from '@mui/icons-material/DriveFileMove'
 import InfoIcon from '@mui/icons-material/Info'
@@ -63,6 +64,13 @@ import FilterTextPanel from './FilterTextPanel'
 import MoveImageDialog from './MoveImageDialog'
 import NoteDisplay from './NoteDisplay'
 import UploadImageModal from './UploadImageModal'
+import { formatFilterTerms, hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
+import {
+  getStoredIntSet,
+  getStoredTextFilters,
+  loadStoredTableFilters,
+  useTableFilterPreferences,
+} from '../useTableFilterPreferences'
 
 interface CategoryPathSegment {
   category: Category
@@ -165,6 +173,7 @@ type SortableColumn =
   | 'created_at'
   | 'dimensions'
   | 'file_size'
+  | 'annotations'
 type SortDirection = 'asc' | 'desc'
 type ManageTableColumn =
   | 'thumbnail'
@@ -181,6 +190,7 @@ type ManageTableColumn =
   | 'dimensions'
   | 'file_size'
   | 'measurement'
+  | 'annotations'
 
 const MANAGE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageTableColumn>[] = [
   { key: 'thumbnail', label: 'Thumbnail' },
@@ -197,6 +207,7 @@ const MANAGE_COLUMN_OPTIONS: readonly ColumnVisibilityOption<ManageTableColumn>[
   { key: 'dimensions', label: 'Dimensions' },
   { key: 'file_size', label: 'File Size' },
   { key: 'measurement', label: 'Measurement' },
+  { key: 'annotations', label: 'Annotations' },
 ]
 
 const MANAGE_DEFAULT_VISIBLE_COLUMNS: readonly ManageTableColumn[] = [
@@ -217,6 +228,46 @@ const MANAGE_COLUMN_FILTER_KEYS: Partial<Record<ManageTableColumn, string>> = {
   category: 'category',
   copyright: 'copyright',
   note: 'note',
+}
+
+function hasCanvasAnnotations(img: ApiImage): boolean {
+  return (
+    Array.isArray(img.metadata_extra?.canvas_annotations) &&
+    img.metadata_extra.canvas_annotations.length > 0
+  )
+}
+
+type ManageStoredFilters = {
+  text?: Record<string, unknown>
+  programs?: unknown[]
+  groups?: unknown[]
+  visibility?: unknown[]
+}
+
+function getStoredVisibilityFilters(
+  storedFilters: ManageStoredFilters | null,
+): Set<VisibilityFilterValue> {
+  const visibility = storedFilters?.visibility
+  if (!Array.isArray(visibility)) return new Set()
+  return new Set(
+    visibility.filter(
+      (value): value is VisibilityFilterValue => value === 'active' || value === 'inactive',
+    ),
+  )
+}
+
+function buildManageFilterSnapshot(
+  filters: Record<string, string>,
+  selectedPrograms: Set<number>,
+  selectedGroups: Set<number>,
+  selectedVisibility: Set<VisibilityFilterValue>,
+) {
+  return {
+    text: filters,
+    programs: [...selectedPrograms],
+    groups: [...selectedGroups],
+    visibility: [...selectedVisibility],
+  }
 }
 
 type VisibilityFilterValue = 'active' | 'inactive'
@@ -296,15 +347,25 @@ export default function ManagePage({
   const [sortColumn, setSortColumn] = useState<SortableColumn>('id')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
 
-  // Filter state
-  const [filters, setFilters] = useState<Record<string, string>>({})
-  const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(new Set())
-  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(new Set())
-  const [selectedVisibility, setSelectedVisibility] = useState<Set<VisibilityFilterValue>>(
-    new Set(),
+  const storedFilters = useMemo(
+    () => loadStoredTableFilters<ManageStoredFilters>('manage-images'),
+    [],
+  )
+  // Filter state seeds synchronously from storage unless navigation wins.
+  const [filters, setFilters] = useState<Record<string, string>>(() =>
+    getStoredTextFilters(storedFilters),
+  )
+  const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(() =>
+    initialProgramFilter ? new Set<number>() : getStoredIntSet(storedFilters, 'programs'),
+  )
+  const [selectedGroups, setSelectedGroups] = useState<Set<number>>(() =>
+    getStoredIntSet(storedFilters, 'groups'),
+  )
+  const [selectedVisibility, setSelectedVisibility] = useState<Set<VisibilityFilterValue>>(() =>
+    getStoredVisibilityFilters(storedFilters),
   )
   const hasActiveFilters =
-    Object.values(filters).some((v) => v !== '') ||
+    Object.values(filters).some((v) => hasFilterTerms(v)) ||
     selectedPrograms.size > 0 ||
     selectedGroups.size > 0 ||
     selectedVisibility.size > 0
@@ -351,7 +412,9 @@ export default function ManagePage({
   const [currentPage, setCurrentPage] = useState(0)
 
   // Apply initial program filter from external navigation (e.g. search)
-  const [prevInitialProgramFilter, setPrevInitialProgramFilter] = useState(initialProgramFilter)
+  const [prevInitialProgramFilter, setPrevInitialProgramFilter] = useState<string | undefined>(
+    undefined,
+  )
   if (initialProgramFilter !== prevInitialProgramFilter) {
     setPrevInitialProgramFilter(initialProgramFilter)
     if (initialProgramFilter) {
@@ -392,6 +455,33 @@ export default function ManagePage({
   useEffect(() => {
     loadImages() // eslint-disable-line react-hooks/set-state-in-effect -- standard data-fetch trigger on dependency change
   }, [loadImages, imagesVersion])
+
+  const filterSnapshot = useMemo(
+    () => buildManageFilterSnapshot(filters, selectedPrograms, selectedGroups, selectedVisibility),
+    [filters, selectedGroups, selectedPrograms, selectedVisibility],
+  )
+  useTableFilterPreferences({
+    tableKey: 'manage-images',
+    value: filterSnapshot,
+  })
+
+  useEffect(() => {
+    const validIds = new Set(programs.map((program) => program.id))
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available programs
+    setSelectedPrograms((prev) => {
+      const pruned = new Set([...prev].filter((id) => validIds.has(id)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [programs])
+
+  useEffect(() => {
+    const validIds = new Set(groups.map((group) => group.id))
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- keep selections aligned with available groups
+    setSelectedGroups((prev) => {
+      const pruned = new Set([...prev].filter((id) => validIds.has(id)))
+      return pruned.size === prev.size ? prev : pruned
+    })
+  }, [groups])
 
   // Sort handler
   const handleSort = (column: SortableColumn) => {
@@ -535,8 +625,7 @@ export default function ManagePage({
     return images.filter((img) => {
       const match = (field: string, value: string) => {
         const filter = filters[field]
-        if (!filter) return true
-        return value.toLowerCase().includes(filter.toLowerCase())
+        return matchesTextFilter(value, filter ?? '')
       }
       if (!match('id', String(img.id))) return false
       if (!match('name', img.name)) return false
@@ -611,6 +700,9 @@ export default function ManagePage({
           break
         case 'file_size':
           cmp = (a.file_size ?? 0) - (b.file_size ?? 0)
+          break
+        case 'annotations':
+          cmp = Number(hasCanvasAnnotations(a)) - Number(hasCanvasAnnotations(b))
           break
       }
       return sortDirection === 'asc' ? cmp : -cmp
@@ -963,7 +1055,7 @@ export default function ManagePage({
           hasActiveFilters ? (
             <>
               {Object.entries(filters)
-                .filter(([, value]) => value.trim().length > 0)
+                .filter(([, value]) => hasFilterTerms(value))
                 .map(([key, value]) => {
                   const labels: Record<string, string> = {
                     id: 'ID',
@@ -975,7 +1067,7 @@ export default function ManagePage({
                   return (
                     <Chip
                       key={key}
-                      label={`${labels[key]}: ${value}`}
+                      label={`${labels[key]}: ${formatFilterTerms(value)}`}
                       size="small"
                       onDelete={() => handleFilterChange(key, '')}
                       sx={{
@@ -1100,7 +1192,7 @@ export default function ManagePage({
         {isColumnVisible('id') && (
           <FilterPopoverButton
             label="ID"
-            activeCount={filters['id']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['id'] ?? '') ? 1 : 0}
             panelWidth={160}
           >
             <FilterTextPanel
@@ -1108,6 +1200,7 @@ export default function ManagePage({
               onChange={(value) => handleFilterChange('id', value)}
               placeholder="Filter by ID"
               ariaLabel="ID"
+              helperText="Separate terms with commas"
               width={160}
             />
           </FilterPopoverButton>
@@ -1115,7 +1208,7 @@ export default function ManagePage({
         {isColumnVisible('name') && (
           <FilterPopoverButton
             label="Name"
-            activeCount={filters['name']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['name'] ?? '') ? 1 : 0}
             panelWidth={260}
           >
             <FilterTextPanel
@@ -1123,6 +1216,7 @@ export default function ManagePage({
               onChange={(value) => handleFilterChange('name', value)}
               placeholder="Filter by name"
               ariaLabel="Name"
+              helperText="Separate terms with commas"
               width={260}
             />
           </FilterPopoverButton>
@@ -1130,7 +1224,7 @@ export default function ManagePage({
         {isColumnVisible('category') && (
           <FilterPopoverButton
             label="Category"
-            activeCount={filters['category']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['category'] ?? '') ? 1 : 0}
             panelWidth={280}
           >
             <FilterTextPanel
@@ -1138,6 +1232,7 @@ export default function ManagePage({
               onChange={(value) => handleFilterChange('category', value)}
               placeholder="Filter by category"
               ariaLabel="Category"
+              helperText="Separate terms with commas"
               width={280}
             />
           </FilterPopoverButton>
@@ -1145,7 +1240,7 @@ export default function ManagePage({
         {isColumnVisible('copyright') && (
           <FilterPopoverButton
             label="Copyright"
-            activeCount={filters['copyright']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['copyright'] ?? '') ? 1 : 0}
             panelWidth={260}
           >
             <FilterTextPanel
@@ -1153,6 +1248,7 @@ export default function ManagePage({
               onChange={(value) => handleFilterChange('copyright', value)}
               placeholder="Filter by copyright"
               ariaLabel="Copyright"
+              helperText="Separate terms with commas"
               width={260}
             />
           </FilterPopoverButton>
@@ -1160,7 +1256,7 @@ export default function ManagePage({
         {isColumnVisible('note') && (
           <FilterPopoverButton
             label="Note"
-            activeCount={filters['note']?.trim() ? 1 : 0}
+            activeCount={hasFilterTerms(filters['note'] ?? '') ? 1 : 0}
             panelWidth={260}
           >
             <FilterTextPanel
@@ -1168,6 +1264,7 @@ export default function ManagePage({
               onChange={(value) => handleFilterChange('note', value)}
               placeholder="Filter by note"
               ariaLabel="Note"
+              helperText="Separate terms with commas"
               width={260}
             />
           </FilterPopoverButton>
@@ -1388,6 +1485,17 @@ export default function ManagePage({
                   </TableCell>
                 )}
                 {isColumnVisible('measurement') && <TableCell>Measurement</TableCell>}
+                {isColumnVisible('annotations') && (
+                  <TableCell sortDirection={sortColumn === 'annotations' ? sortDirection : false}>
+                    <TableSortLabel
+                      active={sortColumn === 'annotations'}
+                      direction={sortColumn === 'annotations' ? sortDirection : 'asc'}
+                      onClick={() => handleSort('annotations')}
+                    >
+                      Annotations
+                    </TableSortLabel>
+                  </TableCell>
+                )}
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
@@ -1638,6 +1746,21 @@ export default function ManagePage({
                           if (scale == null) return '—'
                           return unit ? `${scale} px/${unit}` : `${scale} px`
                         })()}
+                      </TableCell>
+                    )}
+                    {isColumnVisible('annotations') && (
+                      <TableCell {...dimAttr}>
+                        {hasCanvasAnnotations(img) ? (
+                          <span
+                            role="img"
+                            aria-label="Has annotations"
+                            style={{ display: 'inline-flex', verticalAlign: 'middle' }}
+                          >
+                            <CheckCircleIcon color="success" sx={{ fontSize: 18 }} />
+                          </span>
+                        ) : (
+                          '—'
+                        )}
                       </TableCell>
                     )}
                     <TableCell
