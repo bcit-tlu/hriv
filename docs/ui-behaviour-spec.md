@@ -205,8 +205,7 @@ committed on Save) in the edit modals.
 - Category tile title rows align their action icons to the top edge of the
   title block so multi-line labels stay visually balanced.
 - Category tile titles expose the full category name in a hover tooltip.
-- Image tiles keep the same 3-line clamp but do not show a hover tooltip on the
-  title.
+- Image tiles expose the full image name in a hover tooltip.
 
 #### ManagePage table row desaturation
 

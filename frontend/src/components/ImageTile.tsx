@@ -52,19 +52,21 @@ export default function ImageTile({
         />
         <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
-            <Typography
-              variant="h6"
-              sx={{
-                ...(image.active ? {} : { color: visColors.inactive }),
-                display: '-webkit-box',
-                WebkitLineClamp: 3,
-                WebkitBoxOrient: 'vertical',
-                overflow: 'hidden',
-                wordBreak: 'break-word',
-              }}
-            >
-              {image.name}
-            </Typography>
+            <Tooltip title={image.name}>
+              <Typography
+                variant="h6"
+                sx={{
+                  ...(image.active ? {} : { color: visColors.inactive }),
+                  display: '-webkit-box',
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {image.name}
+              </Typography>
+            </Tooltip>
             {!image.active && (
               <Tooltip title="Visibility: Inactive">
                 <span

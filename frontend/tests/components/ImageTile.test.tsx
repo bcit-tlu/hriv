@@ -83,6 +83,21 @@ describe('ImageTile', () => {
       })
     })
 
+    it('shows the full image name in a hover tooltip', async () => {
+      const user = userEvent.setup()
+      render(
+        <ImageTile
+          image={makeImage({
+            name: 'Tooltip Image',
+          })}
+          onClick={vi.fn()}
+        />,
+      )
+
+      await user.hover(screen.getByText('Tooltip Image'))
+      expect(await screen.findByRole('tooltip')).toHaveTextContent('Tooltip Image')
+    })
+
     it('clamps the title to three lines and aligns the title row to the top', () => {
       render(
         <ImageTile
