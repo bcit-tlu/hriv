@@ -365,9 +365,11 @@ export default function ManagePage({
 
   // Apply initial program filter from external navigation (e.g. search)
   const [prevInitialProgramFilter, setPrevInitialProgramFilter] = useState(initialProgramFilter)
+  const shouldSkipFilterHydrateRef = useRef(false)
   if (initialProgramFilter !== prevInitialProgramFilter) {
     setPrevInitialProgramFilter(initialProgramFilter)
     if (initialProgramFilter) {
+      shouldSkipFilterHydrateRef.current = true
       setSelectedPrograms(
         new Set(
           programs
@@ -416,6 +418,8 @@ export default function ManagePage({
     [filters, selectedGroups, selectedPrograms, selectedVisibility],
   )
   const handleFilterHydrate = useCallback((stored: typeof filterSnapshot) => {
+    if (shouldSkipFilterHydrateRef.current) return
+
     const storedText = stored?.text
     if (storedText != null && typeof storedText === 'object' && !Array.isArray(storedText)) {
       const nextFilters: Record<string, string> = {}

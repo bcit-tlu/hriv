@@ -20,6 +20,7 @@ import type { ApiImage } from '../../src/api'
 import type { Group, Program } from '../../src/types'
 import { makeCategory } from '../helpers/fixtures'
 import ManagePage from '../../src/components/ManagePage'
+import * as tableFilterPreferences from '../../src/useTableFilterPreferences'
 
 const programs: Program[] = [
   { id: 1, name: 'Medical Lab', oidc_group: null, created_at: '', updated_at: '' },
@@ -325,6 +326,110 @@ describe('ManagePage', () => {
     })
 
     expect(screen.queryByText('No images match the selected filters.')).not.toBeInTheDocument()
+  })
+
+  it('keeps navigation-selected program filters when persisted filters exist', async () => {
+    const twoPrograms: Program[] = [
+      ...programs,
+      { id: 2, name: 'Other Program', oidc_group: null, created_at: '', updated_at: '' },
+    ]
+    const twoCategories = [
+      makeCategory({ id: 10, label: 'Microscopy A', programIds: [1], groupIds: [7] }),
+      makeCategory({ id: 11, label: 'Microscopy B', programIds: [2], groupIds: [7] }),
+    ]
+    vi.mocked(fetchImages).mockResolvedValue([
+      {
+        id: 101,
+        name: 'Persisted Filter Target',
+        thumb: '/thumb-a.jpg',
+        tile_sources: '/tile-a.dzi',
+        category_id: 10,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 0,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+      {
+        id: 102,
+        name: 'Navigation Target',
+        thumb: '/thumb-b.jpg',
+        tile_sources: '/tile-b.dzi',
+        category_id: 11,
+        copyright: null,
+        note: null,
+        active: true,
+        sort_order: 1,
+        metadata_extra: null,
+        version: 1,
+        width: null,
+        height: null,
+        file_size: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+      },
+    ])
+    localStorage.setItem(
+      'hrivpref:table-filters:manage-images:user:1',
+      JSON.stringify({
+        text: { name: 'No Match' },
+        programs: [1],
+        groups: [],
+        visibility: [],
+      }),
+    )
+
+    let hydrateCalls = 0
+    const hydrateSpy = vi
+      .spyOn(tableFilterPreferences, 'useTableFilterPreferences')
+      .mockImplementation(({ onHydrate }) => {
+        hydrateCalls += 1
+        if (hydrateCalls === 2) {
+          queueMicrotask(() => {
+            onHydrate({
+              text: { name: 'No Match' },
+              programs: [1],
+              groups: [],
+              visibility: [],
+            })
+          })
+        }
+      })
+
+    try {
+      const view = render(
+        <ManagePage categories={twoCategories} programs={twoPrograms} groups={groups} />,
+      )
+      view.rerender(
+        <ManagePage
+          categories={twoCategories}
+          programs={twoPrograms}
+          groups={groups}
+          initialProgramFilter="Other Program"
+        />,
+      )
+
+      await waitFor(() => {
+        expect(screen.getByRole('region', { name: 'Filter by' })).toBeInTheDocument()
+      })
+
+      const filterBar = screen.getByRole('region', { name: 'Filter by' })
+      const nameButton = within(filterBar).getByRole('button', { name: 'Name' })
+      const programButton = within(filterBar).getByRole('button', { name: 'Program' })
+
+      expect(programButton).toHaveTextContent('1')
+      expect(nameButton).not.toHaveTextContent('1')
+      expect(screen.queryByText('Persisted Filter Target')).not.toBeInTheDocument()
+      expect(screen.queryByText('No images match the selected filters.')).not.toBeInTheDocument()
+    } finally {
+      hydrateSpy.mockRestore()
+    }
   })
 
   it('matches comma-separated name filters with OR semantics', async () => {
