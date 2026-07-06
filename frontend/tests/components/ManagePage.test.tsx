@@ -128,6 +128,7 @@ describe('ManagePage', () => {
         dimensions: false,
         file_size: false,
         measurement: false,
+        annotations: false,
       }),
     )
 
@@ -553,6 +554,7 @@ describe('ManagePage', () => {
         dimensions: false,
         file_size: false,
         measurement: false,
+        annotations: false,
       }),
     )
 
@@ -643,6 +645,7 @@ describe('ManagePage', () => {
         dimensions: false,
         file_size: false,
         measurement: false,
+        annotations: false,
       }),
     )
 
