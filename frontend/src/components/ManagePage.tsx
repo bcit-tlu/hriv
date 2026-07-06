@@ -65,7 +65,12 @@ import MoveImageDialog from './MoveImageDialog'
 import NoteDisplay from './NoteDisplay'
 import UploadImageModal from './UploadImageModal'
 import { formatFilterTerms, hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
-import { loadStoredTableFilters, useTableFilterPreferences } from '../useTableFilterPreferences'
+import {
+  getStoredIntSet,
+  getStoredTextFilters,
+  loadStoredTableFilters,
+  useTableFilterPreferences,
+} from '../useTableFilterPreferences'
 
 interface CategoryPathSegment {
   category: Category
@@ -239,33 +244,6 @@ type ManageStoredFilters = {
   visibility?: unknown[]
 }
 
-function getStoredTextFilters(storedFilters: ManageStoredFilters | null): Record<string, string> {
-  const storedText = storedFilters?.text
-  if (storedText == null || typeof storedText !== 'object' || Array.isArray(storedText)) {
-    return {}
-  }
-
-  const nextFilters: Record<string, string> = {}
-  for (const [key, value] of Object.entries(storedText)) {
-    if (typeof value === 'string') {
-      nextFilters[key] = value
-    }
-  }
-  return nextFilters
-}
-
-function getStoredProgramIds(storedFilters: ManageStoredFilters | null): Set<number> {
-  const programs = storedFilters?.programs
-  if (!Array.isArray(programs)) return new Set()
-  return new Set(programs.filter((value): value is number => Number.isInteger(value)))
-}
-
-function getStoredGroupIds(storedFilters: ManageStoredFilters | null): Set<number> {
-  const groups = storedFilters?.groups
-  if (!Array.isArray(groups)) return new Set()
-  return new Set(groups.filter((value): value is number => Number.isInteger(value)))
-}
-
 function getStoredVisibilityFilters(
   storedFilters: ManageStoredFilters | null,
 ): Set<VisibilityFilterValue> {
@@ -375,18 +353,16 @@ export default function ManagePage({
   )
   // Filter state seeds synchronously from storage unless navigation wins.
   const [filters, setFilters] = useState<Record<string, string>>(() =>
-    initialProgramFilter ? {} : getStoredTextFilters(storedFilters),
+    getStoredTextFilters(storedFilters),
   )
   const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(() =>
-    initialProgramFilter ? new Set<number>() : getStoredProgramIds(storedFilters),
+    initialProgramFilter ? new Set<number>() : getStoredIntSet(storedFilters, 'programs'),
   )
   const [selectedGroups, setSelectedGroups] = useState<Set<number>>(() =>
-    initialProgramFilter ? new Set<number>() : getStoredGroupIds(storedFilters),
+    getStoredIntSet(storedFilters, 'groups'),
   )
   const [selectedVisibility, setSelectedVisibility] = useState<Set<VisibilityFilterValue>>(() =>
-    initialProgramFilter
-      ? new Set<VisibilityFilterValue>()
-      : getStoredVisibilityFilters(storedFilters),
+    getStoredVisibilityFilters(storedFilters),
   )
   const hasActiveFilters =
     Object.values(filters).some((v) => hasFilterTerms(v)) ||

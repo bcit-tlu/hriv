@@ -368,7 +368,7 @@ describe('ManagePage', () => {
     expect(screen.queryByText('No images match the selected filters.')).not.toBeInTheDocument()
   })
 
-  it('keeps navigation-selected program filters when persisted filters exist', async () => {
+  it('preserves non-program persisted filters when navigation selects a program', async () => {
     const twoPrograms: Program[] = [
       ...programs,
       { id: 2, name: 'Other Program', oidc_group: null, created_at: '', updated_at: '' },
@@ -418,7 +418,7 @@ describe('ManagePage', () => {
     localStorage.setItem(
       'hrivpref:table-filters:manage-images:user:1',
       JSON.stringify({
-        text: { name: 'No Match' },
+        text: { name: 'Persisted' },
         programs: [1],
         groups: [],
         visibility: [],
@@ -443,9 +443,9 @@ describe('ManagePage', () => {
     const programButton = within(filterBar).getByRole('button', { name: 'Program' })
 
     expect(programButton).toHaveTextContent('1')
-    expect(nameButton).not.toHaveTextContent('1')
-    expect(screen.queryByText('Persisted Filter Target')).not.toBeInTheDocument()
-    expect(screen.queryByText('No images match the selected filters.')).not.toBeInTheDocument()
+    expect(nameButton).toHaveTextContent('1')
+    expect(screen.queryByText('Navigation Target')).not.toBeInTheDocument()
+    expect(screen.getByText('No images match the selected filters.')).toBeInTheDocument()
   })
 
   it('matches comma-separated name filters with OR semantics', async () => {

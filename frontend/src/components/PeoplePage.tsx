@@ -42,7 +42,12 @@ import type { ApiUser } from '../api'
 import type { Role, Program, Group } from '../types'
 import { formatFilterTerms, hasFilterTerms, matchesTextFilter } from '../tableFilterUtils'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
-import { loadStoredTableFilters, useTableFilterPreferences } from '../useTableFilterPreferences'
+import {
+  getStoredIntSet,
+  getStoredTextFilters,
+  loadStoredTableFilters,
+  useTableFilterPreferences,
+} from '../useTableFilterPreferences'
 import AddEditPersonModal from './AddEditPersonModal'
 import BulkEditModal from './BulkEditModal'
 import BulkGroupModal from './BulkGroupModal'
@@ -59,31 +64,10 @@ type PeopleStoredFilters = {
   groups?: unknown[]
 }
 
-function getStoredTextFilters(storedFilters: PeopleStoredFilters | null): Record<string, string> {
-  const storedText = storedFilters?.text
-  if (storedText == null || typeof storedText !== 'object' || Array.isArray(storedText)) {
-    return {}
-  }
-
-  const nextFilters: Record<string, string> = {}
-  for (const [key, value] of Object.entries(storedText)) {
-    if (typeof value === 'string') {
-      nextFilters[key] = value
-    }
-  }
-  return nextFilters
-}
-
 function getStoredRoles(storedFilters: PeopleStoredFilters | null): Set<Role> {
   const roles = storedFilters?.roles
   if (!Array.isArray(roles)) return new Set()
   return new Set(roles.filter((value): value is Role => ROLES.includes(value as Role)))
-}
-
-function getStoredIds(storedFilters: PeopleStoredFilters | null, key: 'programs' | 'groups') {
-  const values = storedFilters?.[key]
-  if (!Array.isArray(values)) return new Set<number>()
-  return new Set(values.filter((value): value is number => Number.isInteger(value)))
 }
 
 function buildPeopleFilterSnapshot(
@@ -185,10 +169,10 @@ export default function PeoplePage({
   )
   const [selectedRoles, setSelectedRoles] = useState<Set<Role>>(() => getStoredRoles(storedFilters))
   const [selectedPrograms, setSelectedPrograms] = useState<Set<number>>(() =>
-    getStoredIds(storedFilters, 'programs'),
+    getStoredIntSet(storedFilters, 'programs'),
   )
   const [selectedGroups, setSelectedGroups] = useState<Set<number>>(() =>
-    getStoredIds(storedFilters, 'groups'),
+    getStoredIntSet(storedFilters, 'groups'),
   )
   const hasActiveFilters =
     Object.values(filters).some((v) => hasFilterTerms(v)) ||
