@@ -1040,6 +1040,7 @@ def _iter_export_entries(
     while walking, :class:`TaskCancelled` is raised promptly.
     """
     tasks_basename = os.path.basename(_TASKS_DIR)
+    tiles_basename = os.path.basename(settings.tiles_dir)
 
     def _check_cancel() -> None:
         if cancel_event is not None and cancel_event.is_set():
@@ -1050,12 +1051,12 @@ def _iter_export_entries(
 
         rel = os.path.relpath(dirpath, data_dir)
         top = rel.split(os.sep)[0]
-        if rel != "." and top in (tasks_basename, "tiles"):
+        if rel != "." and top in (tasks_basename, tiles_basename):
             dirnames.clear()
             continue
 
         # Prune admin_tasks and tiles from child dirs so os.walk skips them.
-        for excluded in (tasks_basename, "tiles"):
+        for excluded in (tasks_basename, tiles_basename):
             if excluded in dirnames:
                 dirnames.remove(excluded)
 
