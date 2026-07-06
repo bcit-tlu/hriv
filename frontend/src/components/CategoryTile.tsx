@@ -287,7 +287,7 @@ export default function CategoryTile({
                   <span
                     role="img"
                     aria-label="Visibility: Hidden"
-                    style={{ display: 'inline-flex' }}
+                    style={{ display: 'inline-flex', flexShrink: 0 }}
                   >
                     <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
                   </span>

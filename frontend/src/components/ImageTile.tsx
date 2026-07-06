@@ -70,7 +70,7 @@ export default function ImageTile({
                 <span
                   role="img"
                   aria-label="Visibility: Inactive"
-                  style={{ display: 'inline-flex' }}
+                  style={{ display: 'inline-flex', flexShrink: 0 }}
                 >
                   <VisibilityOff fontSize="small" sx={{ color: visColors.inactive }} />
                 </span>
