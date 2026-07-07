@@ -2106,4 +2106,12 @@ async def run_file_restore(task_id: int) -> None:
                 try:
                     os.unlink(input_path)
                 except OSError:
-                    pass
+                    logger.debug(
+                        "Ignoring cleanup failure while deleting restore input file",
+                        extra={
+                            "event": "admin_task.file_restore_cleanup_failed",
+                            "task_id": task_id,
+                            "input_path": input_path,
+                        },
+                        exc_info=True,
+                    )
