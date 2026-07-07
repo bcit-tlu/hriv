@@ -397,8 +397,10 @@ def test_parse_content_length() -> None:
 def test_is_upload_path() -> None:
     assert _is_upload_path("/api/source-images/upload")
     assert _is_upload_path("/api/admin/bulk-import/")
+    assert _is_upload_path("/api/admin/tasks/123/upload")
     assert _is_upload_path("/api/images/123/replace")
     assert not _is_upload_path("/api/images")
+    assert not _is_upload_path("/api/admin/tasks/123/cancel")
 
 
 async def test_audit_logs_upload_start_for_upload_paths() -> None:
