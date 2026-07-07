@@ -72,9 +72,19 @@ def _snapshot_manifest(snapshot_name: str, files: dict[str, tuple[bytes, str]]):
     }
 
 
-def _tar_bytes(snapshot_name: str, manifest: dict, files: dict[str, bytes], *, symlink: str | None = None) -> bytes:
+def _tar_bytes(
+    snapshot_name: str,
+    manifest: dict,
+    files: dict[str, bytes],
+    *,
+    symlink: str | None = None,
+    db_sql: bytes = b"dump",
+) -> bytes:
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w:gz") as tar:
+        db_info = tarfile.TarInfo(f"{snapshot_name}/db.sql")
+        db_info.size = len(db_sql)
+        tar.addfile(db_info, io.BytesIO(db_sql))
         for rel_path, payload in files.items():
             info = tarfile.TarInfo(f"{snapshot_name}/{rel_path}")
             info.size = len(payload)

@@ -280,8 +280,6 @@ def restore_snapshot_file(
                 for member in tar:
                     _check_cancel()
                     if member.name != archive_member:
-                        if member.name == f"{snapshot_stem}/db.sql":
-                            raise BackupSnapshotMemberError("db.sql may not be restored with file restore")
                         continue
                     if not member.isfile() or member.islnk() or member.issym():
                         raise BackupSnapshotMemberError(f"{member_path} is not a regular file")
