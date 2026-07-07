@@ -118,6 +118,9 @@ export function userMessage(err: unknown, fallback: string): string {
       }
       return detail
     }
+    if (err.status === 413) {
+      return 'This file is too large to upload.'
+    }
     if (err.status >= 400 && err.status < 500) {
       if (usable) {
         return detail
