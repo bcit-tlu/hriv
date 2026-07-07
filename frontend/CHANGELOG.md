@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.32.0...frontend-v0.32.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* **frontend:** show a clear message when an upload is too large ([#835](https://github.com/bcit-tlu/hriv/issues/835)) ([7e45877](https://github.com/bcit-tlu/hriv/commit/7e45877ef2234662e834c567ac84d537471b6bd3))
+
 ## [0.32.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.31.0...frontend-v0.32.0) (2026-07-07)
 
 
