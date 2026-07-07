@@ -54,3 +54,34 @@ benefit.
 Use the manifest to browse first, then stream one member out of the existing
 archive when the operator confirms the restore. That is the cost-effective
 middle ground for the current system size.
+
+## Implemented shape
+
+The feature now ships with the following backend and UI pieces:
+
+- `GET /api/admin/backups/snapshots`
+- `GET /api/admin/backups/snapshots/{snapshot_name}/manifest`
+- `POST /api/admin/tasks/file-restore`
+
+The backend reads snapshots directly from Azure Blob Storage using a
+container-scoped read SAS exposed as `AZURE_READ_SAS_URL`, plus the snapshot
+prefix in `AZURE_BACKUP_PREFIX`. Both settings are dormant by default: when the
+SAS is unset, the API returns a clear “backup restore is not configured”
+response and does not create an Azure client.
+
+Manifest browsing prefers the sidecar blob written alongside each snapshot:
+
+- `<prefix>/<snapshot_name>.manifest.json`
+
+If the sidecar is missing, the backend falls back to streaming the combined
+`.tar.gz` and extracting `<snapshot_name>/manifest.json` from the archive.
+
+The restore task only allows `data/` members, rejects `db.sql` and path
+traversal, verifies the SHA-256 checksum from the manifest, and restores the
+file atomically via a temp path and rename. The final task log notes that
+Rebuild Tiles may be needed when a restored source image's tiles are stale.
+
+The Admin UI now includes a Backups-tab “Restore individual file” panel that
+lets an operator pick a snapshot, search the manifest, select a single file,
+confirm the action, and drive the existing admin-task polling/log viewer flow
+through the `file_restore` task type.
