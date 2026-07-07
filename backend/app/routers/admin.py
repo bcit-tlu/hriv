@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -446,7 +447,7 @@ async def list_backup_snapshots_endpoint(
 ):
     """List available backup snapshots for the restore browser."""
     try:
-        return list_snapshot_blobs()
+        return await asyncio.to_thread(list_snapshot_blobs)
     except BackupRestoreNotConfiguredError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -458,7 +459,7 @@ async def get_backup_snapshot_manifest(
 ):
     """Return a snapshot manifest for browsing and per-file restore."""
     try:
-        return get_snapshot_manifest(snapshot_name)
+        return await asyncio.to_thread(get_snapshot_manifest, snapshot_name)
     except BackupRestoreNotConfiguredError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except BackupSnapshotNotFoundError as exc:
@@ -474,7 +475,7 @@ async def start_file_restore(
 ):
     """Restore one file from a snapshot via the admin task queue."""
     try:
-        manifest = get_snapshot_manifest(request.snapshot_name)
+        manifest = await asyncio.to_thread(get_snapshot_manifest, request.snapshot_name)
     except BackupRestoreNotConfiguredError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except BackupSnapshotNotFoundError as exc:
