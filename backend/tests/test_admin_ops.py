@@ -337,16 +337,40 @@ def test_create_tar_file_uses_pigz_when_available(tmp_path) -> None:
         patch("app.admin_ops.subprocess.Popen", side_effect=_fake_popen) as mock_popen,
     ):
         mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.export_pigz_threads = 2
         _create_tar_file(
             str(data_dir), dest,
             on_entry=lambda name, size: entries.append((name, size)),
         )
 
     mock_popen.assert_called_once()
+    assert mock_popen.call_args.args[0] == ["/usr/bin/pigz", "-c", "-p", "2"]
     assert processes and processes[0].returncode == 0
     assert os.path.exists(dest)
     _assert_source_only_archive(dest)
     _assert_callback_matches_archive(entries, dest)
+
+
+def test_create_tar_file_omits_pigz_thread_cap_when_zero(tmp_path) -> None:
+    data_dir, tiles_dir, tasks_dir = _make_source_only_tree(tmp_path)
+    dest = str(tmp_path / "pigz-zero.tar.gz")
+
+    def _fake_popen(*_args, **kwargs):
+        return _FakePigzProcess(kwargs["stdout"])
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", str(tasks_dir)),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops.shutil.which", return_value="/usr/bin/pigz"),
+        patch("app.admin_ops.subprocess.Popen", side_effect=_fake_popen) as mock_popen,
+    ):
+        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.export_pigz_threads = 0
+        _create_tar_file(str(data_dir), dest)
+
+    mock_popen.assert_called_once()
+    assert mock_popen.call_args.args[0] == ["/usr/bin/pigz", "-c"]
+    assert os.path.exists(dest)
 
 
 def test_create_tar_file_falls_back_without_pigz(tmp_path) -> None:
@@ -1093,6 +1117,7 @@ async def test_run_files_export_empty_data_dir(tmp_path) -> None:
         patch("app.admin_ops.settings") as mock_settings,
     ):
         mock_settings.tiles_dir = str(data_dir / "tiles")
+        mock_settings.export_pigz_threads = 2
         await run_files_export(1)
 
     assert task.status == "failed"
@@ -1128,6 +1153,7 @@ async def test_run_files_export_success(tmp_path) -> None:
         patch("app.admin_ops._TASKS_DIR", tasks_dir),
     ):
         mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.export_pigz_threads = 2
         await run_files_export(1)
 
     assert task.status == "completed"
@@ -1205,6 +1231,7 @@ async def test_run_files_export_reports_byte_progress(tmp_path) -> None:
         patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.0),
     ):
         mock_settings.tiles_dir = str(data_dir / "tiles")
+        mock_settings.export_pigz_threads = 2
         await run_files_export(1)
 
     assert task.status == "completed"
@@ -1247,6 +1274,7 @@ async def test_run_files_export_verbose_log(tmp_path) -> None:
         patch("app.admin_ops._LOG_FLUSH_INTERVAL", 0.05),
     ):
         mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.export_pigz_threads = 2
         await run_files_export(1)
 
     assert task.status == "completed"
@@ -1309,6 +1337,7 @@ async def test_run_files_export_cancellation(tmp_path) -> None:
         patch("app.admin_ops._create_tar_file", side_effect=_slow_tar),
     ):
         mock_settings.tiles_dir = str(data_dir / "tiles")
+        mock_settings.export_pigz_threads = 2
         await run_files_export(1)
 
     assert task.status == "cancelled"
