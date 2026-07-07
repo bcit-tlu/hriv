@@ -304,9 +304,14 @@ describe('userMessage', () => {
     expect(userMessage(err, 'fallback')).toBe('Name already exists')
   })
 
-  it('returns fallback for HTML detail', () => {
+  it('returns a clear message for 413 detail', () => {
     const err = new ApiError(413, '<!DOCTYPE html><html>error page</html>')
-    expect(userMessage(err, 'Too large')).toBe('Too large')
+    expect(userMessage(err, 'Too large')).toBe('This file is too large to upload.')
+  })
+
+  it('returns a clear message for 413 without usable detail', () => {
+    const err = new ApiError(413, '')
+    expect(userMessage(err, 'Too large')).toBe('This file is too large to upload.')
   })
 
   it('returns fallback for detail exceeding 200 chars', () => {
@@ -346,13 +351,13 @@ describe('userMessage', () => {
     expect(userMessage(null, 'fallback')).toBe('fallback')
   })
 
-  it('returns fallback for HTML fragment detail', () => {
+  it('returns a clear message for HTML fragment detail on 413', () => {
     expect(userMessage(new ApiError(400, '<div>Service Unavailable</div>'), 'fallback')).toBe(
       'fallback',
     )
     expect(
       userMessage(new ApiError(413, '<h1>413 Request Entity Too Large</h1>'), 'fallback'),
-    ).toBe('fallback')
+    ).toBe('This file is too large to upload.')
     expect(userMessage(new ApiError(400, '<pre>Error details</pre>'), 'fallback')).toBe('fallback')
     expect(
       userMessage(new ApiError(400, '<table><tr><td>Error</td></tr></table>'), 'fallback'),
