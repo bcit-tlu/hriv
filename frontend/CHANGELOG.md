@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.32.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.31.0...frontend-v0.32.0) (2026-07-07)
+
+
+### Features
+
+* **admin:** per-file restore from backup snapshots via Admin UI ([#828](https://github.com/bcit-tlu/hriv/issues/828)) ([dc047ae](https://github.com/bcit-tlu/hriv/commit/dc047aeb7f62b827bc03febf342d604d9348c742))
+* **admin:** source-images-only filesystem export with scan-phase progress and cancellation ([#821](https://github.com/bcit-tlu/hriv/issues/821)) ([c3eae16](https://github.com/bcit-tlu/hriv/commit/c3eae1622918b612bf4ea9f497206297d800d083))
+
+
+### Bug Fixes
+
+* **admin:** handle session loss during import and make task cancel idempotent ([#820](https://github.com/bcit-tlu/hriv/issues/820)) ([067fb77](https://github.com/bcit-tlu/hriv/commit/067fb776a1af4eddbb3c06c5d70b10a6828c173c))
+
 ## [0.31.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.30.1...frontend-v0.31.0) (2026-07-06)
 
 
