@@ -55,6 +55,14 @@ spec:
               value: {{ .Values.env.TILES_DIR | quote }}
             - name: EXPORT_PIGZ_THREADS
               value: {{ .Values.env.EXPORT_PIGZ_THREADS | quote }}
+            - name: AZURE_BACKUP_PREFIX
+              value: {{ .Values.env.AZURE_BACKUP_PREFIX | quote }}
+            - name: AZURE_READ_SAS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.azureReadBackup.secretName | quote }}
+                  key: azureReadSasUrl
+                  optional: true
             - name: REDIS_URL
               value: {{ .Values.redis.url | quote }}
             {{- if .Values.observability.openTelemetry.enabled }}

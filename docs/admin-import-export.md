@@ -189,6 +189,22 @@ never resurrected.
 - A rerun skips tile sets that are already current (unless `scope = all`), so
   the operation is safe to run repeatedly.
 
+## Per-file backup restore
+
+The admin area also exposes a manifest-browsing restore flow for restoring a
+single file out of a backup snapshot archive:
+
+- `GET /admin/backups/snapshots`
+- `GET /admin/backups/snapshots/{snapshot_name}/manifest`
+- `POST /admin/tasks/file-restore`
+
+The backend talks directly to Azure Blob Storage with a read-only SAS URL
+(`AZURE_READ_SAS_URL`) and the snapshot prefix (`AZURE_BACKUP_PREFIX`).
+Snapshot manifests are read from the sidecar blob when present, with a
+tar-stream fallback for older snapshots. The restore task only accepts members
+under `data/` and reminds operators to run Rebuild Tiles if a restored source
+image needs fresh tiles.
+
 ## Stale task reconciliation
 
 `reconcile_stale_tasks` runs on **backend startup**. It marks any task stuck in

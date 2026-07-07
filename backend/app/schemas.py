@@ -421,6 +421,16 @@ class RebuildTilesRequest(BaseModel):
         return value
 
 
+class FileRestoreRequest(BaseModel):
+    """Parameters for restoring a single file from a snapshot."""
+
+    snapshot_name: str
+    member_path: str
+
+    _validate_snapshot = field_validator("snapshot_name", mode="before")(normalize_nonblank_value)
+    _validate_member_path = field_validator("member_path", mode="before")(normalize_nonblank_value)
+
+
 # ── Bulk Import Job ──────────────────────────────────────
 
 class BulkImportJobOut(BaseModel):

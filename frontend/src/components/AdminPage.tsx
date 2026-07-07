@@ -1,4 +1,4 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Accordion from '@mui/material/Accordion'
 import AccordionDetails from '@mui/material/AccordionDetails'
 import AccordionSummary from '@mui/material/AccordionSummary'
@@ -17,10 +17,15 @@ import Divider from '@mui/material/Divider'
 import IconButton from '@mui/material/IconButton'
 import LinearProgress from '@mui/material/LinearProgress'
 import Link from '@mui/material/Link'
+import List from '@mui/material/List'
+import ListItemButton from '@mui/material/ListItemButton'
+import ListItemText from '@mui/material/ListItemText'
+import MenuItem from '@mui/material/MenuItem'
 import Snackbar from '@mui/material/Snackbar'
 import Stack from '@mui/material/Stack'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
+import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import CloseIcon from '@mui/icons-material/Close'
 import DownloadIcon from '@mui/icons-material/Download'
@@ -31,10 +36,13 @@ import UploadFileIcon from '@mui/icons-material/UploadFile'
 import CancelIcon from '@mui/icons-material/Cancel'
 import {
   ApiError,
+  fetchBackupSnapshotManifest,
   startDbExport,
   startDbImport,
+  listBackupSnapshots,
   startFilesExport,
   initFilesImport,
+  startFileRestore,
   uploadTaskFile,
   fetchAdminTask,
   fetchAdminTasks,
@@ -42,7 +50,7 @@ import {
   downloadAdminTaskResult,
   userMessage,
 } from '../api'
-import type { AdminTask } from '../api'
+import type { AdminTask, BackupSnapshotManifest, BackupSnapshotSummary } from '../api'
 import { useAuth } from '../useAuth'
 import ConfirmImportDialog, { type ConfirmImportKind } from './ConfirmImportDialog'
 import ChangelogAdmin from './ChangelogAdmin'
@@ -59,6 +67,33 @@ const TASK_LABELS: Record<string, string> = {
   db_import: 'Database Import',
   files_export: 'Filesystem Export',
   files_import: 'Filesystem Import',
+  file_restore: 'File Restore',
+  rebuild_tiles: 'Rebuild Tiles',
+}
+
+function isRestoreNotConfigured(err: unknown): err is ApiError {
+  return (
+    err instanceof ApiError &&
+    err.status === 400 &&
+    err.detail.toLowerCase().includes('backup restore is not configured')
+  )
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  const units = ['KiB', 'MiB', 'GiB', 'TiB']
+  let value = bytes / 1024
+  let unit = units[0]
+  for (let i = 1; i < units.length; i++) {
+    if (value < 1024) break
+    value /= 1024
+    unit = units[i]
+  }
+  return `${value.toFixed(value >= 10 ? 1 : 2)} ${unit}`
+}
+
+function shortHash(hash: string): string {
+  return hash.length > 12 ? hash.slice(0, 12) : hash
 }
 
 /** Snackbar notification for a completed/failed task. */
@@ -111,6 +146,17 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   const [logTask, setLogTask] = useState<AdminTask | null>(null)
   const [activeTab, setActiveTab] = useState<AdminTabValue>('changelog')
   const [taskHistoryExpanded, setTaskHistoryExpanded] = useState(false)
+  const [restoreSnapshots, setRestoreSnapshots] = useState<BackupSnapshotSummary[]>([])
+  const [restoreConfigured, setRestoreConfigured] = useState<boolean | null>(null)
+  const [restoreLoadingSnapshots, setRestoreLoadingSnapshots] = useState(false)
+  const [restorePanelError, setRestorePanelError] = useState<string | null>(null)
+  const [selectedRestoreSnapshot, setSelectedRestoreSnapshot] = useState('')
+  const [selectedRestoreManifest, setSelectedRestoreManifest] =
+    useState<BackupSnapshotManifest | null>(null)
+  const [restoreManifestLoading, setRestoreManifestLoading] = useState(false)
+  const [restoreManifestFilter, setRestoreManifestFilter] = useState('')
+  const [selectedRestoreMemberPath, setSelectedRestoreMemberPath] = useState<string | null>(null)
+  const [restoreConfirmOpen, setRestoreConfirmOpen] = useState(false)
 
   const [error, setError] = useState<string | null>(null)
   const [starting, setStarting] = useState<string | null>(null) // task_type being kicked off
@@ -291,6 +337,69 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     [pollTask],
   )
 
+  const loadRestoreManifest = useCallback(async (snapshotName: string) => {
+    if (!snapshotName) {
+      setSelectedRestoreManifest(null)
+      setSelectedRestoreMemberPath(null)
+      return
+    }
+    setRestoreManifestLoading(true)
+    setRestorePanelError(null)
+    try {
+      const manifest = await fetchBackupSnapshotManifest(snapshotName)
+      setSelectedRestoreManifest(manifest)
+      setSelectedRestoreMemberPath(null)
+    } catch (err) {
+      if (isRestoreNotConfigured(err)) {
+        setRestoreConfigured(false)
+        setRestoreSnapshots([])
+        setSelectedRestoreSnapshot('')
+        setSelectedRestoreManifest(null)
+        setSelectedRestoreMemberPath(null)
+        setRestoreManifestFilter('')
+        return
+      }
+      setRestorePanelError(userMessage(err, 'Failed to load backup snapshot manifest'))
+    } finally {
+      setRestoreManifestLoading(false)
+    }
+  }, [])
+
+  const loadRestoreSnapshots = useCallback(async () => {
+    setRestoreLoadingSnapshots(true)
+    setRestorePanelError(null)
+    try {
+      const snapshots = await listBackupSnapshots()
+      setRestoreConfigured(true)
+      setRestoreSnapshots(snapshots)
+      const nextSnapshot =
+        snapshots.find((snapshot) => snapshot.name === selectedRestoreSnapshot)?.name ??
+        snapshots[0]?.name ??
+        ''
+      setSelectedRestoreSnapshot(nextSnapshot)
+      if (nextSnapshot) {
+        void loadRestoreManifest(nextSnapshot)
+      } else {
+        setSelectedRestoreManifest(null)
+        setSelectedRestoreMemberPath(null)
+      }
+    } catch (err) {
+      if (isRestoreNotConfigured(err)) {
+        setRestoreConfigured(false)
+        setRestoreSnapshots([])
+        setSelectedRestoreSnapshot('')
+        setSelectedRestoreManifest(null)
+        setSelectedRestoreMemberPath(null)
+        setRestoreManifestFilter('')
+        return
+      }
+      setRestoreConfigured(true)
+      setRestorePanelError(userMessage(err, 'Failed to load backup snapshots'))
+    } finally {
+      setRestoreLoadingSnapshots(false)
+    }
+  }, [loadRestoreManifest, selectedRestoreSnapshot])
+
   const handleExport = () => kickOff('db_export', startDbExport)
   const handleExportFiles = () => kickOff('files_export', startFilesExport)
 
@@ -382,6 +491,60 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
         if (task !== undefined) uploadAbortRefs.current.delete(task.id)
       }
     }
+  }
+
+  const handleBackupsTabChange = (_event: React.SyntheticEvent, value: AdminTabValue) => {
+    setActiveTab(value)
+    if (value === 'backups') {
+      void loadRestoreSnapshots()
+    }
+  }
+
+  const handleRestoreSnapshotSelect = (snapshotName: string) => {
+    setSelectedRestoreSnapshot(snapshotName)
+    setSelectedRestoreManifest(null)
+    setSelectedRestoreMemberPath(null)
+    setRestoreManifestFilter('')
+    if (snapshotName) {
+      void loadRestoreManifest(snapshotName)
+    }
+  }
+
+  const filteredRestoreEntries = useMemo(() => {
+    if (!selectedRestoreManifest?.files) return []
+    const entries = Object.entries(selectedRestoreManifest.files).map(([path, entry]) => ({
+      path,
+      size: entry.size,
+      sha256: entry.sha256,
+    }))
+    const needle = restoreManifestFilter.trim().toLowerCase()
+    return entries
+      .filter((entry) =>
+        needle.length === 0
+          ? true
+          : [entry.path, entry.sha256, String(entry.size)].some((value) =>
+              value.toLowerCase().includes(needle),
+            ),
+      )
+      .sort((a, b) => a.path.localeCompare(b.path))
+  }, [restoreManifestFilter, selectedRestoreManifest])
+
+  const handleOpenRestoreConfirm = () => {
+    if (!selectedRestoreSnapshot || !selectedRestoreMemberPath) return
+    setRestoreConfirmOpen(true)
+  }
+
+  const handleConfirmRestore = async () => {
+    if (!selectedRestoreSnapshot || !selectedRestoreMemberPath) return
+    const snapshotName = selectedRestoreSnapshot
+    const memberPath = selectedRestoreMemberPath
+    setRestoreConfirmOpen(false)
+    await kickOff('file_restore', () =>
+      startFileRestore({
+        snapshot_name: snapshotName,
+        member_path: memberPath,
+      }),
+    )
   }
 
   // Dismiss a snackbar notification and remove the task from activeTasks
@@ -569,11 +732,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
           </Alert>
         ))}
 
-      <Tabs
-        value={activeTab}
-        onChange={(_event, value: AdminTabValue) => setActiveTab(value)}
-        aria-label="Admin sections"
-      >
+      <Tabs value={activeTab} onChange={handleBackupsTabChange} aria-label="Admin sections">
         <Tab
           label="Changelog"
           value="changelog"
@@ -666,6 +825,145 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
                   </Button>
                 </CardContent>
               </Card>
+            </Box>
+          </Box>
+
+          <Box>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Restore individual file
+            </Typography>
+            <Box
+              sx={{
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 1,
+                p: 2,
+                bgcolor: 'background.paper',
+              }}
+            >
+              <Stack spacing={2}>
+                <Typography variant="body2" color="text.secondary">
+                  Browse backup snapshot manifests, search for a source file, and restore one
+                  `data/` member at a time.
+                </Typography>
+
+                {restoreConfigured === false ? (
+                  <Alert severity="info">
+                    Backup restore is not configured yet in this environment. The SAS-backed
+                    snapshot browser will enable automatically once the backend credentials are
+                    provisioned.
+                  </Alert>
+                ) : restorePanelError ? (
+                  <Alert severity="error">{restorePanelError}</Alert>
+                ) : null}
+
+                {restoreLoadingSnapshots ? (
+                  <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                    <CircularProgress size={28} />
+                  </Box>
+                ) : (
+                  <>
+                    <TextField
+                      select
+                      fullWidth
+                      label="Snapshot"
+                      value={selectedRestoreSnapshot}
+                      onChange={(event) => handleRestoreSnapshotSelect(String(event.target.value))}
+                      disabled={restoreConfigured === false || restoreSnapshots.length === 0}
+                      helperText={
+                        restoreConfigured === false
+                          ? 'Restore browsing is disabled until the backend SAS is configured.'
+                          : restoreSnapshots.length === 0
+                            ? 'No snapshots are available yet.'
+                            : 'Choose a snapshot to browse its manifest.'
+                      }
+                    >
+                      <MenuItem value="">
+                        <em>Select a snapshot</em>
+                      </MenuItem>
+                      {restoreSnapshots.map((snapshot) => (
+                        <MenuItem key={snapshot.name} value={snapshot.name}>
+                          {snapshot.name}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+
+                    {restoreConfigured !== false && selectedRestoreSnapshot && (
+                      <>
+                        {restoreManifestLoading ? (
+                          <Box sx={{ display: 'flex', justifyContent: 'center', py: 2 }}>
+                            <CircularProgress size={24} />
+                          </Box>
+                        ) : selectedRestoreManifest ? (
+                          <>
+                            <TextField
+                              label="Filter files"
+                              value={restoreManifestFilter}
+                              onChange={(event) => setRestoreManifestFilter(event.target.value)}
+                              helperText="Search by path, size, or hash."
+                              fullWidth
+                            />
+
+                            <Typography variant="body2" color="text.secondary">
+                              {filteredRestoreEntries.length} of{' '}
+                              {Object.keys(selectedRestoreManifest.files ?? {}).length} file
+                              {Object.keys(selectedRestoreManifest.files ?? {}).length === 1
+                                ? ''
+                                : 's'}{' '}
+                              match your filter.
+                            </Typography>
+
+                            <Box
+                              sx={{
+                                border: 1,
+                                borderColor: 'divider',
+                                borderRadius: 1,
+                                maxHeight: 360,
+                                overflow: 'auto',
+                                bgcolor: 'background.default',
+                              }}
+                            >
+                              {filteredRestoreEntries.length > 0 ? (
+                                <List dense disablePadding>
+                                  {filteredRestoreEntries.map((entry) => (
+                                    <ListItemButton
+                                      key={entry.path}
+                                      selected={selectedRestoreMemberPath === entry.path}
+                                      onClick={() => setSelectedRestoreMemberPath(entry.path)}
+                                    >
+                                      <ListItemText
+                                        primary={entry.path}
+                                        secondary={`Size ${formatBytes(entry.size)} · SHA-256 ${shortHash(entry.sha256)}`}
+                                      />
+                                    </ListItemButton>
+                                  ))}
+                                </List>
+                              ) : (
+                                <Box sx={{ p: 2 }}>
+                                  <Typography variant="body2" color="text.secondary">
+                                    No files match this filter.
+                                  </Typography>
+                                </Box>
+                              )}
+                            </Box>
+
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+                              <Button
+                                variant="contained"
+                                color="warning"
+                                disabled={busy || selectedRestoreMemberPath === null}
+                                onClick={handleOpenRestoreConfirm}
+                              >
+                                Restore selected file
+                              </Button>
+                            </Box>
+                          </>
+                        ) : null}
+                      </>
+                    )}
+                  </>
+                )}
+              </Stack>
             </Box>
           </Box>
 
@@ -869,6 +1167,34 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
           </Box>
         </Stack>
       </AdminTabPanel>
+
+      <Dialog
+        open={restoreConfirmOpen}
+        onClose={() => setRestoreConfirmOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>Confirm file restore</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Typography variant="body2">
+              Restore <strong>{selectedRestoreMemberPath ?? ''}</strong> from snapshot{' '}
+              <strong>{selectedRestoreSnapshot}</strong>?
+            </Typography>
+            <Alert severity="warning">
+              The file will overwrite the current path under the shared data volume. If this
+              restores a source image, its tiles may need to be regenerated with Rebuild Tiles after
+              the task completes.
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRestoreConfirmOpen(false)}>Cancel</Button>
+          <Button color="warning" variant="contained" onClick={() => void handleConfirmRestore()}>
+            Restore
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ── Snackbar notifications ────────────────────────── */}
       {notifications.map((n, index) => (

@@ -15,6 +15,10 @@ env:
   SOURCE_IMAGES_DIR: /data/source_images
   TILES_DIR: /data/tiles
   EXPORT_PIGZ_THREADS: 2
+  AZURE_BACKUP_PREFIX: ''
+
+azureReadBackup:
+  secretName: azure-read-backup-credentials
 
 # Mount the ConfigMap published by the hriv-backup chart so
 # ``/api/admin/version`` can surface the deployed backup version

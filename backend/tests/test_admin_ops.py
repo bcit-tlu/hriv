@@ -27,6 +27,7 @@ from app.admin_ops import (
     reconcile_stale_tasks,
     run_db_export,
     run_db_import,
+    run_file_restore,
     run_files_export,
     run_files_import,
     run_rebuild_tiles,
@@ -1590,6 +1591,57 @@ async def test_run_files_import_success(tmp_path) -> None:
     assert task.progress == 100
     assert "Restored" in task.log
     assert "Rebuild Tiles" in task.log
+
+
+async def test_run_file_restore_success(tmp_path) -> None:
+    request_file = tmp_path / "restore.json"
+    request_file.write_text(
+        json.dumps(
+            {
+                "snapshot_name": "hriv-backup-20260102-020000",
+                "member_path": "data/source_images/a.jpg",
+            }
+        )
+    )
+    task = SimpleNamespace(
+        id=1,
+        task_type="file_restore",
+        status="pending",
+        progress=0,
+        log="",
+        result_filename=None,
+        result_path=None,
+        input_path=str(request_file),
+        error_message=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session.refresh = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch(
+            "app.admin_ops.restore_snapshot_file",
+            return_value={
+                "snapshot_name": "hriv-backup-20260102-020000",
+                "member_path": "data/source_images/a.jpg",
+                "destination": "/data/source_images/a.jpg",
+                "size": 3,
+                "sha256": "abc",
+            },
+        ),
+    ):
+        await run_file_restore(1)
+
+    assert task.status == "completed"
+    assert task.progress == 100
+    assert "Rebuild Tiles" in task.log
+    assert not request_file.exists()
 
 
 async def test_run_db_import_with_groups(tmp_path) -> None:
