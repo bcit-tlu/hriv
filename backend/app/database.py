@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     data_dir: str = "/data"
     source_images_dir: str = "/data/source_images"
     tiles_dir: str = "/data/tiles"
+    export_pigz_threads: int = 2
     cors_origins: str = "*"
     db_pool_size: int = 10
     db_max_overflow: int = 20

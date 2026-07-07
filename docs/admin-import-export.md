@@ -129,6 +129,8 @@ For a full cross-environment clone, follow this order:
 > Compression is parallelized with `pigz` when the backend container image
 > provides it (the backend Dockerfile installs it); otherwise the export falls
 > back to single-threaded gzip automatically.
+> Set `EXPORT_PIGZ_THREADS=2` to cap pigz at a modest thread count; use `0`
+> to opt out and let pigz use all available cores.
 
 > HRIV is **not** in production and has no legacy export archives. Imports do not
 > need to support older export formats — backward-compat code can be removed
