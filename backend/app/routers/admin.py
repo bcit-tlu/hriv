@@ -508,8 +508,8 @@ async def start_file_restore(
     except Exception:
         try:
             os.unlink(input_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug("Failed to remove temporary restore input file %s: %s", input_path, exc)
         raise
     await _kick_off(task, bg)
     return _task_to_dict(task)
