@@ -68,6 +68,7 @@ const TASK_LABELS: Record<string, string> = {
   files_export: 'Filesystem Export',
   files_import: 'Filesystem Import',
   file_restore: 'File Restore',
+  rebuild_tiles: 'Rebuild Tiles',
 }
 
 function isRestoreNotConfigured(err: unknown): err is ApiError {

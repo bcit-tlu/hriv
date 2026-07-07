@@ -464,6 +464,8 @@ async def get_backup_snapshot_manifest(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except BackupSnapshotNotFoundError as exc:
         raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_name} not found") from exc
+    except BackupSnapshotManifestError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @router.post("/tasks/file-restore")
