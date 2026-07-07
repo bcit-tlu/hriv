@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.9.0...backup-v0.10.0) (2026-07-07)
+
+
+### Features
+
+* **admin:** per-file restore from backup snapshots via Admin UI ([#828](https://github.com/bcit-tlu/hriv/issues/828)) ([dc047ae](https://github.com/bcit-tlu/hriv/commit/dc047aeb7f62b827bc03febf342d604d9348c742))
+
 ## [0.9.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.8.0...backup-v0.9.0) (2026-07-06)
 
 
