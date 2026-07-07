@@ -1148,8 +1148,12 @@ def _create_tar_file(
 
     archive_fh = open(dest, "wb")
     try:
+        pigz_args = [pigz_path, "-c"]
+        pigz_threads = settings.export_pigz_threads
+        if isinstance(pigz_threads, int) and pigz_threads > 0:
+            pigz_args.extend(["-p", str(pigz_threads)])
         proc = subprocess.Popen(
-            [pigz_path, "-c"],
+            pigz_args,
             stdin=subprocess.PIPE,
             stdout=archive_fh,
             stderr=subprocess.PIPE,

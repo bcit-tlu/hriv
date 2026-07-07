@@ -65,7 +65,9 @@ production role is:
 This same source-only approach is what the Admin UI's Filesystem Export uses.
 Compression is parallelized with `pigz` when it is present in the container
 image (the backend Dockerfile installs it); otherwise the export falls back to
-single-threaded gzip automatically.
+single-threaded gzip automatically. The `EXPORT_PIGZ_THREADS` env var caps
+pigz's worker count when set to a positive integer; the backend defaults it to
+`2`, and `0` preserves the current all-cores behavior.
 
 Set `BACKUP_MODE=production` (the Helm chart default) to enable this mode.
 Use `BACKUP_MODE=development` for local dev or manual exports that include
