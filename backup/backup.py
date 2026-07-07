@@ -440,6 +440,7 @@ def _enforce_retention(container: ContainerClient) -> None:
                 try:
                     container.delete_blob(_manifest_sidecar_blob_name(blob.name.rsplit("/", 1)[-1]))
                 except ResourceNotFoundError:
+                    # Sidecar manifest may already be gone; continue retention cleanup.
                     log.debug("Manifest sidecar already absent for %s; continuing", blob.name)
                 log.info("  Deleted %s", blob.name)
     except Exception:
@@ -473,6 +474,7 @@ def _enforce_local_retention() -> None:
             try:
                 sidecar.unlink()
             except FileNotFoundError:
+                # Missing local sidecar is expected; archive deletion already succeeded.
                 log.debug("Local manifest sidecar already absent for %s; continuing", f.name)
             log.info("  Deleted %s", f.name)
 

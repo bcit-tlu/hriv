@@ -1927,7 +1927,12 @@ async def run_files_import(task_id: int) -> None:
                 try:
                     os.unlink(input_path)
                 except OSError:
-                    pass
+                    # Best-effort cleanup only; keep the file-restore result intact.
+                    logger.debug(
+                        "Failed to remove staged file-restore params %s after task completion",
+                        input_path,
+                        exc_info=True,
+                    )
 
 
 async def run_file_restore(task_id: int) -> None:
