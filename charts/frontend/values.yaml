@@ -96,6 +96,11 @@ scheduling:
     enabled: false
     topologyKey: topology.kubernetes.io/zone
 
+# Explicit override for the Deployment `.spec.strategy`. Leave empty to let
+# the chart auto-select RollingUpdate with maxSurge: 0/maxUnavailable: 1 for
+# hard zone anti-affinity and replicaCount > 1; otherwise Kubernetes defaults.
+updateStrategy: {}
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
