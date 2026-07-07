@@ -241,11 +241,77 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertFalse(any("data/tiles" in n for n in names))
         marker_blob = "hriv-backups/LAST_SUCCESS.json"
         self.assertIn(marker_blob, uploads)
+        sidecar_blob = f"hriv-backups/{result.name.removesuffix('.tar.gz')}.manifest.json"
+        self.assertIn(sidecar_blob, uploads)
+        sidecar = json.loads(uploads[sidecar_blob].decode())
+        self.assertEqual(sidecar["snapshot_name"], result.name.removesuffix(".tar.gz"))
+        self.assertIn("data/source_images/img.jpg", sidecar["files"])
         marker = json.loads(uploads[marker_blob].decode())
         self.assertEqual(marker["snapshot_name"], result.name.removesuffix(".tar.gz"))
         self.assertEqual(marker["backup_mode"], "production")
         self.assertTrue(marker["tiles_excluded"])
         self.assertGreater(marker["archive_size"], 0)
+
+    def test_run_backup_writes_local_manifest_sidecar(self):
+        self._reload(
+            {
+                "BACKUP_MODE": "production",
+                "DATA_DIR": str(self.data_dir),
+            }
+        )
+        local_dir = self.tmp / "backups"
+        local_dir.mkdir()
+
+        def fake_subprocess_run(cmd, **_kwargs):
+            if cmd[0] == "pg_dump":
+                f_idx = cmd.index("-f")
+                Path(cmd[f_idx + 1]).write_text("dump")
+            return MagicMock(returncode=0)
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run", side_effect=fake_subprocess_run),
+        ):
+            result = backup.run_backup()
+
+        archive = local_dir / result.name
+        sidecar = local_dir / f"{result.name.removesuffix('.tar.gz')}.manifest.json"
+        self.assertTrue(archive.exists())
+        self.assertTrue(sidecar.exists())
+        payload = json.loads(sidecar.read_text())
+        self.assertEqual(payload["snapshot_name"], result.name.removesuffix(".tar.gz"))
+        self.assertIn("data/source_images/img.jpg", payload["files"])
+
+
+class RetentionTestCase(_BackupTestCase):
+    """Tests for snapshot retention cleanup."""
+
+    def setUp(self):
+        super().setUp()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmpdir.cleanup)
+        self.tmp = Path(self._tmpdir.name)
+
+    def test_local_retention_deletes_sidecar_with_archive(self):
+        self._reload({"BACKUP_RETENTION_COUNT": "1"})
+        local_dir = self.tmp / "backups"
+        local_dir.mkdir()
+        old_archive = local_dir / "hriv-backup-20260101-020000.tar.gz"
+        old_archive.write_bytes(b"old")
+        old_sidecar = local_dir / "hriv-backup-20260101-020000.manifest.json"
+        old_sidecar.write_text("{}")
+        new_archive = local_dir / "hriv-backup-20260102-020000.tar.gz"
+        new_archive.write_bytes(b"new")
+        new_sidecar = local_dir / "hriv-backup-20260102-020000.manifest.json"
+        new_sidecar.write_text("{}")
+
+        with patch.object(backup, "_local_backup_dir", return_value=local_dir):
+            backup._enforce_local_retention()
+
+        self.assertFalse(old_archive.exists())
+        self.assertFalse(old_sidecar.exists())
+        self.assertTrue(new_archive.exists())
+        self.assertTrue(new_sidecar.exists())
 
 
 class StatusTestCase(_BackupTestCase):

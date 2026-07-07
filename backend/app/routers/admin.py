@@ -11,8 +11,16 @@ from jose import JWTError, jwt
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..backup_access import (
+    BackupRestoreNotConfiguredError,
+    BackupSnapshotManifestError,
+    BackupSnapshotNotFoundError,
+    get_snapshot_manifest,
+    list_snapshots as list_snapshot_blobs,
+)
 from ..admin_ops import (
     _ensure_tasks_dir,
+    run_file_restore,
     run_db_export,
     run_db_import,
     run_files_export,
@@ -23,7 +31,7 @@ from ..auth import auth_settings, require_role
 from ..database import get_db
 from ..maintenance import disable_maintenance_mode, enable_maintenance_mode, is_maintenance_mode
 from ..models import AdminTask, User
-from ..schemas import RebuildTilesRequest
+from ..schemas import FileRestoreRequest, RebuildTilesRequest
 from ..worker import enqueue_admin_task
 
 logger = logging.getLogger(__name__)
@@ -118,6 +126,7 @@ async def _kick_off(
         runner = {
             "db_export": run_db_export,
             "db_import": run_db_import,
+            "file_restore": run_file_restore,
             "files_export": run_files_export,
             "files_import": run_files_import,
             "rebuild_tiles": run_rebuild_tiles,
@@ -424,6 +433,83 @@ async def get_version(
         "backend": os.environ.get("APP_VERSION") or "dev",
         "backup": _read_backup_version(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Snapshot browsing / per-file restore
+# ---------------------------------------------------------------------------
+
+
+@router.get("/backups/snapshots")
+async def list_backup_snapshots_endpoint(
+    _user: Annotated[User, Depends(_admin)],
+):
+    """List available backup snapshots for the restore browser."""
+    try:
+        return list_snapshot_blobs()
+    except BackupRestoreNotConfiguredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/backups/snapshots/{snapshot_name}/manifest")
+async def get_backup_snapshot_manifest(
+    snapshot_name: str,
+    _user: Annotated[User, Depends(_admin)],
+):
+    """Return a snapshot manifest for browsing and per-file restore."""
+    try:
+        return get_snapshot_manifest(snapshot_name)
+    except BackupRestoreNotConfiguredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except BackupSnapshotNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"Snapshot {snapshot_name} not found") from exc
+
+
+@router.post("/tasks/file-restore")
+async def start_file_restore(
+    user: Annotated[User, Depends(_admin)],
+    bg: BackgroundTasks,
+    request: FileRestoreRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Restore one file from a snapshot via the admin task queue."""
+    try:
+        manifest = get_snapshot_manifest(request.snapshot_name)
+    except BackupRestoreNotConfiguredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except BackupSnapshotNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"Snapshot {request.snapshot_name} not found") from exc
+    except BackupSnapshotManifestError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    files = manifest.get("files")
+    if not isinstance(files, dict) or request.member_path not in files:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{request.member_path} is not present in snapshot {request.snapshot_name}",
+        )
+
+    tasks_dir = _ensure_tasks_dir()
+    input_path = os.path.join(tasks_dir, f"restore-{uuid.uuid4().hex}.json")
+    with open(input_path, "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "snapshot_name": request.snapshot_name,
+                "member_path": request.member_path,
+            },
+            f,
+        )
+
+    try:
+        task = await _create_task(db, "file_restore", user, input_path=input_path)
+    except Exception:
+        try:
+            os.unlink(input_path)
+        except OSError:
+            pass
+        raise
+    await _kick_off(task, bg)
+    return _task_to_dict(task)
 
 
 @router.get("/tasks")
