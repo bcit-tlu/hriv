@@ -1,4 +1,5 @@
 import pytest
+from pydantic import ValidationError
 
 from app.database import Settings
 
@@ -34,3 +35,16 @@ def test_normalize_database_scheme_only_replaces_leading_scheme() -> None:
 
     assert settings.database_url.startswith("postgresql+asyncpg://")
     assert "note=postgresql://example" in settings.database_url
+
+
+def test_export_pigz_threads_rejects_negative_values() -> None:
+    with pytest.raises(ValidationError):
+        Settings(export_pigz_threads=-1)
+
+
+def test_export_pigz_threads_accepts_zero_and_positive_values() -> None:
+    zero = Settings(export_pigz_threads=0)
+    four = Settings(export_pigz_threads=4)
+
+    assert zero.export_pigz_threads == 0
+    assert four.export_pigz_threads == 4

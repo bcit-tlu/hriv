@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 
 
@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     data_dir: str = "/data"
     source_images_dir: str = "/data/source_images"
     tiles_dir: str = "/data/tiles"
-    export_pigz_threads: int = 2
+    export_pigz_threads: int = Field(default=2, ge=0)
     azure_read_sas_url: str = ""
     azure_backup_prefix: str = ""
     cors_origins: str = "*"
