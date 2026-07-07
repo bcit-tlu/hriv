@@ -53,6 +53,8 @@ spec:
               value: {{ .Values.env.SOURCE_IMAGES_DIR | quote }}
             - name: TILES_DIR
               value: {{ .Values.env.TILES_DIR | quote }}
+            - name: EXPORT_PIGZ_THREADS
+              value: {{ .Values.env.EXPORT_PIGZ_THREADS | quote }}
             - name: REDIS_URL
               value: {{ .Values.redis.url | quote }}
             {{- if .Values.observability.openTelemetry.enabled }}

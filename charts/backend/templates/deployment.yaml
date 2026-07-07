@@ -94,6 +94,8 @@ spec:
               value: {{ .Values.env.SOURCE_IMAGES_DIR | quote }}
             - name: TILES_DIR
               value: {{ .Values.env.TILES_DIR | quote }}
+            - name: EXPORT_PIGZ_THREADS
+              value: {{ .Values.env.EXPORT_PIGZ_THREADS | quote }}
             {{- if $feedbackProvider }}
             - name: FEEDBACK_DELIVERY_PROVIDER
               value: {{ $feedbackProvider | quote }}
