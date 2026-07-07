@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.29.0...backend-v0.29.1) (2026-07-07)
+
+
+### Bug Fixes
+
+* **admin:** allow large filesystem-import uploads through nginx ([#833](https://github.com/bcit-tlu/hriv/issues/833)) ([98d4883](https://github.com/bcit-tlu/hriv/commit/98d4883806889cf9f9081ff794bda994f1490880))
+
 ## [0.29.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.28.0...backend-v0.29.0) (2026-07-07)
 
 
