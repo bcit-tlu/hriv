@@ -42,6 +42,7 @@ def _is_upload_path(path: str) -> bool:
         path == "/api/source-images/upload"
         or path.startswith("/api/admin/bulk-import")
         or path in {"/api/admin/tasks/db-import", "/api/admin/tasks/files-import"}
+        or (path.startswith("/api/admin/tasks/") and path.endswith("/upload"))
         or (path.startswith("/api/images/") and path.endswith("/replace"))
     )
 
