@@ -62,6 +62,11 @@ production role is:
 - **Why** — walking and checksumming millions of tile files is slow, produces
   enormous archives, and competes with Longhorn's efficient block-level snapshots.
 
+This same source-only approach is what the Admin UI's Filesystem Export uses.
+Compression is parallelized with `pigz` when it is present in the container
+image (the backend Dockerfile installs it); otherwise the export falls back to
+single-threaded gzip automatically.
+
 Set `BACKUP_MODE=production` (the Helm chart default) to enable this mode.
 Use `BACKUP_MODE=development` for local dev or manual exports that include
 the full `/data` tree.

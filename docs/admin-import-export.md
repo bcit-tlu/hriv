@@ -104,6 +104,32 @@ matters because of foreign keys.
   `programs`, `groups`, `categories`, `images`, `users`, `announcements`,
   `changelog_entries`, `source_images`.
 
+## Filesystem export/import
+
+The Admin page's **Filesystem Export** is intentionally **source-images only**.
+It writes a `.tar.gz` of the preserved filesystem data needed to restore the
+application state, but it excludes the derived DZI tile pyramid under
+`/data/tiles/**`. That keeps exports much smaller and avoids spending time
+walking millions of generated tile files.
+
+- **Export contents:** source images and other authoritative filesystem data.
+- **Excluded:** the tile pyramid (`image_files/`, `image.dzi`,
+  `thumbnail.jpeg`, and other derived tile artifacts) plus `admin_tasks/`
+  scratch files.
+- **Import behavior:** filesystem imports restore the source files only. After
+  a successful files import, run **Rebuild Tiles** so images get fresh tiles.
+  Until then, viewers may show missing or stale tile placeholders.
+
+For a full cross-environment clone, follow this order:
+
+1. **Database import**
+2. **Filesystem import**
+3. **Rebuild Tiles**
+
+> Compression is parallelized with `pigz` when the backend container image
+> provides it (the backend Dockerfile installs it); otherwise the export falls
+> back to single-threaded gzip automatically.
+
 > HRIV is **not** in production and has no legacy export archives. Imports do not
 > need to support older export formats — backward-compat code can be removed
 > rather than maintained.
