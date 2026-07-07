@@ -25,6 +25,11 @@ from opentelemetry.trace import StatusCode
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from .backup_access import (
+    BackupRestoreNotConfiguredError,
+    BackupSnapshotCancelledError,
+    restore_snapshot_file,
+)
 from .database import get_async_session, settings
 from .models import (
     AdminTask,
@@ -1922,4 +1927,196 @@ async def run_files_import(task_id: int) -> None:
                 try:
                     os.unlink(input_path)
                 except OSError:
-                    pass
+                    # Best-effort cleanup only; keep the file-restore result intact.
+                    logger.debug(
+                        "Failed to remove staged file-restore params %s after task completion",
+                        input_path,
+                        exc_info=True,
+                    )
+
+
+async def run_file_restore(task_id: int) -> None:
+    """Restore a single file from a backup snapshot in the background."""
+    async with get_async_session()() as session:
+        task = await session.get(AdminTask, task_id)
+        if task is None:
+            logger.error("AdminTask %d not found", task_id)
+            return
+
+        input_path = task.input_path
+        try:
+            await _update_task(
+                session, task,
+                status="running", progress=0,
+                log_line="Starting snapshot file restore…",
+                check_cancelled=True,
+            )
+
+            if not input_path or not os.path.exists(input_path):
+                raise ValueError("Restore request file not found")
+
+            raw = await asyncio.to_thread(_read_file, input_path)
+            params = json.loads(raw)
+            if not isinstance(params, dict):
+                raise ValueError("Restore request must be a JSON object")
+
+            snapshot_name = params.get("snapshot_name")
+            member_path = params.get("member_path")
+            if not isinstance(snapshot_name, str) or not snapshot_name.strip():
+                raise ValueError("Restore request is missing snapshot_name")
+            if not isinstance(member_path, str) or not member_path.strip():
+                raise ValueError("Restore request is missing member_path")
+
+            await _update_task(
+                session,
+                task,
+                progress=10,
+                log_line=(
+                    f"Restoring {member_path} from snapshot {snapshot_name}…"
+                ),
+                check_cancelled=True,
+            )
+
+            cancel_event = threading.Event()
+
+            async def _poll_cancel_only() -> None:
+                while True:
+                    await asyncio.sleep(_LOG_FLUSH_INTERVAL)
+                    await session.refresh(task, attribute_names=["status"])
+                    if task.status in ("cancelling", "cancelled"):
+                        cancel_event.set()
+                        return
+
+            restore_future = asyncio.ensure_future(
+                asyncio.to_thread(
+                    restore_snapshot_file,
+                    snapshot_name,
+                    member_path,
+                    cancel_event=cancel_event,
+                )
+            )
+            poll_future = asyncio.ensure_future(_poll_cancel_only())
+
+            try:
+                done, _pending = await asyncio.wait(
+                    [restore_future, poll_future],
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if restore_future in done:
+                    poll_future.cancel()
+                    try:
+                        restored = restore_future.result()
+                    except BackupSnapshotCancelledError as exc:
+                        raise TaskCancelled(str(exc)) from exc
+                else:
+                    poll_exc = poll_future.exception() if poll_future.done() else None
+                    if poll_exc is not None:
+                        cancel_event.set()
+                        try:
+                            await asyncio.wait_for(restore_future, timeout=5)
+                        except asyncio.TimeoutError:
+                            # Best-effort shutdown timeout; fall through to cancel the restore task.
+                            logger.debug(
+                                "File restore did not finish within the shutdown grace period; cancelling task",
+                            )
+                        if not restore_future.done():
+                            restore_future.cancel()
+                        raise poll_exc
+                    cancel_event.set()
+                    try:
+                        await asyncio.wait_for(restore_future, timeout=5)
+                    except asyncio.TimeoutError:
+                        # Best-effort shutdown timeout; fall through to cancel the restore task.
+                        logger.debug(
+                            "File restore did not finish within the shutdown grace period; cancelling task",
+                        )
+                    if restore_future.done():
+                        try:
+                            restored = restore_future.result()
+                        except BackupSnapshotCancelledError as exc:
+                            raise TaskCancelled(str(exc)) from exc
+                    else:
+                        restore_future.cancel()
+                        raise TaskCancelled("Task cancelled by admin")
+            finally:
+                if not restore_future.done():
+                    restore_future.cancel()
+                if not poll_future.done():
+                    poll_future.cancel()
+
+            await _update_task(
+                session,
+                task,
+                status="completed",
+                progress=100,
+                log_line=(
+                    f"Restored {restored['member_path']} from {restored['snapshot_name']}. "
+                    "If this is a source image, run Rebuild Tiles if its tiles are stale."
+                ),
+            )
+            logger.info(
+                "Background file restore completed",
+                extra={
+                    "event": "admin_task.file_restore_done",
+                    "task_id": task_id,
+                    "snapshot_name": snapshot_name,
+                    "member_path": member_path,
+                },
+            )
+
+        except TaskCancelled:
+            logger.info(
+                "Background file restore cancelled",
+                extra={"event": "admin_task.file_restore_cancelled", "task_id": task_id},
+            )
+            await session.refresh(task)
+            await _update_task(
+                session, task,
+                status="cancelled",
+                log_line="Task cancelled.",
+            )
+
+        except BackupRestoreNotConfiguredError as exc:
+            logger.error(
+                "Background file restore failed — backup restore is not configured",
+                extra={"event": "admin_task.file_restore_not_configured", "task_id": task_id},
+            )
+            await session.refresh(task)
+            await _update_task(
+                session, task,
+                status="failed",
+                progress=0,
+                log_line=f"ERROR: {exc}",
+                error_message=str(exc),
+            )
+
+        except Exception as exc:
+            span = trace.get_current_span()
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, str(exc))
+            logger.exception(
+                "Background file restore failed",
+                extra={"event": "admin_task.file_restore_failed", "task_id": task_id},
+            )
+            await session.rollback()
+            await session.refresh(task)
+            await _update_task(
+                session, task,
+                status="failed", progress=0,
+                log_line=f"ERROR: {exc}",
+                error_message=str(exc),
+            )
+        finally:
+            if input_path:
+                try:
+                    os.unlink(input_path)
+                except OSError:
+                    logger.debug(
+                        "Ignoring cleanup failure while deleting restore input file",
+                        extra={
+                            "event": "admin_task.file_restore_cleanup_failed",
+                            "task_id": task_id,
+                            "input_path": input_path,
+                        },
+                        exc_info=True,
+                    )

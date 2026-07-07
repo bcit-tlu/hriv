@@ -37,6 +37,9 @@ import {
   startDbExport,
   startDbImport,
   startFilesExport,
+  listBackupSnapshots,
+  fetchBackupSnapshotManifest,
+  startFileRestore,
   initFilesImport,
   uploadTaskFile,
   startFilesImport,
@@ -145,6 +148,47 @@ describe('Background Admin Task API', () => {
       expect(url).toBe('/api/admin/tasks/files-export')
       expect(init.method).toBe('POST')
       expect(result).toEqual(TASK_FIXTURE)
+    })
+  })
+
+  describe('backup snapshot browsing', () => {
+    it('lists backup snapshots', async () => {
+      const snapshots = [
+        {
+          name: 'hriv-backup-20260102-020000.tar.gz',
+          blob_name: 'hriv-backups/hriv-backup-20260102-020000.tar.gz',
+          size: 1234,
+          created_at: '2026-01-02T02:00:00+00:00',
+        },
+      ]
+      mockFetch.mockReturnValueOnce(jsonResponse(snapshots))
+
+      const result = await listBackupSnapshots()
+
+      const [url, init] = mockFetch.mock.calls[0]
+      expect(url).toBe('/api/admin/backups/snapshots')
+      expect(init.method).toBeUndefined()
+      expect(result).toEqual(snapshots)
+    })
+
+    it('fetches a snapshot manifest', async () => {
+      const manifest = {
+        snapshot_name: 'hriv-backup-20260102-020000',
+        created_at: '2026-01-02T02:00:00+00:00',
+        files: {
+          'data/source_images/a.jpg': {
+            size: 3,
+            sha256: 'abc123',
+          },
+        },
+      }
+      mockFetch.mockReturnValueOnce(jsonResponse(manifest))
+
+      const result = await fetchBackupSnapshotManifest('hriv-backup-20260102-020000')
+
+      const [url] = mockFetch.mock.calls[0]
+      expect(url).toBe('/api/admin/backups/snapshots/hriv-backup-20260102-020000/manifest')
+      expect(result).toEqual(manifest)
     })
   })
 
@@ -501,6 +545,29 @@ describe('Background Admin Task API', () => {
       expect(url).toBe('/api/admin/tasks/42/cancel')
       expect(init.method).toBe('POST')
       expect(result.status).toBe('cancelling')
+    })
+  })
+
+  describe('startFileRestore', () => {
+    it('sends POST to /api/admin/tasks/file-restore with the requested member', async () => {
+      const task = { ...TASK_FIXTURE, task_type: 'file_restore' }
+      mockFetch.mockReturnValueOnce(jsonResponse(task))
+
+      const result = await startFileRestore({
+        snapshot_name: 'hriv-backup-20260102-020000',
+        member_path: 'data/source_images/a.jpg',
+      })
+
+      const [url, init] = mockFetch.mock.calls[0]
+      expect(url).toBe('/api/admin/tasks/file-restore')
+      expect(init.method).toBe('POST')
+      expect(init.body).toBe(
+        JSON.stringify({
+          snapshot_name: 'hriv-backup-20260102-020000',
+          member_path: 'data/source_images/a.jpg',
+        }),
+      )
+      expect(result).toEqual(task)
     })
   })
 

@@ -17,6 +17,9 @@ vi.mock('../../src/api', async () => {
     startDbExport: vi.fn(),
     startDbImport: vi.fn(),
     startFilesExport: vi.fn(),
+    listBackupSnapshots: vi.fn(),
+    fetchBackupSnapshotManifest: vi.fn(),
+    startFileRestore: vi.fn(),
     initFilesImport: vi.fn(),
     uploadTaskFile: vi.fn(),
     cancelAdminTask: vi.fn(),
@@ -39,6 +42,9 @@ const mockFetchAdminTask = vi.mocked(api.fetchAdminTask)
 const mockStartDbExport = vi.mocked(api.startDbExport)
 const mockStartDbImport = vi.mocked(api.startDbImport)
 const mockStartFilesExport = vi.mocked(api.startFilesExport)
+const mockListBackupSnapshots = vi.mocked(api.listBackupSnapshots)
+const mockFetchBackupSnapshotManifest = vi.mocked(api.fetchBackupSnapshotManifest)
+const mockStartFileRestore = vi.mocked(api.startFileRestore)
 const mockInitFilesImport = vi.mocked(api.initFilesImport)
 const mockUploadTaskFile = vi.mocked(api.uploadTaskFile)
 const mockCancelAdminTask = vi.mocked(api.cancelAdminTask)
@@ -48,6 +54,24 @@ describe('AdminPage', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockFetchAdminTasks.mockResolvedValue([])
+    mockListBackupSnapshots.mockResolvedValue([])
+    mockFetchBackupSnapshotManifest.mockResolvedValue({
+      snapshot_name: 'hriv-backup-20260102-020000',
+      created_at: '2026-01-02T02:00:00Z',
+      files: {},
+    })
+    mockStartFileRestore.mockResolvedValue({
+      id: 5,
+      task_type: 'file_restore',
+      status: 'pending',
+      progress: 0,
+      log: '',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    })
     mockStartDbExport.mockResolvedValue({
       id: 1,
       task_type: 'db_export',
@@ -185,6 +209,106 @@ describe('AdminPage', () => {
 
     expect(recentTasksToggle).toHaveAttribute('aria-expanded', 'true')
     expect(await screen.findByText('Filesystem Export')).toBeVisible()
+  })
+
+  it('browses a snapshot, restores one file, and surfaces the final task log', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    mockListBackupSnapshots.mockResolvedValue([
+      {
+        name: 'hriv-backup-20260102-020000',
+        blob_name: 'hriv-backups/hriv-backup-20260102-020000.tar.gz',
+        size: 2048,
+        created_at: '2026-01-02T02:00:00Z',
+      },
+    ])
+    mockFetchBackupSnapshotManifest.mockResolvedValue({
+      snapshot_name: 'hriv-backup-20260102-020000',
+      created_at: '2026-01-02T02:00:00Z',
+      files: {
+        'data/source_images/a.jpg': {
+          size: 1024,
+          sha256: 'abcdef1234567890deadbeef',
+        },
+        'data/source_images/b.jpg': {
+          size: 512,
+          sha256: 'feedfacecafebabe00112233',
+        },
+      },
+    })
+    mockStartFileRestore.mockResolvedValue({
+      id: 9,
+      task_type: 'file_restore',
+      status: 'pending',
+      progress: 0,
+      log: '',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-06-19T19:00:00Z',
+      updated_at: '2026-06-19T19:00:00Z',
+    })
+    mockFetchAdminTask.mockResolvedValue({
+      id: 9,
+      task_type: 'file_restore',
+      status: 'completed',
+      progress: 100,
+      log: 'Restored data/source_images/a.jpg from hriv-backup-20260102-020000.\nIf this is a source image, run Rebuild Tiles if its tiles are stale.\n',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-06-19T19:00:00Z',
+      updated_at: '2026-06-19T19:01:00Z',
+    })
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+
+    const snapshotPicker = await screen.findByRole('combobox', { name: 'Snapshot' })
+    await user.click(snapshotPicker)
+    await user.click(await screen.findByRole('option', { name: /hriv-backup-20260102-020000/i }))
+
+    await screen.findByText('data/source_images/a.jpg')
+    const filter = screen.getByRole('textbox', { name: 'Filter files' })
+    await user.type(filter, 'a.jpg')
+    await user.click(screen.getByText('data/source_images/a.jpg'))
+
+    await user.click(screen.getByRole('button', { name: 'Restore selected file' }))
+    expect(await screen.findByRole('dialog', { name: 'Confirm file restore' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Restore' }))
+
+    expect(mockStartFileRestore).toHaveBeenCalledWith({
+      snapshot_name: 'hriv-backup-20260102-020000',
+      member_path: 'data/source_images/a.jpg',
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+
+    const detailsButton = await screen.findByRole('button', { name: 'Details' })
+    await user.click(detailsButton)
+    expect(await screen.findByText(/Rebuild Tiles if its tiles are stale/)).toBeInTheDocument()
+  })
+
+  it('renders the restore panel in a dormant state when backup restore is not configured', async () => {
+    const user = userEvent.setup()
+    mockListBackupSnapshots.mockRejectedValue(
+      new api.ApiError(400, 'backup restore is not configured'),
+    )
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+
+    expect(
+      await screen.findByText(/Backup restore is not configured yet in this environment/i),
+    ).toBeInTheDocument()
+    const snapshotPicker = screen.getByRole('combobox', { name: 'Snapshot' })
+    expect(snapshotPicker).toHaveAttribute('aria-disabled', 'true')
+    expect(mockFetchBackupSnapshotManifest).not.toHaveBeenCalled()
   })
 
   it('stops polling and shows a session-ended message on 401', async () => {

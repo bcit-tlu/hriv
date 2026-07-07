@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     data_dir: str = "/data"
     source_images_dir: str = "/data/source_images"
     tiles_dir: str = "/data/tiles"
+    azure_read_sas_url: str = ""
+    azure_backup_prefix: str = ""
     cors_origins: str = "*"
     db_pool_size: int = 10
     db_max_overflow: int = 20

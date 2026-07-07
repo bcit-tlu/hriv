@@ -18,6 +18,7 @@ interface FilterPopoverButtonProps {
   sx?: SxProps<Theme>
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function filterSurfaceBg(theme: Theme): string {
   return theme.palette.mode === 'dark'
     ? alpha(theme.palette.common.white, 0.08)

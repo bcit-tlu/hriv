@@ -88,6 +88,23 @@ def _local_backup_dir() -> Path:
     return Path("/backups")
 
 
+def _snapshot_stem(snapshot_name: str) -> str:
+    return snapshot_name.removesuffix(".tar.gz")
+
+
+def _manifest_sidecar_name(snapshot_name: str) -> str:
+    return f"{_snapshot_stem(snapshot_name)}.manifest.json"
+
+
+def _manifest_sidecar_path(archive_path: Path) -> Path:
+    return archive_path.with_name(_manifest_sidecar_name(archive_path.name))
+
+
+def _manifest_sidecar_blob_name(snapshot_name: str) -> str:
+    prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
+    return f"{prefix}{_manifest_sidecar_name(snapshot_name)}"
+
+
 def _last_success_marker_path() -> Path:
     return _local_backup_dir() / "LAST_SUCCESS.json"
 
@@ -320,6 +337,7 @@ def run_backup() -> Path | None:
 
         manifest_path = work / "manifest.json"
         manifest_path.write_text(json.dumps(manifest, indent=2))
+        manifest_payload = manifest_path.read_bytes()
 
         # 4. Create tar.gz (stream filesystem data directly into archive) ----
         archive_name = f"{snapshot_name}.tar.gz"
@@ -346,6 +364,15 @@ def run_backup() -> Path | None:
                 with open(archive_path, "rb") as data:
                     container.upload_blob(blob_name, data, overwrite=True)
                 log.info("Upload complete")
+                try:
+                    container.upload_blob(
+                        _manifest_sidecar_blob_name(snapshot_name),
+                        io.BytesIO(manifest_payload),
+                        overwrite=True,
+                    )
+                    log.info("Manifest sidecar uploaded")
+                except Exception:
+                    log.exception("Manifest sidecar upload failed")
             except Exception:
                 log.exception("Azure Blob upload failed")
                 return None
@@ -364,11 +391,16 @@ def run_backup() -> Path | None:
                 archive_path,
             )
             # Copy to a persistent location so it survives tmpdir cleanup
-            persistent = Path("/backups")
+            persistent = _local_backup_dir()
             persistent.mkdir(parents=True, exist_ok=True)
             final = persistent / archive_name
             shutil.copy2(str(archive_path), str(final))
             log.info("Local backup saved to %s", final)
+            try:
+                _manifest_sidecar_path(final).write_bytes(manifest_payload)
+                log.info("Local manifest sidecar saved to %s", _manifest_sidecar_path(final))
+            except Exception:
+                log.exception("Local manifest sidecar write failed")
             _enforce_local_retention()
             _write_last_success_marker(
                 snapshot_name,
@@ -405,6 +437,11 @@ def _enforce_retention(container: ContainerClient) -> None:
             )
             for blob in to_delete:
                 container.delete_blob(blob.name)
+                try:
+                    container.delete_blob(_manifest_sidecar_blob_name(blob.name.rsplit("/", 1)[-1]))
+                except ResourceNotFoundError:
+                    # Sidecar manifest may already be gone; continue retention cleanup.
+                    log.debug("Manifest sidecar already absent for %s; continuing", blob.name)
                 log.info("  Deleted %s", blob.name)
     except Exception:
         log.exception("Failed to enforce retention policy")
@@ -415,7 +452,7 @@ def _enforce_local_retention() -> None:
     if BACKUP_RETENTION_COUNT <= 0:
         return
 
-    local_dir = Path("/backups")
+    local_dir = _local_backup_dir()
     if not local_dir.exists():
         return
 
@@ -433,6 +470,12 @@ def _enforce_local_retention() -> None:
         )
         for f in to_delete:
             f.unlink()
+            sidecar = _manifest_sidecar_path(f)
+            try:
+                sidecar.unlink()
+            except FileNotFoundError:
+                # Missing local sidecar is expected; archive deletion already succeeded.
+                log.debug("Local manifest sidecar already absent for %s; continuing", f.name)
             log.info("  Deleted %s", f.name)
 
 
@@ -444,7 +487,7 @@ def list_snapshots() -> list[dict]:
     """List available snapshots in Azure Blob Storage or locally."""
     if not _azure_configured():
         # List local backups
-        local_dir = Path("/backups")
+        local_dir = _local_backup_dir()
         if not local_dir.exists():
             log.info("No local backups found")
             return []
@@ -604,7 +647,7 @@ def _run_restore_inner(snapshot_name: str | None = None) -> bool:
             return _restore_from_archive(archive_path)
     else:
         # Local restore
-        local_dir = Path("/backups")
+        local_dir = _local_backup_dir()
         if snapshot_name:
             fname = snapshot_name if snapshot_name.endswith(".tar.gz") else f"{snapshot_name}.tar.gz"
             archive_path = local_dir / fname

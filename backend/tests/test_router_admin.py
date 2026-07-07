@@ -10,11 +10,19 @@ from fastapi import HTTPException
 
 import json
 
+from app.backup_access import (
+    BackupRestoreNotConfiguredError,
+    BackupSnapshotManifestError,
+    BackupSnapshotNotFoundError,
+)
 from app.routers.admin import (
     _create_task,
     _kick_off,
     _task_to_dict,
+    list_backup_snapshots_endpoint,
+    get_backup_snapshot_manifest,
     get_version,
+    start_file_restore,
     start_db_export,
     start_db_import,
     start_files_export,
@@ -27,7 +35,7 @@ from app.routers.admin import (
     create_task_download_token,
     download_task_result,
 )
-from app.schemas import RebuildTilesRequest
+from app.schemas import FileRestoreRequest, RebuildTilesRequest
 
 
 def _make_admin_task(
@@ -312,6 +320,98 @@ async def test_start_rebuild_tiles_creates_task(tmp_path) -> None:
     with open(os.path.join(tasks_dir, param_files[0])) as f:
         params = json.load(f)
     assert params == {"scope": "missing", "image_ids": [7, 9]}
+
+
+async def test_start_file_restore_creates_task(tmp_path) -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+
+    mock_exec_result = MagicMock()
+    mock_exec_result.scalars.return_value.first.return_value = None
+    db.execute = AsyncMock(return_value=mock_exec_result)
+
+    task = _make_admin_task(task_type="file_restore")
+
+    async def mock_refresh(obj):
+        for k, v in vars(task).items():
+            setattr(obj, k, v)
+
+    db.refresh = AsyncMock(side_effect=mock_refresh)
+
+    tasks_dir = str(tmp_path / "admin_tasks")
+    request = FileRestoreRequest(
+        snapshot_name="hriv-backup-20260102-020000",
+        member_path="data/source_images/a.jpg",
+    )
+
+    manifest = {
+        "snapshot_name": request.snapshot_name,
+        "files": {
+            request.member_path: {"size": 3, "sha256": "abc"},
+        },
+    }
+
+    with (
+        patch("app.admin_ops._TASKS_DIR", tasks_dir),
+        patch("app.routers.admin.get_snapshot_manifest", return_value=manifest),
+        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+    ):
+        result = await start_file_restore(user, bg, request=request, db=db)
+
+    assert result["task_type"] == "file_restore"
+    assert result["status"] == "pending"
+
+    param_files = [f for f in os.listdir(tasks_dir) if f.startswith("restore-")]
+    assert len(param_files) == 1
+    with open(os.path.join(tasks_dir, param_files[0])) as f:
+        params = json.load(f)
+    assert params == {
+        "snapshot_name": request.snapshot_name,
+        "member_path": request.member_path,
+    }
+
+
+async def test_list_backup_snapshots_disabled_returns_400() -> None:
+    with patch(
+        "app.routers.admin.list_snapshot_blobs",
+        side_effect=BackupRestoreNotConfiguredError("backup restore is not configured"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await list_backup_snapshots_endpoint(MagicMock())
+    assert exc.value.status_code == 400
+
+
+async def test_get_backup_snapshot_manifest_not_configured_returns_400() -> None:
+    with patch(
+        "app.routers.admin.get_snapshot_manifest",
+        side_effect=BackupRestoreNotConfiguredError("backup restore is not configured"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await get_backup_snapshot_manifest("hriv-backup-20260102-020000", MagicMock())
+    assert exc.value.status_code == 400
+
+
+async def test_get_backup_snapshot_manifest_invalid_manifest_returns_500() -> None:
+    with patch(
+        "app.routers.admin.get_snapshot_manifest",
+        side_effect=BackupSnapshotManifestError("manifest.json could not be parsed"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await get_backup_snapshot_manifest("hriv-backup-20260102-020000", MagicMock())
+    assert exc.value.status_code == 500
+    assert exc.value.detail == "manifest.json could not be parsed"
+
+
+async def test_get_backup_snapshot_manifest_missing_archive_returns_404() -> None:
+    with patch(
+        "app.routers.admin.get_snapshot_manifest",
+        side_effect=BackupSnapshotNotFoundError("hriv-backup-20260102-020000"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await get_backup_snapshot_manifest("hriv-backup-20260102-020000", MagicMock())
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Snapshot hriv-backup-20260102-020000 not found"
 
 
 def test_rebuild_tiles_request_defaults_and_validation() -> None:

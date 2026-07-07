@@ -1076,6 +1076,25 @@ export interface AdminTask {
   updated_at: string | null
 }
 
+export interface BackupSnapshotSummary {
+  name: string
+  blob_name: string
+  size: number
+  created_at: string | null
+}
+
+export interface BackupSnapshotManifestEntry {
+  size: number
+  sha256: string
+}
+
+export interface BackupSnapshotManifest {
+  snapshot_name: string
+  created_at: string | null
+  files: Record<string, BackupSnapshotManifestEntry>
+  [key: string]: unknown
+}
+
 export function startDbExport(): Promise<AdminTask> {
   return request('/admin/tasks/db-export', { method: 'POST' })
 }
@@ -1098,6 +1117,24 @@ export async function startDbImport(file: File): Promise<AdminTask> {
 
 export function startFilesExport(): Promise<AdminTask> {
   return request('/admin/tasks/files-export', { method: 'POST' })
+}
+
+export function listBackupSnapshots(): Promise<BackupSnapshotSummary[]> {
+  return request('/admin/backups/snapshots')
+}
+
+export function fetchBackupSnapshotManifest(snapshotName: string): Promise<BackupSnapshotManifest> {
+  return request(`/admin/backups/snapshots/${encodeURIComponent(snapshotName)}/manifest`)
+}
+
+export function startFileRestore(body: {
+  snapshot_name: string
+  member_path: string
+}): Promise<AdminTask> {
+  return request('/admin/tasks/file-restore', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 /**

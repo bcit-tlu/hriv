@@ -330,6 +330,7 @@ async def admin_task_runner(
     from .admin_ops import (
         run_db_export,
         run_db_import,
+        run_file_restore,
         run_files_export,
         run_files_import,
         run_rebuild_tiles,
@@ -338,6 +339,7 @@ async def admin_task_runner(
     runners = {
         "db_export": run_db_export,
         "db_import": run_db_import,
+        "file_restore": run_file_restore,
         "files_export": run_files_export,
         "files_import": run_files_import,
         "rebuild_tiles": run_rebuild_tiles,
