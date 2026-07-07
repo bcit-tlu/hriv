@@ -307,6 +307,7 @@ def restore_snapshot_file(
             try:
                 tmp_path.unlink()
             except OSError:
+                # Best-effort cleanup: do not mask the original restore error.
                 pass
             raise
 
@@ -314,6 +315,7 @@ def restore_snapshot_file(
         try:
             tmp_path.unlink()
         except OSError:
+            # Best-effort cleanup: keep the size-mismatch error as the primary failure.
             pass
         raise BackupSnapshotMemberError(
             f"Restored size mismatch for {member_path}: expected {expected_size}, got {written}"
@@ -324,6 +326,7 @@ def restore_snapshot_file(
         try:
             tmp_path.unlink()
         except OSError:
+            # Best-effort cleanup: keep the checksum error as the primary failure.
             pass
         raise BackupSnapshotMemberError(
             f"SHA-256 mismatch for {member_path}: expected {expected_sha256}, got {digest}"
