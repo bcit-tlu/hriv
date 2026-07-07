@@ -178,7 +178,10 @@ def get_snapshot_manifest(snapshot_name: str) -> dict:
 
     archive_blob = _archive_blob_name(snapshot_stem)
     container = _container_client()
-    downloader = container.download_blob(archive_blob)
+    try:
+        downloader = container.download_blob(archive_blob)
+    except ResourceNotFoundError as exc:
+        raise BackupSnapshotNotFoundError(snapshot_stem) from exc
     reader = _ChunkedBlobReader(downloader)
     member_name = f"{snapshot_stem}/manifest.json"
 
@@ -252,7 +255,10 @@ def restore_snapshot_file(
 
     archive_blob = _archive_blob_name(snapshot_stem)
     container = _container_client()
-    downloader = container.download_blob(archive_blob)
+    try:
+        downloader = container.download_blob(archive_blob)
+    except ResourceNotFoundError as exc:
+        raise BackupSnapshotNotFoundError(snapshot_stem) from exc
     reader = _ChunkedBlobReader(downloader)
     archive_member = f"{snapshot_stem}/{member_path}"
     target_path = Path(settings.data_dir) / Path(member_path).relative_to("data")

@@ -18,6 +18,7 @@ from app import backup_access
 from app.backup_access import (
     BackupRestoreNotConfiguredError,
     BackupSnapshotMemberError,
+    BackupSnapshotNotFoundError,
     get_snapshot_manifest,
     list_snapshots,
     restore_snapshot_file,
@@ -165,6 +166,18 @@ def test_get_snapshot_manifest_falls_back_to_tar_member(monkeypatch, tmp_path) -
     assert result == manifest
 
 
+def test_get_snapshot_manifest_missing_archive_raises_not_found(monkeypatch, tmp_path) -> None:
+    snapshot_name = "hriv-backup-20260102-020000"
+    fake_container = _FakeContainer(
+        [],
+        {},
+    )
+    _configure(monkeypatch, tmp_path, fake_container)
+
+    with pytest.raises(BackupSnapshotNotFoundError, match=snapshot_name):
+        get_snapshot_manifest(snapshot_name)
+
+
 def test_restore_snapshot_file_happy_path(monkeypatch, tmp_path) -> None:
     snapshot_name = "hriv-backup-20260102-020000"
     file_payload = b"restored payload"
@@ -189,6 +202,26 @@ def test_restore_snapshot_file_happy_path(monkeypatch, tmp_path) -> None:
     assert restored.read_bytes() == file_payload
     assert result["sha256"] == sha256
     assert result["member_path"] == "data/source_images/a.jpg"
+
+
+def test_restore_snapshot_file_missing_archive_raises_not_found(monkeypatch, tmp_path) -> None:
+    snapshot_name = "hriv-backup-20260102-020000"
+    file_payload = b"restored payload"
+    sha256 = hashlib.sha256(file_payload).hexdigest()
+    manifest = _snapshot_manifest(
+        snapshot_name,
+        {"data/source_images/a.jpg": (file_payload, sha256)},
+    )
+    fake_container = _FakeContainer(
+        [],
+        {
+            f"hriv-backups/{snapshot_name}.manifest.json": json.dumps(manifest).encode("utf-8"),
+        },
+    )
+    _configure(monkeypatch, tmp_path, fake_container)
+
+    with pytest.raises(BackupSnapshotNotFoundError, match=snapshot_name):
+        restore_snapshot_file(snapshot_name, "data/source_images/a.jpg")
 
 
 def test_restore_snapshot_file_checksum_mismatch(monkeypatch, tmp_path) -> None:

@@ -10,7 +10,11 @@ from fastapi import HTTPException
 
 import json
 
-from app.backup_access import BackupRestoreNotConfiguredError, BackupSnapshotManifestError
+from app.backup_access import (
+    BackupRestoreNotConfiguredError,
+    BackupSnapshotManifestError,
+    BackupSnapshotNotFoundError,
+)
 from app.routers.admin import (
     _create_task,
     _kick_off,
@@ -397,6 +401,17 @@ async def test_get_backup_snapshot_manifest_invalid_manifest_returns_500() -> No
             await get_backup_snapshot_manifest("hriv-backup-20260102-020000", MagicMock())
     assert exc.value.status_code == 500
     assert exc.value.detail == "manifest.json could not be parsed"
+
+
+async def test_get_backup_snapshot_manifest_missing_archive_returns_404() -> None:
+    with patch(
+        "app.routers.admin.get_snapshot_manifest",
+        side_effect=BackupSnapshotNotFoundError("hriv-backup-20260102-020000"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await get_backup_snapshot_manifest("hriv-backup-20260102-020000", MagicMock())
+    assert exc.value.status_code == 404
+    assert exc.value.detail == "Snapshot hriv-backup-20260102-020000 not found"
 
 
 def test_rebuild_tiles_request_defaults_and_validation() -> None:
