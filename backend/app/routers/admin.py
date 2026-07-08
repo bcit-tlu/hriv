@@ -2,12 +2,22 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 from pathlib import Path
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import select, update
@@ -22,6 +32,7 @@ from ..backup_access import (
 )
 from ..admin_ops import (
     _ensure_tasks_dir,
+    _format_bytes,
     delete_files_import_archive,
     list_files_import_archives,
     run_file_restore,
@@ -462,9 +473,9 @@ async def purge_backup_archive(
 @router.put("/tasks/{task_id}/upload")
 async def upload_task_file(
     task_id: int,
+    request: Request,
     user: Annotated[User, Depends(_admin)],
     bg: BackgroundTasks,
-    file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
     """Upload the archive for a task currently in ``uploading`` status.
@@ -474,6 +485,15 @@ async def upload_task_file(
     worker (with an in-process ``BackgroundTasks`` fallback when Redis is
     unavailable).
     """
+    content_type = request.headers.get("content-type", "").lower()
+    if content_type.startswith("multipart/form-data"):
+        raise HTTPException(
+            status_code=415,
+            detail=(
+                "This endpoint expects raw file bytes. Send the archive "
+                "body as application/octet-stream, not multipart/form-data."
+            ),
+        )
     task = await db.get(AdminTask, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -485,25 +505,49 @@ async def upload_task_file(
     if not task.input_path:
         raise HTTPException(status_code=500, detail="Task missing input_path")
 
+    tasks_dir = Path(_ensure_tasks_dir())
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            declared_size = int(content_length)
+        except ValueError:
+            declared_size = None
+        if declared_size is not None:
+            free_bytes = shutil.disk_usage(tasks_dir).free
+            if declared_size > free_bytes:
+                detail = (
+                    "Insufficient space to upload archive: "
+                    f"required {declared_size} bytes "
+                    f"({_format_bytes(declared_size)}), "
+                    f"available {free_bytes} bytes "
+                    f"({_format_bytes(free_bytes)}) in {tasks_dir}"
+                )
+                task.status = "failed"
+                task.error_message = detail
+                task.log = (task.log or "") + f"ERROR: {detail}\n"
+                await db.commit()
+                raise HTTPException(status_code=507, detail=detail)
+
     bytes_written = 0
     try:
         with open(task.input_path, "wb") as f:
-            while True:
-                chunk = await file.read(_TASK_UPLOAD_CHUNK)
+            async for chunk in request.stream():
                 if not chunk:
-                    break
+                    continue
                 f.write(chunk)
                 bytes_written += len(chunk)
-    except Exception:
+    except Exception as exc:
+        reason = f"{type(exc).__name__}: {exc}"
+        logger.exception("File upload failed for task %s", task_id)
         try:
             os.unlink(task.input_path)
         except OSError:
             pass
         task.status = "failed"
-        task.error_message = "File upload failed"
-        task.log = (task.log or "") + "ERROR: File upload failed.\n"
+        task.error_message = reason
+        task.log = (task.log or "") + f"ERROR: {reason}\n"
         await db.commit()
-        raise HTTPException(status_code=500, detail="File upload failed")
+        raise HTTPException(status_code=500, detail=reason) from exc
 
     size_mb = bytes_written / (1024 * 1024)
 

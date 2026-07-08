@@ -21,7 +21,10 @@ Use this skill for administrator-facing operations and long-running task flows.
 
 - `AdminTask` active statuses block another task of the same type.
 - Filesystem import starts in `uploading`; the upload endpoint atomically moves
-  it to `pending` so cancellation remains race-safe.
+  it to `pending` so cancellation remains race-safe. The upload endpoint
+  accepts only a raw `application/octet-stream` body; multipart form uploads
+  are rejected with 415, and a declared `Content-Length` that exceeds free
+  space on the admin-tasks volume fails fast with 507 before streaming begins.
 - Filesystem import stages on the data volume via `IMPORT_STAGING_DIR` (default
   `<data_dir>/.import-staging`) and swaps exported top-level entries into `/data`
   one by one; do not reintroduce `/tmp` staging or whole-directory restore/copy

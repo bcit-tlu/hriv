@@ -121,6 +121,12 @@ export function userMessage(err: unknown, fallback: string): string {
     if (err.status === 413) {
       return 'This file is too large to upload.'
     }
+    if (err.status === 507) {
+      if (usable) {
+        return detail
+      }
+      return 'Not enough free space is available to upload this file.'
+    }
     if (err.status >= 400 && err.status < 500) {
       if (usable) {
         return detail
@@ -1230,9 +1236,6 @@ export function uploadTaskFile(
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
 ): Promise<AdminTask> {
-  const form = new FormData()
-  form.append('file', file)
-
   return new Promise<AdminTask>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', `${BASE}/api/admin/tasks/${taskId}/upload`)
@@ -1241,6 +1244,7 @@ export function uploadTaskFile(
     for (const [k, v] of Object.entries(hdrs)) {
       xhr.setRequestHeader(k, v)
     }
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
 
     if (onProgress) {
       xhr.upload.addEventListener('progress', (e) => {
@@ -1279,7 +1283,7 @@ export function uploadTaskFile(
       signal.addEventListener('abort', () => xhr.abort(), { once: true })
     }
 
-    xhr.send(form)
+    xhr.send(file)
   })
 }
 

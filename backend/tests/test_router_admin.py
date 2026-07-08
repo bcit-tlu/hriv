@@ -79,6 +79,24 @@ def _make_admin_task(
     )
 
 
+class _FakeRequest:
+    def __init__(
+        self,
+        chunks: list[bytes],
+        *,
+        content_type: str = "application/octet-stream",
+        content_length: int | None = None,
+    ) -> None:
+        self.headers = {"content-type": content_type}
+        if content_length is not None:
+            self.headers["content-length"] = str(content_length)
+        self._chunks = chunks
+
+    async def stream(self):
+        for chunk in self._chunks:
+            yield chunk
+
+
 _VERSION_ENV_KEYS = ("APP_VERSION", "BACKUP_VERSION", "BACKUP_VERSION_FILE")
 
 
@@ -631,9 +649,10 @@ async def test_upload_task_file_not_found() -> None:
     bg = MagicMock()
     db = AsyncMock()
     db.get = AsyncMock(return_value=None)
+    request = _FakeRequest([b"fake-data"], content_length=9)
 
     with pytest.raises(HTTPException) as exc:
-        await upload_task_file(999, user, bg, file=MagicMock(), db=db)
+        await upload_task_file(999, request, user, bg, db=db)
     assert exc.value.status_code == 404
 
 
@@ -644,10 +663,63 @@ async def test_upload_task_file_wrong_status() -> None:
     task = _make_admin_task(status="running", input_path="/tmp/x.tar.gz")
     db = AsyncMock()
     db.get = AsyncMock(return_value=task)
+    request = _FakeRequest([b"fake-data"], content_length=9)
 
     with pytest.raises(HTTPException) as exc:
-        await upload_task_file(1, user, bg, file=MagicMock(), db=db)
+        await upload_task_file(1, request, user, bg, db=db)
     assert exc.value.status_code == 409
+
+
+async def test_upload_task_file_rejects_multipart() -> None:
+    """Multipart uploads are rejected so clients send raw bytes."""
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+    request = _FakeRequest(
+        [b"--boundary--"],
+        content_type="multipart/form-data; boundary=boundary",
+        content_length=14,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        await upload_task_file(1, request, user, bg, db=db)
+
+    assert exc.value.status_code == 415
+    assert "raw file bytes" in exc.value.detail
+    db.get.assert_not_awaited()
+
+
+async def test_upload_task_file_fails_fast_on_insufficient_space(tmp_path) -> None:
+    """Declared Content-Length is compared to free space before streaming."""
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path=str(tmp_path / "import.tar.gz"),
+        log="Awaiting file upload: backup.tar.gz\n",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    db.commit = AsyncMock()
+    request = _FakeRequest([b"ignored"], content_length=1024)
+
+    with (
+        patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path / "admin_tasks")),
+        patch(
+            "app.routers.admin.shutil.disk_usage",
+            return_value=SimpleNamespace(free=512),
+        ),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await upload_task_file(1, request, user, bg, db=db)
+
+    assert exc.value.status_code == 507
+    assert "required 1024 bytes" in exc.value.detail
+    assert task.status == "failed"
+    assert "required 1024 bytes" in task.error_message
+    assert "ERROR:" in task.log
+    db.commit.assert_awaited_once()
 
 
 async def test_upload_task_file_success(tmp_path) -> None:
@@ -664,6 +736,7 @@ async def test_upload_task_file_success(tmp_path) -> None:
     )
     db = AsyncMock()
     db.get = AsyncMock(return_value=task)
+    request = _FakeRequest([b"fake-data"], content_length=9)
 
     # The atomic UPDATE returns a result whose scalar() yields the task id.
     update_result = MagicMock()
@@ -678,11 +751,12 @@ async def test_upload_task_file_success(tmp_path) -> None:
     db.refresh = AsyncMock(side_effect=mock_refresh)
 
     # Fake upload file that yields one small chunk
-    upload = MagicMock()
-    upload.read = AsyncMock(side_effect=[b"fake-data", b""])
-
-    with patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True):
-        result = await upload_task_file(task.id, user, bg, file=upload, db=db)
+    with (
+        patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path / "admin_tasks")),
+        patch("app.routers.admin.shutil.disk_usage", return_value=SimpleNamespace(free=10**12)),
+        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+    ):
+        result = await upload_task_file(task.id, request, user, bg, db=db)
 
     assert result["status"] == "pending"
     assert "Upload complete" in result["log"]

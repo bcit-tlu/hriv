@@ -314,6 +314,16 @@ describe('userMessage', () => {
     expect(userMessage(err, 'Too large')).toBe('This file is too large to upload.')
   })
 
+  it('returns detail for 507 storage errors', () => {
+    const err = new ApiError(
+      507,
+      'Insufficient space to upload archive: required 1 bytes, available 0 bytes',
+    )
+    expect(userMessage(err, 'fallback')).toBe(
+      'Insufficient space to upload archive: required 1 bytes, available 0 bytes',
+    )
+  })
+
   it('returns fallback for detail exceeding 200 chars', () => {
     const err = new ApiError(400, 'x'.repeat(201))
     expect(userMessage(err, 'fallback')).toBe('fallback')
