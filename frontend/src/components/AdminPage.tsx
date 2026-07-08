@@ -935,8 +935,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
             </Typography>
             {exportArchives.length > 0 && (
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                {exportArchives.length}{' '}
-                {exportArchives.length === 1 ? 'archive' : 'archives'} using{' '}
+                {exportArchives.length} {exportArchives.length === 1 ? 'archive' : 'archives'} using{' '}
                 {formatBytes(exportArchives.reduce((total, a) => total + a.size_bytes, 0))}
               </Typography>
             )}
