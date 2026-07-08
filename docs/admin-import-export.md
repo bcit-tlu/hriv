@@ -145,6 +145,22 @@ Filesystem imports use a two-step flow to stream a potentially large archive:
    `uploading → pending` (a guarded `UPDATE ... WHERE status = 'uploading'`, so a
    concurrent cancel is respected). Wrong-state uploads return **409**.
 
+Once the task enters `pending`, `run_files_import` stages the archive under
+`IMPORT_STAGING_DIR` on the same volume as `data_dir` (default:
+`<data_dir>/.import-staging`), performs a free-space preflight with a small
+margin over the archive size, and extracts the archive in a single pass. When
+extraction finishes, it swaps each exported top-level entry into `/data` one by
+one with same-volume renames. That keeps `tiles/` and `admin_tasks/` in place,
+avoids a whole-directory rename of `/data`, and removes the extra copytree back
+from `/tmp`.
+
+Archive progress is reported from compressed bytes read, so the UI can keep a
+meaningful extract bar without a separate count-only scan. The implementation
+uses `pigz -dc` when available and falls back to Python gzip streaming when it
+is not. Filesystem-import archives remain on the data volume after import so
+operators can rerun them without re-uploading; delete them when you want to
+reclaim space, and be aware that retained archives can accumulate over time.
+
 ## Rebuild tiles
 
 `rebuild_tiles` regenerates DZI tile trees from the **preserved source images**.

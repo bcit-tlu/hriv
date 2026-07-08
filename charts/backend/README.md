@@ -101,6 +101,30 @@ runtime paths stored in the database:
 For multi-replica API or worker deployments, both PVCs must use
 `ReadWriteMany`.
 
+## Health probes and worker resources
+
+The backend pod's probe settings are configurable through `probes.backend.*`.
+The defaults are chosen to tolerate transient node or database load:
+
+- liveness: `GET /api/health`, `timeoutSeconds: 5`, `failureThreshold: 6`
+- readiness: `GET /api/health/ready`, `timeoutSeconds: 5`, `failureThreshold: 3`
+
+Initial delays and periods remain the same defaults as the previous chart
+behavior, but both probes can be overridden in values if a cluster needs
+different timings.
+
+The arq worker inherits its CPU and memory limits from
+`redis.worker.resources` and now also carries modest ephemeral-storage defaults
+for defense in depth:
+
+- `resources.requests.ephemeral-storage: 256Mi`
+- `resources.limits.ephemeral-storage: 1Gi`
+
+These defaults are intentionally small because import staging now lives on the
+`/data` PVC. Overlays that already set worker CPU/memory continue to merge with
+the chart defaults; no overlay change is required for the new storage keys to
+take effect.
+
 ## Upgrade Notes
 
 The legacy flat backend persistence keys are deprecated but still honored as

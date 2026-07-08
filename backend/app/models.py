@@ -407,6 +407,9 @@ class AdminTask(Base):
     result_filename: Mapped[str | None] = mapped_column(String(500), nullable=True)
     result_path: Mapped[str | None] = mapped_column(Text, nullable=True)
     input_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    original_filename: Mapped[str | None] = mapped_column(
+        String(500), nullable=True,
+    )
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True,
