@@ -380,6 +380,17 @@ class User(Base):
     )
 
 
+# Canonical set of ``AdminTask.status`` values that mean the task is still
+# in-flight (not yet in a terminal ``cancelled``/``completed``/``failed`` state).
+# Shared so routers and background workers agree on what "active" means.
+ACTIVE_TASK_STATUSES: tuple[str, ...] = (
+    "uploading",
+    "pending",
+    "running",
+    "cancelling",
+)
+
+
 class AdminTask(Base):
     """Tracks long-running admin operations (import/export) executed in the background."""
 

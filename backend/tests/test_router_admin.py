@@ -20,10 +20,13 @@ from app.routers import admin as admin_router
 from app.routers.admin import (
     _create_task,
     _kick_off,
+    _safe_admin_task_file,
     _task_to_dict,
     list_backup_snapshots_endpoint,
     get_backup_snapshot_manifest,
     get_version,
+    list_export_archives,
+    purge_backup_archive,
     start_file_restore,
     start_db_export,
     start_db_import,
@@ -1012,3 +1015,206 @@ async def test_download_task_tar_gz(tmp_path) -> None:
         mock_settings.jwt_algorithm = "HS256"
         response = await download_task_result(1, token=token, db=db)
     assert response.media_type == "application/gzip"
+
+
+# ── _safe_admin_task_file ───────────────────────────────
+
+
+def test_safe_admin_task_file_returns_none_for_empty() -> None:
+    assert _safe_admin_task_file(None) is None
+    assert _safe_admin_task_file("") is None
+
+
+def test_safe_admin_task_file_rejects_path_outside_tasks_dir(tmp_path) -> None:
+    tasks_dir = tmp_path / "admin_tasks"
+    tasks_dir.mkdir()
+    outside = str(tmp_path / "outside.json")
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tasks_dir)):
+        result = _safe_admin_task_file(outside)
+    assert result is None
+
+
+def test_safe_admin_task_file_accepts_path_inside_tasks_dir(tmp_path) -> None:
+    tasks_dir = tmp_path / "admin_tasks"
+    tasks_dir.mkdir()
+    inside = tasks_dir / "export.json"
+    inside.touch()
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tasks_dir)):
+        result = _safe_admin_task_file(str(inside))
+    assert result == inside.resolve()
+
+
+# ── list_export_archives ─────────────────────────────────
+
+
+async def test_list_export_archives_empty() -> None:
+    """Returns empty list and zero total when no tasks have on-disk result files."""
+    db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = []
+    db.execute = AsyncMock(return_value=mock_result)
+    result = await list_export_archives(_user=MagicMock(), db=db)
+    assert result == {"archives": [], "total_size_bytes": 0}
+
+
+async def test_list_export_archives_includes_existing_file(tmp_path) -> None:
+    """A task with an on-disk result file appears in the archive list."""
+    filepath = tmp_path / "export.json"
+    filepath.write_text("hello")
+    task = _make_admin_task(
+        task_type="db_export",
+        status="completed",
+        result_path=str(filepath),
+        result_filename="export.json",
+    )
+    db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [task]
+    db.execute = AsyncMock(return_value=mock_result)
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path)):
+        result = await list_export_archives(_user=MagicMock(), db=db)
+    assert len(result["archives"]) == 1
+    assert result["archives"][0]["filename"] == "export.json"
+    assert result["archives"][0]["size_bytes"] == filepath.stat().st_size
+    assert result["total_size_bytes"] == filepath.stat().st_size
+    assert result["archives"][0]["purgeable"] is True
+
+
+async def test_list_export_archives_skips_missing_files(tmp_path) -> None:
+    """Tasks whose result files are missing on disk are silently omitted."""
+    task = _make_admin_task(
+        task_type="db_export",
+        status="completed",
+        result_path=str(tmp_path / "gone.json"),
+        result_filename="gone.json",
+    )
+    db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [task]
+    db.execute = AsyncMock(return_value=mock_result)
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path)):
+        result = await list_export_archives(_user=MagicMock(), db=db)
+    assert result == {"archives": [], "total_size_bytes": 0}
+
+
+async def test_list_export_archives_active_task_not_purgeable(tmp_path) -> None:
+    """A task that is still running has purgeable=False."""
+    filepath = tmp_path / "export.json"
+    filepath.write_text("data")
+    task = _make_admin_task(
+        task_type="db_export",
+        status="running",
+        result_path=str(filepath),
+        result_filename="export.json",
+    )
+    db = AsyncMock()
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [task]
+    db.execute = AsyncMock(return_value=mock_result)
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path)):
+        result = await list_export_archives(_user=MagicMock(), db=db)
+    assert result["archives"][0]["purgeable"] is False
+
+
+# ── purge_backup_archive ─────────────────────────────────
+
+
+async def test_purge_backup_archive_success(tmp_path) -> None:
+    """Archive file is deleted and DB columns are cleared."""
+    filepath = tmp_path / "export.json"
+    filepath.write_text('{"data": true}')
+    task = _make_admin_task(
+        task_type="db_export",
+        status="completed",
+        result_path=str(filepath),
+        result_filename="export.json",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path)):
+        result = await purge_backup_archive(
+            task_id=1, artifact_role="result", _user=MagicMock(), db=db
+        )
+    assert result["deleted"] is True
+    assert result["task_id"] == 1
+    assert result["artifact_role"] == "result"
+    assert not filepath.exists()
+    assert task.result_filename is None
+    assert task.result_path is None
+    db.commit.assert_awaited_once()
+
+
+async def test_purge_backup_archive_unknown_role() -> None:
+    """400 for an artifact_role other than 'result'."""
+    db = AsyncMock()
+    with pytest.raises(HTTPException) as exc:
+        await purge_backup_archive(
+            task_id=1, artifact_role="input", _user=MagicMock(), db=db
+        )
+    assert exc.value.status_code == 400
+
+
+async def test_purge_backup_archive_task_not_found() -> None:
+    """404 when the task does not exist."""
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=None)
+    with pytest.raises(HTTPException) as exc:
+        await purge_backup_archive(
+            task_id=999, artifact_role="result", _user=MagicMock(), db=db
+        )
+    assert exc.value.status_code == 404
+
+
+async def test_purge_backup_archive_non_export_task_rejected() -> None:
+    """404 when the task is not an export task (never listed as an archive)."""
+    task = _make_admin_task(task_type="rebuild_tiles", status="completed")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    with pytest.raises(HTTPException) as exc:
+        await purge_backup_archive(
+            task_id=1, artifact_role="result", _user=MagicMock(), db=db
+        )
+    assert exc.value.status_code == 404
+
+
+async def test_purge_backup_archive_active_task_rejected() -> None:
+    """409 when the task is still active."""
+    task = _make_admin_task(task_type="db_export", status="running")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    with pytest.raises(HTTPException) as exc:
+        await purge_backup_archive(
+            task_id=1, artifact_role="result", _user=MagicMock(), db=db
+        )
+    assert exc.value.status_code == 409
+
+
+async def test_purge_backup_archive_no_result_path(tmp_path) -> None:
+    """404 when the task has no result_path set."""
+    task = _make_admin_task(task_type="db_export", status="completed")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path)):
+        with pytest.raises(HTTPException) as exc:
+            await purge_backup_archive(
+                task_id=1, artifact_role="result", _user=MagicMock(), db=db
+            )
+    assert exc.value.status_code == 404
+
+
+async def test_purge_backup_archive_file_not_on_disk(tmp_path) -> None:
+    """404 when the DB references a path that no longer exists on disk."""
+    task = _make_admin_task(
+        task_type="db_export",
+        status="completed",
+        result_path=str(tmp_path / "gone.json"),
+        result_filename="gone.json",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    with patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path)):
+        with pytest.raises(HTTPException) as exc:
+            await purge_backup_archive(
+                task_id=1, artifact_role="result", _user=MagicMock(), db=db
+            )
+    assert exc.value.status_code == 404
