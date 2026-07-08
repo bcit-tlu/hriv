@@ -522,7 +522,7 @@ async def upload_task_file(
                     f"available {free_bytes} bytes "
                     f"({format_bytes(free_bytes)}) in {tasks_dir}"
                 )
-                result = await db.execute(
+                await db.execute(
                     update(AdminTask)
                     .where(AdminTask.id == task_id, AdminTask.status == "uploading")
                     .values(
@@ -530,7 +530,6 @@ async def upload_task_file(
                         error_message=detail,
                         log=(task.log or "") + f"ERROR: {detail}\n",
                     )
-                    .returning(AdminTask.id)
                 )
                 await db.commit()
                 await db.refresh(task)
@@ -551,7 +550,7 @@ async def upload_task_file(
             os.unlink(task.input_path)
         except OSError:
             pass
-        result = await db.execute(
+        await db.execute(
             update(AdminTask)
             .where(AdminTask.id == task_id, AdminTask.status == "uploading")
             .values(
@@ -559,7 +558,6 @@ async def upload_task_file(
                 error_message=reason,
                 log=(task.log or "") + f"ERROR: {reason}\n",
             )
-            .returning(AdminTask.id)
         )
         await db.commit()
         await db.refresh(task)
