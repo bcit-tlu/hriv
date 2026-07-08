@@ -342,7 +342,10 @@ describe('AdminPage', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Backups' }))
     const filesImportInput = screen.getByTestId('files-import-input') as HTMLInputElement
-    await user.upload(filesImportInput, new File(['archive'], 'backup.tar.gz', { type: 'application/gzip' }))
+    await user.upload(
+      filesImportInput,
+      new File(['archive'], 'backup.tar.gz', { type: 'application/gzip' }),
+    )
     expect(await screen.findByRole('dialog', { name: 'Import filesystem?' })).toBeInTheDocument()
     await user.click(
       screen.getByRole('checkbox', { name: /I have verified a recent backup exists/i }),
@@ -389,7 +392,10 @@ describe('AdminPage', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Backups' }))
     const filesImportInput = screen.getByTestId('files-import-input') as HTMLInputElement
-    await user.upload(filesImportInput, new File(['archive'], 'backup.tar.gz', { type: 'application/gzip' }))
+    await user.upload(
+      filesImportInput,
+      new File(['archive'], 'backup.tar.gz', { type: 'application/gzip' }),
+    )
     expect(await screen.findByRole('dialog', { name: 'Import filesystem?' })).toBeInTheDocument()
     await user.click(
       screen.getByRole('checkbox', { name: /I have verified a recent backup exists/i }),

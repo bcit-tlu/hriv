@@ -274,6 +274,10 @@ def _extract_archive_stream(
                         raise TaskCancelled("Task cancelled by admin")
                     tar.extract(member, path=str(staging_dir), filter="data")
                     member_count += 1
+        except Exception as exc:
+            if cancel_event is not None and cancel_event.is_set():
+                raise TaskCancelled("Task cancelled by admin") from exc
+            raise
         finally:
             reader.close()
 

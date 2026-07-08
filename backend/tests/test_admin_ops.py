@@ -221,6 +221,45 @@ def test_extract_archive_stream_falls_back_without_pigz(tmp_path, monkeypatch) -
 
     assert member_count >= 1
     assert (staging / "data" / "source_images" / "a.txt").read_text() == "a"
+
+
+def test_extract_archive_stream_falls_back_without_pigz_cancelled(
+    tmp_path, monkeypatch
+) -> None:
+    archive = tmp_path / "archive.tar.gz"
+    archive.write_bytes(b"placeholder")
+
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    cancel_event = threading.Event()
+
+    class _FakeTar:
+        def __init__(self):
+            self._yielded = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            if not self._yielded:
+                self._yielded = True
+                return SimpleNamespace(name="data/source_images/a.txt")
+            raise tarfile.ReadError("unexpected end of data")
+
+        def extract(self, member, path, filter=None):
+            cancel_event.set()
+
+    monkeypatch.setattr("app.admin_ops.shutil.which", lambda _: None)
+    monkeypatch.setattr("app.admin_ops.tarfile.open", lambda *args, **kwargs: _FakeTar())
+
+    with pytest.raises(TaskCancelled):
+        _extract_archive_stream(str(archive), staging, cancel_event=cancel_event)
 # ── _create_tar_file tests ─────────────────────────────────
 
 
