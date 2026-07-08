@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
@@ -345,6 +346,111 @@ async def delete_files_import_archive_endpoint(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+_ACTIVE_STATUSES = {"uploading", "pending", "running", "cancelling"}
+
+
+def _safe_admin_task_file(path: str | None) -> Path | None:
+    """Resolve *path* and verify it is inside the admin-tasks directory.
+
+    Returns the resolved ``Path`` when the file is safe to expose, or
+    ``None`` when *path* is empty/``None`` or escapes the tasks directory.
+    """
+    if not path:
+        return None
+    try:
+        resolved = Path(path).resolve()
+        tasks_root = Path(_ensure_tasks_dir()).resolve()
+        resolved.relative_to(tasks_root)  # raises ValueError if outside
+        return resolved
+    except (ValueError, OSError):
+        return None
+
+
+@router.get("/tasks/backup-archives")
+async def list_export_archives(
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """List all on-disk export result archives with their sizes.
+
+    Only tasks whose ``result_path`` resolves to an existing file inside the
+    admin-tasks directory are included.  Import archives are managed separately
+    via ``/tasks/files-import/archives``.
+    """
+    result = await db.execute(
+        select(AdminTask)
+        .where(AdminTask.result_filename.isnot(None))
+        .order_by(AdminTask.id.desc())
+    )
+    tasks = result.scalars().all()
+    archives = []
+    total_size = 0
+    for task in tasks:
+        safe = _safe_admin_task_file(task.result_path)
+        if safe is None or not safe.is_file():
+            continue
+        size = safe.stat().st_size
+        total_size += size
+        archives.append(
+            {
+                "task_id": task.id,
+                "task_type": task.task_type,
+                "artifact_role": "result",
+                "filename": task.result_filename,
+                "size_bytes": size,
+                "status": task.status,
+                "created_at": task.created_at.isoformat() if task.created_at else None,
+                "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+                "purgeable": task.status not in _ACTIVE_STATUSES,
+            }
+        )
+    return {"archives": archives, "total_size_bytes": total_size}
+
+
+@router.delete("/tasks/backup-archives/{task_id}/{artifact_role}")
+async def purge_backup_archive(
+    task_id: int,
+    artifact_role: str,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete an on-disk export archive and clear the DB reference.
+
+    Only ``artifact_role="result"`` is currently supported (import archives
+    are managed via ``DELETE /tasks/files-import/archives/{id}``).
+    """
+    if artifact_role != "result":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown artifact_role '{artifact_role}'. Must be 'result'.",
+        )
+    task = await db.get(AdminTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.status in _ACTIVE_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot purge archive while task is {task.status}",
+        )
+    safe = _safe_admin_task_file(task.result_path)
+    if safe is None:
+        raise HTTPException(status_code=404, detail="Task has no purgeable export archive")
+    if not safe.is_file():
+        raise HTTPException(status_code=404, detail="Archive file not found on disk")
+    size_bytes = safe.stat().st_size
+    try:
+        safe.unlink()
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to delete archive file: {exc}",
+        ) from exc
+    task.result_filename = None
+    task.result_path = None
+    await db.commit()
+    return {"deleted": True, "task_id": task_id, "artifact_role": artifact_role, "size_bytes": size_bytes}
 
 
 @router.put("/tasks/{task_id}/upload")

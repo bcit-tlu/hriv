@@ -1156,6 +1156,34 @@ export function deleteFilesImportArchive(
   })
 }
 
+export interface ExportArchive {
+  task_id: number
+  task_type: string
+  artifact_role: 'result'
+  filename: string
+  size_bytes: number
+  status: string
+  created_at: string | null
+  updated_at: string | null
+  purgeable: boolean
+}
+
+export interface ExportArchivesResponse {
+  archives: ExportArchive[]
+  total_size_bytes: number
+}
+
+export function listExportArchives(): Promise<ExportArchivesResponse> {
+  return request('/admin/tasks/backup-archives')
+}
+
+export function purgeExportArchive(
+  taskId: number,
+  artifactRole: 'result',
+): Promise<{ deleted: boolean; task_id: number; artifact_role: string; size_bytes: number }> {
+  return request(`/admin/tasks/backup-archives/${taskId}/${artifactRole}`, { method: 'DELETE' })
+}
+
 export function listBackupSnapshots(): Promise<BackupSnapshotSummary[]> {
   return request('/admin/backups/snapshots')
 }

@@ -39,6 +39,8 @@ import {
   deleteFilesImportArchive,
   fetchBackupSnapshotManifest,
   fetchFilesImportArchives,
+  listExportArchives,
+  purgeExportArchive,
   startDbExport,
   startDbImport,
   listBackupSnapshots,
@@ -57,6 +59,7 @@ import type {
   AdminTask,
   BackupSnapshotManifest,
   BackupSnapshotSummary,
+  ExportArchive,
   FilesImportArchive,
 } from '../api'
 import { useAuth } from '../useAuth'
@@ -173,6 +176,9 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   const [filesImportArchives, setFilesImportArchives] = useState<FilesImportArchive[]>([])
   const [filesImportArchivesLoading, setFilesImportArchivesLoading] = useState(false)
   const [filesImportArchivesError, setFilesImportArchivesError] = useState<string | null>(null)
+  const [exportArchives, setExportArchives] = useState<ExportArchive[]>([])
+  const [exportArchivesLoading, setExportArchivesLoading] = useState(false)
+  const [exportArchivesError, setExportArchivesError] = useState<string | null>(null)
   // Completed/failed task history (loaded once)
   const [taskHistory, setTaskHistory] = useState<AdminTask[]>([])
   // Snackbar notifications
@@ -547,6 +553,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     if (value === 'backups') {
       void loadRestoreSnapshots()
       void loadFilesImportArchives()
+      void loadExportArchives()
     }
   }
 
@@ -580,6 +587,35 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
       void loadFilesImportArchives()
     } catch (err) {
       setError(userMessage(err, 'Failed to delete archive'))
+    }
+  }
+
+  const loadExportArchives = useCallback(async () => {
+    setExportArchivesLoading(true)
+    setExportArchivesError(null)
+    try {
+      const { archives } = await listExportArchives()
+      setExportArchives(archives)
+    } catch (err) {
+      setExportArchivesError(userMessage(err, 'Failed to load export archives'))
+    } finally {
+      setExportArchivesLoading(false)
+    }
+  }, [])
+
+  const handlePurgeExportArchive = async (archive: ExportArchive) => {
+    if (
+      !window.confirm(
+        `Delete export archive "${archive.filename}" (${formatBytes(archive.size_bytes)})? This cannot be undone.`,
+      )
+    )
+      return
+    setError(null)
+    try {
+      await purgeExportArchive(archive.task_id, 'result')
+      void loadExportArchives()
+    } catch (err) {
+      setError(userMessage(err, 'Failed to purge export archive'))
     }
   }
 
@@ -891,6 +927,74 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
                 </CardContent>
               </Card>
             </Box>
+          </Box>
+
+          <Box>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Stored export archives
+            </Typography>
+            {exportArchives.length > 0 && (
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                {exportArchives.length}{' '}
+                {exportArchives.length === 1 ? 'archive' : 'archives'} using{' '}
+                {formatBytes(exportArchives.reduce((total, a) => total + a.size_bytes, 0))}
+              </Typography>
+            )}
+            {exportArchivesError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {exportArchivesError}
+              </Alert>
+            )}
+            {exportArchivesLoading ? (
+              <Box sx={{ py: 2 }}>
+                <LinearProgress />
+              </Box>
+            ) : exportArchives.length === 0 ? (
+              <Typography color="text.secondary">No stored export archives found.</Typography>
+            ) : (
+              <List disablePadding>
+                {exportArchives.map((archive) => (
+                  <Box
+                    key={`${archive.task_id}-${archive.artifact_role}`}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 2,
+                      py: 1.5,
+                      px: 2,
+                      borderBottom: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <ListItemText
+                      primary={archive.filename}
+                      secondary={
+                        <>
+                          <Typography component="span" variant="body2" color="text.secondary">
+                            Task #{archive.task_id} · {archive.task_type} ·{' '}
+                            {formatBytes(archive.size_bytes)} ·{' '}
+                            {archive.created_at
+                              ? new Date(archive.created_at).toLocaleString()
+                              : ''}{' '}
+                            · {archive.status}
+                          </Typography>
+                        </>
+                      }
+                    />
+                    <Button
+                      size="small"
+                      color="error"
+                      variant="outlined"
+                      disabled={!archive.purgeable}
+                      onClick={() => void handlePurgeExportArchive(archive)}
+                      sx={{ flexShrink: 0 }}
+                    >
+                      Delete
+                    </Button>
+                  </Box>
+                ))}
+              </List>
+            )}
           </Box>
 
           <Box>
