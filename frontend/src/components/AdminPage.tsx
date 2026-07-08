@@ -177,6 +177,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   const [filesImportArchivesLoading, setFilesImportArchivesLoading] = useState(false)
   const [filesImportArchivesError, setFilesImportArchivesError] = useState<string | null>(null)
   const [exportArchives, setExportArchives] = useState<ExportArchive[]>([])
+  const [exportArchivesTotalBytes, setExportArchivesTotalBytes] = useState(0)
   const [exportArchivesLoading, setExportArchivesLoading] = useState(false)
   const [exportArchivesError, setExportArchivesError] = useState<string | null>(null)
   // Completed/failed task history (loaded once)
@@ -265,8 +266,9 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     setExportArchivesLoading(true)
     setExportArchivesError(null)
     try {
-      const { archives } = await listExportArchives()
+      const { archives, total_size_bytes } = await listExportArchives()
       setExportArchives(archives)
+      setExportArchivesTotalBytes(total_size_bytes)
     } catch (err) {
       setExportArchivesError(userMessage(err, 'Failed to load export archives'))
     } finally {
@@ -944,7 +946,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
             {exportArchives.length > 0 && (
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 {exportArchives.length} {exportArchives.length === 1 ? 'archive' : 'archives'} using{' '}
-                {formatBytes(exportArchives.reduce((total, a) => total + a.size_bytes, 0))}
+                {formatBytes(exportArchivesTotalBytes)}
               </Typography>
             )}
             {exportArchivesError && (
