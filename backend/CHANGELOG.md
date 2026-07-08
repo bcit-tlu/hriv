@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.29.1...backend-v0.30.0) (2026-07-08)
+
+
+### Features
+
+* **backend,frontend:** backup archive management — list and purge stored archives ([#846](https://github.com/bcit-tlu/hriv/issues/846)) ([250f7e4](https://github.com/bcit-tlu/hriv/commit/250f7e4ee7e2040c52b1d6075ee6c3fd34c10b58))
+
+
+### Bug Fixes
+
+* **backend:** robust, efficient filesystem import with on-volume staging + re-run ([#838](https://github.com/bcit-tlu/hriv/issues/838)) ([d9af9bc](https://github.com/bcit-tlu/hriv/commit/d9af9bcc06315315c2d0377f15c3299fa131e2a3))
+
 ## [0.29.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.29.0...backend-v0.29.1) (2026-07-07)
 
 
