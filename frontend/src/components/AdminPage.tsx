@@ -36,12 +36,15 @@ import UploadFileIcon from '@mui/icons-material/UploadFile'
 import CancelIcon from '@mui/icons-material/Cancel'
 import {
   ApiError,
+  deleteFilesImportArchive,
   fetchBackupSnapshotManifest,
+  fetchFilesImportArchives,
   startDbExport,
   startDbImport,
   listBackupSnapshots,
   startFilesExport,
   initFilesImport,
+  rerunFilesImportArchive,
   startFileRestore,
   uploadTaskFile,
   fetchAdminTask,
@@ -50,7 +53,12 @@ import {
   downloadAdminTaskResult,
   userMessage,
 } from '../api'
-import type { AdminTask, BackupSnapshotManifest, BackupSnapshotSummary } from '../api'
+import type {
+  AdminTask,
+  BackupSnapshotManifest,
+  BackupSnapshotSummary,
+  FilesImportArchive,
+} from '../api'
 import { useAuth } from '../useAuth'
 import ConfirmImportDialog, { type ConfirmImportKind } from './ConfirmImportDialog'
 import ChangelogAdmin from './ChangelogAdmin'
@@ -90,6 +98,30 @@ function formatBytes(bytes: number): string {
     unit = units[i]
   }
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${unit}`
+}
+
+function getLatestLogLine(log: string): string {
+  const lines = log
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+  return lines.at(-1) ?? ''
+}
+
+function getTaskStatusText(task: AdminTask): string {
+  if (task.status === 'cancelling') return 'Cancelling…'
+  const latest = getLatestLogLine(task.log)
+  if (task.status === 'failed') {
+    return task.error_message ?? latest ?? 'Import failed'
+  }
+  return latest || `Progress: ${task.progress}%`
+}
+
+function getTaskProgressValue(task: AdminTask, uploadProgress: Map<number, number>): number {
+  if (task.status === 'uploading') {
+    return (uploadProgress.get(task.id) ?? 0) * 100
+  }
+  return task.progress
 }
 
 function shortHash(hash: string): string {
@@ -138,6 +170,9 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   const [activeTasks, setActiveTasks] = useState<AdminTask[]>([])
   // Client-side upload progress for tasks in "uploading" status (0–1).
   const [uploadProgress, setUploadProgress] = useState<Map<number, number>>(new Map())
+  const [filesImportArchives, setFilesImportArchives] = useState<FilesImportArchive[]>([])
+  const [filesImportArchivesLoading, setFilesImportArchivesLoading] = useState(false)
+  const [filesImportArchivesError, setFilesImportArchivesError] = useState<string | null>(null)
   // Completed/failed task history (loaded once)
   const [taskHistory, setTaskHistory] = useState<AdminTask[]>([])
   // Snackbar notifications
@@ -400,6 +435,19 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     }
   }, [loadRestoreManifest, selectedRestoreSnapshot])
 
+  const loadFilesImportArchives = useCallback(async () => {
+    setFilesImportArchivesLoading(true)
+    setFilesImportArchivesError(null)
+    try {
+      const archives = await fetchFilesImportArchives()
+      setFilesImportArchives(archives)
+    } catch (err) {
+      setFilesImportArchivesError(userMessage(err, 'Failed to load import archives'))
+    } finally {
+      setFilesImportArchivesLoading(false)
+    }
+  }, [])
+
   const handleExport = () => kickOff('db_export', startDbExport)
   const handleExportFiles = () => kickOff('files_export', startFilesExport)
 
@@ -465,6 +513,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
           next.delete(task!.id)
           return next
         })
+        void loadFilesImportArchives()
       } catch (err) {
         // Suppress AbortError — the cancel handler already took care
         // of UI cleanup and the backend cancellation request (#266).
@@ -497,6 +546,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     setActiveTab(value)
     if (value === 'backups') {
       void loadRestoreSnapshots()
+      void loadFilesImportArchives()
     }
   }
 
@@ -507,6 +557,29 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
     setRestoreManifestFilter('')
     if (snapshotName) {
       void loadRestoreManifest(snapshotName)
+    }
+  }
+
+  const handleRerunFilesImportArchive = async (archiveTaskId: number) => {
+    setError(null)
+    try {
+      const task = await rerunFilesImportArchive(archiveTaskId)
+      setActiveTasks((prev) => [...prev, task])
+      pollTask(task.id)
+      void loadFilesImportArchives()
+    } catch (err) {
+      setError(userMessage(err, 'Failed to rerun archive'))
+    }
+  }
+
+  const handleDeleteFilesImportArchive = async (archiveTaskId: number) => {
+    if (!window.confirm('Delete this retained import archive?')) return
+    setError(null)
+    try {
+      await deleteFilesImportArchive(archiveTaskId)
+      void loadFilesImportArchives()
+    } catch (err) {
+      setError(userMessage(err, 'Failed to delete archive'))
     }
   }
 
@@ -704,27 +777,19 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
             <Box sx={{ width: '100%' }}>
               <Typography variant="body2" sx={{ mb: 0.5 }}>
                 {TASK_LABELS[task.task_type] ?? task.task_type}
-                {task.status === 'cancelling'
-                  ? ' — Cancelling…'
-                  : task.status === 'uploading'
-                    ? ` — Uploading ${Math.round((uploadProgress.get(task.id) ?? 0) * 100)}%`
-                    : ` — ${task.progress}%`}
+                {task.status === 'uploading'
+                  ? ` — Uploading ${Math.round((uploadProgress.get(task.id) ?? 0) * 100)}%`
+                  : ` — ${getTaskStatusText(task)}`}
               </Typography>
               <LinearProgress
                 variant={
                   task.status === 'cancelling'
                     ? 'indeterminate'
-                    : task.status === 'uploading'
-                      ? uploadProgress.has(task.id)
-                        ? 'determinate'
-                        : 'indeterminate'
+                    : task.status === 'uploading' && !uploadProgress.has(task.id)
+                      ? 'indeterminate'
                       : 'determinate'
                 }
-                value={
-                  task.status === 'uploading'
-                    ? (uploadProgress.get(task.id) ?? 0) * 100
-                    : task.progress
-                }
+                value={getTaskProgressValue(task, uploadProgress)}
                 color={task.status === 'cancelling' ? 'warning' : 'primary'}
                 sx={{ height: 6, borderRadius: 1 }}
               />
@@ -826,6 +891,76 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
                 </CardContent>
               </Card>
             </Box>
+          </Box>
+
+          <Box>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              Previously uploaded import archives
+            </Typography>
+            {filesImportArchivesError && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {filesImportArchivesError}
+              </Alert>
+            )}
+            {filesImportArchivesLoading ? (
+              <Box sx={{ py: 2 }}>
+                <LinearProgress />
+              </Box>
+            ) : filesImportArchives.length === 0 ? (
+              <Typography color="text.secondary">
+                No retained filesystem-import archives found.
+              </Typography>
+            ) : (
+              <List disablePadding>
+                {filesImportArchives.map((archive) => (
+                  <Box
+                    key={archive.archive_task_id}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: 2,
+                      py: 1.5,
+                      px: 2,
+                      borderBottom: '1px solid',
+                      borderColor: 'divider',
+                    }}
+                  >
+                    <ListItemText
+                      primary={archive.original_filename ?? `Archive #${archive.archive_task_id}`}
+                      secondary={
+                        <>
+                          <Typography component="span" variant="body2" color="text.secondary">
+                            Task #{archive.archive_task_id} ·{' '}
+                            {archive.size_bytes ? formatBytes(archive.size_bytes) : '0 B'} ·{' '}
+                            {archive.created_at
+                              ? new Date(archive.created_at).toLocaleString()
+                              : ''}{' '}
+                            · {archive.last_status}
+                          </Typography>
+                        </>
+                      }
+                    />
+                    <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        onClick={() => void handleRerunFilesImportArchive(archive.archive_task_id)}
+                      >
+                        Re-run import
+                      </Button>
+                      <Button
+                        size="small"
+                        color="error"
+                        variant="outlined"
+                        onClick={() => void handleDeleteFilesImportArchive(archive.archive_task_id)}
+                      >
+                        Delete
+                      </Button>
+                    </Stack>
+                  </Box>
+                ))}
+              </List>
+            )}
           </Box>
 
           <Box>
@@ -1159,6 +1294,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
                     type="file"
                     accept=".tar.gz,.tgz,application/gzip,application/x-gzip,application/x-tar,application/x-compressed-tar"
                     hidden
+                    data-testid="files-import-input"
                     onChange={handleFilesChange}
                   />
                 </CardContent>
@@ -1259,7 +1395,11 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
               : n.task.status === 'cancelled'
                 ? 'cancelled'
                 : 'failed'}
-            {n.task.error_message ? `: ${n.task.error_message}` : ''}
+            {n.task.status === 'failed'
+              ? `: ${n.task.error_message ?? getLatestLogLine(n.task.log) ?? 'Operation failed'}`
+              : n.task.error_message
+                ? `: ${n.task.error_message}`
+                : ''}
           </Alert>
         </Snackbar>
       ))}
@@ -1294,35 +1434,29 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
                 logTask.status === 'cancelling') && (
                 <Box sx={{ mb: 2 }}>
                   <Typography variant="body2" sx={{ mb: 0.5 }}>
-                    {logTask.status === 'cancelling'
-                      ? 'Cancelling…'
-                      : logTask.status === 'uploading'
-                        ? `Uploading ${Math.round((uploadProgress.get(logTask.id) ?? 0) * 100)}%`
-                        : `Progress: ${logTask.progress}%`}
+                    {logTask.status === 'uploading'
+                      ? `Uploading ${Math.round((uploadProgress.get(logTask.id) ?? 0) * 100)}%`
+                      : logTask.status === 'cancelling'
+                        ? 'Cancelling…'
+                        : getTaskStatusText(logTask)}
                   </Typography>
                   <LinearProgress
                     variant={
                       logTask.status === 'cancelling'
                         ? 'indeterminate'
-                        : logTask.status === 'uploading'
-                          ? uploadProgress.has(logTask.id)
-                            ? 'determinate'
-                            : 'indeterminate'
+                        : logTask.status === 'uploading' && !uploadProgress.has(logTask.id)
+                          ? 'indeterminate'
                           : 'determinate'
                     }
-                    value={
-                      logTask.status === 'uploading'
-                        ? (uploadProgress.get(logTask.id) ?? 0) * 100
-                        : logTask.progress
-                    }
+                    value={getTaskProgressValue(logTask, uploadProgress)}
                     color={logTask.status === 'cancelling' ? 'warning' : 'primary'}
                     sx={{ height: 6, borderRadius: 1 }}
                   />
                 </Box>
               )}
-              {logTask.error_message && (
+              {(logTask.error_message || logTask.status === 'failed') && (
                 <Alert severity="error" sx={{ mb: 2 }}>
-                  {logTask.error_message}
+                  {logTask.error_message ?? getLatestLogLine(logTask.log) ?? 'Import failed'}
                 </Alert>
               )}
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
