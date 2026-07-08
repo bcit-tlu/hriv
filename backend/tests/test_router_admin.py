@@ -702,6 +702,9 @@ async def test_upload_task_file_fails_fast_on_insufficient_space(tmp_path) -> No
     db = AsyncMock()
     db.get = AsyncMock(return_value=task)
     db.commit = AsyncMock()
+    update_result = MagicMock()
+    update_result.scalar.return_value = task.id
+    db.execute = AsyncMock(return_value=update_result)
     request = _FakeRequest([b"ignored"], content_length=1024)
 
     with (
@@ -719,6 +722,48 @@ async def test_upload_task_file_fails_fast_on_insufficient_space(tmp_path) -> No
     assert task.status == "failed"
     assert "required 1024 bytes" in task.error_message
     assert "ERROR:" in task.log
+    db.commit.assert_awaited_once()
+
+
+async def test_upload_task_file_stream_error_preserves_cancelled_status(
+    tmp_path,
+) -> None:
+    """A concurrent cancel must survive a later stream failure."""
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path=str(tmp_path / "import.tar.gz"),
+        log="Awaiting file upload: backup.tar.gz\n",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    db.refresh = AsyncMock()
+    db.commit = AsyncMock()
+    update_result = MagicMock()
+    update_result.scalar.return_value = None
+    db.execute = AsyncMock(return_value=update_result)
+
+    class _CancellingRequest(_FakeRequest):
+        async def stream(self):
+            yield b"part-1"
+            task.status = "cancelled"
+            raise OSError("client disconnected")
+
+    request = _CancellingRequest([b"part-1"], content_length=6)
+
+    with (
+        patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path / "admin_tasks")),
+        patch("app.routers.admin.shutil.disk_usage", return_value=SimpleNamespace(free=10**12)),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await upload_task_file(1, request, user, bg, db=db)
+
+    assert exc.value.status_code == 500
+    assert task.status == "cancelled"
+    assert task.error_message is None
+    assert task.log == "Awaiting file upload: backup.tar.gz\n"
     db.commit.assert_awaited_once()
 
 

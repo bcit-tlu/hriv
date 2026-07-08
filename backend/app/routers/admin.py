@@ -522,9 +522,23 @@ async def upload_task_file(
                     f"available {free_bytes} bytes "
                     f"({_format_bytes(free_bytes)}) in {tasks_dir}"
                 )
-                task.status = "failed"
-                task.error_message = detail
-                task.log = (task.log or "") + f"ERROR: {detail}\n"
+                result = await db.execute(
+                    update(AdminTask)
+                    .where(AdminTask.id == task_id, AdminTask.status == "uploading")
+                    .values(
+                        status="failed",
+                        error_message=detail,
+                        log=(task.log or "") + f"ERROR: {detail}\n",
+                    )
+                    .returning(AdminTask.id)
+                )
+                matched = result.scalar() is not None
+                if matched:
+                    task.status = "failed"
+                    task.error_message = detail
+                    task.log = (task.log or "") + f"ERROR: {detail}\n"
+                else:
+                    await db.refresh(task)
                 await db.commit()
                 raise HTTPException(status_code=507, detail=detail)
 
@@ -543,9 +557,23 @@ async def upload_task_file(
             os.unlink(task.input_path)
         except OSError:
             pass
-        task.status = "failed"
-        task.error_message = reason
-        task.log = (task.log or "") + f"ERROR: {reason}\n"
+        result = await db.execute(
+            update(AdminTask)
+            .where(AdminTask.id == task_id, AdminTask.status == "uploading")
+            .values(
+                status="failed",
+                error_message=reason,
+                log=(task.log or "") + f"ERROR: {reason}\n",
+            )
+            .returning(AdminTask.id)
+        )
+        matched = result.scalar() is not None
+        if matched:
+            task.status = "failed"
+            task.error_message = reason
+            task.log = (task.log or "") + f"ERROR: {reason}\n"
+        else:
+            await db.refresh(task)
         await db.commit()
         raise HTTPException(status_code=500, detail=reason) from exc
 
