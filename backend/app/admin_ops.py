@@ -52,11 +52,352 @@ _TASKS_DIR = os.environ.get(
     "ADMIN_TASKS_DIR",
     os.path.join(str(Path(settings.tiles_dir).parent), "admin_tasks"),
 )
+_IMPORT_STAGING_DIR = os.environ.get(
+    "IMPORT_STAGING_DIR",
+    os.path.join(str(Path(settings.data_dir)), ".import-staging"),
+)
+_IMPORT_STAGING_FREE_SPACE_FACTOR = float(
+    os.environ.get("IMPORT_STAGING_FREE_SPACE_FACTOR", "1.25")
+)
+_IMPORT_STAGING_MIN_FREE_BYTES = int(
+    os.environ.get("IMPORT_STAGING_MIN_FREE_BYTES", str(1024 * 1024 * 1024))
+)
+_IMPORT_STAGING_FREE_SPACE_CHECK_INTERVAL_BYTES = 512 * 1024 * 1024
 
 
 def _ensure_tasks_dir() -> str:
     os.makedirs(_TASKS_DIR, exist_ok=True)
     return _TASKS_DIR
+
+
+def _ensure_import_staging_dir() -> str:
+    os.makedirs(_IMPORT_STAGING_DIR, exist_ok=True)
+    return _IMPORT_STAGING_DIR
+
+
+def _format_bytes(num_bytes: int) -> str:
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if num_bytes < 1024 or unit == "TiB":
+            if unit == "B":
+                return f"{num_bytes:.0f} {unit}"
+            return f"{num_bytes:.1f} {unit}"
+        num_bytes /= 1024
+    return f"{num_bytes:.1f} TiB"
+
+
+def _ensure_import_staging_free_space(staging_dir: Path) -> None:
+    free_bytes = shutil.disk_usage(staging_dir).free
+    if free_bytes < _IMPORT_STAGING_MIN_FREE_BYTES:
+        raise ValueError(
+            "Insufficient free space on data volume during filesystem import: "
+            f"have {_format_bytes(free_bytes)} free, "
+            f"need at least {_format_bytes(_IMPORT_STAGING_MIN_FREE_BYTES)}"
+        )
+
+
+def _ensure_import_staging_same_device(staging_dir: Path, data_dir: Path) -> None:
+    """Fail fast if staging and data directories are on different filesystems.
+
+    On-volume staging restores entries by atomically renaming them from the
+    staging directory into ``data_dir`` (``_swap_imported_entries``). ``os.rename``
+    only works within a single filesystem, so a misconfigured
+    ``IMPORT_STAGING_DIR`` on a different volume would otherwise surface as a
+    cryptic ``EXDEV`` ("Invalid cross-device link") failure part-way through the
+    swap. Checking up front produces a clear, actionable error instead.
+    """
+    if os.stat(staging_dir).st_dev != os.stat(data_dir).st_dev:
+        raise ValueError(
+            "Filesystem import staging directory must be on the same volume as "
+            f"the data directory: staging '{staging_dir}' and data '{data_dir}' "
+            "are on different filesystems, so restored entries cannot be "
+            "atomically moved into place (os.rename fails with EXDEV / "
+            "cross-device link). Set IMPORT_STAGING_DIR to a path on the data "
+            "volume."
+        )
+
+
+def _remove_path(path: Path) -> None:
+    if not path.exists() and not path.is_symlink():
+        return
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def _unique_sibling_path(path: Path, suffix: str) -> Path:
+    timestamp = int(datetime.now(timezone.utc).timestamp())
+    candidate = path.with_name(f"{path.name}{suffix}-{timestamp}")
+    counter = 0
+    while candidate.exists():
+        counter += 1
+        candidate = path.with_name(f"{path.name}{suffix}-{timestamp}-{counter}")
+    return candidate
+
+
+class _CountingReader:
+    def __init__(
+        self,
+        fileobj,
+        *,
+        on_bytes: Callable[[int], None] | None = None,
+        cancel_event: threading.Event | None = None,
+    ) -> None:
+        self._fileobj = fileobj
+        self._on_bytes = on_bytes
+        self._cancel_event = cancel_event
+
+    def read(self, size: int = -1):
+        if self._cancel_event is not None and self._cancel_event.is_set():
+            return b""
+        chunk = self._fileobj.read(size)
+        if chunk and self._on_bytes is not None:
+            self._on_bytes(len(chunk))
+        return chunk
+
+    def close(self) -> None:
+        self._fileobj.close()
+
+
+def _extract_archive_stream(
+    tmp_archive: str,
+    staging_dir: Path,
+    *,
+    cancel_event: threading.Event | None = None,
+    on_progress: Callable[[str, int, int], None] | None = None,
+) -> int:
+    archive_size = os.path.getsize(tmp_archive)
+    if on_progress is not None:
+        on_progress("extract", 0, archive_size)
+
+    compressed_read = 0
+    last_free_space_check = 0
+
+    def _on_bytes(count: int) -> None:
+        nonlocal compressed_read, last_free_space_check
+        compressed_read += count
+        if on_progress is not None:
+            on_progress("extract", compressed_read, archive_size)
+        if compressed_read - last_free_space_check >= (
+            _IMPORT_STAGING_FREE_SPACE_CHECK_INTERVAL_BYTES
+        ):
+            last_free_space_check = compressed_read
+            _ensure_import_staging_free_space(staging_dir)
+
+    pigz_path = shutil.which("pigz")
+    member_count = 0
+    if pigz_path is not None:
+        proc = subprocess.Popen(
+            [pigz_path, "-dc"],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        feeder_exc: list[BaseException | None] = [None]
+        feeder_done = threading.Event()
+
+        def _feed_archive() -> None:
+            try:
+                assert proc.stdin is not None
+                with open(tmp_archive, "rb") as archive_fh:
+                    while True:
+                        if cancel_event is not None and cancel_event.is_set():
+                            break
+                        chunk = archive_fh.read(_CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        proc.stdin.write(chunk)
+                        _on_bytes(len(chunk))
+                    try:
+                        proc.stdin.close()
+                    except OSError:
+                        # Best-effort close; the pipe may already be gone during cancellation or shutdown.
+                        pass
+            except (KeyboardInterrupt, SystemExit, GeneratorExit):
+                try:
+                    if proc.stdin is not None and not proc.stdin.closed:
+                        proc.stdin.close()
+                except OSError:
+                    # Best-effort close; the pipe may already be gone.
+                    pass
+                raise
+            except Exception as exc:
+                feeder_exc[0] = exc
+                try:
+                    if proc.stdin is not None and not proc.stdin.closed:
+                        proc.stdin.close()
+                except OSError:
+                    # Best-effort close; the pipe may already be broken.
+                    pass
+            finally:
+                feeder_done.set()
+
+        feeder = threading.Thread(target=_feed_archive, daemon=True)
+        feeder.start()
+        try:
+            assert proc.stdout is not None
+            with tarfile.open(fileobj=proc.stdout, mode="r|") as tar:
+                for member in tar:
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise TaskCancelled("Task cancelled by admin")
+                    tar.extract(member, path=str(staging_dir), filter="data")
+                    member_count += 1
+            if feeder_exc[0] is not None:
+                raise feeder_exc[0]
+            returncode = proc.wait()
+            if returncode != 0:
+                stderr = (
+                    proc.stderr.read().decode("utf-8", errors="replace").strip()
+                    if proc.stderr is not None
+                    else ""
+                )
+                raise RuntimeError(
+                    f"pigz failed with exit code {returncode}"
+                    + (f": {stderr}" if stderr else "")
+                )
+        except Exception as exc:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+            if feeder_exc[0] is not None:
+                raise feeder_exc[0] from exc
+            raise
+        except (KeyboardInterrupt, SystemExit, GeneratorExit):
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
+            raise
+        finally:
+            feeder_done.wait(timeout=5)
+            feeder.join(timeout=5)
+            if proc.stdout is not None:
+                proc.stdout.close()
+            if proc.stderr is not None:
+                proc.stderr.close()
+    else:
+        reader = _CountingReader(
+            open(tmp_archive, "rb"),
+            on_bytes=_on_bytes,
+            cancel_event=cancel_event,
+        )
+        try:
+            with tarfile.open(fileobj=reader, mode="r|gz") as tar:
+                for member in tar:
+                    if cancel_event is not None and cancel_event.is_set():
+                        raise TaskCancelled("Task cancelled by admin")
+                    tar.extract(member, path=str(staging_dir), filter="data")
+                    member_count += 1
+        except Exception as exc:
+            if cancel_event is not None and cancel_event.is_set():
+                raise TaskCancelled("Task cancelled by admin") from exc
+            raise
+        finally:
+            reader.close()
+
+    return member_count
+
+
+
+def _swap_imported_entries(
+    extracted_dir: Path,
+    data_dir: Path,
+    tiles_dir: str,
+    source_images_dir: str,
+    *,
+    cancel_event: threading.Event | None = None,
+) -> dict[str, int]:
+    tasks_basename = os.path.basename(_TASKS_DIR)
+    staging_basename = os.path.basename(_IMPORT_STAGING_DIR)
+    tiles_basename = os.path.basename(settings.tiles_dir)
+    moved: list[tuple[Path, Path | None]] = []
+
+    def _check_cancel() -> None:
+        if cancel_event is not None and cancel_event.is_set():
+            raise TaskCancelled("Task cancelled by admin")
+
+    try:
+        for entry in sorted(extracted_dir.iterdir(), key=lambda p: p.name):
+            _check_cancel()
+            if entry.name in {tasks_basename, staging_basename, tiles_basename}:
+                continue
+            target = data_dir / entry.name
+            backup = (
+                _unique_sibling_path(target, ".bak")
+                if target.exists() or target.is_symlink()
+                else None
+            )
+            if backup is not None:
+                os.rename(str(target), str(backup))
+            try:
+                os.rename(str(entry), str(target))
+            except Exception:
+                if target.exists() or target.is_symlink():
+                    _remove_path(target)
+                if backup is not None and backup.exists():
+                    try:
+                        os.rename(str(backup), str(target))
+                    except OSError:
+                        logger.debug(
+                            "Failed to restore backup path %s to %s during rollback",
+                            backup,
+                            target,
+                            exc_info=True,
+                        )
+                raise
+            moved.append((target, backup))
+    except Exception:
+        for target, backup in reversed(moved):
+            try:
+                if target.exists() or target.is_symlink():
+                    _remove_path(target)
+            except OSError:
+                logger.debug(
+                    "Failed to remove partially restored path %s during rollback",
+                    target,
+                    exc_info=True,
+                )
+            if backup is not None and backup.exists():
+                try:
+                    os.rename(str(backup), str(target))
+                except OSError:
+                    logger.debug(
+                        "Failed to restore backup path %s to %s during rollback",
+                        backup,
+                        target,
+                        exc_info=True,
+                    )
+        raise
+
+    for _target, backup in reversed(moved):
+        if backup is not None and backup.exists():
+            try:
+                _remove_path(backup)
+            except OSError:
+                logger.warning(
+                    "Filesystem import left backup path behind after success: %s",
+                    backup,
+                    extra={"event": "admin_task.files_import_backup_orphaned"},
+                    exc_info=True,
+                )
+
+    tiles_path = Path(tiles_dir)
+    source_path = Path(source_images_dir)
+    tiles_count = 0
+    source_count = 0
+    if tiles_path.exists():
+        tiles_count = sum(1 for f in tiles_path.rglob("*") if f.is_file())
+    if source_path.exists():
+        source_count = sum(1 for f in source_path.rglob("*") if f.is_file())
+
+    return {"tile_files": tiles_count, "source_files": source_count}
 
 
 # Threshold (seconds) after which an in-flight admin task with no
@@ -178,6 +519,151 @@ def _parse_dt(value: str | None) -> datetime | None:
     if not value:
         return None
     return datetime.fromisoformat(value)
+
+
+def _extract_files_import_original_filename(task: AdminTask) -> str | None:
+    if task.original_filename:
+        return task.original_filename
+    prefix = "Awaiting file upload: "
+    for line in (task.log or "").splitlines():
+        if line.startswith(prefix):
+            filename = line[len(prefix) :].strip()
+            return filename or None
+    return None
+
+
+def _validate_retained_files_import_archive_path(input_path: str) -> Path:
+    tasks_dir = Path(_ensure_tasks_dir()).resolve()
+    archive_path = Path(input_path).resolve()
+    try:
+        archive_path.relative_to(tasks_dir)
+    except ValueError as exc:
+        raise ValueError("Archive path is outside admin_tasks dir") from exc
+    if not archive_path.is_file():
+        raise FileNotFoundError("Archive file not found")
+    return archive_path
+
+
+async def _create_rerun_files_import_task(
+    session: AsyncSession,
+    user: User,
+    *,
+    input_path: str,
+    original_filename: str | None,
+) -> AdminTask:
+    existing = (
+        await session.execute(
+            select(AdminTask).where(
+                AdminTask.task_type == "files_import",
+                AdminTask.status.in_(["uploading", "pending", "running", "cancelling"]),
+            )
+        )
+    ).scalars().first()
+    if existing is not None:
+        raise RuntimeError(
+            "A files import task is already "
+            f"{existing.status} (task #{existing.id}). Please wait for it to "
+            "finish or cancel it first."
+        )
+
+    task = AdminTask(
+        task_type="files_import",
+        status="pending",
+        created_by=user.id,
+        input_path=input_path,
+        original_filename=original_filename,
+    )
+    session.add(task)
+    await session.commit()
+    await session.refresh(task)
+    return task
+
+
+async def list_files_import_archives(session: AsyncSession) -> list[dict[str, object]]:
+    result = await session.execute(
+        select(AdminTask)
+        .where(
+            AdminTask.task_type == "files_import",
+            AdminTask.input_path.is_not(None),
+        )
+        .order_by(AdminTask.id.desc())
+    )
+    archives: list[dict[str, object]] = []
+    for task in result.scalars():
+        if not task.input_path:
+            continue
+        try:
+            archive_path = _validate_retained_files_import_archive_path(task.input_path)
+        except (FileNotFoundError, ValueError):
+            continue
+        archives.append(
+            {
+                "archive_task_id": task.id,
+                "original_filename": _extract_files_import_original_filename(task)
+                or archive_path.name,
+                "size_bytes": archive_path.stat().st_size,
+                "created_at": task.created_at,
+                "last_status": task.status,
+            }
+        )
+    return archives
+
+
+async def rerun_files_import_archive(
+    session: AsyncSession,
+    user: User,
+    archive_task_id: int,
+) -> AdminTask:
+    archive_task = await session.get(AdminTask, archive_task_id)
+    if archive_task is None or archive_task.task_type != "files_import":
+        raise LookupError("Archive task not found")
+    if not archive_task.input_path:
+        raise FileNotFoundError("Archive file not found")
+
+    archive_path = _validate_retained_files_import_archive_path(archive_task.input_path)
+    task = await _create_rerun_files_import_task(
+        session,
+        user,
+        input_path=str(archive_path),
+        original_filename=_extract_files_import_original_filename(archive_task),
+    )
+    task.log = (
+        (task.log or "")
+        + f"Re-running retained archive from task #{archive_task_id}.\n"
+    )
+    await session.commit()
+    await session.refresh(task)
+    return task
+
+
+async def delete_files_import_archive(
+    session: AsyncSession,
+    archive_task_id: int,
+) -> dict[str, object]:
+    archive_task = await session.get(AdminTask, archive_task_id)
+    if archive_task is None or archive_task.task_type != "files_import":
+        raise LookupError("Archive task not found")
+    if not archive_task.input_path:
+        raise FileNotFoundError("Archive file not found")
+
+    archive_path = _validate_retained_files_import_archive_path(archive_task.input_path)
+    active_result = await session.execute(
+        select(AdminTask.id)
+        .where(
+            AdminTask.task_type == "files_import",
+            AdminTask.input_path == archive_task.input_path,
+            AdminTask.status.in_(["uploading", "pending", "running", "cancelling"]),
+        )
+    )
+    if active_result.scalars().first() is not None:
+        raise RuntimeError("Archive is currently in use by an active files import")
+
+    os.unlink(archive_path)
+    return {
+        "archive_task_id": archive_task_id,
+        "deleted": True,
+        "path": str(archive_path),
+    }
 
 
 # ── Database Export ────────────────────────────────────────
@@ -1046,6 +1532,7 @@ def _iter_export_entries(
     while walking, :class:`TaskCancelled` is raised promptly.
     """
     tasks_basename = os.path.basename(_TASKS_DIR)
+    staging_basename = os.path.basename(_IMPORT_STAGING_DIR)
     tiles_basename = os.path.basename(settings.tiles_dir)
 
     def _check_cancel() -> None:
@@ -1057,12 +1544,12 @@ def _iter_export_entries(
 
         rel = os.path.relpath(dirpath, data_dir)
         top = rel.split(os.sep)[0]
-        if rel != "." and top in (tasks_basename, tiles_basename):
+        if rel != "." and top in (tasks_basename, staging_basename, tiles_basename):
             dirnames.clear()
             continue
 
-        # Prune admin_tasks and tiles from child dirs so os.walk skips them.
-        for excluded in (tasks_basename, tiles_basename):
+        # Prune admin_tasks, staging, and tiles from child dirs so os.walk skips them.
+        for excluded in (tasks_basename, staging_basename, tiles_basename):
             if excluded in dirnames:
                 dirnames.remove(excluded)
 
@@ -1421,7 +1908,9 @@ async def run_files_export(task_id: int) -> None:
                         try:
                             await asyncio.wait_for(tar_task, timeout=5)
                         except asyncio.TimeoutError:
-                            pass
+                            logger.debug(
+                                "Timed out waiting for filesystem import to settle after cancel"
+                            )
                         if not tar_task.done():
                             tar_task.cancel()
                         raise poll_exc
@@ -1538,7 +2027,7 @@ def _extract_and_restore(
     cancel_event: threading.Event | None = None,
     on_progress: Callable[[str, int, int], None] | None = None,
 ) -> dict[str, int]:
-    """Extract archive, swap data dir atomically, count restored files.
+    """Extract archive, stage on the data volume, and atomically swap entries.
 
     Parameters
     ----------
@@ -1547,128 +2036,47 @@ def _extract_and_restore(
         the caller can abort cleanly.
     on_progress
         Called as ``on_progress(phase, current, total)`` where *phase*
-        is ``"scan"`` (counting members), ``"extract"`` (extracting
-        files), or ``"finalize"`` (directory swap).  During ``"scan"``
-        and ``"finalize"`` *current* and *total* are zero.  During
-        ``"extract"`` *current* is the number of members extracted so
-        far and *total* is the member count from the scan phase.
+        is ``"extract"`` (streaming archive bytes) or ``"finalize"``
+        (entry-level swap). During ``"extract"`` *current* is the number
+        of compressed bytes consumed so far and *total* is the archive
+        size on disk. During ``"finalize"`` *current* and *total* are zero.
     """
 
     def _check_cancel() -> None:
         if cancel_event is not None and cancel_event.is_set():
             raise TaskCancelled("Task cancelled by admin")
 
-    # Phase 1 — scan: iterate headers to count members.  The archive
-    # must be decompressed sequentially (gzip) so this is I/O-bound but
-    # does not extract any data to disk.
-    if on_progress:
-        on_progress("scan", 0, 0)
-    member_count = 0
-    with tarfile.open(tmp_archive, "r:gz") as tar:
-        for _ in tar:
-            _check_cancel()
-            member_count += 1
-
-    if member_count == 0:
+    staging_root = Path(tmpdir)
+    staging_root.mkdir(parents=True, exist_ok=True)
+    extracted_member_count = _extract_archive_stream(
+        tmp_archive,
+        staging_root,
+        cancel_event=cancel_event,
+        on_progress=on_progress,
+    )
+    if extracted_member_count == 0:
         raise ValueError("Archive is empty")
 
-    # Phase 2 — extract: per-member extraction with progress callbacks.
-    staging = Path(tmpdir) / "staging"
-    staging.mkdir()
-    extracted_count = 0
-    with tarfile.open(tmp_archive, "r:gz") as tar:
-        for member in tar:
-            _check_cancel()
-            tar.extract(member, path=str(staging), filter="data")
-            extracted_count += 1
-            if on_progress:
-                on_progress("extract", extracted_count, member_count)
+    extracted_dir = staging_root / "data"
+    if not extracted_dir.exists():
+        entries = list(staging_root.iterdir())
+        extracted_dir = (
+            entries[0]
+            if len(entries) == 1 and entries[0].is_dir()
+            else staging_root
+        )
 
-    # Phase 3 — finalize: swap the data directory.
+    _check_cancel()
     if on_progress:
         on_progress("finalize", 0, 0)
 
-    extracted_dir = staging / "data"
-    if not extracted_dir.exists():
-        entries = list(staging.iterdir())
-        extracted_dir = entries[0] if len(entries) == 1 and entries[0].is_dir() else staging
-
-    data_path = Path(data_dir)
-    backup_path = data_path.with_name(
-        data_path.name + f".bak-{int(datetime.now(timezone.utc).timestamp())}"
+    return _swap_imported_entries(
+        extracted_dir,
+        Path(data_dir),
+        tiles_dir,
+        source_images_dir,
+        cancel_event=cancel_event,
     )
-
-    # Preserve admin_tasks directory — it contains result files from prior
-    # export tasks and the input file for this very import.  The archive
-    # won't contain it (exports exclude admin_tasks/), so the swap would
-    # otherwise destroy it.
-    tasks_basename = os.path.basename(_TASKS_DIR)
-    tasks_src = data_path / tasks_basename
-    tasks_shelter = Path(tmpdir) / tasks_basename
-
-    try:
-        if tasks_src.exists():
-            # shutil.move falls back to copy+delete across filesystems; the
-            # tmpdir may live on a different device than data_dir (e.g. when
-            # /tmp is a tmpfs), which would trip os.rename with EXDEV.
-            shutil.move(str(tasks_src), str(tasks_shelter))
-
-        if data_path.exists():
-            # ``backup_path`` is ``data_path.with_name(...)`` so they are
-            # always siblings on the same filesystem — ``os.rename`` is
-            # sufficient here. Using ``shutil.move`` would be unsafe in
-            # the rollback path below because its "if dst is a directory,
-            # move src inside it" fallback could silently nest the backup.
-            os.rename(str(data_path), str(backup_path))
-        os.makedirs(str(data_path), exist_ok=True)
-        shutil.copytree(str(extracted_dir), str(data_path), dirs_exist_ok=True)
-        # Restore the preserved admin_tasks directory.  The restored archive
-        # should not contain admin_tasks (exports exclude it), but handle
-        # the edge case where it does by merging.
-        restored_tasks = data_path / tasks_basename
-        if tasks_shelter.exists():
-            if restored_tasks.exists():
-                # Archive unexpectedly contained admin_tasks — merge our
-                # preserved files into it (ours win on conflict).
-                shutil.copytree(str(tasks_shelter), str(restored_tasks), dirs_exist_ok=True)
-                shutil.rmtree(str(tasks_shelter), ignore_errors=True)
-            else:
-                shutil.move(str(tasks_shelter), str(restored_tasks))
-    except Exception:
-        # Restore admin_tasks back into backup before rolling back
-        if tasks_shelter.exists():
-            backup_tasks = backup_path / tasks_basename if backup_path.exists() else tasks_src
-            try:
-                shutil.move(str(tasks_shelter), str(backup_tasks))
-            except OSError:
-                pass
-        if backup_path.exists():
-            if data_path.exists():
-                shutil.rmtree(str(data_path), ignore_errors=True)
-            # Use ``os.rename`` — never ``shutil.move`` — for the rollback.
-            # ``shutil.rmtree(..., ignore_errors=True)`` above may leave
-            # ``data_path`` behind (permission issues, file locks). With
-            # ``shutil.move`` that would silently nest the backup inside
-            # the leftover directory, consuming ``backup_path`` and
-            # leaving no recoverable copy. ``os.rename`` instead fails
-            # loudly ("Directory not empty") and preserves ``backup_path``
-            # so an operator can recover manually.
-            os.rename(str(backup_path), str(data_path))
-        raise
-
-    if backup_path.exists():
-        shutil.rmtree(str(backup_path), ignore_errors=True)
-
-    tiles_count = 0
-    source_count = 0
-    tiles_path = Path(tiles_dir)
-    source_path = Path(source_images_dir)
-    if tiles_path.exists():
-        tiles_count = sum(1 for f in tiles_path.rglob("*") if f.is_file())
-    if source_path.exists():
-        source_count = sum(1 for f in source_path.rglob("*") if f.is_file())
-
-    return {"tile_files": tiles_count, "source_files": source_count}
 
 
 async def run_files_import(task_id: int) -> None:
@@ -1677,10 +2085,10 @@ async def run_files_import(task_id: int) -> None:
     Progress is mapped into three phases so the admin UI can show a
     meaningful progress bar for long-running imports:
 
-    * **scan** (5 %–15 %): iterate the tar.gz to count members.
-    * **extract** (15 %–85 %): extract members to a staging directory
-      with per-entry progress.
-    * **finalize** (85 %–100 %): swap directories + count restored files.
+    * **preflight** (0 %–5 %): validate the uploaded archive and staging space.
+    * **extract** (15 %–85 %): stream archive bytes into a staging dir on
+      the data volume.
+    * **finalize** (85 %–100 %): swap restored entries + count files.
 
     Cancellation is supported throughout via ``threading.Event`` (the
     extraction thread) and DB polling (the progress coroutine), following
@@ -1708,14 +2116,29 @@ async def run_files_import(task_id: int) -> None:
             if not input_path or not os.path.exists(input_path):
                 raise ValueError("Uploaded archive file not found")
 
-            data_dir = str(Path(settings.tiles_dir).parent)
+            archive_size = os.path.getsize(input_path)
+            archive_mb = archive_size / (1024 * 1024)
+            staging_root = Path(_ensure_import_staging_dir())
+            _ensure_import_staging_same_device(
+                staging_root, Path(settings.data_dir)
+            )
+            free_bytes = shutil.disk_usage(staging_root).free
+            required_bytes = int(archive_size * _IMPORT_STAGING_FREE_SPACE_FACTOR)
+            if free_bytes < required_bytes:
+                raise ValueError(
+                    "Insufficient free space on data volume for on-volume staging: "
+                    f"need at least ~{_format_bytes(required_bytes)} free before "
+                    "staging and extraction, "
+                    f"have {_format_bytes(free_bytes)}"
+                )
 
-            archive_mb = os.path.getsize(input_path) / (1024 * 1024)
             await _update_task(
                 session, task, progress=5,
                 log_line=(
                     f"Archive size: {archive_mb:.1f} MB. "
-                    "Scanning archive to count entries…"
+                    f"Staging needs at least ~{_format_bytes(required_bytes)} free "
+                    "(archive size plus margin); "
+                    "streaming archive bytes to on-volume staging…"
                 ),
                 check_cancelled=True,
             )
@@ -1743,37 +2166,29 @@ async def run_files_import(task_id: int) -> None:
                     if entries:
                         phase, current, total = entries[-1]
 
-                        if phase == "scan" and last_phase != "scan":
-                            await _update_task(
-                                session, task,
-                                log_line="Scanning archive entries…",
-                                progress=10,
-                            )
-                            last_phase = "scan"
-                        elif phase == "extract":
+                        if phase == "extract":
                             if last_phase != "extract":
                                 await _update_task(
                                     session, task,
-                                    log_line=f"Extracting {total} archive entries…",
+                                    log_line="Streaming archive to staging…",
                                     progress=_EXTRACT_START,
                                 )
                                 last_phase = "extract"
                             elif total > 0:
                                 span = _EXTRACT_END - _EXTRACT_START
-                                pct = _EXTRACT_START + int(
-                                    span * current / total
-                                )
+                                pct = _EXTRACT_START + int(span * current / total)
                                 await _update_task(
                                     session, task,
                                     progress=min(pct, _EXTRACT_END),
                                     log_line=(
-                                        f"  extracted {current}/{total} entries"
+                                        f"  read {_format_bytes(current)} / "
+                                        f"{_format_bytes(total)} archive bytes"
                                     ),
                                 )
                         elif phase == "finalize" and last_phase != "finalize":
                             await _update_task(
                                 session, task,
-                                log_line="Swapping data directory…",
+                                log_line="Swapping restored entries…",
                                 progress=_FINALIZE,
                             )
                             last_phase = "finalize"
@@ -1783,11 +2198,14 @@ async def run_files_import(task_id: int) -> None:
                         cancel_event.set()
                         return
 
-            with tempfile.TemporaryDirectory(prefix="hriv-import-") as tmpdir:
+            with tempfile.TemporaryDirectory(
+                prefix="hriv-import-",
+                dir=_ensure_import_staging_dir(),
+            ) as tmpdir:
                 extract_future = asyncio.ensure_future(
                     asyncio.to_thread(
                         _extract_and_restore,
-                        input_path, tmpdir, data_dir,
+                        input_path, tmpdir, str(Path(settings.data_dir)),
                         settings.tiles_dir, settings.source_images_dir,
                         cancel_event=cancel_event,
                         on_progress=_on_progress,
@@ -1817,41 +2235,26 @@ async def run_files_import(task_id: int) -> None:
                                     extract_future, timeout=120,
                                 )
                             except asyncio.TimeoutError:
-                                pass
+                                logger.debug(
+                                    "Timed out waiting for filesystem import to settle after cancel"
+                                )
                             if not extract_future.done():
                                 extract_future.cancel()
                             raise poll_exc
-                        # Poll returned normally → cancellation detected.
-                        # Wait for the extraction thread.  It will finish
-                        # on its own once cancel_event stops phases 1/2,
-                        # or run to completion if already in phase 3
-                        # (finalize — irreversible directory swap).  We
-                        # must NOT exit the TemporaryDirectory block
-                        # while the thread is still running, as it may be
-                        # mid-copytree from tmpdir → data_dir.
                         cancel_event.set()
 
-                        if last_phase == "finalize":
-                            # The thread is mid-copytree (irreversible).
-                            # We MUST wait for it to finish — exiting the
-                            # TemporaryDirectory block would delete the
-                            # staging dir out from under the copy.
-                            await asyncio.shield(extract_future)
-                        else:
-                            try:
-                                await asyncio.wait_for(
-                                    extract_future, timeout=120,
-                                )
-                            except asyncio.TimeoutError:
-                                pass
+                        try:
+                            await asyncio.wait_for(
+                                extract_future, timeout=120,
+                            )
+                        except asyncio.TimeoutError:
+                            logger.debug(
+                                "Timed out waiting for filesystem import to settle after cancel"
+                            )
 
                         if extract_future.done():
                             try:
                                 restored = extract_future.result()
-                                # Extraction completed (phase 3 was
-                                # already past the cancel check).
-                                # Treat as success — the directory swap
-                                # is irreversible.
                             except TaskCancelled:
                                 raise
                             except Exception:
@@ -1872,7 +2275,8 @@ async def run_files_import(task_id: int) -> None:
                             await _update_task(
                                 session, task,
                                 log_line=(
-                                    f"  extracted {current}/{total} entries"
+                                    f"  read {_format_bytes(current)} / "
+                                    f"{_format_bytes(total)} archive bytes"
                                 ),
                             )
 
@@ -1881,9 +2285,6 @@ async def run_files_import(task_id: int) -> None:
                 "Tiles are not included in filesystem exports; run Rebuild Tiles "
                 "after import so images have fresh tiles."
             )
-            # Do NOT check_cancelled here — files have already been
-            # extracted to disk and cannot be rolled back.  Marking the
-            # task "cancelled" at this point would be misleading.
             await _update_task(
                 session, task,
                 status="completed", progress=100,
@@ -1897,19 +2298,21 @@ async def run_files_import(task_id: int) -> None:
                     "restored": restored,
                 },
             )
-
         except TaskCancelled:
             logger.info(
                 "Background files import cancelled",
                 extra={"event": "admin_task.files_import_cancelled", "task_id": task_id},
             )
-            await session.refresh(task)
+            await session.rollback()
+            refreshed = await session.get(AdminTask, task_id)
+            if refreshed is not None:
+                task = refreshed
             await _update_task(
-                session, task,
+                session,
+                task,
                 status="cancelled",
                 log_line="Task cancelled.",
             )
-
         except Exception as exc:
             span = trace.get_current_span()
             span.record_exception(exc)
@@ -1919,26 +2322,16 @@ async def run_files_import(task_id: int) -> None:
                 extra={"event": "admin_task.files_import_failed", "task_id": task_id},
             )
             await session.rollback()
-            await session.refresh(task)
+            refreshed = await session.get(AdminTask, task_id)
+            if refreshed is not None:
+                task = refreshed
             await _update_task(
-                session, task,
+                session,
+                task,
                 status="failed", progress=0,
                 log_line=f"ERROR: {exc}",
                 error_message=str(exc),
             )
-        finally:
-            if input_path:
-                try:
-                    os.unlink(input_path)
-                except OSError:
-                    # Best-effort cleanup only; keep the file-restore result intact.
-                    logger.debug(
-                        "Failed to remove staged file-restore params %s after task completion",
-                        input_path,
-                        exc_info=True,
-                    )
-
-
 async def run_file_restore(task_id: int) -> None:
     """Restore a single file from a backup snapshot in the background."""
     async with get_async_session()() as session:

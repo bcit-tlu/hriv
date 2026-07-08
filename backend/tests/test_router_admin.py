@@ -5,16 +5,18 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 import json
+import pytest
 
 from app.backup_access import (
     BackupRestoreNotConfiguredError,
     BackupSnapshotManifestError,
     BackupSnapshotNotFoundError,
 )
+from app.routers import admin as admin_router
 from app.routers.admin import (
     _create_task,
     _kick_off,
@@ -27,6 +29,9 @@ from app.routers.admin import (
     start_db_import,
     start_files_export,
     start_files_import,
+    list_files_import_archives_endpoint,
+    rerun_files_import,
+    delete_files_import_archive_endpoint,
     start_rebuild_tiles,
     upload_task_file,
     list_tasks,
@@ -35,7 +40,7 @@ from app.routers.admin import (
     create_task_download_token,
     download_task_result,
 )
-from app.schemas import FileRestoreRequest, RebuildTilesRequest
+from app.schemas import FileRestoreRequest, FilesImportRerunRequest, RebuildTilesRequest
 
 
 def _make_admin_task(
@@ -47,6 +52,7 @@ def _make_admin_task(
     result_filename=None,
     result_path=None,
     input_path=None,
+    original_filename=None,
     error_message=None,
     created_by=1,
     created_at=None,
@@ -62,6 +68,7 @@ def _make_admin_task(
         result_filename=result_filename,
         result_path=result_path,
         input_path=input_path,
+        original_filename=original_filename,
         error_message=error_message,
         created_by=created_by,
         created_at=now,
@@ -466,6 +473,153 @@ async def test_start_files_import_creates_uploading_task() -> None:
 
     assert result["task_type"] == "files_import"
     assert result["status"] == "uploading"
+
+
+
+
+async def test_list_files_import_archives_endpoint_response_model_validation() -> None:
+    app = FastAPI()
+    app.include_router(admin_router.router, prefix="/api")
+
+    async def override_db():
+        yield AsyncMock()
+
+    app.dependency_overrides[admin_router._admin] = lambda: SimpleNamespace(id=1, role="admin")
+    app.dependency_overrides[admin_router.get_db] = override_db
+
+    archives = [
+        {
+            "archive_task_id": 7,
+            "original_filename": "backup.tar.gz",
+            "size_bytes": 123,
+            "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+            "last_status": "completed",
+        }
+    ]
+
+    with patch(
+        "app.routers.admin.list_files_import_archives",
+        new_callable=AsyncMock,
+        return_value=archives,
+    ):
+        with TestClient(app) as client:
+            response = client.get("/api/admin/tasks/files-import/archives")
+
+    assert response.status_code == 200
+    assert response.json() == [
+        {
+            "archive_task_id": 7,
+            "original_filename": "backup.tar.gz",
+            "size_bytes": 123,
+            "created_at": "2026-01-01T00:00:00Z",
+            "last_status": "completed",
+        }
+    ]
+
+
+async def test_list_files_import_archives_endpoint() -> None:
+    user = SimpleNamespace(id=1)
+    archives = [
+        {
+            "archive_task_id": 7,
+            "original_filename": "backup.tar.gz",
+            "size_bytes": 123,
+            "created_at": datetime.now(timezone.utc),
+            "last_status": "completed",
+        }
+    ]
+
+    with patch(
+        "app.routers.admin.list_files_import_archives",
+        new_callable=AsyncMock,
+        return_value=archives,
+    ):
+        result = await list_files_import_archives_endpoint(user, db=AsyncMock())
+
+    assert result == archives
+
+
+async def test_rerun_files_import_creates_pending_task() -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+    task = _make_admin_task(task_type="files_import", status="pending")
+
+    with (
+        patch(
+            "app.routers.admin.rerun_files_import_archive",
+            new_callable=AsyncMock,
+            return_value=task,
+        ),
+        patch("app.routers.admin.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+    ):
+        result = await rerun_files_import(user, bg, FilesImportRerunRequest(archive_task_id=7), db=db)
+
+    assert result["task_type"] == "files_import"
+    assert result["status"] == "pending"
+
+
+async def test_rerun_files_import_concurrency_guard_returns_409() -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+
+    with patch(
+        "app.routers.admin.rerun_files_import_archive",
+        side_effect=HTTPException(status_code=409, detail="already running"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await rerun_files_import(user, bg, FilesImportRerunRequest(archive_task_id=7), db=db)
+    assert exc.value.status_code == 409
+
+
+async def test_rerun_files_import_traversal_rejected_returns_400() -> None:
+    user = SimpleNamespace(id=1)
+    bg = MagicMock()
+    db = AsyncMock()
+
+    with patch(
+        "app.routers.admin.rerun_files_import_archive",
+        side_effect=ValueError("Archive path is outside admin_tasks dir"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await rerun_files_import(user, bg, FilesImportRerunRequest(archive_task_id=7), db=db)
+
+    assert exc.value.status_code == 400
+
+
+async def test_delete_files_import_archive_endpoint_happy_path() -> None:
+    with patch(
+        "app.routers.admin.delete_files_import_archive",
+        new_callable=AsyncMock,
+        return_value={"archive_task_id": 7, "deleted": True, "path": "/data/admin_tasks/import-1.tar.gz"},
+    ):
+        result = await delete_files_import_archive_endpoint(7, MagicMock(), db=AsyncMock())
+
+    assert result["deleted"] is True
+    assert result["archive_task_id"] == 7
+
+
+async def test_delete_files_import_archive_endpoint_missing_archive_returns_404() -> None:
+    with patch(
+        "app.routers.admin.delete_files_import_archive",
+        side_effect=FileNotFoundError("Archive file not found"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await delete_files_import_archive_endpoint(7, MagicMock(), db=AsyncMock())
+
+    assert exc.value.status_code == 404
+
+
+async def test_delete_files_import_archive_endpoint_active_reference_returns_409() -> None:
+    with patch(
+        "app.routers.admin.delete_files_import_archive",
+        side_effect=RuntimeError("Archive is currently in use by an active files import"),
+    ):
+        with pytest.raises(HTTPException) as exc:
+            await delete_files_import_archive_endpoint(7, MagicMock(), db=AsyncMock())
+
+    assert exc.value.status_code == 409
 
 
 async def test_upload_task_file_not_found() -> None:

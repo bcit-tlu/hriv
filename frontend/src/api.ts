@@ -1072,11 +1072,26 @@ export interface AdminTask {
   status: string
   progress: number
   log: string
+  original_filename?: string | null
   result_filename: string | null
   error_message: string | null
   created_by: number | null
   created_at: string | null
   updated_at: string | null
+}
+
+export interface FilesImportArchive {
+  archive_task_id: number
+  original_filename: string | null
+  size_bytes: number
+  created_at: string | null
+  last_status: string
+}
+
+export interface FilesImportArchiveDeleteResponse {
+  archive_task_id: number
+  deleted: boolean
+  path: string
 }
 
 export interface BackupSnapshotSummary {
@@ -1120,6 +1135,25 @@ export async function startDbImport(file: File): Promise<AdminTask> {
 
 export function startFilesExport(): Promise<AdminTask> {
   return request('/admin/tasks/files-export', { method: 'POST' })
+}
+
+export function fetchFilesImportArchives(): Promise<FilesImportArchive[]> {
+  return request('/admin/tasks/files-import/archives')
+}
+
+export function rerunFilesImportArchive(archiveTaskId: number): Promise<AdminTask> {
+  return request('/admin/tasks/files-import/rerun', {
+    method: 'POST',
+    body: JSON.stringify({ archive_task_id: archiveTaskId }),
+  })
+}
+
+export function deleteFilesImportArchive(
+  archiveTaskId: number,
+): Promise<FilesImportArchiveDeleteResponse> {
+  return request(`/admin/tasks/files-import/archives/${archiveTaskId}`, {
+    method: 'DELETE',
+  })
 }
 
 export function listBackupSnapshots(): Promise<BackupSnapshotSummary[]> {

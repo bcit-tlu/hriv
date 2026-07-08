@@ -431,6 +431,18 @@ class FileRestoreRequest(BaseModel):
     _validate_member_path = field_validator("member_path", mode="before")(normalize_nonblank_value)
 
 
+class FilesImportArchiveOut(BaseModel):
+    archive_task_id: int
+    original_filename: str | None = None
+    size_bytes: int
+    created_at: datetime
+    last_status: str
+
+
+class FilesImportRerunRequest(BaseModel):
+    archive_task_id: int
+
+
 # ── Bulk Import Job ──────────────────────────────────────
 
 class BulkImportJobOut(BaseModel):

@@ -19,9 +19,12 @@ vi.mock('../../src/api', async () => {
     startFilesExport: vi.fn(),
     listBackupSnapshots: vi.fn(),
     fetchBackupSnapshotManifest: vi.fn(),
+    fetchFilesImportArchives: vi.fn(),
     startFileRestore: vi.fn(),
     initFilesImport: vi.fn(),
     uploadTaskFile: vi.fn(),
+    rerunFilesImportArchive: vi.fn(),
+    deleteFilesImportArchive: vi.fn(),
     cancelAdminTask: vi.fn(),
     downloadAdminTaskResult: vi.fn(),
   }
@@ -44,9 +47,12 @@ const mockStartDbImport = vi.mocked(api.startDbImport)
 const mockStartFilesExport = vi.mocked(api.startFilesExport)
 const mockListBackupSnapshots = vi.mocked(api.listBackupSnapshots)
 const mockFetchBackupSnapshotManifest = vi.mocked(api.fetchBackupSnapshotManifest)
+const mockFetchFilesImportArchives = vi.mocked(api.fetchFilesImportArchives)
 const mockStartFileRestore = vi.mocked(api.startFileRestore)
 const mockInitFilesImport = vi.mocked(api.initFilesImport)
 const mockUploadTaskFile = vi.mocked(api.uploadTaskFile)
+const mockRerunFilesImportArchive = vi.mocked(api.rerunFilesImportArchive)
+const mockDeleteFilesImportArchive = vi.mocked(api.deleteFilesImportArchive)
 const mockCancelAdminTask = vi.mocked(api.cancelAdminTask)
 const mockDownloadAdminTaskResult = vi.mocked(api.downloadAdminTaskResult)
 
@@ -55,6 +61,7 @@ describe('AdminPage', () => {
     vi.clearAllMocks()
     mockFetchAdminTasks.mockResolvedValue([])
     mockListBackupSnapshots.mockResolvedValue([])
+    mockFetchFilesImportArchives.mockResolvedValue([])
     mockFetchBackupSnapshotManifest.mockResolvedValue({
       snapshot_name: 'hriv-backup-20260102-020000',
       created_at: '2026-01-02T02:00:00Z',
@@ -145,6 +152,8 @@ describe('AdminPage', () => {
       updated_at: '2026-01-01T00:00:00Z',
     })
     mockDownloadAdminTaskResult.mockResolvedValue()
+    mockRerunFilesImportArchive.mockReset()
+    mockDeleteFilesImportArchive.mockReset()
     mockFetchAdminTask.mockReset()
     mockLogout.mockClear()
   })
@@ -309,6 +318,180 @@ describe('AdminPage', () => {
     const snapshotPicker = screen.getByRole('combobox', { name: 'Snapshot' })
     expect(snapshotPicker).toHaveAttribute('aria-disabled', 'true')
     expect(mockFetchBackupSnapshotManifest).not.toHaveBeenCalled()
+  })
+
+  it('shows determinate filesystem-import progress and the backend status line', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    mockFetchAdminTask.mockResolvedValue({
+      id: 4,
+      task_type: 'files_import',
+      status: 'running',
+      progress: 42,
+      log: 'Streaming archive to staging…\nread 12 GiB / 29 GiB archive bytes\n',
+      original_filename: 'backup.tar.gz',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:01Z',
+    })
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+    const filesImportInput = screen.getByTestId('files-import-input') as HTMLInputElement
+    await user.upload(
+      filesImportInput,
+      new File(['archive'], 'backup.tar.gz', { type: 'application/gzip' }),
+    )
+    expect(await screen.findByRole('dialog', { name: 'Import filesystem?' })).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('checkbox', { name: /I have verified a recent backup exists/i }),
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'I understand, proceed' })).toBeEnabled(),
+    )
+    await user.click(await screen.findByRole('button', { name: 'I understand, proceed' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Import filesystem?' })).not.toBeInTheDocument(),
+    )
+
+    expect(await screen.findByText(/Uploading 0%/)).toBeInTheDocument()
+    expect(screen.getAllByRole('progressbar', { hidden: true }).length).toBeGreaterThan(0)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+
+    expect(await screen.findByText(/read 12 GiB \/ 29 GiB archive bytes/i)).toBeInTheDocument()
+    const progressbars = screen.getAllByRole('progressbar')
+    expect(progressbars.some((bar) => bar.getAttribute('aria-valuenow') === '42')).toBe(true)
+  })
+
+  it('surfaces the filesystem-import failure reason instead of a generic toast', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    mockFetchAdminTask.mockResolvedValue({
+      id: 4,
+      task_type: 'files_import',
+      status: 'failed',
+      progress: 100,
+      log: 'Streaming archive to staging…\nInsufficient free space on data volume: need ~37 GiB, have 12 GiB\n',
+      original_filename: 'backup.tar.gz',
+      result_filename: null,
+      error_message: 'Insufficient free space on data volume: need ~37 GiB, have 12 GiB',
+      created_by: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:01Z',
+    })
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+    const filesImportInput = screen.getByTestId('files-import-input') as HTMLInputElement
+    await user.upload(
+      filesImportInput,
+      new File(['archive'], 'backup.tar.gz', { type: 'application/gzip' }),
+    )
+    expect(await screen.findByRole('dialog', { name: 'Import filesystem?' })).toBeInTheDocument()
+    await user.click(
+      screen.getByRole('checkbox', { name: /I have verified a recent backup exists/i }),
+    )
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'I understand, proceed' })).toBeEnabled(),
+    )
+    await user.click(await screen.findByRole('button', { name: 'I understand, proceed' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Import filesystem?' })).not.toBeInTheDocument(),
+    )
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+
+    expect(
+      await screen.findByText(/Insufficient free space on data volume: need ~37 GiB, have 12 GiB/i),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('Operation failed')).not.toBeInTheDocument()
+  })
+
+  it('lists retained archives and supports rerun and delete actions', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    mockFetchFilesImportArchives.mockResolvedValue([
+      {
+        archive_task_id: 7,
+        original_filename: 'backup.tar.gz',
+        size_bytes: 5_368_709_120,
+        created_at: '2026-06-19T19:00:00Z',
+        last_status: 'completed',
+      },
+    ])
+    mockRerunFilesImportArchive.mockResolvedValue({
+      id: 9,
+      task_type: 'files_import',
+      status: 'pending',
+      progress: 0,
+      log: '',
+      original_filename: 'backup.tar.gz',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-06-19T19:10:00Z',
+      updated_at: '2026-06-19T19:10:00Z',
+    })
+    mockDeleteFilesImportArchive.mockResolvedValue({
+      archive_task_id: 7,
+      deleted: true,
+      path: '/data/admin_tasks/import-1.tar.gz',
+    })
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+
+    expect(await screen.findByText('Previously uploaded import archives')).toBeInTheDocument()
+    expect(screen.getByText('backup.tar.gz')).toBeInTheDocument()
+    expect(screen.getByText(/Task #7/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Re-run import' }))
+    await waitFor(() => expect(mockRerunFilesImportArchive).toHaveBeenCalledWith(7))
+    await waitFor(() => expect(mockFetchFilesImportArchives).toHaveBeenCalledTimes(2))
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(mockDeleteFilesImportArchive).toHaveBeenCalledWith(7))
+    await waitFor(() => expect(mockFetchFilesImportArchives).toHaveBeenCalledTimes(3))
+  })
+
+  it('shows cumulative storage usage for retained archives', async () => {
+    const user = userEvent.setup()
+
+    mockFetchFilesImportArchives.mockResolvedValue([
+      {
+        archive_task_id: 7,
+        original_filename: 'backup-a.tar.gz',
+        size_bytes: 5_368_709_120, // 5 GiB
+        created_at: '2026-06-19T19:00:00Z',
+        last_status: 'completed',
+      },
+      {
+        archive_task_id: 8,
+        original_filename: 'backup-b.tar.gz',
+        size_bytes: 10_737_418_240, // 10 GiB
+        created_at: '2026-06-20T19:00:00Z',
+        last_status: 'completed',
+      },
+    ])
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+
+    expect(await screen.findByText('2 retained archives using 15.0 GiB')).toBeInTheDocument()
   })
 
   it('stops polling and shows a session-ended message on 401', async () => {

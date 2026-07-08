@@ -22,6 +22,19 @@ Use this skill for administrator-facing operations and long-running task flows.
 - `AdminTask` active statuses block another task of the same type.
 - Filesystem import starts in `uploading`; the upload endpoint atomically moves
   it to `pending` so cancellation remains race-safe.
+- Filesystem import stages on the data volume via `IMPORT_STAGING_DIR` (default
+  `<data_dir>/.import-staging`) and swaps exported top-level entries into `/data`
+  one by one; do not reintroduce `/tmp` staging or whole-directory restore/copy
+  behavior. Retained filesystem-import archives stay on disk for reruns; add a
+  cleanup path when operators need to reclaim space. The import also uses a
+  coarse compressed-size preflight plus a runtime free-space floor so highly
+  compressible archives still fail before the swap if the staging volume runs
+  low. Because entries are moved with `os.rename`, `IMPORT_STAGING_DIR` must be
+  on the same filesystem as `data_dir`; a `st_dev` check at the start of the
+  import fails fast with a clear error if it is overridden to a different volume
+  (instead of a cryptic `EXDEV` mid-swap). The admin UI shows cumulative
+  retained-archive storage usage (count + total size) so operators can gauge
+  reclaimable space.
 - `run_db_import` uses separate status and data sessions so progress commits
   while destructive data import remains atomic.
 - Keep DB import delete/insert ordering aligned with foreign keys, groups,

@@ -178,8 +178,10 @@ redis:
       requests:
         memory: '512Mi'
         cpu: '250m'
+        ephemeral-storage: '256Mi'
       limits:
         memory: '4Gi'
+        ephemeral-storage: '1Gi'
     # ── Worker Horizontal Pod Autoscaler ──────────────────────
     # Scales worker replicas based on CPU/memory utilisation so that
     # concurrent image-processing jobs are distributed across pods.
@@ -299,6 +301,26 @@ persistence:
       - ReadWriteOnce
 
 resources: {}
+
+# ── Pod health probes ───────────────────────────────────────
+# Defaults are intentionally conservative so transient DB or node I/O
+# pressure does not evict a healthy backend pod. Keep the readiness
+# probe pointed at /api/health/ready so it reflects database reachability
+# rather than the general liveness path.
+probes:
+  backend:
+    liveness:
+      path: /api/health
+      initialDelaySeconds: 10
+      periodSeconds: 30
+      timeoutSeconds: 5
+      failureThreshold: 6
+    readiness:
+      path: /api/health/ready
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 3
 
 # ── High-availability / topology spreading ────────────────────
 # When enabled, adds a required pod anti-affinity rule so that no two

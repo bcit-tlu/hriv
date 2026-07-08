@@ -21,18 +21,26 @@ from ..backup_access import (
 )
 from ..admin_ops import (
     _ensure_tasks_dir,
+    delete_files_import_archive,
+    list_files_import_archives,
     run_file_restore,
     run_db_export,
     run_db_import,
     run_files_export,
     run_files_import,
+    rerun_files_import_archive,
     run_rebuild_tiles,
 )
 from ..auth import auth_settings, require_role
 from ..database import get_db
 from ..maintenance import disable_maintenance_mode, enable_maintenance_mode, is_maintenance_mode
 from ..models import AdminTask, User
-from ..schemas import FileRestoreRequest, RebuildTilesRequest
+from ..schemas import (
+    FileRestoreRequest,
+    FilesImportArchiveOut,
+    FilesImportRerunRequest,
+    RebuildTilesRequest,
+)
 from ..worker import enqueue_admin_task
 
 logger = logging.getLogger(__name__)
@@ -144,6 +152,7 @@ def _task_to_dict(task: AdminTask) -> dict:
         "log": task.log,
         "result_filename": task.result_filename,
         "error_message": task.error_message,
+        "original_filename": getattr(task, "original_filename", None),
         "created_by": task.created_by,
         "created_at": task.created_at.isoformat() if task.created_at else None,
         "updated_at": task.updated_at.isoformat() if task.updated_at else None,
@@ -283,10 +292,59 @@ async def start_files_import(
     task = await _create_task(
         db, "files_import", user, input_path=input_path, status="uploading",
     )
+    task.original_filename = filename
     task.log = f"Awaiting file upload: {filename}\n"
     await db.commit()
     await db.refresh(task)
     return _task_to_dict(task)
+
+
+@router.get("/tasks/files-import/archives", response_model=list[FilesImportArchiveOut])
+async def list_files_import_archives_endpoint(
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """List retained filesystem-import archives available for rerun."""
+    return await list_files_import_archives(db)
+
+
+@router.post("/tasks/files-import/rerun")
+async def rerun_files_import(
+    user: Annotated[User, Depends(_admin)],
+    bg: BackgroundTasks,
+    request: FilesImportRerunRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Queue a new filesystem import using an existing retained archive."""
+    try:
+        task = await rerun_files_import_archive(db, user, request.archive_task_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await _kick_off(task, bg)
+    return _task_to_dict(task)
+
+
+@router.delete("/tasks/files-import/archives/{archive_task_id}")
+async def delete_files_import_archive_endpoint(
+    archive_task_id: int,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a retained filesystem-import archive from disk."""
+    try:
+        return await delete_files_import_archive(db, archive_task_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.put("/tasks/{task_id}/upload")

@@ -4,6 +4,9 @@
 {{- $sourceImages := include "hriv-backend.resolvedSourceImagesPersistence" . | fromYaml -}}
 {{- $tiles := include "hriv-backend.resolvedTilesPersistence" . | fromYaml -}}
 {{- $feedback := include "hriv-backend.feedbackConfig" . | fromYaml -}}
+{{- $backendProbes := .Values.probes.backend | default dict -}}
+{{- $backendLivenessProbe := get $backendProbes "liveness" | default dict -}}
+{{- $backendReadinessProbe := get $backendProbes "readiness" | default dict -}}
 {{- $sourceImagesAccessModes := get $sourceImages "accessModes" -}}
 {{- $tilesAccessModes := get $tiles "accessModes" -}}
 {{- $feedbackProvider := get $feedback "provider" -}}
@@ -200,16 +203,20 @@ spec:
           {{- end }}
           livenessProbe:
             httpGet:
-              path: /api/health
+              path: {{ get $backendLivenessProbe "path" | default "/api/health" | quote }}
               port: http
-            initialDelaySeconds: 10
-            periodSeconds: 30
+            initialDelaySeconds: {{ get $backendLivenessProbe "initialDelaySeconds" | default 10 }}
+            periodSeconds: {{ get $backendLivenessProbe "periodSeconds" | default 30 }}
+            timeoutSeconds: {{ get $backendLivenessProbe "timeoutSeconds" | default 5 }}
+            failureThreshold: {{ get $backendLivenessProbe "failureThreshold" | default 6 }}
           readinessProbe:
             httpGet:
-              path: /api/health
+              path: {{ get $backendReadinessProbe "path" | default "/api/health/ready" | quote }}
               port: http
-            initialDelaySeconds: 5
-            periodSeconds: 10
+            initialDelaySeconds: {{ get $backendReadinessProbe "initialDelaySeconds" | default 5 }}
+            periodSeconds: {{ get $backendReadinessProbe "periodSeconds" | default 10 }}
+            timeoutSeconds: {{ get $backendReadinessProbe "timeoutSeconds" | default 5 }}
+            failureThreshold: {{ get $backendReadinessProbe "failureThreshold" | default 3 }}
           {{- with .Values.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
