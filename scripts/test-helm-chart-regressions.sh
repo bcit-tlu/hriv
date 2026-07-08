@@ -149,4 +149,35 @@ fi
 assert_contains "$backend_guard_output" "Recreate" \
   "backend deployment should explain that ReadWriteOnce persistence requires Recreate"
 
+frontend_zone_aa_manifest="$(helm template test charts/frontend \
+  --set scheduling.zoneAntiAffinity.enabled=true \
+  --set replicaCount=2)"
+
+frontend_zone_aa_deployment="$(extract_yaml_doc "$frontend_zone_aa_manifest" "Deployment" "test-hriv-frontend")"
+assert_contains "$frontend_zone_aa_deployment" "type: RollingUpdate" \
+  "frontend deployment should use RollingUpdate when hard zone anti-affinity is enabled with multiple replicas"
+assert_contains "$frontend_zone_aa_deployment" "maxSurge: 0" \
+  "frontend deployment should set maxSurge: 0 for the zone anti-affinity rollout strategy"
+assert_contains "$frontend_zone_aa_deployment" "maxUnavailable: 1" \
+  "frontend deployment should set maxUnavailable: 1 for the zone anti-affinity rollout strategy"
+
+frontend_default_manifest="$(helm template test charts/frontend)"
+
+frontend_default_deployment="$(extract_yaml_doc "$frontend_default_manifest" "Deployment" "test-hriv-frontend")"
+assert_not_contains "$frontend_default_deployment" "strategy:" \
+  "frontend deployment should omit strategy when no rollout override is needed"
+
+frontend_override_manifest="$(helm template test charts/frontend \
+  --set scheduling.zoneAntiAffinity.enabled=true \
+  --set replicaCount=2 \
+  --set-json 'updateStrategy={"type":"Recreate"}')"
+
+frontend_override_deployment="$(extract_yaml_doc "$frontend_override_manifest" "Deployment" "test-hriv-frontend")"
+assert_contains "$frontend_override_deployment" "type: Recreate" \
+  "frontend deployment should honour an explicit Recreate override"
+assert_not_contains "$frontend_override_deployment" "type: RollingUpdate" \
+  "frontend deployment should not render RollingUpdate when updateStrategy explicitly requests Recreate"
+assert_not_contains "$frontend_override_deployment" "maxSurge:" \
+  "frontend deployment should not render rollingUpdate settings when updateStrategy explicitly requests Recreate"
+
 echo "Helm chart regression checks passed."
