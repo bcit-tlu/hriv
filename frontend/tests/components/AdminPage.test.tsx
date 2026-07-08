@@ -505,6 +505,74 @@ describe('AdminPage', () => {
     expect(await screen.findByText('2 retained archives using 15.0 GiB')).toBeInTheDocument()
   })
 
+  it('lists stored export archives with cumulative usage and purges one', async () => {
+    const user = userEvent.setup()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    mockListExportArchives.mockResolvedValue({
+      archives: [
+        {
+          task_id: 12,
+          task_type: 'db_export',
+          artifact_role: 'result',
+          filename: 'db-export-12.json',
+          size_bytes: 5_368_709_120, // 5 GiB
+          status: 'completed',
+          created_at: '2026-06-19T19:00:00Z',
+          updated_at: '2026-06-19T19:02:00Z',
+          purgeable: true,
+        },
+      ],
+      total_size_bytes: 5_368_709_120,
+    })
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+
+    expect(await screen.findByText('Stored export archives')).toBeInTheDocument()
+    expect(screen.getByText('db-export-12.json')).toBeInTheDocument()
+    expect(
+      screen.getByText((_, el) => el?.textContent === '1 archive using 5.00 GiB'),
+    ).toBeInTheDocument()
+    expect(screen.getByText(/Task #12 · db_export/)).toBeInTheDocument()
+
+    await waitFor(() => expect(mockListExportArchives).toHaveBeenCalledTimes(1))
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await waitFor(() => expect(mockPurgeExportArchive).toHaveBeenCalledWith(12, 'result'))
+    // Purge triggers a refresh of the stored-archives list.
+    await waitFor(() => expect(mockListExportArchives).toHaveBeenCalledTimes(2))
+  })
+
+  it('disables the delete button for a still-active export archive', async () => {
+    const user = userEvent.setup()
+
+    mockListExportArchives.mockResolvedValue({
+      archives: [
+        {
+          task_id: 13,
+          task_type: 'files_export',
+          artifact_role: 'result',
+          filename: 'files-export-13.tar.gz',
+          size_bytes: 1024,
+          status: 'running',
+          created_at: '2026-06-19T19:00:00Z',
+          updated_at: '2026-06-19T19:00:30Z',
+          purgeable: false,
+        },
+      ],
+      total_size_bytes: 1024,
+    })
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+
+    expect(await screen.findByText('files-export-13.tar.gz')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
+  })
+
   it('stops polling and shows a session-ended message on 401', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
