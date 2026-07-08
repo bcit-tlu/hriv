@@ -32,7 +32,7 @@ from ..backup_access import (
 )
 from ..admin_ops import (
     _ensure_tasks_dir,
-    _format_bytes,
+    format_bytes,
     delete_files_import_archive,
     list_files_import_archives,
     run_file_restore,
@@ -518,9 +518,9 @@ async def upload_task_file(
                 detail = (
                     "Insufficient space to upload archive: "
                     f"required {declared_size} bytes "
-                    f"({_format_bytes(declared_size)}), "
+                    f"({format_bytes(declared_size)}), "
                     f"available {free_bytes} bytes "
-                    f"({_format_bytes(free_bytes)}) in {tasks_dir}"
+                    f"({format_bytes(free_bytes)}) in {tasks_dir}"
                 )
                 result = await db.execute(
                     update(AdminTask)
@@ -532,14 +532,8 @@ async def upload_task_file(
                     )
                     .returning(AdminTask.id)
                 )
-                matched = result.scalar() is not None
-                if matched:
-                    task.status = "failed"
-                    task.error_message = detail
-                    task.log = (task.log or "") + f"ERROR: {detail}\n"
-                else:
-                    await db.refresh(task)
                 await db.commit()
+                await db.refresh(task)
                 raise HTTPException(status_code=507, detail=detail)
 
     bytes_written = 0
@@ -567,14 +561,8 @@ async def upload_task_file(
             )
             .returning(AdminTask.id)
         )
-        matched = result.scalar() is not None
-        if matched:
-            task.status = "failed"
-            task.error_message = reason
-            task.log = (task.log or "") + f"ERROR: {reason}\n"
-        else:
-            await db.refresh(task)
         await db.commit()
+        await db.refresh(task)
         raise HTTPException(status_code=500, detail=reason) from exc
 
     size_mb = bytes_written / (1024 * 1024)

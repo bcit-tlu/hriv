@@ -702,6 +702,17 @@ async def test_upload_task_file_fails_fast_on_insufficient_space(tmp_path) -> No
     db = AsyncMock()
     db.get = AsyncMock(return_value=task)
     db.commit = AsyncMock()
+    detail = (
+        "Insufficient space to upload archive: required 1024 bytes (1.0 KiB), "
+        f"available 512 bytes (512 B) in {tmp_path / 'admin_tasks'}"
+    )
+
+    async def _refresh_failed(obj) -> None:
+        obj.status = "failed"
+        obj.error_message = detail
+        obj.log = f"Awaiting file upload: backup.tar.gz\nERROR: {detail}\n"
+
+    db.refresh = AsyncMock(side_effect=_refresh_failed)
     update_result = MagicMock()
     update_result.scalar.return_value = task.id
     db.execute = AsyncMock(return_value=update_result)
