@@ -291,7 +291,10 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
         })
       // A completed export produces a new on-disk archive; refresh the
       // stored-archives panel so it appears without a manual tab switch.
-      if (task.task_type === 'db_export' || task.task_type === 'files_export') {
+      if (
+        task.status === 'completed' &&
+        (task.task_type === 'db_export' || task.task_type === 'files_export')
+      ) {
         void loadExportArchives()
       }
     },
