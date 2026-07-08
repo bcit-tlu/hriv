@@ -59,6 +59,10 @@ _IMPORT_STAGING_DIR = os.environ.get(
 _IMPORT_STAGING_FREE_SPACE_FACTOR = float(
     os.environ.get("IMPORT_STAGING_FREE_SPACE_FACTOR", "1.25")
 )
+_IMPORT_STAGING_MIN_FREE_BYTES = int(
+    os.environ.get("IMPORT_STAGING_MIN_FREE_BYTES", str(1024 * 1024 * 1024))
+)
+_IMPORT_STAGING_FREE_SPACE_CHECK_INTERVAL_BYTES = 512 * 1024 * 1024
 
 
 def _ensure_tasks_dir() -> str:
@@ -79,6 +83,16 @@ def _format_bytes(num_bytes: int) -> str:
             return f"{num_bytes:.1f} {unit}"
         num_bytes /= 1024
     return f"{num_bytes:.1f} TiB"
+
+
+def _ensure_import_staging_free_space(staging_dir: Path) -> None:
+    free_bytes = shutil.disk_usage(staging_dir).free
+    if free_bytes < _IMPORT_STAGING_MIN_FREE_BYTES:
+        raise ValueError(
+            "Insufficient free space on data volume during filesystem import: "
+            f"have {_format_bytes(free_bytes)} free, "
+            f"need at least {_format_bytes(_IMPORT_STAGING_MIN_FREE_BYTES)}"
+        )
 
 
 def _remove_path(path: Path) -> None:
@@ -136,12 +150,18 @@ def _extract_archive_stream(
         on_progress("extract", 0, archive_size)
 
     compressed_read = 0
+    last_free_space_check = 0
 
     def _on_bytes(count: int) -> None:
-        nonlocal compressed_read
+        nonlocal compressed_read, last_free_space_check
         compressed_read += count
         if on_progress is not None:
             on_progress("extract", compressed_read, archive_size)
+        if compressed_read - last_free_space_check >= (
+            _IMPORT_STAGING_FREE_SPACE_CHECK_INTERVAL_BYTES
+        ):
+            last_free_space_check = compressed_read
+            _ensure_import_staging_free_space(staging_dir)
 
     pigz_path = shutil.which("pigz")
     member_count = 0
@@ -170,13 +190,23 @@ def _extract_archive_stream(
                     try:
                         proc.stdin.close()
                     except OSError:
+                        # Best-effort close; the pipe may already be gone during cancellation or shutdown.
                         pass
-            except BaseException as exc:
+            except (KeyboardInterrupt, SystemExit, GeneratorExit):
+                try:
+                    if proc.stdin is not None and not proc.stdin.closed:
+                        proc.stdin.close()
+                except OSError:
+                    # Best-effort close; the pipe may already be gone.
+                    pass
+                raise
+            except Exception as exc:
                 feeder_exc[0] = exc
                 try:
                     if proc.stdin is not None and not proc.stdin.closed:
                         proc.stdin.close()
                 except OSError:
+                    # Best-effort close; the pipe may already be broken.
                     pass
             finally:
                 feeder_done.set()
@@ -191,6 +221,8 @@ def _extract_archive_stream(
                         raise TaskCancelled("Task cancelled by admin")
                     tar.extract(member, path=str(staging_dir), filter="data")
                     member_count += 1
+            if feeder_exc[0] is not None:
+                raise feeder_exc[0]
             returncode = proc.wait()
             if returncode != 0:
                 stderr = (
@@ -202,9 +234,18 @@ def _extract_archive_stream(
                     f"pigz failed with exit code {returncode}"
                     + (f": {stderr}" if stderr else "")
                 )
+        except Exception as exc:
+            if proc.poll() is None:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait()
             if feeder_exc[0] is not None:
-                raise feeder_exc[0]
-        except BaseException:
+                raise feeder_exc[0] from exc
+            raise
+        except (KeyboardInterrupt, SystemExit, GeneratorExit):
             if proc.poll() is None:
                 proc.terminate()
                 try:
@@ -276,7 +317,15 @@ def _swap_imported_entries(
                 if target.exists() or target.is_symlink():
                     _remove_path(target)
                 if backup is not None and backup.exists():
-                    os.rename(str(backup), str(target))
+                    try:
+                        os.rename(str(backup), str(target))
+                    except OSError:
+                        logger.debug(
+                            "Failed to restore backup path %s to %s during rollback",
+                            backup,
+                            target,
+                            exc_info=True,
+                        )
                 raise
             moved.append((target, backup))
     except Exception:
@@ -285,17 +334,34 @@ def _swap_imported_entries(
                 if target.exists() or target.is_symlink():
                     _remove_path(target)
             except OSError:
-                pass
+                logger.debug(
+                    "Failed to remove partially restored path %s during rollback",
+                    target,
+                    exc_info=True,
+                )
             if backup is not None and backup.exists():
                 try:
                     os.rename(str(backup), str(target))
                 except OSError:
-                    pass
+                    logger.debug(
+                        "Failed to restore backup path %s to %s during rollback",
+                        backup,
+                        target,
+                        exc_info=True,
+                    )
         raise
 
     for _target, backup in reversed(moved):
         if backup is not None and backup.exists():
-            _remove_path(backup)
+            try:
+                _remove_path(backup)
+            except OSError:
+                logger.warning(
+                    "Filesystem import left backup path behind after success: %s",
+                    backup,
+                    extra={"event": "admin_task.files_import_backup_orphaned"},
+                    exc_info=True,
+                )
 
     tiles_path = Path(tiles_dir)
     source_path = Path(source_images_dir)
@@ -1817,7 +1883,9 @@ async def run_files_export(task_id: int) -> None:
                         try:
                             await asyncio.wait_for(tar_task, timeout=5)
                         except asyncio.TimeoutError:
-                            pass
+                            logger.debug(
+                                "Timed out waiting for filesystem import to settle after cancel"
+                            )
                         if not tar_task.done():
                             tar_task.cancel()
                         raise poll_exc
@@ -2031,7 +2099,8 @@ async def run_files_import(task_id: int) -> None:
             if free_bytes < required_bytes:
                 raise ValueError(
                     "Insufficient free space on data volume for on-volume staging: "
-                    f"need at least ~{_format_bytes(required_bytes)}, "
+                    f"need at least ~{_format_bytes(required_bytes)} free before "
+                    "staging and extraction, "
                     f"have {_format_bytes(free_bytes)}"
                 )
 
@@ -2138,7 +2207,9 @@ async def run_files_import(task_id: int) -> None:
                                     extract_future, timeout=120,
                                 )
                             except asyncio.TimeoutError:
-                                pass
+                                logger.debug(
+                                    "Timed out waiting for filesystem import to settle after cancel"
+                                )
                             if not extract_future.done():
                                 extract_future.cancel()
                             raise poll_exc
@@ -2149,7 +2220,9 @@ async def run_files_import(task_id: int) -> None:
                                 extract_future, timeout=120,
                             )
                         except asyncio.TimeoutError:
-                            pass
+                            logger.debug(
+                                "Timed out waiting for filesystem import to settle after cancel"
+                            )
 
                         if extract_future.done():
                             try:

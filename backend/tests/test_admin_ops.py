@@ -37,6 +37,7 @@ from app.admin_ops import (
     rerun_files_import_archive,
     run_rebuild_tiles,
     _validate_retained_files_import_archive_path,
+    _swap_imported_entries,
 )
 
 
@@ -1703,6 +1704,120 @@ async def test_run_files_import_rejects_insufficient_staging_space(tmp_path) -> 
 
     assert task.status == "failed"
     assert "on-volume staging" in (task.error_message or "")
+
+
+async def test_run_files_import_trips_runtime_free_space_floor_and_cleans_up(
+    tmp_path,
+) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir()
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir()
+    (source_dir / "old.tiff").write_text("old")
+
+    archive_source = tmp_path / "payload"
+    archive_source_source_images = archive_source / "source_images"
+    archive_source_source_images.mkdir(parents=True)
+    (archive_source_source_images / "new.tiff").write_text("new")
+    archive = tmp_path / "upload.tar.gz"
+    with tarfile.open(str(archive), "w:gz") as tar:
+        tar.add(str(archive_source), arcname="data")
+
+    task = SimpleNamespace(
+        id=1,
+        task_type="files_import",
+        status="pending",
+        progress=0,
+        log="",
+        result_filename=None,
+        result_path=None,
+        input_path=str(archive),
+        error_message=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(
+        return_value=mock_session
+    )
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    staging_root = data_dir / ".import-staging"
+    staging_root.mkdir()
+    disk_usages = iter(
+        [
+            SimpleNamespace(total=10, used=1, free=2 * 1024 * 1024 * 1024),
+            SimpleNamespace(total=10, used=9, free=512 * 1024 * 1024),
+        ]
+    )
+
+    def _disk_usage(path):
+        assert Path(path).is_relative_to(staging_root)
+        return next(disk_usages)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._IMPORT_STAGING_DIR", str(staging_root)),
+        patch("app.admin_ops._IMPORT_STAGING_FREE_SPACE_CHECK_INTERVAL_BYTES", 1),
+        patch("app.admin_ops.shutil.which", return_value=None),
+        patch("app.admin_ops.shutil.disk_usage", side_effect=_disk_usage),
+        patch("app.admin_ops._swap_imported_entries") as mock_swap,
+    ):
+        mock_settings.data_dir = str(data_dir)
+        mock_settings.tiles_dir = str(tiles_dir)
+        mock_settings.source_images_dir = str(source_dir)
+        await run_files_import(1)
+
+    assert task.status == "failed"
+    assert "during filesystem import" in (task.error_message or "")
+    assert "1.0 GiB" in (task.error_message or "")
+    assert (source_dir / "old.tiff").read_text() == "old"
+    assert not (source_dir / "new.tiff").exists()
+    assert list(staging_root.iterdir()) == []
+    mock_swap.assert_not_called()
+
+
+def test_swap_imported_entries_keeps_success_on_backup_cleanup_failure(
+    tmp_path, monkeypatch
+) -> None:
+    extracted_dir = tmp_path / "staging" / "data"
+    extracted_source = extracted_dir / "source_images"
+    extracted_source.mkdir(parents=True)
+    (extracted_source / "new.tiff").write_text("new")
+
+    data_dir = tmp_path / "data"
+    data_source = data_dir / "source_images"
+    data_source.mkdir(parents=True)
+    (data_source / "old.tiff").write_text("old")
+    tiles_dir = data_dir / "tiles"
+    tiles_dir.mkdir()
+
+    from app import admin_ops as admin_ops_module
+
+    real_remove_path = admin_ops_module._remove_path
+
+    def _remove_path_with_cleanup_failure(path: Path) -> None:
+        if path.name.startswith("source_images.bak"):
+            raise OSError("simulated cleanup failure")
+        real_remove_path(path)
+
+    monkeypatch.setattr("app.admin_ops._remove_path", _remove_path_with_cleanup_failure)
+
+    result = _swap_imported_entries(
+        extracted_dir,
+        data_dir,
+        str(tiles_dir),
+        str(data_source),
+    )
+
+    assert result["source_files"] == 1
+    assert (data_source / "new.tiff").read_text() == "new"
+    assert not (data_source / "old.tiff").exists()
 
 
 async def test_list_files_import_archives_returns_retained_uploads(tmp_path) -> None:

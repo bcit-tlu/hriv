@@ -26,7 +26,10 @@ Use this skill for administrator-facing operations and long-running task flows.
   `<data_dir>/.import-staging`) and swaps exported top-level entries into `/data`
   one by one; do not reintroduce `/tmp` staging or whole-directory restore/copy
   behavior. Retained filesystem-import archives stay on disk for reruns; add a
-  cleanup path when operators need to reclaim space.
+  cleanup path when operators need to reclaim space. The import also uses a
+  coarse compressed-size preflight plus a runtime free-space floor so highly
+  compressible archives still fail before the swap if the staging volume runs
+  low.
 - `run_db_import` uses separate status and data sessions so progress commits
   while destructive data import remains atomic.
 - Keep DB import delete/insert ordering aligned with foreign keys, groups,
