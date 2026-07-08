@@ -1165,6 +1165,18 @@ async def test_purge_backup_archive_task_not_found() -> None:
     assert exc.value.status_code == 404
 
 
+async def test_purge_backup_archive_non_export_task_rejected() -> None:
+    """404 when the task is not an export task (never listed as an archive)."""
+    task = _make_admin_task(task_type="rebuild_tiles", status="completed")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    with pytest.raises(HTTPException) as exc:
+        await purge_backup_archive(
+            task_id=1, artifact_role="result", _user=MagicMock(), db=db
+        )
+    assert exc.value.status_code == 404
+
+
 async def test_purge_backup_archive_active_task_rejected() -> None:
     """409 when the task is still active."""
     task = _make_admin_task(task_type="db_export", status="running")

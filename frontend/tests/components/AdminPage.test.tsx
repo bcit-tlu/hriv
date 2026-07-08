@@ -20,6 +20,8 @@ vi.mock('../../src/api', async () => {
     listBackupSnapshots: vi.fn(),
     fetchBackupSnapshotManifest: vi.fn(),
     fetchFilesImportArchives: vi.fn(),
+    listExportArchives: vi.fn(),
+    purgeExportArchive: vi.fn(),
     startFileRestore: vi.fn(),
     initFilesImport: vi.fn(),
     uploadTaskFile: vi.fn(),
@@ -48,6 +50,8 @@ const mockStartFilesExport = vi.mocked(api.startFilesExport)
 const mockListBackupSnapshots = vi.mocked(api.listBackupSnapshots)
 const mockFetchBackupSnapshotManifest = vi.mocked(api.fetchBackupSnapshotManifest)
 const mockFetchFilesImportArchives = vi.mocked(api.fetchFilesImportArchives)
+const mockListExportArchives = vi.mocked(api.listExportArchives)
+const mockPurgeExportArchive = vi.mocked(api.purgeExportArchive)
 const mockStartFileRestore = vi.mocked(api.startFileRestore)
 const mockInitFilesImport = vi.mocked(api.initFilesImport)
 const mockUploadTaskFile = vi.mocked(api.uploadTaskFile)
@@ -62,6 +66,13 @@ describe('AdminPage', () => {
     mockFetchAdminTasks.mockResolvedValue([])
     mockListBackupSnapshots.mockResolvedValue([])
     mockFetchFilesImportArchives.mockResolvedValue([])
+    mockListExportArchives.mockResolvedValue({ archives: [], total_size_bytes: 0 })
+    mockPurgeExportArchive.mockResolvedValue({
+      deleted: true,
+      task_id: 1,
+      artifact_role: 'result',
+      size_bytes: 0,
+    })
     mockFetchBackupSnapshotManifest.mockResolvedValue({
       snapshot_name: 'hriv-backup-20260102-020000',
       created_at: '2026-01-02T02:00:00Z',

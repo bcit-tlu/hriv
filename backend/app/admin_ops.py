@@ -316,7 +316,7 @@ def _swap_imported_entries(
 ) -> dict[str, int]:
     tasks_basename = os.path.basename(_TASKS_DIR)
     staging_basename = os.path.basename(_IMPORT_STAGING_DIR)
-    tiles_basename = os.path.basename(settings.tiles_dir)
+    tiles_basename = os.path.basename(os.path.normpath(settings.tiles_dir))
     moved: list[tuple[Path, Path | None]] = []
 
     def _check_cancel() -> None:
@@ -1533,7 +1533,7 @@ def _iter_export_entries(
     """
     tasks_basename = os.path.basename(_TASKS_DIR)
     staging_basename = os.path.basename(_IMPORT_STAGING_DIR)
-    tiles_basename = os.path.basename(settings.tiles_dir)
+    tiles_basename = os.path.basename(os.path.normpath(settings.tiles_dir))
 
     def _check_cancel() -> None:
         if cancel_event is not None and cancel_event.is_set():

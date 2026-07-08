@@ -177,6 +177,30 @@ storage usage (for example, "3 retained archives using 87.4 GiB") so operators
 can see at a glance how much persistent space retained archives consume before
 deciding what to reclaim.
 
+## Stored export archives
+
+Completed `db_export` and `files_export` tasks leave their result archive on the
+admin-tasks volume so it can be re-downloaded. Over time these accumulate, so
+the admin UI's "Stored export archives" panel lists each retained export
+artifact with its filename, size, owning task metadata, and cumulative storage
+usage, and lets operators purge individual archives.
+
+- `GET /admin/tasks/backup-archives` (admin only) lists all on-disk export
+  result archives. Only `db_export`/`files_export` tasks whose `result_path`
+  resolves (via `_safe_admin_task_file`) to an existing file **inside** the
+  admin-tasks directory are returned. Each entry carries a `purgeable` flag that
+  is `false` while the owning task is still active.
+- `DELETE /admin/tasks/backup-archives/{task_id}/{artifact_role}` (admin only)
+  deletes a single archive from disk and clears the task's `result_filename` /
+  `result_path` columns. Only `artifact_role="result"` is supported (400
+  otherwise); the task must exist (404) and be an export task (404 otherwise),
+  and it must not be active (409 while `uploading`/`pending`/`running`/
+  `cancelling`). Filesystem-import archives are managed separately via
+  `DELETE /tasks/files-import/archives/{id}`.
+
+When an export task reaches a terminal state, the panel refreshes automatically
+so a newly produced archive appears without switching tabs.
+
 ## Rebuild tiles
 
 `rebuild_tiles` regenerates DZI tile trees from the **preserved source images**.

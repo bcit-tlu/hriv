@@ -261,6 +261,19 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   const isTerminalTask = (task: AdminTask) =>
     task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
 
+  const loadExportArchives = useCallback(async () => {
+    setExportArchivesLoading(true)
+    setExportArchivesError(null)
+    try {
+      const { archives } = await listExportArchives()
+      setExportArchives(archives)
+    } catch (err) {
+      setExportArchivesError(userMessage(err, 'Failed to load export archives'))
+    } finally {
+      setExportArchivesLoading(false)
+    }
+  }, [])
+
   // Stop polling a task that has reached a terminal state, surface a
   // notification, and refresh history — mirrors the poll loop's terminal
   // handling so a task finalised outside the poll cycle (e.g. reconciled in
@@ -276,8 +289,13 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
         .catch(() => {
           /* ignore */
         })
+      // A completed export produces a new on-disk archive; refresh the
+      // stored-archives panel so it appears without a manual tab switch.
+      if (task.task_type === 'db_export' || task.task_type === 'files_export') {
+        void loadExportArchives()
+      }
     },
-    [stopPolling],
+    [stopPolling, loadExportArchives],
   )
 
   const handleSessionEnded = useCallback(
@@ -589,19 +607,6 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
       setError(userMessage(err, 'Failed to delete archive'))
     }
   }
-
-  const loadExportArchives = useCallback(async () => {
-    setExportArchivesLoading(true)
-    setExportArchivesError(null)
-    try {
-      const { archives } = await listExportArchives()
-      setExportArchives(archives)
-    } catch (err) {
-      setExportArchivesError(userMessage(err, 'Failed to load export archives'))
-    } finally {
-      setExportArchivesLoading(false)
-    }
-  }, [])
 
   const handlePurgeExportArchive = async (archive: ExportArchive) => {
     if (

@@ -53,6 +53,7 @@ _admin = require_role("admin")
 _CHUNK_SIZE = 1024 * 1024  # 1 MiB streaming chunks
 _DOWNLOAD_TOKEN_EXPIRE_SECONDS = 60
 _ACTIVE_STATUSES = {"uploading", "pending", "running", "cancelling"}
+_EXPORT_TASK_TYPES = ("db_export", "files_export")
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +382,7 @@ async def list_export_archives(
         select(AdminTask)
         .where(
             AdminTask.result_filename.isnot(None),
-            AdminTask.task_type.in_(["db_export", "files_export"]),
+            AdminTask.task_type.in_(_EXPORT_TASK_TYPES),
         )
         .order_by(AdminTask.id.desc())
     )
@@ -430,6 +431,10 @@ async def purge_backup_archive(
     task = await db.get(AdminTask, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
+    if task.task_type not in _EXPORT_TASK_TYPES:
+        raise HTTPException(
+            status_code=404, detail="Task has no purgeable export archive"
+        )
     if task.status in _ACTIVE_STATUSES:
         raise HTTPException(
             status_code=409,
