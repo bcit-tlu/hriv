@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.33.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.32.1...frontend-v0.33.0) (2026-07-08)
+
+
+### Features
+
+* **backend,frontend:** backup archive management — list and purge stored archives ([#846](https://github.com/bcit-tlu/hriv/issues/846)) ([250f7e4](https://github.com/bcit-tlu/hriv/commit/250f7e4ee7e2040c52b1d6075ee6c3fd34c10b58))
+
+
+### Bug Fixes
+
+* **backend:** robust, efficient filesystem import with on-volume staging + re-run ([#838](https://github.com/bcit-tlu/hriv/issues/838)) ([d9af9bc](https://github.com/bcit-tlu/hriv/commit/d9af9bcc06315315c2d0377f15c3299fa131e2a3))
+* **frontend:** prevent zone anti-affinity rolling-update deadlock ([#837](https://github.com/bcit-tlu/hriv/issues/837)) ([9ed42ac](https://github.com/bcit-tlu/hriv/commit/9ed42aca6bd42ccf1bff49c506d5bfabf1979df3))
+
 ## [0.32.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.32.0...frontend-v0.32.1) (2026-07-07)
 
 
