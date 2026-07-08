@@ -1285,6 +1285,7 @@ describe('XHR upload abort support', () => {
   })
 
   it('uploadTaskFile rejects with AbortError when signal is aborted', async () => {
+    mockFetch.mockReturnValueOnce(jsonResponse({ bytes_received: 0, status: 'uploading' }))
     const ac = new AbortController()
     const file = new File(['test'], 'test.tar.gz')
     const promise = uploadTaskFile(1, file, undefined, ac.signal)

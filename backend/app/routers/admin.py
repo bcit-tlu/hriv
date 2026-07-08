@@ -2,13 +2,14 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 from pathlib import Path
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, UploadFile, File
+from fastapi.responses import JSONResponse, StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +42,9 @@ from ..schemas import (
     FilesImportArchiveOut,
     FilesImportRerunRequest,
     RebuildTilesRequest,
+    UploadChunkResponse,
+    UploadFinalizeRequest,
+    UploadStatusResponse,
 )
 from ..worker import enqueue_admin_task
 
@@ -54,6 +58,12 @@ _CHUNK_SIZE = 1024 * 1024  # 1 MiB streaming chunks
 _DOWNLOAD_TOKEN_EXPIRE_SECONDS = 60
 _ACTIVE_STATUSES = frozenset(ACTIVE_TASK_STATUSES)
 _EXPORT_TASK_TYPES = ("db_export", "files_export")
+
+# Chunked file-system import upload tunables.  Chunks are client-sized; the
+# server buffers and flushes to disk in _UPLOAD_FLUSH_SIZE pieces so memory
+# stays bounded while still avoiding a thread-pool call per ASGI micro-chunk.
+_UPLOAD_FLUSH_SIZE = 1024 * 1024  # 1 MiB
+_UPLOAD_MAX_CHUNK_SIZE = 512 * 1024 * 1024  # 512 MiB safety cap per request
 
 
 # ---------------------------------------------------------------------------
@@ -277,12 +287,14 @@ async def start_files_import(
 ):
     """Create a filesystem import task in ``uploading`` status.
 
-    The archive file itself is uploaded separately via
-    ``PUT /admin/tasks/{task_id}/upload``.  This two-step flow lets the
-    frontend show upload progress (via XHR) and ensures the task record
-    exists before the potentially long upload begins — so that timeouts
-    or network errors during upload are visible in the task history
-    rather than vanishing silently.
+    The archive file itself is uploaded separately. Small archives may still
+    use ``PUT /admin/tasks/{task_id}/upload``; for multi-gigabyte archives
+    the chunked flow (``PATCH /admin/tasks/{task_id}/upload`` with
+    ``Upload-Offset`` / ``Upload-Length`` headers, then
+    ``POST /admin/tasks/{task_id}/upload/finalize``) avoids a huge multipart
+    spool and can resume after network errors. The two-step flow ensures the
+    task record exists before the long upload begins, so timeouts or errors are
+    visible in task history rather than vanishing silently.
     """
     if not (
         filename.endswith(".tar.gz") or filename.endswith(".tgz")
@@ -300,6 +312,292 @@ async def start_files_import(
     await db.commit()
     await db.refresh(task)
     return _task_to_dict(task)
+
+
+def _safe_file_size(path: str | None) -> int:
+    """Return *path*'s size, or 0 if it does not exist or is inaccessible."""
+    if not path:
+        return 0
+    try:
+        return os.path.getsize(path)
+    except (OSError, ValueError):
+        return 0
+
+
+def _parse_upload_offset(request: Request) -> int | None:
+    """Read the ``Upload-Offset`` header (Tus-style) as a non-negative int."""
+    raw = request.headers.get("upload-offset")
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value >= 0 else None
+
+
+def _parse_upload_length(request: Request) -> int | None:
+    """Read the optional ``Upload-Length`` header as a positive int."""
+    raw = request.headers.get("upload-length")
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def _parse_content_length(request: Request) -> int | None:
+    """Read the HTTP ``Content-Length`` header as a non-negative int."""
+    raw = request.headers.get("content-length")
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value >= 0 else None
+
+
+def _write_buffer_to_file(path: str, data: bytearray, start: int, length: int) -> None:
+    """Synchronous helper: append *length* bytes from *data* to *path*."""
+    with open(path, "ab") as f:
+        f.write(memoryview(data)[start : start + length])
+
+
+async def _append_request_body_to_file(
+    request: Request,
+    path: str,
+    cancel_event: asyncio.Event | None = None,
+) -> int:
+    """Stream the request body to *path* in bounded-memory chunks.
+
+    Returns the number of bytes received. Raises on stream or write errors
+    so the caller can decide whether to retry/resync.
+    """
+    buffer = bytearray()
+    bytes_received = 0
+    async for data in request.stream():
+        if cancel_event is not None and cancel_event.is_set():
+            break
+        if not data:
+            continue
+        buffer.extend(data)
+        bytes_received += len(data)
+        while len(buffer) >= _UPLOAD_FLUSH_SIZE:
+            await asyncio.to_thread(
+                _write_buffer_to_file, path, buffer, 0, _UPLOAD_FLUSH_SIZE
+            )
+            del buffer[:_UPLOAD_FLUSH_SIZE]
+    if buffer:
+        await asyncio.to_thread(
+            _write_buffer_to_file, path, buffer, 0, len(buffer)
+        )
+        buffer.clear()
+    return bytes_received
+
+
+async def _finalize_files_import_upload(
+    db: AsyncSession,
+    task: AdminTask,
+    bytes_received: int,
+    bg: BackgroundTasks,
+) -> AdminTask:
+    """Atomically transition an uploaded files_import task to ``pending``.
+
+    Matches the guarded UPDATE pattern in ``upload_task_file`` so a concurrent
+    cancel is detected rather than silently overwriting state.
+    """
+    size_mb = bytes_received / (1024 * 1024)
+    log_line = f"Upload complete ({size_mb:.1f} MB). Queued for processing.\n"
+    result = await db.execute(
+        update(AdminTask)
+        .where(AdminTask.id == task.id, AdminTask.status == "uploading")
+        .values(
+            status="pending",
+            log=AdminTask.log + log_line,
+        )
+        .returning(AdminTask.id)
+    )
+    await db.commit()
+
+    if result.scalar() is None:
+        await db.refresh(task)
+        if task.status not in ("pending", "running"):
+            try:
+                os.unlink(task.input_path)
+            except OSError:
+                pass
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task was {task.status} during finalize",
+        )
+
+    await db.refresh(task)
+    await _kick_off(task, bg)
+    await db.refresh(task)
+    return task
+
+
+@router.get("/tasks/{task_id}/upload", response_model=UploadStatusResponse)
+async def get_upload_status(
+    task_id: int,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current upload offset for resuming a chunked upload."""
+    task = await db.get(AdminTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.task_type != "files_import" or task.status != "uploading":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task is in '{task.status}' state, expected 'uploading'",
+        )
+    if not task.input_path:
+        raise HTTPException(status_code=500, detail="Task missing input_path")
+
+    return {
+        "bytes_received": _safe_file_size(task.input_path),
+        "status": task.status,
+    }
+
+
+@router.patch("/tasks/{task_id}/upload", response_model=UploadChunkResponse)
+async def upload_task_chunk(
+    task_id: int,
+    request: Request,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Append a raw-byte chunk to a chunked filesystem-import upload.
+
+    The client sends the next contiguous slice with the ``Upload-Offset``
+    header set to the current file size. If the offset does not match, the
+    server returns 409 with ``bytes_received`` so the client can resync and
+    resume without re-sending already-received data.
+
+    The optional ``Upload-Length`` header lets the server update progress and
+    auto-finalize when the final byte has been received. The body itself is
+    the raw chunk bytes (``application/octet-stream``); multipart is not used,
+    avoiding a potentially huge temporary spool file.
+    """
+    task = await db.get(AdminTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.task_type != "files_import" or task.status != "uploading":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task is in '{task.status}' state, expected 'uploading'",
+        )
+    if not task.input_path:
+        raise HTTPException(status_code=500, detail="Task missing input_path")
+
+    offset = _parse_upload_offset(request)
+    if offset is None:
+        raise HTTPException(status_code=400, detail="Missing or invalid Upload-Offset header")
+
+    content_length = _parse_content_length(request)
+    if content_length is None:
+        raise HTTPException(status_code=400, detail="Missing or invalid Content-Length header")
+    if content_length > _UPLOAD_MAX_CHUNK_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Chunk size {content_length} exceeds server limit of {_UPLOAD_MAX_CHUNK_SIZE}",
+        )
+
+    current_size = _safe_file_size(task.input_path)
+    if offset != current_size:
+        return JSONResponse(
+            status_code=409,
+            content={
+                "bytes_received": current_size,
+                "status": task.status,
+            },
+        )
+
+    total = _parse_upload_length(request)
+    # Fail-fast if the total archive or this chunk will not fit on the data volume.
+    tasks_dir = Path(_ensure_tasks_dir())
+    free_bytes = shutil.disk_usage(tasks_dir).free
+    size_to_check = total if total is not None else content_length
+    if size_to_check > free_bytes:
+        detail = (
+            f"Insufficient space to upload archive: required {size_to_check} bytes, "
+            f"available {free_bytes} bytes in {tasks_dir}"
+        )
+        raise HTTPException(status_code=507, detail=detail)
+
+    try:
+        bytes_received = await _append_request_body_to_file(request, task.input_path)
+    except Exception as exc:
+        logger.exception("Chunked upload failed for task %d: %s", task_id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Chunk upload failed: {exc}",
+        ) from exc
+
+    new_size = current_size + bytes_received
+
+    # Keep the task row alive while a long chunked upload is in flight;
+    # without touching ``updated_at`` a slow cross-environment upload can be
+    # marked stale by another pod's startup reconciliation mid-transfer.
+    if total is not None:
+        progress = min(99, int(new_size / total * 100))
+    else:
+        progress = task.progress
+    try:
+        await db.execute(
+            update(AdminTask)
+            .where(AdminTask.id == task_id)
+            .values(progress=progress)
+        )
+        await db.commit()
+    except Exception as exc:
+        logger.warning(
+            "Failed to update progress for task %d: %s", task_id, exc, exc_info=True
+        )
+
+    return {
+        "bytes_received": new_size,
+        "status": task.status,
+    }
+
+
+@router.post("/tasks/{task_id}/upload/finalize", response_model_exclude_none=True)
+async def finalize_task_upload(
+    task_id: int,
+    request: UploadFinalizeRequest,
+    _user: Annotated[User, Depends(_admin)],
+    bg: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Finalize a chunked filesystem-import upload once all bytes are received.
+
+    Returns the updated ``AdminTask`` (now ``pending`` and queued). If the
+    on-disk size does not match ``total_bytes``, returns 409 with the current
+    ``bytes_received`` so the client can resume.
+    """
+    task = await db.get(AdminTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.task_type != "files_import" or task.status != "uploading":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task is in '{task.status}' state, expected 'uploading'",
+        )
+    if not task.input_path:
+        raise HTTPException(status_code=500, detail="Task missing input_path")
+
+    bytes_received = _safe_file_size(task.input_path)
+    if bytes_received != request.total_bytes:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Expected {request.total_bytes} bytes, received {bytes_received}",
+        )
+
+    return _task_to_dict(await _finalize_files_import_upload(db, task, bytes_received, bg))
 
 
 @router.get("/tasks/files-import/archives", response_model=list[FilesImportArchiveOut])
@@ -494,50 +792,19 @@ async def upload_task_file(
                     break
                 f.write(chunk)
                 bytes_written += len(chunk)
-    except Exception:
+    except Exception as exc:
+        logger.exception("Single-shot upload failed for task %d: %s", task_id, exc)
         try:
             os.unlink(task.input_path)
         except OSError:
             pass
         task.status = "failed"
-        task.error_message = "File upload failed"
-        task.log = (task.log or "") + "ERROR: File upload failed.\n"
+        task.error_message = f"File upload failed: {exc}"[:1000]
+        task.log = (task.log or "") + f"ERROR: File upload failed: {exc}\n"
         await db.commit()
-        raise HTTPException(status_code=500, detail="File upload failed")
+        raise HTTPException(status_code=500, detail=f"File upload failed: {exc}") from exc
 
-    size_mb = bytes_written / (1024 * 1024)
-
-    # Atomic uploading→pending transition.  If cancel_task changed the
-    # status between the upload and this UPDATE, the WHERE clause won't
-    # match and we detect the race without a TOCTOU window.
-    log_line = f"Upload complete ({size_mb:.1f} MB). Queued for processing.\n"
-    result = await db.execute(
-        update(AdminTask)
-        .where(AdminTask.id == task_id, AdminTask.status == "uploading")
-        .values(
-            status="pending",
-            log=AdminTask.log + log_line,
-        )
-        .returning(AdminTask.id)
-    )
-    await db.commit()
-
-    if result.scalar() is None:
-        # Status changed during upload (e.g. cancelled) — clean up file.
-        try:
-            os.unlink(task.input_path)
-        except OSError:
-            pass
-        await db.refresh(task)
-        raise HTTPException(
-            status_code=409,
-            detail=f"Task was {task.status} during upload",
-        )
-
-    await db.refresh(task)
-    await _kick_off(task, bg)
-    await db.refresh(task)
-    return _task_to_dict(task)
+    return _task_to_dict(await _finalize_files_import_upload(db, task, bytes_written, bg))
 
 
 def _read_backup_version() -> str:
