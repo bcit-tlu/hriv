@@ -121,6 +121,12 @@ export function userMessage(err: unknown, fallback: string): string {
     if (err.status === 413) {
       return 'This file is too large to upload.'
     }
+    if (err.status === 507) {
+      if (usable) {
+        return detail
+      }
+      return 'Not enough free space is available to upload this file.'
+    }
     if (err.status >= 400 && err.status < 500) {
       if (usable) {
         return detail
@@ -1340,13 +1346,79 @@ export function finalizeUpload(
 }
 
 /**
+ * Small-file fast path: upload the archive in a single raw PUT.
+ *
+ * Archives that fit in one chunk (<= `UPLOAD_CHUNK_SIZE`) are sent in one
+ * request to avoid the extra round-trips of the chunked/resumable path. The
+ * backend streams raw bytes directly to the data volume without any multipart
+ * /tmp spooling.
+ */
+function uploadTaskFileRaw(
+  taskId: number,
+  file: File,
+  onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
+): Promise<AdminTask> {
+  return new Promise<AdminTask>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', `${BASE}/api/admin/tasks/${taskId}/upload`)
+
+    const hdrs = authHeaders()
+    for (const [k, v] of Object.entries(hdrs)) {
+      xhr.setRequestHeader(k, v)
+    }
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          onProgress(e.loaded / e.total)
+        }
+      })
+    }
+
+    xhr.addEventListener('load', () => {
+      try {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(JSON.parse(xhr.responseText) as AdminTask)
+        } else {
+          const parsed = parseError(xhr.responseText || xhr.statusText)
+          reject(new ApiError(xhr.status, parsed.message, parsed.data))
+        }
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
+      }
+    })
+
+    xhr.addEventListener('error', () => {
+      reject(new TypeError('Network error'))
+    })
+
+    xhr.addEventListener('abort', () => {
+      reject(new DOMException('Upload aborted', 'AbortError'))
+    })
+
+    if (signal) {
+      if (signal.aborted) {
+        reject(new DOMException('Upload aborted', 'AbortError'))
+        return
+      }
+      signal.addEventListener('abort', () => xhr.abort(), { once: true })
+    }
+
+    xhr.send(file)
+  })
+}
+
+/**
  * Upload the archive for an ``uploading``-status task using resumable chunks.
  *
- * The file is sliced into 10 MiB pieces and sent via `PATCH` requests with
- * `Upload-Offset` and `Upload-Length` headers.  Network failures and 5xx
- * responses are retried with a short exponential backoff; 409 offset-conflict
- * responses trigger a resync from the server.  Once the reported
- * `bytes_received` equals `file.size`, the client calls `POST .../finalize`.
+ * Archives larger than `UPLOAD_CHUNK_SIZE` are sliced into 10 MiB pieces and
+ * sent via `PATCH` requests with `Upload-Offset` and `Upload-Length` headers.
+ * Network failures and 5xx responses are retried with a short exponential
+ * backoff; 409 offset-conflict responses trigger a resync from the server.
+ * Once the reported `bytes_received` equals `file.size`, the client calls
+ * `POST .../finalize`.
  *
  * On success the backend transitions the task to ``pending`` and enqueues it.
  *
@@ -1358,6 +1430,10 @@ export function uploadTaskFile(
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
 ): Promise<AdminTask> {
+  if (file.size <= UPLOAD_CHUNK_SIZE) {
+    return uploadTaskFileRaw(taskId, file, onProgress, signal)
+  }
+
   return new Promise<AdminTask>((resolve, reject) => {
     if (signal?.aborted) {
       reject(new DOMException('Upload aborted', 'AbortError'))

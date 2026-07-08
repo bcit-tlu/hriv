@@ -21,7 +21,15 @@ Use this skill for administrator-facing operations and long-running task flows.
 
 - `AdminTask` active statuses block another task of the same type.
 - Filesystem import starts in `uploading`; the upload endpoint atomically moves
-  it to `pending` so cancellation remains race-safe.
+  it to `pending` so cancellation remains race-safe. Small archives use a single
+  raw `PUT` with `application/octet-stream`; multipart form uploads are rejected
+  with 415, and a declared `Content-Length` that exceeds free space on the
+  admin-tasks volume fails fast with 507 before streaming begins. Archives larger
+  than 10 MiB use a resumable chunked flow: `GET /tasks/{id}/upload` returns the
+  current offset, `PATCH /tasks/{id}/upload` appends a chunk with `Upload-Offset`
+  and `Upload-Length` headers, and `POST /tasks/{id}/upload/finalize` transitions
+  the task to `pending` once the total bytes match. Offset mismatches return 409
+  with `bytes_received` so the client can resume without re-sending data.
 - Filesystem import stages on the data volume via `IMPORT_STAGING_DIR` (default
   `<data_dir>/.import-staging`) and swaps exported top-level entries into `/data`
   one by one; do not reintroduce `/tmp` staging or whole-directory restore/copy

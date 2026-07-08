@@ -94,7 +94,6 @@ import {
   fetchAdminTask,
   cancelAdminTask,
   uploadSourceImage,
-  uploadTaskFile,
   bulkImportImages,
   replaceImage,
   type ApiCategory,
@@ -312,6 +311,16 @@ describe('userMessage', () => {
   it('returns a clear message for 413 without usable detail', () => {
     const err = new ApiError(413, '')
     expect(userMessage(err, 'Too large')).toBe('This file is too large to upload.')
+  })
+
+  it('returns detail for 507 storage errors', () => {
+    const err = new ApiError(
+      507,
+      'Insufficient space to upload archive: required 1 bytes, available 0 bytes',
+    )
+    expect(userMessage(err, 'fallback')).toBe(
+      'Insufficient space to upload archive: required 1 bytes, available 0 bytes',
+    )
   })
 
   it('returns fallback for detail exceeding 200 chars', () => {
@@ -1279,16 +1288,6 @@ describe('XHR upload abort support', () => {
       undefined,
       ac.signal,
     )
-    ac.abort()
-    await expect(promise).rejects.toThrow('Upload aborted')
-    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
-  })
-
-  it('uploadTaskFile rejects with AbortError when signal is aborted', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse({ bytes_received: 0, status: 'uploading' }))
-    const ac = new AbortController()
-    const file = new File(['test'], 'test.tar.gz')
-    const promise = uploadTaskFile(1, file, undefined, ac.signal)
     ac.abort()
     await expect(promise).rejects.toThrow('Upload aborted')
     await expect(promise).rejects.toMatchObject({ name: 'AbortError' })

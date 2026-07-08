@@ -42,8 +42,6 @@ import {
   startFileRestore,
   initFilesImport,
   uploadTaskFile,
-  getUploadStatus,
-  finalizeUpload,
   startFilesImport,
   bulkImportImages,
   fetchAdminTasks,
@@ -302,7 +300,11 @@ describe('Background Admin Task API', () => {
 
       const result = await promise
       expect(xhrInstance.open).toHaveBeenCalledWith('PUT', '/api/admin/tasks/42/upload')
-      expect(xhrInstance.send).toHaveBeenCalled()
+      expect(xhrInstance.setRequestHeader).toHaveBeenCalledWith(
+        'Content-Type',
+        'application/octet-stream',
+      )
+      expect(xhrInstance.send).toHaveBeenCalledWith(file)
       expect(result).toEqual(TASK_FIXTURE)
     })
 
