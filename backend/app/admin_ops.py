@@ -95,6 +95,27 @@ def _ensure_import_staging_free_space(staging_dir: Path) -> None:
         )
 
 
+def _ensure_import_staging_same_device(staging_dir: Path, data_dir: Path) -> None:
+    """Fail fast if staging and data directories are on different filesystems.
+
+    On-volume staging restores entries by atomically renaming them from the
+    staging directory into ``data_dir`` (``_swap_imported_entries``). ``os.rename``
+    only works within a single filesystem, so a misconfigured
+    ``IMPORT_STAGING_DIR`` on a different volume would otherwise surface as a
+    cryptic ``EXDEV`` ("Invalid cross-device link") failure part-way through the
+    swap. Checking up front produces a clear, actionable error instead.
+    """
+    if os.stat(staging_dir).st_dev != os.stat(data_dir).st_dev:
+        raise ValueError(
+            "Filesystem import staging directory must be on the same volume as "
+            f"the data directory: staging '{staging_dir}' and data '{data_dir}' "
+            "are on different filesystems, so restored entries cannot be "
+            "atomically moved into place (os.rename fails with EXDEV / "
+            "cross-device link). Set IMPORT_STAGING_DIR to a path on the data "
+            "volume."
+        )
+
+
 def _remove_path(path: Path) -> None:
     if not path.exists() and not path.is_symlink():
         return
@@ -2098,6 +2119,9 @@ async def run_files_import(task_id: int) -> None:
             archive_size = os.path.getsize(input_path)
             archive_mb = archive_size / (1024 * 1024)
             staging_root = Path(_ensure_import_staging_dir())
+            _ensure_import_staging_same_device(
+                staging_root, Path(settings.data_dir)
+            )
             free_bytes = shutil.disk_usage(staging_root).free
             required_bytes = int(archive_size * _IMPORT_STAGING_FREE_SPACE_FACTOR)
             if free_bytes < required_bytes:

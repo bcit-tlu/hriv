@@ -467,6 +467,33 @@ describe('AdminPage', () => {
     await waitFor(() => expect(mockFetchFilesImportArchives).toHaveBeenCalledTimes(3))
   })
 
+  it('shows cumulative storage usage for retained archives', async () => {
+    const user = userEvent.setup()
+
+    mockFetchFilesImportArchives.mockResolvedValue([
+      {
+        archive_task_id: 7,
+        original_filename: 'backup-a.tar.gz',
+        size_bytes: 5_368_709_120, // 5 GiB
+        created_at: '2026-06-19T19:00:00Z',
+        last_status: 'completed',
+      },
+      {
+        archive_task_id: 8,
+        original_filename: 'backup-b.tar.gz',
+        size_bytes: 10_737_418_240, // 10 GiB
+        created_at: '2026-06-20T19:00:00Z',
+        last_status: 'completed',
+      },
+    ])
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+
+    expect(await screen.findByText('2 retained archives using 15.0 GiB')).toBeInTheDocument()
+  })
+
   it('stops polling and shows a session-ended message on 401', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })

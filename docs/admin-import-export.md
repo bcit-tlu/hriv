@@ -166,6 +166,17 @@ The `IMPORT_STAGING_FREE_SPACE_FACTOR` preflight is only a coarse gate for the
 compressed archive size; `IMPORT_STAGING_MIN_FREE_BYTES` is the authoritative
 runtime floor during extraction.
 
+Because entries are moved into place with `os.rename`, `IMPORT_STAGING_DIR`
+**must be on the same filesystem/volume as `data_dir`** (the default satisfies
+this). If it is overridden to a different volume, the import fails fast at the
+preflight with a clear error rather than surfacing a cryptic cross-device
+(`EXDEV`) failure part-way through the swap.
+
+The admin UI's "Previously uploaded import archives" list shows cumulative
+storage usage (for example, "3 retained archives using 87.4 GiB") so operators
+can see at a glance how much persistent space retained archives consume before
+deciding what to reclaim.
+
 ## Rebuild tiles
 
 `rebuild_tiles` regenerates DZI tile trees from the **preserved source images**.

@@ -18,6 +18,7 @@ import pytest
 from app.admin_ops import (
     TaskCancelled,
     _create_tar_file,
+    _ensure_import_staging_same_device,
     _ensure_tasks_dir,
     _extract_archive_stream,
     _extract_and_restore,
@@ -1743,6 +1744,75 @@ async def test_run_files_import_rejects_insufficient_staging_space(tmp_path) -> 
 
     assert task.status == "failed"
     assert "on-volume staging" in (task.error_message or "")
+
+
+def test_ensure_import_staging_same_device_allows_same_filesystem(tmp_path) -> None:
+    staging_dir = tmp_path / "data" / ".import-staging"
+    staging_dir.mkdir(parents=True)
+    data_dir = tmp_path / "data"
+
+    # Both paths live on the same tmp filesystem, so this must not raise.
+    _ensure_import_staging_same_device(staging_dir, data_dir)
+
+
+def test_ensure_import_staging_same_device_rejects_cross_device(tmp_path) -> None:
+    staging_dir = tmp_path / "data" / ".import-staging"
+    staging_dir.mkdir(parents=True)
+    data_dir = tmp_path / "data"
+
+    def _stat(path, *args, **kwargs):
+        if Path(path) == staging_dir:
+            return SimpleNamespace(st_dev=1)
+        return SimpleNamespace(st_dev=2)
+
+    with patch("app.admin_ops.os.stat", side_effect=_stat):
+        with pytest.raises(ValueError, match="same volume"):
+            _ensure_import_staging_same_device(staging_dir, data_dir)
+
+
+async def test_run_files_import_rejects_cross_device_staging(tmp_path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    source_dir = data_dir / "source_images"
+    source_dir.mkdir()
+    archive = tmp_path / "upload.tar.gz"
+    with tarfile.open(str(archive), "w:gz") as tar:
+        tar.add(str(source_dir), arcname="data/source_images")
+
+    task = SimpleNamespace(
+        id=1, task_type="files_import", status="pending", progress=0, log="",
+        result_filename=None, result_path=None, input_path=str(archive),
+        error_message=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=task)
+    mock_session.commit = AsyncMock()
+    mock_session_factory = MagicMock()
+    mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+
+    staging_root = data_dir / ".import-staging"
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=mock_session_factory),
+        patch("app.admin_ops.settings") as mock_settings,
+        patch("app.admin_ops._IMPORT_STAGING_DIR", str(staging_root)),
+        patch(
+            "app.admin_ops._ensure_import_staging_same_device",
+            side_effect=ValueError(
+                "Filesystem import staging directory must be on the same volume "
+                "as the data directory"
+            ),
+        ),
+    ):
+        mock_settings.data_dir = str(data_dir)
+        mock_settings.tiles_dir = str(data_dir / "tiles")
+        mock_settings.source_images_dir = str(source_dir)
+        await run_files_import(1)
+
+    assert task.status == "failed"
+    assert "same volume" in (task.error_message or "")
 
 
 async def test_run_files_import_trips_runtime_free_space_floor_and_cleans_up(

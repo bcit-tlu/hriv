@@ -897,6 +897,18 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
             <Typography variant="h6" sx={{ mb: 2 }}>
               Previously uploaded import archives
             </Typography>
+            {filesImportArchives.length > 0 && (
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                {filesImportArchives.length} retained{' '}
+                {filesImportArchives.length === 1 ? 'archive' : 'archives'} using{' '}
+                {formatBytes(
+                  filesImportArchives.reduce(
+                    (total, archive) => total + (archive.size_bytes ?? 0),
+                    0,
+                  ),
+                )}
+              </Typography>
+            )}
             {filesImportArchivesError && (
               <Alert severity="error" sx={{ mb: 2 }}>
                 {filesImportArchivesError}
