@@ -539,7 +539,7 @@ describe('AdminPage', () => {
 
     await waitFor(() => expect(mockListExportArchives).toHaveBeenCalledTimes(1))
 
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    await user.click(screen.getByTestId('export-archive-delete-12'))
     await waitFor(() => expect(mockPurgeExportArchive).toHaveBeenCalledWith(12, 'result'))
     // Purge triggers a refresh of the stored-archives list.
     await waitFor(() => expect(mockListExportArchives).toHaveBeenCalledTimes(2))
@@ -570,7 +570,7 @@ describe('AdminPage', () => {
     await user.click(screen.getByRole('tab', { name: 'Backups' }))
 
     expect(await screen.findByText('files-export-13.tar.gz')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled()
+    expect(screen.getByTestId('export-archive-delete-13')).toBeDisabled()
   })
 
   it('stops polling and shows a session-ended message on 401', async () => {

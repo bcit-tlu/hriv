@@ -35,7 +35,7 @@ from ..admin_ops import (
 from ..auth import auth_settings, require_role
 from ..database import get_db
 from ..maintenance import disable_maintenance_mode, enable_maintenance_mode, is_maintenance_mode
-from ..models import AdminTask, User
+from ..models import ACTIVE_TASK_STATUSES, AdminTask, User
 from ..schemas import (
     FileRestoreRequest,
     FilesImportArchiveOut,
@@ -52,7 +52,7 @@ _admin = require_role("admin")
 
 _CHUNK_SIZE = 1024 * 1024  # 1 MiB streaming chunks
 _DOWNLOAD_TOKEN_EXPIRE_SECONDS = 60
-_ACTIVE_STATUSES = {"uploading", "pending", "running", "cancelling"}
+_ACTIVE_STATUSES = frozenset(ACTIVE_TASK_STATUSES)
 _EXPORT_TASK_TYPES = ("db_export", "files_export")
 
 

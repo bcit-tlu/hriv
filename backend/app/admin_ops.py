@@ -32,6 +32,7 @@ from .backup_access import (
 )
 from .database import get_async_session, settings
 from .models import (
+    ACTIVE_TASK_STATUSES,
     AdminTask,
     Announcement,
     Category,
@@ -442,7 +443,7 @@ async def reconcile_stale_tasks(
     stmt = (
         update(AdminTask)
         .where(
-            AdminTask.status.in_(["uploading", "pending", "running", "cancelling"]),
+            AdminTask.status.in_(ACTIVE_TASK_STATUSES),
             AdminTask.updated_at < cutoff,
         )
         .values(
@@ -555,7 +556,7 @@ async def _create_rerun_files_import_task(
         await session.execute(
             select(AdminTask).where(
                 AdminTask.task_type == "files_import",
-                AdminTask.status.in_(["uploading", "pending", "running", "cancelling"]),
+                AdminTask.status.in_(ACTIVE_TASK_STATUSES),
             )
         )
     ).scalars().first()
@@ -652,7 +653,7 @@ async def delete_files_import_archive(
         .where(
             AdminTask.task_type == "files_import",
             AdminTask.input_path == archive_task.input_path,
-            AdminTask.status.in_(["uploading", "pending", "running", "cancelling"]),
+            AdminTask.status.in_(ACTIVE_TASK_STATUSES),
         )
     )
     if active_result.scalars().first() is not None:

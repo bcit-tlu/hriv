@@ -994,6 +994,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
                       variant="outlined"
                       disabled={!archive.purgeable}
                       onClick={() => void handlePurgeExportArchive(archive)}
+                      data-testid={`export-archive-delete-${archive.task_id}`}
                       sx={{ flexShrink: 0 }}
                     >
                       Delete
