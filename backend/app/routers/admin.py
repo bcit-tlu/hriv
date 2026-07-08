@@ -52,6 +52,7 @@ _admin = require_role("admin")
 
 _CHUNK_SIZE = 1024 * 1024  # 1 MiB streaming chunks
 _DOWNLOAD_TOKEN_EXPIRE_SECONDS = 60
+_ACTIVE_STATUSES = {"uploading", "pending", "running", "cancelling"}
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +100,7 @@ async def _create_task(
         await db.execute(
             select(AdminTask).where(
                 AdminTask.task_type == task_type,
-                AdminTask.status.in_(["uploading", "pending", "running", "cancelling"]),
+                AdminTask.status.in_(_ACTIVE_STATUSES),
             )
         )
     ).scalars().first()
@@ -348,9 +349,6 @@ async def delete_files_import_archive_endpoint(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-_ACTIVE_STATUSES = {"uploading", "pending", "running", "cancelling"}
-
-
 def _safe_admin_task_file(path: str | None) -> Path | None:
     """Resolve *path* and verify it is inside the admin-tasks directory.
 
@@ -381,7 +379,10 @@ async def list_export_archives(
     """
     result = await db.execute(
         select(AdminTask)
-        .where(AdminTask.result_filename.isnot(None))
+        .where(
+            AdminTask.result_filename.isnot(None),
+            AdminTask.task_type.in_(["db_export", "files_export"]),
+        )
         .order_by(AdminTask.id.desc())
     )
     tasks = result.scalars().all()
