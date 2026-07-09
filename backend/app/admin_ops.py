@@ -1566,7 +1566,9 @@ async def _queue_rebuild_tiles_after_import(
             try:
                 os.unlink(params_path)
             except OSError:
-                pass
+                logger.debug(
+                    "Could not remove rebuild params file %s", params_path, exc_info=True
+                )
             return (
                 f"A rebuild-tiles task is already active (#{existing.id}). "
                 "The automatic rebuild was skipped; run Rebuild Tiles manually after it completes if needed."
@@ -1588,7 +1590,9 @@ async def _queue_rebuild_tiles_after_import(
             try:
                 os.unlink(params_path)
             except OSError:
-                pass
+                logger.debug(
+                    "Could not remove rebuild params file %s", params_path, exc_info=True
+                )
             return (
                 "Could not queue automatic tile rebuild. "
                 "Run Rebuild Tiles manually if needed."
@@ -1605,7 +1609,9 @@ async def _queue_rebuild_tiles_after_import(
                 try:
                     os.unlink(params_path)
                 except OSError:
-                    pass
+                    logger.debug(
+                        "Could not remove rebuild params file %s", params_path, exc_info=True
+                    )
                 return "Could not queue automatic tile rebuild (task id missing)."
 
         enqueued = False
@@ -1643,7 +1649,9 @@ async def _queue_rebuild_tiles_after_import(
         try:
             os.unlink(params_path)
         except OSError:
-            pass
+            logger.debug(
+                "Could not remove rebuild params file %s", params_path, exc_info=True
+            )
         return (
             "Could not queue automatic tile rebuild. "
             "Run Rebuild Tiles manually if needed."
