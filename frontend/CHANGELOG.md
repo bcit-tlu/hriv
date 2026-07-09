@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.33.0...frontend-v0.34.0) (2026-07-09)
+
+
+### Features
+
+* **backend,frontend:** resumable chunked upload for large filesystem import archives ([#851](https://github.com/bcit-tlu/hriv/issues/851)) ([a38c455](https://github.com/bcit-tlu/hriv/commit/a38c45525544c40367836608ef15a3a6c0a45fe1))
+
 ## [0.33.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.32.1...frontend-v0.33.0) (2026-07-08)
 
 
