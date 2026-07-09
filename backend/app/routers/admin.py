@@ -349,7 +349,7 @@ def _acquire_chunk_lock(lock_path: str) -> int:
     fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
+    except OSError:
         os.close(fd)
         raise
     return fd
