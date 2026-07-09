@@ -2475,3 +2475,28 @@ async def test_queue_rebuild_tiles_after_import_queues_on_success(tmp_path) -> N
     with open(params_files[0], "r", encoding="utf-8") as f:
         assert json.load(f)["scope"] == "missing_stale"
     assert session.execute.await_count == 2  # select, insert
+
+
+async def test_queue_rebuild_tiles_after_import_falls_back_to_background_tasks(tmp_path) -> None:
+    """When Redis is unavailable and a BackgroundTasks object is available,
+    the rebuild is scheduled to run in-process after the import completes."""
+    import_task = SimpleNamespace(
+        input_path=str(tmp_path / "import.tar.gz"),
+        created_by=1,
+    )
+    session, session_factory = _queue_session_factory(insert_id=99)
+    bg = MagicMock()
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=False),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task, bg)
+
+    assert "Tile rebuild task #99 was scheduled to run automatically" in message
+    assert session.execute.await_count == 2  # select, insert
+    bg.add_task.assert_called_once_with(run_rebuild_tiles, 99)
+    # Params file is left for the in-process runner to consume and delete.
+    params_files = list(tmp_path.glob("rebuild-after-import-*.json"))
+    assert len(params_files) == 1

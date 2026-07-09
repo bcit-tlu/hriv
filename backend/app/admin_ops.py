@@ -25,6 +25,7 @@ from opentelemetry import trace
 from opentelemetry.trace import StatusCode
 from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.background import BackgroundTasks
 
 from .backup_access import (
     BackupRestoreNotConfiguredError,
@@ -1518,6 +1519,7 @@ async def run_rebuild_tiles(task_id: int) -> None:
 
 async def _queue_rebuild_tiles_after_import(
     import_task: AdminTask,
+    bg: BackgroundTasks | None = None,
 ) -> str:
     """Queue a ``rebuild_tiles`` task after a successful filesystem import.
 
@@ -1625,9 +1627,16 @@ async def _queue_rebuild_tiles_after_import(
             )
 
         # Redis is unavailable. The import task itself must not be blocked for
-        # the potentially hours-long rebuild, so roll the pending task back and
-        # ask the operator to start Rebuild Tiles manually (the endpoint will
-        # run it in-process via BackgroundTasks in a single-container setup).
+        # the potentially hours-long rebuild, so schedule the rebuild to run
+        # in-process via BackgroundTasks if we have access to one, otherwise
+        # start it as an orphan asyncio task (e.g. inside an arq worker).
+        if bg is not None:
+            bg.add_task(run_rebuild_tiles, task_id)
+            return (
+                f"Tile rebuild task #{task_id} was scheduled to run automatically. "
+                "Run Rebuild Tiles manually if you need to re-run it."
+            )
+
         try:
             await rebuild_session.execute(
                 update(AdminTask)
@@ -2222,7 +2231,10 @@ def _extract_and_restore(
     )
 
 
-async def run_files_import(task_id: int) -> None:
+async def run_files_import(
+    task_id: int,
+    bg: BackgroundTasks | None = None,
+) -> None:
     """Extract a tar.gz archive over the data directory in the background.
 
     Progress is mapped into three phases so the admin UI can show a
@@ -2424,7 +2436,7 @@ async def run_files_import(task_id: int) -> None:
                             )
 
             try:
-                rebuild_log = await _queue_rebuild_tiles_after_import(task)
+                rebuild_log = await _queue_rebuild_tiles_after_import(task, bg)
             except Exception:
                 logger.exception(
                     "Failed to queue automatic tile rebuild after import",
