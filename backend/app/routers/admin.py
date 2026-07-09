@@ -361,8 +361,12 @@ def _acquire_chunk_lock(lock_path: str) -> int:
         if exc.errno == errno.EIO and os.path.exists(lock_path):
             try:
                 os.chmod(lock_path, 0o644)
-            except OSError:
-                pass
+            except OSError as chmod_exc:
+                logger.debug(
+                    "chmod on lock file %s failed, continuing anyway",
+                    lock_path,
+                    exc_info=chmod_exc,
+                )
             fd = os.open(lock_path, os.O_WRONLY)
         else:
             raise
