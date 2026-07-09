@@ -930,12 +930,20 @@ async def upload_task_file(
             )
             try:
                 await db.rollback()
-            except Exception:
-                pass
+            except Exception as rollback_exc:
+                logger.debug(
+                    "Failed to rollback after upload failure for task %d: %s",
+                    task_id,
+                    rollback_exc,
+                )
             try:
                 os.unlink(task.input_path)
-            except OSError:
-                pass
+            except OSError as cleanup_exc:
+                logger.debug(
+                    "Failed to remove input_path for task %d during rollback cleanup: %s",
+                    task_id,
+                    cleanup_exc,
+                )
         raise HTTPException(status_code=500, detail=reason) from exc
 
     return _task_to_dict(await _finalize_files_import_upload(db, task, bytes_written, bg))
