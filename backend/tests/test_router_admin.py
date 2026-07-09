@@ -964,6 +964,40 @@ async def test_upload_task_chunk_success_and_updates_progress(tmp_path) -> None:
     db.commit.assert_awaited_once()
 
 
+async def test_upload_task_chunk_does_not_write_beyond_content_length(
+    tmp_path,
+) -> None:
+    """The stream helper caps written bytes to the declared Content-Length."""
+    input_path = tmp_path / "import.tar.gz"
+    task = _make_admin_task(
+        task_type="files_import",
+        status="uploading",
+        input_path=str(input_path),
+        progress=0,
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=task)
+    db.execute = AsyncMock()
+    db.commit = AsyncMock()
+    request = _FakeRequest([b"oversized-chunk-data"], content_length=4)
+    request.headers["upload-offset"] = "0"
+    request.headers["upload-length"] = "100"
+
+    with (
+        patch("app.routers.admin._ensure_tasks_dir", return_value=str(tmp_path / "admin_tasks")),
+        patch(
+            "app.routers.admin.shutil.disk_usage",
+            return_value=SimpleNamespace(free=10**12),
+        ),
+    ):
+        result = await upload_task_chunk(1, request, MagicMock(), db=db)
+
+    assert input_path.read_bytes() == b"over"
+    assert result["bytes_received"] == 4
+    db.execute.assert_awaited_once()
+    db.commit.assert_awaited_once()
+
+
 async def test_finalize_task_upload_size_mismatch_returns_409(tmp_path) -> None:
     """Finalize returns 409 if the on-disk size does not match the request."""
     input_path = tmp_path / "import.tar.gz"

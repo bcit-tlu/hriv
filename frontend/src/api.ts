@@ -1223,6 +1223,7 @@ export function initFilesImport(filename: string): Promise<AdminTask> {
 
 const UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024 // 10 MiB
 const UPLOAD_MAX_RETRIES = 3
+const UPLOAD_MAX_RESYNCS = 5
 const UPLOAD_RETRY_BASE_MS = 1000
 
 function isRetryableUploadStatus(status: number): boolean {
@@ -1443,6 +1444,7 @@ export function uploadTaskFile(
 
     let currentOffset = 0
     let consecutiveRetries = 0
+    let nonProgressResyncs = 0
 
     async function resync(): Promise<void> {
       const status = await getUploadStatus(taskId, signal)
@@ -1451,6 +1453,17 @@ export function uploadTaskFile(
       }
       currentOffset = status.bytes_received
       consecutiveRetries = 0
+    }
+
+    function checkStuck(offsetBefore: number, offsetAfter: number): void {
+      if (offsetAfter <= offsetBefore) {
+        nonProgressResyncs++
+      } else {
+        nonProgressResyncs = 0
+      }
+      if (nonProgressResyncs > UPLOAD_MAX_RESYNCS) {
+        throw new Error('Upload is stuck: offset is not advancing after multiple resyncs')
+      }
     }
 
     async function uploadChunks(): Promise<void> {
@@ -1467,10 +1480,13 @@ export function uploadTaskFile(
           if (resp.bytes_received <= currentOffset) {
             // Server did not accept the chunk (offset conflict). Resync
             // to avoid an infinite loop.
+            const previousOffset = currentOffset
             await resync()
+            checkStuck(previousOffset, currentOffset)
             continue
           }
           currentOffset = resp.bytes_received
+          nonProgressResyncs = 0
           consecutiveRetries = 0
         } catch (err: unknown) {
           if (err instanceof ApiError && err.status === 409) {
@@ -1481,8 +1497,10 @@ export function uploadTaskFile(
             if (data && data.status !== 'uploading') {
               throw new ApiError(409, `Task is in '${data.status}' state, expected 'uploading'`)
             }
+            const previousOffset = currentOffset
             currentOffset =
               data?.bytes_received ?? (await getUploadStatus(taskId, signal)).bytes_received
+            checkStuck(previousOffset, currentOffset)
             consecutiveRetries = 0
             continue
           }

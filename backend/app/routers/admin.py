@@ -4,10 +4,11 @@ import logging
 import fcntl
 import os
 import shutil
-from pathlib import Path
-import uuid
 from datetime import datetime, timedelta, timezone
+from io import BufferedWriter
+from pathlib import Path
 from typing import Annotated
+import uuid
 
 from fastapi import (
     APIRouter,
@@ -394,41 +395,62 @@ def _parse_content_length(request: Request) -> int | None:
     return value if value >= 0 else None
 
 
-def _write_buffer_to_file(path: str, data: bytearray, start: int, length: int) -> None:
-    """Synchronous helper: append *length* bytes from *data* to *path*."""
-    with open(path, "ab") as f:
-        f.write(memoryview(data)[start : start + length])
+def _write_buffer_to_file(f: BufferedWriter, data: bytearray, start: int, length: int) -> None:
+    """Synchronous helper: write *length* bytes from *data* to open file *f*."""
+    f.write(memoryview(data)[start : start + length])
 
 
 async def _append_request_body_to_file(
     request: Request,
     path: str,
+    *,
+    mode: str = "ab",
+    max_bytes: int | None = None,
     cancel_event: asyncio.Event | None = None,
 ) -> int:
     """Stream the request body to *path* in bounded-memory chunks.
 
-    Returns the number of bytes received. Raises on stream or write errors
-    so the caller can decide whether to retry/resync.
+    The file is opened once with *mode* (``"ab"`` for chunked PATCH uploads,
+    ``"wb"`` for single-shot PUT uploads) and all writes are delegated to the
+    thread pool so the async event loop is not blocked by storage.  If
+    *max_bytes* is set, only that many bytes are written; any additional bytes
+    from the stream are consumed and discarded so the connection closes cleanly
+    and the on-disk file cannot grow past the declared size.
+
+    Returns the number of bytes written. Raises on stream or write errors so
+    the caller can decide whether to retry/resync.
     """
-    buffer = bytearray()
-    bytes_received = 0
-    async for data in request.stream():
-        if cancel_event is not None and cancel_event.is_set():
-            break
-        if not data:
-            continue
-        buffer.extend(data)
-        bytes_received += len(data)
-        while len(buffer) >= _UPLOAD_FLUSH_SIZE:
+    f: BufferedWriter = await asyncio.to_thread(open, path, mode)
+    try:
+        buffer = bytearray()
+        bytes_received = 0
+        async for data in request.stream():
+            if cancel_event is not None and cancel_event.is_set():
+                break
+            if not data:
+                continue
+            if max_bytes is not None:
+                allowed = max_bytes - bytes_received
+                if allowed <= 0:
+                    # At or past the declared limit; keep consuming the stream
+                    # without writing or buffering so the connection closes.
+                    continue
+                if len(data) > allowed:
+                    data = data[:allowed]
+            buffer.extend(data)
+            bytes_received += len(data)
+            while len(buffer) >= _UPLOAD_FLUSH_SIZE:
+                await asyncio.to_thread(
+                    _write_buffer_to_file, f, buffer, 0, _UPLOAD_FLUSH_SIZE
+                )
+                del buffer[:_UPLOAD_FLUSH_SIZE]
+        if buffer:
             await asyncio.to_thread(
-                _write_buffer_to_file, path, buffer, 0, _UPLOAD_FLUSH_SIZE
+                _write_buffer_to_file, f, buffer, 0, len(buffer)
             )
-            del buffer[:_UPLOAD_FLUSH_SIZE]
-    if buffer:
-        await asyncio.to_thread(
-            _write_buffer_to_file, path, buffer, 0, len(buffer)
-        )
-        buffer.clear()
+            buffer.clear()
+    finally:
+        await asyncio.to_thread(f.close)
     return bytes_received
 
 
@@ -592,7 +614,9 @@ async def upload_task_chunk(
             raise HTTPException(status_code=507, detail=detail)
 
         try:
-            bytes_received = await _append_request_body_to_file(request, task.input_path)
+            bytes_received = await _append_request_body_to_file(
+                request, task.input_path, max_bytes=content_length
+            )
         except Exception as exc:
             logger.exception("Chunked upload failed for task %d: %s", task_id, exc)
             if os.path.exists(task.input_path):
@@ -675,6 +699,12 @@ async def upload_task_chunk(
     finally:
         if lock_fd is not None:
             await asyncio.to_thread(_release_chunk_lock, lock_fd)
+        try:
+            await asyncio.to_thread(os.unlink, lock_path)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.debug("Failed to remove chunk lock file %s: %s", lock_path, exc)
 
 
 @router.post("/tasks/{task_id}/upload/finalize", response_model_exclude_none=True)
@@ -910,6 +940,7 @@ async def upload_task_file(
 
     tasks_dir = Path(_ensure_tasks_dir())
     content_length = request.headers.get("content-length")
+    declared_size: int | None = None
     if content_length:
         try:
             declared_size = int(content_length)
@@ -938,14 +969,10 @@ async def upload_task_file(
                 await db.refresh(task)
                 raise HTTPException(status_code=507, detail=detail)
 
-    bytes_written = 0
     try:
-        with open(task.input_path, "wb") as f:
-            async for chunk in request.stream():
-                if not chunk:
-                    continue
-                f.write(chunk)
-                bytes_written += len(chunk)
+        bytes_written = await _append_request_body_to_file(
+            request, task.input_path, mode="wb", max_bytes=declared_size
+        )
     except Exception as exc:
         reason = f"{type(exc).__name__}: {exc}"
         logger.exception("File upload failed for task %s", task_id)
