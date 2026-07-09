@@ -1,4 +1,5 @@
 import asyncio
+import errno
 import json
 import logging
 import fcntl
@@ -345,8 +346,30 @@ def _acquire_chunk_lock(lock_path: str) -> int:
 
     Returns the file descriptor.  Raises *BlockingIOError* if the lock is
     already held by another process/thread.
+
+    The lock file is opened write-only (``O_WRONLY``) rather than read/write.
+    Some network-backed filesystems and FUSE mounts reject ``O_RDWR`` on a
+    create/open, returning ``EIO`` while the file is created.  If that happens,
+    we open the already-created file and retry the lock.
     """
-    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+    flags = os.O_WRONLY | os.O_CREAT
+    try:
+        fd = os.open(lock_path, flags, 0o644)
+    except OSError as exc:
+        # NFS/FUSE can return EIO during the create+open step.  If the file
+        # exists, open it without O_CREAT and continue to flock.
+        if exc.errno == errno.EIO and os.path.exists(lock_path):
+            try:
+                os.chmod(lock_path, 0o644)
+            except OSError as chmod_exc:
+                logger.debug(
+                    "chmod on lock file %s failed, continuing anyway",
+                    lock_path,
+                    exc_info=chmod_exc,
+                )
+            fd = os.open(lock_path, os.O_WRONLY)
+        else:
+            raise
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
@@ -603,6 +626,12 @@ async def upload_task_chunk(
                 "bytes_received": current_size,
                 "status": task.status,
             },
+        )
+    except OSError as exc:
+        logger.exception("Failed to acquire chunk lock for task %d: %s", task_id, exc)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to acquire upload lock: {exc}",
         )
 
     try:
