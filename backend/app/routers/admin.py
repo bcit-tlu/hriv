@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import fcntl
 import os
 import shutil
 from pathlib import Path
@@ -334,6 +335,29 @@ def _safe_file_size(path: str | None) -> int:
         return 0
 
 
+def _acquire_chunk_lock(lock_path: str) -> int:
+    """Acquire an exclusive, non-blocking advisory lock on *lock_path*.
+
+    Returns the file descriptor.  Raises *BlockingIOError* if the lock is
+    already held by another process/thread.
+    """
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _release_chunk_lock(fd: int) -> None:
+    """Release an advisory lock and close the file descriptor."""
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
 def _parse_upload_offset(request: Request) -> int | None:
     """Read the ``Upload-Offset`` header (Tus-style) as a non-negative int."""
     raw = request.headers.get("upload-offset")
@@ -521,114 +545,136 @@ async def upload_task_chunk(
             detail=f"Chunk size {content_length} exceeds server limit of {_UPLOAD_MAX_CHUNK_SIZE}",
         )
 
-    current_size = _safe_file_size(task.input_path)
-    if offset != current_size:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "message": "Upload offset conflict",
-                "bytes_received": current_size,
-                "status": task.status,
-            },
-        )
-
     total = _parse_upload_length(request)
-    # Fail-fast if the remaining archive or this chunk will not fit on the data volume.
-    tasks_dir = Path(_ensure_tasks_dir())
-    free_bytes = shutil.disk_usage(tasks_dir).free
-    size_to_check = (
-        max(total - current_size, content_length)
-        if total is not None
-        else content_length
-    )
-    if size_to_check > free_bytes:
-        detail = (
-            f"Insufficient space to upload archive: required {size_to_check} bytes, "
-            f"available {free_bytes} bytes in {tasks_dir}"
-        )
-        raise HTTPException(status_code=507, detail=detail)
 
+    # Serialize chunk writes per task so a retried request cannot overlap
+    # with an in-flight write and corrupt the archive.
+    lock_path = f"{task.input_path}.lock"
+    lock_fd: int | None = None
     try:
-        bytes_received = await _append_request_body_to_file(request, task.input_path)
-    except Exception as exc:
-        logger.exception("Chunked upload failed for task %d: %s", task_id, exc)
-        if os.path.exists(task.input_path):
-            try:
-                os.truncate(task.input_path, current_size)
-            except OSError as truncate_exc:
-                logger.debug(
-                    "Failed to truncate input_path for task %d after write error: %s",
-                    task_id,
-                    truncate_exc,
-                )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Chunk upload failed: {exc}",
-        ) from exc
-
-    if bytes_received != content_length:
-        logger.warning(
-            "Chunk size mismatch for task %d: expected %d bytes, received %d bytes",
-            task_id,
-            content_length,
-            bytes_received,
-        )
-        if os.path.exists(task.input_path):
-            try:
-                os.truncate(task.input_path, current_size)
-            except OSError as truncate_exc:
-                logger.debug(
-                    "Failed to truncate input_path for task %d: %s",
-                    task_id,
-                    truncate_exc,
-                )
+        lock_fd = await asyncio.to_thread(_acquire_chunk_lock, lock_path)
+    except BlockingIOError:
+        current_size = _safe_file_size(task.input_path)
         raise HTTPException(
             status_code=409,
             detail={
-                "message": "Chunk size mismatch",
+                "message": "Upload already in progress for this task",
                 "bytes_received": current_size,
                 "status": task.status,
             },
         )
 
-    new_size = current_size + bytes_received
-
-    # Keep the task row alive while a long chunked upload is in flight;
-    # without touching ``updated_at`` a slow cross-environment upload can be
-    # marked stale by another pod's startup reconciliation mid-transfer.
-    if total is not None:
-        progress = min(99, int(new_size / total * 100))
-    else:
-        progress = task.progress
     try:
-        await db.execute(
-            update(AdminTask)
-            .where(AdminTask.id == task_id, AdminTask.status == "uploading")
-            .values(progress=progress)
-        )
-        await db.commit()
-    except Exception as exc:
-        logger.warning(
-            "Failed to update progress for task %d: %s", task_id, exc, exc_info=True
-        )
-        try:
-            await db.rollback()
-        except Exception as rollback_exc:
-            logger.debug(
-                "Rollback after failed progress update for task %d: %s",
-                task_id,
-                rollback_exc,
+        current_size = _safe_file_size(task.input_path)
+        if offset != current_size:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Upload offset conflict",
+                    "bytes_received": current_size,
+                    "status": task.status,
+                },
             )
 
-    try:
-        await db.refresh(task)
-    except Exception as exc:
-        logger.debug("Failed to refresh task %d after chunk upload: %s", task_id, exc)
+        # Fail-fast if the remaining archive or this chunk will not fit on the data volume.
+        tasks_dir = Path(_ensure_tasks_dir())
+        free_bytes = shutil.disk_usage(tasks_dir).free
+        size_to_check = (
+            max(total - current_size, content_length)
+            if total is not None
+            else content_length
+        )
+        if size_to_check > free_bytes:
+            detail = (
+                f"Insufficient space to upload archive: required {size_to_check} bytes, "
+                f"available {free_bytes} bytes in {tasks_dir}"
+            )
+            raise HTTPException(status_code=507, detail=detail)
 
-    return {
-        "bytes_received": new_size,
-        "status": task.status,
-    }
+        try:
+            bytes_received = await _append_request_body_to_file(request, task.input_path)
+        except Exception as exc:
+            logger.exception("Chunked upload failed for task %d: %s", task_id, exc)
+            if os.path.exists(task.input_path):
+                try:
+                    os.truncate(task.input_path, current_size)
+                except OSError as truncate_exc:
+                    logger.debug(
+                        "Failed to truncate input_path for task %d after write error: %s",
+                        task_id,
+                        truncate_exc,
+                    )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Chunk upload failed: {exc}",
+            ) from exc
+
+        if bytes_received != content_length:
+            logger.warning(
+                "Chunk size mismatch for task %d: expected %d bytes, received %d bytes",
+                task_id,
+                content_length,
+                bytes_received,
+            )
+            if os.path.exists(task.input_path):
+                try:
+                    os.truncate(task.input_path, current_size)
+                except OSError as truncate_exc:
+                    logger.debug(
+                        "Failed to truncate input_path for task %d: %s",
+                        task_id,
+                        truncate_exc,
+                    )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Chunk size mismatch",
+                    "bytes_received": current_size,
+                    "status": task.status,
+                },
+            )
+
+        new_size = current_size + bytes_received
+
+        # Keep the task row alive while a long chunked upload is in flight;
+        # without touching ``updated_at`` a slow cross-environment upload can be
+        # marked stale by another pod's startup reconciliation mid-transfer.
+        if total is not None:
+            progress = min(99, int(new_size / total * 100))
+        else:
+            progress = task.progress
+        try:
+            await db.execute(
+                update(AdminTask)
+                .where(AdminTask.id == task_id, AdminTask.status == "uploading")
+                .values(progress=progress)
+            )
+            await db.commit()
+        except Exception as exc:
+            logger.warning(
+                "Failed to update progress for task %d: %s", task_id, exc, exc_info=True
+            )
+            try:
+                await db.rollback()
+            except Exception as rollback_exc:
+                logger.debug(
+                    "Rollback after failed progress update for task %d: %s",
+                    task_id,
+                    rollback_exc,
+                )
+
+        try:
+            await db.refresh(task)
+        except Exception as exc:
+            logger.debug("Failed to refresh task %d after chunk upload: %s", task_id, exc)
+
+        return {
+            "bytes_received": new_size,
+            "status": task.status,
+        }
+    finally:
+        if lock_fd is not None:
+            await asyncio.to_thread(_release_chunk_lock, lock_fd)
 
 
 @router.post("/tasks/{task_id}/upload/finalize", response_model_exclude_none=True)
