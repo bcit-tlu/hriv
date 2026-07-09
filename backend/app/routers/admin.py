@@ -603,7 +603,7 @@ async def upload_task_chunk(
     try:
         await db.execute(
             update(AdminTask)
-            .where(AdminTask.id == task_id)
+            .where(AdminTask.id == task_id, AdminTask.status == "uploading")
             .values(progress=progress)
         )
         await db.commit()
