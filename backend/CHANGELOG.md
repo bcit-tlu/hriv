@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.31.1...backend-v0.32.0) (2026-07-09)
+
+
+### Features
+
+* queue rebuild_tiles after filesystem import and add manual Rebuild Tiles UI ([#856](https://github.com/bcit-tlu/hriv/issues/856)) ([6e17b90](https://github.com/bcit-tlu/hriv/commit/6e17b9000e2dcbf67a71cebef2b60ebe714ddfec))
+
 ## [0.31.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.31.0...backend-v0.31.1) (2026-07-09)
 
 
