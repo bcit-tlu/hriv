@@ -536,7 +536,11 @@ async def upload_task_chunk(
     # Fail-fast if the remaining archive or this chunk will not fit on the data volume.
     tasks_dir = Path(_ensure_tasks_dir())
     free_bytes = shutil.disk_usage(tasks_dir).free
-    size_to_check = (total - current_size) if total is not None else content_length
+    size_to_check = (
+        max(total - current_size, content_length)
+        if total is not None
+        else content_length
+    )
     if size_to_check > free_bytes:
         detail = (
             f"Insufficient space to upload archive: required {size_to_check} bytes, "
@@ -548,6 +552,15 @@ async def upload_task_chunk(
         bytes_received = await _append_request_body_to_file(request, task.input_path)
     except Exception as exc:
         logger.exception("Chunked upload failed for task %d: %s", task_id, exc)
+        if os.path.exists(task.input_path):
+            try:
+                os.truncate(task.input_path, current_size)
+            except OSError as truncate_exc:
+                logger.debug(
+                    "Failed to truncate input_path for task %d after write error: %s",
+                    task_id,
+                    truncate_exc,
+                )
         raise HTTPException(
             status_code=500,
             detail=f"Chunk upload failed: {exc}",

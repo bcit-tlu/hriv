@@ -1504,6 +1504,12 @@ export function uploadTaskFile(
       try {
         await resync()
         await uploadChunks()
+      } catch (err: unknown) {
+        reject(err)
+        return
+      }
+
+      try {
         const task = await finalizeUpload(taskId, file.size, signal)
         resolve(task)
       } catch (err: unknown) {
@@ -1514,13 +1520,12 @@ export function uploadTaskFile(
             await uploadChunks()
             const task = await finalizeUpload(taskId, file.size, signal)
             resolve(task)
-            return
           } catch (finalizeErr: unknown) {
             reject(finalizeErr)
-            return
           }
+        } else {
+          reject(err)
         }
-        reject(err)
       }
     }
 
