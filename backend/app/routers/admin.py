@@ -365,6 +365,9 @@ def _release_chunk_lock(fd: int, lock_path: str) -> None:
     try:
         os.unlink(lock_path)
     except FileNotFoundError:
+        # The lock path may already be gone (e.g. from a concurrent release or
+        # task cleanup). The descriptor is still open, so the lock will still be
+        # released and closed in the finally block below.
         pass
     except OSError as exc:
         logger.debug("Failed to remove chunk lock file %s: %s", lock_path, exc)
