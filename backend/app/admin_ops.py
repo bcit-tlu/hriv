@@ -2417,7 +2417,16 @@ async def run_files_import(task_id: int) -> None:
                                 ),
                             )
 
-            rebuild_log = await _queue_rebuild_tiles_after_import(task)
+            try:
+                rebuild_log = await _queue_rebuild_tiles_after_import(task)
+            except Exception:
+                logger.exception(
+                    "Failed to queue automatic tile rebuild after import",
+                )
+                rebuild_log = (
+                    "Could not queue automatic tile rebuild. "
+                    "Run Rebuild Tiles manually if needed."
+                )
             summary = (
                 f"Restored {restored['source_files']} source file(s). "
                 f"{rebuild_log}"
