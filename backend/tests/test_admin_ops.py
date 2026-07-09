@@ -15,6 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.models import AdminTask
+
 from app.admin_ops import (
     TaskCancelled,
     _create_tar_file,
@@ -39,6 +41,7 @@ from app.admin_ops import (
     run_rebuild_tiles,
     _validate_retained_files_import_archive_path,
     _swap_imported_entries,
+    _queue_rebuild_tiles_after_import,
 )
 
 
@@ -2375,3 +2378,102 @@ async def test_run_rebuild_tiles_invalid_scope_fails_task() -> None:
 
     assert task.status == "failed"
     assert "Unknown rebuild scope" in (task.error_message or "")
+
+
+# ── _queue_rebuild_tiles_after_import tests ────────────────
+
+
+def _queue_session_factory(existing=None, insert_id=99, raise_on_insert=False):
+    """Factory mock for _queue_rebuild_tiles_after_import tests."""
+    session = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.scalar.return_value = insert_id
+    exec_result.scalars.return_value.first.return_value = existing
+
+    call_count = 0
+
+    async def _execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        if raise_on_insert and call_count == 2:
+            raise RuntimeError("insert failed")
+        return exec_result
+
+    session.execute = AsyncMock(side_effect=_execute)
+    session.commit = AsyncMock()
+    session_factory = MagicMock()
+    session_factory.return_value.__aenter__ = AsyncMock(return_value=session)
+    session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    return session, session_factory
+
+
+async def test_queue_rebuild_tiles_after_import_skips_active_and_cleans_params(tmp_path) -> None:
+    """When a rebuild task is already active, the params file is cleaned up."""
+    import_path = tmp_path / "import.tar.gz"
+    import_path.write_text("archive")
+    import_task = SimpleNamespace(
+        input_path=str(import_path),
+        created_by=1,
+    )
+    existing = AdminTask(
+        id=77,
+        task_type="rebuild_tiles",
+        status="running",
+    )
+    _, session_factory = _queue_session_factory(existing=existing)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock) as mock_enqueue,
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task)
+
+    assert "already active (#77)" in message
+    assert not any(tmp_path.glob("rebuild-after-import-*.json"))
+    mock_enqueue.assert_not_awaited()
+
+
+async def test_queue_rebuild_tiles_after_import_marks_failed_on_enqueue_error(tmp_path) -> None:
+    """When enqueue fails, the pending task is marked failed and params are removed."""
+    import_path = tmp_path / "import.tar.gz"
+    import_path.write_text("archive")
+    import_task = SimpleNamespace(
+        input_path=str(import_path),
+        created_by=1,
+    )
+    session, session_factory = _queue_session_factory(insert_id=99)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=False),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task)
+
+    assert "Could not queue automatic tile rebuild" in message
+    assert not any(tmp_path.glob("rebuild-after-import-*.json"))
+    assert session.execute.await_count == 3  # select, insert, update
+    session.commit.assert_awaited()
+
+
+async def test_queue_rebuild_tiles_after_import_queues_on_success(tmp_path) -> None:
+    """A new rebuild task is created and enqueued when Redis is available."""
+    import_path = tmp_path / "import.tar.gz"
+    import_path.write_text("archive")
+    import_task = SimpleNamespace(
+        input_path=str(import_path),
+        created_by=1,
+    )
+    session, session_factory = _queue_session_factory(insert_id=99)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task)
+
+    assert "Tile rebuild task #99 was queued automatically" in message
+    params_files = list(tmp_path.glob("rebuild-after-import-*.json"))
+    assert len(params_files) == 1
+    with open(params_files[0], "r", encoding="utf-8") as f:
+        assert json.load(f)["scope"] == "missing_stale"
+    assert session.execute.await_count == 2  # select, insert

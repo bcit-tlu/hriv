@@ -1563,6 +1563,10 @@ async def _queue_rebuild_tiles_after_import(
             existing = None
 
         if isinstance(existing, AdminTask):
+            try:
+                os.unlink(params_path)
+            except OSError:
+                pass
             return (
                 f"A rebuild-tiles task is already active (#{existing.id}). "
                 "The automatic rebuild was skipped; run Rebuild Tiles manually after it completes if needed."
