@@ -17,6 +17,7 @@ vi.mock('../../src/api', async () => {
     startDbExport: vi.fn(),
     startDbImport: vi.fn(),
     startFilesExport: vi.fn(),
+    startRebuildTiles: vi.fn(),
     listBackupSnapshots: vi.fn(),
     fetchBackupSnapshotManifest: vi.fn(),
     fetchFilesImportArchives: vi.fn(),
@@ -47,6 +48,7 @@ const mockFetchAdminTask = vi.mocked(api.fetchAdminTask)
 const mockStartDbExport = vi.mocked(api.startDbExport)
 const mockStartDbImport = vi.mocked(api.startDbImport)
 const mockStartFilesExport = vi.mocked(api.startFilesExport)
+const mockStartRebuildTiles = vi.mocked(api.startRebuildTiles)
 const mockListBackupSnapshots = vi.mocked(api.listBackupSnapshots)
 const mockFetchBackupSnapshotManifest = vi.mocked(api.fetchBackupSnapshotManifest)
 const mockFetchFilesImportArchives = vi.mocked(api.fetchFilesImportArchives)
@@ -117,6 +119,18 @@ describe('AdminPage', () => {
     mockStartFilesExport.mockResolvedValue({
       id: 3,
       task_type: 'files_export',
+      status: 'pending',
+      progress: 0,
+      log: '',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+    })
+    mockStartRebuildTiles.mockResolvedValue({
+      id: 6,
+      task_type: 'rebuild_tiles',
       status: 'pending',
       progress: 0,
       log: '',
@@ -229,6 +243,18 @@ describe('AdminPage', () => {
 
     expect(recentTasksToggle).toHaveAttribute('aria-expanded', 'true')
     expect(await screen.findByText('Filesystem Export')).toBeVisible()
+  })
+
+  it('kicks off a tile rebuild when the Rebuild Tiles button is clicked', async () => {
+    const user = userEvent.setup()
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+    await user.click(screen.getByTestId('rebuild-tiles-button'))
+
+    await waitFor(() => expect(mockStartRebuildTiles).toHaveBeenCalledTimes(1))
+    expect(mockStartRebuildTiles).toHaveBeenCalledWith()
   })
 
   it('browses a snapshot, restores one file, and surfaces the final task log', async () => {

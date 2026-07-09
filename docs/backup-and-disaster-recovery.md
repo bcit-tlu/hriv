@@ -223,8 +223,8 @@ Use this when the entire cluster is lost or a fresh redeployment is needed.
 If you only need to restore a single file from a snapshot, use the Admin UI’s
 per-file restore browser instead of a full archive restore. It reads snapshot
 manifests through the backend’s read-only Azure SAS path, restores one
-`data/` member at a time, and notes when Rebuild Tiles may be needed after a
-source-image restore.
+`data/` member at a time, and notes that Rebuild Tiles may be run if a
+source-image restore leaves tiles stale.
 
 ## Known risks and tradeoffs
 

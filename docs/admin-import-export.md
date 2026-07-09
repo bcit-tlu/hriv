@@ -116,15 +116,17 @@ walking millions of generated tile files.
 - **Excluded:** the tile pyramid (`image_files/`, `image.dzi`,
   `thumbnail.jpeg`, and other derived tile artifacts) plus `admin_tasks/`
   scratch files.
-- **Import behavior:** filesystem imports restore the source files only. After
-  a successful files import, run **Rebuild Tiles** so images get fresh tiles.
+- **Import behavior:** filesystem imports restore the source files only. After a
+  successful files import, a **Rebuild Tiles** task is queued automatically; it
+  regenerates missing or stale DZI pyramids from the restored source images. The
+  same **Rebuild Tiles** control can also be triggered manually if needed.
   Until then, viewers may show missing or stale tile placeholders.
 
 For a full cross-environment clone, follow this order:
 
 1. **Database import**
 2. **Filesystem import**
-3. **Rebuild Tiles**
+3. **Rebuild Tiles** (queued automatically; can be triggered manually if needed)
 
 > Compression is parallelized with `pigz` when the backend container image
 > provides it (the backend Dockerfile installs it); otherwise the export falls
@@ -223,6 +225,11 @@ large tile volume, or when a pipeline change makes existing tiles stale. See
 [Tile-cache provenance](tile-cache-provenance.md) for how `missing` vs `stale`
 is determined.
 
+A `rebuild_tiles` task is queued **automatically** after a successful
+`files_import`. The Admin UI also exposes a **Rebuild Tiles** control so an
+operator can start one manually — for example, after a cancelled automatic
+rebuild, a per-file restore, or a stale-tile cleanup.
+
 - Endpoint: `POST /admin/tasks/rebuild-tiles` (admin only). Optional JSON body
   `{ "scope": "missing_stale", "image_ids": [..] }`.
 - Runner: `run_rebuild_tiles` in `admin_ops.py`; per-image work lives in
@@ -271,8 +278,8 @@ The backend talks directly to Azure Blob Storage with a read-only SAS URL
 (`AZURE_READ_SAS_URL`) and the snapshot prefix (`AZURE_BACKUP_PREFIX`).
 Snapshot manifests are read from the sidecar blob when present, with a
 tar-stream fallback for older snapshots. The restore task only accepts members
-under `data/` and reminds operators to run Rebuild Tiles if a restored source
-image needs fresh tiles.
+under `data/` and reminds operators that Rebuild Tiles can be run if a restored
+source image needs fresh tiles.
 
 ## Stale task reconciliation
 

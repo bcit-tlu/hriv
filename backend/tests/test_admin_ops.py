@@ -15,6 +15,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.models import AdminTask
+
 from app.admin_ops import (
     TaskCancelled,
     _create_tar_file,
@@ -39,6 +41,7 @@ from app.admin_ops import (
     run_rebuild_tiles,
     _validate_retained_files_import_archive_path,
     _swap_imported_entries,
+    _queue_rebuild_tiles_after_import,
 )
 
 
@@ -1671,6 +1674,10 @@ async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_p
     mock_session = AsyncMock()
     mock_session.get = AsyncMock(return_value=task)
     mock_session.commit = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.scalar.return_value = 99
+    exec_result.scalars.return_value.first.return_value = None
+    mock_session.execute.return_value = exec_result
     mock_session_factory = MagicMock()
     mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -1687,6 +1694,8 @@ async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_p
         patch("app.admin_ops.settings") as mock_settings,
         patch("app.admin_ops._IMPORT_STAGING_DIR", str(data_dir / ".import-staging")),
         patch("app.admin_ops.tempfile.TemporaryDirectory", side_effect=_recording_tempdir),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tasks_dir)),
     ):
         mock_settings.data_dir = str(data_dir)
         mock_settings.tiles_dir = str(tiles_dir)
@@ -1696,6 +1705,7 @@ async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_p
     assert captured_tmpdir["dir"] == str(data_dir / ".import-staging")
     assert task.status == "completed"
     assert task.progress == 100
+    assert "Tile rebuild task #99" in task.log
     assert (source_dir / "new.tiff").read_text() == "new"
     assert not (source_dir / "old.tiff").exists()
     assert (tiles_dir / "tile1.jpeg").read_text() == "tile"
@@ -2369,3 +2379,124 @@ async def test_run_rebuild_tiles_invalid_scope_fails_task() -> None:
 
     assert task.status == "failed"
     assert "Unknown rebuild scope" in (task.error_message or "")
+
+
+# ── _queue_rebuild_tiles_after_import tests ────────────────
+
+
+def _queue_session_factory(existing=None, insert_id=99, raise_on_insert=False):
+    """Factory mock for _queue_rebuild_tiles_after_import tests."""
+    session = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.scalar.return_value = insert_id
+    exec_result.scalars.return_value.first.return_value = existing
+
+    call_count = 0
+
+    async def _execute(stmt):
+        nonlocal call_count
+        call_count += 1
+        if raise_on_insert and call_count == 2:
+            raise RuntimeError("insert failed")
+        return exec_result
+
+    session.execute = AsyncMock(side_effect=_execute)
+    session.commit = AsyncMock()
+    session_factory = MagicMock()
+    session_factory.return_value.__aenter__ = AsyncMock(return_value=session)
+    session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
+    return session, session_factory
+
+
+async def test_queue_rebuild_tiles_after_import_skips_active_and_cleans_params(tmp_path) -> None:
+    """When a rebuild task is already active, the params file is cleaned up."""
+    import_task = SimpleNamespace(
+        input_path=str(tmp_path / "import.tar.gz"),
+        created_by=1,
+    )
+    existing = AdminTask(
+        id=77,
+        task_type="rebuild_tiles",
+        status="running",
+    )
+    _, session_factory = _queue_session_factory(existing=existing)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock) as mock_enqueue,
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task)
+
+    assert "already active (#77)" in message
+    assert not any(tmp_path.glob("rebuild-after-import-*.json"))
+    mock_enqueue.assert_not_awaited()
+
+
+async def test_queue_rebuild_tiles_after_import_marks_failed_on_enqueue_error(tmp_path) -> None:
+    """When enqueue fails, the pending task is marked failed and params are removed."""
+    import_task = SimpleNamespace(
+        input_path=str(tmp_path / "import.tar.gz"),
+        created_by=1,
+    )
+    session, session_factory = _queue_session_factory(insert_id=99)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=False),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task)
+
+    assert "Could not queue automatic tile rebuild" in message
+    assert not any(tmp_path.glob("rebuild-after-import-*.json"))
+    assert session.execute.await_count == 3  # select, insert, update
+    session.commit.assert_awaited()
+
+
+async def test_queue_rebuild_tiles_after_import_queues_on_success(tmp_path) -> None:
+    """A new rebuild task is created and enqueued when Redis is available."""
+    import_task = SimpleNamespace(
+        input_path=str(tmp_path / "import.tar.gz"),
+        created_by=1,
+    )
+    session, session_factory = _queue_session_factory(insert_id=99)
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task)
+
+    assert "Tile rebuild task #99 was queued automatically" in message
+    params_files = list(tmp_path.glob("rebuild-after-import-*.json"))
+    assert len(params_files) == 1
+    with open(params_files[0], "r", encoding="utf-8") as f:
+        assert json.load(f)["scope"] == "missing_stale"
+    assert session.execute.await_count == 2  # select, insert
+
+
+async def test_queue_rebuild_tiles_after_import_falls_back_to_background_tasks(tmp_path) -> None:
+    """When Redis is unavailable and a BackgroundTasks object is available,
+    the rebuild is scheduled to run in-process after the import completes."""
+    import_task = SimpleNamespace(
+        input_path=str(tmp_path / "import.tar.gz"),
+        created_by=1,
+    )
+    session, session_factory = _queue_session_factory(insert_id=99)
+    bg = MagicMock()
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=session_factory),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=False),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
+    ):
+        message = await _queue_rebuild_tiles_after_import(import_task, bg)
+
+    assert "Tile rebuild task #99 was scheduled to run automatically" in message
+    assert session.execute.await_count == 2  # select, insert
+    bg.add_task.assert_called_once_with(run_rebuild_tiles, 99)
+    # Params file is left for the in-process runner to consume and delete.
+    params_files = list(tmp_path.glob("rebuild-after-import-*.json"))
+    assert len(params_files) == 1

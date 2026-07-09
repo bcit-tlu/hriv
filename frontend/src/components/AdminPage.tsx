@@ -34,6 +34,7 @@ import FolderZipIcon from '@mui/icons-material/FolderZip'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import CancelIcon from '@mui/icons-material/Cancel'
+import RefreshIcon from '@mui/icons-material/Refresh'
 import {
   ApiError,
   deleteFilesImportArchive,
@@ -46,6 +47,7 @@ import {
   listBackupSnapshots,
   startFilesExport,
   initFilesImport,
+  startRebuildTiles,
   rerunFilesImportArchive,
   startFileRestore,
   uploadTaskFile,
@@ -479,6 +481,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
 
   const handleExport = () => kickOff('db_export', startDbExport)
   const handleExportFiles = () => kickOff('files_export', startFilesExport)
+  const handleRebuildTiles = () => kickOff('rebuild_tiles', startRebuildTiles)
 
   const handleImportClick = () => fileRef.current?.click()
   const handleImportFilesClick = () => filesRef.current?.click()
@@ -1398,7 +1401,8 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                     Upload a source-images-only .tar.gz file to replace the filesystem on disk. This
                     action is destructive — existing files will be overwritten. Generated tiles are
-                    not included and must be regenerated with Rebuild Tiles after import.
+                    not included, but a tile rebuild is queued automatically after the import
+                    completes. Rebuild Tiles can also be triggered manually if needed.
                   </Typography>
                   <Button
                     variant="contained"
@@ -1425,6 +1429,42 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
                   />
                 </CardContent>
               </Card>
+
+              <Card
+                sx={{
+                  minWidth: 300,
+                  maxWidth: 400,
+                  flex: '1 1 300px',
+                  bgcolor: 'background.paper',
+                }}
+              >
+                <CardContent>
+                  <Typography variant="h6" gutterBottom>
+                    Rebuild Tiles
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                    Regenerate missing or stale DZI tile pyramids from the preserved source images.
+                    This is run automatically after a filesystem import, but can also be triggered
+                    manually to recover from a cancelled rebuild, a single-file restore, or stale
+                    tiles. The operation is idempotent and non-destructive.
+                  </Typography>
+                  <Button
+                    variant="contained"
+                    startIcon={
+                      starting === 'rebuild_tiles' ? (
+                        <CircularProgress size={18} color="inherit" />
+                      ) : (
+                        <RefreshIcon />
+                      )
+                    }
+                    onClick={handleRebuildTiles}
+                    disabled={busy}
+                    data-testid="rebuild-tiles-button"
+                  >
+                    {starting === 'rebuild_tiles' ? 'Starting…' : 'Rebuild Tiles'}
+                  </Button>
+                </CardContent>
+              </Card>
             </Box>
           </Box>
         </Stack>
@@ -1445,8 +1485,8 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
             </Typography>
             <Alert severity="warning">
               The file will overwrite the current path under the shared data volume. If this
-              restores a source image, its tiles may need to be regenerated with Rebuild Tiles after
-              the task completes.
+              restores a source image, its tiles may be stale and can be regenerated with Rebuild
+              Tiles if needed.
             </Alert>
           </Stack>
         </DialogContent>

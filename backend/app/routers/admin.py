@@ -158,15 +158,19 @@ async def _kick_off(
     enqueued = await enqueue_admin_task(task.id, task.task_type)
     if not enqueued:
         # Redis unavailable — run in-process
-        runner = {
-            "db_export": run_db_export,
-            "db_import": run_db_import,
-            "file_restore": run_file_restore,
-            "files_export": run_files_export,
-            "files_import": run_files_import,
-            "rebuild_tiles": run_rebuild_tiles,
-        }[task.task_type]
-        bg.add_task(runner, task.id)
+        if task.task_type == "files_import":
+            # Pass the BackgroundTasks object so the import can schedule the
+            # automatic rebuild_tiles task that runs after it.
+            bg.add_task(run_files_import, task.id, bg)
+        else:
+            runner = {
+                "db_export": run_db_export,
+                "db_import": run_db_import,
+                "file_restore": run_file_restore,
+                "files_export": run_files_export,
+                "rebuild_tiles": run_rebuild_tiles,
+            }[task.task_type]
+            bg.add_task(runner, task.id)
 
 
 def _task_to_dict(task: AdminTask) -> dict:
