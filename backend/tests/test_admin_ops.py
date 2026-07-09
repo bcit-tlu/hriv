@@ -1695,6 +1695,7 @@ async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_p
         patch("app.admin_ops._IMPORT_STAGING_DIR", str(data_dir / ".import-staging")),
         patch("app.admin_ops.tempfile.TemporaryDirectory", side_effect=_recording_tempdir),
         patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tasks_dir)),
     ):
         mock_settings.data_dir = str(data_dir)
         mock_settings.tiles_dir = str(tiles_dir)
@@ -2409,10 +2410,8 @@ def _queue_session_factory(existing=None, insert_id=99, raise_on_insert=False):
 
 async def test_queue_rebuild_tiles_after_import_skips_active_and_cleans_params(tmp_path) -> None:
     """When a rebuild task is already active, the params file is cleaned up."""
-    import_path = tmp_path / "import.tar.gz"
-    import_path.write_text("archive")
     import_task = SimpleNamespace(
-        input_path=str(import_path),
+        input_path=str(tmp_path / "import.tar.gz"),
         created_by=1,
     )
     existing = AdminTask(
@@ -2425,6 +2424,7 @@ async def test_queue_rebuild_tiles_after_import_skips_active_and_cleans_params(t
     with (
         patch("app.admin_ops.get_async_session", return_value=session_factory),
         patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock) as mock_enqueue,
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
     ):
         message = await _queue_rebuild_tiles_after_import(import_task)
 
@@ -2435,10 +2435,8 @@ async def test_queue_rebuild_tiles_after_import_skips_active_and_cleans_params(t
 
 async def test_queue_rebuild_tiles_after_import_marks_failed_on_enqueue_error(tmp_path) -> None:
     """When enqueue fails, the pending task is marked failed and params are removed."""
-    import_path = tmp_path / "import.tar.gz"
-    import_path.write_text("archive")
     import_task = SimpleNamespace(
-        input_path=str(import_path),
+        input_path=str(tmp_path / "import.tar.gz"),
         created_by=1,
     )
     session, session_factory = _queue_session_factory(insert_id=99)
@@ -2446,6 +2444,7 @@ async def test_queue_rebuild_tiles_after_import_marks_failed_on_enqueue_error(tm
     with (
         patch("app.admin_ops.get_async_session", return_value=session_factory),
         patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=False),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
     ):
         message = await _queue_rebuild_tiles_after_import(import_task)
 
@@ -2457,10 +2456,8 @@ async def test_queue_rebuild_tiles_after_import_marks_failed_on_enqueue_error(tm
 
 async def test_queue_rebuild_tiles_after_import_queues_on_success(tmp_path) -> None:
     """A new rebuild task is created and enqueued when Redis is available."""
-    import_path = tmp_path / "import.tar.gz"
-    import_path.write_text("archive")
     import_task = SimpleNamespace(
-        input_path=str(import_path),
+        input_path=str(tmp_path / "import.tar.gz"),
         created_by=1,
     )
     session, session_factory = _queue_session_factory(insert_id=99)
@@ -2468,6 +2465,7 @@ async def test_queue_rebuild_tiles_after_import_queues_on_success(tmp_path) -> N
     with (
         patch("app.admin_ops.get_async_session", return_value=session_factory),
         patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
+        patch("app.admin_ops._ensure_tasks_dir", return_value=str(tmp_path)),
     ):
         message = await _queue_rebuild_tiles_after_import(import_task)
 

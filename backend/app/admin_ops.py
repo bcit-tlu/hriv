@@ -1525,12 +1525,10 @@ async def _queue_rebuild_tiles_after_import(
     idempotent: it skips already-current tiles unless ``scope == "all"``, so it
     is safe to re-run manually.
     """
-    import_input_path = getattr(import_task, "input_path", None) or ""
-    if import_input_path:
-        tasks_dir = os.path.dirname(import_input_path)
-        os.makedirs(tasks_dir, exist_ok=True)
-    else:
-        tasks_dir = _ensure_tasks_dir()
+    # Always write the rebuild params file under the canonical admin_tasks
+    # directory so the location is predictable and independent of the import
+    # archive path. The worker deletes the file after it consumes it.
+    tasks_dir = _ensure_tasks_dir()
     params_path = os.path.join(
         tasks_dir,
         f"rebuild-after-import-{uuid.uuid4().hex}.json",
@@ -1584,6 +1582,22 @@ async def _queue_rebuild_tiles_after_import(
                     log="Queued for automatic rebuild after filesystem import.\n",
                 ).returning(AdminTask.id)
             )
+            # Read the RETURNING value before committing. SQLAlchemy buffers the
+            # result, but consuming it here is clearer and keeps the
+            # inserted_primary_key fallback for dialects that don't support RETURNING.
+            task_id = result.scalar()
+            if task_id is None:
+                try:
+                    task_id = result.inserted_primary_key[0]
+                except Exception:
+                    logger.warning("Rebuild task id not set after insert")
+                    try:
+                        os.unlink(params_path)
+                    except OSError:
+                        logger.debug(
+                            "Could not remove rebuild params file %s", params_path, exc_info=True
+                        )
+                    return "Could not queue automatic tile rebuild (task id missing)."
             await rebuild_session.commit()
         except Exception:
             logger.warning("Failed to create rebuild task", exc_info=True)
@@ -1597,22 +1611,6 @@ async def _queue_rebuild_tiles_after_import(
                 "Could not queue automatic tile rebuild. "
                 "Run Rebuild Tiles manually if needed."
             )
-
-        # RETURNING gives us the new id directly; inserted_primary_key is a
-        # fallback for dialects that don't support RETURNING.
-        task_id = result.scalar()
-        if task_id is None:
-            try:
-                task_id = result.inserted_primary_key[0]
-            except Exception:
-                logger.warning("Rebuild task id not set after commit")
-                try:
-                    os.unlink(params_path)
-                except OSError:
-                    logger.debug(
-                        "Could not remove rebuild params file %s", params_path, exc_info=True
-                    )
-                return "Could not queue automatic tile rebuild (task id missing)."
 
         enqueued = False
         try:
