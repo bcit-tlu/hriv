@@ -76,7 +76,7 @@ def _ensure_import_staging_dir() -> str:
     return _IMPORT_STAGING_DIR
 
 
-def _format_bytes(num_bytes: int) -> str:
+def format_bytes(num_bytes: int) -> str:
     for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
         if num_bytes < 1024 or unit == "TiB":
             if unit == "B":
@@ -91,8 +91,8 @@ def _ensure_import_staging_free_space(staging_dir: Path) -> None:
     if free_bytes < _IMPORT_STAGING_MIN_FREE_BYTES:
         raise ValueError(
             "Insufficient free space on data volume during filesystem import: "
-            f"have {_format_bytes(free_bytes)} free, "
-            f"need at least {_format_bytes(_IMPORT_STAGING_MIN_FREE_BYTES)}"
+            f"have {format_bytes(free_bytes)} free, "
+            f"need at least {format_bytes(_IMPORT_STAGING_MIN_FREE_BYTES)}"
         )
 
 
@@ -2128,16 +2128,16 @@ async def run_files_import(task_id: int) -> None:
             if free_bytes < required_bytes:
                 raise ValueError(
                     "Insufficient free space on data volume for on-volume staging: "
-                    f"need at least ~{_format_bytes(required_bytes)} free before "
+                    f"need at least ~{format_bytes(required_bytes)} free before "
                     "staging and extraction, "
-                    f"have {_format_bytes(free_bytes)}"
+                    f"have {format_bytes(free_bytes)}"
                 )
 
             await _update_task(
                 session, task, progress=5,
                 log_line=(
                     f"Archive size: {archive_mb:.1f} MB. "
-                    f"Staging needs at least ~{_format_bytes(required_bytes)} free "
+                    f"Staging needs at least ~{format_bytes(required_bytes)} free "
                     "(archive size plus margin); "
                     "streaming archive bytes to on-volume staging…"
                 ),
@@ -2182,8 +2182,8 @@ async def run_files_import(task_id: int) -> None:
                                     session, task,
                                     progress=min(pct, _EXTRACT_END),
                                     log_line=(
-                                        f"  read {_format_bytes(current)} / "
-                                        f"{_format_bytes(total)} archive bytes"
+                                        f"  read {format_bytes(current)} / "
+                                        f"{format_bytes(total)} archive bytes"
                                     ),
                                 )
                         elif phase == "finalize" and last_phase != "finalize":
@@ -2276,8 +2276,8 @@ async def run_files_import(task_id: int) -> None:
                             await _update_task(
                                 session, task,
                                 log_line=(
-                                    f"  read {_format_bytes(current)} / "
-                                    f"{_format_bytes(total)} archive bytes"
+                                    f"  read {format_bytes(current)} / "
+                                    f"{format_bytes(total)} archive bytes"
                                 ),
                             )
 

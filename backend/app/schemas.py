@@ -443,6 +443,26 @@ class FilesImportRerunRequest(BaseModel):
     archive_task_id: int
 
 
+class UploadChunkResponse(BaseModel):
+    """Status returned after appending a chunk to an in-progress upload."""
+
+    bytes_received: int
+    status: str
+
+
+class UploadFinalizeRequest(BaseModel):
+    """Finalize a chunked filesystem-import upload once all bytes are received."""
+
+    total_bytes: int = Field(..., ge=1)
+
+
+class UploadStatusResponse(BaseModel):
+    """Current offset for resuming a chunked filesystem-import upload."""
+
+    bytes_received: int
+    status: str
+
+
 # ── Bulk Import Job ──────────────────────────────────────
 
 class BulkImportJobOut(BaseModel):

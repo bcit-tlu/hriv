@@ -1,13 +1,25 @@
 import asyncio
 import json
 import logging
+import fcntl
 import os
-from pathlib import Path
-import uuid
+import shutil
 from datetime import datetime, timedelta, timezone
+from io import BufferedWriter
+from pathlib import Path
 from typing import Annotated
+import uuid
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile, File
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import select, update
@@ -22,6 +34,7 @@ from ..backup_access import (
 )
 from ..admin_ops import (
     _ensure_tasks_dir,
+    format_bytes,
     delete_files_import_archive,
     list_files_import_archives,
     run_file_restore,
@@ -41,6 +54,9 @@ from ..schemas import (
     FilesImportArchiveOut,
     FilesImportRerunRequest,
     RebuildTilesRequest,
+    UploadChunkResponse,
+    UploadFinalizeRequest,
+    UploadStatusResponse,
 )
 from ..worker import enqueue_admin_task
 
@@ -54,6 +70,12 @@ _CHUNK_SIZE = 1024 * 1024  # 1 MiB streaming chunks
 _DOWNLOAD_TOKEN_EXPIRE_SECONDS = 60
 _ACTIVE_STATUSES = frozenset(ACTIVE_TASK_STATUSES)
 _EXPORT_TASK_TYPES = ("db_export", "files_export")
+
+# Chunked file-system import upload tunables.  Chunks are client-sized; the
+# server buffers and flushes to disk in _UPLOAD_FLUSH_SIZE pieces so memory
+# stays bounded while still avoiding a thread-pool call per ASGI micro-chunk.
+_UPLOAD_FLUSH_SIZE = 1024 * 1024  # 1 MiB
+_UPLOAD_MAX_CHUNK_SIZE = 512 * 1024 * 1024  # 512 MiB safety cap per request
 
 
 # ---------------------------------------------------------------------------
@@ -200,8 +222,12 @@ async def start_db_import(
     except Exception:
         try:
             os.unlink(input_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug(
+                "Failed to remove temporary db-import input file %s: %s",
+                input_path,
+                exc,
+            )
         raise
     await _kick_off(task, bg)
     return _task_to_dict(task)
@@ -277,12 +303,14 @@ async def start_files_import(
 ):
     """Create a filesystem import task in ``uploading`` status.
 
-    The archive file itself is uploaded separately via
-    ``PUT /admin/tasks/{task_id}/upload``.  This two-step flow lets the
-    frontend show upload progress (via XHR) and ensures the task record
-    exists before the potentially long upload begins — so that timeouts
-    or network errors during upload are visible in the task history
-    rather than vanishing silently.
+    The archive file itself is uploaded separately. Small archives may still
+    use ``PUT /admin/tasks/{task_id}/upload``; for multi-gigabyte archives
+    the chunked flow (``PATCH /admin/tasks/{task_id}/upload`` with
+    ``Upload-Offset`` / ``Upload-Length`` headers, then
+    ``POST /admin/tasks/{task_id}/upload/finalize``) avoids a huge multipart
+    spool and can resume after network errors. The two-step flow ensures the
+    task record exists before the long upload begins, so timeouts or errors are
+    visible in task history rather than vanishing silently.
     """
     if not (
         filename.endswith(".tar.gz") or filename.endswith(".tgz")
@@ -300,6 +328,435 @@ async def start_files_import(
     await db.commit()
     await db.refresh(task)
     return _task_to_dict(task)
+
+
+def _safe_file_size(path: str | None) -> int:
+    """Return *path*'s size, or 0 if it does not exist or is inaccessible."""
+    if not path:
+        return 0
+    try:
+        return os.path.getsize(path)
+    except (OSError, ValueError):
+        return 0
+
+
+def _acquire_chunk_lock(lock_path: str) -> int:
+    """Acquire an exclusive, non-blocking advisory lock on *lock_path*.
+
+    Returns the file descriptor.  Raises *BlockingIOError* if the lock is
+    already held by another process/thread.
+    """
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _release_chunk_lock(fd: int, lock_path: str) -> None:
+    """Unlink and release an advisory lock on *lock_path*.
+
+    The lock file is removed while the descriptor still holds the lock so no
+    other process can open the path between unlock and unlink.  The lock is
+    released and the descriptor is closed once the directory entry is gone.
+    """
+    try:
+        os.unlink(lock_path)
+    except FileNotFoundError:
+        # The lock path may already be gone (e.g. from a concurrent release or
+        # task cleanup). The descriptor is still open, so the lock will still be
+        # released and closed in the finally block below.
+        pass
+    except OSError as exc:
+        logger.debug("Failed to remove chunk lock file %s: %s", lock_path, exc)
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
+def _parse_upload_offset(request: Request) -> int | None:
+    """Read the ``Upload-Offset`` header (Tus-style) as a non-negative int."""
+    raw = request.headers.get("upload-offset")
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value >= 0 else None
+
+
+def _parse_upload_length(request: Request) -> int | None:
+    """Read the optional ``Upload-Length`` header as a positive int."""
+    raw = request.headers.get("upload-length")
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def _parse_content_length(request: Request) -> int | None:
+    """Read the HTTP ``Content-Length`` header as a non-negative int."""
+    raw = request.headers.get("content-length")
+    if raw is None:
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value >= 0 else None
+
+
+def _write_buffer_to_file(f: BufferedWriter, data: bytearray, start: int, length: int) -> None:
+    """Synchronous helper: write *length* bytes from *data* to open file *f*."""
+    f.write(memoryview(data)[start : start + length])
+
+
+async def _append_request_body_to_file(
+    request: Request,
+    path: str,
+    *,
+    mode: str = "ab",
+    max_bytes: int | None = None,
+    cancel_event: asyncio.Event | None = None,
+) -> int:
+    """Stream the request body to *path* in bounded-memory chunks.
+
+    The file is opened once with *mode* (``"ab"`` for chunked PATCH uploads,
+    ``"wb"`` for single-shot PUT uploads) and all writes are delegated to the
+    thread pool so the async event loop is not blocked by storage.  If
+    *max_bytes* is set, only that many bytes are written; any additional bytes
+    from the stream are consumed and discarded so the connection closes cleanly
+    and the on-disk file cannot grow past the declared size.
+
+    Returns the number of bytes written. Raises on stream or write errors so
+    the caller can decide whether to retry/resync.
+    """
+    f: BufferedWriter = await asyncio.to_thread(open, path, mode)
+    try:
+        buffer = bytearray()
+        bytes_received = 0
+        async for data in request.stream():
+            if cancel_event is not None and cancel_event.is_set():
+                break
+            if not data:
+                continue
+            if max_bytes is not None:
+                allowed = max_bytes - bytes_received
+                if allowed <= 0:
+                    # At or past the declared limit; keep consuming the stream
+                    # without writing or buffering so the connection closes.
+                    continue
+                if len(data) > allowed:
+                    data = data[:allowed]
+            buffer.extend(data)
+            bytes_received += len(data)
+            while len(buffer) >= _UPLOAD_FLUSH_SIZE:
+                await asyncio.to_thread(
+                    _write_buffer_to_file, f, buffer, 0, _UPLOAD_FLUSH_SIZE
+                )
+                del buffer[:_UPLOAD_FLUSH_SIZE]
+        if buffer:
+            await asyncio.to_thread(
+                _write_buffer_to_file, f, buffer, 0, len(buffer)
+            )
+            buffer.clear()
+    finally:
+        await asyncio.to_thread(f.close)
+    return bytes_received
+
+
+async def _finalize_files_import_upload(
+    db: AsyncSession,
+    task: AdminTask,
+    bytes_received: int,
+    bg: BackgroundTasks,
+) -> AdminTask:
+    """Atomically transition an uploaded files_import task to ``pending``.
+
+    Matches the guarded UPDATE pattern in ``upload_task_file`` so a concurrent
+    cancel is detected rather than silently overwriting state.
+    """
+    size_mb = bytes_received / (1024 * 1024)
+    log_line = f"Upload complete ({size_mb:.1f} MB). Queued for processing.\n"
+    result = await db.execute(
+        update(AdminTask)
+        .where(AdminTask.id == task.id, AdminTask.status == "uploading")
+        .values(
+            status="pending",
+            log=AdminTask.log + log_line,
+        )
+        .returning(AdminTask.id)
+    )
+    await db.commit()
+
+    if result.scalar() is None:
+        await db.refresh(task)
+        if task.status not in ("pending", "running") and task.input_path:
+            try:
+                os.unlink(task.input_path)
+            except OSError as cleanup_exc:
+                logger.debug(
+                    "Failed to remove input_path for task %d: %s",
+                    task.id,
+                    cleanup_exc,
+                )
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task was {task.status} during finalize",
+        )
+
+    await db.refresh(task)
+    await _kick_off(task, bg)
+    await db.refresh(task)
+    return task
+
+
+@router.get("/tasks/{task_id}/upload", response_model=UploadStatusResponse)
+async def get_upload_status(
+    task_id: int,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the current upload offset for resuming a chunked upload."""
+    task = await db.get(AdminTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.task_type != "files_import" or task.status != "uploading":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task is in '{task.status}' state, expected 'uploading'",
+        )
+    if not task.input_path:
+        raise HTTPException(status_code=500, detail="Task missing input_path")
+
+    return {
+        "bytes_received": _safe_file_size(task.input_path),
+        "status": task.status,
+    }
+
+
+@router.patch("/tasks/{task_id}/upload", response_model=UploadChunkResponse)
+async def upload_task_chunk(
+    task_id: int,
+    request: Request,
+    _user: Annotated[User, Depends(_admin)],
+    db: AsyncSession = Depends(get_db),
+):
+    """Append a raw-byte chunk to a chunked filesystem-import upload.
+
+    The client sends the next contiguous slice with the ``Upload-Offset``
+    header set to the current file size. If the offset does not match, the
+    server returns 409 with ``bytes_received`` so the client can resync and
+    resume without re-sending already-received data.
+
+    The optional ``Upload-Length`` header lets the server update progress and
+    auto-finalize when the final byte has been received. The body itself is
+    the raw chunk bytes (``application/octet-stream``); multipart is not used,
+    avoiding a potentially huge temporary spool file.
+    """
+    task = await db.get(AdminTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.task_type != "files_import" or task.status != "uploading":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task is in '{task.status}' state, expected 'uploading'",
+        )
+    if not task.input_path:
+        raise HTTPException(status_code=500, detail="Task missing input_path")
+
+    offset = _parse_upload_offset(request)
+    if offset is None:
+        raise HTTPException(status_code=400, detail="Missing or invalid Upload-Offset header")
+
+    content_length = _parse_content_length(request)
+    if content_length is None:
+        raise HTTPException(status_code=400, detail="Missing or invalid Content-Length header")
+    if content_length > _UPLOAD_MAX_CHUNK_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Chunk size {content_length} exceeds server limit of {_UPLOAD_MAX_CHUNK_SIZE}",
+        )
+
+    total = _parse_upload_length(request)
+
+    # Serialize chunk writes per task so a retried request cannot overlap
+    # with an in-flight write and corrupt the archive.
+    lock_path = f"{task.input_path}.lock"
+    lock_fd: int | None = None
+    try:
+        lock_fd = await asyncio.to_thread(_acquire_chunk_lock, lock_path)
+    except BlockingIOError:
+        current_size = _safe_file_size(task.input_path)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Upload already in progress for this task",
+                "bytes_received": current_size,
+                "status": task.status,
+            },
+        )
+
+    try:
+        current_size = _safe_file_size(task.input_path)
+        if offset != current_size:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Upload offset conflict",
+                    "bytes_received": current_size,
+                    "status": task.status,
+                },
+            )
+
+        # Fail-fast if the remaining archive or this chunk will not fit on the data volume.
+        tasks_dir = Path(_ensure_tasks_dir())
+        free_bytes = shutil.disk_usage(tasks_dir).free
+        size_to_check = (
+            max(total - current_size, content_length)
+            if total is not None
+            else content_length
+        )
+        if size_to_check > free_bytes:
+            detail = (
+                f"Insufficient space to upload archive: required {size_to_check} bytes, "
+                f"available {free_bytes} bytes in {tasks_dir}"
+            )
+            raise HTTPException(status_code=507, detail=detail)
+
+        try:
+            bytes_received = await _append_request_body_to_file(
+                request, task.input_path, max_bytes=content_length
+            )
+        except Exception as exc:
+            logger.exception("Chunked upload failed for task %d: %s", task_id, exc)
+            if os.path.exists(task.input_path):
+                try:
+                    os.truncate(task.input_path, current_size)
+                except OSError as truncate_exc:
+                    logger.debug(
+                        "Failed to truncate input_path for task %d after write error: %s",
+                        task_id,
+                        truncate_exc,
+                    )
+            raise HTTPException(
+                status_code=500,
+                detail=f"Chunk upload failed: {exc}",
+            ) from exc
+
+        if bytes_received != content_length:
+            logger.warning(
+                "Chunk size mismatch for task %d: expected %d bytes, received %d bytes",
+                task_id,
+                content_length,
+                bytes_received,
+            )
+            if os.path.exists(task.input_path):
+                try:
+                    os.truncate(task.input_path, current_size)
+                except OSError as truncate_exc:
+                    logger.debug(
+                        "Failed to truncate input_path for task %d: %s",
+                        task_id,
+                        truncate_exc,
+                    )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "Chunk size mismatch",
+                    "bytes_received": current_size,
+                    "status": task.status,
+                },
+            )
+
+        new_size = current_size + bytes_received
+
+        # Keep the task row alive while a long chunked upload is in flight;
+        # without touching ``updated_at`` a slow cross-environment upload can be
+        # marked stale by another pod's startup reconciliation mid-transfer.
+        if total is not None:
+            progress = min(99, int(new_size / total * 100))
+        else:
+            progress = task.progress
+        try:
+            await db.execute(
+                update(AdminTask)
+                .where(AdminTask.id == task_id, AdminTask.status == "uploading")
+                .values(progress=progress)
+            )
+            await db.commit()
+        except Exception as exc:
+            logger.warning(
+                "Failed to update progress for task %d: %s", task_id, exc, exc_info=True
+            )
+            try:
+                await db.rollback()
+            except Exception as rollback_exc:
+                logger.debug(
+                    "Rollback after failed progress update for task %d: %s",
+                    task_id,
+                    rollback_exc,
+                )
+
+        try:
+            await db.refresh(task)
+        except Exception as exc:
+            logger.debug("Failed to refresh task %d after chunk upload: %s", task_id, exc)
+
+        return {
+            "bytes_received": new_size,
+            "status": task.status,
+        }
+    finally:
+        if lock_fd is not None:
+            await asyncio.to_thread(_release_chunk_lock, lock_fd, lock_path)
+
+
+@router.post("/tasks/{task_id}/upload/finalize", response_model_exclude_none=True)
+async def finalize_task_upload(
+    task_id: int,
+    request: UploadFinalizeRequest,
+    _user: Annotated[User, Depends(_admin)],
+    bg: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Finalize a chunked filesystem-import upload once all bytes are received.
+
+    Returns the updated ``AdminTask`` (now ``pending`` and queued). If the
+    on-disk size does not match ``total_bytes``, returns 409 with the current
+    ``bytes_received`` so the client can resume.
+    """
+    task = await db.get(AdminTask, task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.task_type != "files_import" or task.status != "uploading":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task is in '{task.status}' state, expected 'uploading'",
+        )
+    if not task.input_path:
+        raise HTTPException(status_code=500, detail="Task missing input_path")
+
+    bytes_received = _safe_file_size(task.input_path)
+    if bytes_received != request.total_bytes:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": f"Expected {request.total_bytes} bytes, received {bytes_received}",
+                "bytes_received": bytes_received,
+                "status": task.status,
+            },
+        )
+
+    return _task_to_dict(await _finalize_files_import_upload(db, task, bytes_received, bg))
 
 
 @router.get("/tasks/files-import/archives", response_model=list[FilesImportArchiveOut])
@@ -462,9 +919,9 @@ async def purge_backup_archive(
 @router.put("/tasks/{task_id}/upload")
 async def upload_task_file(
     task_id: int,
+    request: Request,
     user: Annotated[User, Depends(_admin)],
     bg: BackgroundTasks,
-    file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
 ):
     """Upload the archive for a task currently in ``uploading`` status.
@@ -474,10 +931,19 @@ async def upload_task_file(
     worker (with an in-process ``BackgroundTasks`` fallback when Redis is
     unavailable).
     """
+    content_type = request.headers.get("content-type", "").lower()
+    if content_type.startswith("multipart/form-data"):
+        raise HTTPException(
+            status_code=415,
+            detail=(
+                "This endpoint expects raw file bytes. Send the archive "
+                "body as application/octet-stream, not multipart/form-data."
+            ),
+        )
     task = await db.get(AdminTask, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    if task.status != "uploading":
+    if task.task_type != "files_import" or task.status != "uploading":
         raise HTTPException(
             status_code=409,
             detail=f"Task is in '{task.status}' state, expected 'uploading'",
@@ -485,59 +951,89 @@ async def upload_task_file(
     if not task.input_path:
         raise HTTPException(status_code=500, detail="Task missing input_path")
 
-    bytes_written = 0
+    tasks_dir = Path(_ensure_tasks_dir())
+    content_length = request.headers.get("content-length")
+    declared_size: int | None = None
+    if content_length:
+        try:
+            declared_size = int(content_length)
+        except ValueError:
+            declared_size = None
+        if declared_size is not None:
+            free_bytes = shutil.disk_usage(tasks_dir).free
+            if declared_size > free_bytes:
+                detail = (
+                    "Insufficient space to upload archive: "
+                    f"required {declared_size} bytes "
+                    f"({format_bytes(declared_size)}), "
+                    f"available {free_bytes} bytes "
+                    f"({format_bytes(free_bytes)}) in {tasks_dir}"
+                )
+                await db.execute(
+                    update(AdminTask)
+                    .where(AdminTask.id == task_id, AdminTask.status == "uploading")
+                    .values(
+                        status="failed",
+                        error_message=detail,
+                        log=(task.log or "") + f"ERROR: {detail}\n",
+                    )
+                )
+                await db.commit()
+                await db.refresh(task)
+                raise HTTPException(status_code=507, detail=detail)
+
     try:
-        with open(task.input_path, "wb") as f:
-            while True:
-                chunk = await file.read(_TASK_UPLOAD_CHUNK)
-                if not chunk:
-                    break
-                f.write(chunk)
-                bytes_written += len(chunk)
-    except Exception:
-        try:
-            os.unlink(task.input_path)
-        except OSError:
-            pass
-        task.status = "failed"
-        task.error_message = "File upload failed"
-        task.log = (task.log or "") + "ERROR: File upload failed.\n"
-        await db.commit()
-        raise HTTPException(status_code=500, detail="File upload failed")
-
-    size_mb = bytes_written / (1024 * 1024)
-
-    # Atomic uploading→pending transition.  If cancel_task changed the
-    # status between the upload and this UPDATE, the WHERE clause won't
-    # match and we detect the race without a TOCTOU window.
-    log_line = f"Upload complete ({size_mb:.1f} MB). Queued for processing.\n"
-    result = await db.execute(
-        update(AdminTask)
-        .where(AdminTask.id == task_id, AdminTask.status == "uploading")
-        .values(
-            status="pending",
-            log=AdminTask.log + log_line,
+        bytes_written = await _append_request_body_to_file(
+            request, task.input_path, mode="wb", max_bytes=declared_size
         )
-        .returning(AdminTask.id)
-    )
-    await db.commit()
-
-    if result.scalar() is None:
-        # Status changed during upload (e.g. cancelled) — clean up file.
+    except Exception as exc:
+        reason = f"{type(exc).__name__}: {exc}"
+        logger.exception("File upload failed for task %s", task_id)
         try:
-            os.unlink(task.input_path)
-        except OSError:
-            pass
-        await db.refresh(task)
-        raise HTTPException(
-            status_code=409,
-            detail=f"Task was {task.status} during upload",
-        )
+            await db.execute(
+                update(AdminTask)
+                .where(AdminTask.id == task_id, AdminTask.status == "uploading")
+                .values(
+                    status="failed",
+                    error_message=reason,
+                    log=(task.log or "") + f"ERROR: {reason}\n",
+                )
+            )
+            await db.commit()
+            await db.refresh(task)
+            if task.status not in ("pending", "running") and task.input_path:
+                try:
+                    os.unlink(task.input_path)
+                except OSError as cleanup_exc:
+                    logger.debug(
+                        "Failed to remove input_path for task %d: %s",
+                        task.id,
+                        cleanup_exc,
+                    )
+        except Exception as db_exc:
+            logger.warning(
+                "Failed to record upload failure for task %s: %s", task_id, db_exc
+            )
+            try:
+                await db.rollback()
+            except Exception as rollback_exc:
+                logger.debug(
+                    "Failed to rollback after upload failure for task %d: %s",
+                    task_id,
+                    rollback_exc,
+                )
+            if task.input_path:
+                try:
+                    os.unlink(task.input_path)
+                except OSError as cleanup_exc:
+                    logger.debug(
+                        "Failed to remove input_path for task %d during rollback cleanup: %s",
+                        task_id,
+                        cleanup_exc,
+                    )
+        raise HTTPException(status_code=500, detail=reason) from exc
 
-    await db.refresh(task)
-    await _kick_off(task, bg)
-    await db.refresh(task)
-    return _task_to_dict(task)
+    return _task_to_dict(await _finalize_files_import_upload(db, task, bytes_written, bg))
 
 
 def _read_backup_version() -> str:
@@ -744,8 +1240,12 @@ async def cancel_task(
         if task.input_path:
             try:
                 os.unlink(task.input_path)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug(
+                    "Failed to remove partially-uploaded input file %s: %s",
+                    task.input_path,
+                    exc,
+                )
         task.status = "cancelled"
         task.log = (task.log or "") + "Cancelled before upload completed.\n"
     elif task.status in ("pending", "running"):

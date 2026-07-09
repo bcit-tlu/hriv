@@ -141,9 +141,22 @@ For a full cross-environment clone, follow this order:
 Filesystem imports use a two-step flow to stream a potentially large archive:
 
 1. `create_files_import` creates the task in **`uploading`** status.
-2. `upload_task_file` streams the archive, then atomically transitions
+2. For small archives, `upload_task_file` accepts a raw `application/octet-stream`
+   request body, streams the archive directly to disk, then atomically transitions
    `uploading → pending` (a guarded `UPDATE ... WHERE status = 'uploading'`, so a
-   concurrent cancel is respected). Wrong-state uploads return **409**.
+   concurrent cancel is respected). Multipart uploads are rejected with
+   **415** and wrong-state uploads return **409**.
+3. For archives larger than 10 MiB, the client uses the resumable chunked flow:
+   `GET /api/admin/tasks/{task_id}/upload` returns the current `bytes_received`;
+   `PATCH /api/admin/tasks/{task_id}/upload` appends a raw chunk with the
+   `Upload-Offset` and `Upload-Length` headers; and
+   `POST /api/admin/tasks/{task_id}/upload/finalize` transitions the task to
+   `pending` once the total bytes match. Offset mismatches return **409** with
+   the current `bytes_received` so the client can resume without re-sending data.
+4. Before streaming starts, the handler compares `Content-Length` (or the chunk /
+   total size for chunked uploads) against free space on the admin-tasks volume.
+   If the declared size will not fit, the task is marked failed and the endpoint
+   returns **507** with the required and available byte counts.
 
 Once the task enters `pending`, `run_files_import` stages the archive under
 `IMPORT_STAGING_DIR` on the same volume as `data_dir` (default:

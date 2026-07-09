@@ -121,6 +121,12 @@ export function userMessage(err: unknown, fallback: string): string {
     if (err.status === 413) {
       return 'This file is too large to upload.'
     }
+    if (err.status === 507) {
+      if (usable) {
+        return detail
+      }
+      return 'Not enough free space is available to upload this file.'
+    }
     if (err.status >= 400 && err.status < 500) {
       if (usable) {
         return detail
@@ -1215,24 +1221,146 @@ export function initFilesImport(filename: string): Promise<AdminTask> {
   })
 }
 
+const UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024 // 10 MiB
+const UPLOAD_MAX_RETRIES = 3
+const UPLOAD_MAX_RESYNCS = 5
+const UPLOAD_RETRY_BASE_MS = 1000
+
+function isRetryableUploadStatus(status: number): boolean {
+  return (status >= 500 && status !== 507) || status === 408 || status === 429
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function uploadChunk(
+  taskId: number,
+  file: File,
+  offset: number,
+  onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
+): Promise<{ bytes_received: number; status: string }> {
+  return new Promise<{ bytes_received: number; status: string }>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Upload aborted', 'AbortError'))
+      return
+    }
+
+    const end = Math.min(offset + UPLOAD_CHUNK_SIZE, file.size)
+    const chunk = file.slice(offset, end, 'application/octet-stream')
+    const xhr = new XMLHttpRequest()
+    xhr.open('PATCH', `${BASE}/api/admin/tasks/${taskId}/upload`)
+    xhr.setRequestHeader('Upload-Offset', String(offset))
+    xhr.setRequestHeader('Upload-Length', String(file.size))
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
+    const hdrs = authHeaders()
+    for (const [k, v] of Object.entries(hdrs)) {
+      xhr.setRequestHeader(k, v)
+    }
+
+    if (onProgress) {
+      xhr.upload.addEventListener('progress', (e) => {
+        if (e.lengthComputable) {
+          onProgress((offset + e.loaded) / file.size)
+        }
+      })
+    }
+
+    const onAbort = () => xhr.abort()
+    if (signal) {
+      if (signal.aborted) {
+        reject(new DOMException('Upload aborted', 'AbortError'))
+        return
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+
+    xhr.addEventListener('load', () => {
+      signal?.removeEventListener('abort', onAbort)
+      if (xhr.status === 409) {
+        try {
+          const body = JSON.parse(xhr.responseText) as Record<string, unknown>
+          const resp = (body?.detail ?? body) as {
+            bytes_received: number
+            status: string
+          }
+          reject(new ApiError(409, 'Upload offset conflict', resp))
+        } catch {
+          reject(new ApiError(409, 'Upload offset conflict'))
+        }
+        return
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as { bytes_received: number; status: string })
+        } catch (e) {
+          reject(e instanceof Error ? e : new Error('Failed to parse upload chunk response'))
+        }
+      } else {
+        const parsed = parseError(xhr.responseText || xhr.statusText)
+        reject(new ApiError(xhr.status, parsed.message, parsed.data))
+      }
+    })
+
+    xhr.addEventListener('error', () => {
+      signal?.removeEventListener('abort', onAbort)
+      reject(new TypeError('Network error'))
+    })
+
+    xhr.addEventListener('abort', () => {
+      signal?.removeEventListener('abort', onAbort)
+      reject(new DOMException('Upload aborted', 'AbortError'))
+    })
+
+    xhr.send(chunk)
+  })
+}
+
 /**
- * Upload the archive for an ``uploading``-status task via XHR.
+ * Return the current upload offset for resuming a chunked upload.
  *
- * On success the backend transitions the task to ``pending`` and
- * enqueues it for background processing.  The returned promise
- * resolves with the updated task object.
- *
- * @param onProgress  Called with a fraction (0–1) as the upload streams.
+ * Useful when a browser tab is reloaded or a network error occurred
+ * mid-transfer: the client can ask the server how much of the file it
+ * already has before sending the next chunk.
  */
-export function uploadTaskFile(
+export function getUploadStatus(
+  taskId: number,
+  signal?: AbortSignal,
+): Promise<{ bytes_received: number; status: string }> {
+  return request(`/admin/tasks/${taskId}/upload`, { signal })
+}
+
+/**
+ * Finalize a chunked filesystem-import upload once the client believes all
+ * bytes have been received.
+ */
+export function finalizeUpload(
+  taskId: number,
+  totalBytes: number,
+  signal?: AbortSignal,
+): Promise<AdminTask> {
+  return request(`/admin/tasks/${taskId}/upload/finalize`, {
+    method: 'POST',
+    body: JSON.stringify({ total_bytes: totalBytes }),
+    signal,
+  })
+}
+
+/**
+ * Small-file fast path: upload the archive in a single raw PUT.
+ *
+ * Archives that fit in one chunk (<= `UPLOAD_CHUNK_SIZE`) are sent in one
+ * request to avoid the extra round-trips of the chunked/resumable path. The
+ * backend streams raw bytes directly to the data volume without any multipart
+ * /tmp spooling.
+ */
+function uploadTaskFileRaw(
   taskId: number,
   file: File,
   onProgress?: (fraction: number) => void,
   signal?: AbortSignal,
 ): Promise<AdminTask> {
-  const form = new FormData()
-  form.append('file', file)
-
   return new Promise<AdminTask>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', `${BASE}/api/admin/tasks/${taskId}/upload`)
@@ -1241,6 +1369,7 @@ export function uploadTaskFile(
     for (const [k, v] of Object.entries(hdrs)) {
       xhr.setRequestHeader(k, v)
     }
+    xhr.setRequestHeader('Content-Type', 'application/octet-stream')
 
     if (onProgress) {
       xhr.upload.addEventListener('progress', (e) => {
@@ -1279,7 +1408,146 @@ export function uploadTaskFile(
       signal.addEventListener('abort', () => xhr.abort(), { once: true })
     }
 
-    xhr.send(form)
+    xhr.send(file)
+  })
+}
+
+/**
+ * Upload the archive for an ``uploading``-status task using resumable chunks.
+ *
+ * Archives larger than `UPLOAD_CHUNK_SIZE` are sliced into 10 MiB pieces and
+ * sent via `PATCH` requests with `Upload-Offset` and `Upload-Length` headers.
+ * Network failures and 5xx responses are retried with a short exponential
+ * backoff; 409 offset-conflict responses trigger a resync from the server.
+ * Once the reported `bytes_received` equals `file.size`, the client calls
+ * `POST .../finalize`.
+ *
+ * On success the backend transitions the task to ``pending`` and enqueues it.
+ *
+ * @param onProgress  Called with a fraction (0–1) as each chunk streams.
+ */
+export function uploadTaskFile(
+  taskId: number,
+  file: File,
+  onProgress?: (fraction: number) => void,
+  signal?: AbortSignal,
+): Promise<AdminTask> {
+  if (file.size <= UPLOAD_CHUNK_SIZE) {
+    return uploadTaskFileRaw(taskId, file, onProgress, signal)
+  }
+
+  return new Promise<AdminTask>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Upload aborted', 'AbortError'))
+      return
+    }
+
+    let currentOffset = 0
+    let consecutiveRetries = 0
+    let nonProgressResyncs = 0
+
+    async function resync(): Promise<void> {
+      const status = await getUploadStatus(taskId, signal)
+      if (status.status !== 'uploading') {
+        throw new ApiError(409, `Task is in '${status.status}' state, expected 'uploading'`)
+      }
+      currentOffset = status.bytes_received
+      consecutiveRetries = 0
+    }
+
+    function checkStuck(offsetBefore: number, offsetAfter: number): void {
+      if (offsetAfter <= offsetBefore) {
+        nonProgressResyncs++
+      } else {
+        nonProgressResyncs = 0
+      }
+      if (nonProgressResyncs > UPLOAD_MAX_RESYNCS) {
+        throw new Error('Upload is stuck: offset is not advancing after multiple resyncs')
+      }
+    }
+
+    async function uploadChunks(): Promise<void> {
+      while (currentOffset < file.size) {
+        if (signal?.aborted) {
+          throw new DOMException('Upload aborted', 'AbortError')
+        }
+        try {
+          const resp = await uploadChunk(taskId, file, currentOffset, onProgress, signal)
+          if (resp.status !== 'uploading') {
+            // The backend moved the task out of uploading state unexpectedly.
+            throw new ApiError(409, `Task is in '${resp.status}' state, expected 'uploading'`)
+          }
+          if (resp.bytes_received <= currentOffset) {
+            // Server did not accept the chunk (offset conflict). Resync
+            // to avoid an infinite loop.
+            const previousOffset = currentOffset
+            await resync()
+            checkStuck(previousOffset, currentOffset)
+            continue
+          }
+          currentOffset = resp.bytes_received
+          nonProgressResyncs = 0
+          consecutiveRetries = 0
+        } catch (err: unknown) {
+          if (err instanceof ApiError && err.status === 409) {
+            const data =
+              isRecord(err.data) && typeof err.data.bytes_received === 'number'
+                ? (err.data as { bytes_received: number; status: string })
+                : null
+            if (data && data.status !== 'uploading') {
+              throw new ApiError(409, `Task is in '${data.status}' state, expected 'uploading'`)
+            }
+            const previousOffset = currentOffset
+            currentOffset =
+              data?.bytes_received ?? (await getUploadStatus(taskId, signal)).bytes_received
+            checkStuck(previousOffset, currentOffset)
+            consecutiveRetries = 0
+            continue
+          }
+          if (
+            err instanceof TypeError ||
+            (err instanceof ApiError && isRetryableUploadStatus(err.status))
+          ) {
+            consecutiveRetries++
+            if (consecutiveRetries > UPLOAD_MAX_RETRIES) throw err
+            await sleep(UPLOAD_RETRY_BASE_MS * consecutiveRetries)
+            continue
+          }
+          throw err
+        }
+      }
+    }
+
+    async function run() {
+      try {
+        await resync()
+        await uploadChunks()
+      } catch (err: unknown) {
+        reject(err)
+        return
+      }
+
+      try {
+        const task = await finalizeUpload(taskId, file.size, signal)
+        resolve(task)
+      } catch (err: unknown) {
+        if (err instanceof ApiError && err.status === 409) {
+          // Finalize reported a size mismatch; resync and try again once.
+          try {
+            await resync()
+            await uploadChunks()
+            const task = await finalizeUpload(taskId, file.size, signal)
+            resolve(task)
+          } catch (finalizeErr: unknown) {
+            reject(finalizeErr)
+          }
+        } else {
+          reject(err)
+        }
+      }
+    }
+
+    run()
   })
 }
 
