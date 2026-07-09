@@ -222,8 +222,12 @@ async def start_db_import(
     except Exception:
         try:
             os.unlink(input_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug(
+                "Failed to remove temporary db-import input file %s: %s",
+                input_path,
+                exc,
+            )
         raise
     await _kick_off(task, bg)
     return _task_to_dict(task)
@@ -351,12 +355,24 @@ def _acquire_chunk_lock(lock_path: str) -> int:
     return fd
 
 
-def _release_chunk_lock(fd: int) -> None:
-    """Release an advisory lock and close the file descriptor."""
+def _release_chunk_lock(fd: int, lock_path: str) -> None:
+    """Unlink and release an advisory lock on *lock_path*.
+
+    The lock file is removed while the descriptor still holds the lock so no
+    other process can open the path between unlock and unlink.  The lock is
+    released and the descriptor is closed once the directory entry is gone.
+    """
     try:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.unlink(lock_path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        logger.debug("Failed to remove chunk lock file %s: %s", lock_path, exc)
     finally:
-        os.close(fd)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 def _parse_upload_offset(request: Request) -> int | None:
@@ -698,13 +714,7 @@ async def upload_task_chunk(
         }
     finally:
         if lock_fd is not None:
-            await asyncio.to_thread(_release_chunk_lock, lock_fd)
-        try:
-            await asyncio.to_thread(os.unlink, lock_path)
-        except FileNotFoundError:
-            pass
-        except OSError as exc:
-            logger.debug("Failed to remove chunk lock file %s: %s", lock_path, exc)
+            await asyncio.to_thread(_release_chunk_lock, lock_fd, lock_path)
 
 
 @router.post("/tasks/{task_id}/upload/finalize", response_model_exclude_none=True)
@@ -1226,8 +1236,12 @@ async def cancel_task(
         if task.input_path:
             try:
                 os.unlink(task.input_path)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug(
+                    "Failed to remove partially-uploaded input file %s: %s",
+                    task.input_path,
+                    exc,
+                )
         task.status = "cancelled"
         task.log = (task.log or "") + "Cancelled before upload completed.\n"
     elif task.status in ("pending", "running"):
