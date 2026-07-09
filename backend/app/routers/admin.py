@@ -18,7 +18,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from jose import JWTError, jwt
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -519,19 +519,20 @@ async def upload_task_chunk(
 
     current_size = _safe_file_size(task.input_path)
     if offset != current_size:
-        return JSONResponse(
+        raise HTTPException(
             status_code=409,
-            content={
+            detail={
+                "message": "Upload offset conflict",
                 "bytes_received": current_size,
                 "status": task.status,
             },
         )
 
     total = _parse_upload_length(request)
-    # Fail-fast if the total archive or this chunk will not fit on the data volume.
+    # Fail-fast if the remaining archive or this chunk will not fit on the data volume.
     tasks_dir = Path(_ensure_tasks_dir())
     free_bytes = shutil.disk_usage(tasks_dir).free
-    size_to_check = total if total is not None else content_length
+    size_to_check = (total - current_size) if total is not None else content_length
     if size_to_check > free_bytes:
         detail = (
             f"Insufficient space to upload archive: required {size_to_check} bytes, "
@@ -569,6 +570,7 @@ async def upload_task_chunk(
             "Failed to update progress for task %d: %s", task_id, exc, exc_info=True
         )
 
+    await db.refresh(task)
     return {
         "bytes_received": new_size,
         "status": task.status,
@@ -604,7 +606,11 @@ async def finalize_task_upload(
     if bytes_received != request.total_bytes:
         raise HTTPException(
             status_code=409,
-            detail=f"Expected {request.total_bytes} bytes, received {bytes_received}",
+            detail={
+                "message": f"Expected {request.total_bytes} bytes, received {bytes_received}",
+                "bytes_received": bytes_received,
+                "status": task.status,
+            },
         )
 
     return _task_to_dict(await _finalize_files_import_upload(db, task, bytes_received, bg))

@@ -893,9 +893,14 @@ async def test_upload_task_chunk_offset_mismatch_returns_409(tmp_path) -> None:
     )
     request.headers["upload-offset"] = "5"  # does not match current size 10
 
-    result = await upload_task_chunk(1, request, MagicMock(), db=db)
-    assert result.status_code == 409
-    assert result.body == b'{"bytes_received":10,"status":"uploading"}'
+    with pytest.raises(HTTPException) as exc:
+        await upload_task_chunk(1, request, MagicMock(), db=db)
+    assert exc.value.status_code == 409
+    assert exc.value.detail == {
+        "message": "Upload offset conflict",
+        "bytes_received": 10,
+        "status": "uploading",
+    }
 
 
 async def test_upload_task_chunk_insufficient_space_507(tmp_path) -> None:
@@ -974,7 +979,11 @@ async def test_finalize_task_upload_size_mismatch_returns_409(tmp_path) -> None:
     with pytest.raises(HTTPException) as exc:
         await finalize_task_upload(1, UploadFinalizeRequest(total_bytes=5), MagicMock(), MagicMock(), db=db)
     assert exc.value.status_code == 409
-    assert "Expected 5 bytes" in exc.value.detail
+    assert exc.value.detail == {
+        "message": "Expected 5 bytes, received 10",
+        "bytes_received": 10,
+        "status": "uploading",
+    }
 
 
 async def test_finalize_task_upload_success(tmp_path) -> None:

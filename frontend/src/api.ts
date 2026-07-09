@@ -1226,7 +1226,7 @@ const UPLOAD_MAX_RETRIES = 3
 const UPLOAD_RETRY_BASE_MS = 1000
 
 function isRetryableUploadStatus(status: number): boolean {
-  return status >= 500 || status === 408 || status === 429
+  return (status >= 500 && status !== 507) || status === 408 || status === 429
 }
 
 function sleep(ms: number): Promise<void> {
@@ -1458,13 +1458,7 @@ export function uploadTaskFile(
           throw new DOMException('Upload aborted', 'AbortError')
         }
         try {
-          const resp = await uploadChunk(
-            taskId,
-            file,
-            currentOffset,
-            onProgress,
-            signal,
-          )
+          const resp = await uploadChunk(taskId, file, currentOffset, onProgress, signal)
           if (resp.status !== 'uploading') {
             // The backend moved the task out of uploading state unexpectedly.
             throw new ApiError(409, `Task is in '${resp.status}' state, expected 'uploading'`)
@@ -1479,13 +1473,15 @@ export function uploadTaskFile(
           consecutiveRetries = 0
         } catch (err: unknown) {
           if (err instanceof ApiError && err.status === 409) {
-            const data = isRecord(err.data) && typeof err.data.bytes_received === 'number'
-              ? err.data as { bytes_received: number; status: string }
-              : null
+            const data =
+              isRecord(err.data) && typeof err.data.bytes_received === 'number'
+                ? (err.data as { bytes_received: number; status: string })
+                : null
             if (data && data.status !== 'uploading') {
               throw new ApiError(409, `Task is in '${data.status}' state, expected 'uploading'`)
             }
-            currentOffset = data?.bytes_received ?? (await getUploadStatus(taskId)).bytes_received
+            currentOffset =
+              data?.bytes_received ?? (await getUploadStatus(taskId, signal)).bytes_received
             consecutiveRetries = 0
             continue
           }
