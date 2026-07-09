@@ -499,7 +499,7 @@ async def _finalize_files_import_upload(
 
     if result.scalar() is None:
         await db.refresh(task)
-        if task.status not in ("pending", "running"):
+        if task.status not in ("pending", "running") and task.input_path:
             try:
                 os.unlink(task.input_path)
             except OSError as cleanup_exc:
@@ -1001,7 +1001,7 @@ async def upload_task_file(
             )
             await db.commit()
             await db.refresh(task)
-            if task.status not in ("pending", "running"):
+            if task.status not in ("pending", "running") and task.input_path:
                 try:
                     os.unlink(task.input_path)
                 except OSError as cleanup_exc:
@@ -1022,14 +1022,15 @@ async def upload_task_file(
                     task_id,
                     rollback_exc,
                 )
-            try:
-                os.unlink(task.input_path)
-            except OSError as cleanup_exc:
-                logger.debug(
-                    "Failed to remove input_path for task %d during rollback cleanup: %s",
-                    task_id,
-                    cleanup_exc,
-                )
+            if task.input_path:
+                try:
+                    os.unlink(task.input_path)
+                except OSError as cleanup_exc:
+                    logger.debug(
+                        "Failed to remove input_path for task %d during rollback cleanup: %s",
+                        task_id,
+                        cleanup_exc,
+                    )
         raise HTTPException(status_code=500, detail=reason) from exc
 
     return _task_to_dict(await _finalize_files_import_upload(db, task, bytes_written, bg))
