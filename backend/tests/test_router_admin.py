@@ -18,6 +18,7 @@ from app.backup_access import (
 )
 from app.routers import admin as admin_router
 from app.routers.admin import (
+    _acquire_chunk_lock,
     _create_task,
     _kick_off,
     _safe_admin_task_file,
@@ -1581,3 +1582,38 @@ async def test_purge_backup_archive_file_not_on_disk(tmp_path) -> None:
                 task_id=1, artifact_role="result", _user=MagicMock(), db=db
             )
     assert exc.value.status_code == 404
+
+
+def test_acquire_chunk_lock_retries_on_eio(tmp_path) -> None:
+    """If O_CREAT returns EIO while creating the lock file, open it without O_CREAT."""
+    import errno
+
+    lock_path = str(tmp_path / "import.tar.gz.lock")
+    real_open = os.open
+    call_count = 0
+
+    def fake_open(path, flags, *args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            assert path == lock_path
+            assert flags & os.O_CREAT
+            # Simulate NFS/FUSE: the file is created but the open fails with EIO.
+            fd = real_open(path, os.O_WRONLY | os.O_CREAT, 0)
+            os.close(fd)
+            raise OSError(errno.EIO, "Input/output error", path)
+        assert not (flags & os.O_CREAT)
+        return real_open(path, os.O_WRONLY | os.O_CREAT, 0o644)
+
+    with (
+        patch("app.routers.admin.os.open", side_effect=fake_open),
+        patch("app.routers.admin.os.chmod", side_effect=os.chmod) as mock_chmod,
+        patch("app.routers.admin.fcntl.flock") as mock_flock,
+    ):
+        fd = _acquire_chunk_lock(lock_path)
+
+    assert fd is not None
+    assert call_count == 2
+    mock_chmod.assert_called_once_with(lock_path, 0o644)
+    mock_flock.assert_called_once()
+    os.close(fd)
