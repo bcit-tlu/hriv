@@ -1671,6 +1671,10 @@ async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_p
     mock_session = AsyncMock()
     mock_session.get = AsyncMock(return_value=task)
     mock_session.commit = AsyncMock()
+    exec_result = MagicMock()
+    exec_result.scalar.return_value = 99
+    exec_result.scalars.return_value.first.return_value = None
+    mock_session.execute.return_value = exec_result
     mock_session_factory = MagicMock()
     mock_session_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session_factory.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -1687,6 +1691,7 @@ async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_p
         patch("app.admin_ops.settings") as mock_settings,
         patch("app.admin_ops._IMPORT_STAGING_DIR", str(data_dir / ".import-staging")),
         patch("app.admin_ops.tempfile.TemporaryDirectory", side_effect=_recording_tempdir),
+        patch("app.admin_ops.enqueue_admin_task", new_callable=AsyncMock, return_value=True),
     ):
         mock_settings.data_dir = str(data_dir)
         mock_settings.tiles_dir = str(tiles_dir)
@@ -1696,6 +1701,7 @@ async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_p
     assert captured_tmpdir["dir"] == str(data_dir / ".import-staging")
     assert task.status == "completed"
     assert task.progress == 100
+    assert "Tile rebuild task #99" in task.log
     assert (source_dir / "new.tiff").read_text() == "new"
     assert not (source_dir / "old.tiff").exists()
     assert (tiles_dir / "tile1.jpeg").read_text() == "tile"

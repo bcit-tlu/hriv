@@ -1147,6 +1147,20 @@ export function fetchFilesImportArchives(): Promise<FilesImportArchive[]> {
   return request('/admin/tasks/files-import/archives')
 }
 
+export interface RebuildTilesRequest {
+  scope: 'missing' | 'stale' | 'missing_stale' | 'all'
+  image_ids?: number[] | null
+}
+
+export function startRebuildTiles(
+  body: RebuildTilesRequest = { scope: 'missing_stale' },
+): Promise<AdminTask> {
+  return request('/admin/tasks/rebuild-tiles', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 export function rerunFilesImportArchive(archiveTaskId: number): Promise<AdminTask> {
   return request('/admin/tasks/files-import/rerun', {
     method: 'POST',

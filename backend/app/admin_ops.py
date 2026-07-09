@@ -16,13 +16,14 @@ import subprocess
 import tarfile
 import tempfile
 import threading
+import uuid
 from collections.abc import Callable, Iterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from opentelemetry import trace
 from opentelemetry.trace import StatusCode
-from sqlalchemy import func, select, text, update
+from sqlalchemy import func, insert, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .backup_access import (
@@ -31,6 +32,7 @@ from .backup_access import (
     restore_snapshot_file,
 )
 from .database import get_async_session, settings
+from .worker import enqueue_admin_task
 from .models import (
     ACTIVE_TASK_STATUSES,
     AdminTask,
@@ -1514,6 +1516,119 @@ async def run_rebuild_tiles(task_id: int) -> None:
                     )
 
 
+async def _queue_rebuild_tiles_after_import(
+    import_task: AdminTask,
+    restored: dict[str, int],
+) -> str:
+    """Queue a ``rebuild_tiles`` task after a successful filesystem import.
+
+    This makes the import-to-tile-generation flow end-to-end. The rebuild is
+    idempotent: it skips already-current tiles unless ``scope == "all"``, so it
+    is safe to re-run manually.
+    """
+    import_input_path = getattr(import_task, "input_path", None) or ""
+    if import_input_path:
+        tasks_dir = os.path.dirname(import_input_path)
+        os.makedirs(tasks_dir, exist_ok=True)
+    else:
+        tasks_dir = _ensure_tasks_dir()
+    params_path = os.path.join(
+        tasks_dir,
+        f"rebuild-after-import-{uuid.uuid4().hex}.json",
+    )
+    try:
+        with open(params_path, "w", encoding="utf-8") as f:
+            json.dump({"scope": "missing_stale", "image_ids": None}, f)
+    except Exception:
+        logger.warning(
+            "Failed to write rebuild params file %s",
+            params_path,
+            exc_info=True,
+        )
+        return (
+            "Could not queue automatic tile rebuild (failed to write params). "
+            "Run Rebuild Tiles manually if needed."
+        )
+
+    async with get_async_session()() as rebuild_session:
+        try:
+            existing_result = await rebuild_session.execute(
+                select(AdminTask).where(
+                    AdminTask.task_type == "rebuild_tiles",
+                    AdminTask.status.in_(ACTIVE_TASK_STATUSES),
+                )
+            )
+            existing = existing_result.scalars().first()
+        except Exception:
+            logger.warning("Failed to check for active rebuild task", exc_info=True)
+            existing = None
+
+        if isinstance(existing, AdminTask):
+            return (
+                f"A rebuild-tiles task is already active (#{existing.id}). "
+                "The automatic rebuild was skipped; run Rebuild Tiles manually after it completes if needed."
+            )
+
+        try:
+            result = await rebuild_session.execute(
+                insert(AdminTask).values(
+                    task_type="rebuild_tiles",
+                    status="pending",
+                    input_path=params_path,
+                    created_by=getattr(import_task, "created_by", None),
+                    log="Queued for automatic rebuild after filesystem import.\n",
+                )
+            )
+            await rebuild_session.commit()
+        except Exception:
+            logger.warning("Failed to create rebuild task", exc_info=True)
+            try:
+                os.unlink(params_path)
+            except OSError:
+                pass
+            return (
+                "Could not queue automatic tile rebuild. "
+                "Run Rebuild Tiles manually if needed."
+            )
+
+        # Some dialects return the generated id via scalar(); inserted_primary_key
+        # is also available for explicitness.
+        task_id = result.scalar()
+        if task_id is None:
+            try:
+                task_id = result.inserted_primary_key[0]
+            except Exception:
+                logger.warning("Rebuild task id not set after commit")
+                return "Could not queue automatic tile rebuild (task id missing)."
+
+        enqueued = False
+        try:
+            enqueued = await enqueue_admin_task(task_id, "rebuild_tiles")
+        except Exception:
+            logger.warning("Failed to enqueue rebuild task %d", task_id, exc_info=True)
+
+        if enqueued:
+            return (
+                f"Tile rebuild task #{task_id} was queued automatically. "
+                "Run Rebuild Tiles manually if you need to re-run it."
+            )
+
+        # Redis is unavailable; run in-process so the import still completes
+        # end-to-end when the backend is operating in BackgroundTasks fallback.
+        try:
+            await run_rebuild_tiles(task_id)
+            return (
+                f"Tile rebuild task #{task_id} was run automatically. "
+                "Run Rebuild Tiles manually if you need to re-run it."
+            )
+        except Exception:
+            logger.exception("In-process tile rebuild failed", exc_info=True)
+            return (
+                f"Tile rebuild task #{task_id} could not be started automatically. "
+                "Run Rebuild Tiles manually."
+            )
+
+
 # ── Filesystem Export ──────────────────────────────────────
 
 
@@ -2281,10 +2396,10 @@ async def run_files_import(task_id: int) -> None:
                                 ),
                             )
 
+            rebuild_log = await _queue_rebuild_tiles_after_import(task, restored)
             summary = (
                 f"Restored {restored['source_files']} source file(s). "
-                "Tiles are not included in filesystem exports; run Rebuild Tiles "
-                "after import so images have fresh tiles."
+                f"{rebuild_log}"
             )
             await _update_task(
                 session, task,
