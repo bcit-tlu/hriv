@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.31.0...backend-v0.31.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* **backend:** harden chunk lock acquisition and add storage health probes ([#854](https://github.com/bcit-tlu/hriv/issues/854)) ([5b260ce](https://github.com/bcit-tlu/hriv/commit/5b260cec570f342098918c711cf91603f34d33bf))
+
 ## [0.31.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.30.0...backend-v0.31.0) (2026-07-09)
 
 
