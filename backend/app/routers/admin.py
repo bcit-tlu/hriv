@@ -854,7 +854,7 @@ async def upload_task_file(
     task = await db.get(AdminTask, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    if task.status != "uploading":
+    if task.task_type != "files_import" or task.status != "uploading":
         raise HTTPException(
             status_code=409,
             detail=f"Task is in '{task.status}' state, expected 'uploading'",
@@ -903,26 +903,39 @@ async def upload_task_file(
     except Exception as exc:
         reason = f"{type(exc).__name__}: {exc}"
         logger.exception("File upload failed for task %s", task_id)
-        await db.execute(
-            update(AdminTask)
-            .where(AdminTask.id == task_id, AdminTask.status == "uploading")
-            .values(
-                status="failed",
-                error_message=reason,
-                log=(task.log or "") + f"ERROR: {reason}\n",
+        try:
+            await db.execute(
+                update(AdminTask)
+                .where(AdminTask.id == task_id, AdminTask.status == "uploading")
+                .values(
+                    status="failed",
+                    error_message=reason,
+                    log=(task.log or "") + f"ERROR: {reason}\n",
+                )
             )
-        )
-        await db.commit()
-        await db.refresh(task)
-        if task.status not in ("pending", "running"):
+            await db.commit()
+            await db.refresh(task)
+            if task.status not in ("pending", "running"):
+                try:
+                    os.unlink(task.input_path)
+                except OSError as cleanup_exc:
+                    logger.debug(
+                        "Failed to remove input_path for task %d: %s",
+                        task.id,
+                        cleanup_exc,
+                    )
+        except Exception as db_exc:
+            logger.warning(
+                "Failed to record upload failure for task %s: %s", task_id, db_exc
+            )
+            try:
+                await db.rollback()
+            except Exception:
+                pass
             try:
                 os.unlink(task.input_path)
-            except OSError as cleanup_exc:
-                logger.debug(
-                    "Failed to remove input_path for task %d: %s",
-                    task.id,
-                    cleanup_exc,
-                )
+            except OSError:
+                pass
         raise HTTPException(status_code=500, detail=reason) from exc
 
     return _task_to_dict(await _finalize_files_import_upload(db, task, bytes_written, bg))
