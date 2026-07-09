@@ -245,6 +245,8 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | ------ | --------------------------------------------------------------------------------------------------------- | ------------- | ------------ |
 | POST   | /api/auth/login                                                                                           | No            | —            |
 | GET    | /api/health                                                                                               | No            | —            |
+| GET    | /api/health/ready                                                                                         | No            | —            |
+| GET    | /api/health/storage                                                                                       | No            | —            |
 | GET    | /api/categories/                                                                                          | Yes           | student      |
 | POST   | /api/categories/                                                                                          | Yes           | instructor   |
 | GET    | /api/categories/tree                                                                                      | Yes           | student      |
