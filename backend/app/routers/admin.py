@@ -437,8 +437,12 @@ async def _finalize_files_import_upload(
         if task.status not in ("pending", "running"):
             try:
                 os.unlink(task.input_path)
-            except OSError:
-                pass
+            except OSError as cleanup_exc:
+                logger.debug(
+                    "Failed to remove input_path for task %d: %s",
+                    task.id,
+                    cleanup_exc,
+                )
         raise HTTPException(
             status_code=409,
             detail=f"Task was {task.status} during finalize",
@@ -549,6 +553,31 @@ async def upload_task_chunk(
             detail=f"Chunk upload failed: {exc}",
         ) from exc
 
+    if bytes_received != content_length:
+        logger.warning(
+            "Chunk size mismatch for task %d: expected %d bytes, received %d bytes",
+            task_id,
+            content_length,
+            bytes_received,
+        )
+        if os.path.exists(task.input_path):
+            try:
+                os.truncate(task.input_path, current_size)
+            except OSError as truncate_exc:
+                logger.debug(
+                    "Failed to truncate input_path for task %d: %s",
+                    task_id,
+                    truncate_exc,
+                )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Chunk size mismatch",
+                "bytes_received": current_size,
+                "status": task.status,
+            },
+        )
+
     new_size = current_size + bytes_received
 
     # Keep the task row alive while a long chunked upload is in flight;
@@ -569,8 +598,20 @@ async def upload_task_chunk(
         logger.warning(
             "Failed to update progress for task %d: %s", task_id, exc, exc_info=True
         )
+        try:
+            await db.rollback()
+        except Exception as rollback_exc:
+            logger.debug(
+                "Rollback after failed progress update for task %d: %s",
+                task_id,
+                rollback_exc,
+            )
 
-    await db.refresh(task)
+    try:
+        await db.refresh(task)
+    except Exception as exc:
+        logger.debug("Failed to refresh task %d after chunk upload: %s", task_id, exc)
+
     return {
         "bytes_received": new_size,
         "status": task.status,
@@ -863,8 +904,12 @@ async def upload_task_file(
         if task.status not in ("pending", "running"):
             try:
                 os.unlink(task.input_path)
-            except OSError:
-                pass
+            except OSError as cleanup_exc:
+                logger.debug(
+                    "Failed to remove input_path for task %d: %s",
+                    task.id,
+                    cleanup_exc,
+                )
         raise HTTPException(status_code=500, detail=reason) from exc
 
     return _task_to_dict(await _finalize_files_import_upload(db, task, bytes_written, bg))

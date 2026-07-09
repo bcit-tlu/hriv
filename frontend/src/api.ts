@@ -1279,7 +1279,8 @@ function uploadChunk(
       signal?.removeEventListener('abort', onAbort)
       if (xhr.status === 409) {
         try {
-          const resp = JSON.parse(xhr.responseText) as {
+          const body = JSON.parse(xhr.responseText) as Record<string, unknown>
+          const resp = (body?.detail ?? body) as {
             bytes_received: number
             status: string
           }
