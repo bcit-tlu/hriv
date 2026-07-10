@@ -61,6 +61,7 @@ spec:
       labels:
         {{- include "hriv-backend.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: backend
+        hriv.bcit.ca/backend-zone-member: "true"
     spec:
       initContainers:
         # Run ``alembic upgrade head`` against the database before the
@@ -306,7 +307,8 @@ spec:
       {{- end }}
       {{- $aff := deepCopy (.Values.affinity | default dict) }}
       {{- if .Values.scheduling.zoneAntiAffinity.enabled }}
-        {{- $zoneRule := dict "labelSelector" (dict "matchLabels" (include "hriv-backend.selectorLabels" . | fromYaml)) "topologyKey" .Values.scheduling.zoneAntiAffinity.topologyKey }}
+        {{- $zoneMatchLabels := dict "hriv.bcit.ca/backend-zone-member" "true" }}
+        {{- $zoneRule := dict "labelSelector" (dict "matchLabels" $zoneMatchLabels) "topologyKey" .Values.scheduling.zoneAntiAffinity.topologyKey }}
         {{- $existing := list }}
         {{- if and (hasKey $aff "podAntiAffinity") $aff.podAntiAffinity }}
           {{- $existing = $aff.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution | default list }}
