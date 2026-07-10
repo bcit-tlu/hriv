@@ -109,6 +109,48 @@ def test_bootstrap_runs_upgrade_in_worker_thread(
     assert args == (fake_cfg,)
 
 
+def test_bootstrap_retries_transient_connectivity_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Transient CNPG startup/shutdown connection errors should retry."""
+    attempts: list[str] = []
+    sleeps: list[float] = []
+
+    async def _flaky_async_bootstrap() -> None:
+        attempts.append("attempt")
+        if len(attempts) == 1:
+            raise RuntimeError("the database system is shutting down")
+
+    monkeypatch.setattr(migrations_bootstrap, "_async_bootstrap", _flaky_async_bootstrap)
+    monkeypatch.setattr(migrations_bootstrap.time, "sleep", sleeps.append)
+    monkeypatch.setattr(migrations_bootstrap, "_BOOTSTRAP_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(migrations_bootstrap, "_BOOTSTRAP_RETRY_DELAY_SECONDS", 0.25)
+
+    migrations_bootstrap.bootstrap()
+
+    assert attempts == ["attempt", "attempt"]
+    assert sleeps == [0.25]
+
+
+def test_bootstrap_does_not_retry_non_transient_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-connectivity bootstrap failures should still fail immediately."""
+    sleeps: list[float] = []
+
+    async def _boom() -> None:
+        raise RuntimeError("simulated bootstrap failure")
+
+    monkeypatch.setattr(migrations_bootstrap, "_async_bootstrap", _boom)
+    monkeypatch.setattr(migrations_bootstrap.time, "sleep", sleeps.append)
+    monkeypatch.setattr(migrations_bootstrap, "_BOOTSTRAP_MAX_ATTEMPTS", 3)
+
+    with pytest.raises(RuntimeError, match="simulated bootstrap failure"):
+        migrations_bootstrap.bootstrap()
+
+    assert sleeps == []
+
+
 async def test_advisory_lock_acquires_and_releases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -450,3 +492,19 @@ def test_redacted_url_masks_password() -> None:
 def test_redacted_url_handles_unparseable() -> None:
     """``_redacted_url`` must not raise on garbage input."""
     assert migrations_bootstrap._redacted_url("") is not None
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("the database system is shutting down", True),
+        ("the database system is starting up", True),
+        ("the database system is not yet accepting connections", True),
+        ("connection refused", True),
+        ("simulated bootstrap failure", False),
+    ],
+)
+def test_is_transient_bootstrap_connectivity_error(message: str, expected: bool) -> None:
+    """Transient DB turnover messages should be classified as retryable."""
+    exc = RuntimeError(message)
+    assert migrations_bootstrap._is_transient_bootstrap_connectivity_error(exc) is expected
