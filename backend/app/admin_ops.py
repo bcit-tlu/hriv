@@ -1320,6 +1320,7 @@ async def run_rebuild_tiles(task_id: int) -> None:
         input_path = task.input_path
         failures = 0
         rebuilt = 0
+        current_source_id: int | None = None
         try:
             await _update_task(
                 session, task,
@@ -1392,6 +1393,7 @@ async def run_rebuild_tiles(task_id: int) -> None:
             target_ids = [src.id for src in targets]
 
             for index, src_id in enumerate(target_ids):
+                current_source_id = src_id
                 # Observe cancellation requests between images so a long batch
                 # can be stopped without corrupting an in-flight regeneration.
                 await _update_task(
@@ -1446,6 +1448,7 @@ async def run_rebuild_tiles(task_id: int) -> None:
                 # Progress spans the 10–100 % band across the batch.
                 progress = 10 + int((index + 1) / total * 90)
                 await _update_task(session, task, progress=progress)
+                current_source_id = None
 
             summary = (
                 f"Rebuilt {rebuilt} of {total} tile set(s); {failures} failed."
@@ -1483,6 +1486,39 @@ async def run_rebuild_tiles(task_id: int) -> None:
                     "cancellation; already-completed rebuilds are retained."
                 ),
             )
+
+        except asyncio.CancelledError as exc:
+            span = trace.get_current_span()
+            span.record_exception(exc)
+            span.set_status(StatusCode.ERROR, "Background tile rebuild interrupted")
+            logger.exception(
+                "Background tile rebuild interrupted",
+                extra={
+                    "event": "admin_task.rebuild_tiles_interrupted",
+                    "task_id": task_id,
+                    "source_image_id": current_source_id,
+                },
+            )
+            await session.rollback()
+            refreshed = await session.get(AdminTask, task_id)
+            if refreshed is not None:
+                task = refreshed
+            detail = (
+                "Worker interrupted while rebuilding source "
+                f"#{current_source_id}."
+                if current_source_id is not None
+                else "Worker interrupted during tile rebuild."
+            )
+            await _update_task(
+                session, task,
+                status="failed",
+                log_line=(
+                    f"ERROR: {detail} Rebuilt {rebuilt} tile set(s) before "
+                    "interruption; rerun the task to continue."
+                ),
+                error_message=detail,
+            )
+            raise
 
         except Exception as exc:
             span = trace.get_current_span()

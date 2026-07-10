@@ -1169,50 +1169,41 @@ async def rebuild_source_image_tiles(
     img = await session.get(Image, src.image_id) if src.image_id else None
 
     output_dir = os.path.join(settings.tiles_dir, str(src.id))
-    if not await asyncio.to_thread(os.path.isdir, output_dir):
-        # Missing-tile rebuilds are the common restore path. Writing directly to
-        # the final directory avoids the temp-dir promotion step, which has
-        # proven fragile on some RWX-backed cluster volumes. Because there is no
-        # existing tree to preserve here, direct generation is safe.
-        try:
-            with tracer.start_as_current_span("rebuild_generate_tiles"):
-                dzi_rel, thumb_rel, img_width, img_height = await asyncio.to_thread(
-                    generate_tiles, src.stored_path, output_dir,
-                )
-        except Exception:
-            await asyncio.to_thread(shutil.rmtree, output_dir, True)
-            raise
-    else:
-        tmp_dir = os.path.join(
-            settings.tiles_dir, f".rebuild-{src.id}-{uuid4().hex}",
-        )
-        try:
-            with tracer.start_as_current_span("rebuild_generate_tiles"):
-                dzi_rel, thumb_rel, img_width, img_height = await asyncio.to_thread(
-                    generate_tiles, src.stored_path, tmp_dir,
-                )
+    tmp_dir = os.path.join(
+        settings.tiles_dir, f".rebuild-{src.id}-{uuid4().hex}",
+    )
 
-            def _swap() -> None:
-                # Rename-based swap so the previous tile tree stays recoverable
-                # until the new one is promoted: move any existing tree aside, then
-                # rename the freshly generated tree into place (the target no longer
-                # exists, so the directory rename succeeds), then delete the old
-                # tree. If promotion fails, the old tree is restored so we never end
-                # up serving no tiles at all. Each step is a single rename, so the
-                # window where ``output_dir`` is absent is as small as possible.
-                backup_dir = f"{output_dir}.old-{uuid4().hex}"
+    try:
+        with tracer.start_as_current_span("rebuild_generate_tiles"):
+            dzi_rel, thumb_rel, img_width, img_height = await asyncio.to_thread(
+                generate_tiles, src.stored_path, tmp_dir,
+            )
+
+        def _swap() -> None:
+            # Rename-based swap so the previous tile tree stays recoverable
+            # until the new one is promoted: move any existing tree aside, then
+            # rename the freshly generated tree into place (the target no longer
+            # exists, so the directory rename succeeds), then delete the old
+            # tree. If promotion fails, the old tree is restored so we never end
+            # up serving no tiles at all. Each step is a single rename, so the
+            # window where ``output_dir`` is absent is as small as possible.
+            backup_dir = f"{output_dir}.old-{uuid4().hex}"
+            had_existing = os.path.isdir(output_dir)
+            if had_existing:
                 os.replace(output_dir, backup_dir)
-                try:
-                    os.replace(tmp_dir, output_dir)
-                except Exception:
+            try:
+                os.replace(tmp_dir, output_dir)
+            except Exception:
+                if had_existing:
                     os.replace(backup_dir, output_dir)
-                    raise
+                raise
+            if had_existing:
                 shutil.rmtree(backup_dir, ignore_errors=True)
 
-            await asyncio.to_thread(_swap)
-        except Exception:
-            await asyncio.to_thread(shutil.rmtree, tmp_dir, True)
-            raise
+        await asyncio.to_thread(_swap)
+    except Exception:
+        await asyncio.to_thread(shutil.rmtree, tmp_dir, True)
+        raise
 
     source_checksum = await _best_effort_source_checksum(src.stored_path)
 
