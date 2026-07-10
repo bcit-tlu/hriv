@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.32.0...backend-v0.32.1) (2026-07-10)
+
+
+### Bug Fixes
+
+* **backend:** harden rebuild-tiles worker reliability ([#862](https://github.com/bcit-tlu/hriv/issues/862)) ([ddbd39d](https://github.com/bcit-tlu/hriv/commit/ddbd39dd237972e15168891911e2720d1f733763))
+
 ## [0.32.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.31.1...backend-v0.32.0) (2026-07-09)
 
 
