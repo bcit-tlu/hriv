@@ -1,5 +1,5 @@
 {
-  "frontend": "0.35.0",
+  "frontend": "0.35.1",
   "backend": "0.32.1",
   "backup": "0.10.0"
 }
