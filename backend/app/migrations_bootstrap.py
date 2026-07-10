@@ -302,9 +302,12 @@ def _is_transient_bootstrap_connectivity_error(exc: Exception) -> bool:
         "could not connect to the primary server",
     )
 
-    current: BaseException | None = exc
+    to_visit: list[BaseException] = [exc]
     seen: set[int] = set()
-    while current is not None and id(current) not in seen:
+    while to_visit:
+        current = to_visit.pop()
+        if id(current) in seen:
+            continue
         seen.add(id(current))
         msg = str(current).lower()
         type_name = type(current).__name__.lower()
@@ -312,7 +315,10 @@ def _is_transient_bootstrap_connectivity_error(exc: Exception) -> bool:
             marker in msg for marker in transient_messages
         ):
             return True
-        current = current.__cause__ or current.__context__
+        if current.__cause__ is not None:
+            to_visit.append(current.__cause__)
+        if current.__context__ is not None:
+            to_visit.append(current.__context__)
     return False
 
 
@@ -365,6 +371,14 @@ def main() -> int:
                 "Database host unreachable — is the CNPG cluster running "
                 "and does the Service '%s-db-rw' exist?",
                 "hriv-backend",
+            )
+        elif _is_transient_bootstrap_connectivity_error(exc):
+            logger.error(
+                "Database remained temporarily unavailable after %d bootstrap "
+                "attempts. Verify that the CNPG primary behind the rw Service "
+                "is ready and accepting connections, then restart the init "
+                "container or pod.",
+                _BOOTSTRAP_MAX_ATTEMPTS,
             )
         else:
             logger.exception("Alembic bootstrap failed")

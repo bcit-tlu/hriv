@@ -177,6 +177,19 @@ def test_bootstrap_retries_wrapped_transient_connectivity_errors(
     assert sleeps == [0.25]
 
 
+def test_transient_error_detection_walks_cause_and_context_branches() -> None:
+    """A transient error reachable only through ``__context__`` should still match
+    even when the same wrapper also has an unrelated explicit ``__cause__``."""
+    transient = RuntimeError("the database system is starting up")
+    wrapper = RuntimeError("sqlalchemy wrapper")
+    wrapper.__cause__ = RuntimeError("non-transient explicit cause")
+    wrapper.__context__ = transient
+    root = RuntimeError("outer wrapper")
+    root.__cause__ = wrapper
+
+    assert migrations_bootstrap._is_transient_bootstrap_connectivity_error(root) is True
+
+
 async def test_advisory_lock_acquires_and_releases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -428,6 +441,26 @@ def test_main_logs_host_hint_on_dns_error(
 
     assert rc == 1
     assert "Database host unreachable" in caplog.text
+
+
+def test_main_logs_transient_bootstrap_exhaustion_hint(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Persistent transient DB outages should produce an operator-facing hint."""
+
+    def _boom() -> None:
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(migrations_bootstrap, "bootstrap", _boom)
+    monkeypatch.setattr(migrations_bootstrap, "_BOOTSTRAP_MAX_ATTEMPTS", 10)
+
+    with caplog.at_level("ERROR"):
+        rc = migrations_bootstrap.main()
+
+    assert rc == 1
+    assert "Database remained temporarily unavailable after 10 bootstrap attempts" in caplog.text
+    assert "CNPG primary" in caplog.text
+    assert "Traceback" not in caplog.text
 
 
 async def test_check_schema_privilege_passes_when_granted() -> None:
