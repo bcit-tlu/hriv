@@ -151,6 +151,32 @@ def test_bootstrap_does_not_retry_non_transient_errors(
     assert sleeps == []
 
 
+def test_bootstrap_retries_wrapped_transient_connectivity_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wrapped transient DB errors should still be classified as retryable."""
+    attempts: list[str] = []
+    sleeps: list[float] = []
+
+    async def _flaky_async_bootstrap() -> None:
+        attempts.append("attempt")
+        if len(attempts) == 1:
+            inner = RuntimeError("the database system is starting up")
+            outer = RuntimeError("sqlalchemy operational error wrapper")
+            outer.__cause__ = inner
+            raise outer
+
+    monkeypatch.setattr(migrations_bootstrap, "_async_bootstrap", _flaky_async_bootstrap)
+    monkeypatch.setattr(migrations_bootstrap.time, "sleep", sleeps.append)
+    monkeypatch.setattr(migrations_bootstrap, "_BOOTSTRAP_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(migrations_bootstrap, "_BOOTSTRAP_RETRY_DELAY_SECONDS", 0.25)
+
+    migrations_bootstrap.bootstrap()
+
+    assert attempts == ["attempt", "attempt"]
+    assert sleeps == [0.25]
+
+
 async def test_advisory_lock_acquires_and_releases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -508,3 +534,11 @@ def test_is_transient_bootstrap_connectivity_error(message: str, expected: bool)
     """Transient DB turnover messages should be classified as retryable."""
     exc = RuntimeError(message)
     assert migrations_bootstrap._is_transient_bootstrap_connectivity_error(exc) is expected
+
+
+def test_is_transient_bootstrap_connectivity_error_walks_exception_chain() -> None:
+    """Wrapped transient DB turnover messages should still be retryable."""
+    inner = RuntimeError("the database system is shutting down")
+    outer = RuntimeError("sqlalchemy operational error wrapper")
+    outer.__cause__ = inner
+    assert migrations_bootstrap._is_transient_bootstrap_connectivity_error(outer) is True

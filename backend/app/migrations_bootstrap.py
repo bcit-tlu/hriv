@@ -258,13 +258,11 @@ def bootstrap() -> None:
     Runs under a :func:`_advisory_lock` so multiple replicas can safely
     race on the same database.
     """
-    last_error: Exception | None = None
     for attempt in range(1, _BOOTSTRAP_MAX_ATTEMPTS + 1):
         try:
             asyncio.run(_async_bootstrap())
             return
         except Exception as exc:
-            last_error = exc
             if not _is_transient_bootstrap_connectivity_error(exc):
                 raise
             if attempt >= _BOOTSTRAP_MAX_ATTEMPTS:
@@ -278,8 +276,6 @@ def bootstrap() -> None:
                 extra={"event": "alembic.retry"},
             )
             time.sleep(_BOOTSTRAP_RETRY_DELAY_SECONDS)
-    if last_error is not None:
-        raise last_error
 
 
 def _is_transient_bootstrap_connectivity_error(exc: Exception) -> bool:
@@ -291,8 +287,6 @@ def _is_transient_bootstrap_connectivity_error(exc: Exception) -> bool:
     the advisory lock and Alembic semantics already make repeated runs
     idempotent once the database becomes available again.
     """
-    msg = str(exc).lower()
-    type_name = type(exc).__name__.lower()
     transient_markers = (
         "cannotconnectnowerror",
         "connectionrefusederror",
@@ -307,9 +301,19 @@ def _is_transient_bootstrap_connectivity_error(exc: Exception) -> bool:
         "connection refused",
         "could not connect to the primary server",
     )
-    return any(marker in type_name for marker in transient_markers) or any(
-        marker in msg for marker in transient_messages
-    )
+
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        msg = str(current).lower()
+        type_name = type(current).__name__.lower()
+        if any(marker in type_name for marker in transient_markers) or any(
+            marker in msg for marker in transient_messages
+        ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def _redacted_url(url: str) -> str:
