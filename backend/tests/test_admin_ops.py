@@ -2473,7 +2473,7 @@ async def test_queue_rebuild_tiles_after_import_queues_on_success(tmp_path) -> N
     params_files = list(tmp_path.glob("rebuild-after-import-*.json"))
     assert len(params_files) == 1
     with open(params_files[0], "r", encoding="utf-8") as f:
-        assert json.load(f)["scope"] == "missing_stale"
+        assert json.load(f)["scope"] == "missing"
     assert session.execute.await_count == 2  # select, insert
 
 

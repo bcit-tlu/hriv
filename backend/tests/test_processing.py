@@ -772,7 +772,7 @@ async def test_select_rebuild_targets_invalid_scope_raises() -> None:
 
 
 async def test_rebuild_source_image_tiles_success() -> None:
-    """A successful rebuild updates provenance and the linked image record."""
+    """A missing-tree rebuild writes tiles directly to the final directory."""
     src = SimpleNamespace(
         id=5, image_id=10, stored_path="/data/source_images/5.tiff",
         source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
@@ -809,7 +809,37 @@ async def test_rebuild_source_image_tiles_success() -> None:
     assert img.height == 768
     assert img.version == 4
     session.commit.assert_awaited()
-    mock_replace.assert_called_once()
+    mock_replace.assert_not_called()
+
+
+async def test_rebuild_source_image_tiles_cleans_output_dir_on_direct_write_failure() -> None:
+    """A failed direct-write rebuild removes the partial output directory."""
+    src = SimpleNamespace(
+        id=5, image_id=10, stored_path="/data/source_images/5.tiff",
+        source_checksum=None, tile_settings_hash=None, tiles_generated_at=None,
+    )
+    img = SimpleNamespace(
+        tile_sources="/api/tiles/5/old.dzi", thumb="old", width=1, height=1,
+        version=3,
+    )
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=img)
+    session.commit = AsyncMock()
+
+    with (
+        patch("app.processing.generate_tiles", side_effect=OSError("disk error")),
+        patch("app.processing.asyncio.to_thread", side_effect=lambda fn, *a: fn(*a)),
+        patch("app.processing.settings") as ms,
+        patch("app.processing.os.path.isfile", return_value=True),
+        patch("app.processing.os.path.isdir", return_value=False),
+        patch("app.processing.shutil.rmtree") as mock_rmtree,
+    ):
+        ms.tiles_dir = "/data/tiles"
+        with pytest.raises(OSError, match="disk error"):
+            await rebuild_source_image_tiles(session, src)
+
+    mock_rmtree.assert_called_once_with("/data/tiles/5", True)
+    session.commit.assert_not_awaited()
 
 
 async def test_rebuild_source_image_tiles_restores_old_tree_on_swap_failure() -> None:
