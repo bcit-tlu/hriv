@@ -306,9 +306,7 @@ spec:
       {{- end }}
       {{- $aff := deepCopy (.Values.affinity | default dict) }}
       {{- if .Values.scheduling.zoneAntiAffinity.enabled }}
-        {{- $zoneMatchLabels := include "hriv-backend.selectorLabels" . | fromYaml }}
-        {{- $_ := set $zoneMatchLabels "app.kubernetes.io/component" "backend" }}
-        {{- $zoneRule := dict "labelSelector" (dict "matchLabels" $zoneMatchLabels) "topologyKey" .Values.scheduling.zoneAntiAffinity.topologyKey }}
+        {{- $zoneRule := dict "labelSelector" (dict "matchLabels" (include "hriv-backend.selectorLabels" . | fromYaml)) "topologyKey" .Values.scheduling.zoneAntiAffinity.topologyKey }}
         {{- $existing := list }}
         {{- if and (hasKey $aff "podAntiAffinity") $aff.podAntiAffinity }}
           {{- $existing = $aff.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution | default list }}
