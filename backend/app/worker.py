@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
+from arq.worker import func
 from opentelemetry import trace
 from opentelemetry.context import attach, detach
 from opentelemetry.propagate import extract, inject
@@ -393,8 +394,13 @@ async def on_startup(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """Configuration class consumed by ``arq worker``."""
 
-    functions = [process_source_image_task, replace_image_task, bulk_import_task, admin_task_runner]
+    functions = [
+        process_source_image_task,
+        replace_image_task,
+        bulk_import_task,
+        func(admin_task_runner, timeout=86400),
+    ]
     redis_settings = _parse_redis_settings()
     on_startup = on_startup
     max_jobs = 4  # Match the existing _MAX_CONCURRENCY
-    job_timeout = 86400  # 24 hours — import/rebuild batches can legitimately run for many hours
+    job_timeout = 7200  # 2 hours — default bound for short-lived worker jobs

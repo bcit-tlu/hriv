@@ -8,11 +8,14 @@ import pytest
 from opentelemetry.trace import StatusCode
 
 from app.worker import (
+    WorkerSettings,
     admin_task_runner,
+    bulk_import_task,
     enqueue_admin_task,
     enqueue_process_source_image,
     on_startup,
     process_source_image_task,
+    replace_image_task,
 )
 
 
@@ -67,6 +70,19 @@ async def test_on_startup_calls_setup_logging() -> None:
         await on_startup({})
 
     mock_setup.assert_called_once()
+
+
+def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
+    """Long timeout should apply to admin tasks without widening all jobs."""
+    assert WorkerSettings.job_timeout == 7200
+    assert WorkerSettings.functions[:3] == [
+        process_source_image_task,
+        replace_image_task,
+        bulk_import_task,
+    ]
+    admin_fn = WorkerSettings.functions[3]
+    assert admin_fn.name == "admin_task_runner"
+    assert admin_fn.timeout_s == 86400
 
 
 # ── Admin task enqueue tests ──────────────────────────────

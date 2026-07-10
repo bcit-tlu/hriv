@@ -1573,7 +1573,7 @@ async def _queue_rebuild_tiles_after_import(
     )
     try:
         with open(params_path, "w", encoding="utf-8") as f:
-            json.dump({"scope": "missing", "image_ids": None}, f)
+            json.dump({"scope": "missing_stale", "image_ids": None}, f)
     except Exception:
         logger.warning(
             "Failed to write rebuild params file %s",
