@@ -6,8 +6,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
+import app.auth as auth
+from app.routers import categories as categories_router
 from app.routers.categories import (
     _load_tree,
     list_categories,
@@ -117,6 +120,22 @@ def _mock_db(categories: list, images: list) -> AsyncMock:
 
     db.execute = AsyncMock(side_effect=execute_side_effect)
     return db
+
+
+def _make_user(role: str = "admin") -> SimpleNamespace:
+    return SimpleNamespace(id=1, role=role, email="u@example.com", programs=[], groups=[])
+
+
+def _categories_test_client(user_role: str, db: AsyncMock) -> TestClient:
+    app = FastAPI()
+    app.include_router(categories_router.router, prefix="/api")
+
+    async def override_db():
+        yield db
+
+    app.dependency_overrides[auth.get_current_user] = lambda: _make_user(user_role)
+    app.dependency_overrides[categories_router.get_db] = override_db
+    return TestClient(app)
 
 
 async def test_load_tree_empty_database() -> None:
@@ -529,6 +548,32 @@ async def test_update_category_if_match_invalid() -> None:
         await update_category(1, body, _mock_request(if_match="not-a-number"), MagicMock(), db=db)
     assert exc.value.status_code == 400
     assert "if-match" in exc.value.detail.lower()
+
+
+def test_delete_category_endpoint_allows_instructor() -> None:
+    cat = _make_category(1, "Cat")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    with _categories_test_client("instructor", db) as client:
+        response = client.delete("/api/categories/1")
+
+    assert response.status_code == 204
+    db.get.assert_awaited_once()
+    db.delete.assert_awaited_once_with(cat)
+    db.commit.assert_awaited_once()
+
+
+def test_delete_category_endpoint_rejects_student() -> None:
+    db = AsyncMock()
+
+    with _categories_test_client("student", db) as client:
+        response = client.delete("/api/categories/1")
+
+    assert response.status_code == 403
+    db.get.assert_not_called()
 
 
 async def test_reorder_categories_self_parent() -> None:

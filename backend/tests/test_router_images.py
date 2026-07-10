@@ -7,8 +7,11 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi import HTTPException, UploadFile
+from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi.testclient import TestClient
 
+import app.auth as auth
+from app.routers import images as images_router
 from app.routers.images import (
     list_images,
     get_image,
@@ -67,6 +70,18 @@ def _mock_request(if_match: str | None = None) -> MagicMock:
         if_match if key == "If-Match" else default
     )
     return req
+
+
+def _images_test_client(user_role: str, db: AsyncMock) -> TestClient:
+    app = FastAPI()
+    app.include_router(images_router.router, prefix="/api")
+
+    async def override_db():
+        yield db
+
+    app.dependency_overrides[auth.get_current_user] = lambda: _make_user(user_role)
+    app.dependency_overrides[images_router.get_db] = override_db
+    return TestClient(app)
 
 
 async def test_list_images_admin() -> None:
@@ -487,6 +502,68 @@ async def test_delete_image_not_found() -> None:
     with pytest.raises(HTTPException) as exc:
         await delete_image(999, _make_user(), db)
     assert exc.value.status_code == 404
+
+
+def test_delete_image_endpoint_allows_instructor() -> None:
+    img = _make_image()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    with _images_test_client("instructor", db) as client:
+        response = client.delete("/api/images/1")
+
+    assert response.status_code == 204
+    db.get.assert_awaited_once()
+    db.delete.assert_awaited_once_with(img)
+    db.commit.assert_awaited_once()
+
+
+def test_delete_image_endpoint_rejects_student() -> None:
+    db = AsyncMock()
+
+    with _images_test_client("student", db) as client:
+        response = client.delete("/api/images/1")
+
+    assert response.status_code == 403
+    db.get.assert_not_called()
+
+
+def test_bulk_delete_images_endpoint_allows_instructor() -> None:
+    imgs = [_make_image(id=1), _make_image(id=2)]
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = imgs
+
+    db = AsyncMock()
+    db.execute = AsyncMock(return_value=mock_result)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    with _images_test_client("instructor", db) as client:
+        response = client.request(
+            "DELETE",
+            "/api/images/bulk",
+            json={"image_ids": [1, 2]},
+        )
+
+    assert response.status_code == 204
+    assert db.delete.await_count == 2
+    db.commit.assert_awaited_once()
+
+
+def test_bulk_delete_images_endpoint_rejects_student() -> None:
+    db = AsyncMock()
+
+    with _images_test_client("student", db) as client:
+        response = client.request(
+            "DELETE",
+            "/api/images/bulk",
+            json={"image_ids": [1, 2]},
+        )
+
+    assert response.status_code == 403
+    db.execute.assert_not_called()
 
 
 # ── Replace Image tests ──────────────────────────────────
