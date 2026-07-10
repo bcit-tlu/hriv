@@ -6,9 +6,9 @@ from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from fastapi import FastAPI, HTTPException, UploadFile
-from fastapi.testclient import TestClient
 
 import app.auth as auth
 from app.routers import images as images_router
@@ -72,7 +72,7 @@ def _mock_request(if_match: str | None = None) -> MagicMock:
     return req
 
 
-def _images_test_client(user_role: str, db: AsyncMock) -> TestClient:
+def _images_test_app(user_role: str, db: AsyncMock) -> FastAPI:
     app = FastAPI()
     app.include_router(images_router.router, prefix="/api")
 
@@ -81,7 +81,7 @@ def _images_test_client(user_role: str, db: AsyncMock) -> TestClient:
 
     app.dependency_overrides[auth.get_current_user] = lambda: _make_user(user_role)
     app.dependency_overrides[images_router.get_db] = override_db
-    return TestClient(app)
+    return app
 
 
 async def test_list_images_admin() -> None:
@@ -504,15 +504,16 @@ async def test_delete_image_not_found() -> None:
     assert exc.value.status_code == 404
 
 
-def test_delete_image_endpoint_allows_instructor() -> None:
+async def test_delete_image_endpoint_allows_instructor() -> None:
     img = _make_image()
     db = AsyncMock()
     db.get = AsyncMock(return_value=img)
     db.delete = AsyncMock()
     db.commit = AsyncMock()
 
-    with _images_test_client("instructor", db) as client:
-        response = client.delete("/api/images/1")
+    transport = httpx.ASGITransport(app=_images_test_app("instructor", db))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.delete("/api/images/1")
 
     assert response.status_code == 204
     db.get.assert_awaited_once()
@@ -520,17 +521,18 @@ def test_delete_image_endpoint_allows_instructor() -> None:
     db.commit.assert_awaited_once()
 
 
-def test_delete_image_endpoint_rejects_student() -> None:
+async def test_delete_image_endpoint_rejects_student() -> None:
     db = AsyncMock()
 
-    with _images_test_client("student", db) as client:
-        response = client.delete("/api/images/1")
+    transport = httpx.ASGITransport(app=_images_test_app("student", db))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.delete("/api/images/1")
 
     assert response.status_code == 403
     db.get.assert_not_called()
 
 
-def test_bulk_delete_images_endpoint_allows_instructor() -> None:
+async def test_bulk_delete_images_endpoint_allows_instructor() -> None:
     imgs = [_make_image(id=1), _make_image(id=2)]
     mock_result = MagicMock()
     mock_result.scalars.return_value.all.return_value = imgs
@@ -540,8 +542,9 @@ def test_bulk_delete_images_endpoint_allows_instructor() -> None:
     db.delete = AsyncMock()
     db.commit = AsyncMock()
 
-    with _images_test_client("instructor", db) as client:
-        response = client.request(
+    transport = httpx.ASGITransport(app=_images_test_app("instructor", db))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.request(
             "DELETE",
             "/api/images/bulk",
             json={"image_ids": [1, 2]},
@@ -552,11 +555,12 @@ def test_bulk_delete_images_endpoint_allows_instructor() -> None:
     db.commit.assert_awaited_once()
 
 
-def test_bulk_delete_images_endpoint_rejects_student() -> None:
+async def test_bulk_delete_images_endpoint_rejects_student() -> None:
     db = AsyncMock()
 
-    with _images_test_client("student", db) as client:
-        response = client.request(
+    transport = httpx.ASGITransport(app=_images_test_app("student", db))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.request(
             "DELETE",
             "/api/images/bulk",
             json={"image_ids": [1, 2]},
@@ -618,6 +622,7 @@ async def test_replace_image_success(
 
     db = AsyncMock()
     db.get = AsyncMock(return_value=img)
+    db.add = MagicMock()
     db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", src.id))
 
     background_tasks = MagicMock()
@@ -657,6 +662,7 @@ async def test_replace_image_fallback_to_background_tasks(
     img = _make_image()
     db = AsyncMock()
     db.get = AsyncMock(return_value=img)
+    db.add = MagicMock()
     db.refresh = AsyncMock()
 
     background_tasks = MagicMock()
@@ -675,6 +681,56 @@ async def test_replace_image_fallback_to_background_tasks(
         )
 
     background_tasks.add_task.assert_called_once()
+
+
+@patch("os.path.getsize", return_value=1024)
+@patch("os.makedirs")
+@patch("builtins.open", new_callable=MagicMock)
+async def test_replace_image_applies_metadata_updates(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_getsize: MagicMock,
+) -> None:
+    """Multipart metadata updates are applied before creating the SourceImage."""
+    mock_enqueue = AsyncMock(return_value=True)
+    img = _make_image(name="old-name", category_id=7, active=True)
+
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+    db.add = MagicMock()
+    db.refresh = AsyncMock()
+
+    background_tasks = MagicMock()
+    file = _make_upload_file(filename="updated.png", content_type="image/png")
+
+    with patch.dict("sys.modules", {
+        "app.processing": MagicMock(process_replace_image=MagicMock()),
+        "app.worker": MagicMock(enqueue_replace_image=mock_enqueue),
+    }):
+        result = await replace_image(
+            image_id=1,
+            file=file,
+            background_tasks=background_tasks,
+            _user=_make_user(),
+            db=db,
+            name="renamed",
+            category_id="",
+            copyright="",
+            note="updated note",
+            active="0",
+            metadata_extra='{"source":"upload"}',
+        )
+
+    assert img.name == "renamed"
+    assert img.category_id is None
+    assert img.copyright is None
+    assert img.note == "updated note"
+    assert img.active is False
+    assert img.metadata_ == {"source": "upload"}
+    assert img.version == 2
+    assert result.name == "renamed"
+    assert result.category_id is None
+    assert result.active is False
 
 
 async def test_replace_image_not_found() -> None:
@@ -713,6 +769,28 @@ async def test_replace_image_invalid_file() -> None:
         )
     assert exc.value.status_code == 400
     assert "image" in exc.value.detail.lower()
+
+
+async def test_replace_image_invalid_metadata_extra() -> None:
+    img = _make_image()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    background_tasks = MagicMock()
+    file = _make_upload_file()
+
+    with pytest.raises(HTTPException) as exc:
+        await replace_image(
+            image_id=1,
+            file=file,
+            background_tasks=background_tasks,
+            _user=_make_user(),
+            db=db,
+            metadata_extra="{invalid-json}",
+        )
+
+    assert exc.value.status_code == 400
+    assert "metadata_extra" in exc.value.detail
 
 
 async def test_replace_image_no_filename() -> None:
@@ -769,6 +847,42 @@ async def test_replace_image_enospc(
 
     assert exc.value.status_code == 507
     assert "storage" in exc.value.detail.lower()
+    mock_unlink.assert_called_once()
+
+
+@patch("os.unlink")
+@patch("os.makedirs")
+@patch("builtins.open", side_effect=OSError(errno.EIO, "I/O error"))
+async def test_replace_image_reraises_non_enospc_oserror(
+    mock_open: MagicMock,
+    mock_makedirs: MagicMock,
+    mock_unlink: MagicMock,
+) -> None:
+    """Unexpected filesystem errors should propagate after cleanup."""
+    img = _make_image()
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=img)
+
+    file = AsyncMock()
+    file.filename = "broken.tiff"
+    file.content_type = "image/tiff"
+    file.read = AsyncMock(side_effect=[b"data", b""])
+
+    background_tasks = MagicMock()
+
+    with (
+        patch("app.routers.images.settings") as mock_settings,
+        pytest.raises(OSError, match="I/O error"),
+    ):
+        mock_settings.source_images_dir = "/data/source_images"
+        await replace_image(
+            image_id=1,
+            file=file,
+            background_tasks=background_tasks,
+            _user=_make_user(),
+            db=db,
+        )
+
     mock_unlink.assert_called_once()
 
 
