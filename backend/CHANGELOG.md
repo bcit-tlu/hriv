@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.32.1...backend-v0.32.2) (2026-07-10)
+
+
+### Bug Fixes
+
+* **backend:** retry transient migration bootstrap outages ([#869](https://github.com/bcit-tlu/hriv/issues/869)) ([56cef30](https://github.com/bcit-tlu/hriv/commit/56cef30385a9e88cca2ff03042e3c9e16765fa44))
+
 ## [0.32.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.32.0...backend-v0.32.1) (2026-07-10)
 
 
