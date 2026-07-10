@@ -52,7 +52,7 @@ describe('NotificationMenu', () => {
 
     await waitFor(() => expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(1))
 
-    const badge = container.querySelector('.MuiBadge-badge')
+    const badge = container.querySelector('.MuiBadge-dot')
     expect(badge).not.toHaveClass('MuiBadge-invisible')
   })
 
@@ -152,7 +152,7 @@ describe('NotificationMenu', () => {
 
     await waitFor(() => expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(1))
 
-    const badge = container.querySelector('.MuiBadge-badge')
+    const badge = container.querySelector('.MuiBadge-dot')
     expect(badge).toHaveClass('MuiBadge-invisible')
   })
 
@@ -172,7 +172,7 @@ describe('NotificationMenu', () => {
 
     await waitFor(() => expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(1))
 
-    const badge = container.querySelector('.MuiBadge-badge')
+    const badge = container.querySelector('.MuiBadge-dot')
     expect(badge).toHaveClass('MuiBadge-invisible')
     expect(localStorage.getItem('hriv_changelog_last_read_instructor@example.ca')).toBe(
       '2026-06-16T13:00:00Z',
@@ -193,7 +193,7 @@ describe('NotificationMenu', () => {
 
     await waitFor(() => expect(mockFetchChangelogEntries).toHaveBeenCalledTimes(1))
 
-    const badge = container.querySelector('.MuiBadge-badge')
+    const badge = container.querySelector('.MuiBadge-dot')
     expect(badge).toHaveClass('MuiBadge-invisible')
     expect(localStorage.getItem('hriv_changelog_last_read_instructor@example.ca')).toBe(
       '2026-06-16T13:00:00Z',

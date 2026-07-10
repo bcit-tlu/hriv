@@ -109,6 +109,87 @@ def test_bootstrap_runs_upgrade_in_worker_thread(
     assert args == (fake_cfg,)
 
 
+def test_bootstrap_retries_transient_connectivity_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Transient CNPG startup/shutdown connection errors should retry."""
+    attempts: list[str] = []
+    sleeps: list[float] = []
+
+    async def _flaky_async_bootstrap() -> None:
+        attempts.append("attempt")
+        if len(attempts) == 1:
+            raise RuntimeError("the database system is shutting down")
+
+    monkeypatch.setattr(migrations_bootstrap, "_async_bootstrap", _flaky_async_bootstrap)
+    monkeypatch.setattr(migrations_bootstrap.time, "sleep", sleeps.append)
+    monkeypatch.setattr(migrations_bootstrap, "_BOOTSTRAP_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(migrations_bootstrap, "_BOOTSTRAP_RETRY_DELAY_SECONDS", 0.25)
+
+    migrations_bootstrap.bootstrap()
+
+    assert attempts == ["attempt", "attempt"]
+    assert sleeps == [0.25]
+
+
+def test_bootstrap_does_not_retry_non_transient_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-connectivity bootstrap failures should still fail immediately."""
+    sleeps: list[float] = []
+
+    async def _boom() -> None:
+        raise RuntimeError("simulated bootstrap failure")
+
+    monkeypatch.setattr(migrations_bootstrap, "_async_bootstrap", _boom)
+    monkeypatch.setattr(migrations_bootstrap.time, "sleep", sleeps.append)
+    monkeypatch.setattr(migrations_bootstrap, "_BOOTSTRAP_MAX_ATTEMPTS", 3)
+
+    with pytest.raises(RuntimeError, match="simulated bootstrap failure"):
+        migrations_bootstrap.bootstrap()
+
+    assert sleeps == []
+
+
+def test_bootstrap_retries_wrapped_transient_connectivity_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Wrapped transient DB errors should still be classified as retryable."""
+    attempts: list[str] = []
+    sleeps: list[float] = []
+
+    async def _flaky_async_bootstrap() -> None:
+        attempts.append("attempt")
+        if len(attempts) == 1:
+            inner = RuntimeError("the database system is starting up")
+            outer = RuntimeError("sqlalchemy operational error wrapper")
+            outer.__cause__ = inner
+            raise outer
+
+    monkeypatch.setattr(migrations_bootstrap, "_async_bootstrap", _flaky_async_bootstrap)
+    monkeypatch.setattr(migrations_bootstrap.time, "sleep", sleeps.append)
+    monkeypatch.setattr(migrations_bootstrap, "_BOOTSTRAP_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(migrations_bootstrap, "_BOOTSTRAP_RETRY_DELAY_SECONDS", 0.25)
+
+    migrations_bootstrap.bootstrap()
+
+    assert attempts == ["attempt", "attempt"]
+    assert sleeps == [0.25]
+
+
+def test_transient_error_detection_walks_cause_and_context_branches() -> None:
+    """A transient error reachable only through ``__context__`` should still match
+    even when the same wrapper also has an unrelated explicit ``__cause__``."""
+    transient = RuntimeError("the database system is starting up")
+    wrapper = RuntimeError("sqlalchemy wrapper")
+    wrapper.__cause__ = RuntimeError("non-transient explicit cause")
+    wrapper.__context__ = transient
+    root = RuntimeError("outer wrapper")
+    root.__cause__ = wrapper
+
+    assert migrations_bootstrap._is_transient_bootstrap_connectivity_error(root) is True
+
+
 async def test_advisory_lock_acquires_and_releases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -362,6 +443,26 @@ def test_main_logs_host_hint_on_dns_error(
     assert "Database host unreachable" in caplog.text
 
 
+def test_main_logs_transient_bootstrap_exhaustion_hint(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Persistent transient DB outages should produce an operator-facing hint."""
+
+    def _boom() -> None:
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(migrations_bootstrap, "bootstrap", _boom)
+    monkeypatch.setattr(migrations_bootstrap, "_BOOTSTRAP_MAX_ATTEMPTS", 10)
+
+    with caplog.at_level("ERROR"):
+        rc = migrations_bootstrap.main()
+
+    assert rc == 1
+    assert "Database remained temporarily unavailable after 10 bootstrap attempts" in caplog.text
+    assert "CNPG primary" in caplog.text
+    assert "Traceback" not in caplog.text
+
+
 async def test_check_schema_privilege_passes_when_granted() -> None:
     """``_check_schema_privilege`` must succeed silently when the current
     role has CREATE on the ``public`` schema."""
@@ -450,3 +551,27 @@ def test_redacted_url_masks_password() -> None:
 def test_redacted_url_handles_unparseable() -> None:
     """``_redacted_url`` must not raise on garbage input."""
     assert migrations_bootstrap._redacted_url("") is not None
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("the database system is shutting down", True),
+        ("the database system is starting up", True),
+        ("the database system is not yet accepting connections", True),
+        ("connection refused", True),
+        ("simulated bootstrap failure", False),
+    ],
+)
+def test_is_transient_bootstrap_connectivity_error(message: str, expected: bool) -> None:
+    """Transient DB turnover messages should be classified as retryable."""
+    exc = RuntimeError(message)
+    assert migrations_bootstrap._is_transient_bootstrap_connectivity_error(exc) is expected
+
+
+def test_is_transient_bootstrap_connectivity_error_walks_exception_chain() -> None:
+    """Wrapped transient DB turnover messages should still be retryable."""
+    inner = RuntimeError("the database system is shutting down")
+    outer = RuntimeError("sqlalchemy operational error wrapper")
+    outer.__cause__ = inner
+    assert migrations_bootstrap._is_transient_bootstrap_connectivity_error(outer) is True

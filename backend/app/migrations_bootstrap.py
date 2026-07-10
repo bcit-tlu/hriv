@@ -23,6 +23,7 @@ import contextlib
 import hashlib
 import logging
 import sys
+import time
 from collections.abc import AsyncIterator
 from pathlib import Path
 from urllib.parse import urlparse
@@ -35,6 +36,9 @@ from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 from app.database import settings
 
 logger = logging.getLogger(__name__)
+
+_BOOTSTRAP_MAX_ATTEMPTS = 10
+_BOOTSTRAP_RETRY_DELAY_SECONDS = 3.0
 
 # Deterministic signed 64-bit key used with ``pg_advisory_lock`` so that
 # multiple pods racing to bootstrap (Helm ``replicaCount > 1`` or parallel
@@ -254,7 +258,68 @@ def bootstrap() -> None:
     Runs under a :func:`_advisory_lock` so multiple replicas can safely
     race on the same database.
     """
-    asyncio.run(_async_bootstrap())
+    for attempt in range(1, _BOOTSTRAP_MAX_ATTEMPTS + 1):
+        try:
+            asyncio.run(_async_bootstrap())
+            return
+        except Exception as exc:
+            if not _is_transient_bootstrap_connectivity_error(exc):
+                raise
+            if attempt >= _BOOTSTRAP_MAX_ATTEMPTS:
+                raise
+            logger.warning(
+                "Transient database bootstrap failure (%d/%d): %s. Retrying in %.1fs.",
+                attempt,
+                _BOOTSTRAP_MAX_ATTEMPTS,
+                exc,
+                _BOOTSTRAP_RETRY_DELAY_SECONDS,
+                extra={"event": "alembic.retry"},
+            )
+            time.sleep(_BOOTSTRAP_RETRY_DELAY_SECONDS)
+
+
+def _is_transient_bootstrap_connectivity_error(exc: Exception) -> bool:
+    """Return True when bootstrap should retry a transient DB outage.
+
+    CNPG rollouts and primary handovers can briefly surface startup or
+    shutdown errors through asyncpg while the rw Service points at a node
+    that is not yet ready. Retrying the bootstrap initContainer is safe:
+    the advisory lock and Alembic semantics already make repeated runs
+    idempotent once the database becomes available again.
+    """
+    transient_markers = (
+        "cannotconnectnowerror",
+        "connectionrefusederror",
+        "toomanyconnectionserror",
+        "serverclosedconnectionerror",
+        "connectiondoesnotexisterror",
+    )
+    transient_messages = (
+        "the database system is shutting down",
+        "the database system is starting up",
+        "the database system is not yet accepting connections",
+        "connection refused",
+        "could not connect to the primary server",
+    )
+
+    to_visit: list[BaseException] = [exc]
+    seen: set[int] = set()
+    while to_visit:
+        current = to_visit.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        msg = str(current).lower()
+        type_name = type(current).__name__.lower()
+        if any(marker in type_name for marker in transient_markers) or any(
+            marker in msg for marker in transient_messages
+        ):
+            return True
+        if current.__cause__ is not None:
+            to_visit.append(current.__cause__)
+        if current.__context__ is not None:
+            to_visit.append(current.__context__)
+    return False
 
 
 def _redacted_url(url: str) -> str:
@@ -306,6 +371,14 @@ def main() -> int:
                 "Database host unreachable — is the CNPG cluster running "
                 "and does the Service '%s-db-rw' exist?",
                 "hriv-backend",
+            )
+        elif _is_transient_bootstrap_connectivity_error(exc):
+            logger.error(
+                "Database remained temporarily unavailable after %d bootstrap "
+                "attempts. Verify that the CNPG primary behind the rw Service "
+                "is ready and accepting connections, then restart the init "
+                "container or pod.",
+                _BOOTSTRAP_MAX_ATTEMPTS,
             )
         else:
             logger.exception("Alembic bootstrap failed")
