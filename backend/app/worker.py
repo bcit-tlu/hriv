@@ -54,7 +54,7 @@ async def _finalize_interrupted_admin_task(task_id: int, task_type: str) -> None
         if task is None or task.status not in ACTIVE_TASK_STATUSES:
             return
 
-        if task.status in ("cancelling", "cancelled"):
+        if task.status == "cancelling":
             await _update_task(
                 session, task,
                 status="cancelled",
