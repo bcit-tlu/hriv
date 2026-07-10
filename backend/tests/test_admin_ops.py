@@ -2404,7 +2404,7 @@ async def test_run_rebuild_tiles_marks_interrupted_task_failed() -> None:
             await run_rebuild_tiles(1)
 
     assert task.status == "failed"
-    assert "Worker interrupted while rebuilding source #161." == task.error_message
+    assert "Worker interrupted while processing source #161." == task.error_message
     assert "rerun the task to continue" in task.log
 
 

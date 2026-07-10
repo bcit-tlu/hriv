@@ -1504,7 +1504,7 @@ async def run_rebuild_tiles(task_id: int) -> None:
             if refreshed is not None:
                 task = refreshed
             detail = (
-                "Worker interrupted while rebuilding source "
+                "Worker interrupted while processing source "
                 f"#{current_source_id}."
                 if current_source_id is not None
                 else "Worker interrupted during tile rebuild."
