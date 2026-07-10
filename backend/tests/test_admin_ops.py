@@ -1,5 +1,6 @@
 """Tests for the background admin operations module."""
 
+import asyncio
 import builtins
 import gzip
 import io
@@ -2379,6 +2380,32 @@ async def test_run_rebuild_tiles_invalid_scope_fails_task() -> None:
 
     assert task.status == "failed"
     assert "Unknown rebuild scope" in (task.error_message or "")
+
+
+async def test_run_rebuild_tiles_marks_interrupted_task_failed() -> None:
+    """Worker interruption should fail the task instead of leaving it running."""
+    task = _rebuild_task()
+    session, factory = _rebuild_factory(task)
+    targets = [SimpleNamespace(id=161, image_id=162)]
+    session.get = AsyncMock(side_effect=[task, SimpleNamespace(id=161, image_id=162), task])
+
+    with (
+        patch("app.admin_ops.get_async_session", return_value=factory),
+        patch(
+            "app.processing.select_rebuild_targets",
+            AsyncMock(return_value=targets),
+        ),
+        patch(
+            "app.processing.rebuild_source_image_tiles",
+            AsyncMock(side_effect=asyncio.CancelledError()),
+        ),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await run_rebuild_tiles(1)
+
+    assert task.status == "failed"
+    assert "Worker interrupted while processing source #161." == task.error_message
+    assert "rerun the task to continue" in task.log
 
 
 # ── _queue_rebuild_tiles_after_import tests ────────────────

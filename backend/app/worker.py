@@ -14,19 +14,22 @@ full upload → enqueue → worker → tile-gen → DB-write pipeline is
 visible as a single distributed trace.
 """
 
+import asyncio
 import logging
 from typing import Any
 from urllib.parse import urlparse
 
 from arq import create_pool
 from arq.connections import ArqRedis, RedisSettings
+from arq.worker import func
 from opentelemetry import trace
 from opentelemetry.context import attach, detach
 from opentelemetry.propagate import extract, inject
 from opentelemetry.trace import Status, StatusCode
 
-from .database import settings
+from .database import async_session, settings
 from .logging_config import setup_logging
+from .models import ACTIVE_TASK_STATUSES, AdminTask
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
@@ -35,6 +38,37 @@ tracer = trace.get_tracer(__name__)
 # ── Shared helpers ────────────────────────────────────────
 
 _redis_settings: RedisSettings | None = None
+
+
+async def _finalize_interrupted_admin_task(task_id: int, task_type: str) -> None:
+    """Best-effort cleanup when the worker is cancelled mid-admin-task.
+
+    ``run_rebuild_tiles`` already persists its own interruption detail before
+    re-raising ``CancelledError``. This helper covers the other admin-task
+    runners, and also avoids overwriting any task that is already terminal.
+    """
+    from .admin_ops import _update_task
+
+    async with async_session() as session:
+        task = await session.get(AdminTask, task_id)
+        if task is None or task.status not in ACTIVE_TASK_STATUSES:
+            return
+
+        if task.status == "cancelling":
+            await _update_task(
+                session, task,
+                status="cancelled",
+                log_line="Task cancelled while the worker was shutting down.",
+            )
+            return
+
+        detail = f"Worker interrupted during {task_type.replace('_', ' ')}."
+        await _update_task(
+            session, task,
+            status="failed",
+            log_line=f"ERROR: {detail} Rerun the task to continue.",
+            error_message=detail,
+        )
 
 
 def _parse_redis_settings() -> RedisSettings:
@@ -370,6 +404,19 @@ async def admin_task_runner(
             )
             try:
                 await runner(task_id)
+            except asyncio.CancelledError as exc:
+                span.set_status(Status(StatusCode.ERROR, "admin task interrupted"))
+                span.record_exception(exc)
+                logger.exception(
+                    "arq worker interrupted while running admin task",
+                    extra={
+                        "event": "worker.admin_task_interrupted",
+                        "task_id": task_id,
+                        "task_type": task_type,
+                    },
+                )
+                await _finalize_interrupted_admin_task(task_id, task_type)
+                raise
             except Exception as exc:
                 span.set_status(Status(StatusCode.ERROR, str(exc)))
                 span.record_exception(exc)
@@ -393,8 +440,13 @@ async def on_startup(ctx: dict[str, Any]) -> None:
 class WorkerSettings:
     """Configuration class consumed by ``arq worker``."""
 
-    functions = [process_source_image_task, replace_image_task, bulk_import_task, admin_task_runner]
+    functions = [
+        process_source_image_task,
+        replace_image_task,
+        bulk_import_task,
+        func(admin_task_runner, timeout=86400),
+    ]
     redis_settings = _parse_redis_settings()
     on_startup = on_startup
     max_jobs = 4  # Match the existing _MAX_CONCURRENCY
-    job_timeout = 7200  # 2 hours — large filesystem archives need headroom
+    job_timeout = 7200  # 2 hours — default bound for short-lived worker jobs

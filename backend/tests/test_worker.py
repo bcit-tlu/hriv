@@ -1,5 +1,6 @@
 """Tests for arq task queue with BackgroundTasks fallback (Phase 5.2)."""
 
+import asyncio
 import sys
 from types import ModuleType
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
@@ -8,11 +9,14 @@ import pytest
 from opentelemetry.trace import StatusCode
 
 from app.worker import (
+    WorkerSettings,
     admin_task_runner,
+    bulk_import_task,
     enqueue_admin_task,
     enqueue_process_source_image,
     on_startup,
     process_source_image_task,
+    replace_image_task,
 )
 
 
@@ -67,6 +71,19 @@ async def test_on_startup_calls_setup_logging() -> None:
         await on_startup({})
 
     mock_setup.assert_called_once()
+
+
+def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
+    """Long timeout should apply to admin tasks without widening all jobs."""
+    assert WorkerSettings.job_timeout == 7200
+    assert WorkerSettings.functions[:3] == [
+        process_source_image_task,
+        replace_image_task,
+        bulk_import_task,
+    ]
+    admin_fn = WorkerSettings.functions[3]
+    assert admin_fn.name == "admin_task_runner"
+    assert admin_fn.timeout_s == 86400
 
 
 # ── Admin task enqueue tests ──────────────────────────────
@@ -229,3 +246,80 @@ async def test_admin_task_runner_records_exception_on_span() -> None:
     mock_span.record_exception.assert_called_once_with(error)
     set_status_call = mock_span.set_status.call_args
     assert set_status_call[0][0].status_code == StatusCode.ERROR
+
+
+async def test_admin_task_runner_marks_interrupted_active_task_failed() -> None:
+    """Cancelled admin tasks should be moved to a terminal failed state."""
+    mock_run = AsyncMock(side_effect=asyncio.CancelledError())
+    mock_update_task = AsyncMock()
+    fake_admin_ops = ModuleType("app.admin_ops")
+    fake_admin_ops._update_task = mock_update_task  # type: ignore[attr-defined]
+    fake_admin_ops.run_db_export = mock_run  # type: ignore[attr-defined]
+    fake_admin_ops.run_db_import = AsyncMock()  # type: ignore[attr-defined]
+    fake_admin_ops.run_file_restore = AsyncMock()  # type: ignore[attr-defined]
+    fake_admin_ops.run_files_export = AsyncMock()  # type: ignore[attr-defined]
+    fake_admin_ops.run_files_import = AsyncMock()  # type: ignore[attr-defined]
+    fake_admin_ops.run_rebuild_tiles = AsyncMock()  # type: ignore[attr-defined]
+
+    task = MagicMock(status="running")
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=task)
+    session_cm = AsyncMock()
+    session_cm.__aenter__.return_value = session
+    session_cm.__aexit__.return_value = False
+
+    mock_span = MagicMock()
+    with (
+        patch.dict(sys.modules, {"app.admin_ops": fake_admin_ops}),
+        patch("app.worker.async_session", return_value=session_cm),
+        patch("app.worker.tracer") as mock_tracer,
+    ):
+        mock_tracer.start_as_current_span.return_value.__enter__ = MagicMock(return_value=mock_span)
+        mock_tracer.start_as_current_span.return_value.__exit__ = MagicMock(return_value=False)
+
+        with pytest.raises(asyncio.CancelledError):
+            await admin_task_runner({}, 42, "db_export")
+
+    session.get.assert_awaited_once()
+    mock_update_task.assert_awaited_once_with(
+        session, task,
+        status="failed",
+        log_line="ERROR: Worker interrupted during db export. Rerun the task to continue.",
+        error_message="Worker interrupted during db export.",
+    )
+    set_status_call = mock_span.set_status.call_args
+    assert set_status_call[0][0].status_code == StatusCode.ERROR
+
+
+async def test_admin_task_runner_interrupted_cancelling_task_becomes_cancelled() -> None:
+    """Interrupted tasks already in cancelling state should land in cancelled."""
+    mock_run = AsyncMock(side_effect=asyncio.CancelledError())
+    mock_update_task = AsyncMock()
+    fake_admin_ops = ModuleType("app.admin_ops")
+    fake_admin_ops._update_task = mock_update_task  # type: ignore[attr-defined]
+    fake_admin_ops.run_db_export = AsyncMock()  # type: ignore[attr-defined]
+    fake_admin_ops.run_db_import = AsyncMock()  # type: ignore[attr-defined]
+    fake_admin_ops.run_file_restore = AsyncMock()  # type: ignore[attr-defined]
+    fake_admin_ops.run_files_export = mock_run  # type: ignore[attr-defined]
+    fake_admin_ops.run_files_import = AsyncMock()  # type: ignore[attr-defined]
+    fake_admin_ops.run_rebuild_tiles = AsyncMock()  # type: ignore[attr-defined]
+
+    task = MagicMock(status="cancelling")
+    session = AsyncMock()
+    session.get = AsyncMock(return_value=task)
+    session_cm = AsyncMock()
+    session_cm.__aenter__.return_value = session
+    session_cm.__aexit__.return_value = False
+
+    with (
+        patch.dict(sys.modules, {"app.admin_ops": fake_admin_ops}),
+        patch("app.worker.async_session", return_value=session_cm),
+    ):
+        with pytest.raises(asyncio.CancelledError):
+            await admin_task_runner({}, 77, "files_export")
+
+    mock_update_task.assert_awaited_once_with(
+        session, task,
+        status="cancelled",
+        log_line="Task cancelled while the worker was shutting down.",
+    )
