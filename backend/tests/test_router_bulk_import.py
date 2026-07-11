@@ -464,7 +464,12 @@ async def test_process_bulk_import_completes_successful_job(tmp_path) -> None:
         category_id=1,
         errors=[],
     )
-    src = SimpleNamespace(id=10, status="completed", error_message=None)
+    src = SimpleNamespace(
+        id=10,
+        status="completed",
+        error_message=None,
+        status_message=None,
+    )
 
     db = AsyncMock()
     # db.get() is called with (BulkImportJob, id) three times, interleaved

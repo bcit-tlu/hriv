@@ -26,7 +26,8 @@ export interface PollProcessingJobCallbacks {
   /** Fetch the current status of the job.  Rejections are treated as
    * transient errors and the poll is retried after `pollIntervalMs`. */
   fetchStatus: (jobId: number) => Promise<SourceImageStatus>
-  /** Called exactly once when the backend reports `status === "completed"`. */
+  /** Called when the backend reports `status === "completed"`.
+   * If it throws a retryable error, polling retries and may call it again. */
   onCompleted: (imageId: number | null) => void | Promise<void>
   /** Called exactly once when the backend reports `status === "failed"`. */
   onFailed: (progress: number, errorMessage: string | null) => void
@@ -52,7 +53,8 @@ const DEFAULT_POLL_INTERVAL_MS = 3000
  *
  * Invariants:
  * - At most one in-flight fetch is outstanding at any time.
- * - Terminal callbacks (`onCompleted` / `onFailed`) fire at most once.
+ * - `onFailed` and `onAuthFailure` fire at most once.
+ * - `onCompleted` is retried if its own follow-up work throws a non-auth error.
  * - After `cancel()` no further callbacks fire.
  * - Transient fetch rejections schedule a retry at the same interval.
  */

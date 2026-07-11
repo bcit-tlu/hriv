@@ -220,6 +220,8 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
             if (!isAuthFailure(err)) {
               throw err
             }
+            // The server-side job already completed; keep local completion state
+            // and let the next authenticated refresh reconcile the lists.
           }
           setImagesVersion((v) => v + 1)
           const current = selectedImageRef.current
