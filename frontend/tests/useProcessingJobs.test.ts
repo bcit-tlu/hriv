@@ -422,9 +422,12 @@ describe('useProcessingJobs', () => {
         loadUncategorizedImages: firstLoadUncategorizedImages,
       })
 
-      const { result, rerender } = renderHook((deps: UseProcessingJobsDeps) => useProcessingJobs(deps), {
-        initialProps: initialDeps,
-      })
+      const { result, rerender } = renderHook(
+        (deps: UseProcessingJobsDeps) => useProcessingJobs(deps),
+        {
+          initialProps: initialDeps,
+        },
+      )
 
       act(() => {
         result.current.handleBulkImportStarted(
