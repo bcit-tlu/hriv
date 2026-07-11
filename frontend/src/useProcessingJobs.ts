@@ -117,6 +117,31 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
   // AbortController for the active replace-image upload
   const replaceAbortRef = useRef<AbortController | null>(null)
 
+  const refreshImageListsAfterCompletion = useCallback(
+    async ({ swallowNonAuth = false }: { swallowNonAuth?: boolean } = {}) => {
+      const results = await Promise.allSettled([loadCategories(), loadUncategorizedImages()])
+      const errors = results.flatMap((result) =>
+        result.status === 'rejected' ? [result.reason] : [],
+      )
+
+      if (errors.length === 0) {
+        return
+      }
+
+      const nonAuthError = errors.find((err) => !isAuthFailure(err))
+      if (nonAuthError) {
+        if (!swallowNonAuth) {
+          throw nonAuthError
+        }
+        return
+      }
+
+      // The server-side job already completed; keep local completion state
+      // and let the next authenticated refresh reconcile the lists.
+    },
+    [loadCategories, loadUncategorizedImages],
+  )
+
   // Client-side progress interpolation — a simple tick counter that
   // increments every 500 ms to trigger re-renders without mutating
   // processingJobs (which would restart the polling useEffect).
@@ -214,15 +239,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
       const handle = pollProcessingJob(job.id, {
         fetchStatus: fetchSourceImage,
         onCompleted: async (imageId) => {
-          try {
-            await Promise.all([loadCategories(), loadUncategorizedImages()])
-          } catch (err) {
-            if (!isAuthFailure(err)) {
-              throw err
-            }
-            // The server-side job already completed; keep local completion state
-            // and let the next authenticated refresh reconcile the lists.
-          }
+          await refreshImageListsAfterCompletion()
           setImagesVersion((v) => v + 1)
           const current = selectedImageRef.current
           if (imageId != null && current && current.id === imageId) {
@@ -397,8 +414,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
               clearInterval(ref)
               refs.delete(updated.id)
             }
-            loadCategories()
-            loadUncategorizedImages()
+            await refreshImageListsAfterCompletion({ swallowNonAuth: true })
             setImagesVersion((v) => v + 1)
           }
         } catch (err) {
@@ -428,7 +444,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
         refs.delete(id)
       }
     }
-  }, [processingJobs]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [processingJobs, refreshImageListsAfterCompletion]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Unmount-only cleanup for both polling ref maps.
   useEffect(() => {
