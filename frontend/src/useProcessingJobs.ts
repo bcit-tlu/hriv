@@ -241,7 +241,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
       const handle = pollProcessingJob(job.id, {
         fetchStatus: fetchSourceImage,
         onCompleted: async (imageId) => {
-          await refreshImageListsAfterCompletion()
+          await refreshImageListsAfterCompletionRef.current()
           setImagesVersion((v) => v + 1)
           const current = selectedImageRef.current
           if (imageId != null && current && current.id === imageId) {

@@ -283,6 +283,52 @@ describe('useProcessingJobs', () => {
 
       expect(deps.fetchSourceImage).toHaveBeenCalledTimes(2)
     })
+
+    it('uses the latest completion refresh handlers for an in-flight image job after rerender', async () => {
+      const firstLoadCategories = vi.fn().mockResolvedValue(undefined)
+      const firstLoadUncategorizedImages = vi.fn().mockResolvedValue(undefined)
+      const updatedLoadCategories = vi.fn().mockResolvedValue(undefined)
+      const updatedLoadUncategorizedImages = vi.fn().mockResolvedValue(undefined)
+
+      const initialDeps = makeDeps({
+        fetchSourceImage: vi.fn().mockResolvedValue({
+          status: 'completed',
+          progress: 100,
+          status_message: 'Done',
+          error_message: null,
+          image_id: 42,
+        }),
+        loadCategories: firstLoadCategories,
+        loadUncategorizedImages: firstLoadUncategorizedImages,
+      })
+
+      const { result, rerender } = renderHook(
+        (deps: UseProcessingJobsDeps) => useProcessingJobs(deps),
+        {
+          initialProps: initialDeps,
+        },
+      )
+
+      act(() => {
+        result.current.addProcessingJob(42, 'upload.tiff', 3000)
+      })
+
+      const updatedDeps: UseProcessingJobsDeps = {
+        ...initialDeps,
+        loadCategories: updatedLoadCategories,
+        loadUncategorizedImages: updatedLoadUncategorizedImages,
+      }
+      rerender(updatedDeps)
+
+      await act(async () => {
+        await flushMicrotasks()
+      })
+
+      expect(updatedLoadCategories).toHaveBeenCalledTimes(1)
+      expect(updatedLoadUncategorizedImages).toHaveBeenCalledTimes(1)
+      expect(firstLoadCategories).not.toHaveBeenCalled()
+      expect(firstLoadUncategorizedImages).not.toHaveBeenCalled()
+    })
   })
 
   describe('handleBulkImportStarted', () => {
