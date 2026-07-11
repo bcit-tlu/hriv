@@ -103,6 +103,10 @@ export class ApiError extends Error {
   }
 }
 
+export function isAuthFailure(err: unknown): err is ApiError {
+  return err instanceof ApiError && (err.status === 401 || err.status === 403)
+}
+
 export function userMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
     const detail = err.detail.trim()
