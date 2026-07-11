@@ -402,6 +402,62 @@ describe('useProcessingJobs', () => {
 
       expect(deps.fetchBulkImportJob).toHaveBeenCalledTimes(1)
     })
+
+    it('uses the latest completion refresh handlers for an in-flight bulk import after rerender', async () => {
+      const firstLoadCategories = vi.fn().mockResolvedValue(undefined)
+      const firstLoadUncategorizedImages = vi.fn().mockResolvedValue(undefined)
+      const updatedLoadCategories = vi.fn().mockResolvedValue(undefined)
+      const updatedLoadUncategorizedImages = vi.fn().mockResolvedValue(undefined)
+
+      const initialDeps = makeDeps({
+        fetchBulkImportJob: vi.fn().mockResolvedValue({
+          id: 5,
+          status: 'completed',
+          total_count: 10,
+          completed_count: 10,
+          failed_count: 0,
+          errors: null,
+        }),
+        loadCategories: firstLoadCategories,
+        loadUncategorizedImages: firstLoadUncategorizedImages,
+      })
+
+      const { result, rerender } = renderHook((deps: UseProcessingJobsDeps) => useProcessingJobs(deps), {
+        initialProps: initialDeps,
+      })
+
+      act(() => {
+        result.current.handleBulkImportStarted(
+          {
+            id: 5,
+            status: 'importing',
+            total_count: 10,
+            completed_count: 9,
+            failed_count: 0,
+            errors: null,
+          },
+          'archive.zip',
+          50_000,
+        )
+      })
+
+      const updatedDeps: UseProcessingJobsDeps = {
+        ...initialDeps,
+        loadCategories: updatedLoadCategories,
+        loadUncategorizedImages: updatedLoadUncategorizedImages,
+      }
+      rerender(updatedDeps)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+        await flushMicrotasks()
+      })
+
+      expect(updatedLoadCategories).toHaveBeenCalledTimes(1)
+      expect(updatedLoadUncategorizedImages).toHaveBeenCalledTimes(1)
+      expect(firstLoadCategories).not.toHaveBeenCalled()
+      expect(firstLoadUncategorizedImages).not.toHaveBeenCalled()
+    })
   })
 
   describe('dismissJob', () => {

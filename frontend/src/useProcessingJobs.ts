@@ -141,6 +141,8 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
     },
     [loadCategories, loadUncategorizedImages],
   )
+  const refreshImageListsAfterCompletionRef = useRef(refreshImageListsAfterCompletion)
+  refreshImageListsAfterCompletionRef.current = refreshImageListsAfterCompletion
 
   // Client-side progress interpolation — a simple tick counter that
   // increments every 500 ms to trigger re-renders without mutating
@@ -414,7 +416,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
               clearInterval(ref)
               refs.delete(updated.id)
             }
-            await refreshImageListsAfterCompletion({ swallowNonAuth: true })
+            await refreshImageListsAfterCompletionRef.current({ swallowNonAuth: true })
             setImagesVersion((v) => v + 1)
           }
         } catch (err) {
@@ -444,7 +446,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
         refs.delete(id)
       }
     }
-  }, [processingJobs, refreshImageListsAfterCompletion]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [processingJobs]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Unmount-only cleanup for both polling ref maps.
   useEffect(() => {
