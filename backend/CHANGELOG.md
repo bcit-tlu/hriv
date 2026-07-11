@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.3](https://github.com/bcit-tlu/hriv/compare/backend-v0.32.2...backend-v0.32.3) (2026-07-11)
+
+
+### Bug Fixes
+
+* stabilize bulk import completion and auth polling ([#873](https://github.com/bcit-tlu/hriv/issues/873)) ([#874](https://github.com/bcit-tlu/hriv/issues/874)) ([e439950](https://github.com/bcit-tlu/hriv/commit/e43995084632f8336a2bf143f0c7222d235c417e))
+
 ## [0.32.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.32.1...backend-v0.32.2) (2026-07-10)
 
 
