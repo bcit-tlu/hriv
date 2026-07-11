@@ -72,6 +72,21 @@ def _source_image_terminal_state(src: SourceImage) -> _SourceImageTerminalState:
     )
 
 
+def _coerce_utc_aware(dt: datetime, *, source_image_id: int) -> datetime:
+    """Return a timezone-aware UTC datetime, tolerating naive DB values."""
+    if dt.tzinfo is not None:
+        return dt
+
+    logger.warning(
+        "Bulk import source image has naive updated_at; coercing to UTC",
+        extra={
+            "event": "bulk_import.naive_updated_at",
+            "source_image_id": source_image_id,
+        },
+    )
+    return dt.replace(tzinfo=timezone.utc)
+
+
 async def _wait_for_source_image_terminal_state(
     source_image_id: int,
     original_filename: str,
@@ -89,7 +104,8 @@ async def _wait_for_source_image_terminal_state(
                 return _source_image_terminal_state(src)
 
             cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
-            if src.updated_at < cutoff:
+            updated_at = _coerce_utc_aware(src.updated_at, source_image_id=source_image_id)
+            if updated_at < cutoff:
                 src.status = "failed"
                 src.error_message = (
                     "Tile generation stalled during bulk import. "

@@ -823,6 +823,30 @@ async def test_wait_for_source_image_terminal_state_marks_stale_source_failed() 
     db.commit.assert_awaited_once()
 
 
+async def test_wait_for_source_image_terminal_state_handles_naive_updated_at() -> None:
+    """Naive datetimes should be coerced to UTC for stale cutoff checks."""
+    stale_time_naive = datetime.now() - timedelta(seconds=901)
+    src = SimpleNamespace(
+        id=11,
+        status="processing",
+        updated_at=stale_time_naive,
+        error_message=None,
+        status_message="Generating tiles",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=src)
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routers.bulk_import.async_session", return_value=db):
+        result = await _wait_for_source_image_terminal_state(11, "naive.jpg", stale_after_seconds=900)
+
+    assert result.status == "failed"
+    assert "stalled during bulk import" in result.error_message
+    db.commit.assert_awaited_once()
+
+
 # ── _is_image_filename edge cases ─────────────────────────────────────────
 
 

@@ -30,7 +30,8 @@ export interface PollProcessingJobCallbacks {
   onCompleted: (imageId: number | null) => void | Promise<void>
   /** Called exactly once when the backend reports `status === "failed"`. */
   onFailed: (progress: number, errorMessage: string | null) => void
-  /** Called exactly once when auth failed and retrying would be misleading. */
+  /** Called exactly once when auth failed and retrying would be misleading.
+   * If omitted, polling stops silently on 401/403. */
   onAuthFailure?: () => void
   /** Called on every poll that reports a non-terminal status. */
   onProgress: (progress: number, statusMessage: string | null) => void
