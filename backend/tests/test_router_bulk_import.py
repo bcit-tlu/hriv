@@ -11,6 +11,7 @@ import io
 import os
 import sys
 import zipfile
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -25,6 +26,7 @@ if "pyvips" not in sys.modules:
 from app.routers.bulk_import import (
     _is_image_filename,
     _process_bulk_import,
+    _wait_for_source_image_terminal_state,
     bulk_import_images,
     get_bulk_import_job,
     list_bulk_import_jobs,
@@ -37,7 +39,10 @@ from app.routers.bulk_import import (
 
 @pytest.fixture(autouse=True)
 def _patch_enqueue_bulk_import():
-    with patch("app.routers.bulk_import.enqueue_bulk_import", new_callable=AsyncMock, return_value=False):
+    with (
+        patch("app.routers.bulk_import.enqueue_bulk_import", new_callable=AsyncMock, return_value=False),
+        patch("app.routers.bulk_import.enqueue_process_source_image", new_callable=AsyncMock, return_value=False),
+    ):
         yield
 
 
@@ -754,6 +759,68 @@ async def test_process_bulk_import_counter_update_survives_db_error(tmp_path) ->
             job_id=1,
             file_entries=[("a.png", str(tmp_path / "a.png"))],
         )
+
+
+async def test_process_bulk_import_uses_queued_processing_when_available(tmp_path) -> None:
+    """Bulk import should reuse the queued single-image worker path when available."""
+    job = SimpleNamespace(
+        id=1,
+        status="pending",
+        total_count=1,
+        completed_count=1,
+        failed_count=0,
+        category_id=1,
+        errors=[],
+    )
+    src = SimpleNamespace(id=10, status="completed", error_message=None)
+
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=lambda model, pk: job if getattr(model, "__name__", "") == "BulkImportJob" else src)
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock(side_effect=lambda obj: setattr(obj, "id", 10))
+    db.execute = AsyncMock()
+
+    with (
+        patch("app.routers.bulk_import.async_session", _make_async_session_factory(db)),
+        patch("app.routers.bulk_import.enqueue_process_source_image", new_callable=AsyncMock, return_value=True) as enqueue_mock,
+        patch("app.routers.bulk_import._wait_for_source_image_terminal_state", new_callable=AsyncMock, return_value=src) as wait_mock,
+        patch("app.routers.bulk_import.process_source_image", new_callable=AsyncMock) as direct_mock,
+    ):
+        await _process_bulk_import(
+            job_id=1,
+            file_entries=[("queued.png", str(tmp_path / "queued.png"))],
+        )
+
+    enqueue_mock.assert_awaited_once_with(10)
+    wait_mock.assert_awaited_once_with(10, "queued.png")
+    direct_mock.assert_not_awaited()
+    assert job.status == "completed"
+
+
+async def test_wait_for_source_image_terminal_state_marks_stale_source_failed() -> None:
+    """A queued child image that stops updating should be marked failed."""
+    stale_time = datetime.now(timezone.utc) - timedelta(seconds=901)
+    src = SimpleNamespace(
+        id=10,
+        status="processing",
+        updated_at=stale_time,
+        error_message=None,
+        status_message="Generating tiles",
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=src)
+    db.commit = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routers.bulk_import.async_session", return_value=db):
+        result = await _wait_for_source_image_terminal_state(10, "stuck.jpg", stale_after_seconds=900)
+
+    assert result.status == "failed"
+    assert "stalled during bulk import" in result.error_message
+    assert result.status_message == "Failed"
+    db.commit.assert_awaited_once()
 
 
 # ── _is_image_filename edge cases ─────────────────────────────────────────

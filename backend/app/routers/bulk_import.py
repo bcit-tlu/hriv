@@ -13,6 +13,7 @@ import shutil
 import tempfile
 import uuid
 import zipfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
 
@@ -31,7 +32,7 @@ from ..models import BulkImportJob, Category, SourceImage, User
 from ..processing import process_source_image
 from ..schemas import MAX_NOTE_LENGTH, BulkImportJobOut, normalize_note_value
 from ..tracing import record_exception_if_server_error
-from ..worker import enqueue_bulk_import
+from ..worker import enqueue_bulk_import, enqueue_process_source_image
 
 router = APIRouter(prefix="/admin/bulk-import", tags=["admin"])
 
@@ -43,11 +44,52 @@ tracer = trace.get_tracer(__name__)
 # Maximum concurrent tile-generation tasks per bulk import
 _MAX_CONCURRENCY = 4
 _ZIP_EXTRACT_CHUNK_SIZE = 1024 * 1024
+_SOURCE_IMAGE_POLL_INTERVAL_SECONDS = 2
+_SOURCE_IMAGE_STALE_SECONDS = int(os.environ.get("SOURCE_IMAGE_STALE_SECONDS", "900"))
 
 
 def _is_image_filename(filename: str) -> bool:
     """Return True if the filename has a recognised image extension."""
     return Path(filename).suffix.lower() in IMAGE_EXTENSIONS
+
+
+async def _wait_for_source_image_terminal_state(
+    source_image_id: int,
+    original_filename: str,
+    stale_after_seconds: int = _SOURCE_IMAGE_STALE_SECONDS,
+) -> SourceImage:
+    """Wait for a queued source image to finish, failing it if progress stalls."""
+    while True:
+        async with async_session() as db:
+            src = await db.get(SourceImage, source_image_id)
+            if src is None:
+                raise RuntimeError(
+                    f"Queued source image {source_image_id} disappeared before completion"
+                )
+            if src.status in {"completed", "failed"}:
+                return src
+
+            cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
+            if src.updated_at < cutoff:
+                src.status = "failed"
+                src.error_message = (
+                    "Tile generation stalled during bulk import. "
+                    f"No progress update was recorded for more than {stale_after_seconds}s."
+                )
+                src.status_message = "Failed"
+                await db.commit()
+                logger.error(
+                    "Bulk import source image stalled while waiting for queued processing",
+                    extra={
+                        "event": "bulk_import.source_stalled",
+                        "source_image_id": source_image_id,
+                        "original_filename": original_filename,
+                        "stale_after_seconds": stale_after_seconds,
+                    },
+                )
+                return src
+
+        await asyncio.sleep(_SOURCE_IMAGE_POLL_INTERVAL_SECONDS)
 
 
 async def _process_bulk_import(
@@ -89,12 +131,22 @@ async def _process_bulk_import(
                 await db.commit()
                 await db.refresh(src)
 
-            # Process through VIPS pipeline (this acquires the semaphore).
-            # Note: bulk imports use direct processing (not arq) because the
-            # job-tracking logic below needs synchronous completion status.
+            # Process each image through the same queue-backed path used by
+            # single uploads when Redis is available. That keeps heavyweight
+            # tile generation off the request-serving pod while still letting
+            # this bulk-import coordinator observe terminal status and update
+            # per-job counters synchronously.
             async with semaphore:
                 try:
-                    await process_source_image(src.id)
+                    enqueued = await enqueue_process_source_image(src.id)
+                    if enqueued:
+                        src_check = await _wait_for_source_image_terminal_state(
+                            src.id, original_filename,
+                        )
+                    else:
+                        await process_source_image(src.id)
+                        async with async_session() as db:
+                            src_check = await db.get(SourceImage, src.id)
                 except Exception as exc:
                     span = trace.get_current_span()
                     span.record_exception(exc)
@@ -123,7 +175,6 @@ async def _process_bulk_import(
                 # process_source_image catches its own exceptions internally
                 # and sets SourceImage.status to "failed". Check for that.
                 async with async_session() as db:
-                    src_check = await db.get(SourceImage, src.id)
                     if src_check is not None and src_check.status == "failed":
                         error_entry = [{"filename": original_filename, "error": src_check.error_message or "Processing failed"}]
                         await db.execute(
