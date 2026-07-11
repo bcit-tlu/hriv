@@ -9,6 +9,8 @@
  * this helper handles the state machine for exactly one job.
  */
 
+import { isAuthFailure } from './api'
+
 export interface SourceImageStatus {
   /** Backend-reported status — any string is tolerated; only the three
    * recognized values below trigger callbacks. */
@@ -28,6 +30,8 @@ export interface PollProcessingJobCallbacks {
   onCompleted: (imageId: number | null) => void | Promise<void>
   /** Called exactly once when the backend reports `status === "failed"`. */
   onFailed: (progress: number, errorMessage: string | null) => void
+  /** Called exactly once when auth failed and retrying would be misleading. */
+  onAuthFailure?: () => void
   /** Called on every poll that reports a non-terminal status. */
   onProgress: (progress: number, statusMessage: string | null) => void
   /** Interval between polls, in milliseconds.  Defaults to 3000. */
@@ -86,7 +90,12 @@ export function pollProcessingJob(jobId: number, cb: PollProcessingJobCallbacks)
 
       cb.onProgress(src.progress, src.status_message ?? null)
       scheduleNext()
-    } catch {
+    } catch (err) {
+      if (isAuthFailure(err)) {
+        terminated = true
+        cb.onAuthFailure?.()
+        return
+      }
       // Transient error — retry on the same schedule.
       scheduleNext()
     }

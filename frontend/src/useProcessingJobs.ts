@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
-import type { ApiBulkImportJob } from './api'
+import { isAuthFailure, type ApiBulkImportJob } from './api'
 import { pollProcessingJob, type PollHandle } from './pollProcessingJob'
 import type { ImageItem } from './types'
 
@@ -72,6 +72,12 @@ export interface VisibleJobsFilter {
   imageEditOpen: boolean
   browseEditImage: unknown | null
 }
+
+const IMAGE_POLL_AUTH_FAILURE_MESSAGE =
+  'Processing status tracking stopped because your session ended or became invalid. The image may still finish processing on the server. Log back in and refresh to confirm.'
+
+const BULK_IMPORT_AUTH_FAILURE_MESSAGE =
+  'Bulk import status tracking stopped because your session ended or became invalid. The import may still complete on the server. Log back in and refresh to confirm.'
 
 export function useProcessingJobs(deps: UseProcessingJobsDeps) {
   const {
@@ -265,6 +271,20 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
             ),
           )
         },
+        onAuthFailure: () => {
+          refs.delete(job.id)
+          setProcessingJobs((prev) =>
+            prev.map((j) =>
+              j.id === job.id
+                ? {
+                    ...j,
+                    status: 'failed' as const,
+                    errorMessage: IMAGE_POLL_AUTH_FAILURE_MESSAGE,
+                  }
+                : j,
+            ),
+          )
+        },
         onProgress: (progress, statusMessage) => {
           serverProgressRef.current.set(job.id, progress)
           if (statusMessage) {
@@ -372,8 +392,22 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
             loadUncategorizedImages()
             setImagesVersion((v) => v + 1)
           }
-        } catch {
-          // ignore poll errors
+        } catch (err) {
+          if (isAuthFailure(err)) {
+            clearInterval(interval)
+            refs.delete(job.bulkImportJobId)
+            setProcessingJobs((prev) =>
+              prev.map((j) =>
+                j.bulkImportJobId === job.bulkImportJobId
+                  ? {
+                      ...j,
+                      status: 'failed' as const,
+                      errorMessage: BULK_IMPORT_AUTH_FAILURE_MESSAGE,
+                    }
+                  : j,
+              ),
+            )
+          }
         }
       }, 2000)
       refs.set(job.bulkImportJobId, interval)

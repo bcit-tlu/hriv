@@ -12,6 +12,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiError } from '../src/api'
 import { pollProcessingJob, type SourceImageStatus } from '../src/pollProcessingJob'
 
 function makeStatus(partial: Partial<SourceImageStatus> & { status: string }): SourceImageStatus {
@@ -212,6 +213,28 @@ describe('pollProcessingJob', () => {
     await vi.advanceTimersByTimeAsync(500)
     expect(fetchStatus).toHaveBeenCalledTimes(2)
     expect(onCompleted).toHaveBeenCalledWith(7)
+  })
+
+  it('stops polling and calls onAuthFailure on 401/403 responses', async () => {
+    const fetchStatus = vi.fn().mockRejectedValue(new ApiError(401, 'Unauthorized'))
+    const onAuthFailure = vi.fn()
+
+    pollProcessingJob(6, {
+      fetchStatus,
+      onCompleted: vi.fn(),
+      onFailed: vi.fn(),
+      onAuthFailure,
+      onProgress: vi.fn(),
+      pollIntervalMs: 500,
+    })
+
+    await flushMicrotasks()
+
+    expect(fetchStatus).toHaveBeenCalledTimes(1)
+    expect(onAuthFailure).toHaveBeenCalledTimes(1)
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(fetchStatus).toHaveBeenCalledTimes(1)
   })
 
   it('cancel() stops further polls after an in-flight fetch resolves', async () => {

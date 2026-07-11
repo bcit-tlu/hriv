@@ -5,7 +5,7 @@ import {
   type UseProcessingJobsDeps,
   type ProcessingJob,
 } from '../src/useProcessingJobs'
-import type { ApiBulkImportJob } from '../src/api'
+import { ApiError, type ApiBulkImportJob } from '../src/api'
 
 function makeDeps(overrides: Partial<UseProcessingJobsDeps> = {}): UseProcessingJobsDeps {
   return {
@@ -236,6 +236,46 @@ describe('useProcessingJobs', () => {
         status: 'importing',
         bulkImportJobId: 5,
       })
+    })
+
+    it('stops polling and surfaces an auth error when bulk import status returns 401', async () => {
+      const deps = makeDeps({
+        fetchBulkImportJob: vi.fn().mockRejectedValue(new ApiError(401, 'Unauthorized')),
+      })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        result.current.handleBulkImportStarted(
+          {
+            id: 5,
+            status: 'importing',
+            total_count: 10,
+            completed_count: 3,
+            failed_count: 0,
+            errors: null,
+          },
+          'archive.zip',
+          50_000,
+        )
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2_000)
+      })
+
+      expect(result.current.processingJobs[0]).toMatchObject({
+        kind: 'bulk-import',
+        status: 'failed',
+        errorMessage:
+          'Bulk import status tracking stopped because your session ended or became invalid. The import may still complete on the server. Log back in and refresh to confirm.',
+      })
+      expect(deps.fetchBulkImportJob).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+
+      expect(deps.fetchBulkImportJob).toHaveBeenCalledTimes(1)
     })
   })
 
