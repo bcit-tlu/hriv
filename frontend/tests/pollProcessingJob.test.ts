@@ -237,6 +237,30 @@ describe('pollProcessingJob', () => {
     expect(fetchStatus).toHaveBeenCalledTimes(1)
   })
 
+  it('does not reclassify a confirmed completion as auth failure when onCompleted hits 401', async () => {
+    const fetchStatus = vi.fn().mockResolvedValue(makeStatus({ status: 'completed', image_id: 9 }))
+    const onCompleted = vi.fn().mockRejectedValue(new ApiError(401, 'Unauthorized'))
+    const onAuthFailure = vi.fn()
+
+    pollProcessingJob(13, {
+      fetchStatus,
+      onCompleted,
+      onFailed: vi.fn(),
+      onAuthFailure,
+      onProgress: vi.fn(),
+      pollIntervalMs: 500,
+    })
+
+    await flushMicrotasks()
+
+    expect(fetchStatus).toHaveBeenCalledTimes(1)
+    expect(onCompleted).toHaveBeenCalledTimes(1)
+    expect(onAuthFailure).not.toHaveBeenCalled()
+
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(fetchStatus).toHaveBeenCalledTimes(1)
+  })
+
   it('cancel() stops further polls after an in-flight fetch resolves', async () => {
     const fetchStatus = vi
       .fn()

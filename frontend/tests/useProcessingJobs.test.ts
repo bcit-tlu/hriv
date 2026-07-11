@@ -7,6 +7,12 @@ import {
 } from '../src/useProcessingJobs'
 import { ApiError, type ApiBulkImportJob } from '../src/api'
 
+async function flushMicrotasks() {
+  await Promise.resolve()
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
 function makeDeps(overrides: Partial<UseProcessingJobsDeps> = {}): UseProcessingJobsDeps {
   return {
     fetchSourceImage: vi.fn().mockResolvedValue({
@@ -206,6 +212,42 @@ describe('useProcessingJobs', () => {
         id: 42,
         status: 'processing',
       })
+    })
+
+    it('marks a confirmed-complete job completed when refresh hits auth failure', async () => {
+      const deps = makeDeps({
+        fetchSourceImage: vi.fn().mockResolvedValue({
+          status: 'completed',
+          progress: 100,
+          status_message: 'Done',
+          error_message: null,
+          image_id: 42,
+        }),
+        loadCategories: vi.fn().mockRejectedValue(new ApiError(401, 'Unauthorized')),
+        loadUncategorizedImages: vi.fn().mockResolvedValue(undefined),
+      })
+      const { result } = renderHook(() => useProcessingJobs(deps))
+
+      act(() => {
+        result.current.addProcessingJob(42, 'upload.tiff', 3000)
+      })
+      await act(async () => {
+        await flushMicrotasks()
+      })
+
+      expect(deps.fetchSourceImage).toHaveBeenCalledTimes(1)
+      expect(result.current.processingJobs[0]).toMatchObject({
+        id: 42,
+        status: 'completed',
+        imageId: 42,
+        serverProgress: 100,
+      })
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000)
+      })
+
+      expect(deps.fetchSourceImage).toHaveBeenCalledTimes(1)
     })
   })
 

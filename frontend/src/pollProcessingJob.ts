@@ -69,26 +69,48 @@ export function pollProcessingJob(jobId: number, cb: PollProcessingJobCallbacks)
 
   const poll = async () => {
     if (controller.signal.aborted || terminated) return
+    let src: SourceImageStatus
     try {
-      const src = await cb.fetchStatus(jobId)
-      if (controller.signal.aborted || terminated) return
+      src = await cb.fetchStatus(jobId)
+    } catch (err) {
+      if (isAuthFailure(err)) {
+        terminated = true
+        cb.onAuthFailure?.()
+        return
+      }
+      // Transient error — retry on the same schedule.
+      scheduleNext()
+      return
+    }
 
-      if (src.status === 'completed') {
+    if (controller.signal.aborted || terminated) return
+
+    if (src.status === 'completed') {
+      try {
         // Await the terminal callback *before* flipping `terminated`
-        // so that if it rejects (e.g. a data-refresh network blip),
-        // the outer catch schedules a retry — matching the
-        // pre-extraction behaviour where the whole poll was retried
-        // on any error inside the completion handler.
+        // so that retryable refresh failures keep the pre-extraction
+        // behavior, while confirmed completions can still suppress
+        // auth failures from follow-up refresh work.
         await cb.onCompleted(src.image_id ?? null)
         terminated = true
-        return
+      } catch (err) {
+        if (controller.signal.aborted || terminated) return
+        if (isAuthFailure(err)) {
+          terminated = true
+          return
+        }
+        // Transient completion-refresh error — retry on the same schedule.
+        scheduleNext()
       }
-      if (src.status === 'failed') {
-        cb.onFailed(src.progress, src.error_message ?? null)
-        terminated = true
-        return
-      }
+      return
+    }
+    if (src.status === 'failed') {
+      cb.onFailed(src.progress, src.error_message ?? null)
+      terminated = true
+      return
+    }
 
+    try {
       cb.onProgress(src.progress, src.status_message ?? null)
       scheduleNext()
     } catch (err) {

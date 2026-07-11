@@ -214,7 +214,13 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
       const handle = pollProcessingJob(job.id, {
         fetchStatus: fetchSourceImage,
         onCompleted: async (imageId) => {
-          await Promise.all([loadCategories(), loadUncategorizedImages()])
+          try {
+            await Promise.all([loadCategories(), loadUncategorizedImages()])
+          } catch (err) {
+            if (!isAuthFailure(err)) {
+              throw err
+            }
+          }
           setImagesVersion((v) => v + 1)
           const current = selectedImageRef.current
           if (imageId != null && current && current.id === imageId) {
@@ -377,10 +383,11 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
     for (const job of processingJobs) {
       if (job.status !== 'importing' || job.bulkImportJobId == null) continue
       if (refs.has(job.bulkImportJobId)) continue
+      const bulkImportJobId = job.bulkImportJobId
 
       const interval = setInterval(async () => {
         try {
-          const updated = await fetchBulkImportJob(job.bulkImportJobId!)
+          const updated = await fetchBulkImportJob(bulkImportJobId)
           updateBulkImportJob(updated, job.filename, job.fileSize)
           if (updated.status === 'completed' || updated.status === 'failed') {
             const ref = refs.get(updated.id)
@@ -395,10 +402,10 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
         } catch (err) {
           if (isAuthFailure(err)) {
             clearInterval(interval)
-            refs.delete(job.bulkImportJobId)
+            refs.delete(bulkImportJobId)
             setProcessingJobs((prev) =>
               prev.map((j) =>
-                j.bulkImportJobId === job.bulkImportJobId
+                j.bulkImportJobId === bulkImportJobId
                   ? {
                       ...j,
                       status: 'failed' as const,
@@ -410,7 +417,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
           }
         }
       }, 2000)
-      refs.set(job.bulkImportJobId, interval)
+      refs.set(bulkImportJobId, interval)
     }
 
     for (const [id, interval] of refs) {
