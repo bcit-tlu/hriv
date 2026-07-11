@@ -518,7 +518,12 @@ async def test_process_bulk_import_normalizes_empty_note(tmp_path) -> None:
         category_id=1,
         errors=[],
     )
-    src = SimpleNamespace(id=10, status="completed", error_message=None)
+    src = SimpleNamespace(
+        id=10,
+        status="completed",
+        error_message=None,
+        status_message=None,
+    )
 
     db = AsyncMock()
 
@@ -567,7 +572,12 @@ async def test_process_bulk_import_records_failure_for_failed_source(tmp_path) -
         category_id=1,
         errors=[{"filename": "a.png", "error": "bad header"}],
     )
-    src = SimpleNamespace(id=10, status="failed", error_message="bad header")
+    src = SimpleNamespace(
+        id=10,
+        status="failed",
+        error_message="bad header",
+        status_message=None,
+    )
 
     db = AsyncMock()
 
@@ -610,7 +620,12 @@ async def test_process_bulk_import_records_failure_when_processing_raises(tmp_pa
         category_id=1,
         errors=[{"filename": "a.png", "error": "boom"}],
     )
-    src = SimpleNamespace(id=10, status="pending", error_message=None)
+    src = SimpleNamespace(
+        id=10,
+        status="pending",
+        error_message=None,
+        status_message=None,
+    )
 
     db = AsyncMock()
     db.get = AsyncMock(
@@ -656,8 +671,20 @@ async def test_process_bulk_import_partial_success(tmp_path) -> None:
     )
 
     # Two SourceImage objects; the second one is flagged as failed.
-    src_rows = {10: SimpleNamespace(id=10, status="completed", error_message=None),
-                11: SimpleNamespace(id=11, status="failed", error_message="oops")}
+    src_rows = {
+        10: SimpleNamespace(
+            id=10,
+            status="completed",
+            error_message=None,
+            status_message=None,
+        ),
+        11: SimpleNamespace(
+            id=11,
+            status="failed",
+            error_message="oops",
+            status_message=None,
+        ),
+    }
     next_id = [10]
 
     db = AsyncMock()
@@ -777,7 +804,12 @@ async def test_process_bulk_import_uses_queued_processing_when_available(tmp_pat
         category_id=1,
         errors=[],
     )
-    src = SimpleNamespace(id=10, status="completed", error_message=None)
+    src = SimpleNamespace(
+        id=10,
+        status="completed",
+        error_message=None,
+        status_message=None,
+    )
 
     db = AsyncMock()
     db.get = AsyncMock(side_effect=lambda model, pk: job if getattr(model, "__name__", "") == "BulkImportJob" else src)
