@@ -13,6 +13,7 @@ import shutil
 import tempfile
 import uuid
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated
@@ -41,7 +42,8 @@ _editor = require_role("admin", "instructor")
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
-# Maximum concurrent tile-generation tasks per bulk import
+# Maximum in-flight source-image processing tasks per bulk import.
+# Keep this aligned with worker.max_jobs to avoid surprising throughput shifts.
 _MAX_CONCURRENCY = 4
 _ZIP_EXTRACT_CHUNK_SIZE = 1024 * 1024
 _SOURCE_IMAGE_POLL_INTERVAL_SECONDS = 2
@@ -53,12 +55,29 @@ def _is_image_filename(filename: str) -> bool:
     return Path(filename).suffix.lower() in IMAGE_EXTENSIONS
 
 
+@dataclass(frozen=True)
+class _SourceImageTerminalState:
+    """Serializable source-image terminal state independent of SQLAlchemy sessions."""
+
+    status: str
+    error_message: str | None
+    status_message: str | None
+
+
+def _source_image_terminal_state(src: SourceImage) -> _SourceImageTerminalState:
+    return _SourceImageTerminalState(
+        status=src.status,
+        error_message=src.error_message,
+        status_message=src.status_message,
+    )
+
+
 async def _wait_for_source_image_terminal_state(
     source_image_id: int,
     original_filename: str,
     stale_after_seconds: int = _SOURCE_IMAGE_STALE_SECONDS,
-) -> SourceImage:
-    """Wait for a queued source image to finish, failing it if progress stalls."""
+) -> _SourceImageTerminalState:
+    """Wait for queued processing to reach a terminal source-image state."""
     while True:
         async with async_session() as db:
             src = await db.get(SourceImage, source_image_id)
@@ -67,7 +86,7 @@ async def _wait_for_source_image_terminal_state(
                     f"Queued source image {source_image_id} disappeared before completion"
                 )
             if src.status in {"completed", "failed"}:
-                return src
+                return _source_image_terminal_state(src)
 
             cutoff = datetime.now(timezone.utc) - timedelta(seconds=stale_after_seconds)
             if src.updated_at < cutoff:
@@ -87,7 +106,7 @@ async def _wait_for_source_image_terminal_state(
                         "stale_after_seconds": stale_after_seconds,
                     },
                 )
-                return src
+                return _source_image_terminal_state(src)
 
         await asyncio.sleep(_SOURCE_IMAGE_POLL_INTERVAL_SECONDS)
 
@@ -140,13 +159,18 @@ async def _process_bulk_import(
                 try:
                     enqueued = await enqueue_process_source_image(src.id)
                     if enqueued:
-                        src_check = await _wait_for_source_image_terminal_state(
+                        terminal_state = await _wait_for_source_image_terminal_state(
                             src.id, original_filename,
                         )
                     else:
                         await process_source_image(src.id)
                         async with async_session() as db:
                             src_check = await db.get(SourceImage, src.id)
+                            if src_check is None:
+                                raise RuntimeError(
+                                    f"Source image {src.id} disappeared after processing"
+                                )
+                            terminal_state = _source_image_terminal_state(src_check)
                 except Exception as exc:
                     span = trace.get_current_span()
                     span.record_exception(exc)
@@ -175,8 +199,8 @@ async def _process_bulk_import(
                 # process_source_image catches its own exceptions internally
                 # and sets SourceImage.status to "failed". Check for that.
                 async with async_session() as db:
-                    if src_check is not None and src_check.status == "failed":
-                        error_entry = [{"filename": original_filename, "error": src_check.error_message or "Processing failed"}]
+                    if terminal_state.status == "failed":
+                        error_entry = [{"filename": original_filename, "error": terminal_state.error_message or "Processing failed"}]
                         await db.execute(
                             update(BulkImportJob)
                             .where(BulkImportJob.id == job_id)
