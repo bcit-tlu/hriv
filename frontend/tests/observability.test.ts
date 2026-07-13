@@ -9,11 +9,11 @@ const mocks = vi.hoisted(() => {
 
   return {
     active: vi.fn(() => ({})),
-    addSpanProcessor: vi.fn(),
     fetchInstrumentation: vi.fn(),
     inject: vi.fn(),
-    provider: vi.fn(),
+    providerCtor: vi.fn(),
     register: vi.fn(),
+    resourceFromAttributes: vi.fn(),
     registerInstrumentations: vi.fn(),
     setLogger: vi.fn(),
     span,
@@ -69,10 +69,9 @@ vi.mock('@opentelemetry/instrumentation-fetch', () => ({
 }))
 
 vi.mock('@opentelemetry/resources', () => ({
-  Resource: class {
-    constructor(attributes: unknown) {
-      mocks.provider(attributes)
-    }
+  resourceFromAttributes: (attributes: unknown) => {
+    mocks.resourceFromAttributes(attributes)
+    return { attributes }
   },
 }))
 
@@ -83,11 +82,10 @@ vi.mock('@opentelemetry/sdk-trace-web', () => ({
     }
   },
   WebTracerProvider: class {
-    addSpanProcessor = mocks.addSpanProcessor
     register = mocks.register
 
     constructor(config: unknown) {
-      mocks.provider(config)
+      mocks.providerCtor(config)
     }
   },
 }))
@@ -139,6 +137,9 @@ describe('observability', () => {
 
     expect(vi.getTimerCount()).toBe(0)
     expect(mocks.traceExporter).toHaveBeenCalledOnce()
+    expect(mocks.providerCtor).toHaveBeenCalledWith(
+      expect.objectContaining({ spanProcessors: expect.any(Array) }),
+    )
     expect(mocks.registerInstrumentations).toHaveBeenCalledOnce()
     expect(fetch).toHaveBeenCalledWith(
       '/api/telemetry/events',
