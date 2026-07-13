@@ -650,18 +650,6 @@ async def test_delete_category_not_found() -> None:
 # ── Program-scoped student filtering ────────────────────────
 
 
-def _make_student_user(
-    programs: list | None = None, groups: list | None = None,
-) -> SimpleNamespace:
-    return SimpleNamespace(
-        id=1,
-        role="student",
-        email="s@example.com",
-        programs=programs or [],
-        groups=groups or [],
-    )
-
-
 async def test_list_categories_student_excludes_restricted() -> None:
     """Student without matching program should not see restricted categories."""
     prog = _make_program(10)
@@ -688,7 +676,7 @@ async def test_list_categories_student_excludes_restricted() -> None:
     db = AsyncMock()
     db.execute = AsyncMock(side_effect=execute_side_effect)
 
-    result = await list_categories(_make_student_user(), parent_id=None, db=db)
+    result = await list_categories(_make_user("student"), parent_id=None, db=db)
     assert len(result) == 1
     assert result[0].label == "Open"
 
@@ -716,7 +704,7 @@ async def test_list_categories_student_sees_matching_program() -> None:
     db.execute = AsyncMock(side_effect=execute_side_effect)
 
     result = await list_categories(
-        _make_student_user(programs=[_make_program(10)]),
+        _make_user("student", programs=[_make_program(10)]),
         parent_id=None,
         db=db,
     )
@@ -747,7 +735,7 @@ async def test_get_category_student_hidden() -> None:
     db.get = AsyncMock(return_value=cat)
 
     with pytest.raises(HTTPException) as exc:
-        await get_category(1, _make_student_user(), db=db)
+        await get_category(1, _make_user("student"), db=db)
     assert exc.value.status_code == 404
 
 
@@ -757,7 +745,7 @@ async def test_get_category_student_program_restricted() -> None:
     db.get = AsyncMock(return_value=cat)
 
     with pytest.raises(HTTPException) as exc:
-        await get_category(1, _make_student_user(), db=db)
+        await get_category(1, _make_user("student"), db=db)
     assert exc.value.status_code == 404
 
 
@@ -767,7 +755,7 @@ async def test_get_category_student_matching_program() -> None:
     db.get = AsyncMock(return_value=cat)
 
     result = await get_category(
-        1, _make_student_user(programs=[_make_program(10)]), db=db,
+        1, _make_user("student", programs=[_make_program(10)]), db=db,
     )
     assert result.label == "Match"
 
@@ -783,7 +771,7 @@ async def test_get_category_student_hidden_ancestor() -> None:
     db.get = AsyncMock(side_effect=mock_get)
 
     with pytest.raises(HTTPException) as exc:
-        await get_category(2, _make_student_user(), db=db)
+        await get_category(2, _make_user("student"), db=db)
     assert exc.value.status_code == 404
 
 
@@ -798,7 +786,7 @@ async def test_get_category_student_restricted_ancestor() -> None:
     db.get = AsyncMock(side_effect=mock_get)
 
     with pytest.raises(HTTPException) as exc:
-        await get_category(2, _make_student_user(programs=[_make_program(20)]), db=db)
+        await get_category(2, _make_user("student", programs=[_make_program(20)]), db=db)
     assert exc.value.status_code == 404
 
 
@@ -807,7 +795,7 @@ async def test_get_category_student_unrestricted() -> None:
     db = AsyncMock()
     db.get = AsyncMock(return_value=cat)
 
-    result = await get_category(1, _make_student_user(), db=db)
+    result = await get_category(1, _make_user("student"), db=db)
     assert result.label == "Open"
 
 
