@@ -295,7 +295,6 @@ async def test_audit_handles_invalid_jwt_gracefully() -> None:
 
     with patch("app.middleware.logger") as mock_logger:
         messages = await _invoke(mw, scope)
-        headers = _response_headers(messages)
         # Should still succeed; invalid JWT just means no user info in logs
         for msg in messages:
             if msg["type"] == "http.response.start":

@@ -1,4 +1,9 @@
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.orm import DeclarativeBase
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
@@ -61,7 +66,7 @@ _engine = None
 _async_session = None
 
 
-def get_engine() -> "AsyncEngine":
+def get_engine() -> AsyncEngine:
     """Return the async engine, creating it on first call.
 
     Lazy initialisation avoids executing ``create_async_engine`` at module
