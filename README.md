@@ -121,6 +121,8 @@ reconciliation model for both environments.
 | [docs/backup-and-disaster-recovery.md](docs/backup-and-disaster-recovery.md)         | Production backup and DR strategy, volume layout, restore order, and runbook    |
 | [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md)                               | UI behaviour spec (role gating, browse, dialogs, viewer, file drop)             |
 | [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md)                   | Release-please + Flux deploy flow                                               |
+| [docs/observability-conventions.md](docs/observability-conventions.md)               | OTel spans, telemetry ingestion, canonical auth logs, usage dashboard           |
+| [docs/synthetic-monitoring.md](docs/synthetic-monitoring.md)                         | Synthetic Playwright journey, configuration, and operator runbook               |
 | [AGENTS.md](AGENTS.md)                                                               | Contributor setup, workflow, and **Critical Invariants**                        |
 
 ## License

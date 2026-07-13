@@ -37,6 +37,12 @@ class Settings(BaseSettings):
     rate_limit_login_max: int = 5
     rate_limit_login_window: int = 60  # seconds
 
+    # Telemetry ingestion rate limiting. Batches are small and best-effort, so
+    # the window is generous; this only guards against a misbehaving or
+    # malicious client flooding the structured-log pipeline.
+    rate_limit_telemetry_max: int = 60
+    rate_limit_telemetry_window: int = 60  # seconds
+
     # OIDC / OAuth settings (Phase 3 — Identity)
     oidc_enabled: bool = False
     oidc_issuer: str = ""

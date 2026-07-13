@@ -20,6 +20,14 @@ import {
 } from '@opentelemetry/semantic-conventions'
 
 import { getToken, SESSION_ID } from './api'
+import { detectClientEnv, type ClientEnv } from './clientEnv'
+
+/**
+ * Version of the frontend telemetry event payload. Bump when the emitted
+ * field shape changes so log parsers and dashboards can branch on it. The
+ * backend records this alongside every event as `schema.version`.
+ */
+export const TELEMETRY_SCHEMA_VERSION = 1
 
 const DEFAULT_OTEL_TRACE_ENDPOINT_PROD = 'https://telemetry.ltc.bcit.ca'
 const DEFAULT_OTEL_TRACE_ENDPOINT_DEV = 'http://localhost:4318'
@@ -28,7 +36,7 @@ let _tracerProvider: WebTracerProvider | null = null
 let _initialized = false
 let _synthetic = false
 let _flushTimer: ReturnType<typeof setTimeout> | null = null
-const _pendingEvents: TelemetryEvent[] = []
+const _pendingEvents: TelemetryPayload[] = []
 
 function defaultTraceEndpoint(): string {
   const mode = import.meta.env.MODE ?? 'development'
@@ -136,7 +144,20 @@ export interface TelemetryEvent {
   page?: string
   /** Optional boolean flag identifying synthetic-monitor events. */
   synthetic?: boolean
+  /** Structured domain id for image-related events (never a metric label). */
+  image_id?: number
+  /** Structured domain id for category context (never a metric label). */
+  category_id?: number
 }
+
+/**
+ * Payload actually sent to the backend: a caller event enriched with the
+ * schema version and bounded client-environment buckets.
+ */
+type TelemetryPayload = TelemetryEvent & Partial<ClientEnv> & { schema_version: number }
+
+// Client environment is stable for the tab lifetime; compute it once lazily.
+let _clientEnv: ClientEnv | null | undefined
 
 function _flushEvents(): void {
   if (_flushTimer !== null) {
@@ -177,8 +198,14 @@ function _flushEvents(): void {
 export function emitEvent(event: TelemetryEvent): void {
   if (!isBrowser()) return
 
-  const normalized: TelemetryEvent = {
+  if (_clientEnv === undefined) {
+    _clientEnv = detectClientEnv()
+  }
+
+  const normalized: TelemetryPayload = {
+    ...(_clientEnv ?? {}),
     ...event,
+    schema_version: TELEMETRY_SCHEMA_VERSION,
     outcome: event.outcome ?? 'unknown',
     synthetic: _synthetic || event.synthetic || false,
   }

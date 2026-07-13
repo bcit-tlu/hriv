@@ -51,25 +51,19 @@ async def _get_redis() -> Redis | None:
         return None
 
 
-async def check_login_rate_limit(client_ip: str, email: str) -> int | None:
-    """Check whether *client_ip* + *email* has exceeded the login rate limit.
+async def check_rate_limit(key: str, window: int, max_attempts: int) -> int | None:
+    """Sliding-window rate-limit check for an arbitrary *key*.
 
-    The key is a composite of IP and email so that one user's successful
-    login does not reset the counter for a different user at the same IP
-    (important when the service is publicly accessible and users may be
-    behind a shared campus NAT).
-
-    Returns ``None`` if the request is allowed, otherwise returns the
-    number of seconds the client should wait (for a ``Retry-After``
-    header).
+    Records the current attempt when allowed. Returns ``None`` when the
+    request is within budget, otherwise the number of seconds the client
+    should wait (suitable for a ``Retry-After`` header). When Redis is
+    unavailable the limiter is a no-op (fail-open) so the application keeps
+    working.
     """
     redis = await _get_redis()
     if redis is None:
         return None  # limiter disabled — allow
 
-    key = f"rate:login:{client_ip}:{email}"
-    window = settings.rate_limit_login_window
-    max_attempts = settings.rate_limit_login_max
     now = time.time()
 
     try:
@@ -99,6 +93,39 @@ async def check_login_rate_limit(client_ip: str, email: str) -> int | None:
             extra={"event": "rate_limit.redis_error"},
         )
     return None
+
+
+async def check_login_rate_limit(client_ip: str, email: str) -> int | None:
+    """Check whether *client_ip* + *email* has exceeded the login rate limit.
+
+    The key is a composite of IP and email so that one user's successful
+    login does not reset the counter for a different user at the same IP
+    (important when the service is publicly accessible and users may be
+    behind a shared campus NAT).
+
+    Returns ``None`` if the request is allowed, otherwise returns the
+    number of seconds the client should wait (for a ``Retry-After``
+    header).
+    """
+    return await check_rate_limit(
+        f"rate:login:{client_ip}:{email}",
+        settings.rate_limit_login_window,
+        settings.rate_limit_login_max,
+    )
+
+
+async def check_telemetry_rate_limit(user_id: int) -> int | None:
+    """Rate-limit frontend telemetry ingestion per authenticated user.
+
+    Keyed by internal user id (from the JWT) rather than IP so that shared
+    campus NAT egress does not cause one user to throttle another. Returns
+    ``None`` when allowed, otherwise the ``Retry-After`` seconds.
+    """
+    return await check_rate_limit(
+        f"rate:telemetry:{user_id}",
+        settings.rate_limit_telemetry_window,
+        settings.rate_limit_telemetry_max,
+    )
 
 
 async def reset_login_rate_limit(client_ip: str, email: str) -> None:

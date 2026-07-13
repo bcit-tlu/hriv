@@ -23,6 +23,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from ..auth import create_access_token
+from ..auth_events import (
+    AUTH_METHOD_OIDC,
+    AUTH_OUTCOME_SUCCESS,
+    auth_event_fields,
+)
 from ..tracing import record_exception_if_server_error
 from ..database import get_db, settings as _settings
 from ..models import Program, User
@@ -447,6 +452,11 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         "email": email,
                         "role": resolved_role or "student",
                         "program_ids": [p.id for p in user.programs],
+                        **auth_event_fields(
+                            method=AUTH_METHOD_OIDC,
+                            outcome=AUTH_OUTCOME_SUCCESS,
+                            user=user,
+                        ),
                     },
                 )
             else:
@@ -481,6 +491,11 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                         "email": email,
                         "role": resolved_role,
                         "program_ids": [p.id for p in user.programs],
+                        **auth_event_fields(
+                            method=AUTH_METHOD_OIDC,
+                            outcome=AUTH_OUTCOME_SUCCESS,
+                            user=user,
+                        ),
                     },
                 )
 
