@@ -14,6 +14,8 @@ interface ReportIssueModalProps {
   onClose: () => void
 }
 
+export const AUTO_CLOSE_DELAY_MS = 2000
+
 export default function ReportIssueModal({ open, onClose }: ReportIssueModalProps) {
   const [description, setDescription] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -63,7 +65,7 @@ export default function ReportIssueModal({ open, onClose }: ReportIssueModalProp
         timerRef.current = null
         setSuccess('')
         handleClose()
-      }, 2000)
+      }, AUTO_CLOSE_DELAY_MS)
       void result
     } catch (err) {
       setError(userMessage(err, 'Failed to submit report.'))
