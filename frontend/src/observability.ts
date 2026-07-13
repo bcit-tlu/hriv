@@ -11,7 +11,7 @@ import { W3CTraceContextPropagator } from '@opentelemetry/core'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { registerInstrumentations } from '@opentelemetry/instrumentation'
 import { FetchInstrumentation } from '@opentelemetry/instrumentation-fetch'
-import { Resource } from '@opentelemetry/resources'
+import { resourceFromAttributes } from '@opentelemetry/resources'
 import { BatchSpanProcessor, WebTracerProvider } from '@opentelemetry/sdk-trace-web'
 import {
   ATTR_DEPLOYMENT_ENVIRONMENT_NAME,
@@ -84,18 +84,20 @@ export function initObservability(): void {
   const env = import.meta.env.MODE ?? 'development'
   const serviceVersion = import.meta.env.VITE_APP_VERSION ?? 'dev'
 
-  const resource = new Resource({
+  const resource = resourceFromAttributes({
     [ATTR_SERVICE_NAME]: 'hriv-frontend',
     [ATTR_SERVICE_VERSION]: serviceVersion,
     [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: env,
     'browser.tab.session_id': SESSION_ID,
   })
 
-  _tracerProvider = new WebTracerProvider({ resource })
   const traceExporter = new OTLPTraceExporter({
     url: `${traceEndpoint()}/v1/traces`,
   })
-  _tracerProvider.addSpanProcessor(new BatchSpanProcessor(traceExporter))
+  _tracerProvider = new WebTracerProvider({
+    resource,
+    spanProcessors: [new BatchSpanProcessor(traceExporter)],
+  })
   _tracerProvider.register({
     propagator: new W3CTraceContextPropagator(),
   })

@@ -9,7 +9,6 @@ const mocks = vi.hoisted(() => {
 
   return {
     active: vi.fn(() => ({})),
-    addSpanProcessor: vi.fn(),
     fetchInstrumentation: vi.fn(),
     inject: vi.fn(),
     provider: vi.fn(),
@@ -69,10 +68,9 @@ vi.mock('@opentelemetry/instrumentation-fetch', () => ({
 }))
 
 vi.mock('@opentelemetry/resources', () => ({
-  Resource: class {
-    constructor(attributes: unknown) {
-      mocks.provider(attributes)
-    }
+  resourceFromAttributes: (attributes: unknown) => {
+    mocks.provider(attributes)
+    return { attributes }
   },
 }))
 
@@ -83,7 +81,6 @@ vi.mock('@opentelemetry/sdk-trace-web', () => ({
     }
   },
   WebTracerProvider: class {
-    addSpanProcessor = mocks.addSpanProcessor
     register = mocks.register
 
     constructor(config: unknown) {
