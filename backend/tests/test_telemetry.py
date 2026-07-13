@@ -167,6 +167,33 @@ async def test_telemetry_bounds_client_environment(
     assert getattr(log, "client.touch") is True
 
 
+async def test_telemetry_bounds_non_numeric_browser_major(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A non-numeric browser major is coerced to 'other' rather than stored raw."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+
+    batch = TelemetryBatch(
+        events=[
+            TelemetryEvent(
+                event="navigation.page_changed",
+                browser_family="chrome",
+                browser_major="not-a-version",
+            )
+        ]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=1, role="student", metadata_={})
+
+    with _allow_rate_limit():
+        await ingest_telemetry_events(
+            batch=batch, request=request, user=user, x_session_id=None
+        )
+
+    log = [r for r in caplog.records if r.message == "frontend telemetry event"][0]
+    assert getattr(log, "client.browser.major") == "other"
+
+
 async def test_telemetry_synthetic_from_user_metadata(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

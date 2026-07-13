@@ -78,6 +78,18 @@ def _bounded(value: str | None, allowed: frozenset[str]) -> str | None:
     return value if value in allowed else "other"
 
 
+def _bounded_major(value: str | None) -> str | None:
+    """Return a browser major version as a bare number string, else ``"other"``.
+
+    Browser majors are inherently low-cardinality numeric strings; anything a
+    client sends that is not a short run of digits is coerced to ``"other"`` so
+    the field cannot carry arbitrary text into the analytics pipeline.
+    """
+    if value is None:
+        return None
+    return value if value.isdigit() and len(value) <= 4 else "other"
+
+
 class TelemetryEvent(BaseModel):
     """A single frontend telemetry event."""
 
@@ -179,8 +191,9 @@ async def ingest_telemetry_events(
         browser_family = _bounded(event.browser_family, _BROWSER_FAMILIES)
         if browser_family is not None:
             extra["client.browser.family"] = browser_family
-        if event.browser_major:
-            extra["client.browser.major"] = event.browser_major
+        browser_major = _bounded_major(event.browser_major)
+        if browser_major is not None:
+            extra["client.browser.major"] = browser_major
         os_family = _bounded(event.os_family, _OS_FAMILIES)
         if os_family is not None:
             extra["client.os.family"] = os_family
