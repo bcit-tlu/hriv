@@ -766,4 +766,50 @@ describe('AdminPage', () => {
     ).toBeInTheDocument()
     expect(screen.queryByText(/Failed to force-cancel task/)).not.toBeInTheDocument()
   })
+
+  it('offers a download for a completed export and lets the user view then close the task log', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    mockDownloadAdminTaskResult.mockResolvedValue(undefined)
+
+    mockFetchAdminTask.mockResolvedValue({
+      id: 1,
+      task_type: 'db_export',
+      status: 'completed',
+      progress: 100,
+      log: 'Database export finished',
+      result_filename: 'db-export.sql.gz',
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-06-19T19:00:00Z',
+      updated_at: '2026-06-19T19:02:00Z',
+    })
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+    await user.click(screen.getAllByRole('button', { name: 'Export' })[0])
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+
+    expect(await screen.findByText(/Database Export completed/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Download' }))
+    expect(mockDownloadAdminTaskResult).toHaveBeenCalledWith(1)
+
+    await user.click(screen.getByRole('button', { name: 'Details' }))
+    const dialog = await screen.findByRole('dialog', { name: /Database Export — Task #1/i })
+    expect(dialog).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Download' }))
+    expect(mockDownloadAdminTaskResult).toHaveBeenCalledTimes(2)
+
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: /Database Export — Task #1/i }),
+      ).not.toBeInTheDocument(),
+    )
+  })
 })
