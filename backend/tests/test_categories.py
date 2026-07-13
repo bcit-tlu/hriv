@@ -122,8 +122,10 @@ def _mock_db(categories: list, images: list) -> AsyncMock:
     return db
 
 
-def _make_user(role: str = "admin") -> SimpleNamespace:
-    return SimpleNamespace(id=1, role=role, email="u@example.com", programs=[], groups=[])
+def _make_user(
+    role: str = "admin", programs: list | None = None, groups: list | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(id=1, role=role, email="u@example.com", programs=programs or [], groups=groups or [])
 
 
 def _categories_test_app(user_role: str, db: AsyncMock) -> FastAPI:
