@@ -57,7 +57,7 @@ _backup_configured = Gauge(
 
 _backup_age = Gauge(
     "hriv_backup_age_seconds",
-    "Seconds since the last successful backup completed",
+    "Seconds since the last successful backup completed; +Inf if no valid successful backup exists",
     registry=_registry,
 )
 
@@ -90,10 +90,16 @@ def render_backup_metrics() -> tuple[bytes, str]:
     with _render_lock:
         _backup_configured.set(1 if configured else 0)
 
-        if not configured or marker is None:
+        if not configured:
             _backup_age.set(0)
             _backup_size.set(0)
-            _backup_outcome.set(-1 if configured else 0)
+            _backup_outcome.set(0)
+            return generate_latest(_registry), _CONTENT_TYPE
+
+        if marker is None:
+            _backup_age.set(float("inf"))
+            _backup_size.set(0)
+            _backup_outcome.set(-1)
             return generate_latest(_registry), _CONTENT_TYPE
 
         created_at_raw = marker.get("created_at")
@@ -107,7 +113,7 @@ def render_backup_metrics() -> tuple[bytes, str]:
             _backup_age.set(age)
             _backup_outcome.set(1)
         except Exception:
-            _backup_age.set(0)
+            _backup_age.set(float("inf"))
             _backup_outcome.set(0)
 
         if isinstance(archive_size, (int, float)):

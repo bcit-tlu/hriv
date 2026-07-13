@@ -88,5 +88,27 @@ async def test_not_configured_is_cached() -> None:
         content2, _ = backup_metrics.render_backup_metrics()
 
     assert b"hriv_backup_configured 0.0" in content1
+    assert b"hriv_backup_age_seconds 0.0" in content1
     assert b"hriv_backup_configured 0.0" in content2
     assert mock_download.call_count == 1
+
+
+async def test_missing_marker_reports_infinite_age() -> None:
+    """A configured backup with no successful marker must not look fresh."""
+    with patch("app.backup_metrics.get_last_success_marker", return_value=None):
+        content, _ = backup_metrics.render_backup_metrics()
+
+    assert b"hriv_backup_configured 1.0" in content
+    assert b"hriv_backup_age_seconds +Inf" in content
+    assert b"hriv_backup_last_outcome -1.0" in content
+
+
+async def test_invalid_marker_timestamp_reports_infinite_age() -> None:
+    """A marker without a valid completion time must not look fresh."""
+    marker = {"created_at": "not-a-timestamp", "archive_size": 123}
+
+    with patch("app.backup_metrics.get_last_success_marker", return_value=marker):
+        content, _ = backup_metrics.render_backup_metrics()
+
+    assert b"hriv_backup_age_seconds +Inf" in content
+    assert b"hriv_backup_last_outcome 0.0" in content

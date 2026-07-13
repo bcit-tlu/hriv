@@ -134,6 +134,10 @@ the ServiceMonitor. The frontend nginx configuration returns `404` for the
 exact `/api/metrics` path so the unauthenticated scrape endpoint is not exposed
 through the public application ingress.
 
+`hriv_backup_age_seconds` is `+Inf` when backup access is configured but no
+valid successful-backup marker exists. This keeps the age gauge in its red
+threshold state instead of presenting a missing or malformed backup as fresh.
+
 ### Alerting recommendations
 
 | Alert                   | Condition                                                      | Severity                                                                  |
