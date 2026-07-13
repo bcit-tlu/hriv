@@ -132,8 +132,9 @@ export default function App() {
   })
 
   useEffect(() => {
+    if (!currentUser) return
     emitEvent({ event: 'navigation.page_changed', action: 'navigate', outcome: 'success', page })
-  }, [page])
+  }, [page, currentUser])
 
   const [path, setPath] = useState<Category[]>([])
   const pathRef = useRef(path)

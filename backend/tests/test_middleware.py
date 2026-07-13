@@ -342,6 +342,28 @@ async def test_audit_logs_health_check_at_debug() -> None:
             mock_logger.info.assert_not_called()
 
 
+async def test_audit_logs_metrics_at_debug() -> None:
+    """The Prometheus scrape endpoint should be logged at DEBUG."""
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/metrics")
+
+    with patch("app.middleware.logger") as mock_logger:
+        await _invoke(mw, scope)
+        mock_logger.debug.assert_called_once()
+        mock_logger.info.assert_not_called()
+
+
+async def test_audit_metrics_does_not_suppress_similar_paths() -> None:
+    """A hypothetical /api/metrics_custom path must still be logged at INFO."""
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/metrics_custom")
+
+    with patch("app.middleware.logger") as mock_logger:
+        await _invoke(mw, scope)
+        mock_logger.info.assert_called_once()
+        mock_logger.debug.assert_not_called()
+
+
 async def test_audit_logs_non_health_at_info() -> None:
     """Non-health-check endpoints should still be logged at INFO."""
     mw = AuditMiddleware(app=AsyncMock())

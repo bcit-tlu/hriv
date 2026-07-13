@@ -110,3 +110,9 @@ async def test_telemetry_rejects_oversized_batch() -> None:
     events = [TelemetryEvent(event="image.view.started") for _ in range(20)]
     with pytest.raises(ValueError):
         TelemetryBatch(events=events)
+
+
+async def test_telemetry_rejects_oversized_event_name() -> None:
+    """Event names exceeding the max length are rejected during validation."""
+    with pytest.raises(ValueError):
+        TelemetryEvent(event="x" * 101, outcome="success")

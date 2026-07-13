@@ -45,7 +45,7 @@ class TelemetryEvent(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    event: str = Field(..., description="Stable, dotted event name")
+    event: str = Field(..., max_length=100, description="Stable, dotted event name")
     outcome: Literal["success", "failure", "unknown"] | None = None
     duration_ms: float | None = None
     error: str | None = Field(None, max_length=_MAX_ATTRIBUTE_LENGTH)

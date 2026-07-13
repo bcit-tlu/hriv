@@ -27,37 +27,29 @@ _marker_cache_time: float = 0.0
 _marker_cache_lock = Lock()
 
 
-def _get_cached_marker() -> tuple[dict | None, bool]:
-    """Return the cached marker and configuration flag, or raise LookupError."""
+def _fetch_marker() -> tuple[dict | None, bool]:
+    """Return the cached marker, downloading from Azure only on cache miss.
+
+    The cache lock is held during the Azure fetch so concurrent callers block
+    on the first fetch instead of all issuing simultaneous requests when the
+    TTL expires. Backup state changes daily at most, so a brief lock is fine.
+    """
+    global _marker_cache, _marker_cache_time
+
     with _marker_cache_lock:
         if _marker_cache is not None and monotonic() - _marker_cache_time < _MARKER_CACHE_TTL_SECONDS:
             return _marker_cache
-    raise LookupError("marker cache miss")
 
+        configured = True
+        marker: dict | None = None
+        try:
+            marker = get_last_success_marker()
+        except BackupRestoreNotConfiguredError:
+            configured = False
 
-def _set_cached_marker(marker: dict | None, configured: bool) -> None:
-    global _marker_cache, _marker_cache_time
-    with _marker_cache_lock:
         _marker_cache = (marker, configured)
         _marker_cache_time = monotonic()
-
-
-def _fetch_marker() -> tuple[dict | None, bool]:
-    """Download the last-success marker from Azure, caching the result."""
-    try:
-        return _get_cached_marker()
-    except LookupError:
-        pass
-
-    configured = True
-    marker: dict | None = None
-    try:
-        marker = get_last_success_marker()
-    except BackupRestoreNotConfiguredError:
-        configured = False
-
-    _set_cached_marker(marker, configured)
-    return marker, configured
+        return _marker_cache
 
 _backup_configured = Gauge(
     "hriv_backup_configured",

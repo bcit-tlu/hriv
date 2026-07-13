@@ -9,7 +9,6 @@ import pytest
 
 import app.backup_metrics as backup_metrics
 from app.backup_access import BackupRestoreNotConfiguredError
-from app.backup_metrics import render_backup_metrics
 
 
 def _clear_marker_cache() -> None:
@@ -34,7 +33,7 @@ async def test_render_backup_metrics_reads_marker() -> None:
     }
 
     with patch("app.backup_metrics.get_last_success_marker", return_value=marker):
-        content, _ = render_backup_metrics()
+        content, _ = backup_metrics.render_backup_metrics()
 
     assert b"hriv_backup_configured 1.0" in content
     assert b"hriv_backup_last_outcome 1.0" in content
@@ -47,9 +46,9 @@ async def test_marker_cache_avoids_repeated_azure_calls() -> None:
     marker = {"created_at": datetime.now(timezone.utc).isoformat(), "archive_size": 1}
 
     with patch("app.backup_metrics.get_last_success_marker", return_value=marker) as mock_download:
-        render_backup_metrics()
-        render_backup_metrics()
-        render_backup_metrics()
+        backup_metrics.render_backup_metrics()
+        backup_metrics.render_backup_metrics()
+        backup_metrics.render_backup_metrics()
 
     # Only one Azure download should occur because the cache is warm.
     assert mock_download.call_count == 1
@@ -67,16 +66,16 @@ async def test_marker_cache_refreshes_after_ttl(monkeypatch) -> None:
 
     with patch("app.backup_metrics.get_last_success_marker", return_value=marker) as mock_download:
         cache_time[0] = 0.0
-        render_backup_metrics()
+        backup_metrics.render_backup_metrics()
 
         # Still within TTL: no new download.
         cache_time[0] = 60.0
-        render_backup_metrics()
+        backup_metrics.render_backup_metrics()
         assert mock_download.call_count == 1
 
         # TTL expired: should fetch again.
         cache_time[0] = 400.0
-        render_backup_metrics()
+        backup_metrics.render_backup_metrics()
         assert mock_download.call_count == 2
 
 
@@ -86,8 +85,8 @@ async def test_not_configured_is_cached() -> None:
         "app.backup_metrics.get_last_success_marker",
         side_effect=BackupRestoreNotConfiguredError,
     ) as mock_download:
-        content1, _ = render_backup_metrics()
-        content2, _ = render_backup_metrics()
+        content1, _ = backup_metrics.render_backup_metrics()
+        content2, _ = backup_metrics.render_backup_metrics()
 
     assert b"hriv_backup_configured 0.0" in content1
     assert b"hriv_backup_configured 0.0" in content2
