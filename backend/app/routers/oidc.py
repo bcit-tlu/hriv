@@ -223,20 +223,23 @@ def _oidc_callback_error(
     merged_extra: dict[str, Any] = {
         "event": "oidc.callback_error",
         "oidc_error_code": error_code,
-        # Canonical auth fields so failed OIDC logins appear in the same login
-        # reports as local/OIDC successes. Role/id/synthetic are included only
-        # when the failing request is tied to a known user (e.g. subject
-        # mismatch); otherwise just method + failure outcome.
-        **auth_event_fields(
-            method=AUTH_METHOD_OIDC,
-            outcome=AUTH_OUTCOME_FAILURE,
-            user=user,
-        ),
     }
     if extra:
         # Caller-provided keys win so they can override ``event`` with a
         # more specific value (e.g. ``oidc.missing_claims``) when useful.
         merged_extra.update(extra)
+    # Canonical auth fields are merged LAST so a caller's ``extra`` can never
+    # override them — dashboards depend on ``auth.outcome``/``auth.method``
+    # being authoritative. Role/id/synthetic are included only when the failing
+    # request is tied to a known user (e.g. subject mismatch); otherwise just
+    # method + failure outcome.
+    merged_extra.update(
+        auth_event_fields(
+            method=AUTH_METHOD_OIDC,
+            outcome=AUTH_OUTCOME_FAILURE,
+            user=user,
+        )
+    )
     logger.error(
         "OIDC callback error (%s): %s",
         error_code,

@@ -181,18 +181,27 @@ rather than silently misreading older records.
 while remaining distinct per browser tab — giving a durable notion of a
 "session" for usage analytics without any server-side session store.
 
-**Rate limiting.** The endpoint is rate limited via the shared Redis
-sliding-window limiter (`rate_limit_telemetry_max` / `rate_limit_telemetry_window`,
-default 60 requests / 60 s). The budget is keyed by authenticated user **plus a
-digest of the per-tab `X-Session-ID`** (falling back to a user-only key when the
-header is absent). HRIV intentionally supports many students sharing a single
-account, so keying by user id alone would let independent tabs collectively
-exhaust one budget and throttle each other; the per-session key gives each tab
-its own budget. The digest bounds the key length and hides the raw session id
-(it does not reduce the number of distinct keys). Exceeding the budget
-returns `429 Too Many Requests` with a `Retry-After` header. Consistent with
-the login limiter, the limiter is **fail-open**: if Redis is unavailable the
-request is allowed rather than rejected.
+**Rate limiting.** The endpoint enforces **two** shared-Redis sliding-window
+budgets over the same window (`rate_limit_telemetry_window`, default 60 s):
+
+- a **per-tab** budget keyed by authenticated user **plus a digest of the
+  per-tab `X-Session-ID`** (`rate_limit_telemetry_max`, default 60 req/window),
+  falling back to a user-only key when the header is absent; and
+- a higher **per-user aggregate** budget keyed by user id alone
+  (`rate_limit_telemetry_user_max`, default 600 req/window).
+
+HRIV intentionally supports many students sharing a single account, so keying by
+user id alone would let independent tabs collectively exhaust one budget and
+throttle each other; the per-tab key gives each tab its own budget. The digest
+bounds the key length and hides the raw session id (it does not reduce the
+number of distinct keys). The per-user aggregate cap ensures a client that
+**rotates `X-Session-ID`** on every request cannot mint unlimited per-tab
+budgets and flood the log pipeline, while legitimately shared accounts keep
+generous headroom. Both budgets are checked per request and the **stricter**
+`Retry-After` wins. Exceeding either returns `429 Too Many Requests` with a
+`Retry-After` header. Consistent with the login limiter, the limiter is
+**fail-open**: if Redis is unavailable the request is allowed rather than
+rejected.
 
 Browser trace spans are a separate signal and are exported directly to the
 OTLP/HTTP gateway configured by `VITE_OTEL_ENDPOINT`. Production builds use the

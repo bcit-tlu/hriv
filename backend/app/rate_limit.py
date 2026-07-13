@@ -133,21 +133,47 @@ def _telemetry_rate_limit_key(user_id: int, session_id: str | None) -> str:
     return f"rate:telemetry:{user_id}:{digest}"
 
 
+def _telemetry_user_rate_limit_key(user_id: int) -> str:
+    """Build the per-user aggregate telemetry rate-limit key for *user_id*.
+
+    This budget spans every tab/session of a single account so that a client
+    rotating ``X-Session-ID`` cannot mint unlimited per-tab budgets and bypass
+    the limiter entirely.
+    """
+    return f"rate:telemetry:user:{user_id}"
+
+
 async def check_telemetry_rate_limit(
     user_id: int, session_id: str | None = None
 ) -> int | None:
-    """Rate-limit frontend telemetry ingestion per authenticated user + session.
+    """Rate-limit frontend telemetry ingestion with two budgets over one window.
 
-    Keyed by internal user id (from the JWT) plus a digest of the per-tab
-    ``X-Session-ID`` so that shared campus NAT egress and shared student accounts
-    do not cause one tab/user to throttle another. Returns ``None`` when allowed,
-    otherwise the ``Retry-After`` seconds.
+    Two sliding-window budgets are enforced:
+
+    * a **per-tab** budget keyed by internal user id + a digest of the per-tab
+      ``X-Session-ID`` (``rate_limit_telemetry_max``) so an accidental tab loop
+      throttles only that tab, and shared student accounts do not throttle each
+      other; and
+    * a higher **per-user aggregate** budget keyed by user id alone
+      (``rate_limit_telemetry_user_max``) so a client rotating ``X-Session-ID``
+      cannot create unbounded throughput.
+
+    Both are checked; the **stricter** (larger ``Retry-After``) is returned.
+    Returns ``None`` when allowed. Redis failure remains fail-open in
+    ``check_rate_limit``.
     """
-    return await check_rate_limit(
+    session_retry = await check_rate_limit(
         _telemetry_rate_limit_key(user_id, session_id),
         settings.rate_limit_telemetry_window,
         settings.rate_limit_telemetry_max,
     )
+    user_retry = await check_rate_limit(
+        _telemetry_user_rate_limit_key(user_id),
+        settings.rate_limit_telemetry_window,
+        settings.rate_limit_telemetry_user_max,
+    )
+    retries = [r for r in (session_retry, user_retry) if r is not None]
+    return max(retries) if retries else None
 
 
 async def reset_login_rate_limit(client_ip: str, email: str) -> None:

@@ -39,8 +39,13 @@ class Settings(BaseSettings):
 
     # Telemetry ingestion rate limiting. Batches are small and best-effort, so
     # the window is generous; this only guards against a misbehaving or
-    # malicious client flooding the structured-log pipeline.
+    # malicious client flooding the structured-log pipeline. Two budgets are
+    # enforced over the same window: a per-tab (user + session) limit that
+    # stops an accidental tab loop, and a higher per-user aggregate cap so a
+    # client rotating ``X-Session-ID`` cannot mint unlimited throughput while
+    # legitimately shared student accounts still retain plenty of headroom.
     rate_limit_telemetry_max: int = 60
+    rate_limit_telemetry_user_max: int = 600
     rate_limit_telemetry_window: int = 60  # seconds
 
     # OIDC / OAuth settings (Phase 3 — Identity)

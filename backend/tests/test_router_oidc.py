@@ -475,6 +475,31 @@ async def test_oidc_callback_subject_mismatch_logs_canonical_auth_fields(
     assert getattr(log, "auth.synthetic") is True
 
 
+async def test_oidc_callback_error_canonical_fields_not_overridable_by_extra() -> None:
+    """A caller's ``extra`` cannot override the canonical ``auth.*`` fields."""
+    from app.routers.oidc import _OIDC_ERR_MISSING_CLAIMS, _oidc_callback_error
+
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
+        with patch("app.routers.oidc.logger") as mock_logger:
+            _oidc_callback_error(
+                _OIDC_ERR_MISSING_CLAIMS,
+                log_detail="x",
+                extra={
+                    "event": "oidc.missing_claims",
+                    "auth.outcome": "success",  # hostile override attempt
+                    "auth.method": "local",
+                },
+            )
+
+    logged_extra = mock_logger.error.call_args.kwargs["extra"]
+    # Caller may still specialize ``event`` but never the canonical auth fields.
+    assert logged_extra["event"] == "oidc.missing_claims"
+    assert logged_extra["auth.outcome"] == "failure"
+    assert logged_extra["auth.method"] == "oidc"
+
+
 async def test_oidc_callback_error_logs_canonical_auth_fields_without_user(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
