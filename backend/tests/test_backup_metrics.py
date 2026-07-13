@@ -15,7 +15,6 @@ def _clear_marker_cache() -> None:
     """Reset the module-level marker cache in the backup_metrics module."""
     with backup_metrics._marker_cache_lock:
         backup_metrics._marker_cache = None
-        backup_metrics._marker_cache_time = 0.0
 
 
 @pytest.fixture(autouse=True)

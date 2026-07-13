@@ -248,10 +248,12 @@ class AuditMiddleware:
 # ── Maintenance-mode middleware ─────────────────────────
 
 # Paths that must remain reachable during a restore so that health
-# probes, the status endpoint, and the maintenance toggle keep working.
+# probes, the status endpoint, metrics scraping, and the maintenance toggle
+# keep working.
 _MAINTENANCE_EXEMPT: tuple[str, ...] = (
     "/api/health",
     "/api/status",
+    "/api/metrics",
     "/api/admin/maintenance",
 )
 

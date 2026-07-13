@@ -286,6 +286,11 @@ async def metrics():
     Exposes backup age, size, and outcome as gauges. Operational RED metrics
     are emitted via OpenTelemetry OTLP and stored in Prometheus via remote
     write; this endpoint covers the backup state that only changes daily.
+
+    This endpoint is intentionally unauthenticated so in-cluster Prometheus
+    scrapes work without per-pod credentials. It should only be reachable
+    inside the cluster via the ServiceMonitor; do not expose it on a public
+    ingress.
     """
     import asyncio
     from fastapi.responses import Response

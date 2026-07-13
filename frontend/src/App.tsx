@@ -131,8 +131,11 @@ export default function App() {
     return 'browse'
   })
 
+  const lastEmittedPageRef = useRef<Page | null>(null)
   useEffect(() => {
     if (!currentUser) return
+    if (lastEmittedPageRef.current === page) return
+    lastEmittedPageRef.current = page
     emitEvent({ event: 'navigation.page_changed', action: 'navigate', outcome: 'success', page })
   }, [page, currentUser])
 

@@ -103,9 +103,17 @@ async def test_middleware_allows_admin_maintenance_during_maintenance(_mock) -> 
     assert _status_from(messages) == 200
 
 
+@patch("app.middleware.is_maintenance_mode", return_value=True)
+async def test_middleware_allows_metrics_during_maintenance(_mock) -> None:
+    middleware = MaintenanceMiddleware(app=MagicMock())
+    messages = await _call_middleware(middleware, _make_scope("/api/metrics"))
+    assert _status_from(messages) == 200
+
+
 def test_all_exempt_paths_listed() -> None:
     assert "/api/health" in _MAINTENANCE_EXEMPT
     assert "/api/status" in _MAINTENANCE_EXEMPT
+    assert "/api/metrics" in _MAINTENANCE_EXEMPT
     assert "/api/admin/maintenance" in _MAINTENANCE_EXEMPT
 
 
