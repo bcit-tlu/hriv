@@ -134,8 +134,10 @@ describe('observability', () => {
     initObservability()
     initObservability()
     emitEvent({ event: 'navigation.page_changed', page: 'browse' })
+    expect(vi.getTimerCount()).toBe(1)
     window.dispatchEvent(new Event('pagehide'))
 
+    expect(vi.getTimerCount()).toBe(0)
     expect(mocks.traceExporter).toHaveBeenCalledOnce()
     expect(mocks.registerInstrumentations).toHaveBeenCalledOnce()
     expect(fetch).toHaveBeenCalledWith(
@@ -153,6 +155,8 @@ describe('observability', () => {
         },
       ],
     })
+    await vi.runAllTimersAsync()
+    expect(fetch).toHaveBeenCalledOnce()
   })
 
   it('batches events and applies explicit synthetic mode', async () => {

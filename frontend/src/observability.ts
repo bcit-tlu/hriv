@@ -137,6 +137,9 @@ export interface TelemetryEvent {
 }
 
 function _flushEvents(): void {
+  if (_flushTimer !== null) {
+    clearTimeout(_flushTimer)
+  }
   _flushTimer = null
   if (_pendingEvents.length === 0) return
 
@@ -180,7 +183,7 @@ export function emitEvent(event: TelemetryEvent): void {
 
   _pendingEvents.push(normalized)
 
-  if (!_flushTimer) {
+  if (_flushTimer === null) {
     _flushTimer = setTimeout(() => _flushEvents(), 1000)
   }
 }

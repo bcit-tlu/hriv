@@ -120,6 +120,13 @@ server {
         add_header         X-Content-Type-Options "nosniff"     always;
     }
 
+    # Prometheus scrapes the backend ClusterIP directly through its
+    # ServiceMonitor. Do not expose operational backup gauges through the
+    # public frontend ingress.
+    location = /api/metrics {
+        return 404;
+    }
+
     # Default API proxy — sane body-size cap for JSON/metadata routes.
     location /api/ {
         # Re-resolve the backend hostname on every request so that nginx

@@ -166,6 +166,10 @@ frontend_default_manifest="$(helm template test charts/frontend)"
 frontend_default_deployment="$(extract_yaml_doc "$frontend_default_manifest" "Deployment" "test-hriv-frontend")"
 assert_not_contains "$frontend_default_deployment" "strategy:" \
   "frontend deployment should omit strategy when no rollout override is needed"
+assert_contains "$frontend_default_manifest" "location = /api/metrics {" \
+  "frontend nginx should intercept the backend-only Prometheus metrics endpoint"
+assert_contains "$frontend_default_manifest" "return 404;" \
+  "frontend nginx should not expose Prometheus metrics through the public ingress"
 
 frontend_override_manifest="$(helm template test charts/frontend \
   --set scheduling.zoneAntiAffinity.enabled=true \
