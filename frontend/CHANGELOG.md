@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.35.2...frontend-v0.36.0) (2026-07-13)
+
+
+### Features
+
+* **observability:** implement HRIV frontend and backend observability ([#883](https://github.com/bcit-tlu/hriv/issues/883)) ([8b8394b](https://github.com/bcit-tlu/hriv/commit/8b8394b66af60dd23fc16824d43bc6930e52bc9e))
+
 ## [0.35.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.35.1...frontend-v0.35.2) (2026-07-11)
 
 
