@@ -232,6 +232,12 @@ bounded. Client-environment fields are reduced to small enumerated buckets and
 the backend **re-bounds** them against allowlists (coercing anything unknown to
 `other`), so a client cannot inject high-cardinality or free-text values.
 
+Client-environment values are detected once per tab (on the first telemetry
+event) and cached for the tab lifetime. In particular `viewport_bucket`
+reflects the **session-initial** viewport; a mid-session browser resize is not
+re-sampled. Treat these fields as "environment the session started in", not a
+live measurement.
+
 ### Backend enrichment
 
 The endpoint enriches each event with:
