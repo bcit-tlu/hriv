@@ -30,6 +30,7 @@ from ..backup_access import (
     BackupRestoreNotConfiguredError,
     BackupSnapshotManifestError,
     BackupSnapshotNotFoundError,
+    get_last_success_marker,
     get_snapshot_manifest,
     list_snapshots as list_snapshot_blobs,
 )
@@ -1132,6 +1133,55 @@ async def get_version(
     return {
         "backend": os.environ.get("APP_VERSION") or "dev",
         "backup": _read_backup_version(),
+    }
+
+
+@router.get("/backup-status")
+async def get_backup_status(
+    _user: Annotated[User, Depends(_admin)],
+):
+    """Return the last successful backup timestamp, age, size, and mode.
+
+    Reads the backup LAST_SUCCESS marker from Azure Blob Storage. This is
+    the JSON counterpart to the Prometheus ``/api/metrics`` backup gauges
+    and is intended for the Data and Recovery dashboard.
+    """
+    try:
+        marker = await asyncio.to_thread(get_last_success_marker)
+    except BackupRestoreNotConfiguredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if marker is None:
+        return {
+            "configured": True,
+            "available": False,
+            "age_seconds": None,
+            "created_at": None,
+            "archive_size": None,
+            "backup_mode": None,
+            "tiles_excluded": None,
+        }
+
+    created_at_str = marker.get("created_at")
+    age_seconds = None
+    try:
+        created_at = datetime.fromisoformat(str(created_at_str))
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        age_seconds = max(
+            (datetime.now(timezone.utc) - created_at).total_seconds(), 0
+        )
+    except Exception:
+        pass
+
+    return {
+        "configured": True,
+        "available": True,
+        "age_seconds": age_seconds,
+        "created_at": created_at_str,
+        "archive_size": marker.get("archive_size"),
+        "backup_mode": marker.get("backup_mode"),
+        "tiles_excluded": marker.get("tiles_excluded"),
     }
 
 

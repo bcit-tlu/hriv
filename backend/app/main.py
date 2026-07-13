@@ -16,6 +16,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .admin_ops import _ensure_tasks_dir, reconcile_stale_tasks
 from .auth import auth_settings
+from .backup_metrics import render_backup_metrics
 from .database import get_async_session, get_db, settings
 from .logging_config import setup_logging
 from .maintenance import is_maintenance_mode
@@ -274,3 +275,17 @@ async def storage_health():
 async def status():
     """Public endpoint for the frontend to check maintenance mode."""
     return {"maintenance": is_maintenance_mode(), "version": app.version}
+
+
+@app.get("/api/metrics")
+async def metrics():
+    """Prometheus metrics endpoint (backup status only at this stage).
+
+    Exposes backup age, size, and outcome as gauges. Operational RED metrics
+    are emitted via OpenTelemetry OTLP and stored in Prometheus via remote
+    write; this endpoint covers the backup state that only changes daily.
+    """
+    from fastapi.responses import Response
+
+    content, media_type = render_backup_metrics()
+    return Response(content=content, media_type=media_type)

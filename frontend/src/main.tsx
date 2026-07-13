@@ -4,6 +4,9 @@ import ColorModeProvider from './ThemeContext'
 import AuthProvider from './AuthContext'
 import MaintenanceBanner from './components/MaintenanceBanner'
 import App from './App'
+import { initObservability } from './observability'
+
+initObservability()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

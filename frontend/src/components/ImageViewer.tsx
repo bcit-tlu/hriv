@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
+import { emitEvent } from '../observability'
 import CanvasOverlay from './CanvasOverlay'
 import type { CanvasAnnotation } from './CanvasOverlay'
 import {
@@ -84,6 +85,7 @@ export default function ImageViewer({
   const onClearOverlaysRef = useRef(onClearOverlays)
   const overlaysLockedRef = useRef(overlaysLocked)
   const canEditContentRef = useRef(canEditContent)
+  const viewStartTimeRef = useRef<number | null>(null)
   const updateLockUiRef = useRef<(() => void) | null>(null)
   const updateCanvasEditUiRef = useRef<((active: boolean) => void) | null>(null)
   const updateMagnificationRef = useRef<(() => void) | null>(null)
@@ -172,6 +174,9 @@ export default function ImageViewer({
 
   useEffect(() => {
     if (!containerRef.current) return
+
+    viewStartTimeRef.current = performance.now()
+    emitEvent({ event: 'image.view.started', action: 'view' })
 
     viewerRef.current = OpenSeadragon({
       element: containerRef.current,
@@ -614,6 +619,15 @@ export default function ImageViewer({
 
     // Restore viewport state and initial overlays after the image has loaded
     viewer.addOnceHandler('open', () => {
+      const duration = viewStartTimeRef.current
+        ? Math.round(performance.now() - viewStartTimeRef.current)
+        : undefined
+      emitEvent({
+        event: 'image.view.ready',
+        action: 'view',
+        outcome: 'success',
+        duration_ms: duration,
+      })
       if (initialViewport) {
         viewer.viewport.zoomTo(initialViewport.zoom, undefined, true)
         viewer.viewport.panTo(new OpenSeadragon.Point(initialViewport.x, initialViewport.y), true)
@@ -630,6 +644,18 @@ export default function ImageViewer({
         updateLockIcon()
       }
       updateMagnification()
+    })
+
+    viewer.addHandler('open-failed', () => {
+      const duration = viewStartTimeRef.current
+        ? Math.round(performance.now() - viewStartTimeRef.current)
+        : undefined
+      emitEvent({
+        event: 'image.view.failed',
+        action: 'view',
+        outcome: 'failure',
+        duration_ms: duration,
+      })
     })
 
     // Reset rotation to 0 when the home button is clicked

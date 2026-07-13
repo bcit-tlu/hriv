@@ -17,7 +17,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import pyvips
-from opentelemetry import trace
+from opentelemetry import metrics, trace
 from opentelemetry.trace import StatusCode
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +35,42 @@ from .tile_provenance import (
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+
+_meter = metrics.get_meter(__name__)
+_processing_started_counter = _meter.create_counter(
+    "hriv.image_processing.started",
+    description="Number of image processing jobs started",
+    unit="1",
+)
+_processing_completed_counter = _meter.create_counter(
+    "hriv.image_processing.completed",
+    description="Number of image processing jobs completed",
+    unit="1",
+)
+_processing_duration_histogram = _meter.create_histogram(
+    "hriv.image_processing.duration",
+    description="Duration of image processing jobs",
+    unit="s",
+)
+
+
+def _record_processing_started(task_type: str) -> None:
+    _processing_started_counter.add(1, {"task_type": task_type})
+
+
+def _record_processing_finished(
+    task_type: str, duration_s: float, success: bool,
+) -> None:
+    _processing_completed_counter.add(
+        1,
+        {"task_type": task_type, "outcome": "success" if success else "failure"},
+    )
+    _processing_duration_histogram.record(duration_s, {"task_type": task_type})
+    try:
+        metrics.get_meter_provider().force_flush()
+    except Exception:
+        # Metric export is best-effort; never block tile generation completion.
+        pass
 
 
 # ── Pyramidal image detection ─────────────────────────────
@@ -449,6 +485,7 @@ async def process_source_image(source_image_id: int) -> None:
                 "file_size": getattr(src, "file_size", None),
             },
         )
+        _record_processing_started("process")
         t_start = time.monotonic()
 
         span.set_attribute("source_image.filename", src.original_filename)
@@ -636,6 +673,7 @@ async def process_source_image(source_image_id: int) -> None:
                 await db.commit()
 
             duration_ms = round((time.monotonic() - t_start) * 1000)
+            _record_processing_finished("process", duration_ms / 1000, True)
             logger.info(
                 "Processing completed successfully",
                 extra={
@@ -652,6 +690,7 @@ async def process_source_image(source_image_id: int) -> None:
             span.record_exception(exc)
             span.set_status(StatusCode.ERROR, str(exc))
             duration_ms = round((time.monotonic() - t_start) * 1000)
+            _record_processing_finished("process", duration_ms / 1000, False)
             logger.exception(
                 "Failed to process source image",
                 extra={
@@ -730,6 +769,7 @@ async def process_replace_image(
                 "original_filename": src.original_filename,
             },
         )
+        _record_processing_started("replace")
         t_start = time.monotonic()
 
         try:
@@ -917,6 +957,7 @@ async def process_replace_image(
                 )
 
             duration_ms = round((time.monotonic() - t_start) * 1000)
+            _record_processing_finished("replace", duration_ms / 1000, True)
             logger.info(
                 "Replacement processing completed",
                 extra={
@@ -932,6 +973,7 @@ async def process_replace_image(
             span.record_exception(exc)
             span.set_status(StatusCode.ERROR, str(exc))
             duration_ms = round((time.monotonic() - t_start) * 1000)
+            _record_processing_finished("replace", duration_ms / 1000, False)
             logger.exception(
                 "Failed to process replacement image",
                 extra={
@@ -1173,6 +1215,9 @@ async def rebuild_source_image_tiles(
         settings.tiles_dir, f".rebuild-{src.id}-{uuid4().hex}",
     )
 
+    _record_processing_started("rebuild")
+    t_start = time.monotonic()
+
     try:
         with tracer.start_as_current_span("rebuild_generate_tiles"):
             dzi_rel, thumb_rel, img_width, img_height = await asyncio.to_thread(
@@ -1221,6 +1266,9 @@ async def rebuild_source_image_tiles(
         img.version = img.version + 1
 
     await session.commit()
+
+    duration_ms = round((time.monotonic() - t_start) * 1000)
+    _record_processing_finished("rebuild", duration_ms / 1000, True)
 
     logger.info(
         "Rebuilt tiles for source image",

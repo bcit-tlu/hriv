@@ -98,7 +98,8 @@ INSERT INTO users (id, name, email, password_hash, role, last_access, metadata)
 VALUES
   (1, 'Haruki Tanaka',      'admin@example.ca',   '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'admin',      NULL, '{}'),
   (2, 'Carlos Henrique Souza',   'instructor@example.ca',     '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'instructor', NULL, '{}'),
-  (3, 'Mira Patel',  'student@example.ca', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    NULL, '{}')
+  (3, 'Mira Patel',  'student@example.ca', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    NULL, '{}'),
+  (4, 'Synthetic Student',  'synthetic.student@example.ca', '$2b$12$bD0vGhiySbmr6aqbp.fjeuF9VTVMaGiKOujX2aOoTIRxyjsNc4b2C', 'student',    NULL, '{"synthetic": true}')
 ON CONFLICT (id) DO NOTHING;
 
 SELECT setval('users_id_seq', GREATEST((SELECT MAX(id) FROM users), 1));
@@ -109,5 +110,6 @@ INSERT INTO user_programs (user_id, program_id)
 VALUES
   (1, 1),  -- admin -> Administration
   (2, 2),  -- instructor -> Digital Design
-  (3, 2)   -- student -> Digital Design
+  (3, 2),  -- student -> Digital Design
+  (4, 2)   -- synthetic student -> Digital Design
 ON CONFLICT (user_id, program_id) DO NOTHING;
