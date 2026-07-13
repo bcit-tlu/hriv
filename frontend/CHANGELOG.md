@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.36.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.36.0...frontend-v0.36.1) (2026-07-13)
+
+
+### Bug Fixes
+
+* **frontend:** align observability code with OpenTelemetry JS SDK v2.x ([#889](https://github.com/bcit-tlu/hriv/issues/889)) ([e96d20b](https://github.com/bcit-tlu/hriv/commit/e96d20b24e4b79f49c6132b2b575b46a34fe5adc))
+
 ## [0.36.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.35.2...frontend-v0.36.0) (2026-07-13)
 
 
