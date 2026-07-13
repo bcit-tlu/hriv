@@ -188,7 +188,8 @@ digest of the per-tab `X-Session-ID`** (falling back to a user-only key when the
 header is absent). HRIV intentionally supports many students sharing a single
 account, so keying by user id alone would let independent tabs collectively
 exhaust one budget and throttle each other; the per-session key gives each tab
-its own budget while never storing the raw session id. Exceeding the budget
+its own budget. The digest bounds the key length and hides the raw session id
+(it does not reduce the number of distinct keys). Exceeding the budget
 returns `429 Too Many Requests` with a `Retry-After` header. Consistent with
 the login limiter, the limiter is **fail-open**: if Redis is unavailable the
 request is allowed rather than rejected.

@@ -122,8 +122,9 @@ def _telemetry_rate_limit_key(user_id: int, session_id: str | None) -> str:
     one internal user id), so keying by user id alone would let independent tabs
     collectively exhaust one budget and throttle each other. When an
     ``X-Session-ID`` is present it is folded into the key via a short SHA-256
-    digest (bounding cardinality and never storing the raw client value), giving
-    each tab its own budget. When absent we fall back to a user-only key.
+    digest (bounding the key length and hiding the raw client value, not the
+    number of distinct keys), giving each tab its own budget. When absent we fall
+    back to a user-only key.
     """
     session = (session_id or "").strip()
     if not session:

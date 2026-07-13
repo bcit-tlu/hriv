@@ -428,6 +428,77 @@ async def test_oidc_callback_subject_mismatch() -> None:
     _assert_oidc_error_redirect(resp, "subject_mismatch", "http://localhost:3000")
 
 
+async def test_oidc_callback_subject_mismatch_logs_canonical_auth_fields(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A subject-mismatch failure logs canonical auth fields for the known user."""
+    request = MagicMock()
+    mock_client = AsyncMock()
+    mock_client.authorize_access_token = AsyncMock(return_value={
+        "userinfo": {
+            "sub": "new-sub",
+            "email": "user@example.ca",
+            "name": "User",
+            "groups": [],
+            "email_verified": True,
+        },
+    })
+
+    mock_result_empty = MagicMock()
+    mock_result_empty.scalars.return_value.first.return_value = None
+    existing_user = SimpleNamespace(
+        id=2, name="User", email="user@example.ca",
+        oidc_subject="different-sub", role="instructor",
+        programs=[], metadata_={"synthetic": True},
+    )
+    mock_result_found = MagicMock()
+    mock_result_found.scalars.return_value.first.return_value = existing_user
+
+    db = AsyncMock()
+    db.execute = AsyncMock(side_effect=[mock_result_empty, mock_result_found])
+
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_enabled = True
+        mock_settings.oidc_trust_email = True
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
+        with patch("app.routers.oidc.oauth") as mock_oauth:
+            mock_oauth.create_client.return_value = mock_client
+            with caplog.at_level("ERROR", logger="app.routers.oidc"):
+                await oidc_callback(request, db)
+
+    log = [r for r in caplog.records if r.message.startswith("OIDC callback error")][0]
+    assert getattr(log, "auth.method") == "oidc"
+    assert getattr(log, "auth.outcome") == "failure"
+    assert getattr(log, "auth.user_id") == 2
+    assert getattr(log, "auth.role") == "instructor"
+    assert getattr(log, "auth.synthetic") is True
+
+
+async def test_oidc_callback_error_logs_canonical_auth_fields_without_user(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failure with no known user still logs method/outcome (no user id/role)."""
+    request = MagicMock()
+    db = AsyncMock()
+
+    with patch("app.routers.oidc._settings") as mock_settings:
+        mock_settings.oidc_enabled = True
+        mock_settings.oidc_post_login_redirect = "http://localhost:3000"
+        mock_settings.cors_origins = "*"
+        with patch("app.routers.oidc.oauth") as mock_oauth:
+            mock_oauth.create_client.return_value = None
+            with caplog.at_level("ERROR", logger="app.routers.oidc"):
+                await oidc_callback(request, db)
+
+    log = [r for r in caplog.records if r.message.startswith("OIDC callback error")][0]
+    assert getattr(log, "auth.method") == "oidc"
+    assert getattr(log, "auth.outcome") == "failure"
+    assert getattr(log, "auth.synthetic") is False
+    assert not hasattr(log, "auth.user_id")
+    assert not hasattr(log, "auth.role")
+
+
 async def test_oidc_callback_no_redirect_configured() -> None:
     request = MagicMock()
     mock_client = AsyncMock()

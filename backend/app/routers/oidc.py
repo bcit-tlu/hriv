@@ -25,7 +25,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import create_access_token
 from ..auth_events import (
     AUTH_METHOD_OIDC,
+    AUTH_OUTCOME_FAILURE,
     AUTH_OUTCOME_SUCCESS,
+    AuthUser,
     auth_event_fields,
 )
 from ..tracing import record_exception_if_server_error
@@ -196,6 +198,7 @@ def _oidc_callback_error(
     *,
     log_detail: str,
     extra: dict[str, Any] | None = None,
+    user: AuthUser | None = None,
 ) -> HTMLResponse:
     """Redirect the browser to the frontend with ``#oidc_error=<code>``.
 
@@ -220,6 +223,15 @@ def _oidc_callback_error(
     merged_extra: dict[str, Any] = {
         "event": "oidc.callback_error",
         "oidc_error_code": error_code,
+        # Canonical auth fields so failed OIDC logins appear in the same login
+        # reports as local/OIDC successes. Role/id/synthetic are included only
+        # when the failing request is tied to a known user (e.g. subject
+        # mismatch); otherwise just method + failure outcome.
+        **auth_event_fields(
+            method=AUTH_METHOD_OIDC,
+            outcome=AUTH_OUTCOME_FAILURE,
+            user=user,
+        ),
     }
     if extra:
         # Caller-provided keys win so they can override ``event`` with a
@@ -276,6 +288,10 @@ async def oidc_login(request: Request):
                 "event": "oidc.provider_unreachable",
                 "metadata_url": metadata_url,
                 "issuer": _settings.oidc_issuer,
+                **auth_event_fields(
+                    method=AUTH_METHOD_OIDC,
+                    outcome=AUTH_OUTCOME_FAILURE,
+                ),
             },
         )
         raise HTTPException(
@@ -473,6 +489,7 @@ async def oidc_callback(request: Request, db: AsyncSession = Depends(get_db)):
                             "existing_sub": user.oidc_subject,
                             "incoming_sub": sub,
                         },
+                        user=user,
                     )
                 if not user.oidc_subject:
                     user.oidc_subject = sub
