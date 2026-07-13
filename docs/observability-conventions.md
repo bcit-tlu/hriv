@@ -129,6 +129,53 @@ root HTTP span. To query them:
 | OIDC provider down      | `oidc.error_code = PROVIDER_UNREACHABLE` > 0 for 2 min         | Critical                                                                  |
 | Background task failure | Span error in `_process_bulk_import` or `process_source_image` | Warning                                                                   |
 
+## Frontend Telemetry Ingestion
+
+Frontend usage events (image viewer lifecycle, page navigation) are **not**
+sent directly to the OpenTelemetry collector. Instead, the browser batches them
+and POSTs them to the authenticated backend endpoint:
+
+```
+POST /api/telemetry/events
+Authorization: Bearer <JWT>
+X-Session-ID: <tab-session-id>
+Content-Type: application/json
+
+{"events": [{"event": "image.view.ready", "outcome": "success", ...}]}
+```
+
+The endpoint validates each event name against an allowlist and emits a
+structured log that the OTel logging handler forwards to the collector. This
+keeps the collector endpoint off the public internet and lets the backend
+enforce auth, schema validation, and payload-size limits.
+
+### Allowed event names
+
+- `image.view.started`
+- `image.view.ready`
+- `image.view.failed`
+- `navigation.page_changed`
+
+### Event fields
+
+| Field         | Type                                  | Purpose                                                |
+| ------------- | ------------------------------------- | ------------------------------------------------------ |
+| `event`       | string (required)                     | One of the allowed event names above                   |
+| `outcome`     | `"success"`, `"failure"`, `"unknown"` | Result of the operation                                |
+| `duration_ms` | number                                | End-to-end duration in milliseconds, when meaningful   |
+| `action`      | string                                | Low-cardinality action label (e.g. `view`, `navigate`) |
+| `page`        | string                                | Low-cardinality page identifier for navigation events  |
+| `error`       | string                                | High-level error category, never free-text or PII      |
+| `synthetic`   | boolean                               | True for Playwright synthetic-monitoring journeys      |
+
+### Backend enrichment
+
+The endpoint enriches each event with:
+
+- `user.id` and `user.role` from the authenticated JWT
+- `browser.tab.session_id` from the `X-Session-ID` header
+- `trace.parent` from the incoming `traceparent` header, if present
+
 ## Structured Logging vs Tracing
 
 HRIV uses **both** structured logs and distributed traces. They serve different

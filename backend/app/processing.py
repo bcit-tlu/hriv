@@ -66,11 +66,6 @@ def _record_processing_finished(
         {"task_type": task_type, "outcome": "success" if success else "failure"},
     )
     _processing_duration_histogram.record(duration_s, {"task_type": task_type})
-    try:
-        metrics.get_meter_provider().force_flush()
-    except Exception:
-        # Metric export is best-effort; never block tile generation completion.
-        pass
 
 
 # ── Pyramidal image detection ─────────────────────────────

@@ -464,8 +464,8 @@
       {
         "current": {
           "selected": false,
-          "text": "Prometheus",
-          "value": "${prometheus}"
+          "text": "hriv-backend",
+          "value": "hriv-backend"
         },
         "hide": 0,
         "includeAll": false,

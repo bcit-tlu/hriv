@@ -155,6 +155,7 @@ def get_last_success_marker() -> dict | None:
 
 
 def list_snapshots() -> list[dict]:
+    """Return all snapshot archives available in Azure Blob Storage."""
     container = _container_client()
     prefix = _backup_prefix()
     snapshots: list[dict] = []

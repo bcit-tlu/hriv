@@ -7,12 +7,10 @@ import {
   type Span,
 } from '@opentelemetry/api'
 import { W3CTraceContextPropagator } from '@opentelemetry/core'
-import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http'
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http'
 import { registerInstrumentations } from '@opentelemetry/instrumentation'
 import { FetchInstrumentation } from '@opentelemetry/instrumentation-fetch'
 import { Resource } from '@opentelemetry/resources'
-import { BatchLogRecordProcessor, LoggerProvider } from '@opentelemetry/sdk-logs'
 import { BatchSpanProcessor, WebTracerProvider } from '@opentelemetry/sdk-trace-web'
 import {
   ATTR_DEPLOYMENT_ENVIRONMENT_NAME,
@@ -20,27 +18,39 @@ import {
   ATTR_SERVICE_VERSION,
 } from '@opentelemetry/semantic-conventions'
 
-import { SESSION_ID } from './api'
+import { getToken, SESSION_ID } from './api'
 
-const DEFAULT_OTEL_ENDPOINT_PROD = 'https://telemetry.ltc.bcit.ca'
-const DEFAULT_OTEL_ENDPOINT_DEV = 'http://localhost:4318'
+const DEFAULT_OTEL_TRACE_ENDPOINT_PROD = 'https://telemetry.ltc.bcit.ca'
+const DEFAULT_OTEL_TRACE_ENDPOINT_DEV = 'http://localhost:4318'
 
-let _loggerProvider: LoggerProvider | null = null
 let _tracerProvider: WebTracerProvider | null = null
 let _initialized = false
 let _synthetic = false
+let _flushTimer: ReturnType<typeof setTimeout> | null = null
+const _pendingEvents: TelemetryEvent[] = []
 
-function defaultEndpoint(): string {
+function defaultTraceEndpoint(): string {
   const mode = import.meta.env.MODE ?? 'development'
-  return mode === 'production' ? DEFAULT_OTEL_ENDPOINT_PROD : DEFAULT_OTEL_ENDPOINT_DEV
+  return mode === 'production' ? DEFAULT_OTEL_TRACE_ENDPOINT_PROD : DEFAULT_OTEL_TRACE_ENDPOINT_DEV
 }
 
-function endpoint(): string {
-  return import.meta.env.VITE_OTEL_ENDPOINT?.replace(/\/$/, '') ?? defaultEndpoint()
+function traceEndpoint(): string {
+  return import.meta.env.VITE_OTEL_ENDPOINT?.replace(/\/$/, '') ?? defaultTraceEndpoint()
+}
+
+function apiUrl(): string {
+  return import.meta.env.VITE_API_URL ?? ''
 }
 
 function isBrowser(): boolean {
   return typeof window !== 'undefined'
+}
+
+function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = { 'X-Session-ID': SESSION_ID }
+  const token = getToken()
+  if (token) h['Authorization'] = `Bearer ${token}`
+  return h
 }
 
 /**
@@ -80,16 +90,9 @@ export function initObservability(): void {
     'browser.tab.session_id': SESSION_ID,
   })
 
-  _loggerProvider = new LoggerProvider({ resource })
-  const logExporter = new OTLPLogExporter({
-    url: `${endpoint()}/v1/logs`,
-    headers: {},
-  })
-  _loggerProvider.addLogRecordProcessor(new BatchLogRecordProcessor(logExporter))
-
   _tracerProvider = new WebTracerProvider({ resource })
   const traceExporter = new OTLPTraceExporter({
-    url: `${endpoint()}/v1/traces`,
+    url: `${traceEndpoint()}/v1/traces`,
   })
   _tracerProvider.addSpanProcessor(new BatchSpanProcessor(traceExporter))
   _tracerProvider.register({
@@ -99,9 +102,9 @@ export function initObservability(): void {
   const fetchConfig: { clearTimingResources: boolean; propagateTraceHeaderCorsUrls?: RegExp[] } = {
     clearTimingResources: true,
   }
-  const apiUrl = import.meta.env.VITE_API_URL
-  if (apiUrl) {
-    fetchConfig.propagateTraceHeaderCorsUrls = [new RegExp('^' + escapeRegExp(apiUrl))]
+  const baseUrl = apiUrl()
+  if (baseUrl) {
+    fetchConfig.propagateTraceHeaderCorsUrls = [new RegExp('^' + escapeRegExp(baseUrl))]
   }
 
   registerInstrumentations({
@@ -124,48 +127,56 @@ export interface TelemetryEvent {
   error?: string
   /** Low-cardinality action being performed (e.g. login, navigate, view). */
   action?: string
+  /** Low-cardinality page identifier for navigation events. */
+  page?: string
   /** Optional boolean flag identifying synthetic-monitor events. */
   synthetic?: boolean
-  /** Other low-cardinality attributes explicitly allowed by the schema. */
-  [key: string]: unknown
+}
+
+function _flushEvents(): void {
+  _flushTimer = null
+  if (_pendingEvents.length === 0) return
+
+  const events = _pendingEvents.splice(0, _pendingEvents.length)
+  const base = apiUrl()
+  if (!base) return
+
+  fetch(`${base}/api/telemetry/events`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ events }),
+    keepalive: true,
+  }).catch(() => {
+    // Telemetry delivery is best-effort; never block the UI.
+  })
 }
 
 /**
- * Emit a structured usage/operational event as an OTLP log record.
+ * Emit a structured usage/operational event.
  *
- * Events are sent to the public OpenTelemetry collector and forwarded to
- * Loki. The backend is the authoritative source for identity: this function
- * only includes the session ID and any active trace context. Do not pass
- * user IDs, email addresses, free-text search terms, or image filenames here.
+ * Events are batched and sent to an authenticated backend ingestion endpoint
+ * so the backend can validate the schema, enforce auth, and forward the event
+ * to the collector. The backend is the authoritative source for identity: do
+ * not pass user IDs, email addresses, free-text search terms, or image filenames
+ * here.
  */
 export function emitEvent(event: TelemetryEvent): void {
-  if (!_loggerProvider) return
+  if (!isBrowser()) return
 
-  const logger = _loggerProvider.getLogger('hriv-frontend', '1.0.0')
-  const activeSpan = trace.getActiveSpan()
-  const traceId = activeSpan?.spanContext().traceId
-  const spanId = activeSpan?.spanContext().spanId
-
-  const isError = event.outcome === 'failure'
-  const attributes: Record<string, string | number | boolean> = {
-    'event.name': event.event,
-    'event.outcome': event.outcome ?? 'unknown',
-    'browser.tab.session_id': SESSION_ID,
+  const normalized: TelemetryEvent = {
+    ...event,
+    outcome: event.outcome ?? 'unknown',
+    synthetic: _synthetic || event.synthetic || false,
   }
 
-  if (traceId) attributes['trace.id'] = traceId
-  if (spanId) attributes['trace.span_id'] = spanId
-  if (event.action) attributes['event.action'] = event.action
-  if (event.duration_ms !== undefined) attributes['event.duration_ms'] = event.duration_ms
-  if (_synthetic || event.synthetic) attributes['event.synthetic'] = true
-  if (isError && event.error) attributes['error.type'] = event.error
+  _pendingEvents.push(normalized)
 
-  logger.emit({
-    severityNumber: isError ? 17 : 9, // ERROR : INFO
-    severityText: isError ? 'ERROR' : 'INFO',
-    body: JSON.stringify(event),
-    attributes,
-  })
+  if (!_flushTimer) {
+    _flushTimer = setTimeout(() => _flushEvents(), 1000)
+  }
 }
 
 /**
