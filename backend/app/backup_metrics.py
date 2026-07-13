@@ -8,6 +8,8 @@ once per day.
 
 from datetime import datetime, timezone
 from threading import Lock
+from time import monotonic
+from typing import Tuple
 
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
 
@@ -15,6 +17,47 @@ from .backup_access import BackupRestoreNotConfiguredError, get_last_success_mar
 
 _registry = CollectorRegistry()
 _render_lock = Lock()
+
+# Cache the Azure marker lookup so Prometheus scrapes (default 60s) do not
+# hit Azure Blob Storage on every request. The backup job only runs daily, so
+# a 5-minute TTL is a safe trade-off between freshness and Azure API load.
+_MARKER_CACHE_TTL_SECONDS = 300
+_marker_cache: Tuple[dict | None, bool] | None = None
+_marker_cache_time: float = 0.0
+_marker_cache_lock = Lock()
+
+
+def _get_cached_marker() -> tuple[dict | None, bool]:
+    """Return the cached marker and configuration flag, or raise LookupError."""
+    with _marker_cache_lock:
+        if _marker_cache is not None and monotonic() - _marker_cache_time < _MARKER_CACHE_TTL_SECONDS:
+            return _marker_cache
+    raise LookupError("marker cache miss")
+
+
+def _set_cached_marker(marker: dict | None, configured: bool) -> None:
+    global _marker_cache, _marker_cache_time
+    with _marker_cache_lock:
+        _marker_cache = (marker, configured)
+        _marker_cache_time = monotonic()
+
+
+def _fetch_marker() -> tuple[dict | None, bool]:
+    """Download the last-success marker from Azure, caching the result."""
+    try:
+        return _get_cached_marker()
+    except LookupError:
+        pass
+
+    configured = True
+    marker: dict | None = None
+    try:
+        marker = get_last_success_marker()
+    except BackupRestoreNotConfiguredError:
+        configured = False
+
+    _set_cached_marker(marker, configured)
+    return marker, configured
 
 _backup_configured = Gauge(
     "hriv_backup_configured",
@@ -47,18 +90,12 @@ _CONTENT_TYPE = CONTENT_TYPE_LATEST
 def render_backup_metrics() -> tuple[bytes, str]:
     """Return Prometheus exposition text and content type for backup status.
 
-    Reads the LAST_SUCCESS marker from Azure Blob Storage. If backup restore
-    is not configured or the marker is missing, the gauges still return
-    valid values so dashboards can distinguish "not configured" from
-    "configured but stale".
+    Reads the LAST_SUCCESS marker from Azure Blob Storage, with a short in-memory
+    cache so Prometheus scrapes do not hit Azure every minute. If backup restore
+    is not configured or the marker is missing, the gauges still return valid
+    values so dashboards can distinguish "not configured" from "configured but stale".
     """
-    marker: dict | None = None
-    configured = True
-
-    try:
-        marker = get_last_success_marker()
-    except BackupRestoreNotConfiguredError:
-        configured = False
+    marker, configured = _fetch_marker()
 
     with _render_lock:
         _backup_configured.set(1 if configured else 0)

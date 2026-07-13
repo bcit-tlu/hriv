@@ -139,9 +139,12 @@ function _flushEvents(): void {
 
   const events = _pendingEvents.splice(0, _pendingEvents.length)
   const base = apiUrl()
-  if (!base) return
+  // In production, VITE_API_URL points at the backend. In local development
+  // Vite proxies the same-origin /api path to the backend, so a relative URL
+  // works without requiring VITE_API_URL to be set.
+  const url = base ? `${base}/api/telemetry/events` : '/api/telemetry/events'
 
-  fetch(`${base}/api/telemetry/events`, {
+  fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

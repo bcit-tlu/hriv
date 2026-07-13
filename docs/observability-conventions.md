@@ -149,6 +149,11 @@ structured log that the OTel logging handler forwards to the collector. This
 keeps the collector endpoint off the public internet and lets the backend
 enforce auth, schema validation, and payload-size limits.
 
+When `VITE_API_URL` is set (production and staging), the frontend posts to
+`${VITE_API_URL}/api/telemetry/events`. In local development, when `VITE_API_URL`
+is unset, the frontend falls back to the same-origin relative path
+`/api/telemetry/events` so the Vite dev proxy forwards events to the backend.
+
 ### Allowed event names
 
 - `image.view.started`
