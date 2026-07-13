@@ -5,9 +5,12 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
 
+import app.auth as auth
+from app.routers import categories as categories_router
 from app.routers.categories import (
     _load_tree,
     list_categories,
@@ -117,6 +120,24 @@ def _mock_db(categories: list, images: list) -> AsyncMock:
 
     db.execute = AsyncMock(side_effect=execute_side_effect)
     return db
+
+
+def _make_user(
+    role: str = "admin", programs: list | None = None, groups: list | None = None,
+) -> SimpleNamespace:
+    return SimpleNamespace(id=1, role=role, email=f"{role}@example.com", programs=programs or [], groups=groups or [])
+
+
+def _categories_test_app(user_role: str, db: AsyncMock) -> FastAPI:
+    app = FastAPI()
+    app.include_router(categories_router.router, prefix="/api")
+
+    async def override_db():
+        yield db
+
+    app.dependency_overrides[auth.get_current_user] = lambda: _make_user(user_role)
+    app.dependency_overrides[categories_router.get_db] = override_db
+    return app
 
 
 async def test_load_tree_empty_database() -> None:
@@ -531,6 +552,34 @@ async def test_update_category_if_match_invalid() -> None:
     assert "if-match" in exc.value.detail.lower()
 
 
+async def test_delete_category_endpoint_allows_instructor() -> None:
+    cat = _make_category(1, "Cat")
+    db = AsyncMock()
+    db.get = AsyncMock(return_value=cat)
+    db.delete = AsyncMock()
+    db.commit = AsyncMock()
+
+    transport = httpx.ASGITransport(app=_categories_test_app("instructor", db))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.delete("/api/categories/1")
+
+    assert response.status_code == 204
+    db.get.assert_awaited_once()
+    db.delete.assert_awaited_once_with(cat)
+    db.commit.assert_awaited_once()
+
+
+async def test_delete_category_endpoint_rejects_student() -> None:
+    db = AsyncMock()
+
+    transport = httpx.ASGITransport(app=_categories_test_app("student", db))
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        response = await client.delete("/api/categories/1")
+
+    assert response.status_code == 403
+    db.get.assert_not_called()
+
+
 async def test_reorder_categories_self_parent() -> None:
     items = [CategoryReorderItem(id=1, parent_id=1, sort_order=0)]
     body = CategoryReorderRequest(items=items)
@@ -601,18 +650,6 @@ async def test_delete_category_not_found() -> None:
 # ── Program-scoped student filtering ────────────────────────
 
 
-def _make_student_user(
-    programs: list | None = None, groups: list | None = None,
-) -> SimpleNamespace:
-    return SimpleNamespace(
-        id=1,
-        role="student",
-        email="s@example.com",
-        programs=programs or [],
-        groups=groups or [],
-    )
-
-
 async def test_list_categories_student_excludes_restricted() -> None:
     """Student without matching program should not see restricted categories."""
     prog = _make_program(10)
@@ -639,7 +676,7 @@ async def test_list_categories_student_excludes_restricted() -> None:
     db = AsyncMock()
     db.execute = AsyncMock(side_effect=execute_side_effect)
 
-    result = await list_categories(_make_student_user(), parent_id=None, db=db)
+    result = await list_categories(_make_user("student"), parent_id=None, db=db)
     assert len(result) == 1
     assert result[0].label == "Open"
 
@@ -667,7 +704,7 @@ async def test_list_categories_student_sees_matching_program() -> None:
     db.execute = AsyncMock(side_effect=execute_side_effect)
 
     result = await list_categories(
-        _make_student_user(programs=[_make_program(10)]),
+        _make_user("student", programs=[_make_program(10)]),
         parent_id=None,
         db=db,
     )
@@ -698,7 +735,7 @@ async def test_get_category_student_hidden() -> None:
     db.get = AsyncMock(return_value=cat)
 
     with pytest.raises(HTTPException) as exc:
-        await get_category(1, _make_student_user(), db=db)
+        await get_category(1, _make_user("student"), db=db)
     assert exc.value.status_code == 404
 
 
@@ -708,7 +745,7 @@ async def test_get_category_student_program_restricted() -> None:
     db.get = AsyncMock(return_value=cat)
 
     with pytest.raises(HTTPException) as exc:
-        await get_category(1, _make_student_user(), db=db)
+        await get_category(1, _make_user("student"), db=db)
     assert exc.value.status_code == 404
 
 
@@ -718,7 +755,7 @@ async def test_get_category_student_matching_program() -> None:
     db.get = AsyncMock(return_value=cat)
 
     result = await get_category(
-        1, _make_student_user(programs=[_make_program(10)]), db=db,
+        1, _make_user("student", programs=[_make_program(10)]), db=db,
     )
     assert result.label == "Match"
 
@@ -734,7 +771,7 @@ async def test_get_category_student_hidden_ancestor() -> None:
     db.get = AsyncMock(side_effect=mock_get)
 
     with pytest.raises(HTTPException) as exc:
-        await get_category(2, _make_student_user(), db=db)
+        await get_category(2, _make_user("student"), db=db)
     assert exc.value.status_code == 404
 
 
@@ -749,7 +786,7 @@ async def test_get_category_student_restricted_ancestor() -> None:
     db.get = AsyncMock(side_effect=mock_get)
 
     with pytest.raises(HTTPException) as exc:
-        await get_category(2, _make_student_user(programs=[_make_program(20)]), db=db)
+        await get_category(2, _make_user("student", programs=[_make_program(20)]), db=db)
     assert exc.value.status_code == 404
 
 
@@ -758,7 +795,7 @@ async def test_get_category_student_unrestricted() -> None:
     db = AsyncMock()
     db.get = AsyncMock(return_value=cat)
 
-    result = await get_category(1, _make_student_user(), db=db)
+    result = await get_category(1, _make_user("student"), db=db)
     assert result.label == "Open"
 
 
