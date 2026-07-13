@@ -3,9 +3,10 @@ import { test, expect, type Response } from '@playwright/test'
 /**
  * End-to-end synthetic journey: a monitor "student" logs in, browses, opens an
  * image, and — critically — we assert that the deep-zoom pipeline actually
- * served content by observing a successful `.dzi` descriptor or tile HTTP
- * response. A visible `<canvas>` alone can be produced even when tiles 404, so
- * the network assertion is what proves the viewer is genuinely healthy.
+ * served content by observing BOTH a successful `.dzi` descriptor AND a real
+ * tile image (`.jpg`/`.jpeg`/`.png`) HTTP response. A visible `<canvas>` alone
+ * can be produced even when tiles 404, so the network assertions are what prove
+ * the viewer is genuinely healthy.
  *
  * Steps are wrapped in `test.step(...)` so the reporter (and CI logs) show a
  * readable, timed breakdown of the journey.
@@ -15,13 +16,12 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
   const password = process.env.SYNTHETIC_PASSWORD || 'password'
 
   // Deep-zoom descriptors and tiles are both served under /api/tiles/. Collect
-  // successful ones so we can assert the viewer received real image data.
+  // every one (registered up front; a passive listener has no timeout) so we
+  // can assert the viewer never received a failing tile response.
   const tileResponses: Array<{ url: string; status: number }> = []
-  const isTileUrl = (url: string) => /\/api\/tiles\/.+\.(dzi|jpe?g|png)(\?|$)/i.test(url)
-  const firstDzi = page.waitForResponse(
-    (r: Response) => /\/api\/tiles\/.+\.dzi(\?|$)/i.test(r.url()) && r.ok(),
-    { timeout: 30000 },
-  )
+  const isDziUrl = (url: string) => /\/api\/tiles\/.+\.dzi(\?|$)/i.test(url)
+  const isTileImageUrl = (url: string) => /\/api\/tiles\/.+\.(jpe?g|png)(\?|$)/i.test(url)
+  const isTileUrl = (url: string) => isDziUrl(url) || isTileImageUrl(url)
   page.on('response', (r: Response) => {
     if (isTileUrl(r.url())) {
       tileResponses.push({ url: r.url(), status: r.status() })
@@ -49,7 +49,18 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
     console.log('[synthetic] login succeeded, browse page loaded')
   })
 
-  await test.step('open the seeded Duomo image', async () => {
+  await test.step('open the seeded Duomo image and assert DZI + tile responses', async () => {
+    // Register the network waits immediately before triggering the image load
+    // so their 30s timeout budget covers only tile fetching, not the preceding
+    // login/navigation. OpenSeadragon fetches image.dzi first, then tiles.
+    const dziResponse = page.waitForResponse((r: Response) => isDziUrl(r.url()) && r.ok(), {
+      timeout: 30000,
+    })
+    const tileImageResponse = page.waitForResponse(
+      (r: Response) => isTileImageUrl(r.url()) && r.ok(),
+      { timeout: 30000 },
+    )
+
     // Open the seeded Duomo image. Using the image alt text avoids fragile
     // CSS selectors when Material UI rendering changes.
     await page.locator('img[alt="Duomo di Milano"]').first().click()
@@ -58,15 +69,19 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
     // The viewer container should contain an OpenSeadragon canvas.
     await expect(page.locator('canvas')).toBeVisible({ timeout: 20000 })
     console.log('[synthetic] viewer canvas rendered')
-  })
 
-  await test.step('assert a successful DZI/tile response', async () => {
-    // Wait for the descriptor specifically; OpenSeadragon fetches image.dzi
-    // before requesting any tiles, so this is the earliest strong signal.
-    const dzi = await firstDzi
+    // The descriptor is the earliest strong signal; a real tile image proves
+    // the pipeline served actual pixel data, not just metadata.
+    const dzi = await dziResponse
+    expect(dzi.status(), `DZI descriptor not 2xx: ${dzi.status()} ${dzi.url()}`).toBeLessThan(300)
     console.log(`[synthetic] DZI descriptor OK: ${dzi.status()} ${dzi.url()}`)
 
-    // Also verify at least one tile/descriptor response and that none failed.
+    const tile = await tileImageResponse
+    expect(tile.status(), `tile image not 2xx: ${tile.status()} ${tile.url()}`).toBeLessThan(300)
+    console.log(`[synthetic] tile image OK: ${tile.status()} ${tile.url()}`)
+  })
+
+  await test.step('assert no tile/DZI response failed', async () => {
     const failed = tileResponses.filter((r) => r.status >= 400)
     expect(failed, `tile/DZI responses returned errors: ${JSON.stringify(failed)}`).toHaveLength(0)
     expect(tileResponses.length, 'expected at least one /api/tiles/ response').toBeGreaterThan(0)

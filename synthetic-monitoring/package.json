@@ -1,6 +1,6 @@
 {
   "name": "hriv-synthetic-monitoring",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Playwright-based synthetic monitoring journeys for HRIV.",
   "scripts": {

@@ -168,7 +168,10 @@ keeps structured event ingestion behind application authentication and lets the
 backend enforce schema validation and payload-size limits.
 
 **Versioning.** Every event carries a `schema_version` (currently `1`), emitted
-in logs as `schema.version`. Bump `TELEMETRY_SCHEMA_VERSION` (frontend
+in logs as `schema.version`. Only the current version is accepted: an **omitted**
+version is treated as the current one (backward compatible), while an explicit
+**unsupported** version is rejected with `422` so the log shape stays
+well-defined. Bump `TELEMETRY_SCHEMA_VERSION` (frontend
 `observability.ts` and backend `routers/telemetry.py` in lockstep) whenever the
 field shape changes so log parsers and dashboards can branch on the version
 rather than silently misreading older records.
@@ -178,9 +181,14 @@ rather than silently misreading older records.
 while remaining distinct per browser tab — giving a durable notion of a
 "session" for usage analytics without any server-side session store.
 
-**Rate limiting.** The endpoint is rate limited per authenticated user via the
-shared Redis sliding-window limiter (`rate_limit_telemetry_max` /
-`rate_limit_telemetry_window`, default 60 events / 60 s). Exceeding the budget
+**Rate limiting.** The endpoint is rate limited via the shared Redis
+sliding-window limiter (`rate_limit_telemetry_max` / `rate_limit_telemetry_window`,
+default 60 requests / 60 s). The budget is keyed by authenticated user **plus a
+digest of the per-tab `X-Session-ID`** (falling back to a user-only key when the
+header is absent). HRIV intentionally supports many students sharing a single
+account, so keying by user id alone would let independent tabs collectively
+exhaust one budget and throttle each other; the per-session key gives each tab
+its own budget while never storing the raw session id. Exceeding the budget
 returns `429 Too Many Requests` with a `Retry-After` header. Consistent with
 the login limiter, the limiter is **fail-open**: if Redis is unavailable the
 request is allowed rather than rejected.

@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.routers.telemetry import (
     TELEMETRY_SCHEMA_VERSION,
@@ -192,6 +193,23 @@ async def test_telemetry_bounds_non_numeric_browser_major(
 
     log = [r for r in caplog.records if r.message == "frontend telemetry event"][0]
     assert getattr(log, "client.browser.major") == "other"
+
+
+def test_telemetry_accepts_current_and_omitted_schema_version() -> None:
+    """The current schema version and an omitted version are both accepted."""
+    assert TelemetryEvent(event="navigation.page_changed").schema_version is None
+    assert (
+        TelemetryEvent(
+            event="navigation.page_changed", schema_version=TELEMETRY_SCHEMA_VERSION
+        ).schema_version
+        == TELEMETRY_SCHEMA_VERSION
+    )
+
+
+def test_telemetry_rejects_unsupported_schema_version() -> None:
+    """An explicit unsupported schema version is rejected at validation time."""
+    with pytest.raises(ValidationError):
+        TelemetryEvent(event="navigation.page_changed", schema_version=2)
 
 
 async def test_telemetry_synthetic_from_user_metadata(

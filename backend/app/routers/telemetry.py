@@ -96,7 +96,10 @@ class TelemetryEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event: str = Field(..., max_length=100, description="Stable, dotted event name")
-    schema_version: int | None = Field(None, ge=1, le=1_000_000)
+    # Only the current schema version is accepted; an omitted version is treated
+    # as the current one for backward compatibility, but an explicit unsupported
+    # version is rejected (422) so the log shape stays well-defined.
+    schema_version: Literal[1] | None = None
     outcome: Literal["success", "failure", "unknown"] | None = None
     duration_ms: float | None = None
     error: str | None = Field(None, max_length=_MAX_ATTRIBUTE_LENGTH)
@@ -136,10 +139,11 @@ async def ingest_telemetry_events(
 
     Events are emitted as structured logs so the OTel logging handler can
     forward them to the collector. Invalid or unknown events are dropped silently
-    to keep the endpoint fast and resilient. Per-user rate limiting protects the
-    log pipeline from a misbehaving client.
+    to keep the endpoint fast and resilient. Per-user + per-tab rate limiting
+    protects the log pipeline from a misbehaving client without letting tabs of a
+    shared student account throttle one another.
     """
-    retry_after = await check_telemetry_rate_limit(user.id)
+    retry_after = await check_telemetry_rate_limit(user.id, x_session_id)
     if retry_after is not None:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

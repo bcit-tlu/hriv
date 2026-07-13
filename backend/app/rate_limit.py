@@ -4,6 +4,7 @@ Uses a sliding-window counter stored in Redis.  When Redis is
 unavailable the limiter is a no-op so the application keeps working.
 """
 
+import hashlib
 import logging
 import time
 
@@ -114,15 +115,35 @@ async def check_login_rate_limit(client_ip: str, email: str) -> int | None:
     )
 
 
-async def check_telemetry_rate_limit(user_id: int) -> int | None:
-    """Rate-limit frontend telemetry ingestion per authenticated user.
+def _telemetry_rate_limit_key(user_id: int, session_id: str | None) -> str:
+    """Build the telemetry rate-limit key for *user_id* + *session_id*.
 
-    Keyed by internal user id (from the JWT) rather than IP so that shared
-    campus NAT egress does not cause one user to throttle another. Returns
-    ``None`` when allowed, otherwise the ``Retry-After`` seconds.
+    HRIV intentionally supports many students sharing a single account (and thus
+    one internal user id), so keying by user id alone would let independent tabs
+    collectively exhaust one budget and throttle each other. When an
+    ``X-Session-ID`` is present it is folded into the key via a short SHA-256
+    digest (bounding cardinality and never storing the raw client value), giving
+    each tab its own budget. When absent we fall back to a user-only key.
+    """
+    session = (session_id or "").strip()
+    if not session:
+        return f"rate:telemetry:{user_id}"
+    digest = hashlib.sha256(session.encode("utf-8")).hexdigest()[:16]
+    return f"rate:telemetry:{user_id}:{digest}"
+
+
+async def check_telemetry_rate_limit(
+    user_id: int, session_id: str | None = None
+) -> int | None:
+    """Rate-limit frontend telemetry ingestion per authenticated user + session.
+
+    Keyed by internal user id (from the JWT) plus a digest of the per-tab
+    ``X-Session-ID`` so that shared campus NAT egress and shared student accounts
+    do not cause one tab/user to throttle another. Returns ``None`` when allowed,
+    otherwise the ``Retry-After`` seconds.
     """
     return await check_rate_limit(
-        f"rate:telemetry:{user_id}",
+        _telemetry_rate_limit_key(user_id, session_id),
         settings.rate_limit_telemetry_window,
         settings.rate_limit_telemetry_max,
     )
