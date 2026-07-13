@@ -146,15 +146,14 @@ describe('observability', () => {
       expect.objectContaining({ keepalive: true }),
     )
     const request = vi.mocked(fetch).mock.calls[0]?.[1]
-    expect(JSON.parse(String(request?.body))).toEqual({
-      events: [
-        {
-          event: 'navigation.page_changed',
-          outcome: 'unknown',
-          page: 'browse',
-          synthetic: true,
-        },
-      ],
+    const parsed = JSON.parse(String(request?.body))
+    expect(parsed.events).toHaveLength(1)
+    expect(parsed.events[0]).toMatchObject({
+      event: 'navigation.page_changed',
+      outcome: 'unknown',
+      page: 'browse',
+      synthetic: true,
+      schema_version: 1,
     })
     await vi.runAllTimersAsync()
     expect(fetch).toHaveBeenCalledOnce()
@@ -164,24 +163,20 @@ describe('observability', () => {
     const { emitEvent, setSyntheticMode } = await import('../src/observability')
 
     setSyntheticMode(true)
-    emitEvent({ event: 'image.view.ready', outcome: 'success' })
+    emitEvent({ event: 'image.view.ready', outcome: 'success', image_id: 5 })
     await vi.advanceTimersByTimeAsync(1000)
 
     expect(fetch).toHaveBeenCalledOnce()
-    expect(fetch).toHaveBeenCalledWith(
-      '/api/telemetry/events',
-      expect.objectContaining({
-        body: JSON.stringify({
-          events: [
-            {
-              event: 'image.view.ready',
-              outcome: 'success',
-              synthetic: true,
-            },
-          ],
-        }),
-      }),
-    )
+    const request = vi.mocked(fetch).mock.calls[0]?.[1]
+    const parsed = JSON.parse(String(request?.body))
+    expect(parsed.events).toHaveLength(1)
+    expect(parsed.events[0]).toMatchObject({
+      event: 'image.view.ready',
+      outcome: 'success',
+      synthetic: true,
+      schema_version: 1,
+      image_id: 5,
+    })
   })
 
   it('injects the active trace context into headers', async () => {

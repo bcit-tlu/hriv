@@ -159,13 +159,52 @@ Authorization: Bearer <JWT>
 X-Session-ID: <tab-session-id>
 Content-Type: application/json
 
-{"events": [{"event": "image.view.ready", "outcome": "success", ...}]}
+{"events": [{"event": "image.view.ready", "outcome": "success", "schema_version": 1, ...}]}
 ```
 
 The endpoint validates each event name against an allowlist and emits a
 structured log that the OTel logging handler forwards to the collector. This
 keeps structured event ingestion behind application authentication and lets the
 backend enforce schema validation and payload-size limits.
+
+**Versioning.** Every event carries a `schema_version` (currently `1`), emitted
+in logs as `schema.version`. Only the current version is accepted: an **omitted**
+version is treated as the current one (backward compatible), while an explicit
+**unsupported** version is rejected with `422` so the log shape stays
+well-defined. Bump `TELEMETRY_SCHEMA_VERSION` (frontend
+`observability.ts` and backend `routers/telemetry.py` in lockstep) whenever the
+field shape changes so log parsers and dashboards can branch on the version
+rather than silently misreading older records.
+
+**Per-tab session id.** `X-Session-ID` is persisted in `sessionStorage`
+(`hriv.session_id`), so it stays stable across in-tab reloads and SPA remounts
+while remaining distinct per browser tab — giving a durable notion of a
+"session" for usage analytics without any server-side session store.
+
+**Rate limiting.** The endpoint enforces **two** shared-Redis sliding-window
+budgets over the same window (`rate_limit_telemetry_window`, default 60 s):
+
+- a **per-tab** budget keyed by authenticated user **plus a digest of the
+  per-tab `X-Session-ID`** (`rate_limit_telemetry_max`, default 60 req/window),
+  falling back to a user-only key when the header is absent; and
+- a higher **per-user aggregate** budget keyed by user id alone
+  (`rate_limit_telemetry_user_max`, default 600 req/window).
+
+HRIV intentionally supports many students sharing a single account, so keying by
+user id alone would let independent tabs collectively exhaust one budget and
+throttle each other; the per-tab key gives each tab its own budget. The digest
+bounds the key length and hides the raw session id (it does not reduce the
+number of distinct keys). The per-user aggregate cap ensures a client that
+**rotates `X-Session-ID`** on every request cannot mint unlimited per-tab
+budgets and flood the log pipeline, while legitimately shared accounts keep
+generous headroom. The per-tab budget is checked **first** and short-circuits:
+if a tab is over its own budget it gets `429` immediately and the shared
+per-user aggregate is **not** checked or incremented, so one throttled tab
+hammering retries cannot exhaust the shared-account cap for everyone else. The
+aggregate is only consulted for requests that pass their per-tab budget.
+Exceeding either returns `429 Too Many Requests` with a `Retry-After` header.
+Consistent with the login limiter, the limiter is **fail-open**: if Redis is
+unavailable the request is allowed rather than rejected.
 
 Browser trace spans are a separate signal and are exported directly to the
 OTLP/HTTP gateway configured by `VITE_OTEL_ENDPOINT`. Production builds use the
@@ -189,23 +228,98 @@ is unset, the frontend falls back to the same-origin relative path
 
 ### Event fields
 
-| Field         | Type                                  | Purpose                                                |
-| ------------- | ------------------------------------- | ------------------------------------------------------ |
-| `event`       | string (required)                     | One of the allowed event names above                   |
-| `outcome`     | `"success"`, `"failure"`, `"unknown"` | Result of the operation                                |
-| `duration_ms` | number                                | End-to-end duration in milliseconds, when meaningful   |
-| `action`      | string                                | Low-cardinality action label (e.g. `view`, `navigate`) |
-| `page`        | string                                | Low-cardinality page identifier for navigation events  |
-| `error`       | string                                | High-level error category, never free-text or PII      |
-| `synthetic`   | boolean                               | True for Playwright synthetic-monitoring journeys      |
+| Field             | Type                                  | Purpose                                                          |
+| ----------------- | ------------------------------------- | ---------------------------------------------------------------- |
+| `event`           | string (required)                     | One of the allowed event names above                             |
+| `schema_version`  | integer                               | Event payload version (logged as `schema.version`)               |
+| `outcome`         | `"success"`, `"failure"`, `"unknown"` | Result of the operation                                          |
+| `duration_ms`     | number                                | End-to-end duration in milliseconds, when meaningful             |
+| `action`          | string                                | Low-cardinality action label (e.g. `view`, `navigate`)           |
+| `page`            | string                                | Low-cardinality page identifier for navigation events            |
+| `error`           | string                                | High-level error category, never free-text or PII                |
+| `synthetic`       | boolean                               | Client hint only; server metadata is authoritative (see below)   |
+| `image_id`        | integer                               | Structured domain id for image events (never a Prometheus label) |
+| `category_id`     | integer                               | Structured domain id for category context (never a label)        |
+| `browser_family`  | bounded string                        | `chrome`/`firefox`/`safari`/`edge`/`opera`/`samsung`/`other`     |
+| `browser_major`   | string                                | Major browser version only (e.g. `128`)                          |
+| `os_family`       | bounded string                        | `windows`/`macos`/`ios`/`android`/`linux`/`chromeos`/`other`     |
+| `device_class`    | bounded string                        | `desktop`/`mobile`/`tablet`/`other`                              |
+| `viewport_bucket` | bounded string                        | `xs`/`sm`/`md`/`lg`/`xl` (Material UI breakpoints)               |
+| `touch`           | boolean                               | Whether the device reports touch capability                      |
+
+Domain identifiers (`image_id`, `category_id`) are emitted only as **structured
+event fields**, never as Prometheus metric labels, to keep metric cardinality
+bounded. Client-environment fields are reduced to small enumerated buckets and
+the backend **re-bounds** them against allowlists (coercing anything unknown to
+`other`), so a client cannot inject high-cardinality or free-text values.
+
+Client-environment values are detected once per tab (on the first telemetry
+event) and cached for the tab lifetime. In particular `viewport_bucket`
+reflects the **session-initial** viewport; a mid-session browser resize is not
+re-sampled. Treat these fields as "environment the session started in", not a
+live measurement.
 
 ### Backend enrichment
 
 The endpoint enriches each event with:
 
+- `schema.version` — the accepted event schema version
 - `user.id` and `user.role` from the authenticated JWT
 - `browser.tab.session_id` from the `X-Session-ID` header
+- `event.synthetic` — **server-authoritative**: derived from the authenticated
+  user's stored `metadata_.synthetic` flag. The client `synthetic` field can
+  only ever _set_ this true (e.g. a real user running a manual synthetic
+  journey); it can never clear a server-marked synthetic account. This lets
+  reports reliably exclude synthetic-monitor traffic.
+- `image.id` / `category.id` from the event's structured ids
+- `client.browser.family` / `client.browser.major` / `client.os.family` /
+  `client.device.class` / `client.viewport.bucket` / `client.touch` — bounded
+  client-environment buckets
 - `trace.parent` from the incoming `traceparent` header, if present
+
+## Canonical Authentication Log Fields
+
+Local password and OIDC login flows keep their existing per-flow event names
+(`auth.login_success`, `auth.login_failed`, `oidc.login_success`,
+`oidc.user_created`, …) but now **additively** emit a canonical `auth.*` field
+set (see `backend/app/auth_events.py`) so a single Loki query can report on
+logins across every flow:
+
+| Field            | Meaning                                                 |
+| ---------------- | ------------------------------------------------------- |
+| `auth.method`    | `local` or `oidc`                                       |
+| `auth.outcome`   | `success` or `failure`                                  |
+| `auth.user_id`   | Internal (database) user id, when known                 |
+| `auth.role`      | Internal role of the user, when known                   |
+| `auth.synthetic` | `true` when the account is a synthetic monitor identity |
+
+Because new OIDC users are logged with the same canonical fields as returning
+users, login reports include first-time OIDC logins; filtering
+`auth.synthetic != "true"` excludes synthetic-monitor logins.
+
+## Usage Analytics Dashboard (`HRIV Usage Overview`)
+
+`charts/backend/observability/dashboards/hriv-usage-overview.json` is a
+Loki-backed, aggregate-only dashboard for decision makers, provisioned
+automatically alongside the other dashboards (the ConfigMap template globs
+every JSON in `observability/dashboards/`). Panels cover page hits, active
+users, sessions, successful/failed logins, activity by role, image views vs
+failures, top images/categories, and the bounded client-environment
+distributions. Every panel excludes synthetic traffic via the server-marked
+`event_synthetic` / `auth_synthetic` flag.
+
+**No named-user panels are provisioned.** Grafana dashboard provisioning is
+broadly readable, so listing individual users on a provisioned dashboard would
+expose per-person activity to everyone with dashboard access. Per-user
+drill-down is intentionally left to ad-hoc, access-controlled log queries
+(`user.id` / `auth.user_id` are present in the logs). If a safe, restricted
+provisioning mechanism (a separate access-scoped Grafana folder or organization)
+is later established, named-user panels can be added there.
+
+> Field-name note: the queries assume OTLP→Loki ingestion, which sanitizes
+> attribute dots to underscores (`event.name` → `event_name`,
+> `client.browser.family` → `client_browser_family`, etc.). Adjust the label
+> names / `service` template variable if your Loki label pipeline differs.
 
 ## Structured Logging vs Tracing
 

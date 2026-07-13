@@ -9,6 +9,12 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from ..auth import verify_password, create_access_token, get_current_user
+from ..auth_events import (
+    AUTH_METHOD_LOCAL,
+    AUTH_OUTCOME_FAILURE,
+    AUTH_OUTCOME_SUCCESS,
+    auth_event_fields,
+)
 from ..database import get_db
 from ..models import User
 from ..middleware import get_client_ip
@@ -57,7 +63,13 @@ async def login(
     if not user or not user.password_hash:
         logger.warning(
             "Login failed: unknown email or no password set",
-            extra={"event": "auth.login_failed", "user_email": body.email},
+            extra={
+                "event": "auth.login_failed",
+                "user_email": body.email,
+                **auth_event_fields(
+                    method=AUTH_METHOD_LOCAL, outcome=AUTH_OUTCOME_FAILURE
+                ),
+            },
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -71,6 +83,11 @@ async def login(
                 "event": "auth.login_failed",
                 "user_email": body.email,
                 "user_id": user.id,
+                **auth_event_fields(
+                    method=AUTH_METHOD_LOCAL,
+                    outcome=AUTH_OUTCOME_FAILURE,
+                    user=user,
+                ),
             },
         )
         raise HTTPException(
@@ -92,6 +109,11 @@ async def login(
             "event": "auth.login_success",
             "user_id": user.id,
             "user_email": user.email,
+            **auth_event_fields(
+                method=AUTH_METHOD_LOCAL,
+                outcome=AUTH_OUTCOME_SUCCESS,
+                user=user,
+            ),
         },
     )
 

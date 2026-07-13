@@ -4,6 +4,7 @@ Uses a sliding-window counter stored in Redis.  When Redis is
 unavailable the limiter is a no-op so the application keeps working.
 """
 
+import hashlib
 import logging
 import time
 
@@ -51,25 +52,19 @@ async def _get_redis() -> Redis | None:
         return None
 
 
-async def check_login_rate_limit(client_ip: str, email: str) -> int | None:
-    """Check whether *client_ip* + *email* has exceeded the login rate limit.
+async def check_rate_limit(key: str, window: int, max_attempts: int) -> int | None:
+    """Sliding-window rate-limit check for an arbitrary *key*.
 
-    The key is a composite of IP and email so that one user's successful
-    login does not reset the counter for a different user at the same IP
-    (important when the service is publicly accessible and users may be
-    behind a shared campus NAT).
-
-    Returns ``None`` if the request is allowed, otherwise returns the
-    number of seconds the client should wait (for a ``Retry-After``
-    header).
+    Records the current attempt when allowed. Returns ``None`` when the
+    request is within budget, otherwise the number of seconds the client
+    should wait (suitable for a ``Retry-After`` header). When Redis is
+    unavailable the limiter is a no-op (fail-open) so the application keeps
+    working.
     """
     redis = await _get_redis()
     if redis is None:
         return None  # limiter disabled — allow
 
-    key = f"rate:login:{client_ip}:{email}"
-    window = settings.rate_limit_login_window
-    max_attempts = settings.rate_limit_login_max
     now = time.time()
 
     try:
@@ -99,6 +94,91 @@ async def check_login_rate_limit(client_ip: str, email: str) -> int | None:
             extra={"event": "rate_limit.redis_error"},
         )
     return None
+
+
+async def check_login_rate_limit(client_ip: str, email: str) -> int | None:
+    """Check whether *client_ip* + *email* has exceeded the login rate limit.
+
+    The key is a composite of IP and email so that one user's successful
+    login does not reset the counter for a different user at the same IP
+    (important when the service is publicly accessible and users may be
+    behind a shared campus NAT).
+
+    Returns ``None`` if the request is allowed, otherwise returns the
+    number of seconds the client should wait (for a ``Retry-After``
+    header).
+    """
+    return await check_rate_limit(
+        f"rate:login:{client_ip}:{email}",
+        settings.rate_limit_login_window,
+        settings.rate_limit_login_max,
+    )
+
+
+def _telemetry_rate_limit_key(user_id: int, session_id: str | None) -> str:
+    """Build the telemetry rate-limit key for *user_id* + *session_id*.
+
+    HRIV intentionally supports many students sharing a single account (and thus
+    one internal user id), so keying by user id alone would let independent tabs
+    collectively exhaust one budget and throttle each other. When an
+    ``X-Session-ID`` is present it is folded into the key via a short SHA-256
+    digest (bounding the key length and hiding the raw client value, not the
+    number of distinct keys), giving each tab its own budget. When absent we fall
+    back to a user-only key.
+    """
+    session = (session_id or "").strip()
+    if not session:
+        return f"rate:telemetry:{user_id}"
+    digest = hashlib.sha256(session.encode("utf-8")).hexdigest()[:16]
+    return f"rate:telemetry:{user_id}:{digest}"
+
+
+def _telemetry_user_rate_limit_key(user_id: int) -> str:
+    """Build the per-user aggregate telemetry rate-limit key for *user_id*.
+
+    This budget spans every tab/session of a single account so that a client
+    rotating ``X-Session-ID`` cannot mint unlimited per-tab budgets and bypass
+    the limiter entirely.
+    """
+    return f"rate:telemetry:user:{user_id}"
+
+
+async def check_telemetry_rate_limit(
+    user_id: int, session_id: str | None = None
+) -> int | None:
+    """Rate-limit frontend telemetry ingestion with two budgets over one window.
+
+    Two sliding-window budgets are enforced in order:
+
+    * a **per-tab** budget keyed by internal user id + a digest of the per-tab
+      ``X-Session-ID`` (``rate_limit_telemetry_max``) so an accidental tab loop
+      throttles only that tab, and shared student accounts do not throttle each
+      other; and
+    * a higher **per-user aggregate** budget keyed by user id alone
+      (``rate_limit_telemetry_user_max``) so a client rotating ``X-Session-ID``
+      cannot create unbounded throughput.
+
+    The per-session budget is checked **first** and short-circuits: if it is
+    exceeded we return immediately and do **not** check or increment the shared
+    per-user aggregate. Otherwise one throttled tab hammering 429s would keep
+    consuming the shared-account aggregate and starve every other tab/user on
+    the same account. The aggregate is only consulted for requests that pass
+    their per-session budget. Returns ``None`` when allowed, otherwise the
+    ``Retry-After`` seconds. Redis failure remains fail-open in
+    ``check_rate_limit``.
+    """
+    session_retry = await check_rate_limit(
+        _telemetry_rate_limit_key(user_id, session_id),
+        settings.rate_limit_telemetry_window,
+        settings.rate_limit_telemetry_max,
+    )
+    if session_retry is not None:
+        return session_retry
+    return await check_rate_limit(
+        _telemetry_user_rate_limit_key(user_id),
+        settings.rate_limit_telemetry_window,
+        settings.rate_limit_telemetry_user_max,
+    )
 
 
 async def reset_login_rate_limit(client_ip: str, email: str) -> None:

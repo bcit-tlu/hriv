@@ -16,6 +16,10 @@ import {
 
 interface ImageViewerProps {
   tileSources: OpenSeadragon.TileSourceOptions | string
+  /** Id of the image being viewed; emitted as a structured telemetry field. */
+  imageId?: number
+  /** Id of the image's category; emitted as a structured telemetry field. */
+  categoryId?: number
   height?: string
   initialViewport?: ViewportState
   onViewportChange?: (state: ViewportState) => void
@@ -53,6 +57,8 @@ interface DragState {
 
 export default function ImageViewer({
   tileSources,
+  imageId,
+  categoryId,
   height = '70vh',
   initialViewport,
   onViewportChange,
@@ -86,6 +92,14 @@ export default function ImageViewer({
   const overlaysLockedRef = useRef(overlaysLocked)
   const canEditContentRef = useRef(canEditContent)
   const viewStartTimeRef = useRef<number | null>(null)
+  const imageIdRef = useRef(imageId)
+  const categoryIdRef = useRef(categoryId)
+  useEffect(() => {
+    imageIdRef.current = imageId
+  }, [imageId])
+  useEffect(() => {
+    categoryIdRef.current = categoryId
+  }, [categoryId])
   const updateLockUiRef = useRef<(() => void) | null>(null)
   const updateCanvasEditUiRef = useRef<((active: boolean) => void) | null>(null)
   const updateMagnificationRef = useRef<(() => void) | null>(null)
@@ -176,7 +190,12 @@ export default function ImageViewer({
     if (!containerRef.current) return
 
     viewStartTimeRef.current = performance.now()
-    emitEvent({ event: 'image.view.started', action: 'view' })
+    emitEvent({
+      event: 'image.view.started',
+      action: 'view',
+      image_id: imageIdRef.current,
+      category_id: categoryIdRef.current,
+    })
 
     viewerRef.current = OpenSeadragon({
       element: containerRef.current,
@@ -627,6 +646,8 @@ export default function ImageViewer({
         action: 'view',
         outcome: 'success',
         duration_ms: duration,
+        image_id: imageIdRef.current,
+        category_id: categoryIdRef.current,
       })
       if (initialViewport) {
         viewer.viewport.zoomTo(initialViewport.zoom, undefined, true)
@@ -655,6 +676,8 @@ export default function ImageViewer({
         action: 'view',
         outcome: 'failure',
         duration_ms: duration,
+        image_id: imageIdRef.current,
+        category_id: categoryIdRef.current,
       })
     })
 

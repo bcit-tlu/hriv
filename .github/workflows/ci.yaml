@@ -91,6 +91,30 @@ jobs:
       - name: Test with coverage (Vitest)
         run: npm run test:coverage
 
+  synthetic-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: synthetic-monitoring
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - uses: actions/cache@v5
+        with:
+          path: ~/.npm
+          key: synthetic-npm-${{ hashFiles('synthetic-monitoring/package-lock.json') }}
+          restore-keys: synthetic-npm-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check journeys (tsc)
+        run: npm run typecheck
+
   helm-lint:
     runs-on: ubuntu-latest
     steps:
@@ -194,7 +218,25 @@ jobs:
       trivyignore: .trivyignore
     secrets: inherit
 
-  # Helm chart publish (main push only; release publish in helm-publish.yaml)
+  build-synthetic-monitoring:
+    needs: [synthetic-checks]
+    uses: bcit-tlu/.github/.github/workflows/oci-build.yaml@main
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      security-events: write
+      actions: read
+    with:
+      component: synthetic-monitoring
+      image_name: hriv-synthetic-monitoring
+      context: ./synthetic-monitoring
+      trivyignore: .trivyignore
+    secrets: inherit
+
+  # Helm chart publish (main push only; release publish in helm-publish.yaml).
+  # Synthetic monitoring has no Helm chart, so it is intentionally absent from
+  # the publish loop below.
 
   helm-publish:
     needs: [helm-lint, build-frontend, build-backend, build-backup]

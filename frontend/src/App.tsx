@@ -1408,6 +1408,8 @@ export default function App() {
               <Paper elevation={3} sx={{ borderRadius: 2, overflow: 'hidden' }}>
                 <ImageViewer
                   tileSources={selectedImage.tileSources}
+                  imageId={selectedImage.id}
+                  categoryId={selectedImage.categoryId ?? undefined}
                   initialViewport={initialViewport}
                   onViewportChange={handleViewportChange}
                   measurement={selectedImageMeasurement}

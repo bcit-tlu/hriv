@@ -32,7 +32,27 @@ let _token: string | null = readStoredToken()
 // Unique per browser-tab identifier sent on every API call.  Allows the
 // backend audit log to correlate all requests from a single tab, even when
 // many students share the same JWT (shared "student@example.ca" account).
-export const SESSION_ID = globalThis.crypto?.randomUUID?.() ?? 'test-session'
+//
+// Persisted in sessionStorage so the id survives in-tab reloads and SPA
+// remounts (giving a stable notion of a "session" for usage analytics) while
+// still being distinct per tab — sessionStorage is not shared between tabs.
+function resolveSessionId(): string {
+  const fresh = (): string => globalThis.crypto?.randomUUID?.() ?? 'test-session'
+  try {
+    const storage = globalThis.sessionStorage
+    if (!storage) return fresh()
+    const existing = storage.getItem('hriv.session_id')
+    if (existing) return existing
+    const id = fresh()
+    storage.setItem('hriv.session_id', id)
+    return id
+  } catch {
+    // Private-mode or disabled storage: fall back to an in-memory id.
+    return fresh()
+  }
+}
+
+export const SESSION_ID = resolveSessionId()
 
 export function setToken(token: string | null): void {
   _token = token

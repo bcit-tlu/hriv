@@ -84,10 +84,16 @@ jobs:
               echo "::warning::No tag_name output for path '${path}', skipping"
               continue
             fi
-            echo "Dispatching helm-publish.yaml for ${tag}"
-            gh workflow run helm-publish.yaml \
-              --ref "${tag}" \
-              -f tag_name="${tag}"
+            # synthetic-monitoring ships as an image only (no Helm chart), so
+            # skip the chart publish for it.
+            if [[ "${path}" == "synthetic-monitoring" ]]; then
+              echo "Skipping helm-publish.yaml for ${tag} (no chart for ${path})"
+            else
+              echo "Dispatching helm-publish.yaml for ${tag}"
+              gh workflow run helm-publish.yaml \
+                --ref "${tag}" \
+                -f tag_name="${tag}"
+            fi
             echo "Dispatching release-retag.yaml for ${tag}"
             gh workflow run release-retag.yaml \
               --ref "${tag}" \
