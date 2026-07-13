@@ -3,6 +3,7 @@ import {
   diag,
   DiagConsoleLogger,
   DiagLogLevel,
+  SpanStatusCode,
   trace,
   type Span,
 } from '@opentelemetry/api'
@@ -110,6 +111,8 @@ export function initObservability(): void {
   registerInstrumentations({
     instrumentations: [new FetchInstrumentation(fetchConfig)],
   })
+
+  window.addEventListener('pagehide', _flushEvents)
 }
 
 function escapeRegExp(value: string): string {
@@ -218,10 +221,13 @@ export async function withSpan<T>(name: string, fn: () => Promise<T>): Promise<T
   return tracer.startActiveSpan(name, async (span: Span) => {
     try {
       const result = await fn()
-      span.setStatus({ code: 1 }) // OK
+      span.setStatus({ code: SpanStatusCode.OK })
       return result
     } catch (err) {
-      span.setStatus({ code: 2, message: err instanceof Error ? err.message : String(err) }) // ERROR
+      span.setStatus({
+        code: SpanStatusCode.ERROR,
+        message: err instanceof Error ? err.message : String(err),
+      })
       span.recordException(err instanceof Error ? err : new Error(String(err)))
       throw err
     } finally {

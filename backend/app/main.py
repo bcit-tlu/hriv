@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, status as http_status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -292,8 +293,5 @@ async def metrics():
     inside the cluster via the ServiceMonitor; do not expose it on a public
     ingress.
     """
-    import asyncio
-    from fastapi.responses import Response
-
     content, media_type = await asyncio.to_thread(render_backup_metrics)
     return Response(content=content, media_type=media_type)

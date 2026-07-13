@@ -120,6 +120,12 @@ root HTTP span. To query them:
 | **OCC Contention**    | Count of `{ span.http.response.status_code = 409 }` — useful for detecting hot categories/images                  |
 | **Auth Failures**     | Filter on `{ span.oidc.error_code != "" }`                                                                        |
 
+The Data and Recovery dashboard's image-processing panels require the backend
+and worker OTel metrics exporter. Set
+`observability.openTelemetry.exporter.metrics=otlp` when enabling the OTel
+collector; the chart default is `none` so deployments do not emit metrics
+unless explicitly configured.
+
 ### Alerting recommendations
 
 | Alert                   | Condition                                                      | Severity                                                                  |

@@ -274,7 +274,7 @@ class MaintenanceMiddleware:
 
         if is_maintenance_mode():
             path: str = scope["path"]
-            if not any(path.startswith(p) for p in _MAINTENANCE_EXEMPT):
+            if not any(_path_matches_excluded(path, p) for p in _MAINTENANCE_EXEMPT):
                 response = JSONResponse(
                     status_code=503,
                     content={
