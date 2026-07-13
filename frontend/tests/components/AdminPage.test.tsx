@@ -770,7 +770,6 @@ describe('AdminPage', () => {
   it('offers a download for a completed export and lets the user view then close the task log', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
-    mockDownloadAdminTaskResult.mockResolvedValue(undefined)
 
     mockFetchAdminTask.mockResolvedValue({
       id: 1,

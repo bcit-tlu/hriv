@@ -11,7 +11,7 @@ vi.mock('../../src/api', async (importOriginal) => {
 })
 
 import { reportIssue } from '../../src/api'
-import ReportIssueModal from '../../src/components/ReportIssueModal'
+import ReportIssueModal, { AUTO_CLOSE_DELAY_MS } from '../../src/components/ReportIssueModal'
 
 describe('ReportIssueModal', () => {
   beforeEach(() => {
@@ -109,7 +109,7 @@ describe('ReportIssueModal', () => {
     expect(onClose).not.toHaveBeenCalled()
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2500)
+      await vi.advanceTimersByTimeAsync(AUTO_CLOSE_DELAY_MS + 500)
     })
     expect(onClose).toHaveBeenCalledOnce()
   })
@@ -136,7 +136,7 @@ describe('ReportIssueModal', () => {
     expect(onClose).toHaveBeenCalledOnce()
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(2500)
+      await vi.advanceTimersByTimeAsync(AUTO_CLOSE_DELAY_MS + 500)
     })
     expect(onClose).toHaveBeenCalledOnce()
   })
