@@ -58,7 +58,7 @@ def _make_user(
     role: str = "admin", programs: list | None = None, groups: list | None = None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
-        id=1, role=role, email="u@example.com",
+        id=1, role=role, email=f"{role}@example.com",
         programs=programs or [], groups=groups or [],
     )
 
