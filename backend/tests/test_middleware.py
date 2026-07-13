@@ -331,10 +331,15 @@ async def test_audit_handles_exception_in_inner_app() -> None:
 
 
 async def test_audit_logs_health_check_at_debug() -> None:
-    """Health-check endpoints should be logged at DEBUG, not INFO."""
+    """Health-check endpoints should be logged at DEBUG, not INFO.
+
+    The ``/api/health`` prefix (no trailing slash) covers the exact path and
+    its subpaths, so ``/api/health/ready`` and ``/api/health/storage`` are
+    excluded without needing their own entries in ``audit_exclude_prefixes``.
+    """
     mw = AuditMiddleware(app=AsyncMock())
 
-    for path in ("/api/health", "/api/health/ready"):
+    for path in ("/api/health", "/api/health/ready", "/api/health/storage"):
         scope = _make_scope(path=path)
         with patch("app.middleware.logger") as mock_logger:
             await _invoke(mw, scope)

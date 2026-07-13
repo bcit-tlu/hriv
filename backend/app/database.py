@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # that prefix. Intended for high-volume, low-signal endpoints (container
     # healthchecks, tile serving, Prometheus scrapes, etc.). Operators can
     # extend the list per deployment by setting the AUDIT_EXCLUDE_PREFIXES env var.
-    audit_exclude_prefixes: str = "/api/health,/api/health/ready,/api/health/storage,/api/tiles/,/api/metrics"
+    audit_exclude_prefixes: str = "/api/health,/api/tiles/,/api/metrics"
 
     # Login rate limiting (Phase 5)
     rate_limit_login_max: int = 5
