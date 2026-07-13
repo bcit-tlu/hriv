@@ -197,11 +197,14 @@ bounds the key length and hides the raw session id (it does not reduce the
 number of distinct keys). The per-user aggregate cap ensures a client that
 **rotates `X-Session-ID`** on every request cannot mint unlimited per-tab
 budgets and flood the log pipeline, while legitimately shared accounts keep
-generous headroom. Both budgets are checked per request and the **stricter**
-`Retry-After` wins. Exceeding either returns `429 Too Many Requests` with a
-`Retry-After` header. Consistent with the login limiter, the limiter is
-**fail-open**: if Redis is unavailable the request is allowed rather than
-rejected.
+generous headroom. The per-tab budget is checked **first** and short-circuits:
+if a tab is over its own budget it gets `429` immediately and the shared
+per-user aggregate is **not** checked or incremented, so one throttled tab
+hammering retries cannot exhaust the shared-account cap for everyone else. The
+aggregate is only consulted for requests that pass their per-tab budget.
+Exceeding either returns `429 Too Many Requests` with a `Retry-After` header.
+Consistent with the login limiter, the limiter is **fail-open**: if Redis is
+unavailable the request is allowed rather than rejected.
 
 Browser trace spans are a separate signal and are exported directly to the
 OTLP/HTTP gateway configured by `VITE_OTEL_ENDPOINT`. Production builds use the

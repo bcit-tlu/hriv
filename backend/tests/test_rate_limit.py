@@ -116,8 +116,8 @@ def test_telemetry_user_key_ignores_session() -> None:
     assert _telemetry_user_rate_limit_key(7) != _telemetry_rate_limit_key(7, "tab-a")
 
 
-async def test_telemetry_rate_limit_checks_both_budgets() -> None:
-    """Both the per-tab and per-user aggregate keys are checked per request."""
+async def test_telemetry_rate_limit_checks_aggregate_when_session_passes() -> None:
+    """When the per-tab budget passes, the per-user aggregate is also checked."""
     calls: list[tuple[str, int, int]] = []
 
     async def fake_check(key: str, window: int, max_attempts: int) -> None:
@@ -130,12 +130,33 @@ async def test_telemetry_rate_limit_checks_both_budgets() -> None:
         result = await check_telemetry_rate_limit(7, "tab-a")
 
     assert result is None
-    keys = {c[0] for c in calls}
-    assert _telemetry_rate_limit_key(7, "tab-a") in keys
-    assert _telemetry_user_rate_limit_key(7) in keys
-    # per-tab budget uses the smaller limit; aggregate uses the larger.
-    assert (_telemetry_rate_limit_key(7, "tab-a"), 60, 60) in calls
-    assert (_telemetry_user_rate_limit_key(7), 60, 600) in calls
+    # per-tab budget (smaller limit) is checked first, then the aggregate.
+    assert calls == [
+        (_telemetry_rate_limit_key(7, "tab-a"), 60, 60),
+        (_telemetry_user_rate_limit_key(7), 60, 600),
+    ]
+
+
+async def test_telemetry_rate_limit_short_circuits_on_session_budget() -> None:
+    """An exceeded per-tab budget returns immediately and never touches the aggregate."""
+    session_key = _telemetry_rate_limit_key(7, "tab-a")
+    aggregate_key = _telemetry_user_rate_limit_key(7)
+    calls: list[str] = []
+
+    async def fake_check(key: str, window: int, max_attempts: int) -> int | None:
+        calls.append(key)
+        return 5 if key == session_key else 30
+
+    with patch("app.rate_limit.settings", _MOCK_SETTINGS), patch(
+        "app.rate_limit.check_rate_limit", side_effect=fake_check
+    ):
+        result = await check_telemetry_rate_limit(7, "tab-a")
+
+    # Session retry is returned; the shared aggregate is never checked/incremented,
+    # so a throttled tab cannot exhaust the shared-account cap for everyone else.
+    assert result == 5
+    assert calls == [session_key]
+    assert aggregate_key not in calls
 
 
 async def test_telemetry_session_rotation_hits_aggregate_cap() -> None:
@@ -156,21 +177,6 @@ async def test_telemetry_session_rotation_hits_aggregate_cap() -> None:
 
     # Despite a distinct session id each time, the aggregate cap throttles all.
     assert results == [42, 42, 42, 42, 42]
-
-
-async def test_telemetry_rate_limit_returns_stricter_retry() -> None:
-    """When both budgets are exceeded, the larger Retry-After wins."""
-    session_key = _telemetry_rate_limit_key(7, "tab-a")
-
-    async def fake_check(key: str, window: int, max_attempts: int) -> int | None:
-        return 5 if key == session_key else 30
-
-    with patch("app.rate_limit.settings", _MOCK_SETTINGS), patch(
-        "app.rate_limit.check_rate_limit", side_effect=fake_check
-    ):
-        result = await check_telemetry_rate_limit(7, "tab-a")
-
-    assert result == 30
 
 
 async def test_telemetry_rate_limit_fail_open_when_redis_down() -> None:

@@ -148,7 +148,7 @@ async def check_telemetry_rate_limit(
 ) -> int | None:
     """Rate-limit frontend telemetry ingestion with two budgets over one window.
 
-    Two sliding-window budgets are enforced:
+    Two sliding-window budgets are enforced in order:
 
     * a **per-tab** budget keyed by internal user id + a digest of the per-tab
       ``X-Session-ID`` (``rate_limit_telemetry_max``) so an accidental tab loop
@@ -158,8 +158,13 @@ async def check_telemetry_rate_limit(
       (``rate_limit_telemetry_user_max``) so a client rotating ``X-Session-ID``
       cannot create unbounded throughput.
 
-    Both are checked; the **stricter** (larger ``Retry-After``) is returned.
-    Returns ``None`` when allowed. Redis failure remains fail-open in
+    The per-session budget is checked **first** and short-circuits: if it is
+    exceeded we return immediately and do **not** check or increment the shared
+    per-user aggregate. Otherwise one throttled tab hammering 429s would keep
+    consuming the shared-account aggregate and starve every other tab/user on
+    the same account. The aggregate is only consulted for requests that pass
+    their per-session budget. Returns ``None`` when allowed, otherwise the
+    ``Retry-After`` seconds. Redis failure remains fail-open in
     ``check_rate_limit``.
     """
     session_retry = await check_rate_limit(
@@ -167,13 +172,13 @@ async def check_telemetry_rate_limit(
         settings.rate_limit_telemetry_window,
         settings.rate_limit_telemetry_max,
     )
-    user_retry = await check_rate_limit(
+    if session_retry is not None:
+        return session_retry
+    return await check_rate_limit(
         _telemetry_user_rate_limit_key(user_id),
         settings.rate_limit_telemetry_window,
         settings.rate_limit_telemetry_user_max,
     )
-    retries = [r for r in (session_retry, user_retry) if r is not None]
-    return max(retries) if retries else None
 
 
 async def reset_login_rate_limit(client_ip: str, email: str) -> None:
