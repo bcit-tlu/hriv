@@ -6,17 +6,20 @@ downstream dashboards.
 
 ## Stack Overview
 
-| Layer                | Technology                                                                 | Role                                                       |
-| -------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| SDK bootstrap        | `otel_bootstrap.py`                                                        | Ensures the OTel SDK is active under `uvicorn --reload`    |
-| Auto-instrumentation | `opentelemetry-instrumentation-fastapi`, `-sqlalchemy`, `-redis`, `-httpx` | Captures HTTP, DB, cache, and outbound spans automatically |
-| Exporter             | OTLP (gRPC) → Tempo                                                        | Ships traces to the cluster collector                      |
-| Dashboards           | Grafana (Tempo data source)                                                | Query and alert on traces                                  |
-| Structured logs      | `AuditMiddleware` → NDJSON stdout → Loki                                   | Request-level audit trail with `X-Request-ID` correlation  |
+| Layer                  | Technology                                                                 | Role                                                       |
+| ---------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| SDK bootstrap          | `otel_bootstrap.py`                                                        | Ensures the OTel SDK is active under `uvicorn --reload`    |
+| Auto-instrumentation   | `opentelemetry-instrumentation-fastapi`, `-sqlalchemy`, `-redis`, `-httpx` | Captures HTTP, DB, cache, and outbound spans automatically |
+| Backend exporter       | OTLP (gRPC) → Tempo                                                        | Ships backend traces to the cluster collector              |
+| Browser trace exporter | `frontend/src/observability.ts` → OTLP/HTTP                                | Ships browser spans to the configured public OTLP gateway  |
+| Frontend usage events  | Authenticated backend ingestion → structured logs                          | Validates and enriches approved browser activity events    |
+| Dashboards             | Grafana (Tempo data source)                                                | Query and alert on traces                                  |
+| Structured logs        | `AuditMiddleware` → NDJSON stdout → Loki                                   | Request-level audit trail with `X-Request-ID` correlation  |
 
-Configuration is entirely via `OTEL_*` environment variables (set in the Helm
-chart values). When all exporters are `"none"`, the SDK stays in no-op mode
-with zero runtime overhead.
+Backend configuration uses `OTEL_*` environment variables set in the Helm chart
+values. When all backend exporters are `"none"`, the SDK stays in no-op mode
+with zero runtime overhead. Browser trace export is configured separately at
+frontend build time through `VITE_OTEL_ENDPOINT`.
 
 ## Span Error Semantics
 
@@ -120,6 +123,21 @@ root HTTP span. To query them:
 | **OCC Contention**    | Count of `{ span.http.response.status_code = 409 }` — useful for detecting hot categories/images                  |
 | **Auth Failures**     | Filter on `{ span.oidc.error_code != "" }`                                                                        |
 
+The Data and Recovery dashboard's image-processing panels require the backend
+and worker OTel metrics exporter. Set
+`observability.openTelemetry.exporter.metrics=otlp` when enabling the OTel
+collector; the chart default is `none` so deployments do not emit metrics
+unless explicitly configured.
+
+Prometheus scrapes `/api/metrics` directly from the backend ClusterIP through
+the ServiceMonitor. The frontend nginx configuration returns `404` for the
+exact `/api/metrics` path so the unauthenticated scrape endpoint is not exposed
+through the public application ingress.
+
+`hriv_backup_age_seconds` is `+Inf` when backup access is configured but no
+valid successful-backup marker exists. This keeps the age gauge in its red
+threshold state instead of presenting a missing or malformed backup as fresh.
+
 ### Alerting recommendations
 
 | Alert                   | Condition                                                      | Severity                                                                  |
@@ -128,6 +146,66 @@ root HTTP span. To query them:
 | Sustained 409 spike     | 409 count > 50/min for 10 min                                  | Warning (OCC contention — possible UI bug or concurrent batch operations) |
 | OIDC provider down      | `oidc.error_code = PROVIDER_UNREACHABLE` > 0 for 2 min         | Critical                                                                  |
 | Background task failure | Span error in `_process_bulk_import` or `process_source_image` | Warning                                                                   |
+
+## Frontend Telemetry Ingestion
+
+Frontend usage events (image viewer lifecycle, page navigation) are **not**
+sent directly to the OpenTelemetry collector. Instead, the browser batches them
+and POSTs them to the authenticated backend endpoint:
+
+```
+POST /api/telemetry/events
+Authorization: Bearer <JWT>
+X-Session-ID: <tab-session-id>
+Content-Type: application/json
+
+{"events": [{"event": "image.view.ready", "outcome": "success", ...}]}
+```
+
+The endpoint validates each event name against an allowlist and emits a
+structured log that the OTel logging handler forwards to the collector. This
+keeps structured event ingestion behind application authentication and lets the
+backend enforce schema validation and payload-size limits.
+
+Browser trace spans are a separate signal and are exported directly to the
+OTLP/HTTP gateway configured by `VITE_OTEL_ENDPOINT`. Production builds use the
+standard BCIT gateway as a fallback; non-standard deployments should override
+it at build time. Because this endpoint accepts browser traffic, the gateway
+must enforce CORS, request-size limits, and rate limits, and downstream systems
+must not trust browser-supplied identity attributes. Structured usage events
+never use this direct path.
+
+When `VITE_API_URL` is set (production and staging), the frontend posts to
+`${VITE_API_URL}/api/telemetry/events`. In local development, when `VITE_API_URL`
+is unset, the frontend falls back to the same-origin relative path
+`/api/telemetry/events` so the Vite dev proxy forwards events to the backend.
+
+### Allowed event names
+
+- `image.view.started`
+- `image.view.ready`
+- `image.view.failed`
+- `navigation.page_changed`
+
+### Event fields
+
+| Field         | Type                                  | Purpose                                                |
+| ------------- | ------------------------------------- | ------------------------------------------------------ |
+| `event`       | string (required)                     | One of the allowed event names above                   |
+| `outcome`     | `"success"`, `"failure"`, `"unknown"` | Result of the operation                                |
+| `duration_ms` | number                                | End-to-end duration in milliseconds, when meaningful   |
+| `action`      | string                                | Low-cardinality action label (e.g. `view`, `navigate`) |
+| `page`        | string                                | Low-cardinality page identifier for navigation events  |
+| `error`       | string                                | High-level error category, never free-text or PII      |
+| `synthetic`   | boolean                               | True for Playwright synthetic-monitoring journeys      |
+
+### Backend enrichment
+
+The endpoint enriches each event with:
+
+- `user.id` and `user.role` from the authenticated JWT
+- `browser.tab.session_id` from the `X-Session-ID` header
+- `trace.parent` from the incoming `traceparent` header, if present
 
 ## Structured Logging vs Tracing
 

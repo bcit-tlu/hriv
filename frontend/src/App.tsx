@@ -82,6 +82,7 @@ import AddCategoryDialog from './components/AddCategoryDialog'
 import EditCategoryDialog from './components/EditCategoryDialog'
 import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
+import { emitEvent } from './observability'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from './categoryUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
@@ -129,6 +130,15 @@ export default function App() {
     if (p === 'manage' || p === 'people' || p === 'admin') return p
     return 'browse'
   })
+
+  const lastEmittedPageRef = useRef<Page | null>(null)
+  useEffect(() => {
+    if (!currentUser) return
+    if (lastEmittedPageRef.current === page) return
+    lastEmittedPageRef.current = page
+    emitEvent({ event: 'navigation.page_changed', action: 'navigate', outcome: 'success', page })
+  }, [page, currentUser])
+
   const [path, setPath] = useState<Category[]>([])
   const pathRef = useRef(path)
   useEffect(() => {

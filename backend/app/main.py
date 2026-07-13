@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, status as http_status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +17,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from .admin_ops import _ensure_tasks_dir, reconcile_stale_tasks
 from .auth import auth_settings
+from .backup_metrics import render_backup_metrics
 from .database import get_async_session, get_db, settings
 from .logging_config import setup_logging
 from .maintenance import is_maintenance_mode
@@ -33,6 +35,7 @@ from .routers import (
     issues,
     oidc,
     programs,
+    telemetry,
     upload,
     users,
 )
@@ -230,6 +233,7 @@ app.include_router(groups.router, prefix="/api")
 app.include_router(images.router, prefix="/api")
 app.include_router(issues.router, prefix="/api")
 app.include_router(programs.router, prefix="/api")
+app.include_router(telemetry.router, prefix="/api")
 app.include_router(upload.router, prefix="/api")
 app.include_router(users.router, prefix="/api")
 
@@ -274,3 +278,20 @@ async def storage_health():
 async def status():
     """Public endpoint for the frontend to check maintenance mode."""
     return {"maintenance": is_maintenance_mode(), "version": app.version}
+
+
+@app.get("/api/metrics")
+async def metrics():
+    """Prometheus metrics endpoint (backup status only at this stage).
+
+    Exposes backup age, size, and outcome as gauges. Operational RED metrics
+    are emitted via OpenTelemetry OTLP and stored in Prometheus via remote
+    write; this endpoint covers the backup state that only changes daily.
+
+    This endpoint is intentionally unauthenticated so in-cluster Prometheus
+    scrapes work without per-pod credentials. It should only be reachable
+    inside the cluster via the ServiceMonitor; do not expose it on a public
+    ingress.
+    """
+    content, media_type = await asyncio.to_thread(render_backup_metrics)
+    return Response(content=content, media_type=media_type)

@@ -1,0 +1,93 @@
+# Optional local observability stack for HRIV.
+#
+# Start alongside the main compose file:
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up -d
+#
+# This adds Prometheus, Loki, Tempo, Grafana, and an OpenTelemetry collector.
+# The frontend is already configured to send OTLP/HTTP logs/traces to
+# http://localhost:4318 (see docker-compose.yml -> frontend -> VITE_OTEL_ENDPOINT).
+# Add the backend OTEL variables below to have the backend/worker contribute
+# metrics, traces, and logs as well.
+
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.117.0
+    command: ['--config=/etc/otel-collector-config.yaml']
+    ports:
+      - '4317:4317' # OTLP gRPC
+      - '4318:4318' # OTLP HTTP
+      - '13133:13133' # health
+    volumes:
+      - ./docker/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yaml
+      - --storage.tsdb.retention.time=7d
+      - --enable-feature=remote-write-receiver
+    ports:
+      - '9090:9090'
+    volumes:
+      - ./docker/prometheus.yaml:/etc/prometheus/prometheus.yaml:ro
+      - prometheus-data:/prometheus
+
+  loki:
+    image: grafana/loki:3.3.0
+    command: ['-config.file=/etc/loki/local-config.yaml']
+    ports:
+      - '3100:3100'
+    volumes:
+      - loki-data:/loki
+
+  tempo:
+    image: grafana/tempo:2.7.0
+    command: ['-config.file=/etc/tempo.yaml']
+    ports:
+      - '3200:3200' # Tempo query/API
+      - '9095:9095' # Tempo gRPC (internal)
+    # OTLP gRPC is consumed internally by the collector (tempo:4317); no
+    # host-port mapping is needed and it would collide with the collector.
+    volumes:
+      - ./docker/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/tmp/tempo
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    ports:
+      - '3000:3000'
+    environment:
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+    volumes:
+      - ./docker/grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+      - grafana-data:/var/lib/grafana
+
+  # Override backend env so it exports OTLP to the local collector.
+  backend:
+    environment:
+      - OTEL_SERVICE_NAME=hriv-backend
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_PYTHON_FASTAPI_EXCLUDED_URLS=api/health,api/health/ready,api/metrics
+      - OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true
+
+  worker:
+    environment:
+      - OTEL_SERVICE_NAME=hriv-worker
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=otlp
+      - OTEL_LOGS_EXPORTER=otlp
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED=true
+
+volumes:
+  prometheus-data:
+  loki-data:
+  tempo-data:
+  grafana-data:

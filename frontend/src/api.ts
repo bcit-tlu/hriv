@@ -32,7 +32,7 @@ let _token: string | null = readStoredToken()
 // Unique per browser-tab identifier sent on every API call.  Allows the
 // backend audit log to correlate all requests from a single tab, even when
 // many students share the same JWT (shared "student@example.ca" account).
-const SESSION_ID = globalThis.crypto?.randomUUID?.() ?? 'test-session'
+export const SESSION_ID = globalThis.crypto?.randomUUID?.() ?? 'test-session'
 
 export function setToken(token: string | null): void {
   _token = token

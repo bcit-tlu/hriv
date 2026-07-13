@@ -31,6 +31,7 @@ opentelemetry-instrumentation-sqlalchemy = "^0.57b0"
 opentelemetry-instrumentation-redis = "^0.57b0"
 alembic = "^1.13.0"
 azure-storage-blob = "12.28.0"
+prometheus-client = "^0.21.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.3"

@@ -165,7 +165,6 @@ export default function AppShell(props: AppShellProps) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale anchor after viewport collapse
       setManageMenuAnchor(null)
     } else {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- close drawer after viewport expands
       setNavDrawerOpen(false)
     }
   }, [collapseNav])

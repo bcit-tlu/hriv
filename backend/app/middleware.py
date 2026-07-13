@@ -28,6 +28,19 @@ def _parse_exclude_prefixes(raw: str) -> tuple[str, ...]:
     return tuple(p.strip() for p in raw.split(",") if p.strip())
 
 
+def _path_matches_excluded(path: str, prefix: str) -> bool:
+    """Return True if ``path`` is covered by an audit-exclude prefix.
+
+    Prefixes that end with ``/`` are treated as directory prefixes.
+    Prefixes without a trailing slash match the exact path or the path plus a
+    ``/`` sub-path, but do not match sibling paths that merely start with the
+    same characters (e.g. ``/api/metrics`` must not match ``/api/metrics_custom``).
+    """
+    if prefix.endswith("/"):
+        return path.startswith(prefix)
+    return path == prefix or path.startswith(prefix + "/")
+
+
 def _parse_content_length(raw: str | None) -> int | str | None:
     if not raw:
         return None
@@ -220,7 +233,7 @@ class AuditMiddleware:
                 if user_role:
                     span.set_attribute("enduser.role", user_role)
 
-            is_excluded = any(path.startswith(p) for p in _EXCLUDE_PREFIXES)
+            is_excluded = any(_path_matches_excluded(path, p) for p in _EXCLUDE_PREFIXES)
             _log = logger.debug if is_excluded else logger.info
             _log(
                 "%s %s %s %dms",
@@ -235,10 +248,12 @@ class AuditMiddleware:
 # ── Maintenance-mode middleware ─────────────────────────
 
 # Paths that must remain reachable during a restore so that health
-# probes, the status endpoint, and the maintenance toggle keep working.
+# probes, the status endpoint, metrics scraping, and the maintenance toggle
+# keep working.
 _MAINTENANCE_EXEMPT: tuple[str, ...] = (
     "/api/health",
     "/api/status",
+    "/api/metrics",
     "/api/admin/maintenance",
 )
 
@@ -259,7 +274,7 @@ class MaintenanceMiddleware:
 
         if is_maintenance_mode():
             path: str = scope["path"]
-            if not any(path.startswith(p) for p in _MAINTENANCE_EXEMPT):
+            if not any(_path_matches_excluded(path, p) for p in _MAINTENANCE_EXEMPT):
                 response = JSONResponse(
                     status_code=503,
                     content={

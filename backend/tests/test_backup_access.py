@@ -17,8 +17,10 @@ from azure.core.exceptions import ResourceNotFoundError
 from app import backup_access
 from app.backup_access import (
     BackupRestoreNotConfiguredError,
+    BackupSnapshotManifestError,
     BackupSnapshotMemberError,
     BackupSnapshotNotFoundError,
+    get_last_success_marker,
     get_snapshot_manifest,
     list_snapshots,
     restore_snapshot_file,
@@ -129,6 +131,41 @@ def test_list_snapshots_uses_azure_container(monkeypatch, tmp_path) -> None:
             "created_at": "2026-01-02T02:00:00+00:00",
         }
     ]
+
+
+def test_get_last_success_marker_downloads_prefixed_marker() -> None:
+    marker = {"created_at": "2026-01-02T02:00:00+00:00"}
+
+    with (
+        patch.object(backup_access, "_backup_prefix", return_value="hriv-backups/"),
+        patch.object(backup_access, "_download_json_blob", return_value=marker) as download,
+    ):
+        result = get_last_success_marker()
+
+    assert result == marker
+    download.assert_called_once_with("hriv-backups/LAST_SUCCESS.json")
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        ResourceNotFoundError(message="missing"),
+        BackupSnapshotManifestError("invalid marker"),
+    ],
+)
+def test_get_last_success_marker_returns_none_for_missing_or_invalid_marker(
+    error: Exception,
+) -> None:
+    with patch.object(backup_access, "_download_json_blob", side_effect=error):
+        assert get_last_success_marker() is None
+
+
+def test_get_last_success_marker_reraises_not_configured() -> None:
+    error = BackupRestoreNotConfiguredError("backup restore is not configured")
+
+    with patch.object(backup_access, "_download_json_blob", side_effect=error):
+        with pytest.raises(BackupRestoreNotConfiguredError, match="not configured"):
+            get_last_success_marker()
 
 
 def test_get_snapshot_manifest_prefers_sidecar(monkeypatch, tmp_path) -> None:

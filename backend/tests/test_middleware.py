@@ -295,7 +295,6 @@ async def test_audit_handles_invalid_jwt_gracefully() -> None:
 
     with patch("app.middleware.logger") as mock_logger:
         messages = await _invoke(mw, scope)
-        headers = _response_headers(messages)
         # Should still succeed; invalid JWT just means no user info in logs
         for msg in messages:
             if msg["type"] == "http.response.start":
@@ -331,15 +330,42 @@ async def test_audit_handles_exception_in_inner_app() -> None:
 
 
 async def test_audit_logs_health_check_at_debug() -> None:
-    """Health-check endpoints should be logged at DEBUG, not INFO."""
+    """Health-check endpoints should be logged at DEBUG, not INFO.
+
+    The ``/api/health`` prefix (no trailing slash) covers the exact path and
+    its subpaths, so ``/api/health/ready`` and ``/api/health/storage`` are
+    excluded without needing their own entries in ``audit_exclude_prefixes``.
+    """
     mw = AuditMiddleware(app=AsyncMock())
 
-    for path in ("/api/health", "/api/health/ready"):
+    for path in ("/api/health", "/api/health/ready", "/api/health/storage"):
         scope = _make_scope(path=path)
         with patch("app.middleware.logger") as mock_logger:
             await _invoke(mw, scope)
             mock_logger.debug.assert_called_once()
             mock_logger.info.assert_not_called()
+
+
+async def test_audit_logs_metrics_at_debug() -> None:
+    """The Prometheus scrape endpoint should be logged at DEBUG."""
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/metrics")
+
+    with patch("app.middleware.logger") as mock_logger:
+        await _invoke(mw, scope)
+        mock_logger.debug.assert_called_once()
+        mock_logger.info.assert_not_called()
+
+
+async def test_audit_metrics_does_not_suppress_similar_paths() -> None:
+    """A hypothetical /api/metrics_custom path must still be logged at INFO."""
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/metrics_custom")
+
+    with patch("app.middleware.logger") as mock_logger:
+        await _invoke(mw, scope)
+        mock_logger.info.assert_called_once()
+        mock_logger.debug.assert_not_called()
 
 
 async def test_audit_logs_non_health_at_info() -> None:
