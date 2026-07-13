@@ -138,9 +138,10 @@ class _ChunkedBlobReader:
 def get_last_success_marker() -> dict | None:
     """Return the backup LAST_SUCCESS marker from Azure Blob Storage.
 
-    Returns ``None`` when backup restore is not configured, the marker blob
-    does not exist, or the marker cannot be parsed. This is a read-only
-    operation used for observability dashboards.
+    Raises ``BackupRestoreNotConfiguredError`` when backup restore is not
+    configured. Returns ``None`` when the marker blob does not exist or the
+    marker cannot be parsed. This is a read-only operation used for
+    observability dashboards.
     """
     try:
         blob_name = f"{_backup_prefix()}LAST_SUCCESS.json"

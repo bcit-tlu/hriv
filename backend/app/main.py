@@ -285,7 +285,8 @@ async def metrics():
     are emitted via OpenTelemetry OTLP and stored in Prometheus via remote
     write; this endpoint covers the backup state that only changes daily.
     """
+    import asyncio
     from fastapi.responses import Response
 
-    content, media_type = render_backup_metrics()
+    content, media_type = await asyncio.to_thread(render_backup_metrics)
     return Response(content=content, media_type=media_type)

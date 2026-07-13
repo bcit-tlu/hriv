@@ -46,7 +46,8 @@ services:
     ports:
       - '3200:3200' # Tempo query/API
       - '9095:9095' # Tempo gRPC (internal)
-      - '4317:4317' # OTLP gRPC
+    # OTLP gRPC is consumed internally by the collector (tempo:4317); no
+    # host-port mapping is needed and it would collide with the collector.
     volumes:
       - ./docker/tempo.yaml:/etc/tempo.yaml:ro
       - tempo-data:/tmp/tempo

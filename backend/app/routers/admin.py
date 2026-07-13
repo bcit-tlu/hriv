@@ -1171,8 +1171,12 @@ async def get_backup_status(
         age_seconds = max(
             (datetime.now(timezone.utc) - created_at).total_seconds(), 0
         )
-    except Exception:
-        pass
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid backup timestamp %r; leaving age_seconds as None",
+            created_at_str,
+            exc_info=True,
+        )
 
     return {
         "configured": True,

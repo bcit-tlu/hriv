@@ -22,15 +22,21 @@ import {
 
 import { SESSION_ID } from './api'
 
-const DEFAULT_OTEL_ENDPOINT = 'https://telemetry.ltc.bcit.ca'
+const DEFAULT_OTEL_ENDPOINT_PROD = 'https://telemetry.ltc.bcit.ca'
+const DEFAULT_OTEL_ENDPOINT_DEV = 'http://localhost:4318'
 
 let _loggerProvider: LoggerProvider | null = null
 let _tracerProvider: WebTracerProvider | null = null
 let _initialized = false
 let _synthetic = false
 
+function defaultEndpoint(): string {
+  const mode = import.meta.env.MODE ?? 'development'
+  return mode === 'production' ? DEFAULT_OTEL_ENDPOINT_PROD : DEFAULT_OTEL_ENDPOINT_DEV
+}
+
 function endpoint(): string {
-  return import.meta.env.VITE_OTEL_ENDPOINT?.replace(/\/$/, '') ?? DEFAULT_OTEL_ENDPOINT
+  return import.meta.env.VITE_OTEL_ENDPOINT?.replace(/\/$/, '') ?? defaultEndpoint()
 }
 
 function isBrowser(): boolean {
@@ -90,15 +96,16 @@ export function initObservability(): void {
     propagator: new W3CTraceContextPropagator(),
   })
 
+  const fetchConfig: { clearTimingResources: boolean; propagateTraceHeaderCorsUrls?: RegExp[] } = {
+    clearTimingResources: true,
+  }
+  const apiUrl = import.meta.env.VITE_API_URL
+  if (apiUrl) {
+    fetchConfig.propagateTraceHeaderCorsUrls = [new RegExp('^' + escapeRegExp(apiUrl))]
+  }
+
   registerInstrumentations({
-    instrumentations: [
-      new FetchInstrumentation({
-        clearTimingResources: true,
-        propagateTraceHeaderCorsUrls: [
-          new RegExp('^' + escapeRegExp(import.meta.env.VITE_API_URL ?? '')),
-        ],
-      }),
-    ],
+    instrumentations: [new FetchInstrumentation(fetchConfig)],
   })
 }
 

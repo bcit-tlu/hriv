@@ -1248,6 +1248,8 @@ async def rebuild_source_image_tiles(
         await asyncio.to_thread(_swap)
     except Exception:
         await asyncio.to_thread(shutil.rmtree, tmp_dir, True)
+        duration_ms = round((time.monotonic() - t_start) * 1000)
+        _record_processing_finished("rebuild", duration_ms / 1000, False)
         raise
 
     source_checksum = await _best_effort_source_checksum(src.stored_path)
