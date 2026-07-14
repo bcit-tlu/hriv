@@ -106,7 +106,11 @@ def normalize_http_route(scope: Scope) -> str:
     """
     route = scope.get("route")
     route_path = getattr(route, "path", None)
-    if isinstance(route_path, str) and route_path:
+    # Starlette ``Mount`` routes can surface a catch-all template such as
+    # ``/api/tiles/{path:path}``, which is less descriptive than the explicit
+    # DZI/thumbnail/image_files patterns below. Prefer the fallback
+    # normalization for those catch-all mount routes.
+    if isinstance(route_path, str) and route_path and "{path:path}" not in route_path:
         return route_path
 
     return _normalize_path_fallback(scope["path"])

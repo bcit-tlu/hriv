@@ -459,6 +459,16 @@ def test_normalize_http_route_prefers_router_template() -> None:
     assert normalize_http_route(scope) == "/api/images/{image_id}/replace"
 
 
+def test_normalize_http_route_ignores_mount_catch_all_template() -> None:
+    scope = _make_scope(path="/api/tiles/123/image_files/4/2_2.jpeg")
+    scope["route"] = SimpleNamespace(path="/api/tiles/{path:path}")
+
+    assert (
+        normalize_http_route(scope)
+        == "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+    )
+
+
 def test_normalize_http_route_normalizes_tile_paths() -> None:
     scope = _make_scope(path="/api/tiles/123/image_files/4/2_2.jpeg")
 
