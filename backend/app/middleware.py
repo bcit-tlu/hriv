@@ -13,7 +13,7 @@ import uuid
 from contextvars import ContextVar
 
 from jose import jwt
-from opentelemetry import trace
+from opentelemetry import metrics, trace
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -22,6 +22,28 @@ from .database import settings
 from .maintenance import is_maintenance_mode
 
 logger = logging.getLogger(__name__)
+_meter = metrics.get_meter(__name__)
+
+_tile_request_counter = _meter.create_counter(
+    "hriv.tile.requests",
+    description="Number of tile-delivery HTTP responses",
+    unit="1",
+)
+_tile_error_counter = _meter.create_counter(
+    "hriv.tile.errors",
+    description="Number of tile-delivery HTTP responses classified as errors",
+    unit="1",
+)
+_tile_duration_histogram = _meter.create_histogram(
+    "hriv.tile.response.duration",
+    description="Duration of tile-delivery HTTP responses",
+    unit="s",
+)
+_tile_response_size_histogram = _meter.create_histogram(
+    "hriv.tile.response.size",
+    description="Response size of tile-delivery HTTP responses",
+    unit="By",
+)
 
 _UUID_PATH_SEGMENT = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
@@ -34,6 +56,11 @@ _TILE_IMAGE_FILE_ROUTE = re.compile(
 _IMAGE_REPLACE_ROUTE = re.compile(r"/api/images/[0-9]+/replace")
 _ADMIN_TASK_UPLOAD_ROUTE = re.compile(r"/api/admin/tasks/[^/]+/upload(?:/finalize)?")
 _CATCH_ALL_ROUTE_PARAM = re.compile(r"\{[^/{}:]+:path\}")
+_TILE_METRIC_ROUTES = frozenset({
+    "/api/tiles/{image_id}/image.dzi",
+    "/api/tiles/{image_id}/thumbnail.{format}",
+    "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}",
+})
 
 
 def _parse_exclude_prefixes(raw: str) -> tuple[str, ...]:
@@ -71,6 +98,53 @@ def _is_upload_path(path: str) -> bool:
         or (path.startswith("/api/admin/tasks/") and path.endswith("/upload"))
         or (path.startswith("/api/images/") and path.endswith("/replace"))
     )
+
+
+def _is_tile_route(route: str) -> bool:
+    return route in _TILE_METRIC_ROUTES
+
+
+def _status_class(status_code: int) -> str:
+    if 100 <= status_code <= 599:
+        return f"{status_code // 100}xx"
+    return "other"
+
+
+def _tile_outcome(status_code: int) -> str:
+    if status_code == 404:
+        return "not_found"
+    if status_code in {401, 403}:
+        return "access_denied"
+    if 400 <= status_code <= 499:
+        return "client_error"
+    if 500 <= status_code <= 599:
+        return "server_error"
+    return "success"
+
+
+def _record_tile_metrics(
+    *,
+    method: str,
+    route: str,
+    status_code: int,
+    duration_s: float,
+    response_size_bytes: int,
+) -> None:
+    if not _is_tile_route(route):
+        return
+
+    attrs = {
+        "http.method": method,
+        "http.route": route,
+        "http.status_code": status_code,
+        "status_class": _status_class(status_code),
+        "outcome": _tile_outcome(status_code),
+    }
+    _tile_request_counter.add(1, attrs)
+    _tile_duration_histogram.record(duration_s, attrs)
+    _tile_response_size_histogram.record(response_size_bytes, attrs)
+    if status_code >= 400:
+        _tile_error_counter.add(1, attrs)
 
 
 def _normalize_path_fallback(path: str) -> str:
@@ -226,15 +300,18 @@ class AuditMiddleware:
 
         start = time.monotonic()
         status_code = 500  # default if the inner app raises
+        response_size_bytes = 0
 
         async def send_wrapper(message: Message) -> None:
-            nonlocal status_code
+            nonlocal status_code, response_size_bytes
             if message["type"] == "http.response.start":
                 status_code = message["status"]
                 # Inject X-Request-ID into the response headers
                 headers = list(message.get("headers", []))
                 headers.append((b"x-request-id", req_id.encode("latin-1")))
                 message = {**message, "headers": headers}
+            elif message["type"] == "http.response.body":
+                response_size_bytes += len(message.get("body", b""))
             await send(message)
 
         try:
@@ -242,7 +319,8 @@ class AuditMiddleware:
         except Exception:
             raise
         finally:
-            duration_ms = round((time.monotonic() - start) * 1000)
+            duration_s = time.monotonic() - start
+            duration_ms = round(duration_s * 1000)
             route = normalize_http_route(scope)
 
             client_ip = get_client_ip(scope)
@@ -310,6 +388,14 @@ class AuditMiddleware:
                     span.set_attribute("enduser.id", user_id)
                 if user_role:
                     span.set_attribute("enduser.role", user_role)
+
+            _record_tile_metrics(
+                method=method,
+                route=route,
+                status_code=status_code,
+                duration_s=duration_s,
+                response_size_bytes=response_size_bytes,
+            )
 
             is_excluded = any(_path_matches_excluded(path, p) for p in _EXCLUDE_PREFIXES)
             _log = logger.debug if is_excluded else logger.info

@@ -176,6 +176,49 @@ Examples:
 | `/api/tiles/123/image.dzi`                                           | `/api/tiles/{image_id}/image.dzi`                                |
 | `/api/tiles/123/image_files/4/2_2.jpeg`                              | `/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}` |
 
+## Tile Delivery Metrics
+
+Tile delivery must be measured separately from general API traffic because a
+student-visible incident can be isolated to DZI manifests or image tile fetches
+while the rest of the backend appears healthy.
+
+Authoritative source:
+
+- Emit tile-delivery metrics once, in the backend ASGI audit middleware, after
+  the response completes. Do not add a second counter in the static-file mount,
+  tile-generation worker, or dashboard query layer.
+
+Metric contract:
+
+- `hriv.tile.requests`: counter for all tile responses.
+- `hriv.tile.errors`: counter for tile responses with `http.status_code >= 400`.
+- `hriv.tile.response.duration`: histogram in seconds.
+- `hriv.tile.response.size`: histogram in bytes.
+
+Required dimensions:
+
+- `http.method`
+- `http.route`
+- `http.status_code`
+- `status_class`
+- `outcome`
+
+Rules:
+
+- Use normalized tile routes such as `/api/tiles/{image_id}/image.dzi`,
+  `/api/tiles/{image_id}/thumbnail.{format}`, and
+  `/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}`.
+- Emit tile metrics only for those known artifact routes. Unexpected paths under
+  the static tile mount should remain visible in request logs but must not
+  create new metric label values.
+- Distinguish missing content (`404`) from access-control denials (`401`/`403`)
+  and server failures (`5xx`) through `http.status_code`, `status_class`, and
+  the bounded `outcome` attribute.
+- Never use raw paths, image ids, tile coordinates, or zoom levels as metric
+  labels.
+- Count response bytes from streamed ASGI body chunks; do not buffer the body
+  solely for observability.
+
 ## Privacy, Access, and Retention
 
 Observability data serves two different uses and must be treated differently:
