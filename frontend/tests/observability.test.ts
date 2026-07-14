@@ -312,8 +312,15 @@ describe('observability', () => {
   it('exports the implemented frontend telemetry event contract', async () => {
     const { TELEMETRY_EVENT_NAMES, TELEMETRY_SCHEMA_VERSION } = await import('../src/observability')
 
-    expect(TELEMETRY_SCHEMA_VERSION).toBe(1)
+    expect(TELEMETRY_SCHEMA_VERSION).toBe(2)
     expect(TELEMETRY_EVENT_NAMES).toEqual([
+      'application.session_started',
+      'auth.logout_selected',
+      'feedback.report_issue_opened',
+      'feedback.report_issue_submitted',
+      'frontend.error',
+      'frontend.performance',
+      'image.share_selected',
       'image.view.started',
       'image.view.ready',
       'image.view.failed',
