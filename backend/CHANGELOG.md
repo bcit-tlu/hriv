@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.37.0...backend-v0.38.0) (2026-07-14)
+
+
+### Features
+
+* **observability:** add restore and build telemetry ([#925](https://github.com/bcit-tlu/hriv/issues/925)) ([6197188](https://github.com/bcit-tlu/hriv/commit/619718896b39f64d97992bc5ae4c85616faecbc2))
+
 ## [0.37.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.36.0...backend-v0.37.0) (2026-07-14)
 
 
