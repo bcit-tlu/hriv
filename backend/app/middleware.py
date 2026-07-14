@@ -26,7 +26,13 @@ logger = logging.getLogger(__name__)
 _UUID_PATH_SEGMENT = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
-_TILE_ROUTE = re.compile(r"^/api/tiles/\d+/\d+/\d+/\d+(?:\.[A-Za-z0-9]+)?$")
+_TILE_DZI_ROUTE = re.compile(r"^/api/tiles/\d+/image\.dzi$")
+_TILE_THUMBNAIL_ROUTE = re.compile(r"^/api/tiles/\d+/thumbnail\.[A-Za-z0-9]+$")
+_TILE_IMAGE_FILE_ROUTE = re.compile(
+    r"^/api/tiles/\d+/image_files/\d+/\d+_\d+\.[A-Za-z0-9]+$"
+)
+_IMAGE_REPLACE_ROUTE = re.compile(r"^/api/images/\d+/replace$")
+_ADMIN_TASK_UPLOAD_ROUTE = re.compile(r"^/api/admin/tasks/[^/]+/upload(?:/finalize)?$")
 
 
 def _parse_exclude_prefixes(raw: str) -> tuple[str, ...]:
@@ -66,6 +72,30 @@ def _is_upload_path(path: str) -> bool:
     )
 
 
+def _normalize_path_fallback(path: str) -> str:
+    """Normalize a raw URL path when no framework route template is available."""
+    if _TILE_DZI_ROUTE.fullmatch(path):
+        return "/api/tiles/{image_id}/image.dzi"
+    if _TILE_THUMBNAIL_ROUTE.fullmatch(path):
+        return "/api/tiles/{image_id}/thumbnail.{format}"
+    if _TILE_IMAGE_FILE_ROUTE.fullmatch(path):
+        return "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+    if _IMAGE_REPLACE_ROUTE.fullmatch(path):
+        return "/api/images/{image_id}/replace"
+    if _ADMIN_TASK_UPLOAD_ROUTE.fullmatch(path):
+        if path.endswith("/finalize"):
+            return "/api/admin/tasks/{task_id}/upload/finalize"
+        return "/api/admin/tasks/{task_id}/upload"
+
+    normalized_segments: list[str] = []
+    for segment in path.split("/"):
+        if segment.isdigit() or _UUID_PATH_SEGMENT.fullmatch(segment):
+            normalized_segments.append("{id}")
+        else:
+            normalized_segments.append(segment)
+    return "/".join(normalized_segments) or "/"
+
+
 def normalize_http_route(scope: Scope) -> str:
     """Return a low-cardinality route template for the current request.
 
@@ -79,17 +109,7 @@ def normalize_http_route(scope: Scope) -> str:
     if isinstance(route_path, str) and route_path:
         return route_path
 
-    path = scope["path"]
-    if _TILE_ROUTE.fullmatch(path):
-        return "/api/tiles/{image_id}/{z}/{x}/{y}.{format}"
-
-    normalized_segments: list[str] = []
-    for segment in path.split("/"):
-        if segment.isdigit() or _UUID_PATH_SEGMENT.fullmatch(segment):
-            normalized_segments.append("{id}")
-        else:
-            normalized_segments.append(segment)
-    return "/".join(normalized_segments) or "/"
+    return _normalize_path_fallback(scope["path"])
 
 
 # Snapshot the configured prefixes at import time so the per-request
@@ -154,7 +174,6 @@ class AuditMiddleware:
             return
 
         path: str = scope["path"]
-        upload_route = normalize_http_route(scope)
 
         # Generate or accept correlation ID (validate client-supplied values
         # to prevent log injection / bloat via oversized or non-alphanumeric IDs)
@@ -172,6 +191,7 @@ class AuditMiddleware:
         )
 
         if method in {"POST", "PUT", "PATCH"} and _is_upload_path(path):
+            upload_route = _normalize_path_fallback(path)
             extra: dict[str, object] = {
                 "event": "http.upload_started",
                 "request_id": req_id,

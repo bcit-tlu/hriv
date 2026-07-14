@@ -157,8 +157,10 @@ Rules:
 
 - Prefer the framework route template when available, for example
   `/api/images/{image_id}/replace`.
-- Mounted static tile requests normalize to
-  `/api/tiles/{image_id}/{z}/{x}/{y}.{format}`.
+- Mounted static tile requests normalize to the actual DZI artifacts HRIV
+  serves, such as `/api/tiles/{image_id}/image.dzi`,
+  `/api/tiles/{image_id}/thumbnail.{format}`, and
+  `/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}`.
 - If no template is available, replace numeric or UUID-like path segments with
   `{id}` before using the route in logs, labels, or dashboards.
 - Keep raw `path` only in restricted request logs for request-by-request
@@ -167,11 +169,12 @@ Rules:
 
 Examples:
 
-| Raw path                                                             | Normalized route                             |
-| -------------------------------------------------------------------- | -------------------------------------------- |
-| `/api/images/42/replace`                                             | `/api/images/{image_id}/replace`             |
-| `/api/admin/tasks/123e4567-e89b-12d3-a456-426614174000/artifacts/42` | `/api/admin/tasks/{id}/artifacts/{id}`       |
-| `/api/tiles/123/4/2/2.jpg`                                           | `/api/tiles/{image_id}/{z}/{x}/{y}.{format}` |
+| Raw path                                                             | Normalized route                                                 |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `/api/images/42/replace`                                             | `/api/images/{image_id}/replace`                                 |
+| `/api/admin/tasks/123e4567-e89b-12d3-a456-426614174000/artifacts/42` | `/api/admin/tasks/{id}/artifacts/{id}`                           |
+| `/api/tiles/123/image.dzi`                                           | `/api/tiles/{image_id}/image.dzi`                                |
+| `/api/tiles/123/image_files/4/2_2.jpeg`                              | `/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}` |
 
 ## Privacy, Access, and Retention
 

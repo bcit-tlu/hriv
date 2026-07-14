@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.middleware import (
     AuditMiddleware,
     MaintenanceMiddleware,
+    _normalize_path_fallback,
     _is_upload_path,
     _parse_content_length,
     _parse_exclude_prefixes,
@@ -459,9 +460,18 @@ def test_normalize_http_route_prefers_router_template() -> None:
 
 
 def test_normalize_http_route_normalizes_tile_paths() -> None:
-    scope = _make_scope(path="/api/tiles/123/4/2/2.jpg")
+    scope = _make_scope(path="/api/tiles/123/image_files/4/2_2.jpeg")
 
-    assert normalize_http_route(scope) == "/api/tiles/{image_id}/{z}/{x}/{y}.{format}"
+    assert (
+        normalize_http_route(scope)
+        == "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+    )
+
+
+def test_normalize_http_route_normalizes_tile_manifest_path() -> None:
+    scope = _make_scope(path="/api/tiles/123/image.dzi")
+
+    assert normalize_http_route(scope) == "/api/tiles/{image_id}/image.dzi"
 
 
 def test_normalize_http_route_scrubs_numeric_and_uuid_segments() -> None:
@@ -470,6 +480,14 @@ def test_normalize_http_route_scrubs_numeric_and_uuid_segments() -> None:
     )
 
     assert normalize_http_route(scope) == "/api/admin/tasks/{id}/artifacts/{id}"
+
+
+def test_normalize_path_fallback_uses_descriptive_upload_templates() -> None:
+    assert _normalize_path_fallback("/api/images/123/replace") == "/api/images/{image_id}/replace"
+    assert (
+        _normalize_path_fallback("/api/admin/tasks/123e4567-e89b-12d3-a456-426614174000/upload")
+        == "/api/admin/tasks/{task_id}/upload"
+    )
 
 
 async def test_audit_logs_upload_start_for_upload_paths() -> None:
@@ -489,10 +507,25 @@ async def test_audit_logs_upload_start_for_upload_paths() -> None:
         assert extra["route"] == "/api/admin/bulk-import/"
 
 
+async def test_audit_logs_descriptive_upload_route_before_dispatch() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(
+        method="POST",
+        path="/api/images/123/replace",
+        headers={"content-length": "1024"},
+    )
+
+    with patch("app.middleware.logger") as mock_logger:
+        await _invoke(mw, scope)
+        upload_call = mock_logger.info.call_args_list[0]
+        extra = upload_call.kwargs.get("extra", {})
+        assert extra["route"] == "/api/images/{image_id}/replace"
+
+
 async def test_audit_logs_tiles_at_debug() -> None:
     """Tile-serving endpoints match the default prefix list and log at DEBUG."""
     mw = AuditMiddleware(app=AsyncMock())
-    scope = _make_scope(path="/api/tiles/123/4/2/2.jpg")
+    scope = _make_scope(path="/api/tiles/123/image_files/4/2_2.jpeg")
 
     with patch("app.middleware._EXCLUDE_PREFIXES", ("/api/tiles/",)):
         with patch("app.middleware.logger") as mock_logger:
@@ -500,7 +533,10 @@ async def test_audit_logs_tiles_at_debug() -> None:
             mock_logger.debug.assert_called_once()
             mock_logger.info.assert_not_called()
             extra = mock_logger.debug.call_args.kwargs.get("extra", {})
-            assert extra["route"] == "/api/tiles/{image_id}/{z}/{x}/{y}.{format}"
+            assert (
+                extra["route"]
+                == "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+            )
 
 
 async def test_audit_respects_configured_exclude_prefixes() -> None:
