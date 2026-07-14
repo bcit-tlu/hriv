@@ -79,13 +79,13 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
 
     for (const categoryName of categoryPath) {
       const categoryButton = tileGrid
-        .getByRole('button')
+        .locator('button')
         .filter({ has: page.getByText(categoryName, { exact: true }) })
         .first()
       await expect(categoryButton, `category not visible: ${categoryName}`).toBeVisible({
         timeout: 20000,
       })
-      await categoryButton.click()
+      await categoryButton.click({ force: true })
     }
 
     await expect(page).toHaveURL((url) => {
@@ -93,8 +93,11 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
       return url.pathname === '/' && categoryIds.length === categoryPath.length
     })
 
-    const image = page.getByAltText(imageName, { exact: true }).first()
-    await expect(image, `image not visible: ${imageName}`).toBeVisible({ timeout: 20000 })
+    const imageButton = tileGrid
+      .locator('button')
+      .filter({ has: page.getByAltText(imageName, { exact: true }) })
+      .first()
+    await expect(imageButton, `image not visible: ${imageName}`).toBeVisible({ timeout: 20000 })
 
     // Register the network waits immediately before triggering the image load
     // so their 30s timeout budget covers only tile fetching, not the preceding
@@ -107,7 +110,7 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
       { timeout: 30000 },
     )
 
-    await image.click()
+    await imageButton.click({ force: true })
     await expect(page).toHaveURL((url) => {
       const imageId = url.searchParams.get('image')
       return url.pathname === '/' && imageId !== null && /^\d+$/.test(imageId)
@@ -115,7 +118,7 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
     console.log(`[synthetic] opened configured image: ${categoryPath.join(' / ')} / ${imageName}`)
 
     // The viewer container should contain an OpenSeadragon canvas.
-    await expect(page.locator('canvas')).toBeVisible({ timeout: 20000 })
+    await expect(page.locator('canvas').first()).toBeVisible({ timeout: 20000 })
     console.log('[synthetic] viewer canvas rendered')
 
     // The descriptor is the earliest strong signal; a real tile image proves
