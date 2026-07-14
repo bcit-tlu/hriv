@@ -218,4 +218,16 @@ describe('observability', () => {
     expect(mocks.traceExporter).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
   })
+
+  it('exports the implemented frontend telemetry event contract', async () => {
+    const { TELEMETRY_EVENT_NAMES, TELEMETRY_SCHEMA_VERSION } = await import('../src/observability')
+
+    expect(TELEMETRY_SCHEMA_VERSION).toBe(1)
+    expect(TELEMETRY_EVENT_NAMES).toEqual([
+      'image.view.started',
+      'image.view.ready',
+      'image.view.failed',
+      'navigation.page_changed',
+    ])
+  })
 })

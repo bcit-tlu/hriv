@@ -7,6 +7,7 @@ the entire body in RAM before the streaming-to-disk handler runs.
 """
 
 import logging
+import re
 import time
 import uuid
 from contextvars import ContextVar
@@ -21,6 +22,11 @@ from .database import settings
 from .maintenance import is_maintenance_mode
 
 logger = logging.getLogger(__name__)
+
+_UUID_PATH_SEGMENT = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+_TILE_ROUTE = re.compile(r"^/api/tiles/\d+/\d+/\d+/\d+(?:\.[A-Za-z0-9]+)?$")
 
 
 def _parse_exclude_prefixes(raw: str) -> tuple[str, ...]:
@@ -58,6 +64,32 @@ def _is_upload_path(path: str) -> bool:
         or (path.startswith("/api/admin/tasks/") and path.endswith("/upload"))
         or (path.startswith("/api/images/") and path.endswith("/replace"))
     )
+
+
+def normalize_http_route(scope: Scope) -> str:
+    """Return a low-cardinality route template for the current request.
+
+    Prefer the framework-provided route template when available. Mounted static
+    paths such as tile delivery do not provide one, so apply explicit
+    normalization rules there and fall back to replacing numeric/UUID-like path
+    segments with ``{id}``.
+    """
+    route = scope.get("route")
+    route_path = getattr(route, "path", None)
+    if isinstance(route_path, str) and route_path:
+        return route_path
+
+    path = scope["path"]
+    if _TILE_ROUTE.fullmatch(path):
+        return "/api/tiles/{image_id}/{z}/{x}/{y}.{format}"
+
+    normalized_segments: list[str] = []
+    for segment in path.split("/"):
+        if segment.isdigit() or _UUID_PATH_SEGMENT.fullmatch(segment):
+            normalized_segments.append("{id}")
+        else:
+            normalized_segments.append(segment)
+    return "/".join(normalized_segments) or "/"
 
 
 # Snapshot the configured prefixes at import time so the per-request
@@ -122,6 +154,7 @@ class AuditMiddleware:
             return
 
         path: str = scope["path"]
+        route = normalize_http_route(scope)
 
         # Generate or accept correlation ID (validate client-supplied values
         # to prevent log injection / bloat via oversized or non-alphanumeric IDs)
@@ -144,6 +177,7 @@ class AuditMiddleware:
                 "request_id": req_id,
                 "method": method,
                 "path": path,
+                "route": route,
             }
             if content_length is not None:
                 extra["content_length"] = content_length
@@ -205,6 +239,7 @@ class AuditMiddleware:
                 "request_id": req_id,
                 "method": method,
                 "path": path,
+                "route": route,
                 "status": status_code,
                 "duration_ms": duration_ms,
                 "client_ip": client_ip,
@@ -225,6 +260,7 @@ class AuditMiddleware:
             # OTEL span so distributed traces carry user context.
             span = trace.get_current_span()
             if span.is_recording():
+                span.set_attribute("http.route", route)
                 span.set_attribute("request.id", req_id)
                 if session_id:
                     span.set_attribute("session.id", session_id)

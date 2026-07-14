@@ -29,6 +29,19 @@ import { detectClientEnv, type ClientEnv } from './clientEnv'
  */
 export const TELEMETRY_SCHEMA_VERSION = 1
 
+/**
+ * Event names currently accepted by the authenticated backend ingestion
+ * endpoint. Keep this in lockstep with `backend/app/routers/telemetry.py`.
+ */
+export const TELEMETRY_EVENT_NAMES = [
+  'image.view.started',
+  'image.view.ready',
+  'image.view.failed',
+  'navigation.page_changed',
+] as const
+
+export type TelemetryEventName = (typeof TELEMETRY_EVENT_NAMES)[number]
+
 const DEFAULT_OTEL_TRACE_ENDPOINT_PROD = 'https://telemetry.ltc.bcit.ca'
 const DEFAULT_OTEL_TRACE_ENDPOINT_DEV = 'http://localhost:4318'
 
@@ -131,7 +144,7 @@ function escapeRegExp(value: string): string {
 
 export interface TelemetryEvent {
   /** Stable, dotted event name (e.g. image.view.ready). */
-  event: string
+  event: TelemetryEventName
   /** Outcome of the operation. */
   outcome?: 'success' | 'failure' | 'unknown'
   /** Duration in milliseconds when meaningful. */

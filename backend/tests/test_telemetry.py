@@ -212,6 +212,15 @@ def test_telemetry_rejects_unsupported_schema_version() -> None:
         TelemetryEvent(event="navigation.page_changed", schema_version=2)
 
 
+def test_telemetry_rejects_prohibited_extra_fields() -> None:
+    """Unknown or privacy-sensitive extra fields are rejected at validation time."""
+    with pytest.raises(ValidationError):
+        TelemetryEvent.model_validate({
+            "event": "navigation.page_changed",
+            "user_email": "student@example.ca",
+        })
+
+
 async def test_telemetry_synthetic_from_user_metadata(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

@@ -1,5 +1,6 @@
 """Tests for the audit middleware and correlation-ID context."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.middleware import (
@@ -10,6 +11,7 @@ from app.middleware import (
     _parse_exclude_prefixes,
     get_client_ip,
     get_request_id,
+    normalize_http_route,
     request_id_ctx,
 )
 
@@ -194,6 +196,7 @@ async def test_audit_extracts_session_id() -> None:
         call_args = mock_logger.info.call_args
         extra = call_args.kwargs.get("extra", {})
         assert extra["session_id"] == "session-abc"
+        assert extra["route"] == "/api/test"
 
 
 async def test_audit_extracts_user_from_jwt() -> None:
@@ -251,6 +254,7 @@ async def test_audit_sets_span_attributes_for_authenticated_request() -> None:
     assert calls["enduser.id"] == 42
     assert "enduser.email" not in calls
     assert calls["enduser.role"] == "admin"
+    assert calls["http.route"] == "/api/test"
     assert calls["session.id"] == "session-xyz"
     assert "request.id" in calls
 
@@ -429,6 +433,27 @@ def test_is_upload_path() -> None:
     assert not _is_upload_path("/api/admin/tasks/123/cancel")
 
 
+def test_normalize_http_route_prefers_router_template() -> None:
+    scope = _make_scope(path="/api/images/42/replace")
+    scope["route"] = SimpleNamespace(path="/api/images/{image_id}/replace")
+
+    assert normalize_http_route(scope) == "/api/images/{image_id}/replace"
+
+
+def test_normalize_http_route_normalizes_tile_paths() -> None:
+    scope = _make_scope(path="/api/tiles/123/4/2/2.jpg")
+
+    assert normalize_http_route(scope) == "/api/tiles/{image_id}/{z}/{x}/{y}.{format}"
+
+
+def test_normalize_http_route_scrubs_numeric_and_uuid_segments() -> None:
+    scope = _make_scope(
+        path="/api/admin/tasks/123e4567-e89b-12d3-a456-426614174000/artifacts/42"
+    )
+
+    assert normalize_http_route(scope) == "/api/admin/tasks/{id}/artifacts/{id}"
+
+
 async def test_audit_logs_upload_start_for_upload_paths() -> None:
     mw = AuditMiddleware(app=AsyncMock())
     scope = _make_scope(
@@ -443,6 +468,7 @@ async def test_audit_logs_upload_start_for_upload_paths() -> None:
         extra = upload_call.kwargs.get("extra", {})
         assert extra["event"] == "http.upload_started"
         assert extra["content_length"] == 3607772528
+        assert extra["route"] == "/api/admin/bulk-import/"
 
 
 async def test_audit_logs_tiles_at_debug() -> None:
@@ -455,6 +481,8 @@ async def test_audit_logs_tiles_at_debug() -> None:
             await _invoke(mw, scope)
             mock_logger.debug.assert_called_once()
             mock_logger.info.assert_not_called()
+            extra = mock_logger.debug.call_args.kwargs.get("extra", {})
+            assert extra["route"] == "/api/tiles/{image_id}/{z}/{x}/{y}.{format}"
 
 
 async def test_audit_respects_configured_exclude_prefixes() -> None:
