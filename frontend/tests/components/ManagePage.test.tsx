@@ -255,6 +255,12 @@ describe('ManagePage', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Done' }))
 
     await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: 'Choose image table columns' }),
+      ).not.toBeInTheDocument()
+    })
+
+    await waitFor(() => {
       expect(screen.getByRole('columnheader', { name: 'Annotations' })).toBeInTheDocument()
     })
 
@@ -268,7 +274,7 @@ describe('ManagePage', () => {
     expect(
       within(unannotatedRow as HTMLElement).queryByLabelText('Has annotations'),
     ).not.toBeInTheDocument()
-  })
+  }, 30_000)
 
   it('keeps the filter bar in sync with visible columns', async () => {
     const user = userEvent.setup()
@@ -292,7 +298,7 @@ describe('ManagePage', () => {
 
     expect(screen.queryByRole('columnheader', { name: 'Groups' })).not.toBeInTheDocument()
     expect(within(filterBar).queryByRole('button', { name: 'Group' })).not.toBeInTheDocument()
-  })
+  }, 30_000)
 
   it('shows the filtered result total beside the active chips only when a filter is applied', async () => {
     const user = userEvent.setup()

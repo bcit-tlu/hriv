@@ -38,6 +38,7 @@ import {
   getToken,
   clearUserStorage,
   ApiError,
+  ApiTransportError,
   fetchStatus,
   fetchCategoryTree,
   createCategory,
@@ -105,6 +106,7 @@ import {
   type ApiAnnouncement,
   type ApiChangelogEntry,
   type ApiSourceImage,
+  setApiFailureObserver,
   userMessage,
 } from '../src/api'
 
@@ -115,6 +117,7 @@ function jsonResponse(body: unknown, status = 200) {
     ok: status >= 200 && status < 300,
     status,
     statusText: 'OK',
+    headers: { get: () => null },
     json: () => Promise.resolve(body),
     text: () => Promise.resolve(JSON.stringify(body)),
   })
@@ -125,16 +128,18 @@ function noContentResponse() {
     ok: true,
     status: 204,
     statusText: 'No Content',
+    headers: { get: () => null },
     json: () => Promise.reject(new Error('no body')),
     text: () => Promise.resolve(''),
   })
 }
 
-function errorResponse(status: number, body: string) {
+function errorResponse(status: number, body: string, requestId?: string) {
   return Promise.resolve({
     ok: false,
     status,
     statusText: body,
+    headers: { get: (key: string) => (key === 'X-Request-ID' ? (requestId ?? null) : null) },
     json: () => Promise.resolve(body),
     text: () => Promise.resolve(body),
   })
@@ -255,7 +260,20 @@ describe('ApiError', () => {
   })
 })
 
+describe('ApiTransportError', () => {
+  it('has the transport request context', () => {
+    const err = new ApiTransportError('Network error', { method: 'GET', path: '/status' })
+    expect(err.name).toBe('ApiTransportError')
+    expect(err.method).toBe('GET')
+    expect(err.path).toBe('/status')
+  })
+})
+
 describe('userMessage', () => {
+  afterEach(() => {
+    setApiFailureObserver(null)
+  })
+
   it('returns friendly message for concurrency-style 409s', () => {
     const err = new ApiError(409, 'Resource has been modified by another client')
     expect(userMessage(err, 'fallback')).toBe(
@@ -349,6 +367,50 @@ describe('userMessage', () => {
     )
   })
 
+  it('notifies the API failure observer for ApiError values', () => {
+    const observer = vi.fn()
+    setApiFailureObserver(observer)
+
+    expect(
+      userMessage(
+        new ApiError(503, 'Backend unavailable', undefined, {
+          method: 'GET',
+          path: '/images',
+          requestId: 'req-123',
+        }),
+        'fallback',
+      ),
+    ).toBe('fallback')
+    expect(observer).toHaveBeenCalledWith(
+      expect.any(ApiError),
+      expect.objectContaining({
+        method: 'GET',
+        path: '/images',
+        requestId: 'req-123',
+        status: 503,
+      }),
+    )
+  })
+
+  it('notifies the API failure observer for transport errors', () => {
+    const observer = vi.fn()
+    setApiFailureObserver(observer)
+
+    expect(
+      userMessage(
+        new ApiTransportError('Network error', { method: 'POST', path: '/images' }),
+        'fallback',
+      ),
+    ).toBe('Network error \u2014 check your connection and try again.')
+    expect(observer).toHaveBeenCalledWith(
+      expect.any(ApiTransportError),
+      expect.objectContaining({
+        method: 'POST',
+        path: '/images',
+      }),
+    )
+  })
+
   it('returns fallback for AbortError', () => {
     const err = new DOMException('Aborted', 'AbortError')
     expect(userMessage(err, 'fallback')).toBe('fallback')
@@ -407,7 +469,7 @@ describe('request helper (via wrapper functions)', () => {
   })
 
   it('throws ApiError with correct status code', async () => {
-    mockFetch.mockReturnValueOnce(errorResponse(422, 'Validation Error'))
+    mockFetch.mockReturnValueOnce(errorResponse(422, 'Validation Error', 'req-422'))
     try {
       await fetchCategoryTree()
       expect.fail('should have thrown')
@@ -415,7 +477,13 @@ describe('request helper (via wrapper functions)', () => {
       expect(e).toBeInstanceOf(ApiError)
       expect((e as ApiError).status).toBe(422)
       expect((e as ApiError).message).toContain('422')
+      expect((e as ApiError).requestId).toBe('req-422')
     }
+  })
+
+  it('throws ApiTransportError on fetch network failures', async () => {
+    mockFetch.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    await expect(fetchCategoryTree()).rejects.toThrow(ApiTransportError)
   })
 
   it('falls back to statusText when text() rejects', async () => {
@@ -424,6 +492,7 @@ describe('request helper (via wrapper functions)', () => {
         ok: false,
         status: 500,
         statusText: 'Internal Server Error',
+        headers: { get: () => null },
         json: () => Promise.reject(new Error('no json')),
         text: () => Promise.reject(new Error('no text')),
       }),
@@ -444,6 +513,7 @@ describe('request helper (via wrapper functions)', () => {
         ok: false,
         status: 409,
         statusText: 'Conflict',
+        headers: { get: () => null },
         json: () =>
           Promise.resolve({
             detail: { message: 'Group is attached to one or more categories', category_ids: [1] },
@@ -1090,7 +1160,12 @@ describe('Version API', () => {
 
   it('fetchFrontendVersion throws on non-OK response', async () => {
     mockFetch.mockReturnValueOnce(
-      Promise.resolve({ ok: false, status: 404, statusText: 'Not Found' }),
+      Promise.resolve({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        headers: { get: () => null },
+      }),
     )
     await expect(fetchFrontendVersion()).rejects.toThrow('Frontend /version 404')
   })

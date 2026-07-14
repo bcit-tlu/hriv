@@ -47,12 +47,19 @@ router = APIRouter(prefix="/telemetry", tags=["telemetry"])
 
 
 # Bump when the wire/log shape changes in a backward-incompatible way.
-TELEMETRY_SCHEMA_VERSION = 1
+TELEMETRY_SCHEMA_VERSION = 2
 
 
 # Event names the frontend is allowed to emit. Keep this allowlist small and
 # review any new event for privacy/PII implications before adding it.
 _ALLOWED_EVENTS = frozenset({
+    "application.session_started",
+    "auth.logout_selected",
+    "feedback.report_issue_opened",
+    "feedback.report_issue_submitted",
+    "frontend.error",
+    "frontend.performance",
+    "image.share_selected",
     "image.view.started",
     "image.view.ready",
     "image.view.failed",
@@ -76,6 +83,18 @@ _OS_FAMILIES = frozenset({
 })
 _DEVICE_CLASSES = frozenset({"desktop", "mobile", "tablet", "other"})
 _VIEWPORT_BUCKETS = frozenset({"xs", "sm", "md", "lg", "xl"})
+_UNITS = frozenset({"ms", "score"})
+_ERROR_CODES = frozenset({
+    "api_http_4xx",
+    "api_http_5xx",
+    "api_network_error",
+    "image_viewer_init_failed",
+    "image_viewer_open_failed",
+    "react_render_error",
+    "unhandled_promise_rejection",
+    "window_runtime_error",
+    "other",
+})
 
 
 def _bounded(value: str | None, allowed: frozenset[str]) -> str | None:
@@ -100,19 +119,25 @@ def _bounded_major(value: str | None) -> str | None:
 class TelemetryEvent(BaseModel):
     """A single frontend telemetry event."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     event: str = Field(..., max_length=100, description="Stable, dotted event name")
     # Only the current schema version is accepted; an omitted version is treated
     # as the current one for backward compatibility, but an explicit unsupported
     # version is rejected (422) so the log shape stays well-defined.
-    schema_version: Literal[1] | None = None
+    schema_version: Literal[1, 2] | None = None
+    event_version: Literal[1] | None = None
     outcome: Literal["success", "failure", "unknown"] | None = None
     duration_ms: float | None = None
     error: str | None = Field(None, max_length=_MAX_ATTRIBUTE_LENGTH)
+    error_code: str | None = Field(None, max_length=64)
     action: str | None = Field(None, max_length=_MAX_ATTRIBUTE_LENGTH)
     page: str | None = Field(None, max_length=_MAX_ATTRIBUTE_LENGTH)
     synthetic: bool | None = None
+    request_id: str | None = Field(None, max_length=128)
+    trace_id: str | None = Field(None, max_length=64)
+    value: float | None = None
+    unit: str | None = Field(None, max_length=16)
 
     # Structured domain identifiers (never used as Prometheus labels).
     image_id: int | None = None
@@ -124,13 +149,14 @@ class TelemetryEvent(BaseModel):
     os_family: str | None = Field(None, max_length=32)
     device_class: str | None = Field(None, max_length=32)
     viewport_bucket: str | None = Field(None, max_length=8)
+    touch_capable: bool | None = None
     touch: bool | None = None
 
 
 class TelemetryBatch(BaseModel):
     """Batch of frontend telemetry events."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     events: list[TelemetryEvent] = Field(..., max_length=_MAX_EVENTS_PER_REQUEST)
 
@@ -184,6 +210,7 @@ async def ingest_telemetry_events(
 
         extra: dict[str, object] = {
             "schema.version": event.schema_version or TELEMETRY_SCHEMA_VERSION,
+            "event.version": event.event_version or 1,
             "event.name": event.event,
             "event.outcome": event.outcome or "unknown",
             "event.synthetic": server_synthetic,
@@ -203,10 +230,22 @@ async def ingest_telemetry_events(
             extra["event.page"] = event.page
         if event.error:
             extra["error.type"] = event.error
+        error_code = _bounded(event.error_code, _ERROR_CODES)
+        if error_code is not None:
+            extra["error.code"] = error_code
         if event.image_id is not None:
             extra["image.id"] = event.image_id
         if event.category_id is not None:
             extra["category.id"] = event.category_id
+        if event.request_id:
+            extra["request.id"] = event.request_id
+        if event.trace_id:
+            extra["trace.id"] = event.trace_id
+        if event.value is not None:
+            extra["event.value"] = event.value
+        unit = _bounded(event.unit, _UNITS)
+        if unit is not None:
+            extra["event.unit"] = unit
 
         browser_family = _bounded(event.browser_family, _BROWSER_FAMILIES)
         if browser_family is not None:
@@ -223,8 +262,11 @@ async def ingest_telemetry_events(
         viewport_bucket = _bounded(event.viewport_bucket, _VIEWPORT_BUCKETS)
         if viewport_bucket is not None:
             extra["client.viewport.bucket"] = viewport_bucket
-        if event.touch is not None:
-            extra["client.touch"] = event.touch
+        touch_capable = (
+            event.touch_capable if event.touch_capable is not None else event.touch
+        )
+        if touch_capable is not None:
+            extra["client.touch_capable"] = touch_capable
 
         if traceparent:
             extra["trace.parent"] = traceparent

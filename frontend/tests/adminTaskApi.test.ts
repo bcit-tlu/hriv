@@ -85,6 +85,7 @@ function jsonResponse(body: unknown, status = 200) {
     ok: status >= 200 && status < 300,
     status,
     statusText: 'OK',
+    headers: new Headers(),
     json: () => Promise.resolve(body),
     text: () => Promise.resolve(JSON.stringify(body)),
   })
@@ -95,6 +96,7 @@ function errorResponse(status: number, body: string) {
     ok: false,
     status,
     statusText: body,
+    headers: new Headers(),
     json: () => Promise.resolve(body),
     text: () => Promise.resolve(body),
   })
@@ -249,6 +251,7 @@ describe('Background Admin Task API', () => {
       send: ReturnType<typeof vi.fn>
       upload: { addEventListener: ReturnType<typeof vi.fn> }
       addEventListener: ReturnType<typeof vi.fn>
+      getResponseHeader: ReturnType<typeof vi.fn>
       status: number
       responseText: string
     }
@@ -260,6 +263,7 @@ describe('Background Admin Task API', () => {
         send: vi.fn(),
         upload: { addEventListener: vi.fn() },
         addEventListener: vi.fn(),
+        getResponseHeader: vi.fn(() => null),
         status: 200,
         responseText: JSON.stringify(TASK_FIXTURE),
       }
@@ -351,6 +355,7 @@ describe('Background Admin Task API', () => {
       send: ReturnType<typeof vi.fn>
       upload: { addEventListener: ReturnType<typeof vi.fn> }
       addEventListener: ReturnType<typeof vi.fn>
+      getResponseHeader: ReturnType<typeof vi.fn>
       status: number
       responseText: string
       statusText: string
@@ -363,6 +368,7 @@ describe('Background Admin Task API', () => {
         send: vi.fn(),
         upload: { addEventListener: vi.fn() },
         addEventListener: vi.fn(),
+        getResponseHeader: vi.fn(() => null),
         status: 201,
         responseText: JSON.stringify(BULK_IMPORT_FIXTURE),
         statusText: 'Created',
@@ -444,6 +450,7 @@ describe('Background Admin Task API', () => {
       send: ReturnType<typeof vi.fn>
       upload: { addEventListener: ReturnType<typeof vi.fn> }
       addEventListener: ReturnType<typeof vi.fn>
+      getResponseHeader: ReturnType<typeof vi.fn>
       status: number
       responseText: string
     }
@@ -455,6 +462,7 @@ describe('Background Admin Task API', () => {
         send: vi.fn(),
         upload: { addEventListener: vi.fn() },
         addEventListener: vi.fn(),
+        getResponseHeader: vi.fn(() => null),
         status: 200,
         responseText: JSON.stringify(TASK_FIXTURE),
       }

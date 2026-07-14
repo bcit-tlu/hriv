@@ -4,6 +4,12 @@ import { useShareableImageState } from '../src/useShareableImageState'
 import type { UseShareableImageStateDeps } from '../src/useShareableImageState'
 import { makeCategory, makeImage } from './helpers/fixtures'
 
+const emitEventMock = vi.fn()
+
+vi.mock('../src/observability', () => ({
+  emitEvent: (...args: unknown[]) => emitEventMock(...args),
+}))
+
 function makeDeps(overrides: Partial<UseShareableImageStateDeps> = {}): UseShareableImageStateDeps {
   return {
     selectedImage: null,
@@ -25,6 +31,7 @@ describe('useShareableImageState', () => {
   let savedExecCommand: typeof document.execCommand | undefined
 
   beforeEach(() => {
+    emitEventMock.mockReset()
     replaceStateSpy = vi.spyOn(window.history, 'replaceState')
     // Reset URL to clean state
     window.history.replaceState(null, '', '/')
@@ -105,7 +112,10 @@ describe('useShareableImageState', () => {
       Object.assign(navigator, {
         clipboard: { writeText },
       })
-      const { result } = renderHook(() => useShareableImageState(makeDeps()))
+      const image = makeImage({ id: 42, categoryId: 7 })
+      const { result } = renderHook(() =>
+        useShareableImageState(makeDeps({ selectedImage: image })),
+      )
       await act(async () => {
         result.current.copyShareLink()
         // Let the clipboard promise resolve
@@ -113,18 +123,37 @@ describe('useShareableImageState', () => {
       })
       expect(writeText).toHaveBeenCalled()
       expect(result.current.snackOpen).toBe(true)
+      expect(emitEventMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'image.share_selected',
+          action: 'share',
+          outcome: 'success',
+          image_id: 42,
+          category_id: 7,
+        }),
+      )
     })
 
     it('uses fallback when clipboard API is unavailable', () => {
       Object.assign(navigator, { clipboard: undefined })
       // jsdom does not define execCommand — define it for this test
       document.execCommand = vi.fn().mockReturnValue(true)
-      const { result } = renderHook(() => useShareableImageState(makeDeps()))
+      const image = makeImage({ id: 42, categoryId: 7 })
+      const { result } = renderHook(() =>
+        useShareableImageState(makeDeps({ selectedImage: image })),
+      )
       act(() => {
         result.current.copyShareLink()
       })
       expect(document.execCommand).toHaveBeenCalledWith('copy')
       expect(result.current.snackOpen).toBe(true)
+      expect(emitEventMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: 'image.share_selected',
+          outcome: 'success',
+          image_id: 42,
+        }),
+      )
     })
   })
 

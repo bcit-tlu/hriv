@@ -12,6 +12,7 @@ import {
   clearUserStorage,
 } from './api'
 import type { ApiUser } from './api'
+import { emitEventNow } from './observability'
 
 // Capture the URL fragment immediately at module-load time.  In React,
 // children’s effects fire before their parents’ effects.  App (a child of
@@ -193,6 +194,11 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(() => {
+    emitEventNow({
+      event: 'auth.logout_selected',
+      action: 'logout',
+      outcome: 'success',
+    })
     setCurrentUser(null)
     clearUserStorage()
   }, [])

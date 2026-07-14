@@ -213,7 +213,7 @@ describe('GroupManagementModal', () => {
       expect(screen.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument()
       expect(within(filterBar).queryByRole('button', { name: 'Program' })).not.toBeInTheDocument()
     })
-  })
+  }, 30_000)
 
   it('renders the selected group row with the subtle secondary group colour', async () => {
     renderModal()

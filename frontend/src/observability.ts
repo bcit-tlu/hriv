@@ -19,21 +19,27 @@ import {
   ATTR_SERVICE_VERSION,
 } from '@opentelemetry/semantic-conventions'
 
-import { getToken, SESSION_ID } from './api'
+import { getToken, SESSION_ID, setApiFailureObserver, type ApiFailureContext } from './api'
 import { detectClientEnv, type ClientEnv } from './clientEnv'
 
 /**
- * Version of the frontend telemetry event payload. Bump when the emitted
- * field shape changes so log parsers and dashboards can branch on it. The
- * backend records this alongside every event as `schema.version`.
+ * Version of the frontend telemetry payload. Bump this when the top-level
+ * event shape changes so backend parsing can branch safely.
  */
-export const TELEMETRY_SCHEMA_VERSION = 1
+export const TELEMETRY_SCHEMA_VERSION = 2
 
 /**
  * Event names currently accepted by the authenticated backend ingestion
  * endpoint. Keep this in lockstep with `backend/app/routers/telemetry.py`.
  */
 export const TELEMETRY_EVENT_NAMES = [
+  'application.session_started',
+  'auth.logout_selected',
+  'feedback.report_issue_opened',
+  'feedback.report_issue_submitted',
+  'frontend.error',
+  'frontend.performance',
+  'image.share_selected',
   'image.view.started',
   'image.view.ready',
   'image.view.failed',
@@ -41,15 +47,83 @@ export const TELEMETRY_EVENT_NAMES = [
 ] as const
 
 export type TelemetryEventName = (typeof TELEMETRY_EVENT_NAMES)[number]
-
+const TELEMETRY_EVENT_VERSION = 1
 const DEFAULT_OTEL_TRACE_ENDPOINT_PROD = 'https://telemetry.ltc.bcit.ca'
 const DEFAULT_OTEL_TRACE_ENDPOINT_DEV = 'http://localhost:4318'
+const SESSION_STARTED_STORAGE_KEY = `hriv.telemetry.${SESSION_ID}.session_started`
+const ERROR_DEDUPE_TTL_MS = 30_000
+
+export type TelemetryOutcome = 'success' | 'failure' | 'unknown'
+export type TelemetryUnit = 'ms' | 'score'
+export type TelemetryErrorCode =
+  | 'api_http_4xx'
+  | 'api_http_5xx'
+  | 'api_network_error'
+  | 'image_viewer_init_failed'
+  | 'image_viewer_open_failed'
+  | 'react_render_error'
+  | 'unhandled_promise_rejection'
+  | 'window_runtime_error'
+export type FrontendPerformanceMetric = 'application_load' | 'lcp' | 'inp' | 'cls' | 'image_ready'
+export type FrontendPage = 'browse' | 'manage' | 'people' | 'admin' | 'unknown'
+
+interface TelemetryEventBase {
+  event: TelemetryEventName
+  event_version?: 1
+  outcome?: TelemetryOutcome
+  duration_ms?: number
+  error?: string
+  error_code?: TelemetryErrorCode
+  action?: string
+  page?: FrontendPage
+  synthetic?: boolean
+  image_id?: number
+  category_id?: number
+  request_id?: string
+  trace_id?: string
+  value?: number
+  unit?: TelemetryUnit
+}
+
+export type TelemetryEvent = TelemetryEventBase
+type TelemetryPayload = TelemetryEvent & Partial<ClientEnv> & { schema_version: number }
+
+export interface FrontendErrorEventOptions {
+  action: string
+  error: string
+  errorCode: TelemetryErrorCode
+  page?: FrontendPage
+  imageId?: number
+  categoryId?: number
+  requestId?: string | null
+  dedupeKey?: string
+}
+
+export interface FrontendPerformanceEventOptions {
+  metric: FrontendPerformanceMetric
+  value: number
+  unit: TelemetryUnit
+  page?: FrontendPage
+  imageId?: number
+  categoryId?: number
+}
 
 let _tracerProvider: WebTracerProvider | null = null
 let _initialized = false
 let _synthetic = false
 let _flushTimer: ReturnType<typeof setTimeout> | null = null
+let _clientEnv: ClientEnv | null | undefined
+let _appLoadMetricSent = false
+let _finalPerformanceMetricsSent = false
+let _pagehideHandlerAttached = false
+let _windowErrorHandlerAttached = false
+let _promiseRejectionHandlerAttached = false
+let _sessionStartedEmitted = false
+let _latestLcpMs: number | null = null
+let _largestInpMs: number | null = null
+let _clsScore = 0
 const _pendingEvents: TelemetryPayload[] = []
+const _errorDedupe = new Map<string, number>()
 
 function defaultTraceEndpoint(): string {
   const mode = import.meta.env.MODE ?? 'development'
@@ -71,24 +145,283 @@ function isBrowser(): boolean {
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { 'X-Session-ID': SESSION_ID }
   const token = getToken()
-  if (token) h['Authorization'] = `Bearer ${token}`
+  if (token) h.Authorization = `Bearer ${token}`
   return h
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function currentPage(): FrontendPage {
+  if (!isBrowser()) return 'unknown'
+  const page = new URLSearchParams(window.location.search).get('page')
+  if (page === 'browse' || page === 'manage' || page === 'people' || page === 'admin') {
+    return page
+  }
+  return 'browse'
+}
+
+function activeTraceId(): string | undefined {
+  const getActiveSpan = (
+    trace as {
+      getActiveSpan?: () => { spanContext(): { traceId: string } } | undefined
+    }
+  ).getActiveSpan
+  const span = getActiveSpan?.()
+  const traceId = span?.spanContext().traceId
+  return traceId && !/^0+$/.test(traceId) ? traceId : undefined
+}
+
+function roundMetric(value: number, unit: TelemetryUnit): number {
+  if (!Number.isFinite(value)) return value
+  if (unit === 'score') {
+    return Math.round(value * 10_000) / 10_000
+  }
+  return Math.round(value)
+}
+
+function normalizeRequestId(value: string | null | undefined): string | undefined {
+  const normalized = value?.trim()
+  return normalized ? normalized : undefined
+}
+
+function pruneErrorDedupe(now: number): void {
+  for (const [key, seenAt] of _errorDedupe.entries()) {
+    if (now - seenAt > ERROR_DEDUPE_TTL_MS) {
+      _errorDedupe.delete(key)
+    }
+  }
+}
+
+function shouldEmitDedupedError(key: string): boolean {
+  const now = Date.now()
+  pruneErrorDedupe(now)
+  const seenAt = _errorDedupe.get(key)
+  if (seenAt && now - seenAt < ERROR_DEDUPE_TTL_MS) {
+    return false
+  }
+  _errorDedupe.set(key, now)
+  return true
+}
+
+function postEvents(events: TelemetryPayload[]): void {
+  if (events.length === 0) return
+
+  const base = apiUrl()
+  const url = base ? `${base}/api/telemetry/events` : '/api/telemetry/events'
+
+  fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ events }),
+    keepalive: true,
+  }).catch(() => {
+    // Telemetry delivery is best-effort; never block the UI.
+  })
+}
+
+function flushPendingEvents(): void {
+  if (_flushTimer !== null) {
+    clearTimeout(_flushTimer)
+  }
+  _flushTimer = null
+  if (_pendingEvents.length === 0) return
+  const events = _pendingEvents.splice(0, _pendingEvents.length)
+  postEvents(events)
+}
+
+function queueFlush(): void {
+  if (_flushTimer !== null) return
+  _flushTimer = setTimeout(() => {
+    flushPendingEvents()
+  }, 1000)
+}
+
+function ensureClientEnv(): Partial<ClientEnv> {
+  if (_clientEnv === undefined) {
+    _clientEnv = detectClientEnv()
+  }
+  return _clientEnv ?? {}
+}
+
+function normalizeEvent(event: TelemetryEvent): TelemetryPayload {
+  return {
+    ...ensureClientEnv(),
+    ...event,
+    schema_version: TELEMETRY_SCHEMA_VERSION,
+    event_version: event.event_version ?? TELEMETRY_EVENT_VERSION,
+    outcome: event.outcome ?? 'unknown',
+    synthetic: _synthetic || event.synthetic || false,
+    trace_id: event.trace_id ?? activeTraceId(),
+  }
+}
+
+function supportsPerformanceEntry(entryType: string): boolean {
+  if (typeof PerformanceObserver === 'undefined') return false
+  return (
+    Array.isArray(PerformanceObserver.supportedEntryTypes) &&
+    PerformanceObserver.supportedEntryTypes.includes(entryType)
+  )
+}
+
+function emitApplicationLoadMetric(): void {
+  if (!isBrowser() || _appLoadMetricSent || typeof performance === 'undefined') return
+  const navigationEntry = performance.getEntriesByType('navigation')[0] as
+    | PerformanceNavigationTiming
+    | undefined
+  const loadEnd = navigationEntry?.loadEventEnd ?? 0
+  if (!loadEnd) return
+  _appLoadMetricSent = true
+  emitFrontendPerformance({
+    metric: 'application_load',
+    value: loadEnd,
+    unit: 'ms',
+  })
+}
+
+function registerApplicationLoadMetric(): void {
+  if (!isBrowser()) return
+  if (document.readyState === 'complete') {
+    emitApplicationLoadMetric()
+    return
+  }
+  window.addEventListener('load', () => emitApplicationLoadMetric(), { once: true })
+}
+
+function registerPerformanceObservers(): void {
+  if (!isBrowser() || typeof PerformanceObserver === 'undefined') return
+
+  if (supportsPerformanceEntry('largest-contentful-paint')) {
+    const lcpObserver = new PerformanceObserver((entryList) => {
+      for (const entry of entryList.getEntries()) {
+        _latestLcpMs = Math.max(_latestLcpMs ?? 0, entry.startTime)
+      }
+    })
+    try {
+      lcpObserver.observe({ type: 'largest-contentful-paint', buffered: true })
+    } catch {
+      // Some browsers expose the entry type but still reject observe options.
+    }
+  }
+
+  if (supportsPerformanceEntry('layout-shift')) {
+    const clsObserver = new PerformanceObserver((entryList) => {
+      for (const entry of entryList.getEntries() as Array<
+        PerformanceEntry & { value?: number; hadRecentInput?: boolean }
+      >) {
+        if (entry.hadRecentInput) continue
+        _clsScore += entry.value ?? 0
+      }
+    })
+    try {
+      clsObserver.observe({ type: 'layout-shift', buffered: true })
+    } catch {
+      // Some browsers expose the entry type but still reject observe options.
+    }
+  }
+
+  if (supportsPerformanceEntry('event')) {
+    const inpObserver = new PerformanceObserver((entryList) => {
+      for (const entry of entryList.getEntries() as Array<
+        PerformanceEntry & { duration?: number; interactionId?: number }
+      >) {
+        if (!entry.interactionId || !entry.duration) continue
+        _largestInpMs = Math.max(_largestInpMs ?? 0, entry.duration)
+      }
+    })
+    try {
+      inpObserver.observe({
+        type: 'event',
+        buffered: true,
+        ...(supportsPerformanceEntry('event')
+          ? ({ durationThreshold: 16 } as { durationThreshold: number })
+          : {}),
+      } as PerformanceObserverInit)
+    } catch {
+      // Browsers that do not fully support Event Timing should degrade quietly.
+    }
+  }
+}
+
+function emitFinalPerformanceMetrics(): void {
+  if (_finalPerformanceMetricsSent) return
+  _finalPerformanceMetricsSent = true
+  emitApplicationLoadMetric()
+  if (_latestLcpMs !== null) {
+    emitFrontendPerformance({ metric: 'lcp', value: _latestLcpMs, unit: 'ms' })
+  }
+  if (_largestInpMs !== null) {
+    emitFrontendPerformance({ metric: 'inp', value: _largestInpMs, unit: 'ms' })
+  }
+  if (_clsScore > 0) {
+    emitFrontendPerformance({ metric: 'cls', value: _clsScore, unit: 'score' })
+  }
+}
+
+function handlePagehide(): void {
+  emitFinalPerformanceMetrics()
+  flushPendingEvents()
+}
+
+function registerWindowErrorHandlers(): void {
+  if (!isBrowser()) return
+
+  if (!_windowErrorHandlerAttached) {
+    window.addEventListener('error', () => {
+      emitFrontendError({
+        action: 'window',
+        error: 'runtime',
+        errorCode: 'window_runtime_error',
+      })
+    })
+    _windowErrorHandlerAttached = true
+  }
+
+  if (!_promiseRejectionHandlerAttached) {
+    window.addEventListener('unhandledrejection', () => {
+      emitFrontendError({
+        action: 'promise',
+        error: 'runtime',
+        errorCode: 'unhandled_promise_rejection',
+      })
+    })
+    _promiseRejectionHandlerAttached = true
+  }
+}
+
+function registerApiFailureObserver(): void {
+  setApiFailureObserver((error: unknown, failure: ApiFailureContext) => {
+    const status =
+      failure.status ??
+      (error instanceof Error && 'status' in error ? Number(error.status) : undefined)
+    const errorCode: TelemetryErrorCode =
+      status === undefined ? 'api_network_error' : status >= 500 ? 'api_http_5xx' : 'api_http_4xx'
+    const errorType = status === undefined ? 'network' : status >= 500 ? 'http_5xx' : 'http_4xx'
+    emitFrontendError({
+      action: 'request',
+      error: `api_${errorType}`,
+      errorCode,
+      requestId: failure.requestId,
+      dedupeKey: `api:${errorCode}:${failure.method}:${failure.path}:${status ?? 'network'}:${failure.requestId ?? 'none'}`,
+    })
+  })
+}
+
 /**
- * Initialize the frontend OpenTelemetry SDK.
+ * Initialize the frontend OpenTelemetry SDK and event instrumentation.
  *
- * Call this once near application startup. It is safe to call multiple
- * times; subsequent calls are no-ops. In non-browser environments (tests,
- * SSR) the SDK is not started.
+ * Call this once near application startup. It is safe to call multiple times;
+ * subsequent calls are no-ops. In non-browser environments (tests, SSR) the
+ * SDK is not started.
  */
 export function initObservability(): void {
   if (_initialized || !isBrowser()) return
   _initialized = true
 
-  // Activate synthetic markers when the URL contains ?synthetic=1. This lets
-  // Playwright journeys self-identify in Loki without a separate identity
-  // system and without leaking real-user session data into the marker.
   try {
     if (new URLSearchParams(window.location.search).has('synthetic')) {
       _synthetic = true
@@ -98,13 +431,10 @@ export function initObservability(): void {
     // Defensive: malformed URLs should not prevent SDK startup.
   }
 
-  // Surface SDK warnings only. The exporter is configured to swallow export
-  // failures so telemetry problems never break the UI.
   diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.WARN)
 
   const env = import.meta.env.MODE ?? 'development'
   const serviceVersion = import.meta.env.VITE_APP_VERSION ?? 'dev'
-
   const resource = resourceFromAttributes({
     [ATTR_SERVICE_NAME]: 'hriv-frontend',
     [ATTR_SERVICE_VERSION]: serviceVersion,
@@ -128,75 +458,22 @@ export function initObservability(): void {
   }
   const baseUrl = apiUrl()
   if (baseUrl) {
-    fetchConfig.propagateTraceHeaderCorsUrls = [new RegExp('^' + escapeRegExp(baseUrl))]
+    fetchConfig.propagateTraceHeaderCorsUrls = [new RegExp(`^${escapeRegExp(baseUrl)}`)]
   }
 
   registerInstrumentations({
     instrumentations: [new FetchInstrumentation(fetchConfig)],
   })
 
-  window.addEventListener('pagehide', _flushEvents)
-}
+  registerApplicationLoadMetric()
+  registerPerformanceObservers()
+  registerWindowErrorHandlers()
+  registerApiFailureObserver()
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-export interface TelemetryEvent {
-  /** Stable, dotted event name (e.g. image.view.ready). */
-  event: TelemetryEventName
-  /** Outcome of the operation. */
-  outcome?: 'success' | 'failure' | 'unknown'
-  /** Duration in milliseconds when meaningful. */
-  duration_ms?: number
-  /** High-level error category; never include PII or free text payloads. */
-  error?: string
-  /** Low-cardinality action being performed (e.g. login, navigate, view). */
-  action?: string
-  /** Low-cardinality page identifier for navigation events. */
-  page?: string
-  /** Optional boolean flag identifying synthetic-monitor events. */
-  synthetic?: boolean
-  /** Structured domain id for image-related events (never a metric label). */
-  image_id?: number
-  /** Structured domain id for category context (never a metric label). */
-  category_id?: number
-}
-
-/**
- * Payload actually sent to the backend: a caller event enriched with the
- * schema version and bounded client-environment buckets.
- */
-type TelemetryPayload = TelemetryEvent & Partial<ClientEnv> & { schema_version: number }
-
-// Client environment is stable for the tab lifetime; compute it once lazily.
-let _clientEnv: ClientEnv | null | undefined
-
-function _flushEvents(): void {
-  if (_flushTimer !== null) {
-    clearTimeout(_flushTimer)
+  if (!_pagehideHandlerAttached) {
+    window.addEventListener('pagehide', handlePagehide)
+    _pagehideHandlerAttached = true
   }
-  _flushTimer = null
-  if (_pendingEvents.length === 0) return
-
-  const events = _pendingEvents.splice(0, _pendingEvents.length)
-  const base = apiUrl()
-  // In production, VITE_API_URL points at the backend. In local development
-  // Vite proxies the same-origin /api path to the backend, so a relative URL
-  // works without requiring VITE_API_URL to be set.
-  const url = base ? `${base}/api/telemetry/events` : '/api/telemetry/events'
-
-  fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-    },
-    body: JSON.stringify({ events }),
-    keepalive: true,
-  }).catch(() => {
-    // Telemetry delivery is best-effort; never block the UI.
-  })
 }
 
 /**
@@ -205,29 +482,75 @@ function _flushEvents(): void {
  * Events are batched and sent to an authenticated backend ingestion endpoint
  * so the backend can validate the schema, enforce auth, and forward the event
  * to the collector. The backend is the authoritative source for identity: do
- * not pass user IDs, email addresses, free-text search terms, or image filenames
- * here.
+ * not pass user IDs, email addresses, free-text search terms, or image
+ * filenames here.
  */
 export function emitEvent(event: TelemetryEvent): void {
   if (!isBrowser()) return
+  _pendingEvents.push(normalizeEvent(event))
+  queueFlush()
+}
 
-  if (_clientEnv === undefined) {
-    _clientEnv = detectClientEnv()
+export function emitEventNow(event: TelemetryEvent): void {
+  emitEvent(event)
+  flushPendingEvents()
+}
+
+export function emitSessionStartedOnce(page: FrontendPage = currentPage()): void {
+  if (!isBrowser()) return
+  if (_sessionStartedEmitted) return
+  try {
+    if (window.sessionStorage.getItem(SESSION_STARTED_STORAGE_KEY) === '1') {
+      _sessionStartedEmitted = true
+      return
+    }
+    window.sessionStorage.setItem(SESSION_STARTED_STORAGE_KEY, '1')
+  } catch {
+    // If sessionStorage is unavailable, the in-memory guard still prevents duplicates.
   }
+  _sessionStartedEmitted = true
+  emitEvent({
+    event: 'application.session_started',
+    action: 'session_start',
+    outcome: 'success',
+    page,
+  })
+}
 
-  const normalized: TelemetryPayload = {
-    ...(_clientEnv ?? {}),
-    ...event,
-    schema_version: TELEMETRY_SCHEMA_VERSION,
-    outcome: event.outcome ?? 'unknown',
-    synthetic: _synthetic || event.synthetic || false,
+export function emitFrontendError(options: FrontendErrorEventOptions): void {
+  if (!isBrowser()) return
+  const page = options.page ?? currentPage()
+  const requestId = normalizeRequestId(options.requestId)
+  const dedupeKey =
+    options.dedupeKey ??
+    `${options.errorCode}:${options.action}:${page}:${options.imageId ?? 'none'}:${options.categoryId ?? 'none'}:${requestId ?? 'none'}`
+  if (!shouldEmitDedupedError(dedupeKey)) {
+    return
   }
+  emitEvent({
+    event: 'frontend.error',
+    action: options.action,
+    error: options.error,
+    error_code: options.errorCode,
+    outcome: 'failure',
+    page,
+    image_id: options.imageId,
+    category_id: options.categoryId,
+    request_id: requestId,
+  })
+}
 
-  _pendingEvents.push(normalized)
-
-  if (_flushTimer === null) {
-    _flushTimer = setTimeout(() => _flushEvents(), 1000)
-  }
+export function emitFrontendPerformance(options: FrontendPerformanceEventOptions): void {
+  emitEvent({
+    event: 'frontend.performance',
+    action: options.metric,
+    outcome: 'success',
+    page: options.page ?? currentPage(),
+    image_id: options.imageId,
+    category_id: options.categoryId,
+    value: roundMetric(options.value, options.unit),
+    unit: options.unit,
+  })
 }
 
 /**
@@ -241,8 +564,8 @@ export function getTraceHeaders(): Record<string, string> {
   const headers: Record<string, string> = {}
   const propagator = new W3CTraceContextPropagator()
   propagator.inject(context.active(), headers, {
-    set: (h: Record<string, string>, key: string, value: string) => {
-      h[key] = value
+    set: (carrier: Record<string, string>, key: string, value: string) => {
+      carrier[key] = value
     },
   })
   return headers

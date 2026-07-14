@@ -8,20 +8,24 @@ import TextField from '@mui/material/TextField'
 import Alert from '@mui/material/Alert'
 import CircularProgress from '@mui/material/CircularProgress'
 import { reportIssue, userMessage } from '../api'
+import type { FrontendPage } from '../observability'
+import { emitEvent } from '../observability'
 
 interface ReportIssueModalProps {
   open: boolean
   onClose: () => void
+  page: FrontendPage
 }
 
 export const AUTO_CLOSE_DELAY_MS = 2000
 
-export default function ReportIssueModal({ open, onClose }: ReportIssueModalProps) {
+export default function ReportIssueModal({ open, onClose, page }: ReportIssueModalProps) {
   const [description, setDescription] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasEmittedOpenRef = useRef(false)
 
   useEffect(
     () => () => {
@@ -29,6 +33,21 @@ export default function ReportIssueModal({ open, onClose }: ReportIssueModalProp
     },
     [],
   )
+
+  useEffect(() => {
+    if (!open) {
+      hasEmittedOpenRef.current = false
+      return
+    }
+    if (hasEmittedOpenRef.current) return
+    hasEmittedOpenRef.current = true
+    emitEvent({
+      event: 'feedback.report_issue_opened',
+      action: 'open',
+      outcome: 'success',
+      page,
+    })
+  }, [open, page])
 
   const handleClose = () => {
     if (submitting) return
@@ -52,11 +71,19 @@ export default function ReportIssueModal({ open, onClose }: ReportIssueModalProp
     setSubmitting(true)
     setError('')
     setSuccess('')
+    const startedAt = performance.now()
 
     try {
       const result = await reportIssue({
         description: trimmed,
         page_url: window.location.href,
+      })
+      emitEvent({
+        event: 'feedback.report_issue_submitted',
+        action: 'submit',
+        outcome: 'success',
+        duration_ms: Math.round(performance.now() - startedAt),
+        page,
       })
       setSuccess('Your feedback was received successfully. Thanks!')
       setDescription('')
@@ -68,6 +95,13 @@ export default function ReportIssueModal({ open, onClose }: ReportIssueModalProp
       }, AUTO_CLOSE_DELAY_MS)
       void result
     } catch (err) {
+      emitEvent({
+        event: 'feedback.report_issue_submitted',
+        action: 'submit',
+        outcome: 'failure',
+        duration_ms: Math.round(performance.now() - startedAt),
+        page,
+      })
       setError(userMessage(err, 'Failed to submit report.'))
     } finally {
       setSubmitting(false)
