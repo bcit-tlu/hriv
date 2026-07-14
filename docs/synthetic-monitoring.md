@@ -6,6 +6,12 @@ outside, the same way a real user would. It is the fastest signal that the full
 stack — auth, API, deep-zoom tile pipeline, and frontend — is healthy end to
 end, independent of internal metrics.
 
+The journey now also publishes an **authoritative latest-result snapshot** to
+the backend at `POST /api/telemetry/synthetic-result`. The backend persists the
+latest result in Redis and exposes durable gauges through `/api/metrics`, so
+Prometheus can query the most recent run outcome without inferring health from
+retained Kubernetes Job objects.
+
 - **Source:** `synthetic-monitoring/`
 - **Journey:** `synthetic-monitoring/tests/student-journey.spec.ts`
 - **Image:** `ghcr.io/bcit-tlu/hriv/hriv-synthetic-monitoring`
@@ -27,17 +33,70 @@ end, independent of internal metrics.
 
 Each step is wrapped in `test.step(...)` and logs a `[synthetic] …` line, so CI
 logs and the Playwright report show a readable, timed breakdown and the session
-id used to correlate the run's frontend events in Loki.
+id used to correlate the run's frontend events in Loki. The runner also records
+bounded step durations and submits the result from `finally`, so failed journeys
+still attempt to publish their last known state before the Job exits.
+
+## Authoritative result schema
+
+The runner submits the following bounded payload:
+
+```json
+{
+  "event_version": 1,
+  "started_at": "2026-07-13T18:00:00Z",
+  "completed_at": "2026-07-13T18:00:03Z",
+  "success": true,
+  "duration_ms": 3124,
+  "failure_code": null,
+  "component_version": "1.2.3",
+  "steps": [
+    { "name": "frontend", "success": true, "duration_ms": 350 },
+    { "name": "login", "success": true, "duration_ms": 420 },
+    { "name": "category", "success": true, "duration_ms": 300 },
+    { "name": "image", "success": true, "duration_ms": 850 },
+    { "name": "dzi", "success": true, "duration_ms": 480 },
+    { "name": "tile", "success": true, "duration_ms": 310 }
+  ]
+}
+```
+
+Allowed step names are fixed:
+
+- `frontend`
+- `login`
+- `category`
+- `image`
+- `dzi`
+- `tile`
+
+Allowed failure codes are fixed:
+
+- `frontend_unreachable`
+- `login_failed`
+- `category_unavailable`
+- `image_unavailable`
+- `dzi_failed`
+- `tile_failed`
+- `timeout`
+- `result_submission_failed`
+- `unexpected_error`
+
+The endpoint only accepts requests from an authenticated user whose
+`metadata_.synthetic` flag is `true`. Stale results older than the currently
+stored latest run are rejected, so out-of-order Job completions cannot roll the
+authoritative gauges backward.
 
 ## Configuration
 
-| Variable                  | Default                        | Purpose                                     |
-| ------------------------- | ------------------------------ | ------------------------------------------- |
-| `BASE_URL`                | `http://localhost:5173`        | Target environment base URL                 |
-| `SYNTHETIC_EMAIL`         | `synthetic.student@example.ca` | Login email for the monitor account         |
-| `SYNTHETIC_PASSWORD`      | `password`                     | Login password for the monitor account      |
-| `SYNTHETIC_CATEGORY_PATH` | `Architecture/Italian`         | Slash-separated category labels to navigate |
-| `SYNTHETIC_IMAGE_NAME`    | `Duomo di Milano`              | Exact image name to open                    |
+| Variable                      | Default                        | Purpose                                     |
+| ----------------------------- | ------------------------------ | ------------------------------------------- |
+| `BASE_URL`                    | `http://localhost:5173`        | Target environment base URL                 |
+| `SYNTHETIC_EMAIL`             | `synthetic.student@example.ca` | Login email for the monitor account         |
+| `SYNTHETIC_PASSWORD`          | `password`                     | Login password for the monitor account      |
+| `SYNTHETIC_CATEGORY_PATH`     | `Architecture/Italian`         | Slash-separated category labels to navigate |
+| `SYNTHETIC_IMAGE_NAME`        | `Duomo di Milano`              | Exact image name to open                    |
+| `SYNTHETIC_COMPONENT_VERSION` | package version                | Version string attached to logs and results |
 
 The monitor account should be a dedicated user whose database `metadata_`
 carries `{"synthetic": true}`. The backend uses that flag to mark the account's
@@ -101,6 +160,25 @@ job): `npm run typecheck`.
    and traces in Tempo for the same window to see the backend-side error.
 3. If the failure is environmental (target down, network), re-run once the
    dependency recovers; the journey is idempotent.
+4. If Prometheus shows a stale `hriv_synthetic_result_age_seconds`, the Job may
+   have stopped running entirely or the authoritative result submission may no
+   longer be reaching the backend.
+
+## Published metrics
+
+The backend exposes these gauges on `/api/metrics` from the latest stored
+synthetic result:
+
+- `hriv_synthetic_last_run_timestamp_seconds`
+- `hriv_synthetic_last_success_timestamp_seconds`
+- `hriv_synthetic_journey_success`
+- `hriv_synthetic_journey_duration_seconds`
+- `hriv_synthetic_result_age_seconds`
+- `hriv_synthetic_step_success{step="frontend|login|category|image|dzi|tile"}`
+- `hriv_synthetic_step_duration_seconds{step="frontend|login|category|image|dzi|tile"}`
+
+The gauges never label by account email, image id, category id, URL, or raw
+failure message.
 
 **Deployment prerequisites** (out of scope for this repo — configured in
 `bcit-tlu/flux-fleet`): a scheduler (e.g. a `CronJob`) to run the image on an

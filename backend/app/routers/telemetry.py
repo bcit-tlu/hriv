@@ -33,6 +33,13 @@ from ..auth import get_current_user
 from ..auth_events import is_synthetic_user
 from ..models import User
 from ..rate_limit import check_telemetry_rate_limit
+from ..synthetic_result import (
+    StaleSyntheticResultError,
+    StoredSyntheticJourneyState,
+    SyntheticJourneyResult,
+    SyntheticResultStorageUnavailableError,
+    store_synthetic_result,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +135,15 @@ class TelemetryBatch(BaseModel):
     events: list[TelemetryEvent] = Field(..., max_length=_MAX_EVENTS_PER_REQUEST)
 
 
+class SyntheticResultIngestResponse(BaseModel):
+    """Response schema for accepted authoritative synthetic journey results."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["stored"]
+    completed_at: str
+
+
 @router.post("/events", status_code=202)
 async def ingest_telemetry_events(
     batch: TelemetryBatch,
@@ -216,3 +232,78 @@ async def ingest_telemetry_events(
         logger.info("frontend telemetry event", extra=extra)
 
     return Response(status_code=202)
+
+
+@router.post("/synthetic-result", status_code=202, response_model=SyntheticResultIngestResponse)
+async def ingest_synthetic_result(
+    result: SyntheticJourneyResult,
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+) -> SyntheticResultIngestResponse:
+    """Persist the latest authoritative synthetic journey result for Prometheus."""
+    if not is_synthetic_user(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Synthetic result ingestion requires a synthetic account.",
+        )
+
+    try:
+        stored_state = await store_synthetic_result(result)
+    except StaleSyntheticResultError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "Synthetic result is stale compared with the stored latest run: "
+                f"{exc.latest_completed_at.isoformat()}"
+            ),
+        ) from exc
+    except SyntheticResultStorageUnavailableError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Synthetic result storage is unavailable.",
+        ) from exc
+
+    _log_synthetic_result(result, stored_state, request, user)
+    return SyntheticResultIngestResponse(
+        status="stored",
+        completed_at=stored_state.latest_result.completed_at.isoformat(),
+    )
+
+
+def _log_synthetic_result(
+    result: SyntheticJourneyResult,
+    stored_state: StoredSyntheticJourneyState,
+    request: Request,
+    user: User,
+) -> None:
+    """Emit the authoritative synthetic result as a structured backend log."""
+    step_names = [step.name for step in result.steps]
+    failed_steps = [step.name for step in result.steps if not step.success]
+    extra: dict[str, object] = {
+        "schema.version": result.event_version,
+        "event.name": "synthetic.journey.result",
+        "event.outcome": "success" if result.success else "failure",
+        "event.synthetic": True,
+        "synthetic.component_version": result.component_version or "unknown",
+        "synthetic.started_at": result.started_at.isoformat(),
+        "synthetic.completed_at": result.completed_at.isoformat(),
+        "synthetic.duration_ms": result.duration_ms,
+        "synthetic.step_count": len(result.steps),
+        "synthetic.steps": ",".join(step_names),
+        "synthetic.failed_steps": ",".join(failed_steps),
+        "synthetic.last_success_completed_at": (
+            stored_state.last_success_completed_at.isoformat()
+            if stored_state.last_success_completed_at is not None
+            else ""
+        ),
+        "user.id": user.id,
+        "user.role": user.role,
+    }
+    if result.failure_code is not None:
+        extra["error.type"] = result.failure_code
+
+    traceparent = request.headers.get("traceparent")
+    if traceparent:
+        extra["trace.parent"] = traceparent
+
+    logger.info("synthetic journey result stored", extra=extra)
