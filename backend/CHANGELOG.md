@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.34.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.33.0...backend-v0.34.0) (2026-07-13)
+
+
+### Features
+
+* **observability:** versioned usage telemetry, canonical auth logs, usage dashboard, synthetic monitor release ([#892](https://github.com/bcit-tlu/hriv/issues/892)) ([e61636c](https://github.com/bcit-tlu/hriv/commit/e61636cfa1a8bb8790e22aa19e96f505c04c7f22))
+
 ## [0.33.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.32.3...backend-v0.33.0) (2026-07-13)
 
 
