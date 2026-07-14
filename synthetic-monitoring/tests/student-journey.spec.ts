@@ -62,6 +62,7 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
     expect(response.ok(), `Login returned ${response.status()}`).toBeTruthy()
 
     // The browse root intentionally has no ?page= parameter.
+    await expect(page).toHaveURL((url) => url.pathname === '/' && !url.searchParams.has('page'))
     await expect(page.locator('img[alt="Duomo di Milano"]').first()).toBeVisible({
       timeout: 20000,
     })
