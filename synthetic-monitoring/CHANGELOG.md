@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.1.1...synthetic-monitoring-v1.1.2) (2026-07-14)
+
+
+### Bug Fixes
+
+* **synthetic-monitoring:** handle OIDC login form ([#898](https://github.com/bcit-tlu/hriv/issues/898)) ([d11e328](https://github.com/bcit-tlu/hriv/commit/d11e328d04df5109885b4dff6fbeb810c597d87a))
+
 ## [1.1.1](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.1.0...synthetic-monitoring-v1.1.1) (2026-07-14)
 
 
