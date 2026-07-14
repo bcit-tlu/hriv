@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.4](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.1.3...synthetic-monitoring-v1.1.4) (2026-07-14)
+
+
+### Bug Fixes
+
+* **synthetic-monitoring:** configure production test target ([#902](https://github.com/bcit-tlu/hriv/issues/902)) ([109dc3f](https://github.com/bcit-tlu/hriv/commit/109dc3fede8e3daff78dbe066a442a7175b5cf9a))
+
 ## [1.1.3](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.1.2...synthetic-monitoring-v1.1.3) (2026-07-14)
 
 
