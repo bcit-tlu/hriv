@@ -56,6 +56,11 @@ _TILE_IMAGE_FILE_ROUTE = re.compile(
 _IMAGE_REPLACE_ROUTE = re.compile(r"/api/images/[0-9]+/replace")
 _ADMIN_TASK_UPLOAD_ROUTE = re.compile(r"/api/admin/tasks/[^/]+/upload(?:/finalize)?")
 _CATCH_ALL_ROUTE_PARAM = re.compile(r"\{[^/{}:]+:path\}")
+_TILE_METRIC_ROUTES = frozenset({
+    "/api/tiles/{image_id}/image.dzi",
+    "/api/tiles/{image_id}/thumbnail.{format}",
+    "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}",
+})
 
 
 def _parse_exclude_prefixes(raw: str) -> tuple[str, ...]:
@@ -96,7 +101,7 @@ def _is_upload_path(path: str) -> bool:
 
 
 def _is_tile_route(route: str) -> bool:
-    return route.startswith("/api/tiles/")
+    return route in _TILE_METRIC_ROUTES
 
 
 def _status_class(status_code: int) -> str:

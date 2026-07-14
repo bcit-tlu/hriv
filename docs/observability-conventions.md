@@ -208,6 +208,9 @@ Rules:
 - Use normalized tile routes such as `/api/tiles/{image_id}/image.dzi`,
   `/api/tiles/{image_id}/thumbnail.{format}`, and
   `/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}`.
+- Emit tile metrics only for those known artifact routes. Unexpected paths under
+  the static tile mount should remain visible in request logs but must not
+  create new metric label values.
 - Distinguish missing content (`404`) from access-control denials (`401`/`403`)
   and server failures (`5xx`) through `http.status_code`, `status_class`, and
   the bounded `outcome` attribute.

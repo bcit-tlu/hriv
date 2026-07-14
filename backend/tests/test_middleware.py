@@ -703,6 +703,25 @@ async def test_audit_does_not_record_tile_metrics_for_non_tile_routes() -> None:
     size_histogram.record.assert_not_called()
 
 
+async def test_audit_does_not_record_tile_metrics_for_unrecognized_tile_path() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/tiles/123/debug")
+
+    with patch("app.middleware._tile_request_counter") as request_counter:
+        with patch("app.middleware._tile_error_counter") as error_counter:
+            with patch("app.middleware._tile_duration_histogram") as duration_histogram:
+                with patch(
+                    "app.middleware._tile_response_size_histogram"
+                ) as size_histogram:
+                    with patch("app.middleware.logger"):
+                        await _invoke(mw, scope, response_status=404)
+
+    request_counter.add.assert_not_called()
+    error_counter.add.assert_not_called()
+    duration_histogram.record.assert_not_called()
+    size_histogram.record.assert_not_called()
+
+
 async def test_audit_respects_configured_exclude_prefixes() -> None:
     """Paths not matching any configured prefix are still logged at INFO."""
     mw = AuditMiddleware(app=AsyncMock())
