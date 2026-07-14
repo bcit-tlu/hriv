@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import type { ViewportState, OverlayRect } from './components/imageViewerUtils'
 import { MAX_SHARE_OVERLAYS } from './components/imageViewerUtils'
 import { buildNavHistoryState } from './useNavigationHistory'
+import { emitEvent } from './observability'
 import { findImageInTree, resolveCategoryPath } from './treeUtils'
 import type { Category, ImageItem } from './types'
 
@@ -327,26 +328,43 @@ export function useShareableImageState(
 
   const copyShareLink = useCallback(() => {
     const url = window.location.href
+    const startedAt = performance.now()
+    const emitShareEvent = (outcome: 'success' | 'failure') => {
+      emitEvent({
+        event: 'image.share_selected',
+        action: 'share',
+        outcome,
+        duration_ms: Math.round(performance.now() - startedAt),
+        image_id: selectedImage?.id,
+        category_id: selectedImage?.categoryId ?? undefined,
+      })
+    }
     const fallbackCopy = () => {
       const input = document.createElement('input')
       input.value = url
       document.body.appendChild(input)
       input.select()
-      document.execCommand('copy')
+      const copied = document.execCommand('copy')
       document.body.removeChild(input)
-      setSnackOpen(true)
+      if (copied) {
+        setSnackOpen(true)
+        emitShareEvent('success')
+        return
+      }
+      emitShareEvent('failure')
     }
     if (navigator.clipboard?.writeText) {
       navigator.clipboard
         .writeText(url)
         .then(() => {
           setSnackOpen(true)
+          emitShareEvent('success')
         })
-        .catch(fallbackCopy)
+        .catch(() => fallbackCopy())
     } else {
       fallbackCopy()
     }
-  }, [])
+  }, [selectedImage?.categoryId, selectedImage?.id])
 
   const clearImage = useCallback(() => {
     setSelectedImage(null)

@@ -6,15 +6,25 @@ const mocks = vi.hoisted(() => {
     recordException: vi.fn(),
     setStatus: vi.fn(),
   }
+  let apiFailureObserver:
+    | ((
+        error: unknown,
+        context: { method: string; path: string; requestId?: string | null; status?: number },
+      ) => void)
+    | null = null
 
   return {
     active: vi.fn(() => ({})),
+    apiFailureObserver: () => apiFailureObserver,
     fetchInstrumentation: vi.fn(),
     inject: vi.fn(),
     providerCtor: vi.fn(),
     register: vi.fn(),
     resourceFromAttributes: vi.fn(),
     registerInstrumentations: vi.fn(),
+    setApiFailureObserver: vi.fn((observer) => {
+      apiFailureObserver = observer
+    }),
     setLogger: vi.fn(),
     span,
     spanProcessor: vi.fn(),
@@ -99,6 +109,7 @@ vi.mock('@opentelemetry/semantic-conventions', () => ({
 vi.mock('../src/api', () => ({
   getToken: () => 'test-token',
   SESSION_ID: 'test-session-id',
+  setApiFailureObserver: mocks.setApiFailureObserver,
 }))
 
 describe('observability', () => {
@@ -118,6 +129,7 @@ describe('observability', () => {
         setter: { set: (headers: Record<string, string>, key: string, value: string) => void },
       ) => setter.set(carrier, 'traceparent', '00-test-trace-test-span-01'),
     )
+    window.sessionStorage.clear()
   })
 
   afterEach(() => {
@@ -150,10 +162,11 @@ describe('observability', () => {
     expect(parsed.events).toHaveLength(1)
     expect(parsed.events[0]).toMatchObject({
       event: 'navigation.page_changed',
+      event_version: 1,
       outcome: 'unknown',
       page: 'browse',
       synthetic: true,
-      schema_version: 1,
+      schema_version: 2,
     })
     await vi.runAllTimersAsync()
     expect(fetch).toHaveBeenCalledOnce()
@@ -172,10 +185,61 @@ describe('observability', () => {
     expect(parsed.events).toHaveLength(1)
     expect(parsed.events[0]).toMatchObject({
       event: 'image.view.ready',
+      event_version: 1,
       outcome: 'success',
       synthetic: true,
-      schema_version: 1,
+      schema_version: 2,
       image_id: 5,
+    })
+  })
+
+  it('emits a session-start event only once per tab session', async () => {
+    const { emitSessionStartedOnce } = await import('../src/observability')
+
+    emitSessionStartedOnce('browse')
+    emitSessionStartedOnce('browse')
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(fetch).toHaveBeenCalledOnce()
+    const request = vi.mocked(fetch).mock.calls[0]?.[1]
+    const parsed = JSON.parse(String(request?.body))
+    expect(parsed.events).toHaveLength(1)
+    expect(parsed.events[0]).toMatchObject({
+      event: 'application.session_started',
+      event_version: 1,
+      outcome: 'success',
+      page: 'browse',
+      schema_version: 2,
+    })
+  })
+
+  it('reports user-visible API failures as sanitized frontend errors', async () => {
+    const { initObservability } = await import('../src/observability')
+
+    initObservability()
+    const observer = mocks.apiFailureObserver()
+    expect(observer).toBeTypeOf('function')
+
+    observer?.(new Error('nope'), {
+      method: 'GET',
+      path: '/images/123',
+      requestId: 'req-123',
+      status: 503,
+    })
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(fetch).toHaveBeenCalledOnce()
+    const request = vi.mocked(fetch).mock.calls[0]?.[1]
+    const parsed = JSON.parse(String(request?.body))
+    expect(parsed.events[0]).toMatchObject({
+      event: 'frontend.error',
+      event_version: 1,
+      outcome: 'failure',
+      action: 'request',
+      error: 'api_http_5xx',
+      error_code: 'api_http_5xx',
+      request_id: 'req-123',
+      schema_version: 2,
     })
   })
 

@@ -427,9 +427,11 @@ missing or malformed backup as fresh.
 
 ## Frontend Telemetry Ingestion
 
-Frontend usage events (image viewer lifecycle, page navigation) are **not**
-sent directly to the OpenTelemetry collector. Instead, the browser batches them
-and POSTs them to the authenticated backend endpoint:
+Frontend usage events (session start, logout intent, image viewer lifecycle,
+share/report-issue actions, bounded frontend errors, page navigation, and a
+small browser-performance set) are **not** sent directly to the OpenTelemetry
+collector. Instead, the browser batches them and POSTs them to the
+authenticated backend endpoint:
 
 ```
 POST /api/telemetry/events
@@ -437,7 +439,7 @@ Authorization: Bearer <JWT>
 X-Session-ID: <tab-session-id>
 Content-Type: application/json
 
-{"events": [{"event": "image.view.ready", "outcome": "success", "schema_version": 1, ...}]}
+{"events": [{"event": "image.view.ready", "outcome": "success", "schema_version": 2, "event_version": 1, ...}]}
 ```
 
 The endpoint validates each event name against an allowlist and emits a
@@ -445,14 +447,14 @@ structured log that the OTel logging handler forwards to the collector. This
 keeps structured event ingestion behind application authentication and lets the
 backend enforce schema validation and payload-size limits.
 
-**Versioning.** Every event carries a `schema_version` (currently `1`), emitted
-in logs as `schema.version`. Only the current version is accepted: an **omitted**
-version is treated as the current one (backward compatible), while an explicit
-**unsupported** version is rejected with `422` so the log shape stays
-well-defined. Bump `TELEMETRY_SCHEMA_VERSION` (frontend
-`observability.ts` and backend `routers/telemetry.py` in lockstep) whenever the
-field shape changes so log parsers and dashboards can branch on the version
-rather than silently misreading older records.
+**Versioning.** Every event carries a `schema_version` (currently `2`) and an
+`event_version` (currently `1`), emitted in logs as `schema.version` and
+`event.version`. `schema_version` describes the top-level payload envelope;
+`event_version` describes the event-specific field contract. Bump
+`TELEMETRY_SCHEMA_VERSION` (frontend `observability.ts` and backend
+`routers/telemetry.py` in lockstep) whenever the payload shape changes so log
+parsers and dashboards can branch on the version rather than silently
+misreading older records.
 
 **Per-tab session id.** `X-Session-ID` is persisted in `sessionStorage`
 (`hriv.session_id`), so it stays stable across in-tab reloads and SPA remounts
@@ -491,6 +493,79 @@ it at build time. Because this endpoint accepts browser traffic, the gateway
 must enforce CORS, request-size limits, and rate limits, and downstream systems
 must not trust browser-supplied identity attributes. Structured usage events
 never use this direct path.
+
+### Frontend event contract
+
+Approved event names:
+
+- `application.session_started`
+- `auth.logout_selected`
+- `feedback.report_issue_opened`
+- `feedback.report_issue_submitted`
+- `frontend.error`
+- `frontend.performance`
+- `image.share_selected`
+- `image.view.started`
+- `image.view.ready`
+- `image.view.failed`
+- `navigation.page_changed`
+
+Common fields:
+
+- `event_version`
+- `outcome`
+- `duration_ms`
+- `action`
+- `page`
+- `image_id`
+- `category_id`
+- `request_id`
+- `trace_id`
+- bounded client environment fields:
+  `browser_family`, `browser_major`, `os_family`, `device_class`,
+  `viewport_bucket`, `touch_capable`
+
+Additional frontend-error fields:
+
+- `error`
+- `error_code`
+
+Allowed `error_code` values:
+
+- `api_http_4xx`
+- `api_http_5xx`
+- `api_network_error`
+- `image_viewer_init_failed`
+- `image_viewer_open_failed`
+- `react_render_error`
+- `unhandled_promise_rejection`
+- `window_runtime_error`
+
+Additional frontend-performance fields:
+
+- `value`
+- `unit`
+
+`frontend.performance` uses `action` as the metric name. Approved metrics are:
+
+- `application_load`
+- `lcp`
+- `inp`
+- `cls`
+- `image_ready`
+
+`unit` is bounded to:
+
+- `ms`
+- `score`
+
+Privacy rules for frontend telemetry:
+
+- Never include free-text report-issue descriptions.
+- Never include full URLs or search-query values in events.
+- Never include image names, category labels, email addresses, or access tokens.
+- Preserve `request_id` only when the backend already generated it.
+- Browser and device fields must stay inside the documented bounded sets.
 
 When `VITE_API_URL` is set (production and staging), the frontend posts to
 `${VITE_API_URL}/api/telemetry/events`. In local development, when `VITE_API_URL`

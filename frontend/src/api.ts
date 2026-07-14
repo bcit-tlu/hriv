@@ -110,16 +110,58 @@ function authHeaders(): Record<string, string> {
   return h
 }
 
+export interface ApiFailureContext {
+  method: string
+  path: string
+  requestId?: string | null
+  status?: number
+}
+
+type ApiFailureObserver = (error: unknown, context: ApiFailureContext) => void
+
+let _apiFailureObserver: ApiFailureObserver | null = null
+
+export function setApiFailureObserver(observer: ApiFailureObserver | null): void {
+  _apiFailureObserver = observer
+}
+
+function notifyVisibleApiFailure(error: unknown, context: ApiFailureContext): void {
+  _apiFailureObserver?.(error, context)
+}
+
 export class ApiError extends Error {
   status: number
   detail: string
   data?: unknown
-  constructor(status: number, detail: string, data?: unknown) {
+  requestId?: string | null
+  method?: string
+  path?: string
+  constructor(
+    status: number,
+    detail: string,
+    data?: unknown,
+    context?: Omit<ApiFailureContext, 'status'>,
+  ) {
     super(`API ${status}: ${detail}`)
     this.name = 'ApiError'
     this.status = status
     this.detail = detail
     this.data = data
+    this.requestId = context?.requestId
+    this.method = context?.method
+    this.path = context?.path
+  }
+}
+
+export class ApiTransportError extends TypeError {
+  method: string
+  path: string
+
+  constructor(message: string, context: Omit<ApiFailureContext, 'status' | 'requestId'>) {
+    super(message)
+    this.name = 'ApiTransportError'
+    this.method = context.method
+    this.path = context.path
   }
 }
 
@@ -129,6 +171,12 @@ export function isAuthFailure(err: unknown): err is ApiError {
 
 export function userMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
+    notifyVisibleApiFailure(err, {
+      method: err.method ?? 'GET',
+      path: err.path ?? 'unknown',
+      requestId: err.requestId,
+      status: err.status,
+    })
     const detail = err.detail.trim()
     const looksLikeHtml =
       /^<(!doctype|html|head|body|div|p|span|h[1-6]|pre|ul|ol|table|section|article)\b/i.test(
@@ -161,6 +209,13 @@ export function userMessage(err: unknown, fallback: string): string {
   // Network failure: fetch rejects with TypeError (e.g. "Failed to fetch").
   // XHR-based handlers in this module also reject with TypeError for
   // consistency, so all network-level failures surface here.
+  if (err instanceof ApiTransportError) {
+    notifyVisibleApiFailure(err, {
+      method: err.method,
+      path: err.path,
+    })
+    return 'Network error — check your connection and try again.'
+  }
   if (err instanceof TypeError) {
     return 'Network error — check your connection and try again.'
   }
@@ -242,18 +297,31 @@ function parseError(text: string): { message: string; data?: unknown } {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const { headers: initHeaders, ...restInit } = init ?? {}
-  const res = await fetch(`${BASE}/api${path}`, {
-    ...restInit,
-    headers: {
-      'Content-Type': 'application/json',
-      ...authHeaders(),
-      ...initHeaders,
-    },
-  })
+  const method = init?.method ?? 'GET'
+  let res: Response
+  try {
+    res = await fetch(`${BASE}/api${path}`, {
+      ...restInit,
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders(),
+        ...initHeaders,
+      },
+    })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw err
+    }
+    throw new ApiTransportError('Network error', { method, path })
+  }
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
     const parsed = parseError(text)
-    throw new ApiError(res.status, parsed.message, parsed.data)
+    throw new ApiError(res.status, parsed.message, parsed.data, {
+      method,
+      path,
+      requestId: res.headers.get('X-Request-ID'),
+    })
   }
   if (res.status === 204) return undefined as unknown as T
   return res.json() as Promise<T>
@@ -360,7 +428,11 @@ export async function fetchStatus(): Promise<ApiStatus> {
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
     const parsed = parseError(text)
-    throw new ApiError(res.status, parsed.message, parsed.data)
+    throw new ApiError(res.status, parsed.message, parsed.data, {
+      method: 'GET',
+      path: '/status',
+      requestId: res.headers.get('X-Request-ID'),
+    })
   }
   return res.json() as Promise<ApiStatus>
 }
@@ -882,7 +954,13 @@ export async function uploadSourceImage(
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
           const parsed = parseError(xhr.responseText || xhr.statusText)
-          reject(new ApiError(xhr.status, parsed.message, parsed.data))
+          reject(
+            new ApiError(xhr.status, parsed.message, parsed.data, {
+              method: 'POST',
+              path: '/source-images/upload',
+              requestId: xhr.getResponseHeader('X-Request-ID'),
+            }),
+          )
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
@@ -890,7 +968,9 @@ export async function uploadSourceImage(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new TypeError('Network error'))
+      reject(
+        new ApiTransportError('Network error', { method: 'POST', path: '/source-images/upload' }),
+      )
     })
 
     xhr.addEventListener('abort', () => {
@@ -963,7 +1043,13 @@ export async function replaceImage(
           resolve(JSON.parse(xhr.responseText) as ApiSourceImage)
         } else {
           const parsed = parseError(xhr.responseText || xhr.statusText)
-          reject(new ApiError(xhr.status, parsed.message, parsed.data))
+          reject(
+            new ApiError(xhr.status, parsed.message, parsed.data, {
+              method: 'POST',
+              path: `/images/${imageId}/replace`,
+              requestId: xhr.getResponseHeader('X-Request-ID'),
+            }),
+          )
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse replace response'))
@@ -971,7 +1057,12 @@ export async function replaceImage(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new TypeError('Network error'))
+      reject(
+        new ApiTransportError('Network error', {
+          method: 'POST',
+          path: `/images/${imageId}/replace`,
+        }),
+      )
     })
 
     xhr.addEventListener('abort', () => {
@@ -1045,7 +1136,13 @@ export async function bulkImportImages(
           resolve(JSON.parse(xhr.responseText) as ApiBulkImportJob)
         } else {
           const parsed = parseError(xhr.responseText || xhr.statusText)
-          reject(new ApiError(xhr.status, parsed.message, parsed.data))
+          reject(
+            new ApiError(xhr.status, parsed.message, parsed.data, {
+              method: 'POST',
+              path: '/admin/bulk-import/',
+              requestId: xhr.getResponseHeader('X-Request-ID'),
+            }),
+          )
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse bulk import response'))
@@ -1053,7 +1150,9 @@ export async function bulkImportImages(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new TypeError('Network error'))
+      reject(
+        new ApiTransportError('Network error', { method: 'POST', path: '/admin/bulk-import/' }),
+      )
     })
 
     xhr.addEventListener('abort', () => {
@@ -1158,7 +1257,11 @@ export async function startDbImport(file: File): Promise<AdminTask> {
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText)
     const parsed = parseError(text)
-    throw new ApiError(res.status, parsed.message, parsed.data)
+    throw new ApiError(res.status, parsed.message, parsed.data, {
+      method: 'POST',
+      path: '/admin/tasks/db-import',
+      requestId: res.headers.get('X-Request-ID'),
+    })
   }
   return res.json() as Promise<AdminTask>
 }
@@ -1323,9 +1426,21 @@ function uploadChunk(
             bytes_received: number
             status: string
           }
-          reject(new ApiError(409, 'Upload offset conflict', resp))
+          reject(
+            new ApiError(409, 'Upload offset conflict', resp, {
+              method: 'PATCH',
+              path: `/admin/tasks/${taskId}/upload`,
+              requestId: xhr.getResponseHeader('X-Request-ID'),
+            }),
+          )
         } catch {
-          reject(new ApiError(409, 'Upload offset conflict'))
+          reject(
+            new ApiError(409, 'Upload offset conflict', undefined, {
+              method: 'PATCH',
+              path: `/admin/tasks/${taskId}/upload`,
+              requestId: xhr.getResponseHeader('X-Request-ID'),
+            }),
+          )
         }
         return
       }
@@ -1337,13 +1452,24 @@ function uploadChunk(
         }
       } else {
         const parsed = parseError(xhr.responseText || xhr.statusText)
-        reject(new ApiError(xhr.status, parsed.message, parsed.data))
+        reject(
+          new ApiError(xhr.status, parsed.message, parsed.data, {
+            method: 'PATCH',
+            path: `/admin/tasks/${taskId}/upload`,
+            requestId: xhr.getResponseHeader('X-Request-ID'),
+          }),
+        )
       }
     })
 
     xhr.addEventListener('error', () => {
       signal?.removeEventListener('abort', onAbort)
-      reject(new TypeError('Network error'))
+      reject(
+        new ApiTransportError('Network error', {
+          method: 'PATCH',
+          path: `/admin/tasks/${taskId}/upload`,
+        }),
+      )
     })
 
     xhr.addEventListener('abort', () => {
@@ -1423,7 +1549,13 @@ function uploadTaskFileRaw(
           resolve(JSON.parse(xhr.responseText) as AdminTask)
         } else {
           const parsed = parseError(xhr.responseText || xhr.statusText)
-          reject(new ApiError(xhr.status, parsed.message, parsed.data))
+          reject(
+            new ApiError(xhr.status, parsed.message, parsed.data, {
+              method: 'PUT',
+              path: `/admin/tasks/${taskId}/upload`,
+              requestId: xhr.getResponseHeader('X-Request-ID'),
+            }),
+          )
         }
       } catch (e) {
         reject(e instanceof Error ? e : new Error('Failed to parse upload response'))
@@ -1431,7 +1563,12 @@ function uploadTaskFileRaw(
     })
 
     xhr.addEventListener('error', () => {
-      reject(new TypeError('Network error'))
+      reject(
+        new ApiTransportError('Network error', {
+          method: 'PUT',
+          path: `/admin/tasks/${taskId}/upload`,
+        }),
+      )
     })
 
     xhr.addEventListener('abort', () => {

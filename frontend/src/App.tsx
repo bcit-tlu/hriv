@@ -82,7 +82,7 @@ import AddCategoryDialog from './components/AddCategoryDialog'
 import EditCategoryDialog from './components/EditCategoryDialog'
 import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
-import { emitEvent } from './observability'
+import { emitEvent, emitSessionStartedOnce } from './observability'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from './categoryUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
@@ -138,6 +138,11 @@ export default function App() {
     lastEmittedPageRef.current = page
     emitEvent({ event: 'navigation.page_changed', action: 'navigate', outcome: 'success', page })
   }, [page, currentUser])
+
+  useEffect(() => {
+    if (usersLoading || !currentUser) return
+    emitSessionStartedOnce(page)
+  }, [currentUser, page, usersLoading])
 
   const [path, setPath] = useState<Category[]>([])
   const pathRef = useRef(path)
@@ -2091,7 +2096,11 @@ export default function App() {
       />
 
       {/* Report issue modal */}
-      <ReportIssueModal open={reportIssueOpen} onClose={() => setReportIssueOpen(false)} />
+      <ReportIssueModal
+        open={reportIssueOpen}
+        onClose={() => setReportIssueOpen(false)}
+        page={page}
+      />
 
       {/* Search modal */}
       <SearchModal

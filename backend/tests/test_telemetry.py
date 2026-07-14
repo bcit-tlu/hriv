@@ -51,12 +51,13 @@ async def test_telemetry_events_accepted_and_logged(
     batch = TelemetryBatch(
         events=[
             TelemetryEvent(
-                event="image.view.started",
+                event="application.session_started",
                 outcome="success",
-                action="view",
+                action="session_start",
                 duration_ms=12.5,
-                image_id=7,
-                category_id=3,
+                event_version=1,
+                value=12.5,
+                unit="ms",
             ),
             TelemetryEvent(
                 event="navigation.page_changed", action="navigate", page="browse"
@@ -78,12 +79,13 @@ async def test_telemetry_events_accepted_and_logged(
 
     first, second = telemetry_logs
     assert getattr(first, "schema.version") == TELEMETRY_SCHEMA_VERSION
-    assert getattr(first, "event.name") == "image.view.started"
+    assert getattr(first, "event.version") == 1
+    assert getattr(first, "event.name") == "application.session_started"
     assert getattr(first, "event.outcome") == "success"
-    assert getattr(first, "event.action") == "view"
+    assert getattr(first, "event.action") == "session_start"
     assert getattr(first, "event.duration_ms") == 12.5
-    assert getattr(first, "image.id") == 7
-    assert getattr(first, "category.id") == 3
+    assert getattr(first, "event.value") == 12.5
+    assert getattr(first, "event.unit") == "ms"
     assert getattr(first, "event.synthetic") is False
     assert getattr(first, "user.id") == 42
     assert getattr(first, "user.role") == "student"
@@ -155,7 +157,7 @@ async def test_telemetry_bounds_client_environment(
                 os_family="definitely-not-real",
                 device_class="mobile",
                 viewport_bucket="md",
-                touch=True,
+                touch_capable=True,
             )
         ]
     )
@@ -174,7 +176,7 @@ async def test_telemetry_bounds_client_environment(
     assert getattr(log, "client.os.family") == "other"
     assert getattr(log, "client.device.class") == "mobile"
     assert getattr(log, "client.viewport.bucket") == "md"
-    assert getattr(log, "client.touch") is True
+    assert getattr(log, "client.touch_capable") is True
 
 
 async def test_telemetry_bounds_non_numeric_browser_major(
@@ -213,12 +215,13 @@ def test_telemetry_accepts_current_and_omitted_schema_version() -> None:
         ).schema_version
         == TELEMETRY_SCHEMA_VERSION
     )
+    assert TelemetryEvent(event="navigation.page_changed", schema_version=1).schema_version == 1
 
 
 def test_telemetry_rejects_unsupported_schema_version() -> None:
     """An explicit unsupported schema version is rejected at validation time."""
     with pytest.raises(ValidationError):
-        TelemetryEvent(event="navigation.page_changed", schema_version=2)
+        TelemetryEvent(event="navigation.page_changed", schema_version=3)
 
 
 def test_telemetry_rejects_prohibited_extra_fields() -> None:
@@ -277,6 +280,76 @@ async def test_telemetry_rejects_oversized_batch() -> None:
     events = [TelemetryEvent(event="image.view.started") for _ in range(20)]
     with pytest.raises(ValueError):
         TelemetryBatch(events=events)
+
+
+def test_telemetry_ignores_unknown_fields() -> None:
+    """Unknown fields are ignored so additive clients do not break ingestion."""
+    event = TelemetryEvent.model_validate(
+        {"event": "frontend.performance", "action": "lcp", "unit": "ms", "unknown": "ignored"}
+    )
+    assert event.event == "frontend.performance"
+
+
+async def test_telemetry_logs_error_code_and_request_id(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Frontend error events preserve bounded diagnostic identifiers."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+
+    batch = TelemetryBatch(
+        events=[
+            TelemetryEvent(
+                event="frontend.error",
+                action="request",
+                outcome="failure",
+                error="api_http_5xx",
+                error_code="api_http_5xx",
+                request_id="req-123",
+            )
+        ]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=8, role="student", metadata_={})
+
+    with _allow_rate_limit():
+        await ingest_telemetry_events(
+            batch=batch, request=request, user=user, x_session_id=None
+        )
+
+    log = [r for r in caplog.records if r.message == "frontend telemetry event"][0]
+    assert getattr(log, "error.type") == "api_http_5xx"
+    assert getattr(log, "error.code") == "api_http_5xx"
+    assert getattr(log, "request.id") == "req-123"
+
+
+async def test_telemetry_bounds_unknown_error_code_and_unit(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Unrecognized bounded values are coerced to the sentinel rather than logged raw."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+
+    batch = TelemetryBatch(
+        events=[
+            TelemetryEvent(
+                event="frontend.performance",
+                action="cls",
+                value=0.1234,
+                unit="bogus_unit",
+                error_code="not-valid",
+            )
+        ]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=8, role="student", metadata_={})
+
+    with _allow_rate_limit():
+        await ingest_telemetry_events(
+            batch=batch, request=request, user=user, x_session_id=None
+        )
+
+    log = [r for r in caplog.records if r.message == "frontend telemetry event"][0]
+    assert getattr(log, "event.unit") == "other"
+    assert getattr(log, "error.code") == "other"
 
 
 async def test_telemetry_rejects_oversized_event_name() -> None:
