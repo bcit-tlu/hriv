@@ -1,6 +1,11 @@
 {{- if and .Values.tiles.enabled (not .Values.persistence.enabled) }}
 {{- fail "tiles.enabled requires persistence.enabled — the sidecar serves tiles from the PVC" }}
 {{- end }}
+{{- $backupVersionMountPath := trimSuffix "/" .Values.backupVersionConfigMap.mountPath -}}
+{{- $frontendVersionMountPath := trimSuffix "/" .Values.frontendVersionConfigMap.mountPath -}}
+{{- if and .Values.backupVersionConfigMap.enabled .Values.frontendVersionConfigMap.enabled (eq $backupVersionMountPath $frontendVersionMountPath) }}
+{{- fail "backupVersionConfigMap.mountPath and frontendVersionConfigMap.mountPath must differ when both ConfigMap mounts are enabled" }}
+{{- end }}
 {{- $sourceImages := include "hriv-backend.resolvedSourceImagesPersistence" . | fromYaml -}}
 {{- $tiles := include "hriv-backend.resolvedTilesPersistence" . | fromYaml -}}
 {{- $feedback := include "hriv-backend.feedbackConfig" . | fromYaml -}}

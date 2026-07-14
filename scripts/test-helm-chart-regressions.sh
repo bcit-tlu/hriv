@@ -169,6 +169,15 @@ assert_contains "$backend_frontend_version_manifest" 'name: frontend-version' \
 assert_contains "$backend_frontend_version_manifest" 'name: FRONTEND_VERSION_FILE' \
   "backend deployment should expose FRONTEND_VERSION_FILE when the frontend version ConfigMap is enabled"
 
+if backend_colliding_version_mounts_output="$(helm template test charts/backend \
+  --set backupVersionConfigMap.enabled=true \
+  --set frontendVersionConfigMap.enabled=true \
+  --set frontendVersionConfigMap.mountPath=/etc/hriv-versions 2>&1)"; then
+  fail "expected colliding backend version ConfigMap mount paths to be rejected"
+fi
+assert_contains "$backend_colliding_version_mounts_output" "must differ" \
+  "backend deployment should explain that backup and frontend version ConfigMap mount paths must differ"
+
 frontend_zone_aa_manifest="$(helm template test charts/frontend \
   --set scheduling.zoneAntiAffinity.enabled=true \
   --set replicaCount=2)"
