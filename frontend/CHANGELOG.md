@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.37.0...frontend-v0.38.0) (2026-07-14)
+
+
+### Features
+
+* define observability contracts ([#915](https://github.com/bcit-tlu/hriv/issues/915)) ([4ff5050](https://github.com/bcit-tlu/hriv/commit/4ff5050c1d5509b2a0a7cabb6d6c695bd5768ffb))
+
 ## [0.37.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.36.1...frontend-v0.37.0) (2026-07-14)
 
 
