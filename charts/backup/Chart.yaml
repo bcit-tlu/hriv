@@ -2,5 +2,5 @@ apiVersion: v2
 name: hriv-backup
 description: HRIV Backup Service – scheduled database and filesystem snapshots
 type: application
-version: 0.10.0 # x-release-please-version
-appVersion: '0.10.0' # x-release-please-version
+version: 0.11.0 # x-release-please-version
+appVersion: '0.11.0' # x-release-please-version
