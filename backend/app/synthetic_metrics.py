@@ -8,7 +8,11 @@ from threading import Lock
 
 from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, generate_latest
 
-from .synthetic_result import SYNTHETIC_STEP_NAMES, load_stored_synthetic_result_state
+from .synthetic_result import (
+    SYNTHETIC_STEP_NAMES,
+    StoredSyntheticJourneyState,
+    load_stored_synthetic_result_state,
+)
 
 _registry = CollectorRegistry()
 _render_lock = Lock()
@@ -93,7 +97,10 @@ def _render_synthetic_metrics_payload(state) -> tuple[bytes, str]:
         return generate_latest(_registry), CONTENT_TYPE_LATEST
 
 
-async def render_synthetic_metrics() -> tuple[bytes, str]:
+async def render_synthetic_metrics(
+    state: StoredSyntheticJourneyState | None = None,
+) -> tuple[bytes, str]:
     """Return Prometheus exposition text for the stored synthetic journey state."""
-    state = await load_stored_synthetic_result_state()
+    if state is None:
+        state = await load_stored_synthetic_result_state()
     return await asyncio.to_thread(_render_synthetic_metrics_payload, state)

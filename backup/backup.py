@@ -286,13 +286,7 @@ def _seed_restore_success_history(state: dict, previous_state: dict | None) -> N
             current_section = current_purpose.get(restore_type)
             if not isinstance(previous_section, dict) or not isinstance(current_section, dict):
                 continue
-            for key in (
-                "last_success_started_at",
-                "last_success_completed_at",
-                "last_success_duration_seconds",
-                "last_success_archive_name",
-            ):
-                current_section[key] = previous_section.get(key)
+            current_section.update(previous_section)
 
 
 def _write_restore_state(state: dict) -> None:
@@ -1308,16 +1302,31 @@ END $$;
             )
             _write_restore_state(restore_state)
 
-    log.info(
-        "Restore completed successfully",
-        extra={
-            "event": "restore.completed",
-            "purpose": purpose,
-            "archive_name": archive_path.name,
-            "target_data_dir": target_data_dir,
-        },
-    )
-    return True
+    database_success = _restore_section(restore_state, purpose, "database").get("success") is True
+    filesystem_success = _restore_section(restore_state, purpose, "filesystem").get("success") is True
+    overall_success = database_success and filesystem_success
+    if overall_success:
+        log.info(
+            "Restore completed successfully",
+            extra={
+                "event": "restore.completed",
+                "purpose": purpose,
+                "archive_name": archive_path.name,
+                "target_data_dir": target_data_dir,
+            },
+        )
+    else:
+        log.error(
+            "Restore completed with missing or failed components",
+            extra={
+                "event": "restore.failed",
+                "purpose": purpose,
+                "archive_name": archive_path.name,
+                "database_success": database_success,
+                "filesystem_success": filesystem_success,
+            },
+        )
+    return overall_success
 
 
 # ---------------------------------------------------------------------------

@@ -195,6 +195,21 @@ class RestoreTestCase(_BackupTestCase):
         )
 
     @patch("backup.subprocess.run", return_value=MagicMock(returncode=0))
+    def test_restore_returns_false_when_archive_has_no_restorable_components(self, _mock_run):
+        self._reload({"BACKUP_MODE": "development", "DATA_DIR": str(self.data_dir)})
+        snapshot_dir = self.tmp / "empty_snapshot"
+        snapshot_dir.mkdir()
+        (snapshot_dir / "manifest.json").write_text(
+            json.dumps({"snapshot_name": "empty_snapshot", "created_at": "2026-01-01T00:00:00+00:00"})
+        )
+        archive = self.tmp / "empty-backup.tar.gz"
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(snapshot_dir, arcname="empty_snapshot")
+
+        with patch.object(backup, "_local_backup_dir", return_value=self.tmp / "backups"):
+            self.assertFalse(backup._restore_from_archive(archive))
+
+    @patch("backup.subprocess.run", return_value=MagicMock(returncode=0))
     def test_restore_persists_state_for_operator_restore(self, _mock_run):
         self._reload({"BACKUP_MODE": "development", "DATA_DIR": str(self.data_dir)})
         archive_data = self.tmp / "archive_state"

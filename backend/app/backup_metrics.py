@@ -303,12 +303,12 @@ def render_backup_metrics() -> tuple[bytes, str]:
 
         if not archive_configured:
             _backup_archive_listing_last_outcome.set(-1)
-            _backup_archive_listing_last_refresh.set(0)
+            _backup_archive_listing_last_refresh.set(float("nan"))
             archive_summary = _empty_summary()
         else:
             _backup_archive_listing_last_outcome.set(1 if archive_fetch_succeeded else 0)
             if archive_last_refresh_monotonic is None:
-                _backup_archive_listing_last_refresh.set(0)
+                _backup_archive_listing_last_refresh.set(float("nan"))
             else:
                 elapsed = max(monotonic() - archive_last_refresh_monotonic, 0.0)
                 _backup_archive_listing_last_refresh.set(

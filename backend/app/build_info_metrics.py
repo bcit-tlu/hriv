@@ -59,7 +59,10 @@ def _render_build_info_payload(state: StoredSyntheticJourneyState | None) -> tup
         return generate_latest(_registry), CONTENT_TYPE_LATEST
 
 
-async def render_build_info_metrics() -> tuple[bytes, str]:
+async def render_build_info_metrics(
+    state: StoredSyntheticJourneyState | None = None,
+) -> tuple[bytes, str]:
     """Return Prometheus exposition text for HRIV component build identities."""
-    state = await load_stored_synthetic_result_state()
+    if state is None:
+        state = await load_stored_synthetic_result_state()
     return await asyncio.to_thread(_render_build_info_payload, state)
