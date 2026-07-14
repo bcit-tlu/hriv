@@ -2,5 +2,5 @@
   "frontend": "0.37.0",
   "backend": "0.34.0",
   "backup": "0.10.0",
-  "synthetic-monitoring": "1.1.2"
+  "synthetic-monitoring": "1.1.3"
 }

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.3](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.1.2...synthetic-monitoring-v1.1.3) (2026-07-14)
+
+
+### Bug Fixes
+
+* **synthetic-monitoring:** assert browse content after login ([#900](https://github.com/bcit-tlu/hriv/issues/900)) ([a884ed7](https://github.com/bcit-tlu/hriv/commit/a884ed7e47cdab64c1fc2378375986f1ed95581a))
+
 ## [1.1.2](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.1.1...synthetic-monitoring-v1.1.2) (2026-07-14)
 
 
