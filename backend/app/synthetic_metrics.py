@@ -16,6 +16,7 @@ from .synthetic_result import (
 
 _registry = CollectorRegistry()
 _render_lock = Lock()
+_STATE_NOT_PROVIDED = object()
 
 _synthetic_last_run = Gauge(
     "hriv_synthetic_last_run_timestamp_seconds",
@@ -98,9 +99,9 @@ def _render_synthetic_metrics_payload(state) -> tuple[bytes, str]:
 
 
 async def render_synthetic_metrics(
-    state: StoredSyntheticJourneyState | None = None,
+    state: StoredSyntheticJourneyState | None | object = _STATE_NOT_PROVIDED,
 ) -> tuple[bytes, str]:
     """Return Prometheus exposition text for the stored synthetic journey state."""
-    if state is None:
+    if state is _STATE_NOT_PROVIDED:
         state = await load_stored_synthetic_result_state()
     return await asyncio.to_thread(_render_synthetic_metrics_payload, state)

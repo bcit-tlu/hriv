@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from app.build_info_metrics import render_build_info_metrics
 from app.synthetic_result import StoredSyntheticJourneyState, SyntheticJourneyResult, SyntheticJourneyStep
@@ -76,3 +76,15 @@ async def test_render_build_info_metrics_falls_back_to_unknowns() -> None:
     assert b'component="frontend",version="unknown"' in content
     assert b'component="synthetic",version="unknown"' in content
     assert b'commit_sha="unknown",component="backup"' in content
+
+
+async def test_render_build_info_metrics_with_explicit_none_skips_reload() -> None:
+    loader = AsyncMock(return_value=_synthetic_state())
+    with (
+        patch.dict(os.environ, {}, clear=True),
+        patch("app.build_info_metrics.load_stored_synthetic_result_state", loader),
+    ):
+        content, _ = await render_build_info_metrics(None)
+
+    loader.assert_not_awaited()
+    assert b'component="synthetic",version="unknown"' in content

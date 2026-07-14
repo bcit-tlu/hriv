@@ -23,6 +23,7 @@ from .synthetic_result import StoredSyntheticJourneyState, load_stored_synthetic
 
 _registry = CollectorRegistry()
 _render_lock = Lock()
+_STATE_NOT_PROVIDED = object()
 
 _build_info = Gauge(
     "hriv_build_info",
@@ -60,9 +61,9 @@ def _render_build_info_payload(state: StoredSyntheticJourneyState | None) -> tup
 
 
 async def render_build_info_metrics(
-    state: StoredSyntheticJourneyState | None = None,
+    state: StoredSyntheticJourneyState | None | object = _STATE_NOT_PROVIDED,
 ) -> tuple[bytes, str]:
     """Return Prometheus exposition text for HRIV component build identities."""
-    if state is None:
+    if state is _STATE_NOT_PROVIDED:
         state = await load_stored_synthetic_result_state()
     return await asyncio.to_thread(_render_build_info_payload, state)
