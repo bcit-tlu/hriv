@@ -112,6 +112,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify Playwright image version
+        run: npm run check:image-version
+
       - name: Type-check journeys (tsc)
         run: npm run typecheck
 
