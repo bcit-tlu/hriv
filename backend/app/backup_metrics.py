@@ -310,26 +310,29 @@ def render_backup_metrics() -> tuple[bytes, str]:
             if archive_last_refresh_monotonic is None:
                 _backup_archive_listing_last_refresh.set(0)
             else:
+                elapsed = max(monotonic() - archive_last_refresh_monotonic, 0.0)
                 _backup_archive_listing_last_refresh.set(
-                    max(datetime.now(timezone.utc).timestamp() - (monotonic() - archive_last_refresh_monotonic), 0.0)
+                    max(datetime.now(timezone.utc).timestamp() - elapsed, 0.0)
                 )
             archive_summary = archive_summary or _empty_summary()
 
         for backup_type in _BACKUP_TYPES:
             section = backup_state.get(backup_type) if isinstance(backup_state, dict) else None
             summary = archive_summary.get(backup_type, {})
+            attempt_started = _parse_timestamp(section.get("started_at")) if isinstance(section, dict) else None
+            success_completed = (
+                _parse_timestamp(section.get("last_success_completed_at"))
+                if isinstance(section, dict)
+                else None
+            )
 
             _set_or_nan(
                 _backup_last_attempt.labels(backup_type=backup_type),
-                (_parse_timestamp(section.get("started_at")).timestamp() if isinstance(section, dict) and _parse_timestamp(section.get("started_at")) else None),
+                attempt_started.timestamp() if attempt_started else None,
             )
             _set_or_nan(
                 _backup_last_success.labels(backup_type=backup_type),
-                (
-                    _parse_timestamp(section.get("last_success_completed_at")).timestamp()
-                    if isinstance(section, dict) and _parse_timestamp(section.get("last_success_completed_at"))
-                    else None
-                ),
+                success_completed.timestamp() if success_completed else None,
             )
             _backup_last_outcome.labels(backup_type=backup_type).set(_attempt_outcome_value(section))
             _set_or_nan(

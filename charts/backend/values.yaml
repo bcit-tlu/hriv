@@ -48,7 +48,7 @@ backupVersionConfigMap:
 backupVersion: ''
 
 frontendVersionConfigMap:
-  enabled: true
+  enabled: false
   name: hriv-frontend-version
   key: version
   imageTagKey: image-tag

@@ -162,7 +162,8 @@ assert_contains "$backend_worker_deployment" 'value: "hriv-backend-worker"' \
 assert_contains "$backend_worker_deployment" 'name: WORKER_IMAGE_TAG' \
   "backend worker deployment should surface the worker image tag for build-info metrics"
 
-backend_frontend_version_manifest="$(helm template test charts/backend)"
+backend_frontend_version_manifest="$(helm template test charts/backend \
+  --set frontendVersionConfigMap.enabled=true)"
 assert_contains "$backend_frontend_version_manifest" 'name: frontend-version' \
   "backend deployment should mount the frontend version ConfigMap for build-info metrics"
 assert_contains "$backend_frontend_version_manifest" 'name: FRONTEND_VERSION_FILE' \
