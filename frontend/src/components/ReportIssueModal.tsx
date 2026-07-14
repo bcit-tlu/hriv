@@ -25,6 +25,7 @@ export default function ReportIssueModal({ open, onClose, page }: ReportIssueMod
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hasEmittedOpenRef = useRef(false)
 
   useEffect(
     () => () => {
@@ -34,7 +35,12 @@ export default function ReportIssueModal({ open, onClose, page }: ReportIssueMod
   )
 
   useEffect(() => {
-    if (!open) return
+    if (!open) {
+      hasEmittedOpenRef.current = false
+      return
+    }
+    if (hasEmittedOpenRef.current) return
+    hasEmittedOpenRef.current = true
     emitEvent({
       event: 'feedback.report_issue_opened',
       action: 'open',

@@ -169,6 +169,9 @@ export function isAuthFailure(err: unknown): err is ApiError {
   return err instanceof ApiError && (err.status === 401 || err.status === 403)
 }
 
+// Converts an API-layer error into a user-facing string. When the caller is
+// about to surface the message to the user, this helper also notifies the
+// optional observability hook so we can record user-visible API failures.
 export function userMessage(err: unknown, fallback: string): string {
   if (err instanceof ApiError) {
     notifyVisibleApiFailure(err, {

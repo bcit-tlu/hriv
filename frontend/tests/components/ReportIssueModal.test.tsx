@@ -59,6 +59,14 @@ describe('ReportIssueModal', () => {
     expect(screen.getByRole('button', { name: /submit/i })).toBeDisabled()
   })
 
+  it('does not re-emit the opened event when props change while already open', () => {
+    const { rerender } = render(<ReportIssueModal open onClose={vi.fn()} page="browse" />)
+    expect(emitEventMock).toHaveBeenCalledTimes(1)
+
+    rerender(<ReportIssueModal open onClose={vi.fn()} page="manage" />)
+    expect(emitEventMock).toHaveBeenCalledTimes(1)
+  })
+
   it('calls reportIssue and shows success message', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     vi.mocked(reportIssue).mockResolvedValue({

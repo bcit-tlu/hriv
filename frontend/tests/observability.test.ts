@@ -213,6 +213,32 @@ describe('observability', () => {
     })
   })
 
+  it('falls back to an in-memory guard when sessionStorage is unavailable', async () => {
+    const getItemSpy = vi.spyOn(window.sessionStorage, 'getItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    const setItemSpy = vi.spyOn(window.sessionStorage, 'setItem').mockImplementation(() => {
+      throw new Error('blocked')
+    })
+    const { emitSessionStartedOnce } = await import('../src/observability')
+
+    emitSessionStartedOnce('browse')
+    emitSessionStartedOnce('manage')
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(fetch).toHaveBeenCalledOnce()
+    const request = vi.mocked(fetch).mock.calls[0]?.[1]
+    const parsed = JSON.parse(String(request?.body))
+    expect(parsed.events).toHaveLength(1)
+    expect(parsed.events[0]).toMatchObject({
+      event: 'application.session_started',
+      page: 'browse',
+    })
+
+    getItemSpy.mockRestore()
+    setItemSpy.mockRestore()
+  })
+
   it('reports user-visible API failures as sanitized frontend errors', async () => {
     const { initObservability } = await import('../src/observability')
 
