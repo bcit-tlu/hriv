@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.5](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.1.4...synthetic-monitoring-v1.1.5) (2026-07-14)
+
+
+### Bug Fixes
+
+* **synthetic-monitoring:** click card actions in journey ([#904](https://github.com/bcit-tlu/hriv/issues/904)) ([8222abe](https://github.com/bcit-tlu/hriv/commit/8222abe41bc96515e167dec3380d70051b7df9e0))
+
 ## [1.1.4](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.1.3...synthetic-monitoring-v1.1.4) (2026-07-14)
 
 
