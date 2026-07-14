@@ -26,12 +26,12 @@ logger = logging.getLogger(__name__)
 _UUID_PATH_SEGMENT = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
-_TILE_DZI_ROUTE = re.compile(r"/api/tiles/\d+/image\.dzi")
-_TILE_THUMBNAIL_ROUTE = re.compile(r"/api/tiles/\d+/thumbnail\.[A-Za-z0-9]+")
+_TILE_DZI_ROUTE = re.compile(r"/api/tiles/[0-9]+/image\.dzi")
+_TILE_THUMBNAIL_ROUTE = re.compile(r"/api/tiles/[0-9]+/thumbnail\.[A-Za-z0-9]+")
 _TILE_IMAGE_FILE_ROUTE = re.compile(
-    r"/api/tiles/\d+/image_files/\d+/\d+_\d+\.[A-Za-z0-9]+"
+    r"/api/tiles/[0-9]+/image_files/[0-9]+/[0-9]+_[0-9]+\.[A-Za-z0-9]+"
 )
-_IMAGE_REPLACE_ROUTE = re.compile(r"/api/images/\d+/replace")
+_IMAGE_REPLACE_ROUTE = re.compile(r"/api/images/[0-9]+/replace")
 _ADMIN_TASK_UPLOAD_ROUTE = re.compile(r"/api/admin/tasks/[^/]+/upload(?:/finalize)?")
 _CATCH_ALL_ROUTE_PARAM = re.compile(r"\{[^/{}:]+:path\}")
 
@@ -97,11 +97,16 @@ def _normalize_path_fallback(path: str) -> str:
 
     normalized_segments: list[str] = []
     for segment in path.split("/"):
-        if segment.isdigit() or _UUID_PATH_SEGMENT.fullmatch(segment):
+        if _is_ascii_numeric_segment(segment) or _UUID_PATH_SEGMENT.fullmatch(segment):
             normalized_segments.append("{id}")
         else:
             normalized_segments.append(segment)
     return "/".join(normalized_segments) or "/"
+
+
+def _is_ascii_numeric_segment(segment: str) -> bool:
+    """Return True only for non-empty ASCII decimal path segments."""
+    return bool(segment) and segment.isascii() and segment.isdecimal()
 
 
 def normalize_http_route(scope: Scope) -> str:

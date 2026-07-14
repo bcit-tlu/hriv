@@ -469,6 +469,13 @@ def test_normalize_http_route_ignores_mount_catch_all_template() -> None:
     )
 
 
+def test_normalize_http_route_falls_back_when_route_has_no_path() -> None:
+    scope = _make_scope(path="/api/images/42/replace")
+    scope["route"] = object()
+
+    assert normalize_http_route(scope) == "/api/images/{image_id}/replace"
+
+
 def test_normalize_http_route_normalizes_tile_paths() -> None:
     scope = _make_scope(path="/api/tiles/123/image_files/4/2_2.jpeg")
 
@@ -498,6 +505,10 @@ def test_normalize_path_fallback_uses_descriptive_upload_templates() -> None:
         _normalize_path_fallback("/api/admin/tasks/123e4567-e89b-12d3-a456-426614174000/upload")
         == "/api/admin/tasks/{task_id}/upload"
     )
+
+
+def test_normalize_path_fallback_does_not_treat_unicode_digits_as_ids() -> None:
+    assert _normalize_path_fallback("/api/images/١٢٣/replace") == "/api/images/١٢٣/replace"
 
 
 async def test_audit_logs_upload_start_for_upload_paths() -> None:
