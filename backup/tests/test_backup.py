@@ -240,7 +240,9 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertTrue(any("data/source_images/img.jpg" in n for n in names))
         self.assertFalse(any("data/tiles" in n for n in names))
         marker_blob = "hriv-backups/LAST_SUCCESS.json"
+        state_blob = "hriv-backups/BACKUP_STATE.json"
         self.assertIn(marker_blob, uploads)
+        self.assertIn(state_blob, uploads)
         sidecar_blob = f"hriv-backups/{result.name.removesuffix('.tar.gz')}.manifest.json"
         self.assertIn(sidecar_blob, uploads)
         sidecar = json.loads(uploads[sidecar_blob].decode())
@@ -251,6 +253,18 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertEqual(marker["backup_mode"], "production")
         self.assertTrue(marker["tiles_excluded"])
         self.assertGreater(marker["archive_size"], 0)
+        state = json.loads(uploads[state_blob].decode())
+        self.assertEqual(state["schema_version"], 2)
+        self.assertTrue(state["database"]["success"])
+        self.assertTrue(state["filesystem"]["success"])
+        self.assertEqual(
+            state["database"]["last_success_archive_key"],
+            f"hriv-backups/{result.name}",
+        )
+        self.assertEqual(
+            state["filesystem"]["last_success_archive_key"],
+            f"hriv-backups/{result.name}",
+        )
 
     def test_run_backup_writes_local_manifest_sidecar(self):
         self._reload(
@@ -276,11 +290,41 @@ class BackupRunTestCase(_BackupTestCase):
 
         archive = local_dir / result.name
         sidecar = local_dir / f"{result.name.removesuffix('.tar.gz')}.manifest.json"
+        state_path = local_dir / "BACKUP_STATE.json"
         self.assertTrue(archive.exists())
         self.assertTrue(sidecar.exists())
+        self.assertTrue(state_path.exists())
         payload = json.loads(sidecar.read_text())
         self.assertEqual(payload["snapshot_name"], result.name.removesuffix(".tar.gz"))
         self.assertIn("data/source_images/img.jpg", payload["files"])
+        state = json.loads(state_path.read_text())
+        self.assertEqual(state["schema_version"], 2)
+        self.assertTrue(state["filesystem"]["success"])
+        self.assertEqual(state["filesystem"]["last_success_archive_key"], str(archive))
+
+    def test_pg_dump_failure_updates_backup_state(self):
+        self._reload(
+            {
+                "BACKUP_MODE": "production",
+                "DATA_DIR": str(self.data_dir),
+            }
+        )
+        local_dir = self.tmp / "backups"
+        local_dir.mkdir()
+
+        def fake_subprocess_run(_cmd, **_kwargs):
+            return MagicMock(returncode=1, stderr="boom")
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run", side_effect=fake_subprocess_run),
+        ):
+            result = backup.run_backup()
+
+        self.assertIsNone(result)
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertFalse(state["database"]["success"])
+        self.assertIsNone(state["filesystem"]["started_at"])
 
 
 class RetentionTestCase(_BackupTestCase):

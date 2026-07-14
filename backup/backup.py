@@ -114,6 +114,115 @@ def _last_success_marker_blob_name() -> str:
     return f"{prefix}LAST_SUCCESS.json"
 
 
+def _backup_state_path() -> Path:
+    return _local_backup_dir() / "BACKUP_STATE.json"
+
+
+def _backup_state_blob_name() -> str:
+    prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
+    return f"{prefix}BACKUP_STATE.json"
+
+
+def _atomic_write_bytes(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_name(f".{path.name}.tmp")
+    tmp_path.write_bytes(payload)
+    tmp_path.replace(path)
+
+
+def _new_backup_state(snapshot_name: str) -> dict:
+    def _blank_section() -> dict[str, object]:
+        return {
+            "started_at": None,
+            "completed_at": None,
+            "success": None,
+            "duration_seconds": None,
+            "size_bytes": None,
+            "archive_key": None,
+            "last_success_started_at": None,
+            "last_success_completed_at": None,
+            "last_success_duration_seconds": None,
+            "last_success_size_bytes": None,
+            "last_success_archive_key": None,
+        }
+
+    return {
+        "schema_version": 2,
+        "snapshot_name": snapshot_name,
+        "backup_mode": BACKUP_MODE,
+        "tiles_excluded": _exclude_tiles(),
+        "storage_prefix": AZURE_BLOB_PREFIX,
+        "database": _blank_section(),
+        "filesystem": _blank_section(),
+    }
+
+
+def _mark_attempt_started(
+    state: dict,
+    backup_type: str,
+    *,
+    started_at: datetime,
+) -> None:
+    section = state[backup_type]
+    section["started_at"] = started_at.isoformat()
+    section["completed_at"] = None
+    section["success"] = None
+    section["duration_seconds"] = None
+    section["size_bytes"] = None
+    section["archive_key"] = None
+
+
+def _mark_attempt_finished(
+    state: dict,
+    backup_type: str,
+    *,
+    started_at: datetime,
+    completed_at: datetime,
+    success: bool,
+    size_bytes: int | None,
+    archive_key: str | None = None,
+) -> None:
+    duration_seconds = max((completed_at - started_at).total_seconds(), 0.0)
+    section = state[backup_type]
+    section["started_at"] = started_at.isoformat()
+    section["completed_at"] = completed_at.isoformat()
+    section["success"] = success
+    section["duration_seconds"] = duration_seconds
+    section["size_bytes"] = size_bytes
+    section["archive_key"] = archive_key
+    if success:
+        section["last_success_started_at"] = section["started_at"]
+        section["last_success_completed_at"] = section["completed_at"]
+        section["last_success_duration_seconds"] = duration_seconds
+        section["last_success_size_bytes"] = size_bytes
+        section["last_success_archive_key"] = archive_key
+
+
+def _write_backup_state(state: dict) -> None:
+    payload = json.dumps(state, indent=2).encode()
+
+    try:
+        if _azure_configured():
+            container = _blob_container_client()
+            container.upload_blob(
+                _backup_state_blob_name(),
+                io.BytesIO(payload),
+                overwrite=True,
+            )
+        else:
+            _atomic_write_bytes(_backup_state_path(), payload)
+    except Exception:
+        log.exception("Failed to write backup observability state")
+
+
+def _attach_archive_key_to_success(state: dict, backup_type: str, archive_key: str) -> None:
+    section = state[backup_type]
+    if section.get("success") is not True:
+        return
+    section["archive_key"] = archive_key
+    section["last_success_archive_key"] = archive_key
+
+
 def _write_last_success_marker(
     snapshot_name: str,
     *,
@@ -138,9 +247,7 @@ def _write_last_success_marker(
                 overwrite=True,
             )
         else:
-            path = _last_success_marker_path()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(payload)
+            _atomic_write_bytes(_last_success_marker_path(), payload)
     except Exception:
         log.exception("Failed to write last-success marker")
 
@@ -263,6 +370,7 @@ def run_backup() -> Path | None:
     timestamp = created_at.strftime("%Y%m%d-%H%M%S")
     snapshot_name = f"hriv-backup-{timestamp}"
     log.info("Starting backup: %s", snapshot_name)
+    backup_state = _new_backup_state(snapshot_name)
 
     db = _parse_db_url(DATABASE_URL)
     pg = _pg_env(db)
@@ -274,6 +382,9 @@ def run_backup() -> Path | None:
         # 1. pg_dump ----------------------------------------------------------
         dump_path = work / "db.sql"
         log.info("Dumping database %s@%s:%s/%s …", db["user"], db["host"], db["port"], db["dbname"])
+        db_started_at = datetime.now(timezone.utc)
+        _mark_attempt_started(backup_state, "database", started_at=db_started_at)
+        _write_backup_state(backup_state)
         result = subprocess.run(
             [
                 "pg_dump",
@@ -292,14 +403,35 @@ def run_backup() -> Path | None:
         )
         if result.returncode != 0:
             log.error("pg_dump failed: %s", result.stderr)
+            _mark_attempt_finished(
+                backup_state,
+                "database",
+                started_at=db_started_at,
+                completed_at=datetime.now(timezone.utc),
+                success=False,
+                size_bytes=None,
+            )
+            _write_backup_state(backup_state)
             return None
         log.info("Database dump complete (%s bytes)", dump_path.stat().st_size)
+        _mark_attempt_finished(
+            backup_state,
+            "database",
+            started_at=db_started_at,
+            completed_at=datetime.now(timezone.utc),
+            success=True,
+            size_bytes=dump_path.stat().st_size,
+        )
+        _write_backup_state(backup_state)
 
         # 2. Filesystem snapshot -----------------------------------------------
         data_src = Path(DATA_DIR)
         has_data = data_src.exists() and any(data_src.iterdir())
         if not has_data:
             log.warning("Data directory %s is empty or missing – skipping filesystem snapshot", DATA_DIR)
+        filesystem_started_at = datetime.now(timezone.utc)
+        _mark_attempt_started(backup_state, "filesystem", started_at=filesystem_started_at)
+        _write_backup_state(backup_state)
 
         # 3. Manifest ----------------------------------------------------------
         tiles_path = Path(DATA_DIR) / "tiles"
@@ -313,6 +445,7 @@ def run_backup() -> Path | None:
             "tiles_excluded": _exclude_tiles(),
             "files": {},
         }
+        filesystem_size_bytes = 0
 
         for fpath in sorted(work.rglob("*")):
             if fpath.is_file():
@@ -329,6 +462,7 @@ def run_backup() -> Path | None:
                 if fpath.is_file():
                     if _exclude_tiles() and fpath.is_relative_to(tiles_path):
                         continue
+                    filesystem_size_bytes += fpath.stat().st_size
                     rel = "data/" + str(fpath.relative_to(data_src))
                     manifest["files"][rel] = {
                         "size": fpath.stat().st_size,
@@ -342,24 +476,25 @@ def run_backup() -> Path | None:
         # 4. Create tar.gz (stream filesystem data directly into archive) ----
         archive_name = f"{snapshot_name}.tar.gz"
         archive_path = Path(tmpdir) / archive_name
-        log.info("Creating archive %s …", archive_name)
-        tiles_arcname = f"{snapshot_name}/data/tiles"
-        filter_func = _tar_filter(_exclude_tiles(), tiles_arcname)
-        with tarfile.open(str(archive_path), "w:gz") as tar:
-            # Add db dump and manifest from the work directory
-            tar.add(str(work), arcname=snapshot_name, filter=filter_func)
-            # Stream filesystem data directly into the archive (avoids 2x disk copy)
-            if has_data:
-                log.info("Streaming filesystem data from %s into archive …", DATA_DIR)
-                tar.add(str(data_src), arcname=f"{snapshot_name}/data", filter=filter_func)
-        archive_size = archive_path.stat().st_size
-        log.info("Archive created: %s (%s bytes)", archive_name, archive_size)
+        archive_key: str
+        try:
+            log.info("Creating archive %s …", archive_name)
+            tiles_arcname = f"{snapshot_name}/data/tiles"
+            filter_func = _tar_filter(_exclude_tiles(), tiles_arcname)
+            with tarfile.open(str(archive_path), "w:gz") as tar:
+                # Add db dump and manifest from the work directory
+                tar.add(str(work), arcname=snapshot_name, filter=filter_func)
+                # Stream filesystem data directly into the archive (avoids 2x disk copy)
+                if has_data:
+                    log.info("Streaming filesystem data from %s into archive …", DATA_DIR)
+                    tar.add(str(data_src), arcname=f"{snapshot_name}/data", filter=filter_func)
+            archive_size = archive_path.stat().st_size
+            log.info("Archive created: %s (%s bytes)", archive_name, archive_size)
 
-        # 5. Upload to Azure Blob Storage ------------------------------------
-        if _azure_configured():
-            blob_name = f"{AZURE_BLOB_PREFIX}/{archive_name}" if AZURE_BLOB_PREFIX else archive_name
-            log.info("Uploading to azure://%s/%s …", AZURE_STORAGE_CONTAINER, blob_name)
-            try:
+            # 5. Upload to Azure Blob Storage --------------------------------
+            if _azure_configured():
+                blob_name = f"{AZURE_BLOB_PREFIX}/{archive_name}" if AZURE_BLOB_PREFIX else archive_name
+                log.info("Uploading to azure://%s/%s …", AZURE_STORAGE_CONTAINER, blob_name)
                 container = _blob_container_client()
                 with open(archive_path, "rb") as data:
                     container.upload_blob(blob_name, data, overwrite=True)
@@ -373,41 +508,66 @@ def run_backup() -> Path | None:
                     log.info("Manifest sidecar uploaded")
                 except Exception:
                     log.exception("Manifest sidecar upload failed")
-            except Exception:
-                log.exception("Azure Blob upload failed")
-                return None
 
-            # 6. Enforce retention policy --------------------------------------
-            _enforce_retention(container)
-            _write_last_success_marker(
-                snapshot_name,
-                created_at=created_at,
-                archive_size=archive_size,
+                # 6. Enforce retention policy --------------------------------
+                _enforce_retention(container)
+                archive_key = blob_name
+                _write_last_success_marker(
+                    snapshot_name,
+                    created_at=created_at,
+                    archive_size=archive_size,
+                )
+            else:
+                log.warning(
+                    "Azure Blob Storage not configured – archive saved locally at %s only. "
+                    "Set AZURE_STORAGE_CONNECTION_STRING and AZURE_STORAGE_CONTAINER to enable cloud storage.",
+                    archive_path,
+                )
+                # Copy to a persistent location so it survives tmpdir cleanup
+                persistent = _local_backup_dir()
+                persistent.mkdir(parents=True, exist_ok=True)
+                final = persistent / archive_name
+                shutil.copy2(str(archive_path), str(final))
+                log.info("Local backup saved to %s", final)
+                try:
+                    _atomic_write_bytes(_manifest_sidecar_path(final), manifest_payload)
+                    log.info("Local manifest sidecar saved to %s", _manifest_sidecar_path(final))
+                except Exception:
+                    log.exception("Local manifest sidecar write failed")
+                _enforce_local_retention()
+                archive_key = str(final)
+                _write_last_success_marker(
+                    snapshot_name,
+                    created_at=created_at,
+                    archive_size=final.stat().st_size,
+                )
+        except Exception:
+            log.exception("Filesystem backup failed")
+            _mark_attempt_finished(
+                backup_state,
+                "filesystem",
+                started_at=filesystem_started_at,
+                completed_at=datetime.now(timezone.utc),
+                success=False,
+                size_bytes=filesystem_size_bytes,
             )
-        else:
-            log.warning(
-                "Azure Blob Storage not configured – archive saved locally at %s only. "
-                "Set AZURE_STORAGE_CONNECTION_STRING and AZURE_STORAGE_CONTAINER to enable cloud storage.",
-                archive_path,
-            )
-            # Copy to a persistent location so it survives tmpdir cleanup
-            persistent = _local_backup_dir()
-            persistent.mkdir(parents=True, exist_ok=True)
-            final = persistent / archive_name
-            shutil.copy2(str(archive_path), str(final))
-            log.info("Local backup saved to %s", final)
-            try:
-                _manifest_sidecar_path(final).write_bytes(manifest_payload)
-                log.info("Local manifest sidecar saved to %s", _manifest_sidecar_path(final))
-            except Exception:
-                log.exception("Local manifest sidecar write failed")
-            _enforce_local_retention()
-            _write_last_success_marker(
-                snapshot_name,
-                created_at=created_at,
-                archive_size=final.stat().st_size,
-            )
-            return final
+            _write_backup_state(backup_state)
+            return None
+
+        _mark_attempt_finished(
+            backup_state,
+            "filesystem",
+            started_at=filesystem_started_at,
+            completed_at=datetime.now(timezone.utc),
+            success=True,
+            size_bytes=filesystem_size_bytes,
+            archive_key=archive_key,
+        )
+        _attach_archive_key_to_success(backup_state, "database", archive_key)
+        _write_backup_state(backup_state)
+
+        if not _azure_configured():
+            return Path(archive_key)
 
     log.info("Backup %s completed successfully", snapshot_name)
     # archive_path inside tmpdir is gone; return a sentinel Path for truthy check

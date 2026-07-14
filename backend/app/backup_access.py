@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import hashlib
 import json
 import os
@@ -20,6 +21,8 @@ from .database import settings
 
 _CHUNK_SIZE = 1024 * 1024
 _SNAPSHOT_NAME_RE = re.compile(r"(?P<stamp>\d{8}-\d{6})")
+_BACKUP_TYPES = ("database", "filesystem")
+logger = logging.getLogger(__name__)
 
 
 class BackupRestoreNotConfiguredError(RuntimeError):
@@ -70,6 +73,10 @@ def _archive_blob_name(snapshot_name: str) -> str:
 
 def _manifest_blob_name(snapshot_name: str) -> str:
     return f"{_backup_prefix()}{_snapshot_stem(snapshot_name)}.manifest.json"
+
+
+def _backup_state_blob_name() -> str:
+    return f"{_backup_prefix()}BACKUP_STATE.json"
 
 
 def _created_at_from_snapshot_name(snapshot_name: str) -> datetime | None:
@@ -152,6 +159,139 @@ def get_last_success_marker() -> dict | None:
         return None
     except BackupSnapshotManifestError:
         return None
+
+
+def _legacy_backup_state_from_marker(marker: dict | None) -> dict | None:
+    if not isinstance(marker, dict):
+        return None
+
+    created_at = marker.get("created_at")
+    archive_size = marker.get("archive_size")
+    snapshot_name = marker.get("snapshot_name")
+    archive_key = f"{_backup_prefix()}{snapshot_name}.tar.gz" if snapshot_name else None
+
+    section = {
+        "started_at": created_at,
+        "completed_at": created_at,
+        "success": True,
+        "duration_seconds": None,
+        "size_bytes": archive_size,
+        "archive_key": archive_key,
+        "last_success_started_at": created_at,
+        "last_success_completed_at": created_at,
+        "last_success_duration_seconds": None,
+        "last_success_size_bytes": archive_size,
+        "last_success_archive_key": archive_key,
+    }
+    return {
+        "schema_version": 2,
+        "snapshot_name": snapshot_name,
+        "backup_mode": marker.get("backup_mode"),
+        "tiles_excluded": marker.get("tiles_excluded"),
+        "storage_prefix": _backup_prefix().rstrip("/"),
+        "database": dict(section),
+        "filesystem": dict(section),
+    }
+
+
+def get_backup_observability_state() -> dict | None:
+    """Return the versioned backup observability state, with legacy fallback."""
+    try:
+        state = _download_json_blob(_backup_state_blob_name())
+    except BackupRestoreNotConfiguredError:
+        raise
+    except ResourceNotFoundError:
+        state = None
+    except BackupSnapshotManifestError:
+        logger.warning("Failed to parse backup observability state; falling back to legacy marker")
+        state = None
+
+    if isinstance(state, dict) and state.get("schema_version") == 2:
+        return state
+
+    return _legacy_backup_state_from_marker(get_last_success_marker())
+
+
+def _classify_backup_types(manifest: dict) -> dict[str, bool]:
+    files = manifest.get("files")
+    if not isinstance(files, dict):
+        raise BackupSnapshotManifestError("Manifest is missing the files map")
+
+    return {
+        "database": "db.sql" in files,
+        "filesystem": any(
+            isinstance(member, str) and member.startswith("data/")
+            for member in files
+        ),
+    }
+
+
+def _update_retention_summary(
+    summary: dict[str, dict[str, datetime | int | None]],
+    backup_type: str,
+    created_at: datetime | None,
+) -> None:
+    current = summary[backup_type]
+    current["count"] = int(current["count"] or 0) + 1
+    if created_at is None:
+        return
+
+    oldest = current["oldest_created_at"]
+    newest = current["newest_created_at"]
+    if oldest is None or created_at < oldest:
+        current["oldest_created_at"] = created_at
+    if newest is None or created_at > newest:
+        current["newest_created_at"] = created_at
+
+
+def list_retained_backup_archives() -> dict[str, dict[str, datetime | int | None]]:
+    """Classify retained snapshot archives by backup type.
+
+    The archive listing itself is a cheap Azure prefix scan. Type classification
+    reuses each snapshot's manifest so the backend can distinguish whether the
+    archive protects the database, the filesystem, or both.
+    """
+    container = _container_client()
+    prefix = _backup_prefix()
+    summary: dict[str, dict[str, datetime | int | None]] = {
+        backup_type: {
+            "count": 0,
+            "oldest_created_at": None,
+            "newest_created_at": None,
+        }
+        for backup_type in _BACKUP_TYPES
+    }
+
+    archives: list[tuple[str, datetime | None]] = []
+    for blob in container.list_blobs(name_starts_with=prefix):
+        if not blob.name.endswith(".tar.gz"):
+            continue
+        name = blob.name.rsplit("/", 1)[-1]
+        created_at = getattr(blob, "last_modified", None) or _created_at_from_snapshot_name(name)
+        archives.append((name, created_at))
+
+    for snapshot_name, created_at in archives:
+        try:
+            manifest = get_snapshot_manifest(snapshot_name)
+            supported_types = _classify_backup_types(manifest)
+        except BackupSnapshotManifestError:
+            logger.warning(
+                "Skipping unclassifiable backup archive %s: invalid or incomplete manifest",
+                snapshot_name,
+            )
+            continue
+        except BackupSnapshotNotFoundError:
+            logger.warning(
+                "Skipping unclassifiable backup archive %s: archive disappeared during classification",
+                snapshot_name,
+            )
+            continue
+
+        for backup_type, is_supported in supported_types.items():
+            if is_supported:
+                _update_retention_summary(summary, backup_type, created_at)
+
+    return summary
 
 
 def list_snapshots() -> list[dict]:

@@ -112,6 +112,21 @@ All settings are controlled via environment variables in `docker-compose.yml` or
 | `AZURE_STORAGE_CONTAINER`         | _(empty)_                                                 | Azure Blob Storage container name                                                  |
 | `AZURE_BLOB_PREFIX`               | `hriv-backups`                                            | Blob name prefix (folder) inside the container                                     |
 
+## Observability markers
+
+The backup service writes two small JSON marker files alongside the retained
+archives:
+
+- `BACKUP_STATE.json` is the authoritative observability state. It is
+  versioned (`schema_version: 2`) and records the latest database and
+  filesystem attempt timestamps, outcomes, durations, payload sizes, and the
+  last successful values for each backup type independently.
+- `LAST_SUCCESS.json` is retained as a compatibility marker for older tooling
+  that only expects a single last-success heartbeat.
+
+`BACKUP_STATE.json` is updated at attempt start and completion so a failed
+current backup remains visible even when an older success exists.
+
 ## Kubernetes Volume Layout
 
 For production-style Helm deployments, the backup chart keeps the existing
