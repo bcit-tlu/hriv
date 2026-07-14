@@ -259,6 +259,24 @@ async def test_audit_sets_span_attributes_for_authenticated_request() -> None:
     assert "request.id" in calls
 
 
+async def test_audit_uses_router_template_after_inner_app_dispatch() -> None:
+    """The final audit log uses the framework route template once dispatch runs."""
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/images/42/replace")
+
+    async def inner_app(scope, receive, send):
+        scope["route"] = SimpleNamespace(path="/api/images/{image_id}/replace")
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    mw.app = inner_app
+
+    with patch("app.middleware.logger") as mock_logger:
+        await mw(scope, _noop_receive, _noop_send)
+        extra = mock_logger.info.call_args.kwargs.get("extra", {})
+        assert extra["route"] == "/api/images/{image_id}/replace"
+
+
 async def test_audit_sets_span_attributes_for_anonymous_request() -> None:
     """Anonymous requests still get request.id on the span but no enduser.*."""
     mw = AuditMiddleware(app=AsyncMock())

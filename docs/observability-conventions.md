@@ -27,12 +27,12 @@ frontend build time through `VITE_OTEL_ENDPOINT`.
 Every emitted signal must identify the component and deployment using the same
 base resource attributes.
 
-| Attribute | Requirement | Notes |
-| --- | --- | --- |
-| `service.name` | Required | Canonical service identifier used for dashboards and correlation |
-| `service.version` | Required | Runtime application version, not a build-time placeholder |
-| `deployment.environment.name` | Required | Environment name such as `development`, `latest`, or `stable` |
-| `service.instance.id` | Required where the runtime provides one | Backend pods, workers, and backup jobs should expose this through the runtime or collector enrichment |
+| Attribute                     | Requirement                             | Notes                                                                                                 |
+| ----------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `service.name`                | Required                                | Canonical service identifier used for dashboards and correlation                                      |
+| `service.version`             | Required                                | Runtime application version, not a build-time placeholder                                             |
+| `deployment.environment.name` | Required                                | Environment name such as `development`, `latest`, or `stable`                                         |
+| `service.instance.id`         | Required where the runtime provides one | Backend pods, workers, and backup jobs should expose this through the runtime or collector enrichment |
 
 Canonical service names:
 
@@ -124,24 +124,24 @@ New events must not introduce alternate spellings or separator styles.
 The browser payload schema is versioned by `schema_version`. The backend
 enriches accepted events into a structured-log envelope for Loki.
 
-| Concept | Browser field | Structured log field | Notes |
-| --- | --- | --- | --- |
-| Event name | `event` | `event.name` | Required, dotted, allowlisted |
-| Event version | `schema_version` | `schema.version` | Omitted means current version; unsupported explicit versions are rejected |
-| Outcome | `outcome` | `event.outcome` | Defaults to `unknown` |
-| Duration | `duration_ms` | `event.duration_ms` | Milliseconds |
-| Action | `action` | `event.action` | Low-cardinality only |
-| Page | `page` | `event.page` | Low-cardinality only |
-| Error code/category | `error` | `error.type` | Never free-text exception bodies |
-| Session id | Header `X-Session-ID` | `browser.tab.session_id` | Stable per browser tab |
-| Request correlation | Request `traceparent` / `X-Request-ID` | `trace.parent`, request logs carry `request_id` | Used for Loki and Tempo drill-down |
-| User identity | not emitted by browser | `user.id`, `user.role` | Derived from the authenticated backend user |
-| Synthetic classification | `synthetic` hint | `event.synthetic` | Server-authoritative from user metadata |
-| Route | not emitted by browser | request logs carry `route` | Aggregate on normalized routes only |
-| Service version | not emitted by browser | resource `service.version` | Derived from runtime config |
-| Environment | not emitted by browser | resource `deployment.environment.name` | Derived from runtime config |
-| Browser / OS / device | bounded fields | `client.*` fields | Re-bounded server-side |
-| Domain ids | `image_id`, `category_id` | `image.id`, `category.id` | Structured logs only, never metric labels |
+| Concept                  | Browser field                          | Structured log field                            | Notes                                                                     |
+| ------------------------ | -------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------- |
+| Event name               | `event`                                | `event.name`                                    | Required, dotted, allowlisted                                             |
+| Event version            | `schema_version`                       | `schema.version`                                | Omitted means current version; unsupported explicit versions are rejected |
+| Outcome                  | `outcome`                              | `event.outcome`                                 | Defaults to `unknown`                                                     |
+| Duration                 | `duration_ms`                          | `event.duration_ms`                             | Milliseconds                                                              |
+| Action                   | `action`                               | `event.action`                                  | Low-cardinality only                                                      |
+| Page                     | `page`                                 | `event.page`                                    | Low-cardinality only                                                      |
+| Error code/category      | `error`                                | `error.type`                                    | Never free-text exception bodies                                          |
+| Session id               | Header `X-Session-ID`                  | `browser.tab.session_id`                        | Stable per browser tab                                                    |
+| Request correlation      | Request `traceparent` / `X-Request-ID` | `trace.parent`, request logs carry `request_id` | Used for Loki and Tempo drill-down                                        |
+| User identity            | not emitted by browser                 | `user.id`, `user.role`                          | Derived from the authenticated backend user                               |
+| Synthetic classification | `synthetic` hint                       | `event.synthetic`                               | Server-authoritative from user metadata                                   |
+| Route                    | not emitted by browser                 | request logs carry `route`                      | Aggregate on normalized routes only                                       |
+| Service version          | not emitted by browser                 | resource `service.version`                      | Derived from runtime config                                               |
+| Environment              | not emitted by browser                 | resource `deployment.environment.name`          | Derived from runtime config                                               |
+| Browser / OS / device    | bounded fields                         | `client.*` fields                               | Re-bounded server-side                                                    |
+| Domain ids               | `image_id`, `category_id`              | `image.id`, `category.id`                       | Structured logs only, never metric labels                                 |
 
 Reserved envelope concepts for later event families include `timestamp`,
 `trace_id`, `value`, `unit`, and `error_code`. When those are implemented they
@@ -167,11 +167,11 @@ Rules:
 
 Examples:
 
-| Raw path | Normalized route |
-| --- | --- |
-| `/api/images/42/replace` | `/api/images/{image_id}/replace` |
-| `/api/admin/tasks/123e4567-e89b-12d3-a456-426614174000/artifacts/42` | `/api/admin/tasks/{id}/artifacts/{id}` |
-| `/api/tiles/123/4/2/2.jpg` | `/api/tiles/{image_id}/{z}/{x}/{y}.{format}` |
+| Raw path                                                             | Normalized route                             |
+| -------------------------------------------------------------------- | -------------------------------------------- |
+| `/api/images/42/replace`                                             | `/api/images/{image_id}/replace`             |
+| `/api/admin/tasks/123e4567-e89b-12d3-a456-426614174000/artifacts/42` | `/api/admin/tasks/{id}/artifacts/{id}`       |
+| `/api/tiles/123/4/2/2.jpg`                                           | `/api/tiles/{image_id}/{z}/{x}/{y}.{format}` |
 
 ## Privacy, Access, and Retention
 
@@ -194,12 +194,12 @@ Default privacy rules:
 
 Recommended retention:
 
-| Signal | Recommendation | Notes |
-| --- | --- | --- |
-| Metrics | 30 days minimum | Supports week-over-week operational comparisons |
-| Structured logs | 14 days minimum | Covers incident review and short operational audits |
-| Traces | 7 days minimum | Enough for recent latency and dependency diagnosis |
-| Restricted named-user investigations | Shortest retention permitted by policy | Prefer ad-hoc queries over provisioned dashboards |
+| Signal                               | Recommendation                         | Notes                                               |
+| ------------------------------------ | -------------------------------------- | --------------------------------------------------- |
+| Metrics                              | 30 days minimum                        | Supports week-over-week operational comparisons     |
+| Structured logs                      | 14 days minimum                        | Covers incident review and short operational audits |
+| Traces                               | 7 days minimum                         | Enough for recent latency and dependency diagnosis  |
+| Restricted named-user investigations | Shortest retention permitted by policy | Prefer ad-hoc queries over provisioned dashboards   |
 
 These are repository-level recommendations. The Flux observability stack and
 institutional policy remain the source of truth for actual retention settings

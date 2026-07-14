@@ -154,7 +154,7 @@ class AuditMiddleware:
             return
 
         path: str = scope["path"]
-        route = normalize_http_route(scope)
+        upload_route = normalize_http_route(scope)
 
         # Generate or accept correlation ID (validate client-supplied values
         # to prevent log injection / bloat via oversized or non-alphanumeric IDs)
@@ -177,7 +177,7 @@ class AuditMiddleware:
                 "request_id": req_id,
                 "method": method,
                 "path": path,
-                "route": route,
+                "route": upload_route,
             }
             if content_length is not None:
                 extra["content_length"] = content_length
@@ -202,6 +202,7 @@ class AuditMiddleware:
             raise
         finally:
             duration_ms = round((time.monotonic() - start) * 1000)
+            route = normalize_http_route(scope)
 
             client_ip = get_client_ip(scope)
 
