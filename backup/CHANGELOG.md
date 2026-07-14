@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.10.0...backup-v0.11.0) (2026-07-14)
+
+
+### Features
+
+* **observability:** split backup and archive telemetry ([#922](https://github.com/bcit-tlu/hriv/issues/922)) ([98e2d49](https://github.com/bcit-tlu/hriv/commit/98e2d4932688182a804fe0875984481645b0030b))
+
 ## [0.10.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.9.0...backup-v0.10.0) (2026-07-07)
 
 
