@@ -20,7 +20,7 @@ export interface ClientEnv {
   os_family: OsFamily
   device_class: DeviceClass
   viewport_bucket: ViewportBucket
-  touch: boolean
+  touch_capable: boolean
 }
 
 function detectBrowser(ua: string): { family: BrowserFamily; major?: string } {
@@ -87,6 +87,6 @@ export function detectClientEnv(): ClientEnv | null {
     os_family: detectOs(ua),
     device_class: detectDeviceClass(ua, touch),
     viewport_bucket: detectViewportBucket(window.innerWidth || 0),
-    touch,
+    touch_capable: touch,
   }
 }

@@ -28,7 +28,7 @@ describe('detectClientEnv', () => {
       os_family: 'windows',
       device_class: 'desktop',
       viewport_bucket: 'lg',
-      touch: false,
+      touch_capable: false,
     })
   })
 
@@ -40,7 +40,7 @@ describe('detectClientEnv', () => {
     const env = detectClientEnv()
     expect(env?.os_family).toBe('ios')
     expect(env?.device_class).toBe('mobile')
-    expect(env?.touch).toBe(true)
+    expect(env?.touch_capable).toBe(true)
     expect(env?.viewport_bucket).toBe('xs')
   })
 

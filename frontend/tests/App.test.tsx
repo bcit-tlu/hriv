@@ -217,6 +217,9 @@ const overlayPersistenceMock = {
   handleClearOverlays: vi.fn(),
 }
 
+const emitEventMock = vi.fn()
+const emitSessionStartedOnceMock = vi.fn()
+
 const categoryActionsMock = {
   moveCatOpen: false,
   setMoveCatOpen: vi.fn(),
@@ -292,6 +295,10 @@ vi.mock('../src/components/EditImageModal', () => ({ default: () => null }))
 vi.mock('../src/components/ProgramManagementModal', () => ({ default: () => null }))
 vi.mock('../src/components/GroupManagementModal', () => ({ default: () => null }))
 vi.mock('../src/components/ReportIssueModal', () => ({ default: () => null }))
+vi.mock('../src/observability', () => ({
+  emitEvent: (...args: unknown[]) => emitEventMock(...args),
+  emitSessionStartedOnce: (...args: unknown[]) => emitSessionStartedOnceMock(...args),
+}))
 vi.mock('../src/components/SearchModal', () => ({
   default: ({
     onSelectImage,

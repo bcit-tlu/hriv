@@ -75,6 +75,12 @@ const POLL_INTERVAL = 2000 // ms
 const isAuthFailure = (err: unknown): err is ApiError =>
   err instanceof ApiError && (err.status === 401 || err.status === 403)
 
+function hasAdminTaskShape(task: unknown): task is AdminTask {
+  return (
+    typeof task === 'object' && task !== null && typeof (task as { id?: unknown }).id === 'number'
+  )
+}
+
 const TASK_LABELS: Record<string, string> = {
   db_export: 'Database Export',
   db_import: 'Database Import',
@@ -327,6 +333,10 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
         const handle = setTimeout(async () => {
           try {
             const updated = await fetchAdminTask(taskId)
+            if (!hasAdminTaskShape(updated)) {
+              schedule()
+              return
+            }
 
             // Update active tasks list
             syncTask(updated)
@@ -723,6 +733,9 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
       }
       try {
         const refreshed = await fetchAdminTask(taskId)
+        if (!hasAdminTaskShape(refreshed)) {
+          throw new Error('Invalid task refresh response')
+        }
         syncTask(refreshed)
         if (isTerminalTask(refreshed)) {
           finalizeTerminalTask(refreshed)

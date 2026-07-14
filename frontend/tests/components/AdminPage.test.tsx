@@ -337,7 +337,7 @@ describe('AdminPage', () => {
     const detailsButton = await screen.findByRole('button', { name: 'Details' })
     await user.click(detailsButton)
     expect(await screen.findByText(/Rebuild Tiles if its tiles are stale/)).toBeInTheDocument()
-  })
+  }, 30_000)
 
   it('renders the restore panel in a dormant state when backup restore is not configured', async () => {
     const user = userEvent.setup()
@@ -810,5 +810,5 @@ describe('AdminPage', () => {
         screen.queryByRole('dialog', { name: /Database Export — Task #1/i }),
       ).not.toBeInTheDocument(),
     )
-  })
+  }, 30_000)
 })

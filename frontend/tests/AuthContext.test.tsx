@@ -13,6 +13,8 @@ import { AuthContext } from '../src/authContextValue'
 import type { AuthContextValue } from '../src/authContextValue'
 import { useContext, useEffect } from 'react'
 
+const emitEventNowMock = vi.fn()
+
 // ── Mocks ────────────────────────────────────────────────────────────────
 
 const mockFetchUsers = vi.fn()
@@ -36,6 +38,10 @@ vi.mock('../src/api', () => ({
     })
     currentToken = null
   },
+}))
+
+vi.mock('../src/observability', () => ({
+  emitEventNow: (...args: unknown[]) => emitEventNowMock(...args),
 }))
 
 const storage: Record<string, string> = {}
@@ -82,6 +88,7 @@ function AuthConsumer({ onContext }: { onContext: (ctx: AuthContextValue) => voi
 
 describe('AuthProvider', () => {
   beforeEach(() => {
+    emitEventNowMock.mockReset()
     Object.defineProperty(window, 'localStorage', {
       value: localStorageMock,
       configurable: true,
@@ -449,6 +456,13 @@ describe('AuthProvider', () => {
     })
 
     expect(screen.getByTestId('user').textContent).toBe('none')
+    expect(emitEventNowMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'auth.logout_selected',
+        action: 'logout',
+        outcome: 'success',
+      }),
+    )
     expect(currentToken).toBeNull()
     expect(storage['hriv_user']).toBeUndefined()
     expect(storage['hriv-color-mode']).toBeUndefined()
