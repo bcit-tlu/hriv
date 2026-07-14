@@ -18,8 +18,10 @@ def _join_metric_payloads(*payloads: bytes) -> bytes:
 
 async def render_metrics() -> tuple[bytes, str]:
     """Render the full Prometheus scrape payload for `/api/metrics`."""
-    backup_content, media_type = await asyncio.to_thread(render_backup_metrics)
-    synthetic_content, synthetic_media_type = await render_synthetic_metrics()
+    (backup_content, media_type), (synthetic_content, synthetic_media_type) = await asyncio.gather(
+        asyncio.to_thread(render_backup_metrics),
+        render_synthetic_metrics(),
+    )
     if synthetic_media_type != media_type:
         raise RuntimeError("Metrics renderers returned inconsistent media types.")
     return _join_metric_payloads(backup_content, synthetic_content), media_type

@@ -74,7 +74,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "hriv_synthetic_last_run_timestamp_seconds",
+          "expr": "hriv_synthetic_last_run_timestamp_seconds * 1000",
           "instant": true,
           "legendFormat": "last run",
           "range": false,
@@ -137,7 +137,7 @@
       "targets": [
         {
           "editorMode": "code",
-          "expr": "hriv_synthetic_last_success_timestamp_seconds",
+          "expr": "hriv_synthetic_last_success_timestamp_seconds * 1000",
           "instant": true,
           "legendFormat": "last success",
           "range": false,

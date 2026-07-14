@@ -104,6 +104,13 @@ export class SyntheticJourneyRecorder {
   }
 
   markUnexpectedFailure(error: unknown): void {
+    if (this.steps.length === 0) {
+      this.steps.push({
+        name: 'frontend',
+        success: false,
+        duration_ms: roundDuration(Date.now() - this.startedAt.getTime()),
+      })
+    }
     this.failureCode = this.failureCode ?? classifyFailure(null, error)
   }
 
