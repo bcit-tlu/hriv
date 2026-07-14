@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.36.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.35.0...backend-v0.36.0) (2026-07-14)
+
+
+### Features
+
+* **backend:** add normalized tile delivery metrics ([#921](https://github.com/bcit-tlu/hriv/issues/921)) ([6c7e019](https://github.com/bcit-tlu/hriv/commit/6c7e019149bde20b53df38bab0943c6faac1396f))
+* **observability:** publish authoritative synthetic metrics ([#918](https://github.com/bcit-tlu/hriv/issues/918)) ([fc5dd70](https://github.com/bcit-tlu/hriv/commit/fc5dd70ec3be58d7ba49f1d2e8091d2e8ca0aaa1))
+
 ## [0.35.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.34.0...backend-v0.35.0) (2026-07-14)
 
 
