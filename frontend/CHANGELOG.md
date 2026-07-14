@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.36.1...frontend-v0.37.0) (2026-07-14)
+
+
+### Features
+
+* **observability:** versioned usage telemetry, canonical auth logs, usage dashboard, synthetic monitor release ([#892](https://github.com/bcit-tlu/hriv/issues/892)) ([e61636c](https://github.com/bcit-tlu/hriv/commit/e61636cfa1a8bb8790e22aa19e96f505c04c7f22))
+
 ## [0.36.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.36.0...frontend-v0.36.1) (2026-07-13)
 
 
