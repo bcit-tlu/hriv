@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.1.0...synthetic-monitoring-v1.1.1) (2026-07-14)
+
+
+### Bug Fixes
+
+* **synthetic-monitoring:** align Playwright image version ([#896](https://github.com/bcit-tlu/hriv/issues/896)) ([f679da8](https://github.com/bcit-tlu/hriv/commit/f679da8fb959c4fc08a15ac21a23be26c34cc088))
+
 ## [1.1.0](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.0.0...synthetic-monitoring-v1.1.0) (2026-07-14)
 
 ### Features
