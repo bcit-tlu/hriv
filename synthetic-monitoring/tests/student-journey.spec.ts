@@ -48,12 +48,23 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
   })
 
   await test.step('submit local credentials', async () => {
+    const loginResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/auth/login' &&
+        response.request().method() === 'POST',
+    )
+
     await page.getByLabel('Username').fill(email)
     await page.getByRole('textbox', { name: 'Password', exact: true }).fill(password)
     await page.getByRole('button', { name: /LOGIN|Signing in/ }).click()
 
-    // Wait for the browse page to load and image grid to render.
-    await expect(page).toHaveURL(/page=browse/)
+    const response = await loginResponse
+    expect(response.ok(), `Login returned ${response.status()}`).toBeTruthy()
+
+    // The browse root intentionally has no ?page= parameter.
+    await expect(page.locator('img[alt="Duomo di Milano"]').first()).toBeVisible({
+      timeout: 20000,
+    })
     console.log('[synthetic] login succeeded, browse page loaded')
   })
 
