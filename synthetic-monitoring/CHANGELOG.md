@@ -2,13 +2,10 @@
 
 ## [1.1.0](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.0.0...synthetic-monitoring-v1.1.0) (2026-07-14)
 
-
 ### Features
 
-* **observability:** implement HRIV frontend and backend observability ([#883](https://github.com/bcit-tlu/hriv/issues/883)) ([8b8394b](https://github.com/bcit-tlu/hriv/commit/8b8394b66af60dd23fc16824d43bc6930e52bc9e))
-* **observability:** versioned usage telemetry, canonical auth logs, usage dashboard, synthetic monitor release ([#892](https://github.com/bcit-tlu/hriv/issues/892)) ([e61636c](https://github.com/bcit-tlu/hriv/commit/e61636cfa1a8bb8790e22aa19e96f505c04c7f22))
-
-## Changelog
+- **observability:** implement HRIV frontend and backend observability ([#883](https://github.com/bcit-tlu/hriv/issues/883)) ([8b8394b](https://github.com/bcit-tlu/hriv/commit/8b8394b66af60dd23fc16824d43bc6930e52bc9e))
+- **observability:** versioned usage telemetry, canonical auth logs, usage dashboard, synthetic monitor release ([#892](https://github.com/bcit-tlu/hriv/issues/892)) ([e61636c](https://github.com/bcit-tlu/hriv/commit/e61636cfa1a8bb8790e22aa19e96f505c04c7f22))
 
 All notable changes to the HRIV synthetic monitoring journeys are documented
 here. This file is maintained by
