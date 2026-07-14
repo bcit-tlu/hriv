@@ -74,7 +74,14 @@ def _is_upload_path(path: str) -> bool:
 
 
 def _normalize_path_fallback(path: str) -> str:
-    """Normalize a raw URL path when no framework route template is available."""
+    """Normalize a raw URL path when no framework route template is available.
+
+    This fallback is intentionally conservative: generic segment rewriting only
+    covers purely numeric ids and UUIDs. Routes that introduce other dynamic
+    high-cardinality segments should add an explicit normalization rule above
+    rather than broadening the heuristic and risking false positives for stable
+    literals such as ``db-import``.
+    """
     if _TILE_DZI_ROUTE.fullmatch(path):
         return "/api/tiles/{image_id}/image.dzi"
     if _TILE_THUMBNAIL_ROUTE.fullmatch(path):
