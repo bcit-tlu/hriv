@@ -29,19 +29,27 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
   })
 
   await test.step('load login page in synthetic mode', async () => {
+    const oidcStatusResponse = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/auth/oidc/enabled',
+    )
+
     // Start in synthetic mode so front-end telemetry marks events accordingly.
     await page.goto('/?synthetic=1')
 
+    const response = await oidcStatusResponse
+    expect(response.ok(), `OIDC status returned ${response.status()}`).toBeTruthy()
+    const { enabled: oidcEnabled } = (await response.json()) as { enabled: boolean }
+
     // Local-credentials view. If OIDC is enabled, click through to local form.
-    const localUserLink = page.getByRole('link', { name: 'Use a local user' })
-    if (await localUserLink.isVisible().catch(() => false)) {
-      await localUserLink.click()
+    if (oidcEnabled) {
+      await page.getByRole('button', { name: 'Use a local user' }).click()
     }
+    await expect(page.getByLabel('Username')).toBeVisible()
   })
 
   await test.step('submit local credentials', async () => {
     await page.getByLabel('Username').fill(email)
-    await page.getByLabel('Password').fill(password)
+    await page.getByRole('textbox', { name: 'Password', exact: true }).fill(password)
     await page.getByRole('button', { name: /LOGIN|Signing in/ }).click()
 
     // Wait for the browse page to load and image grid to render.
