@@ -17,7 +17,7 @@ end, independent of internal metrics.
 1. Loads the app in synthetic mode (`/?synthetic=1`) so the frontend tags its
    telemetry as synthetic.
 2. Logs in with local credentials.
-3. Reaches the browse page and opens the seeded "Duomo di Milano" image.
+3. Navigates the configured category path and opens the configured image.
 4. Confirms the OpenSeadragon `<canvas>` renders.
 5. **Asserts a successful deep-zoom response** by observing the network: it
    waits for a `200` `.dzi` descriptor under `/api/tiles/...` and verifies that
@@ -31,17 +31,25 @@ id used to correlate the run's frontend events in Loki.
 
 ## Configuration
 
-| Variable             | Default                        | Purpose                                |
-| -------------------- | ------------------------------ | -------------------------------------- |
-| `BASE_URL`           | `http://localhost:5173`        | Target environment base URL            |
-| `SYNTHETIC_EMAIL`    | `synthetic.student@example.ca` | Login email for the monitor account    |
-| `SYNTHETIC_PASSWORD` | `password`                     | Login password for the monitor account |
+| Variable                  | Default                        | Purpose                                     |
+| ------------------------- | ------------------------------ | ------------------------------------------- |
+| `BASE_URL`                | `http://localhost:5173`        | Target environment base URL                 |
+| `SYNTHETIC_EMAIL`         | `synthetic.student@example.ca` | Login email for the monitor account         |
+| `SYNTHETIC_PASSWORD`      | `password`                     | Login password for the monitor account      |
+| `SYNTHETIC_CATEGORY_PATH` | `Architecture/Italian`         | Slash-separated category labels to navigate |
+| `SYNTHETIC_IMAGE_NAME`    | `Duomo di Milano`              | Exact image name to open                    |
 
 The monitor account should be a dedicated user whose database `metadata_`
 carries `{"synthetic": true}`. The backend uses that flag to mark the account's
 telemetry and login events as synthetic server-side, so dashboards and reports
 can exclude monitor traffic (see
 [`observability-conventions.md`](observability-conventions.md)).
+
+Production environments must use a dedicated, stable category and image rather
+than the development seed data. The image must be active, visible to the
+monitor account, and uploaded through HRIV so processing produces a
+`/api/tiles/...` DZI descriptor and tile set. Category labels in
+`SYNTHETIC_CATEGORY_PATH` must not contain `/`.
 
 ## Running locally
 
@@ -52,6 +60,8 @@ npx playwright install --with-deps chromium
 BASE_URL=http://localhost:5173 \
 SYNTHETIC_EMAIL=synthetic.student@example.ca \
 SYNTHETIC_PASSWORD=password \
+SYNTHETIC_CATEGORY_PATH=Architecture/Italian \
+SYNTHETIC_IMAGE_NAME='Duomo di Milano' \
   npm test
 ```
 
@@ -62,6 +72,8 @@ docker run --rm \
   -e BASE_URL=https://hriv.example.ca \
   -e SYNTHETIC_EMAIL=synthetic.student@example.ca \
   -e SYNTHETIC_PASSWORD='<password>' \
+  -e SYNTHETIC_CATEGORY_PATH='Synthetic Monitoring' \
+  -e SYNTHETIC_IMAGE_NAME='Synthetic Monitoring Image' \
   ghcr.io/bcit-tlu/hriv/hriv-synthetic-monitoring:latest
 ```
 
@@ -77,13 +89,14 @@ job): `npm run typecheck`.
    - **Fails at login** → auth outage or the monitor account's credentials /
      enablement changed. Verify the account exists, is enabled, and the
      `SYNTHETIC_EMAIL`/`SYNTHETIC_PASSWORD` secrets are current.
-   - **Fails opening the image / canvas not visible** → the seeded image is
-     missing or the frontend failed to load; check the frontend deploy and that
-     image id `1` ("Duomo di Milano") still exists in the target environment.
+   - **Fails opening the category or image** → the configured category/image
+     is missing, renamed, inactive, or not visible to the monitor account.
+     Verify `SYNTHETIC_CATEGORY_PATH`, `SYNTHETIC_IMAGE_NAME`, and the account's
+     program/group access.
    - **Fails at "assert a successful DZI/tile response"** → the deep-zoom tile
      pipeline is unhealthy. Check that tiles exist on the tiles volume, the
      backend `/api/tiles/` route and the nginx tile proxy are serving, and that
-     image processing completed for the seeded image.
+     image processing completed for the configured image.
 2. Cross-reference the logged session id against Loki (`browser.tab.session_id`)
    and traces in Tempo for the same window to see the backend-side error.
 3. If the failure is environmental (target down, network), re-run once the
@@ -94,3 +107,24 @@ job): `npm run typecheck`.
 interval, the `BASE_URL` for the target environment, and the monitor account
 credentials delivered as a secret. The monitor account itself must be seeded
 with `metadata_.synthetic = true` in the target database.
+
+### Provisioning the production test target
+
+For each environment:
+
+1. Create a dedicated program such as `Synthetic Monitoring`.
+2. Create a stable root category such as `Synthetic Monitoring`, restrict it
+   to that program, and keep it active.
+3. Upload a small supported source image into that category with a unique,
+   stable name such as `Synthetic Monitoring Image`.
+4. Wait for processing to complete and verify the image's `tile_sources` uses
+   `/api/tiles/`; an external DZI URL does not exercise HRIV's tile pipeline.
+5. Assign the synthetic student to the dedicated program and retain
+   `metadata_.synthetic = true`.
+6. Set `SYNTHETIC_CATEGORY_PATH` to the exact slash-separated category labels
+   and `SYNTHETIC_IMAGE_NAME` to the exact image name.
+7. Run the journey once manually before enabling or resuming the CronJob.
+
+To rotate the target, provision and validate the replacement image first,
+update both configuration values, run a one-off smoke Job, and only then remove
+the old image or category.
