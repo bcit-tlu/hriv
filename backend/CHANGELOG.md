@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.36.0...backend-v0.37.0) (2026-07-14)
+
+
+### Features
+
+* **observability:** split backup and archive telemetry ([#922](https://github.com/bcit-tlu/hriv/issues/922)) ([98e2d49](https://github.com/bcit-tlu/hriv/commit/98e2d4932688182a804fe0875984481645b0030b))
+
 ## [0.36.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.35.0...backend-v0.36.0) (2026-07-14)
 
 
