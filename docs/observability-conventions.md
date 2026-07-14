@@ -1,8 +1,9 @@
 # Observability Conventions
 
-This document describes HRIV's OpenTelemetry (OTel) conventions for span
-attributes, error recording, and how to query 4xx vs 5xx behaviour in
-downstream dashboards.
+This document is HRIV's authoritative observability contract. It defines the
+stable names, fields, privacy constraints, and aggregation rules that new
+metrics, traces, structured logs, frontend events, dashboards, and runbooks
+must follow.
 
 ## Stack Overview
 
@@ -20,6 +21,216 @@ Backend configuration uses `OTEL_*` environment variables set in the Helm chart
 values. When all backend exporters are `"none"`, the SDK stays in no-op mode
 with zero runtime overhead. Browser trace export is configured separately at
 frontend build time through `VITE_OTEL_ENDPOINT`.
+
+## Canonical Resource Attributes
+
+Every emitted signal must identify the component and deployment using the same
+base resource attributes.
+
+| Attribute                     | Requirement                             | Notes                                                                                                 |
+| ----------------------------- | --------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `service.name`                | Required                                | Canonical service identifier used for dashboards and correlation                                      |
+| `service.version`             | Required                                | Runtime application version, not a build-time placeholder                                             |
+| `deployment.environment.name` | Required                                | Environment name such as `development`, `latest`, or `stable`                                         |
+| `service.instance.id`         | Required where the runtime provides one | Backend pods, workers, and backup jobs should expose this through the runtime or collector enrichment |
+
+Canonical service names:
+
+- `hriv-frontend`
+- `hriv-backend`
+- `hriv-backend-worker`
+- `hriv-backup`
+- `hriv-synthetic`
+
+`service_name` is the canonical aggregate field name for Prometheus and Loki
+queries. Avoid mixing `service`, `service.name`, and custom aliases inside
+dashboards unless a datasource adapter forces a different field name.
+
+## Metric Label Allowlist
+
+Prometheus labels must stay bounded and low-cardinality.
+
+Allowed for aggregate metrics:
+
+- `service_name`
+- `component`
+- `http_method`
+- `http_route`
+- `http_status_code`
+- `status_class`
+- `outcome`
+- `operation`
+- `job_type`
+- `backup_type`
+- `restore_type`
+- `purpose`
+- `step`
+- `user_role`
+
+Prohibited in Prometheus labels:
+
+- `user_id`
+- `user_email`
+- `session_id`
+- `request_id`
+- `trace_id`
+- `image_id`
+- `category_id`
+- `client_ip`
+- `raw_path`
+- `raw_url`
+- `tile_coordinate`
+- `zoom_level`
+- `filename`
+- `exception_message`
+- `user_agent`
+
+High-cardinality values belong in traces or structured logs. If a proposed
+metric dimension is not on the allowlist, treat it as disallowed until this
+document is intentionally updated.
+
+## Canonical Event Names
+
+Event names use dot-separated verbs and remain stable once published.
+
+Implemented frontend-ingestion events:
+
+- `image.view.started`
+- `image.view.ready`
+- `image.view.failed`
+- `navigation.page_changed`
+
+Reserved names for follow-on observability issues:
+
+- `application.session_started`
+- `auth.login_succeeded`
+- `auth.login_failed`
+- `auth.logout_selected`
+- `navigation.category_viewed`
+- `image.share_selected`
+- `feedback.report_issue_opened`
+- `feedback.report_issue_submitted`
+- `frontend.error`
+- `frontend.performance`
+- `backup.completed`
+- `backup.failed`
+- `restore.completed`
+- `restore.failed`
+
+New events must not introduce alternate spellings or separator styles.
+
+## Frontend Event Envelope
+
+The browser payload schema is versioned by `schema_version`. The backend
+enriches accepted events into a structured-log envelope for Loki.
+
+| Concept                  | Browser field                          | Structured log field                            | Notes                                                                     |
+| ------------------------ | -------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------- |
+| Event name               | `event`                                | `event.name`                                    | Required, dotted, allowlisted                                             |
+| Event version            | `schema_version`                       | `schema.version`                                | Omitted means current version; unsupported explicit versions are rejected |
+| Outcome                  | `outcome`                              | `event.outcome`                                 | Defaults to `unknown`                                                     |
+| Duration                 | `duration_ms`                          | `event.duration_ms`                             | Milliseconds                                                              |
+| Action                   | `action`                               | `event.action`                                  | Low-cardinality only                                                      |
+| Page                     | `page`                                 | `event.page`                                    | Low-cardinality only                                                      |
+| Error code/category      | `error`                                | `error.type`                                    | Never free-text exception bodies                                          |
+| Session id               | Header `X-Session-ID`                  | `browser.tab.session_id`                        | Stable per browser tab                                                    |
+| Request correlation      | Request `traceparent` / `X-Request-ID` | `trace.parent`, request logs carry `request_id` | Used for Loki and Tempo drill-down                                        |
+| User identity            | not emitted by browser                 | `user.id`, `user.role`                          | Derived from the authenticated backend user                               |
+| Synthetic classification | `synthetic` hint                       | `event.synthetic`                               | Server-authoritative from user metadata                                   |
+| Route                    | not emitted by browser                 | request logs carry `route`                      | Aggregate on normalized routes only                                       |
+| Service version          | not emitted by browser                 | resource `service.version`                      | Derived from runtime config                                               |
+| Environment              | not emitted by browser                 | resource `deployment.environment.name`          | Derived from runtime config                                               |
+| Browser / OS / device    | bounded fields                         | `client.*` fields                               | Re-bounded server-side                                                    |
+| Domain ids               | `image_id`, `category_id`              | `image.id`, `category.id`                       | Structured logs only, never metric labels                                 |
+
+Reserved envelope concepts for later event families include `timestamp`,
+`trace_id`, `value`, `unit`, and `error_code`. When those are implemented they
+must extend this contract additively and bump the schema version if the wire
+shape changes incompatibly.
+
+## Route Normalization
+
+Use normalized routes for every aggregate query or metric label. Raw request
+paths remain diagnostic-only.
+
+Rules:
+
+- Prefer the framework route template when available, for example
+  `/api/images/{image_id}/replace`.
+- Mounted static tile requests normalize to the actual DZI artifacts HRIV
+  serves, such as `/api/tiles/{image_id}/image.dzi`,
+  `/api/tiles/{image_id}/thumbnail.{format}`, and
+  `/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}`.
+- If no template is available, replace numeric or UUID-like path segments with
+  `{id}` before using the route in logs, labels, or dashboards.
+- Keep raw `path` only in restricted request logs for request-by-request
+  debugging.
+- Set `http.route` on spans and emit `route` on request logs.
+
+Examples:
+
+| Raw path                                                             | Normalized route                                                 |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| `/api/images/42/replace`                                             | `/api/images/{image_id}/replace`                                 |
+| `/api/admin/tasks/123e4567-e89b-12d3-a456-426614174000/artifacts/42` | `/api/admin/tasks/{id}/artifacts/{id}`                           |
+| `/api/tiles/123/image.dzi`                                           | `/api/tiles/{image_id}/image.dzi`                                |
+| `/api/tiles/123/image_files/4/2_2.jpeg`                              | `/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}` |
+
+## Privacy, Access, and Retention
+
+Observability data serves two different uses and must be treated differently:
+
+- Aggregate operational dashboards for broad operator visibility.
+- Restricted investigation data in logs and traces for incident response.
+
+Default privacy rules:
+
+- Frontend telemetry never emits emails, access tokens, free-text feedback,
+  share URLs, search text, or API payload bodies.
+- Request logs may retain `client_ip`, `user_email`, and raw `path` for
+  restricted operational diagnosis, but provisioned dashboards must not expose
+  named-user or raw-path panels.
+- Aggregate dashboards must prefer internal ids and bounded buckets over user
+  names or free text.
+- Synthetic traffic must be filtered using the server-authoritative synthetic
+  flag, not browser-only hints.
+
+Recommended retention:
+
+| Signal                               | Recommendation                         | Notes                                               |
+| ------------------------------------ | -------------------------------------- | --------------------------------------------------- |
+| Metrics                              | 30 days minimum                        | Supports week-over-week operational comparisons     |
+| Structured logs                      | 14 days minimum                        | Covers incident review and short operational audits |
+| Traces                               | 7 days minimum                         | Enough for recent latency and dependency diagnosis  |
+| Restricted named-user investigations | Shortest retention permitted by policy | Prefer ad-hoc queries over provisioned dashboards   |
+
+These are repository-level recommendations. The Flux observability stack and
+institutional policy remain the source of truth for actual retention settings
+and access controls.
+
+## Dashboard Authoring Rules
+
+When adding or updating Grafana content:
+
+- Use `service_name` consistently for service filtering.
+- Aggregate HTTP activity by normalized `route`, not raw `path`.
+- Exclude synthetic traffic with the server-marked synthetic fields.
+- Keep named-user panels out of provisioned shared dashboards.
+- Use datasource UIDs or variables rather than environment-specific URLs.
+- Treat request logs, traces, and metrics as complementary signals rather than
+  duplicating high-cardinality data into Prometheus.
+
+## Contract Verification
+
+Minimum validation for contract changes:
+
+- Backend route-normalization and telemetry-schema tests:
+  `cd backend && poetry run pytest tests/test_middleware.py tests/test_telemetry.py`
+- Frontend event-contract tests:
+  `cd frontend && npm test -- observability.test.ts`
+- Manual cardinality review for new metrics or log fields:
+  confirm proposed labels do not include ids, emails, raw URLs, user agents, or
+  other open-ended values.
 
 ## Span Error Semantics
 
@@ -365,3 +576,16 @@ async def my_endpoint(...):
             record_exception_if_server_error(span, exc)
             raise
 ```
+
+## Adding New Telemetry
+
+Before adding a new metric, span attribute, log field, or frontend event:
+
+1. Reuse an existing canonical service name, event name family, and route rule.
+2. Check the metric-label allowlist before introducing any new dimension.
+3. Keep identifiers, raw paths, and free text out of Prometheus labels.
+4. Prefer backend enrichment over trusting browser-supplied identity or
+   synthetic state.
+5. Update this document if the contract changes, then add or extend targeted
+   tests in `backend/tests/test_middleware.py`, `backend/tests/test_telemetry.py`,
+   or `frontend/tests/observability.test.ts`.

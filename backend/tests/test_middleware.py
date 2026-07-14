@@ -1,15 +1,18 @@
 """Tests for the audit middleware and correlation-ID context."""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.middleware import (
     AuditMiddleware,
     MaintenanceMiddleware,
+    _normalize_path_fallback,
     _is_upload_path,
     _parse_content_length,
     _parse_exclude_prefixes,
     get_client_ip,
     get_request_id,
+    normalize_http_route,
     request_id_ctx,
 )
 
@@ -194,6 +197,7 @@ async def test_audit_extracts_session_id() -> None:
         call_args = mock_logger.info.call_args
         extra = call_args.kwargs.get("extra", {})
         assert extra["session_id"] == "session-abc"
+        assert extra["route"] == "/api/test"
 
 
 async def test_audit_extracts_user_from_jwt() -> None:
@@ -251,8 +255,27 @@ async def test_audit_sets_span_attributes_for_authenticated_request() -> None:
     assert calls["enduser.id"] == 42
     assert "enduser.email" not in calls
     assert calls["enduser.role"] == "admin"
+    assert calls["http.route"] == "/api/test"
     assert calls["session.id"] == "session-xyz"
     assert "request.id" in calls
+
+
+async def test_audit_uses_router_template_after_inner_app_dispatch() -> None:
+    """The final audit log uses the framework route template once dispatch runs."""
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(path="/api/images/42/replace")
+
+    async def inner_app(scope, receive, send):
+        scope["route"] = SimpleNamespace(path="/api/images/{image_id}/replace")
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    mw.app = inner_app
+
+    with patch("app.middleware.logger") as mock_logger:
+        await mw(scope, _noop_receive, _noop_send)
+        extra = mock_logger.info.call_args.kwargs.get("extra", {})
+        assert extra["route"] == "/api/images/{image_id}/replace"
 
 
 async def test_audit_sets_span_attributes_for_anonymous_request() -> None:
@@ -429,6 +452,65 @@ def test_is_upload_path() -> None:
     assert not _is_upload_path("/api/admin/tasks/123/cancel")
 
 
+def test_normalize_http_route_prefers_router_template() -> None:
+    scope = _make_scope(path="/api/images/42/replace")
+    scope["route"] = SimpleNamespace(path="/api/images/{image_id}/replace")
+
+    assert normalize_http_route(scope) == "/api/images/{image_id}/replace"
+
+
+def test_normalize_http_route_ignores_mount_catch_all_template() -> None:
+    scope = _make_scope(path="/api/tiles/123/image_files/4/2_2.jpeg")
+    scope["route"] = SimpleNamespace(path="/api/tiles/{filepath:path}")
+
+    assert (
+        normalize_http_route(scope)
+        == "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+    )
+
+
+def test_normalize_http_route_falls_back_when_route_has_no_path() -> None:
+    scope = _make_scope(path="/api/images/42/replace")
+    scope["route"] = object()
+
+    assert normalize_http_route(scope) == "/api/images/{image_id}/replace"
+
+
+def test_normalize_http_route_normalizes_tile_paths() -> None:
+    scope = _make_scope(path="/api/tiles/123/image_files/4/2_2.jpeg")
+
+    assert (
+        normalize_http_route(scope)
+        == "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+    )
+
+
+def test_normalize_http_route_normalizes_tile_manifest_path() -> None:
+    scope = _make_scope(path="/api/tiles/123/image.dzi")
+
+    assert normalize_http_route(scope) == "/api/tiles/{image_id}/image.dzi"
+
+
+def test_normalize_http_route_scrubs_numeric_and_uuid_segments() -> None:
+    scope = _make_scope(
+        path="/api/admin/tasks/123e4567-e89b-12d3-a456-426614174000/artifacts/42"
+    )
+
+    assert normalize_http_route(scope) == "/api/admin/tasks/{id}/artifacts/{id}"
+
+
+def test_normalize_path_fallback_uses_descriptive_upload_templates() -> None:
+    assert _normalize_path_fallback("/api/images/123/replace") == "/api/images/{image_id}/replace"
+    assert (
+        _normalize_path_fallback("/api/admin/tasks/123e4567-e89b-12d3-a456-426614174000/upload")
+        == "/api/admin/tasks/{task_id}/upload"
+    )
+
+
+def test_normalize_path_fallback_does_not_treat_unicode_digits_as_ids() -> None:
+    assert _normalize_path_fallback("/api/images/١٢٣/replace") == "/api/images/١٢٣/replace"
+
+
 async def test_audit_logs_upload_start_for_upload_paths() -> None:
     mw = AuditMiddleware(app=AsyncMock())
     scope = _make_scope(
@@ -443,18 +525,39 @@ async def test_audit_logs_upload_start_for_upload_paths() -> None:
         extra = upload_call.kwargs.get("extra", {})
         assert extra["event"] == "http.upload_started"
         assert extra["content_length"] == 3607772528
+        assert extra["route"] == "/api/admin/bulk-import/"
+
+
+async def test_audit_logs_descriptive_upload_route_before_dispatch() -> None:
+    mw = AuditMiddleware(app=AsyncMock())
+    scope = _make_scope(
+        method="POST",
+        path="/api/images/123/replace",
+        headers={"content-length": "1024"},
+    )
+
+    with patch("app.middleware.logger") as mock_logger:
+        await _invoke(mw, scope)
+        upload_call = mock_logger.info.call_args_list[0]
+        extra = upload_call.kwargs.get("extra", {})
+        assert extra["route"] == "/api/images/{image_id}/replace"
 
 
 async def test_audit_logs_tiles_at_debug() -> None:
     """Tile-serving endpoints match the default prefix list and log at DEBUG."""
     mw = AuditMiddleware(app=AsyncMock())
-    scope = _make_scope(path="/api/tiles/123/4/2/2.jpg")
+    scope = _make_scope(path="/api/tiles/123/image_files/4/2_2.jpeg")
 
     with patch("app.middleware._EXCLUDE_PREFIXES", ("/api/tiles/",)):
         with patch("app.middleware.logger") as mock_logger:
             await _invoke(mw, scope)
             mock_logger.debug.assert_called_once()
             mock_logger.info.assert_not_called()
+            extra = mock_logger.debug.call_args.kwargs.get("extra", {})
+            assert (
+                extra["route"]
+                == "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+            )
 
 
 async def test_audit_respects_configured_exclude_prefixes() -> None:

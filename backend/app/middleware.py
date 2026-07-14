@@ -7,6 +7,7 @@ the entire body in RAM before the streaming-to-disk handler runs.
 """
 
 import logging
+import re
 import time
 import uuid
 from contextvars import ContextVar
@@ -21,6 +22,18 @@ from .database import settings
 from .maintenance import is_maintenance_mode
 
 logger = logging.getLogger(__name__)
+
+_UUID_PATH_SEGMENT = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+_TILE_DZI_ROUTE = re.compile(r"/api/tiles/[0-9]+/image\.dzi")
+_TILE_THUMBNAIL_ROUTE = re.compile(r"/api/tiles/[0-9]+/thumbnail\.[A-Za-z0-9]+")
+_TILE_IMAGE_FILE_ROUTE = re.compile(
+    r"/api/tiles/[0-9]+/image_files/[0-9]+/[0-9]+_[0-9]+\.[A-Za-z0-9]+"
+)
+_IMAGE_REPLACE_ROUTE = re.compile(r"/api/images/[0-9]+/replace")
+_ADMIN_TASK_UPLOAD_ROUTE = re.compile(r"/api/admin/tasks/[^/]+/upload(?:/finalize)?")
+_CATCH_ALL_ROUTE_PARAM = re.compile(r"\{[^/{}:]+:path\}")
 
 
 def _parse_exclude_prefixes(raw: str) -> tuple[str, ...]:
@@ -58,6 +71,66 @@ def _is_upload_path(path: str) -> bool:
         or (path.startswith("/api/admin/tasks/") and path.endswith("/upload"))
         or (path.startswith("/api/images/") and path.endswith("/replace"))
     )
+
+
+def _normalize_path_fallback(path: str) -> str:
+    """Normalize a raw URL path when no framework route template is available.
+
+    This fallback is intentionally conservative: generic segment rewriting only
+    covers purely numeric ids and UUIDs. Routes that introduce other dynamic
+    high-cardinality segments should add an explicit normalization rule above
+    rather than broadening the heuristic and risking false positives for stable
+    literals such as ``db-import``.
+    """
+    if _TILE_DZI_ROUTE.fullmatch(path):
+        return "/api/tiles/{image_id}/image.dzi"
+    if _TILE_THUMBNAIL_ROUTE.fullmatch(path):
+        return "/api/tiles/{image_id}/thumbnail.{format}"
+    if _TILE_IMAGE_FILE_ROUTE.fullmatch(path):
+        return "/api/tiles/{image_id}/image_files/{level}/{col}_{row}.{format}"
+    if _IMAGE_REPLACE_ROUTE.fullmatch(path):
+        return "/api/images/{image_id}/replace"
+    if _ADMIN_TASK_UPLOAD_ROUTE.fullmatch(path):
+        if path.endswith("/finalize"):
+            return "/api/admin/tasks/{task_id}/upload/finalize"
+        return "/api/admin/tasks/{task_id}/upload"
+
+    normalized_segments: list[str] = []
+    for segment in path.split("/"):
+        if _is_ascii_numeric_segment(segment) or _UUID_PATH_SEGMENT.fullmatch(segment):
+            normalized_segments.append("{id}")
+        else:
+            normalized_segments.append(segment)
+    return "/".join(normalized_segments) or "/"
+
+
+def _is_ascii_numeric_segment(segment: str) -> bool:
+    """Return True only for non-empty ASCII decimal path segments."""
+    return bool(segment) and segment.isascii() and segment.isdecimal()
+
+
+def normalize_http_route(scope: Scope) -> str:
+    """Return a low-cardinality route template for the current request.
+
+    Prefer the framework-provided route template when available. Mounted static
+    paths such as tile delivery do not provide one, so apply explicit
+    normalization rules there and fall back to replacing numeric/UUID-like path
+    segments with ``{id}``.
+    """
+    route = scope.get("route")
+    route_path = getattr(route, "path", None)
+    # Starlette ``Mount`` routes can surface a catch-all template such as
+    # ``/api/tiles/{path:path}`` or ``/api/files/{filepath:path}``, which is
+    # less descriptive than the explicit path rules below. Prefer the fallback
+    # normalization for any catch-all ``:path`` mount template.
+    if (
+        isinstance(route_path, str)
+        and route_path
+        and _CATCH_ALL_ROUTE_PARAM.search(route_path) is None
+    ):
+        return route_path
+
+    return _normalize_path_fallback(scope["path"])
 
 
 # Snapshot the configured prefixes at import time so the per-request
@@ -139,11 +212,13 @@ class AuditMiddleware:
         )
 
         if method in {"POST", "PUT", "PATCH"} and _is_upload_path(path):
+            upload_route = _normalize_path_fallback(path)
             extra: dict[str, object] = {
                 "event": "http.upload_started",
                 "request_id": req_id,
                 "method": method,
                 "path": path,
+                "route": upload_route,
             }
             if content_length is not None:
                 extra["content_length"] = content_length
@@ -168,6 +243,7 @@ class AuditMiddleware:
             raise
         finally:
             duration_ms = round((time.monotonic() - start) * 1000)
+            route = normalize_http_route(scope)
 
             client_ip = get_client_ip(scope)
 
@@ -205,6 +281,7 @@ class AuditMiddleware:
                 "request_id": req_id,
                 "method": method,
                 "path": path,
+                "route": route,
                 "status": status_code,
                 "duration_ms": duration_ms,
                 "client_ip": client_ip,
@@ -225,6 +302,7 @@ class AuditMiddleware:
             # OTEL span so distributed traces carry user context.
             span = trace.get_current_span()
             if span.is_recording():
+                span.set_attribute("http.route", route)
                 span.set_attribute("request.id", req_id)
                 if session_id:
                     span.set_attribute("session.id", session_id)
