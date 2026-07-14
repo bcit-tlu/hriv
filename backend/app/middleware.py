@@ -26,13 +26,14 @@ logger = logging.getLogger(__name__)
 _UUID_PATH_SEGMENT = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
 )
-_TILE_DZI_ROUTE = re.compile(r"^/api/tiles/\d+/image\.dzi$")
-_TILE_THUMBNAIL_ROUTE = re.compile(r"^/api/tiles/\d+/thumbnail\.[A-Za-z0-9]+$")
+_TILE_DZI_ROUTE = re.compile(r"/api/tiles/\d+/image\.dzi")
+_TILE_THUMBNAIL_ROUTE = re.compile(r"/api/tiles/\d+/thumbnail\.[A-Za-z0-9]+")
 _TILE_IMAGE_FILE_ROUTE = re.compile(
-    r"^/api/tiles/\d+/image_files/\d+/\d+_\d+\.[A-Za-z0-9]+$"
+    r"/api/tiles/\d+/image_files/\d+/\d+_\d+\.[A-Za-z0-9]+"
 )
-_IMAGE_REPLACE_ROUTE = re.compile(r"^/api/images/\d+/replace$")
-_ADMIN_TASK_UPLOAD_ROUTE = re.compile(r"^/api/admin/tasks/[^/]+/upload(?:/finalize)?$")
+_IMAGE_REPLACE_ROUTE = re.compile(r"/api/images/\d+/replace")
+_ADMIN_TASK_UPLOAD_ROUTE = re.compile(r"/api/admin/tasks/[^/]+/upload(?:/finalize)?")
+_CATCH_ALL_ROUTE_PARAM = re.compile(r"\{[^/{}:]+:path\}")
 
 
 def _parse_exclude_prefixes(raw: str) -> tuple[str, ...]:
@@ -107,10 +108,14 @@ def normalize_http_route(scope: Scope) -> str:
     route = scope.get("route")
     route_path = getattr(route, "path", None)
     # Starlette ``Mount`` routes can surface a catch-all template such as
-    # ``/api/tiles/{path:path}``, which is less descriptive than the explicit
-    # DZI/thumbnail/image_files patterns below. Prefer the fallback
-    # normalization for those catch-all mount routes.
-    if isinstance(route_path, str) and route_path and "{path:path}" not in route_path:
+    # ``/api/tiles/{path:path}`` or ``/api/files/{filepath:path}``, which is
+    # less descriptive than the explicit path rules below. Prefer the fallback
+    # normalization for any catch-all ``:path`` mount template.
+    if (
+        isinstance(route_path, str)
+        and route_path
+        and _CATCH_ALL_ROUTE_PARAM.search(route_path) is None
+    ):
         return route_path
 
     return _normalize_path_fallback(scope["path"])
