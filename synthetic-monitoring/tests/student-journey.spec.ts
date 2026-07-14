@@ -75,8 +75,10 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
   })
 
   await test.step('navigate to configured image and assert DZI + tile responses', async () => {
+    const tileGrid = page.getByRole('region', { name: 'Sortable tile grid' })
+
     for (const categoryName of categoryPath) {
-      const categoryButton = page
+      const categoryButton = tileGrid
         .getByRole('button')
         .filter({ has: page.getByText(categoryName, { exact: true }) })
         .first()
