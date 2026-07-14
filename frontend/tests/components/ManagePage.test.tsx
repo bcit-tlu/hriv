@@ -255,6 +255,12 @@ describe('ManagePage', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Done' }))
 
     await waitFor(() => {
+      expect(
+        screen.queryByRole('dialog', { name: 'Choose image table columns' }),
+      ).not.toBeInTheDocument()
+    })
+
+    await waitFor(() => {
       expect(screen.getByRole('columnheader', { name: 'Annotations' })).toBeInTheDocument()
     })
 

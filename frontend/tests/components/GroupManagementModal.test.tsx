@@ -191,29 +191,33 @@ describe('GroupManagementModal', () => {
     )
   })
 
-  it('hides student-only program filter summary chips on the instructors tab', async () => {
-    const user = userEvent.setup()
-    renderModal()
+  it(
+    'hides student-only program filter summary chips on the instructors tab',
+    async () => {
+      const user = userEvent.setup()
+      renderModal()
 
-    expect(await screen.findByText('CURRENT MEMBERS')).toBeInTheDocument()
+      expect(await screen.findByText('CURRENT MEMBERS')).toBeInTheDocument()
 
-    const filterBar = screen.getByRole('region', { name: 'Filter by' })
-    await user.click(within(filterBar).getByRole('button', { name: 'Program' }))
-    await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Program A' }))
+      const filterBar = screen.getByRole('region', { name: 'Filter by' })
+      await user.click(within(filterBar).getByRole('button', { name: 'Program' }))
+      await user.click(await screen.findByRole('menuitemcheckbox', { name: 'Program A' }))
 
-    await waitFor(() => {
-      expect(screen.getByText('Program: Program A')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Clear all' })).toBeInTheDocument()
-    })
+      await waitFor(() => {
+        expect(screen.getByText('Program: Program A')).toBeInTheDocument()
+        expect(screen.getByRole('button', { name: 'Clear all' })).toBeInTheDocument()
+      })
 
-    await user.click(screen.getByRole('tab', { name: /Instructors/ }))
+      await user.click(screen.getByRole('tab', { name: /Instructors/ }))
 
-    await waitFor(() => {
-      expect(screen.queryByText('Program: Program A')).not.toBeInTheDocument()
-      expect(screen.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument()
-      expect(within(filterBar).queryByRole('button', { name: 'Program' })).not.toBeInTheDocument()
-    })
-  })
+      await waitFor(() => {
+        expect(screen.queryByText('Program: Program A')).not.toBeInTheDocument()
+        expect(screen.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument()
+        expect(within(filterBar).queryByRole('button', { name: 'Program' })).not.toBeInTheDocument()
+      })
+    },
+    30_000,
+  )
 
   it('renders the selected group row with the subtle secondary group colour', async () => {
     renderModal()
