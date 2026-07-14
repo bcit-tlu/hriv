@@ -76,7 +76,9 @@ const isAuthFailure = (err: unknown): err is ApiError =>
   err instanceof ApiError && (err.status === 401 || err.status === 403)
 
 function hasAdminTaskShape(task: unknown): task is AdminTask {
-  return typeof task === 'object' && task !== null && typeof (task as { id?: unknown }).id === 'number'
+  return (
+    typeof task === 'object' && task !== null && typeof (task as { id?: unknown }).id === 'number'
+  )
 }
 
 const TASK_LABELS: Record<string, string> = {

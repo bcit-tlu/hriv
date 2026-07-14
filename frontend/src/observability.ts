@@ -114,6 +114,7 @@ let _synthetic = false
 let _flushTimer: ReturnType<typeof setTimeout> | null = null
 let _clientEnv: ClientEnv | null | undefined
 let _appLoadMetricSent = false
+let _finalPerformanceMetricsSent = false
 let _pagehideHandlerAttached = false
 let _windowErrorHandlerAttached = false
 let _promiseRejectionHandlerAttached = false
@@ -347,6 +348,8 @@ function registerPerformanceObservers(): void {
 }
 
 function emitFinalPerformanceMetrics(): void {
+  if (_finalPerformanceMetricsSent) return
+  _finalPerformanceMetricsSent = true
   emitApplicationLoadMetric()
   if (_latestLcpMs !== null) {
     emitFrontendPerformance({ metric: 'lcp', value: _latestLcpMs, unit: 'ms' })

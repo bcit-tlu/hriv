@@ -257,11 +257,9 @@ describe('AdminPage', () => {
     expect(mockStartRebuildTiles).toHaveBeenCalledWith()
   })
 
-  it(
-    'browses a snapshot, restores one file, and surfaces the final task log',
-    async () => {
-      vi.useFakeTimers({ shouldAdvanceTime: true })
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+  it('browses a snapshot, restores one file, and surfaces the final task log', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
 
     mockListBackupSnapshots.mockResolvedValue([
       {
@@ -310,40 +308,36 @@ describe('AdminPage', () => {
       updated_at: '2026-06-19T19:01:00Z',
     })
 
-      render(<AdminPage />)
+    render(<AdminPage />)
 
-      await user.click(screen.getByRole('tab', { name: 'Backups' }))
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
 
-      const snapshotPicker = await screen.findByRole('combobox', { name: 'Snapshot' })
-      await user.click(snapshotPicker)
-      await user.click(
-        await screen.findByRole('option', { name: /hriv-backup-20260102-020000/i }),
-      )
+    const snapshotPicker = await screen.findByRole('combobox', { name: 'Snapshot' })
+    await user.click(snapshotPicker)
+    await user.click(await screen.findByRole('option', { name: /hriv-backup-20260102-020000/i }))
 
-      await screen.findByText('data/source_images/a.jpg')
-      const filter = screen.getByRole('textbox', { name: 'Filter files' })
-      await user.type(filter, 'a.jpg')
-      await user.click(screen.getByText('data/source_images/a.jpg'))
+    await screen.findByText('data/source_images/a.jpg')
+    const filter = screen.getByRole('textbox', { name: 'Filter files' })
+    await user.type(filter, 'a.jpg')
+    await user.click(screen.getByText('data/source_images/a.jpg'))
 
-      await user.click(screen.getByRole('button', { name: 'Restore selected file' }))
-      expect(await screen.findByRole('dialog', { name: 'Confirm file restore' })).toBeVisible()
-      await user.click(screen.getByRole('button', { name: 'Restore' }))
+    await user.click(screen.getByRole('button', { name: 'Restore selected file' }))
+    expect(await screen.findByRole('dialog', { name: 'Confirm file restore' })).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Restore' }))
 
-      expect(mockStartFileRestore).toHaveBeenCalledWith({
-        snapshot_name: 'hriv-backup-20260102-020000',
-        member_path: 'data/source_images/a.jpg',
-      })
+    expect(mockStartFileRestore).toHaveBeenCalledWith({
+      snapshot_name: 'hriv-backup-20260102-020000',
+      member_path: 'data/source_images/a.jpg',
+    })
 
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(2000)
-      })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
 
-      const detailsButton = await screen.findByRole('button', { name: 'Details' })
-      await user.click(detailsButton)
-      expect(await screen.findByText(/Rebuild Tiles if its tiles are stale/)).toBeInTheDocument()
-    },
-    30_000,
-  )
+    const detailsButton = await screen.findByRole('button', { name: 'Details' })
+    await user.click(detailsButton)
+    expect(await screen.findByText(/Rebuild Tiles if its tiles are stale/)).toBeInTheDocument()
+  }, 30_000)
 
   it('renders the restore panel in a dormant state when backup restore is not configured', async () => {
     const user = userEvent.setup()
@@ -773,52 +767,48 @@ describe('AdminPage', () => {
     expect(screen.queryByText(/Failed to force-cancel task/)).not.toBeInTheDocument()
   })
 
-  it(
-    'offers a download for a completed export and lets the user view then close the task log',
-    async () => {
-      vi.useFakeTimers({ shouldAdvanceTime: true })
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+  it('offers a download for a completed export and lets the user view then close the task log', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
 
-      mockFetchAdminTask.mockResolvedValue({
-        id: 1,
-        task_type: 'db_export',
-        status: 'completed',
-        progress: 100,
-        log: 'Database export finished',
-        result_filename: 'db-export.sql.gz',
-        error_message: null,
-        created_by: 1,
-        created_at: '2026-06-19T19:00:00Z',
-        updated_at: '2026-06-19T19:02:00Z',
-      })
+    mockFetchAdminTask.mockResolvedValue({
+      id: 1,
+      task_type: 'db_export',
+      status: 'completed',
+      progress: 100,
+      log: 'Database export finished',
+      result_filename: 'db-export.sql.gz',
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-06-19T19:00:00Z',
+      updated_at: '2026-06-19T19:02:00Z',
+    })
 
-      render(<AdminPage />)
+    render(<AdminPage />)
 
-      await user.click(screen.getByRole('tab', { name: 'Backups' }))
-      await user.click(screen.getAllByRole('button', { name: 'Export' })[0])
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+    await user.click(screen.getAllByRole('button', { name: 'Export' })[0])
 
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(2000)
-      })
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
 
-      expect(await screen.findByText(/Database Export completed/i)).toBeInTheDocument()
-      await user.click(screen.getByRole('button', { name: 'Download' }))
-      expect(mockDownloadAdminTaskResult).toHaveBeenCalledWith(1)
+    expect(await screen.findByText(/Database Export completed/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Download' }))
+    expect(mockDownloadAdminTaskResult).toHaveBeenCalledWith(1)
 
-      await user.click(screen.getByRole('button', { name: 'Details' }))
-      const dialog = await screen.findByRole('dialog', { name: /Database Export — Task #1/i })
-      expect(dialog).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Details' }))
+    const dialog = await screen.findByRole('dialog', { name: /Database Export — Task #1/i })
+    expect(dialog).toBeInTheDocument()
 
-      await user.click(screen.getByRole('button', { name: 'Download' }))
-      expect(mockDownloadAdminTaskResult).toHaveBeenCalledTimes(2)
+    await user.click(screen.getByRole('button', { name: 'Download' }))
+    expect(mockDownloadAdminTaskResult).toHaveBeenCalledTimes(2)
 
-      await user.click(screen.getByRole('button', { name: 'Close' }))
-      await waitFor(() =>
-        expect(
-          screen.queryByRole('dialog', { name: /Database Export — Task #1/i }),
-        ).not.toBeInTheDocument(),
-      )
-    },
-    30_000,
-  )
+    await user.click(screen.getByRole('button', { name: 'Close' }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: /Database Export — Task #1/i }),
+      ).not.toBeInTheDocument(),
+    )
+  }, 30_000)
 })

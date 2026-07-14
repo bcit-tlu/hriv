@@ -118,6 +118,7 @@ describe('observability', () => {
     vi.clearAllMocks()
     vi.useFakeTimers()
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true }))
+    vi.stubGlobal('performance', { getEntriesByType: vi.fn(() => []) })
     window.history.replaceState({}, '', '/')
     mocks.startActiveSpan.mockImplementation(
       (_name: string, callback: (span: typeof mocks.span) => unknown) => callback(mocks.span),
@@ -170,6 +171,45 @@ describe('observability', () => {
     })
     await vi.runAllTimersAsync()
     expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('emits final performance metrics only once across repeated pagehide events', async () => {
+    const observerCallbacks: Array<(entryList: { getEntries(): PerformanceEntry[] }) => void> = []
+    class MockPerformanceObserver {
+      static supportedEntryTypes = ['layout-shift']
+
+      constructor(callback: (entryList: { getEntries(): PerformanceEntry[] }) => void) {
+        observerCallbacks.push(callback)
+      }
+
+      observe(): void {}
+    }
+
+    vi.stubGlobal('PerformanceObserver', MockPerformanceObserver)
+    vi.stubGlobal('performance', { getEntriesByType: vi.fn(() => []) })
+    const { initObservability } = await import('../src/observability')
+
+    initObservability()
+    observerCallbacks[0]?.({
+      getEntries: () =>
+        [
+          { value: 0.125, hadRecentInput: false, startTime: 0 } as PerformanceEntry,
+        ] as PerformanceEntry[],
+    })
+
+    window.dispatchEvent(new Event('pagehide'))
+    window.dispatchEvent(new Event('pagehide'))
+
+    expect(fetch).toHaveBeenCalledOnce()
+    const request = vi.mocked(fetch).mock.calls[0]?.[1]
+    const parsed = JSON.parse(String(request?.body))
+    expect(parsed.events).toHaveLength(1)
+    expect(parsed.events[0]).toMatchObject({
+      event: 'frontend.performance',
+      action: 'cls',
+      value: 0.125,
+      unit: 'score',
+    })
   })
 
   it('batches events and applies explicit synthetic mode', async () => {
