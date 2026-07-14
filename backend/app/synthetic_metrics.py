@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from threading import Lock
 
@@ -51,10 +52,8 @@ _synthetic_step_duration = Gauge(
 )
 
 
-async def render_synthetic_metrics() -> tuple[bytes, str]:
-    """Return Prometheus exposition text for the stored synthetic journey state."""
-    state = await load_stored_synthetic_result_state()
-
+def _render_synthetic_metrics_payload(state) -> tuple[bytes, str]:
+    """Render Prometheus exposition text for the given synthetic journey state."""
     with _render_lock:
         if state is None:
             _synthetic_last_run.set(0)
@@ -92,3 +91,9 @@ async def render_synthetic_metrics() -> tuple[bytes, str]:
             )
 
         return generate_latest(_registry), CONTENT_TYPE_LATEST
+
+
+async def render_synthetic_metrics() -> tuple[bytes, str]:
+    """Return Prometheus exposition text for the stored synthetic journey state."""
+    state = await load_stored_synthetic_result_state()
+    return await asyncio.to_thread(_render_synthetic_metrics_payload, state)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
@@ -171,7 +171,7 @@ def _build_stored_state(
     return StoredSyntheticJourneyState(
         latest_result=result,
         last_success_completed_at=last_success_completed_at,
-        updated_at=datetime.now(result.completed_at.tzinfo),
+        updated_at=datetime.now(timezone.utc),
     )
 
 
@@ -221,9 +221,9 @@ async def store_synthetic_result(
             return state
         except WatchError:
             continue
+        except StaleSyntheticResultError:
+            raise
         except Exception as exc:
-            if isinstance(exc, StaleSyntheticResultError):
-                raise
             logger.warning(
                 "Redis operation failed while storing synthetic result",
                 extra={

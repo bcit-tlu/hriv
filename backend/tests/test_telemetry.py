@@ -300,10 +300,18 @@ def _make_synthetic_result(
         duration_ms=3000,
         failure_code=failure_code,
         component_version="1.2.3",
-        steps=[
-            SyntheticJourneyStep(name="frontend", success=True, duration_ms=200),
-            SyntheticJourneyStep(name="login", success=True, duration_ms=300),
-        ],
+        steps=(
+            [
+                SyntheticJourneyStep(name="frontend", success=True, duration_ms=200),
+                SyntheticJourneyStep(name="login", success=True, duration_ms=300),
+            ]
+            if success
+            else [
+                SyntheticJourneyStep(name="frontend", success=True, duration_ms=200),
+                SyntheticJourneyStep(name="login", success=True, duration_ms=300),
+                SyntheticJourneyStep(name="tile", success=False, duration_ms=1500),
+            ]
+        ),
     )
 
 
