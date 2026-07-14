@@ -252,6 +252,43 @@ def _write_last_success_marker(
         log.exception("Failed to write last-success marker")
 
 
+def _read_backup_state() -> dict | None:
+    try:
+        if _azure_configured():
+            container = _blob_container_client()
+            stream = container.download_blob(_backup_state_blob_name())
+            return json.loads(stream.readall())
+
+        path = _backup_state_path()
+        if not path.exists():
+            return None
+        return json.loads(path.read_text())
+    except ResourceNotFoundError:
+        return None
+    except Exception:
+        log.exception("Failed to read backup observability state")
+        return None
+
+
+def _seed_last_success_history(state: dict, previous_state: dict | None) -> None:
+    if not isinstance(previous_state, dict) or previous_state.get("schema_version") != 2:
+        return
+
+    for backup_type in ("database", "filesystem"):
+        previous_section = previous_state.get(backup_type)
+        current_section = state.get(backup_type)
+        if not isinstance(previous_section, dict) or not isinstance(current_section, dict):
+            continue
+        for key in (
+            "last_success_started_at",
+            "last_success_completed_at",
+            "last_success_duration_seconds",
+            "last_success_size_bytes",
+            "last_success_archive_key",
+        ):
+            current_section[key] = previous_section.get(key)
+
+
 def _read_last_success_marker() -> dict | None:
     try:
         if _azure_configured():
@@ -371,6 +408,7 @@ def run_backup() -> Path | None:
     snapshot_name = f"hriv-backup-{timestamp}"
     log.info("Starting backup: %s", snapshot_name)
     backup_state = _new_backup_state(snapshot_name)
+    _seed_last_success_history(backup_state, _read_backup_state())
 
     db = _parse_db_url(DATABASE_URL)
     pg = _pg_env(db)

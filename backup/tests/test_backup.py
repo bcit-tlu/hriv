@@ -326,6 +326,60 @@ class BackupRunTestCase(_BackupTestCase):
         self.assertFalse(state["database"]["success"])
         self.assertIsNone(state["filesystem"]["started_at"])
 
+    def test_backup_state_preserves_previous_success_history_on_filesystem_failure(self):
+        self._reload(
+            {
+                "BACKUP_MODE": "production",
+                "DATA_DIR": str(self.data_dir),
+            }
+        )
+        local_dir = self.tmp / "backups"
+        local_dir.mkdir()
+        (local_dir / "BACKUP_STATE.json").write_text(
+            json.dumps(
+                {
+                    "schema_version": 2,
+                    "database": {
+                        "last_success_started_at": "2026-07-12T08:00:00+00:00",
+                        "last_success_completed_at": "2026-07-12T08:00:42+00:00",
+                        "last_success_duration_seconds": 42,
+                        "last_success_size_bytes": 100,
+                        "last_success_archive_key": "old-db",
+                    },
+                    "filesystem": {
+                        "last_success_started_at": "2026-07-11T08:01:00+00:00",
+                        "last_success_completed_at": "2026-07-11T08:09:00+00:00",
+                        "last_success_duration_seconds": 480,
+                        "last_success_size_bytes": 200,
+                        "last_success_archive_key": "old-fs",
+                    },
+                }
+            )
+        )
+
+        def fake_subprocess_run(cmd, **_kwargs):
+            if cmd[0] == "pg_dump":
+                f_idx = cmd.index("-f")
+                Path(cmd[f_idx + 1]).write_text("dump")
+            return MagicMock(returncode=0)
+
+        with (
+            patch.object(backup, "_local_backup_dir", return_value=local_dir),
+            patch.object(backup.subprocess, "run", side_effect=fake_subprocess_run),
+            patch.object(backup.tarfile, "open", side_effect=RuntimeError("tar failed")),
+        ):
+            result = backup.run_backup()
+
+        self.assertIsNone(result)
+        state = json.loads((local_dir / "BACKUP_STATE.json").read_text())
+        self.assertTrue(state["database"]["success"])
+        self.assertFalse(state["filesystem"]["success"])
+        self.assertEqual(
+            state["filesystem"]["last_success_completed_at"],
+            "2026-07-11T08:09:00+00:00",
+        )
+        self.assertEqual(state["filesystem"]["last_success_archive_key"], "old-fs")
+
 
 class RetentionTestCase(_BackupTestCase):
     """Tests for snapshot retention cleanup."""

@@ -207,6 +207,28 @@ async def test_archive_listing_failure_preserves_stale_summary_without_zeroing()
     assert b'hriv_backup_archives_retained{backup_type="database"} 3.0' in content
 
 
+async def test_archive_listing_failure_is_cached_until_ttl_expires(monkeypatch) -> None:
+    state = _state()
+    cache_time = [0.0]
+
+    def _fake_monotonic() -> float:
+        return cache_time[0]
+
+    monkeypatch.setattr("app.backup_metrics.monotonic", _fake_monotonic)
+
+    with patch("app.backup_metrics.get_backup_observability_state", return_value=state):
+        with patch(
+            "app.backup_metrics.list_retained_backup_archives",
+            side_effect=RuntimeError("azure listing failed"),
+        ) as archive_fetch:
+            cache_time[0] = 0.0
+            backup_metrics.render_backup_metrics()
+            cache_time[0] = 60.0
+            backup_metrics.render_backup_metrics()
+
+    assert archive_fetch.call_count == 1
+
+
 async def test_invalid_numeric_fields_render_nan() -> None:
     state = _state(db_size=None, fs_size=None)
     state["database"]["duration_seconds"] = "bad"

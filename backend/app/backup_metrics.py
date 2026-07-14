@@ -31,7 +31,7 @@ _BACKUP_TYPES = ("database", "filesystem")
 _CACHE_TTL_SECONDS = 300
 _state_cache: tuple[dict | None, bool, float] | None = None
 _state_cache_lock = Lock()
-_archive_cache: tuple[dict[str, dict[str, Any]] | None, bool, float, bool] | None = None
+_archive_cache: tuple[dict[str, dict[str, Any]] | None, bool, float, float | None, bool] | None = None
 _archive_cache_lock = Lock()
 
 
@@ -81,6 +81,9 @@ def _fetch_backup_state() -> tuple[dict | None, bool]:
             state = get_backup_observability_state()
         except BackupRestoreNotConfiguredError:
             configured = False
+        except Exception:  # noqa: BLE001 - never break the metrics scrape
+            logger.exception("Failed to refresh backup observability state")
+            state = None
 
         _state_cache = (state, configured, monotonic())
         return _state_cache[:2]
@@ -92,14 +95,13 @@ def _fetch_archive_summary() -> tuple[dict[str, dict[str, Any]] | None, bool, fl
     with _archive_cache_lock:
         if (
             _archive_cache is not None
-            and _archive_cache[2] is not None
             and monotonic() - _archive_cache[2] < _CACHE_TTL_SECONDS
         ):
-            return _archive_cache
+            return (_archive_cache[0], _archive_cache[1], _archive_cache[3], _archive_cache[4])
 
         configured = True
         last_successful_summary = _archive_cache[0] if _archive_cache is not None else None
-        last_successful_at = _archive_cache[2] if _archive_cache is not None and _archive_cache[3] else None
+        last_successful_at = _archive_cache[3] if _archive_cache is not None else None
         fetch_succeeded = False
 
         try:
@@ -117,8 +119,8 @@ def _fetch_archive_summary() -> tuple[dict[str, dict[str, Any]] | None, bool, fl
         if fetch_succeeded:
             last_successful_at = cache_time
 
-        _archive_cache = (summary, configured, last_successful_at, fetch_succeeded)
-        return _archive_cache
+        _archive_cache = (summary, configured, cache_time, last_successful_at, fetch_succeeded)
+        return (summary, configured, last_successful_at, fetch_succeeded)
 
 
 _backup_configured = Gauge(
