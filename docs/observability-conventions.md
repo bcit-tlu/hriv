@@ -388,9 +388,33 @@ the ServiceMonitor. The frontend nginx configuration returns `404` for the
 exact `/api/metrics` path so the unauthenticated scrape endpoint is not exposed
 through the public application ingress.
 
-`hriv_backup_age_seconds` is `+Inf` when backup access is configured but no
-valid successful-backup marker exists. This keeps the age gauge in its red
-threshold state instead of presenting a missing or malformed backup as fresh.
+Backup recovery metrics are split by `backup_type="database|filesystem"`.
+Prometheus uses the latest versioned `BACKUP_STATE.json` result marker for
+attempt/success state and a cached retained-archive classification pass for
+archive counts and oldest/newest timestamps.
+
+Published backup gauges:
+
+- `hriv_backup_last_attempt_timestamp_seconds{backup_type}`
+- `hriv_backup_last_success_timestamp_seconds{backup_type}`
+- `hriv_backup_last_outcome{backup_type}`
+- `hriv_backup_last_duration_seconds{backup_type}`
+- `hriv_backup_last_size_bytes{backup_type}`
+- `hriv_backup_archives_retained{backup_type}`
+- `hriv_backup_oldest_archive_timestamp_seconds{backup_type}`
+- `hriv_backup_newest_archive_timestamp_seconds{backup_type}`
+
+`hriv_backup_archive_listing_last_refresh_timestamp_seconds` records when the
+retained-archive classification cache was last refreshed successfully, and
+`hriv_backup_archive_listing_last_outcome` distinguishes success, failure, and
+not-configured states. Archive listing failures must not be rendered as zero
+retained archives.
+
+For compatibility, `hriv_backup_age_seconds` remains the worst-case age across
+the database and filesystem last-success timestamps. It is `+Inf` when backup
+access is configured but either backup type lacks a valid successful timestamp.
+This keeps the age gauge in its red threshold state instead of presenting a
+missing or malformed backup as fresh.
 
 ### Alerting recommendations
 

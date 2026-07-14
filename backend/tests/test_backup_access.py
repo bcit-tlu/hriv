@@ -20,8 +20,10 @@ from app.backup_access import (
     BackupSnapshotManifestError,
     BackupSnapshotMemberError,
     BackupSnapshotNotFoundError,
+    get_backup_observability_state,
     get_last_success_marker,
     get_snapshot_manifest,
+    list_retained_backup_archives,
     list_snapshots,
     restore_snapshot_file,
 )
@@ -166,6 +168,111 @@ def test_get_last_success_marker_reraises_not_configured() -> None:
     with patch.object(backup_access, "_download_json_blob", side_effect=error):
         with pytest.raises(BackupRestoreNotConfiguredError, match="not configured"):
             get_last_success_marker()
+
+
+def test_get_backup_observability_state_prefers_v2_state() -> None:
+    state = {
+        "schema_version": 2,
+        "database": {"success": True},
+        "filesystem": {"success": False},
+    }
+
+    with (
+        patch.object(backup_access, "_backup_state_blob_name", return_value="BACKUP_STATE.json"),
+        patch.object(backup_access, "_download_json_blob", return_value=state) as download,
+    ):
+        result = get_backup_observability_state()
+
+    assert result == state
+    download.assert_called_once_with("BACKUP_STATE.json")
+
+
+def test_get_backup_observability_state_falls_back_to_legacy_marker() -> None:
+    legacy_marker = {
+        "snapshot_name": "hriv-backup-20260102-020000",
+        "created_at": "2026-01-02T02:00:00+00:00",
+        "archive_size": 1234,
+        "backup_mode": "production",
+        "tiles_excluded": True,
+    }
+
+    with (
+        patch.object(backup_access, "_backup_state_blob_name", return_value="BACKUP_STATE.json"),
+        patch.object(backup_access, "_download_json_blob", side_effect=ResourceNotFoundError(message="missing")),
+        patch.object(backup_access, "get_last_success_marker", return_value=legacy_marker),
+    ):
+        state = get_backup_observability_state()
+
+    assert state["schema_version"] == 2
+    assert state["database"]["success"] is True
+    assert state["filesystem"]["last_success_size_bytes"] == 1234
+
+
+def test_list_retained_backup_archives_classifies_by_manifest(monkeypatch, tmp_path) -> None:
+    blobs = [
+        SimpleNamespace(
+            name="hriv-backups/hriv-backup-20260102-020000.tar.gz",
+            size=1234,
+            last_modified=datetime(2026, 1, 2, 2, 0, tzinfo=timezone.utc),
+        ),
+        SimpleNamespace(
+            name="hriv-backups/hriv-backup-20260103-020000.tar.gz",
+            size=2345,
+            last_modified=datetime(2026, 1, 3, 2, 0, tzinfo=timezone.utc),
+        ),
+    ]
+    fake_container = _FakeContainer(blobs, {})
+    _configure(monkeypatch, tmp_path, fake_container)
+
+    manifests = {
+        "hriv-backup-20260102-020000.tar.gz": {"files": {"db.sql": {"size": 10}}},
+        "hriv-backup-20260103-020000.tar.gz": {
+            "files": {
+                "db.sql": {"size": 10},
+                "data/source_images/a.jpg": {"size": 20},
+            }
+        },
+    }
+
+    with patch.object(
+        backup_access,
+        "get_snapshot_manifest",
+        side_effect=lambda snapshot_name: manifests[snapshot_name],
+    ):
+        summary = list_retained_backup_archives()
+
+    assert summary["database"]["count"] == 2
+    assert summary["filesystem"]["count"] == 1
+    assert summary["database"]["oldest_created_at"] == datetime(
+        2026, 1, 2, 2, 0, tzinfo=timezone.utc
+    )
+    assert summary["filesystem"]["newest_created_at"] == datetime(
+        2026, 1, 3, 2, 0, tzinfo=timezone.utc
+    )
+
+
+def test_list_retained_backup_archives_skips_unclassifiable_archive(
+    monkeypatch, tmp_path, caplog: pytest.LogCaptureFixture
+) -> None:
+    blobs = [
+        SimpleNamespace(
+            name="hriv-backups/hriv-backup-20260102-020000.tar.gz",
+            size=1234,
+            last_modified=datetime(2026, 1, 2, 2, 0, tzinfo=timezone.utc),
+        ),
+    ]
+    fake_container = _FakeContainer(blobs, {})
+    _configure(monkeypatch, tmp_path, fake_container)
+
+    with patch.object(
+        backup_access,
+        "get_snapshot_manifest",
+        side_effect=BackupSnapshotManifestError("bad manifest"),
+    ):
+        summary = list_retained_backup_archives()
+
+    assert summary["database"]["count"] == 0
+    assert "Skipping unclassifiable backup archive" in caplog.text
 
 
 def test_get_snapshot_manifest_prefers_sidecar(monkeypatch, tmp_path) -> None:
