@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.11.0...backup-v0.12.0) (2026-07-14)
+
+
+### Features
+
+* **observability:** add restore and build telemetry ([#925](https://github.com/bcit-tlu/hriv/issues/925)) ([6197188](https://github.com/bcit-tlu/hriv/commit/619718896b39f64d97992bc5ae4c85616faecbc2))
+
 ## [0.11.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.10.0...backup-v0.11.0) (2026-07-14)
 
 
