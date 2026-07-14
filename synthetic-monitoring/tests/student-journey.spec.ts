@@ -14,8 +14,7 @@ import { test, expect, type Response } from '@playwright/test'
 test('synthetic student can log in, browse, and view an image', async ({ page }) => {
   const email = process.env.SYNTHETIC_EMAIL || 'synthetic.student@example.ca'
   const password = process.env.SYNTHETIC_PASSWORD || 'password'
-  const categoryPathValue =
-    process.env.SYNTHETIC_CATEGORY_PATH?.trim() || 'Architecture/Italian'
+  const categoryPathValue = process.env.SYNTHETIC_CATEGORY_PATH?.trim() || 'Architecture/Italian'
   const categoryPath = categoryPathValue
     .split('/')
     .map((segment) => segment.trim())
