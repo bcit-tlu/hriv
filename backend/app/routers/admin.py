@@ -48,6 +48,13 @@ from ..admin_ops import (
     run_rebuild_tiles,
 )
 from ..auth import auth_settings, require_role
+from ..component_versions import (
+    get_backend_version,
+    get_backup_version,
+    get_frontend_version,
+    get_synthetic_version,
+    get_worker_version,
+)
 from ..database import get_db
 from ..maintenance import disable_maintenance_mode, enable_maintenance_mode, is_maintenance_mode
 from ..models import ACTIVE_TASK_STATUSES, AdminTask, User
@@ -60,6 +67,7 @@ from ..schemas import (
     UploadFinalizeRequest,
     UploadStatusResponse,
 )
+from ..synthetic_result import load_stored_synthetic_result_state
 from ..worker import enqueue_admin_task
 
 logger = logging.getLogger(__name__)
@@ -1070,37 +1078,6 @@ async def upload_task_file(
     return _task_to_dict(await _finalize_files_import_upload(db, task, bytes_written, bg))
 
 
-def _read_backup_version() -> str:
-    """Resolve the deployed backup chart's version string.
-
-    The backup chart publishes its ``Chart.AppVersion`` in a ConfigMap
-    that the backend chart mounts as a volume; ``BACKUP_VERSION_FILE``
-    points at the projected key.  Reading the file per-request means
-    kubelet's ConfigMap-volume refresh (~60s) propagates new versions
-    without the backend pod restarting — so head builds and rc tags
-    that only change the backup chart show up in the admin footer on
-    the next request without manual fleet bumps.
-
-    Precedence:
-        1. Contents of ``BACKUP_VERSION_FILE`` (backup chart ConfigMap).
-        2. ``BACKUP_VERSION`` env var (legacy / local override).
-        3. ``"dev"`` fallback for unset local builds.
-    """
-    file_path = os.environ.get("BACKUP_VERSION_FILE")
-    if file_path:
-        try:
-            with open(file_path, "r", encoding="utf-8") as f:
-                value = f.read().strip()
-            if value:
-                return value
-        except OSError:
-            # File missing / unreadable — fall through to env-var path.
-            # Expected on local installs without the backup chart
-            # deployed, or before the first kubelet volume refresh.
-            pass
-    return os.environ.get("BACKUP_VERSION") or "dev"
-
-
 @router.get("/version")
 async def get_version(
     _user: Annotated[User, Depends(_admin)],
@@ -1120,19 +1097,25 @@ async def get_version(
     ``"dev"`` when the env var is unset (local ``docker compose`` or
     ad-hoc ``docker run``).
 
-    Backup: resolved by :func:`_read_backup_version` — ConfigMap-mount
-    file first, then ``BACKUP_VERSION`` env var, then ``"dev"``.  The
-    backup service versions independently of backend, so its version
-    is surfaced via the hriv-backup chart's ``version-configmap``
-    (which itself uses the same display-version derivation from
-    ``.Values.image.tag``).
+    Backup and frontend versions may be sourced from chart-published
+    ConfigMap mounts that the backend reads on demand. That keeps the
+    admin panel in sync with independently deployed components without
+    requiring a backend pod restart.
 
     Admin-only: version strings leak information about the deployed
     image and are not surfaced to other roles.
     """
+    synthetic_state = await load_stored_synthetic_result_state()
+    latest_synthetic_version = None
+    if synthetic_state is not None and synthetic_state.latest_result.component_version:
+        latest_synthetic_version = synthetic_state.latest_result.component_version
+
     return {
-        "backend": os.environ.get("APP_VERSION") or "dev",
-        "backup": _read_backup_version(),
+        "backend": get_backend_version(),
+        "worker": get_worker_version(),
+        "backup": get_backup_version(),
+        "frontend": get_frontend_version(),
+        "synthetic": get_synthetic_version(latest_synthetic_version),
     }
 
 

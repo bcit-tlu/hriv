@@ -73,6 +73,26 @@ async def test_on_startup_calls_setup_logging() -> None:
     mock_setup.assert_called_once()
 
 
+async def test_on_startup_logs_worker_identity() -> None:
+    """Startup log should include the resolved worker service identity."""
+    with (
+        patch("app.worker.setup_logging"),
+        patch("app.worker.get_worker_version", return_value="1.2.3"),
+        patch.dict("os.environ", {"OTEL_SERVICE_NAME": "hriv-backend-worker"}, clear=True),
+        patch("app.worker.logger") as mock_logger,
+    ):
+        await on_startup({})
+
+    mock_logger.info.assert_called_once_with(
+        "arq worker started",
+        extra={
+            "event": "worker.started",
+            "service.name": "hriv-backend-worker",
+            "service.version": "1.2.3",
+        },
+    )
+
+
 def test_worker_settings_only_extend_timeout_for_admin_tasks() -> None:
     """Long timeout should apply to admin tasks without widening all jobs."""
     assert WorkerSettings.job_timeout == 7200

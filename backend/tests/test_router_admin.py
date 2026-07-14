@@ -101,7 +101,14 @@ class _FakeRequest:
             yield chunk
 
 
-_VERSION_ENV_KEYS = ("APP_VERSION", "BACKUP_VERSION", "BACKUP_VERSION_FILE")
+_VERSION_ENV_KEYS = (
+    "APP_VERSION",
+    "WORKER_VERSION",
+    "BACKUP_VERSION",
+    "BACKUP_VERSION_FILE",
+    "FRONTEND_VERSION",
+    "FRONTEND_VERSION_FILE",
+)
 
 
 def _version_env(**overrides: str) -> dict[str, str]:
@@ -121,29 +128,54 @@ async def test_get_version_returns_env_values() -> None:
     """With no ConfigMap mount, env vars are the source of truth."""
     with patch.dict(
         os.environ,
-        _version_env(APP_VERSION="1.2.3", BACKUP_VERSION="4.5.6"),
+        _version_env(
+            APP_VERSION="1.2.3",
+            WORKER_VERSION="1.2.4",
+            BACKUP_VERSION="4.5.6",
+            FRONTEND_VERSION="7.8.9",
+        ),
         clear=True,
-    ):
+    ), patch("app.routers.admin.load_stored_synthetic_result_state", return_value=None):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
-    assert result == {"backend": "1.2.3", "backup": "4.5.6"}
+    assert result == {
+        "backend": "1.2.3",
+        "worker": "1.2.4",
+        "backup": "4.5.6",
+        "frontend": "7.8.9",
+        "synthetic": "unknown",
+    }
 
 
 async def test_get_version_defaults_to_dev() -> None:
     """Unset env vars fall back to 'dev' so local builds still render."""
-    with patch.dict(os.environ, _version_env(), clear=True):
+    with patch.dict(os.environ, _version_env(), clear=True), patch(
+        "app.routers.admin.load_stored_synthetic_result_state", return_value=None
+    ):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
-    assert result == {"backend": "dev", "backup": "dev"}
+    assert result == {
+        "backend": "dev",
+        "worker": "dev",
+        "backup": "dev",
+        "frontend": "unknown",
+        "synthetic": "unknown",
+    }
 
 
 async def test_get_version_empty_env_falls_back_to_dev() -> None:
     """Empty string env vars (chart default for BACKUP_VERSION) → 'dev'."""
     with patch.dict(
         os.environ,
-        _version_env(APP_VERSION="", BACKUP_VERSION=""),
+        _version_env(APP_VERSION="", WORKER_VERSION="", BACKUP_VERSION="", FRONTEND_VERSION=""),
         clear=True,
-    ):
+    ), patch("app.routers.admin.load_stored_synthetic_result_state", return_value=None):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
-    assert result == {"backend": "dev", "backup": "dev"}
+    assert result == {
+        "backend": "dev",
+        "worker": "dev",
+        "backup": "dev",
+        "frontend": "unknown",
+        "synthetic": "unknown",
+    }
 
 
 async def test_get_version_reads_backup_from_configmap_mount(tmp_path) -> None:
@@ -158,11 +190,13 @@ async def test_get_version_reads_backup_from_configmap_mount(tmp_path) -> None:
             BACKUP_VERSION_FILE=str(version_file),
         ),
         clear=True,
-    ):
+    ), patch("app.routers.admin.load_stored_synthetic_result_state", return_value=None):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
     # Trailing whitespace/newline from the ConfigMap projection is stripped
     # so the footer stays tidy.
-    assert result == {"backend": "0.6.0", "backup": "0.3.1-head.abc1234"}
+    assert result["backend"] == "0.6.0"
+    assert result["worker"] == "0.6.0"
+    assert result["backup"] == "0.3.1-head.abc1234"
 
 
 async def test_get_version_falls_back_to_env_when_mount_missing(tmp_path) -> None:
@@ -176,9 +210,10 @@ async def test_get_version_falls_back_to_env_when_mount_missing(tmp_path) -> Non
             BACKUP_VERSION_FILE=str(missing),
         ),
         clear=True,
-    ):
+    ), patch("app.routers.admin.load_stored_synthetic_result_state", return_value=None):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
-    assert result == {"backend": "0.6.0", "backup": "0.3.0"}
+    assert result["backend"] == "0.6.0"
+    assert result["backup"] == "0.3.0"
 
 
 async def test_get_version_falls_back_to_env_when_mount_empty(tmp_path) -> None:
@@ -193,9 +228,10 @@ async def test_get_version_falls_back_to_env_when_mount_empty(tmp_path) -> None:
             BACKUP_VERSION_FILE=str(version_file),
         ),
         clear=True,
-    ):
+    ), patch("app.routers.admin.load_stored_synthetic_result_state", return_value=None):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
-    assert result == {"backend": "0.6.0", "backup": "0.3.0"}
+    assert result["backend"] == "0.6.0"
+    assert result["backup"] == "0.3.0"
 
 
 async def test_get_version_falls_back_to_dev_when_mount_and_env_missing(tmp_path) -> None:
@@ -205,9 +241,30 @@ async def test_get_version_falls_back_to_dev_when_mount_and_env_missing(tmp_path
         os.environ,
         _version_env(BACKUP_VERSION_FILE=str(missing)),
         clear=True,
+    ), patch("app.routers.admin.load_stored_synthetic_result_state", return_value=None):
+        result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
+    assert result["backend"] == "dev"
+    assert result["backup"] == "dev"
+
+
+async def test_get_version_reads_frontend_and_synthetic_versions(tmp_path) -> None:
+    frontend_version = tmp_path / "frontend-version"
+    frontend_version.write_text("3.4.5\n")
+    synthetic_state = SimpleNamespace(
+        latest_result=SimpleNamespace(component_version="6.7.8"),
+    )
+    with patch.dict(
+        os.environ,
+        _version_env(FRONTEND_VERSION_FILE=str(frontend_version)),
+        clear=True,
+    ), patch(
+        "app.routers.admin.load_stored_synthetic_result_state",
+        return_value=synthetic_state,
     ):
         result = await get_version(_user=SimpleNamespace(id=1, role="admin"))
-    assert result == {"backend": "dev", "backup": "dev"}
+
+    assert result["frontend"] == "3.4.5"
+    assert result["synthetic"] == "6.7.8"
 
 
 def test_task_to_dict() -> None:

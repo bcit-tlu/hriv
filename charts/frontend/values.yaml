@@ -36,6 +36,12 @@ tileServer:
 env:
   BACKEND_URL: ''
 
+versionConfigMap:
+  enabled: true
+  name: hriv-frontend-version
+  key: version
+  imageTagKey: image-tag
+
 # Volume mounts backed by ConfigMaps.  Each entry creates a ConfigMap
 # resource and is mounted into the container at the given mountPath.
 # Override the nginx config at deploy time without rebuilding the image.

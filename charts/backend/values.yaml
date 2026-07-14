@@ -38,6 +38,7 @@ backupVersionConfigMap:
   enabled: false
   name: hriv-backup-version
   key: version
+  imageTagKey: image-tag
   mountPath: /etc/hriv-versions
 
 # Legacy literal override for the backup version.  Only consulted when
@@ -45,6 +46,15 @@ backupVersionConfigMap:
 # missing (e.g. local/dev installs without the backup chart deployed).
 # Leave empty to render ``"dev"`` at runtime.
 backupVersion: ''
+
+frontendVersionConfigMap:
+  enabled: false
+  name: hriv-frontend-version
+  key: version
+  imageTagKey: image-tag
+  mountPath: /etc/hriv-frontend-version
+
+frontendVersion: ''
 
 # ── OpenTelemetry observability ─────────────────────────────
 # When enabled=true, the backend Deployment renders six OTEL_* env vars

@@ -8,6 +8,7 @@ Usage:
     python backup.py backup          # Run a one-shot backup now
     python backup.py restore          # Restore the latest snapshot
     python backup.py restore <name>   # Restore a specific snapshot
+    python backup.py restore-test     # Restore into the configured test target
     python backup.py list             # List available snapshots
     python backup.py status           # Show the last-success heartbeat
     python backup.py cron             # Start the cron scheduler (default)
@@ -69,6 +70,8 @@ AZURE_BLOB_PREFIX: str = _env("AZURE_BLOB_PREFIX", "hriv-backups")
 BACKUP_CRON_SCHEDULE: str = _env("BACKUP_CRON_SCHEDULE", "0 2 * * *")
 BACKUP_RETENTION_COUNT: int = int(_env("BACKUP_RETENTION_COUNT", "30"))
 BACKUP_STALE_HOURS: int = int(_env("BACKUP_STALE_HOURS", "26"))
+RESTORE_TEST_DATABASE_URL: str = _env("RESTORE_TEST_DATABASE_URL", "")
+RESTORE_TEST_DATA_DIR: str = _env("RESTORE_TEST_DATA_DIR", "")
 
 # Operating mode: "development" backs up DB + source images + tiles.
 # "production" backs up DB + source images only; tiles are excluded and
@@ -121,6 +124,15 @@ def _backup_state_path() -> Path:
 def _backup_state_blob_name() -> str:
     prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
     return f"{prefix}BACKUP_STATE.json"
+
+
+def _restore_state_path() -> Path:
+    return _local_backup_dir() / "RESTORE_STATE.json"
+
+
+def _restore_state_blob_name() -> str:
+    prefix = f"{AZURE_BLOB_PREFIX}/" if AZURE_BLOB_PREFIX else ""
+    return f"{prefix}RESTORE_STATE.json"
 
 
 def _atomic_write_bytes(path: Path, payload: bytes) -> None:
@@ -213,6 +225,129 @@ def _write_backup_state(state: dict) -> None:
             _atomic_write_bytes(_backup_state_path(), payload)
     except Exception:
         log.exception("Failed to write backup observability state")
+
+
+def _new_restore_state() -> dict:
+    def _blank_section() -> dict[str, object]:
+        return {
+            "started_at": None,
+            "completed_at": None,
+            "success": None,
+            "duration_seconds": None,
+            "archive_name": None,
+            "last_success_started_at": None,
+            "last_success_completed_at": None,
+            "last_success_duration_seconds": None,
+            "last_success_archive_name": None,
+        }
+
+    return {
+        "schema_version": 1,
+        "operator": {
+            "database": _blank_section(),
+            "filesystem": _blank_section(),
+        },
+        "test": {
+            "database": _blank_section(),
+            "filesystem": _blank_section(),
+        },
+    }
+
+
+def _read_restore_state() -> dict | None:
+    try:
+        if _azure_configured():
+            container = _blob_container_client()
+            stream = container.download_blob(_restore_state_blob_name())
+            return json.loads(stream.readall())
+
+        path = _restore_state_path()
+        if not path.exists():
+            return None
+        return json.loads(path.read_text())
+    except ResourceNotFoundError:
+        return None
+    except Exception:
+        log.exception("Failed to read restore observability state")
+        return None
+
+
+def _seed_restore_success_history(state: dict, previous_state: dict | None) -> None:
+    if not isinstance(previous_state, dict) or previous_state.get("schema_version") != 1:
+        return
+
+    for purpose in ("operator", "test"):
+        previous_purpose = previous_state.get(purpose)
+        current_purpose = state.get(purpose)
+        if not isinstance(previous_purpose, dict) or not isinstance(current_purpose, dict):
+            continue
+        for restore_type in ("database", "filesystem"):
+            previous_section = previous_purpose.get(restore_type)
+            current_section = current_purpose.get(restore_type)
+            if not isinstance(previous_section, dict) or not isinstance(current_section, dict):
+                continue
+            current_section.update(previous_section)
+
+
+def _write_restore_state(state: dict) -> None:
+    payload = json.dumps(state, indent=2).encode()
+
+    try:
+        if _azure_configured():
+            container = _blob_container_client()
+            container.upload_blob(
+                _restore_state_blob_name(),
+                io.BytesIO(payload),
+                overwrite=True,
+            )
+        else:
+            _atomic_write_bytes(_restore_state_path(), payload)
+    except Exception:
+        log.exception("Failed to write restore observability state")
+
+
+def _restore_section(state: dict, purpose: str, restore_type: str) -> dict[str, object]:
+    return state[purpose][restore_type]
+
+
+def _mark_restore_started(
+    state: dict,
+    purpose: str,
+    restore_type: str,
+    *,
+    started_at: datetime,
+    archive_name: str,
+) -> None:
+    section = _restore_section(state, purpose, restore_type)
+    section["started_at"] = started_at.isoformat()
+    section["completed_at"] = None
+    section["success"] = None
+    section["duration_seconds"] = None
+    section["archive_name"] = archive_name
+
+
+def _mark_restore_finished(
+    state: dict,
+    purpose: str,
+    restore_type: str,
+    *,
+    started_at: datetime,
+    completed_at: datetime,
+    success: bool,
+    archive_name: str,
+) -> None:
+    duration_seconds = max((completed_at - started_at).total_seconds(), 0.0)
+    section = _restore_section(state, purpose, restore_type)
+    section["started_at"] = started_at.isoformat()
+    section["completed_at"] = completed_at.isoformat()
+    section["success"] = success
+    section["duration_seconds"] = duration_seconds
+    section["archive_name"] = archive_name
+    if success:
+        section["last_success_started_at"] = section["started_at"]
+        section["last_success_completed_at"] = section["completed_at"]
+        section["last_success_duration_seconds"] = duration_seconds
+        section["last_success_archive_name"] = archive_name
 
 
 def _attach_archive_key_to_success(state: dict, backup_type: str, archive_key: str) -> None:
@@ -798,24 +933,63 @@ def _set_maintenance(enabled: bool) -> None:
 # Restore
 # ---------------------------------------------------------------------------
 
-def run_restore(snapshot_name: str | None = None) -> bool:
+def run_restore(
+    snapshot_name: str | None = None,
+    *,
+    purpose: str = "operator",
+    database_url: str | None = None,
+    data_dir: str | None = None,
+    maintenance: bool = True,
+) -> bool:
     """Download and restore a snapshot.
 
-    Automatically enables maintenance mode before the restore starts and
-    disables it when the restore completes (or fails).
-
-    If *snapshot_name* is ``None``, the latest snapshot is used.
-    Returns ``True`` on success.
+    Operator restores run with maintenance mode enabled so the application is
+    unavailable while tables and files are replaced. Restore tests target a
+    separate database/data directory and therefore skip maintenance mode.
     """
-    _set_maintenance(True)
+    if maintenance:
+        _set_maintenance(True)
     try:
-        return _run_restore_inner(snapshot_name)
+        return _run_restore_inner(
+            snapshot_name,
+            purpose=purpose,
+            database_url=database_url,
+            data_dir=data_dir,
+        )
     finally:
-        _set_maintenance(False)
+        if maintenance:
+            _set_maintenance(False)
 
 
-def _run_restore_inner(snapshot_name: str | None = None) -> bool:
+def run_restore_test(snapshot_name: str | None = None) -> bool:
+    """Restore a snapshot into the configured non-production test target."""
+    if not RESTORE_TEST_DATABASE_URL or not RESTORE_TEST_DATA_DIR:
+        log.error(
+            "RESTORE_TEST_DATABASE_URL and RESTORE_TEST_DATA_DIR must be set for restore-test",
+            extra={"event": "restore.test_not_configured"},
+        )
+        return False
+
+    return run_restore(
+        snapshot_name,
+        purpose="test",
+        database_url=RESTORE_TEST_DATABASE_URL,
+        data_dir=RESTORE_TEST_DATA_DIR,
+        maintenance=False,
+    )
+
+
+def _run_restore_inner(
+    snapshot_name: str | None = None,
+    *,
+    purpose: str = "operator",
+    database_url: str | None = None,
+    data_dir: str | None = None,
+) -> bool:
     """Core restore logic (called inside the maintenance-flag guard)."""
+    target_database_url = database_url or DATABASE_URL
+    target_data_dir = data_dir or DATA_DIR
+
     # Locate the snapshot -------------------------------------------------------
     if _azure_configured():
         snapshots = list_snapshots()
@@ -842,7 +1016,12 @@ def _run_restore_inner(snapshot_name: str | None = None) -> bool:
                 stream = container.download_blob(target["blob_name"])
                 stream.readinto(f)
             log.info("Download complete (%s bytes)", archive_path.stat().st_size)
-            return _restore_from_archive(archive_path)
+            return _restore_from_archive(
+                archive_path,
+                purpose=purpose,
+                database_url=target_database_url,
+                data_dir=target_data_dir,
+            )
     else:
         # Local restore
         local_dir = _local_backup_dir()
@@ -864,7 +1043,12 @@ def _run_restore_inner(snapshot_name: str | None = None) -> bool:
         if not archive_path.exists():
             log.error("Snapshot file not found: %s", archive_path)
             return False
-        return _restore_from_archive(archive_path)
+        return _restore_from_archive(
+            archive_path,
+            purpose=purpose,
+            database_url=target_database_url,
+            data_dir=target_data_dir,
+        )
 
 
 def _restore_ignore_tiles(
@@ -884,9 +1068,29 @@ def _restore_ignore_tiles(
     return _ignore
 
 
-def _restore_from_archive(archive_path: Path) -> bool:
+def _restore_from_archive(
+    archive_path: Path,
+    *,
+    purpose: str = "operator",
+    database_url: str | None = None,
+    data_dir: str | None = None,
+) -> bool:
     """Extract an archive and restore database + filesystem."""
-    log.info("Restoring from %s …", archive_path.name)
+    log.info(
+        "Restoring from %s …",
+        archive_path.name,
+        extra={
+            "event": "restore.started",
+            "purpose": purpose,
+            "archive_name": archive_path.name,
+            "maintenance_enabled": purpose == "operator",
+        },
+    )
+
+    restore_state = _new_restore_state()
+    _seed_restore_success_history(restore_state, _read_restore_state())
+    target_database_url = database_url or DATABASE_URL
+    target_data_dir = data_dir or DATA_DIR
 
     with tempfile.TemporaryDirectory(prefix="hriv-restore-") as tmpdir:
         # Extract ---------------------------------------------------------------
@@ -919,10 +1123,19 @@ def _restore_from_archive(archive_path: Path) -> bool:
         # 1. Restore database ---------------------------------------------------
         dump_path = snapshot_dir / "db.sql"
         if dump_path.exists():
-            db = _parse_db_url(DATABASE_URL)
+            db = _parse_db_url(target_database_url)
             pg = _pg_env(db)
 
             log.info("Restoring database …")
+            database_started_at = datetime.now(timezone.utc)
+            _mark_restore_started(
+                restore_state,
+                purpose,
+                "database",
+                started_at=database_started_at,
+                archive_name=archive_path.name,
+            )
+            _write_restore_state(restore_state)
 
             # Drop and recreate the database contents by restoring into a clean state
             # First, terminate existing connections and drop/recreate tables
@@ -968,42 +1181,152 @@ END $$;
             )
             if result.returncode != 0:
                 log.error("Database restore failed: %s", result.stderr)
+                _mark_restore_finished(
+                    restore_state,
+                    purpose,
+                    "database",
+                    started_at=database_started_at,
+                    completed_at=datetime.now(timezone.utc),
+                    success=False,
+                    archive_name=archive_path.name,
+                )
+                _write_restore_state(restore_state)
                 return False
+            _mark_restore_finished(
+                restore_state,
+                purpose,
+                "database",
+                started_at=database_started_at,
+                completed_at=datetime.now(timezone.utc),
+                success=True,
+                archive_name=archive_path.name,
+            )
+            _write_restore_state(restore_state)
             log.info("Database restored successfully")
         else:
             log.warning("No db.sql found in snapshot – skipping database restore")
+            database_started_at = datetime.now(timezone.utc)
+            _mark_restore_started(
+                restore_state,
+                purpose,
+                "database",
+                started_at=database_started_at,
+                archive_name=archive_path.name,
+            )
+            _mark_restore_finished(
+                restore_state,
+                purpose,
+                "database",
+                started_at=database_started_at,
+                completed_at=database_started_at,
+                success=False,
+                archive_name=archive_path.name,
+            )
+            _write_restore_state(restore_state)
 
         # 2. Restore filesystem -------------------------------------------------
         data_archive = snapshot_dir / "data"
         if data_archive.exists() and data_archive.is_dir():
-            data_dest = Path(DATA_DIR)
-            log.info("Restoring filesystem data to %s …", DATA_DIR)
+            data_dest = Path(target_data_dir)
+            filesystem_started_at = datetime.now(timezone.utc)
+            _mark_restore_started(
+                restore_state,
+                purpose,
+                "filesystem",
+                started_at=filesystem_started_at,
+                archive_name=archive_path.name,
+            )
+            _write_restore_state(restore_state)
+            log.info("Restoring filesystem data to %s …", target_data_dir)
+            try:
+                exclude_tiles = _exclude_tiles()
+                # Clear existing data (preserve the maintenance flag and, in production, the tiles tree)
+                if data_dest.exists():
+                    for child in data_dest.iterdir():
+                        if child.name == _MAINTENANCE_FILENAME:
+                            continue
+                        if exclude_tiles and child.name == "tiles":
+                            continue
+                        if child.is_dir():
+                            shutil.rmtree(str(child))
+                        else:
+                            child.unlink()
 
-            exclude_tiles = _exclude_tiles()
-            # Clear existing data (preserve the maintenance flag and, in production, the tiles tree)
-            if data_dest.exists():
-                for child in data_dest.iterdir():
-                    if child.name == _MAINTENANCE_FILENAME:
-                        continue
-                    if exclude_tiles and child.name == "tiles":
-                        continue
-                    if child.is_dir():
-                        shutil.rmtree(str(child))
-                    else:
-                        child.unlink()
-
-            # Copy restored data
-            ignore = _restore_ignore_tiles(data_archive, exclude_tiles)
-            if ignore:
-                shutil.copytree(str(data_archive), str(data_dest), dirs_exist_ok=True, ignore=ignore)
-            else:
-                shutil.copytree(str(data_archive), str(data_dest), dirs_exist_ok=True)
+                # Copy restored data
+                ignore = _restore_ignore_tiles(data_archive, exclude_tiles)
+                if ignore:
+                    shutil.copytree(str(data_archive), str(data_dest), dirs_exist_ok=True, ignore=ignore)
+                else:
+                    shutil.copytree(str(data_archive), str(data_dest), dirs_exist_ok=True)
+            except Exception:
+                _mark_restore_finished(
+                    restore_state,
+                    purpose,
+                    "filesystem",
+                    started_at=filesystem_started_at,
+                    completed_at=datetime.now(timezone.utc),
+                    success=False,
+                    archive_name=archive_path.name,
+                )
+                _write_restore_state(restore_state)
+                raise
+            _mark_restore_finished(
+                restore_state,
+                purpose,
+                "filesystem",
+                started_at=filesystem_started_at,
+                completed_at=datetime.now(timezone.utc),
+                success=True,
+                archive_name=archive_path.name,
+            )
+            _write_restore_state(restore_state)
             log.info("Filesystem data restored")
         else:
             log.warning("No data/ directory in snapshot – skipping filesystem restore")
+            filesystem_started_at = datetime.now(timezone.utc)
+            _mark_restore_started(
+                restore_state,
+                purpose,
+                "filesystem",
+                started_at=filesystem_started_at,
+                archive_name=archive_path.name,
+            )
+            _mark_restore_finished(
+                restore_state,
+                purpose,
+                "filesystem",
+                started_at=filesystem_started_at,
+                completed_at=filesystem_started_at,
+                success=False,
+                archive_name=archive_path.name,
+            )
+            _write_restore_state(restore_state)
 
-    log.info("Restore completed successfully")
-    return True
+    database_success = _restore_section(restore_state, purpose, "database").get("success") is True
+    filesystem_success = _restore_section(restore_state, purpose, "filesystem").get("success") is True
+    overall_success = database_success and filesystem_success
+    if overall_success:
+        log.info(
+            "Restore completed successfully",
+            extra={
+                "event": "restore.completed",
+                "purpose": purpose,
+                "archive_name": archive_path.name,
+                "target_data_dir": target_data_dir,
+            },
+        )
+    else:
+        log.error(
+            "Restore completed with missing or failed components",
+            extra={
+                "event": "restore.failed",
+                "purpose": purpose,
+                "archive_name": archive_path.name,
+                "database_success": database_success,
+                "filesystem_success": filesystem_success,
+            },
+        )
+    return overall_success
 
 
 # ---------------------------------------------------------------------------
@@ -1071,6 +1394,11 @@ def main() -> None:
     elif command == "restore":
         name = sys.argv[2] if len(sys.argv) > 2 else None
         success = run_restore(name)
+        sys.exit(0 if success else 1)
+
+    elif command == "restore-test":
+        name = sys.argv[2] if len(sys.argv) > 2 else None
+        success = run_restore_test(name)
         sys.exit(0 if success else 1)
 
     elif command == "list":

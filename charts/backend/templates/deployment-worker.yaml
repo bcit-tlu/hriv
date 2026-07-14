@@ -65,6 +65,14 @@ spec:
                   optional: true
             - name: REDIS_URL
               value: {{ .Values.redis.url | quote }}
+            - name: APP_VERSION
+              value: {{ include "hriv-backend.displayVersion" . | quote }}
+            - name: APP_IMAGE_TAG
+              value: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
+            - name: WORKER_VERSION
+              value: {{ include "hriv-backend.displayVersion" . | quote }}
+            - name: WORKER_IMAGE_TAG
+              value: {{ .Values.image.tag | default .Chart.AppVersion | quote }}
             {{- if .Values.observability.openTelemetry.enabled }}
             - name: OTEL_SERVICE_NAME
               value: {{ printf "%s-worker" .Values.observability.openTelemetry.serviceName | quote }}

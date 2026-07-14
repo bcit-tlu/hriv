@@ -201,3 +201,15 @@ async def test_render_synthetic_metrics_without_state_is_stale() -> None:
 
     assert b"hriv_synthetic_last_run_timestamp_seconds 0.0" in content
     assert b"hriv_synthetic_result_age_seconds +Inf" in content
+
+
+async def test_render_synthetic_metrics_with_explicit_none_skips_reload() -> None:
+    from unittest.mock import AsyncMock, patch
+
+    loader = AsyncMock(return_value=_make_result())
+    with patch("app.synthetic_metrics.load_stored_synthetic_result_state", loader):
+        content, _ = await render_synthetic_metrics(None)
+
+    loader.assert_not_awaited()
+    assert b"hriv_synthetic_last_run_timestamp_seconds 0.0" in content
+    assert b"hriv_synthetic_result_age_seconds +Inf" in content

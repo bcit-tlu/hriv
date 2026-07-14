@@ -16,6 +16,7 @@ visible as a single distributed trace.
 
 import asyncio
 import logging
+import os
 from typing import Any
 from urllib.parse import urlparse
 
@@ -27,6 +28,7 @@ from opentelemetry.context import attach, detach
 from opentelemetry.propagate import extract, inject
 from opentelemetry.trace import Status, StatusCode
 
+from .component_versions import get_worker_version
 from .database import async_session, settings
 from .logging_config import setup_logging
 from .models import ACTIVE_TASK_STATUSES, AdminTask
@@ -432,7 +434,14 @@ async def admin_task_runner(
 async def on_startup(ctx: dict[str, Any]) -> None:
     """Initialise structured JSON logging when the arq worker boots."""
     setup_logging()
-    logger.info("arq worker started", extra={"event": "worker.started"})
+    logger.info(
+        "arq worker started",
+        extra={
+            "event": "worker.started",
+            "service.name": os.environ.get("OTEL_SERVICE_NAME", "hriv-backend-worker"),
+            "service.version": get_worker_version(),
+        },
+    )
 
 
 # ── arq WorkerSettings ───────────────────────────────────
