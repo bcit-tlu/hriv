@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.1.5...synthetic-monitoring-v1.2.0) (2026-07-14)
+
+
+### Features
+
+* **observability:** publish authoritative synthetic metrics ([#918](https://github.com/bcit-tlu/hriv/issues/918)) ([fc5dd70](https://github.com/bcit-tlu/hriv/commit/fc5dd70ec3be58d7ba49f1d2e8091d2e8ca0aaa1))
+
 ## [1.1.5](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.1.4...synthetic-monitoring-v1.1.5) (2026-07-14)
 
 
