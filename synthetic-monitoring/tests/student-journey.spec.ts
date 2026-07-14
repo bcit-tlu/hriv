@@ -14,6 +14,13 @@ import { test, expect, type Response } from '@playwright/test'
 test('synthetic student can log in, browse, and view an image', async ({ page }) => {
   const email = process.env.SYNTHETIC_EMAIL || 'synthetic.student@example.ca'
   const password = process.env.SYNTHETIC_PASSWORD || 'password'
+  const categoryPathValue = process.env.SYNTHETIC_CATEGORY_PATH?.trim() || 'Architecture/Italian'
+  const categoryPath = categoryPathValue
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean)
+  const imageName = process.env.SYNTHETIC_IMAGE_NAME?.trim() || 'Duomo di Milano'
+  expect(categoryPath, 'SYNTHETIC_CATEGORY_PATH must contain a category label').not.toHaveLength(0)
 
   // Deep-zoom descriptors and tiles are both served under /api/tiles/. Collect
   // every one (registered up front; a passive listener has no timeout) so we
@@ -63,13 +70,32 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
 
     // The browse root intentionally has no ?page= parameter.
     await expect(page).toHaveURL((url) => url.pathname === '/' && !url.searchParams.has('page'))
-    await expect(page.locator('img[alt="Duomo di Milano"]').first()).toBeVisible({
-      timeout: 20000,
-    })
+    await expect(page.getByRole('navigation', { name: 'category breadcrumb' })).toBeVisible()
     console.log('[synthetic] login succeeded, browse page loaded')
   })
 
-  await test.step('open the seeded Duomo image and assert DZI + tile responses', async () => {
+  await test.step('navigate to configured image and assert DZI + tile responses', async () => {
+    const tileGrid = page.getByRole('region', { name: 'Sortable tile grid' })
+
+    for (const categoryName of categoryPath) {
+      const categoryButton = tileGrid
+        .getByRole('button')
+        .filter({ has: page.getByText(categoryName, { exact: true }) })
+        .first()
+      await expect(categoryButton, `category not visible: ${categoryName}`).toBeVisible({
+        timeout: 20000,
+      })
+      await categoryButton.click()
+    }
+
+    await expect(page).toHaveURL((url) => {
+      const categoryIds = url.searchParams.get('cat')?.split(',').filter(Boolean) ?? []
+      return url.pathname === '/' && categoryIds.length === categoryPath.length
+    })
+
+    const image = page.getByAltText(imageName, { exact: true }).first()
+    await expect(image, `image not visible: ${imageName}`).toBeVisible({ timeout: 20000 })
+
     // Register the network waits immediately before triggering the image load
     // so their 30s timeout budget covers only tile fetching, not the preceding
     // login/navigation. OpenSeadragon fetches image.dzi first, then tiles.
@@ -81,10 +107,12 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
       { timeout: 30000 },
     )
 
-    // Open the seeded Duomo image. Using the image alt text avoids fragile
-    // CSS selectors when Material UI rendering changes.
-    await page.locator('img[alt="Duomo di Milano"]').first().click()
-    await expect(page).toHaveURL(/image=1/)
+    await image.click()
+    await expect(page).toHaveURL((url) => {
+      const imageId = url.searchParams.get('image')
+      return url.pathname === '/' && imageId !== null && /^\d+$/.test(imageId)
+    })
+    console.log(`[synthetic] opened configured image: ${categoryPath.join(' / ')} / ${imageName}`)
 
     // The viewer container should contain an OpenSeadragon canvas.
     await expect(page.locator('canvas')).toBeVisible({ timeout: 20000 })
