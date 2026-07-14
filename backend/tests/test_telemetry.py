@@ -10,10 +10,19 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.routers.telemetry import (
+    SyntheticResultIngestResponse,
     TELEMETRY_SCHEMA_VERSION,
     TelemetryBatch,
     TelemetryEvent,
+    ingest_synthetic_result,
     ingest_telemetry_events,
+)
+from app.synthetic_result import (
+    StaleSyntheticResultError,
+    StoredSyntheticJourneyState,
+    SyntheticJourneyResult,
+    SyntheticJourneyStep,
+    SyntheticResultStorageUnavailableError,
 )
 
 
@@ -274,3 +283,112 @@ async def test_telemetry_rejects_oversized_event_name() -> None:
     """Event names exceeding the max length are rejected during validation."""
     with pytest.raises(ValueError):
         TelemetryEvent(event="x" * 101, outcome="success")
+
+
+def _make_synthetic_result(
+    *,
+    success: bool = True,
+    failure_code: str | None = None,
+) -> SyntheticJourneyResult:
+    started_at = "2026-07-14T08:00:00Z"
+    completed_at = "2026-07-14T08:00:03Z"
+    return SyntheticJourneyResult(
+        event_version=1,
+        started_at=started_at,
+        completed_at=completed_at,
+        success=success,
+        duration_ms=3000,
+        failure_code=failure_code,
+        component_version="1.2.3",
+        steps=[
+            SyntheticJourneyStep(name="frontend", success=True, duration_ms=200),
+            SyntheticJourneyStep(name="login", success=True, duration_ms=300),
+        ],
+    )
+
+
+async def test_synthetic_result_requires_synthetic_account() -> None:
+    request = _make_request()
+    user = SimpleNamespace(id=7, role="student", metadata_={})
+
+    with pytest.raises(HTTPException) as exc_info:
+        await ingest_synthetic_result(
+            result=_make_synthetic_result(), request=request, user=user
+        )
+
+    assert exc_info.value.status_code == 403
+
+
+async def test_synthetic_result_stored_and_logged(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+    result = _make_synthetic_result()
+    request = _make_request(
+        traceparent="00-1234567890abcdef1234567890abcdef-1234567890abcdef-01"
+    )
+    user = SimpleNamespace(id=9, role="student", metadata_={"synthetic": True})
+    stored_state = StoredSyntheticJourneyState(
+        latest_result=result,
+        last_success_completed_at=result.completed_at,
+        updated_at=result.completed_at,
+    )
+
+    with patch(
+        "app.routers.telemetry.store_synthetic_result",
+        new_callable=AsyncMock,
+        return_value=stored_state,
+    ):
+        response = await ingest_synthetic_result(
+            result=result, request=request, user=user
+        )
+
+    assert response == SyntheticResultIngestResponse(
+        status="stored", completed_at=result.completed_at.isoformat()
+    )
+    log = [r for r in caplog.records if r.message == "synthetic journey result stored"][0]
+    assert getattr(log, "event.name") == "synthetic.journey.result"
+    assert getattr(log, "event.synthetic") is True
+    assert getattr(log, "synthetic.component_version") == "1.2.3"
+    assert getattr(log, "trace.parent") == request.headers.get("traceparent")
+
+
+async def test_synthetic_result_rejects_stale_runs() -> None:
+    request = _make_request()
+    user = SimpleNamespace(id=9, role="student", metadata_={"synthetic": True})
+    latest_completed_at = _make_synthetic_result().completed_at
+
+    with patch(
+        "app.routers.telemetry.store_synthetic_result",
+        new_callable=AsyncMock,
+        side_effect=StaleSyntheticResultError(latest_completed_at),
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await ingest_synthetic_result(
+                result=_make_synthetic_result(
+                    success=False,
+                    failure_code="tile_failed",
+                ),
+                request=request,
+                user=user,
+            )
+
+    assert exc_info.value.status_code == 409
+    assert latest_completed_at.isoformat() in exc_info.value.detail
+
+
+async def test_synthetic_result_maps_storage_errors() -> None:
+    request = _make_request()
+    user = SimpleNamespace(id=9, role="student", metadata_={"synthetic": True})
+
+    with patch(
+        "app.routers.telemetry.store_synthetic_result",
+        new_callable=AsyncMock,
+        side_effect=SyntheticResultStorageUnavailableError,
+    ):
+        with pytest.raises(HTTPException) as exc_info:
+            await ingest_synthetic_result(
+                result=_make_synthetic_result(), request=request, user=user
+            )
+
+    assert exc_info.value.status_code == 503
