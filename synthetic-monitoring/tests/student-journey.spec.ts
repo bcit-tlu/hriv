@@ -70,10 +70,11 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
 
     // The browse root intentionally has no ?page= parameter.
     await expect(page).toHaveURL((url) => url.pathname === '/' && !url.searchParams.has('page'))
+    await expect(page.getByRole('navigation', { name: 'category breadcrumb' })).toBeVisible()
     console.log('[synthetic] login succeeded, browse page loaded')
   })
 
-  await test.step('open the configured category and image', async () => {
+  await test.step('navigate to configured image and assert DZI + tile responses', async () => {
     for (const categoryName of categoryPath) {
       const categoryButton = page
         .getByRole('button')
