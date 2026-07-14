@@ -33,6 +33,8 @@ class _BackupTestCase(unittest.TestCase):
         "BACKUP_STALE_HOURS",
         "DATABASE_URL",
         "DATA_DIR",
+        "RESTORE_TEST_DATABASE_URL",
+        "RESTORE_TEST_DATA_DIR",
     )
 
     def setUp(self):
@@ -136,7 +138,8 @@ class RestoreTestCase(_BackupTestCase):
         (archive_data / "tiles" / "restored.dzi").write_bytes(b"restored tiles")
         archive = self._build_archive(archive_data, backup_mode="development")
 
-        self.assertTrue(backup._restore_from_archive(archive))
+        with patch.object(backup, "_local_backup_dir", return_value=self.tmp / "backups"):
+            self.assertTrue(backup._restore_from_archive(archive))
         self.assertEqual(
             (self.data_dir / "source_images" / "restored.jpg").read_bytes(),
             b"restored source",
@@ -146,6 +149,9 @@ class RestoreTestCase(_BackupTestCase):
             b"restored tiles",
         )
         self.assertFalse((self.data_dir / "source_images" / "existing.jpg").exists())
+        restore_state = json.loads((self.tmp / "backups" / "RESTORE_STATE.json").read_text())
+        self.assertTrue(restore_state["operator"]["database"]["success"])
+        self.assertTrue(restore_state["operator"]["filesystem"]["success"])
 
     @patch("backup.subprocess.run", return_value=MagicMock(returncode=0))
     def test_production_restore_preserves_tiles(self, _mock_run):
@@ -158,7 +164,8 @@ class RestoreTestCase(_BackupTestCase):
         (archive_data / "tiles" / "restored.dzi").write_bytes(b"restored tiles")
         archive = self._build_archive(archive_data, backup_mode="development")
 
-        self.assertTrue(backup._restore_from_archive(archive))
+        with patch.object(backup, "_local_backup_dir", return_value=self.tmp / "backups"):
+            self.assertTrue(backup._restore_from_archive(archive))
         self.assertEqual(
             (self.data_dir / "source_images" / "restored.jpg").read_bytes(),
             b"restored source",
@@ -180,11 +187,60 @@ class RestoreTestCase(_BackupTestCase):
         archive = self._build_archive(archive_data, backup_mode="development")
 
         with self.assertLogs("hriv-backup", level="WARNING") as cm:
-            self.assertTrue(backup._restore_from_archive(archive))
+            with patch.object(backup, "_local_backup_dir", return_value=self.tmp / "backups"):
+                self.assertTrue(backup._restore_from_archive(archive))
         self.assertTrue(
             any("mismatch" in msg.lower() for msg in cm.output),
             f"Expected mismatch warning, got: {cm.output}",
         )
+
+    @patch("backup.subprocess.run", return_value=MagicMock(returncode=0))
+    def test_restore_persists_state_for_operator_restore(self, _mock_run):
+        self._reload({"BACKUP_MODE": "development", "DATA_DIR": str(self.data_dir)})
+        archive_data = self.tmp / "archive_state"
+        archive_data.mkdir()
+        (archive_data / "source_images").mkdir()
+        (archive_data / "source_images" / "restored.jpg").write_bytes(b"restored source")
+        archive = self._build_archive(archive_data, backup_mode="development")
+
+        with patch.object(backup, "_local_backup_dir", return_value=self.tmp / "backups"):
+            self.assertTrue(backup._restore_from_archive(archive))
+
+        state = json.loads((self.tmp / "backups" / "RESTORE_STATE.json").read_text())
+        self.assertEqual(state["schema_version"], 1)
+        self.assertEqual(state["operator"]["database"]["archive_name"], archive.name)
+        self.assertTrue(state["operator"]["database"]["success"])
+        self.assertTrue(state["operator"]["filesystem"]["success"])
+        self.assertIsNone(state["test"]["database"]["started_at"])
+
+    @patch("backup.subprocess.run", return_value=MagicMock(returncode=0))
+    def test_run_restore_test_uses_separate_targets(self, _mock_run):
+        test_data_dir = self.tmp / "restore-test-data"
+        self._reload(
+            {
+                "BACKUP_MODE": "development",
+                "DATA_DIR": str(self.data_dir),
+                "RESTORE_TEST_DATABASE_URL": "postgresql://restore:test@db:5432/restore_test",
+                "RESTORE_TEST_DATA_DIR": str(test_data_dir),
+            }
+        )
+        archive_data = self.tmp / "archive_test"
+        archive_data.mkdir()
+        (archive_data / "source_images").mkdir()
+        (archive_data / "source_images" / "restored.jpg").write_bytes(b"restored source")
+        archive = self._build_archive(archive_data, backup_mode="development")
+        local_backups = self.tmp / "backups"
+        local_backups.mkdir()
+        shutil.copy2(archive, local_backups / archive.name)
+
+        with patch.object(backup, "_local_backup_dir", return_value=local_backups):
+            self.assertTrue(backup.run_restore_test(archive.name))
+
+        self.assertTrue((test_data_dir / "source_images" / "restored.jpg").exists())
+        self.assertTrue((self.data_dir / "source_images" / "existing.jpg").exists())
+        state = json.loads((local_backups / "RESTORE_STATE.json").read_text())
+        self.assertTrue(state["test"]["database"]["success"])
+        self.assertTrue(state["test"]["filesystem"]["success"])
 
 
 class BackupRunTestCase(_BackupTestCase):

@@ -1,10 +1,4 @@
-"""Prometheus-format backup metrics for the /api/metrics endpoint.
-
-These metrics are intentionally separate from the OpenTelemetry auto-
-instrumented metrics emitted by the backend. Backup execution happens on a
-daily cadence, so the backend exposes the latest known backup state and cached
-archive-retention summary as scrape-time gauges.
-"""
+"""Prometheus-format backup and restore metrics for the /api/metrics endpoint."""
 
 from __future__ import annotations
 
@@ -19,6 +13,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, CollectorRegistry, Gauge, gen
 from .backup_access import (
     BackupRestoreNotConfiguredError,
     get_backup_observability_state,
+    get_restore_observability_state,
     list_retained_backup_archives,
 )
 
@@ -28,11 +23,16 @@ _registry = CollectorRegistry()
 _render_lock = Lock()
 
 _BACKUP_TYPES = ("database", "filesystem")
+_RESTORE_TYPES = ("database", "filesystem")
+_RESTORE_PURPOSES = ("operator", "test")
 _CACHE_TTL_SECONDS = 300
+
 _state_cache: tuple[dict | None, bool, float] | None = None
 _state_cache_lock = Lock()
 _archive_cache: tuple[dict[str, dict[str, Any]] | None, bool, float, float | None, bool] | None = None
 _archive_cache_lock = Lock()
+_restore_cache: tuple[dict | None, bool, float] | None = None
+_restore_cache_lock = Lock()
 
 
 def _parse_timestamp(value: object) -> datetime | None:
@@ -55,7 +55,9 @@ def _parse_numeric(value: object) -> float | None:
     return None
 
 
-def _backup_outcome_value(section: dict[str, object]) -> float:
+def _attempt_outcome_value(section: dict[str, object] | None) -> float:
+    if not isinstance(section, dict):
+        return -1.0
     success = section.get("success")
     if success is True:
         return 1.0
@@ -83,20 +85,36 @@ def _fetch_backup_state() -> tuple[dict | None, bool]:
             configured = False
         except Exception:  # noqa: BLE001 - never break the metrics scrape
             logger.exception("Failed to refresh backup observability state")
-            state = None
 
         _state_cache = (state, configured, monotonic())
         return _state_cache[:2]
+
+
+def _fetch_restore_state() -> tuple[dict | None, bool]:
+    global _restore_cache
+
+    with _restore_cache_lock:
+        if _restore_cache is not None and monotonic() - _restore_cache[2] < _CACHE_TTL_SECONDS:
+            return _restore_cache[:2]
+
+        configured = True
+        state: dict | None = None
+        try:
+            state = get_restore_observability_state()
+        except BackupRestoreNotConfiguredError:
+            configured = False
+        except Exception:  # noqa: BLE001 - never break the metrics scrape
+            logger.exception("Failed to refresh restore observability state")
+
+        _restore_cache = (state, configured, monotonic())
+        return _restore_cache[:2]
 
 
 def _fetch_archive_summary() -> tuple[dict[str, dict[str, Any]] | None, bool, float | None, bool]:
     global _archive_cache
 
     with _archive_cache_lock:
-        if (
-            _archive_cache is not None
-            and monotonic() - _archive_cache[2] < _CACHE_TTL_SECONDS
-        ):
+        if _archive_cache is not None and monotonic() - _archive_cache[2] < _CACHE_TTL_SECONDS:
             return (_archive_cache[0], _archive_cache[1], _archive_cache[3], _archive_cache[4])
 
         configured = True
@@ -203,7 +221,33 @@ _backup_archive_listing_last_outcome = Gauge(
     registry=_registry,
 )
 
-_CONTENT_TYPE = CONTENT_TYPE_LATEST
+_restore_last_attempt = Gauge(
+    "hriv_restore_last_attempt_timestamp_seconds",
+    "Unix timestamp when the latest restore attempt for this restore type and purpose started",
+    labelnames=("restore_type", "purpose"),
+    registry=_registry,
+)
+
+_restore_last_success = Gauge(
+    "hriv_restore_last_success_timestamp_seconds",
+    "Unix timestamp when the latest successful restore for this restore type and purpose completed",
+    labelnames=("restore_type", "purpose"),
+    registry=_registry,
+)
+
+_restore_last_outcome = Gauge(
+    "hriv_restore_last_outcome",
+    "Outcome of the latest restore attempt for this restore type and purpose: 1 success, 0 failure, -1 unknown",
+    labelnames=("restore_type", "purpose"),
+    registry=_registry,
+)
+
+_restore_last_duration = Gauge(
+    "hriv_restore_last_duration_seconds",
+    "Duration in seconds of the latest restore attempt for this restore type and purpose",
+    labelnames=("restore_type", "purpose"),
+    registry=_registry,
+)
 
 
 def _empty_summary() -> dict[str, dict[str, Any]]:
@@ -217,10 +261,7 @@ def _empty_summary() -> dict[str, dict[str, Any]]:
     }
 
 
-def _compatibility_backup_age(
-    configured: bool,
-    state: dict | None,
-) -> float:
+def _compatibility_backup_age(configured: bool, state: dict | None) -> float:
     if not configured:
         return 0.0
 
@@ -241,16 +282,24 @@ def _compatibility_backup_age(
     return max(ages, default=float("inf"))
 
 
+def _purpose_section(state: dict | None, purpose: str) -> dict | None:
+    if not isinstance(state, dict):
+        return None
+    section = state.get(purpose)
+    return section if isinstance(section, dict) else None
+
+
 def render_backup_metrics() -> tuple[bytes, str]:
-    """Return Prometheus exposition text and content type for backup state."""
-    state, configured = _fetch_backup_state()
+    """Return Prometheus exposition text for backup and restore state."""
+    backup_state, backup_configured = _fetch_backup_state()
     archive_summary, archive_configured, archive_last_refresh_monotonic, archive_fetch_succeeded = (
         _fetch_archive_summary()
     )
+    restore_state, restore_configured = _fetch_restore_state()
 
     with _render_lock:
-        _backup_configured.set(1 if configured else 0)
-        _backup_age.set(_compatibility_backup_age(configured, state))
+        _backup_configured.set(1 if backup_configured else 0)
+        _backup_age.set(_compatibility_backup_age(backup_configured, backup_state))
 
         if not archive_configured:
             _backup_archive_listing_last_outcome.set(-1)
@@ -259,52 +308,73 @@ def render_backup_metrics() -> tuple[bytes, str]:
         else:
             _backup_archive_listing_last_outcome.set(1 if archive_fetch_succeeded else 0)
             if archive_last_refresh_monotonic is None:
-                _backup_archive_listing_last_refresh.set(float("nan"))
-                archive_summary = archive_summary or _empty_summary()
+                _backup_archive_listing_last_refresh.set(0)
             else:
-                refreshed_at = datetime.now(timezone.utc).timestamp() - max(
-                    monotonic() - archive_last_refresh_monotonic,
-                    0.0,
+                _backup_archive_listing_last_refresh.set(
+                    max(datetime.now(timezone.utc).timestamp() - (monotonic() - archive_last_refresh_monotonic), 0.0)
                 )
-                _backup_archive_listing_last_refresh.set(refreshed_at)
-                archive_summary = archive_summary or _empty_summary()
+            archive_summary = archive_summary or _empty_summary()
 
         for backup_type in _BACKUP_TYPES:
-            labels = {"backup_type": backup_type}
-            section = state.get(backup_type) if isinstance(state, dict) else {}
-            if not isinstance(section, dict):
-                section = {}
-
-            attempt_started = _parse_timestamp(section.get("started_at"))
-            success_completed = _parse_timestamp(section.get("last_success_completed_at"))
-            duration = _parse_numeric(section.get("duration_seconds"))
-            size = _parse_numeric(section.get("size_bytes"))
+            section = backup_state.get(backup_type) if isinstance(backup_state, dict) else None
+            summary = archive_summary.get(backup_type, {})
 
             _set_or_nan(
-                _backup_last_attempt.labels(**labels),
-                attempt_started.timestamp() if attempt_started is not None else None,
+                _backup_last_attempt.labels(backup_type=backup_type),
+                (_parse_timestamp(section.get("started_at")).timestamp() if isinstance(section, dict) and _parse_timestamp(section.get("started_at")) else None),
             )
             _set_or_nan(
-                _backup_last_success.labels(**labels),
-                success_completed.timestamp() if success_completed is not None else None,
+                _backup_last_success.labels(backup_type=backup_type),
+                (
+                    _parse_timestamp(section.get("last_success_completed_at")).timestamp()
+                    if isinstance(section, dict) and _parse_timestamp(section.get("last_success_completed_at"))
+                    else None
+                ),
             )
-            _backup_last_outcome.labels(**labels).set(_backup_outcome_value(section))
-            _set_or_nan(_backup_last_duration.labels(**labels), duration)
-            _set_or_nan(_backup_last_size.labels(**labels), size)
-
-            archive_data = archive_summary.get(backup_type, {})
-            retained_count = archive_data.get("count")
-            _backup_archives_retained.labels(**labels).set(float(retained_count or 0))
-
-            oldest = archive_data.get("oldest_created_at")
-            newest = archive_data.get("newest_created_at")
+            _backup_last_outcome.labels(backup_type=backup_type).set(_attempt_outcome_value(section))
             _set_or_nan(
-                _backup_oldest_archive.labels(**labels),
-                oldest.timestamp() if isinstance(oldest, datetime) else None,
+                _backup_last_duration.labels(backup_type=backup_type),
+                _parse_numeric(section.get("duration_seconds")) if isinstance(section, dict) else None,
             )
             _set_or_nan(
-                _backup_newest_archive.labels(**labels),
-                newest.timestamp() if isinstance(newest, datetime) else None,
+                _backup_last_size.labels(backup_type=backup_type),
+                _parse_numeric(section.get("size_bytes")) if isinstance(section, dict) else None,
+            )
+            _backup_archives_retained.labels(backup_type=backup_type).set(float(summary.get("count", 0) or 0))
+            _set_or_nan(
+                _backup_oldest_archive.labels(backup_type=backup_type),
+                summary["oldest_created_at"].timestamp() if isinstance(summary.get("oldest_created_at"), datetime) else None,
+            )
+            _set_or_nan(
+                _backup_newest_archive.labels(backup_type=backup_type),
+                summary["newest_created_at"].timestamp() if isinstance(summary.get("newest_created_at"), datetime) else None,
             )
 
-        return generate_latest(_registry), _CONTENT_TYPE
+        restore_available = restore_configured and isinstance(restore_state, dict)
+        for purpose in _RESTORE_PURPOSES:
+            purpose_state = _purpose_section(restore_state, purpose) if restore_available else None
+            for restore_type in _RESTORE_TYPES:
+                section = purpose_state.get(restore_type) if isinstance(purpose_state, dict) else None
+                attempt_started = (
+                    _parse_timestamp(section.get("started_at")) if isinstance(section, dict) else None
+                )
+                success_completed = (
+                    _parse_timestamp(section.get("last_success_completed_at")) if isinstance(section, dict) else None
+                )
+                _set_or_nan(
+                    _restore_last_attempt.labels(restore_type=restore_type, purpose=purpose),
+                    attempt_started.timestamp() if attempt_started else None,
+                )
+                _set_or_nan(
+                    _restore_last_success.labels(restore_type=restore_type, purpose=purpose),
+                    success_completed.timestamp() if success_completed else None,
+                )
+                _restore_last_outcome.labels(restore_type=restore_type, purpose=purpose).set(
+                    _attempt_outcome_value(section)
+                )
+                _set_or_nan(
+                    _restore_last_duration.labels(restore_type=restore_type, purpose=purpose),
+                    _parse_numeric(section.get("duration_seconds")) if isinstance(section, dict) else None,
+                )
+
+        return generate_latest(_registry), CONTENT_TYPE_LATEST

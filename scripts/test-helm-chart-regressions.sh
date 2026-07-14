@@ -149,6 +149,25 @@ fi
 assert_contains "$backend_guard_output" "Recreate" \
   "backend deployment should explain that ReadWriteOnce persistence requires Recreate"
 
+backend_worker_otel_manifest="$(helm template test charts/backend \
+  --set redis.enabled=true \
+  --set redis.worker.enabled=true \
+  --set observability.openTelemetry.enabled=true)"
+
+backend_worker_deployment="$(extract_yaml_doc "$backend_worker_otel_manifest" "Deployment" "test-hriv-backend-worker")"
+assert_contains "$backend_worker_deployment" 'name: OTEL_SERVICE_NAME' \
+  "backend worker deployment should set OTEL_SERVICE_NAME when OpenTelemetry is enabled"
+assert_contains "$backend_worker_deployment" 'value: "hriv-backend-worker"' \
+  "backend worker deployment should identify itself as hriv-backend-worker"
+assert_contains "$backend_worker_deployment" 'name: WORKER_IMAGE_TAG' \
+  "backend worker deployment should surface the worker image tag for build-info metrics"
+
+backend_frontend_version_manifest="$(helm template test charts/backend)"
+assert_contains "$backend_frontend_version_manifest" 'name: frontend-version' \
+  "backend deployment should mount the frontend version ConfigMap for build-info metrics"
+assert_contains "$backend_frontend_version_manifest" 'name: FRONTEND_VERSION_FILE' \
+  "backend deployment should expose FRONTEND_VERSION_FILE when the frontend version ConfigMap is enabled"
+
 frontend_zone_aa_manifest="$(helm template test charts/frontend \
   --set scheduling.zoneAntiAffinity.enabled=true \
   --set replicaCount=2)"
@@ -166,6 +185,10 @@ frontend_default_manifest="$(helm template test charts/frontend)"
 frontend_default_deployment="$(extract_yaml_doc "$frontend_default_manifest" "Deployment" "test-hriv-frontend")"
 assert_not_contains "$frontend_default_deployment" "strategy:" \
   "frontend deployment should omit strategy when no rollout override is needed"
+assert_contains "$frontend_default_manifest" "kind: ConfigMap" \
+  "frontend chart should publish a version ConfigMap for backend build-info metrics"
+assert_contains "$frontend_default_manifest" "name: hriv-frontend-version" \
+  "frontend chart should render the default frontend version ConfigMap"
 assert_contains "$frontend_default_manifest" "location = /api/metrics {" \
   "frontend nginx should intercept the backend-only Prometheus metrics endpoint"
 assert_contains "$frontend_default_manifest" "return 404;" \

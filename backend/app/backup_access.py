@@ -79,6 +79,10 @@ def _backup_state_blob_name() -> str:
     return f"{_backup_prefix()}BACKUP_STATE.json"
 
 
+def _restore_state_blob_name() -> str:
+    return f"{_backup_prefix()}RESTORE_STATE.json"
+
+
 def _created_at_from_snapshot_name(snapshot_name: str) -> datetime | None:
     match = _SNAPSHOT_NAME_RE.search(_snapshot_stem(snapshot_name))
     if not match:
@@ -210,6 +214,23 @@ def get_backup_observability_state() -> dict | None:
         return state
 
     return _legacy_backup_state_from_marker(get_last_success_marker())
+
+
+def get_restore_observability_state() -> dict | None:
+    """Return the versioned restore observability state when available."""
+    try:
+        state = _download_json_blob(_restore_state_blob_name())
+    except BackupRestoreNotConfiguredError:
+        raise
+    except ResourceNotFoundError:
+        return None
+    except BackupSnapshotManifestError:
+        logger.warning("Failed to parse restore observability state")
+        return None
+
+    if isinstance(state, dict) and state.get("schema_version") == 1:
+        return state
+    return None
 
 
 def _classify_backup_types(manifest: dict) -> dict[str, bool]:

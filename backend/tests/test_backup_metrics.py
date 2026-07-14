@@ -16,6 +16,8 @@ def _clear_caches() -> None:
         backup_metrics._state_cache = None
     with backup_metrics._archive_cache_lock:
         backup_metrics._archive_cache = None
+    with backup_metrics._restore_cache_lock:
+        backup_metrics._restore_cache = None
 
 
 @pytest.fixture(autouse=True)
@@ -78,12 +80,55 @@ def _archive_summary() -> dict:
     }
 
 
+def _restore_state() -> dict:
+    return {
+        "schema_version": 1,
+        "operator": {
+            "database": {
+                "started_at": "2026-07-13T09:00:00+00:00",
+                "completed_at": "2026-07-13T09:01:00+00:00",
+                "success": True,
+                "duration_seconds": 60,
+                "last_success_started_at": "2026-07-13T09:00:00+00:00",
+                "last_success_completed_at": "2026-07-13T09:01:00+00:00",
+            },
+            "filesystem": {
+                "started_at": "2026-07-13T09:01:00+00:00",
+                "completed_at": "2026-07-13T09:04:00+00:00",
+                "success": False,
+                "duration_seconds": 180,
+                "last_success_started_at": "2026-07-12T09:01:00+00:00",
+                "last_success_completed_at": "2026-07-12T09:03:00+00:00",
+            },
+        },
+        "test": {
+            "database": {
+                "started_at": "2026-07-13T10:00:00+00:00",
+                "completed_at": "2026-07-13T10:00:30+00:00",
+                "success": True,
+                "duration_seconds": 30,
+                "last_success_started_at": "2026-07-13T10:00:00+00:00",
+                "last_success_completed_at": "2026-07-13T10:00:30+00:00",
+            },
+            "filesystem": {
+                "started_at": "2026-07-13T10:00:30+00:00",
+                "completed_at": "2026-07-13T10:03:00+00:00",
+                "success": True,
+                "duration_seconds": 150,
+                "last_success_started_at": "2026-07-13T10:00:30+00:00",
+                "last_success_completed_at": "2026-07-13T10:03:00+00:00",
+            },
+        },
+    }
+
+
 async def test_render_backup_metrics_exposes_split_backup_state() -> None:
     state = _state()
     archives = _archive_summary()
 
     with (
         patch("app.backup_metrics.get_backup_observability_state", return_value=state),
+        patch("app.backup_metrics.get_restore_observability_state", return_value=_restore_state()),
         patch("app.backup_metrics.list_retained_backup_archives", return_value=archives),
     ):
         content, _ = backup_metrics.render_backup_metrics()
@@ -97,6 +142,8 @@ async def test_render_backup_metrics_exposes_split_backup_state() -> None:
     assert b'hriv_backup_archives_retained{backup_type="database"} 3.0' in content
     assert b'hriv_backup_oldest_archive_timestamp_seconds{backup_type="filesystem"}' in content
     assert b'hriv_backup_archive_listing_last_outcome 1.0' in content
+    assert b'hriv_restore_last_outcome{purpose="operator",restore_type="filesystem"} 0.0' in content
+    assert b'hriv_restore_last_duration_seconds{purpose="test",restore_type="database"} 30.0' in content
 
 
 async def test_render_backup_metrics_preserves_failed_attempt_with_older_success() -> None:
@@ -104,6 +151,7 @@ async def test_render_backup_metrics_preserves_failed_attempt_with_older_success
 
     with (
         patch("app.backup_metrics.get_backup_observability_state", return_value=state),
+        patch("app.backup_metrics.get_restore_observability_state", return_value=_restore_state()),
         patch("app.backup_metrics.list_retained_backup_archives", return_value=_archive_summary()),
     ):
         content, _ = backup_metrics.render_backup_metrics()
@@ -115,6 +163,7 @@ async def test_render_backup_metrics_preserves_failed_attempt_with_older_success
 async def test_marker_cache_avoids_repeated_calls() -> None:
     with (
         patch("app.backup_metrics.get_backup_observability_state", return_value=_state()) as state_fetch,
+        patch("app.backup_metrics.get_restore_observability_state", return_value=_restore_state()) as restore_fetch,
         patch("app.backup_metrics.list_retained_backup_archives", return_value=_archive_summary()) as archive_fetch,
     ):
         backup_metrics.render_backup_metrics()
@@ -123,6 +172,7 @@ async def test_marker_cache_avoids_repeated_calls() -> None:
 
     assert state_fetch.call_count == 1
     assert archive_fetch.call_count == 1
+    assert restore_fetch.call_count == 1
 
 
 async def test_cache_refreshes_after_ttl(monkeypatch) -> None:
@@ -135,6 +185,7 @@ async def test_cache_refreshes_after_ttl(monkeypatch) -> None:
 
     with (
         patch("app.backup_metrics.get_backup_observability_state", return_value=_state()) as state_fetch,
+        patch("app.backup_metrics.get_restore_observability_state", return_value=_restore_state()) as restore_fetch,
         patch("app.backup_metrics.list_retained_backup_archives", return_value=_archive_summary()) as archive_fetch,
     ):
         cache_time[0] = 0.0
@@ -146,12 +197,17 @@ async def test_cache_refreshes_after_ttl(monkeypatch) -> None:
 
     assert state_fetch.call_count == 2
     assert archive_fetch.call_count == 2
+    assert restore_fetch.call_count == 2
 
 
 async def test_not_configured_reports_disabled_state() -> None:
     with (
         patch(
             "app.backup_metrics.get_backup_observability_state",
+            side_effect=BackupRestoreNotConfiguredError,
+        ),
+        patch(
+            "app.backup_metrics.get_restore_observability_state",
             side_effect=BackupRestoreNotConfiguredError,
         ),
         patch(
@@ -169,6 +225,7 @@ async def test_not_configured_reports_disabled_state() -> None:
 async def test_missing_state_reports_infinite_age() -> None:
     with (
         patch("app.backup_metrics.get_backup_observability_state", return_value=None),
+        patch("app.backup_metrics.get_restore_observability_state", return_value=None),
         patch("app.backup_metrics.list_retained_backup_archives", return_value=_archive_summary()),
     ):
         content, _ = backup_metrics.render_backup_metrics()
@@ -188,6 +245,7 @@ async def test_archive_listing_failure_preserves_stale_summary_without_zeroing()
     with patch("app.backup_metrics.monotonic", _fake_monotonic):
         with (
             patch("app.backup_metrics.get_backup_observability_state", return_value=state),
+            patch("app.backup_metrics.get_restore_observability_state", return_value=_restore_state()),
             patch("app.backup_metrics.list_retained_backup_archives", return_value=archives),
         ):
             cache_time[0] = 0.0
@@ -195,6 +253,7 @@ async def test_archive_listing_failure_preserves_stale_summary_without_zeroing()
 
         with (
             patch("app.backup_metrics.get_backup_observability_state", return_value=state),
+            patch("app.backup_metrics.get_restore_observability_state", return_value=_restore_state()),
             patch(
                 "app.backup_metrics.list_retained_backup_archives",
                 side_effect=RuntimeError("azure listing failed"),
@@ -216,7 +275,10 @@ async def test_archive_listing_failure_is_cached_until_ttl_expires(monkeypatch) 
 
     monkeypatch.setattr("app.backup_metrics.monotonic", _fake_monotonic)
 
-    with patch("app.backup_metrics.get_backup_observability_state", return_value=state):
+    with (
+        patch("app.backup_metrics.get_backup_observability_state", return_value=state),
+        patch("app.backup_metrics.get_restore_observability_state", return_value=_restore_state()),
+    ):
         with patch(
             "app.backup_metrics.list_retained_backup_archives",
             side_effect=RuntimeError("azure listing failed"),
@@ -236,9 +298,22 @@ async def test_invalid_numeric_fields_render_nan() -> None:
 
     with (
         patch("app.backup_metrics.get_backup_observability_state", return_value=state),
+        patch("app.backup_metrics.get_restore_observability_state", return_value=_restore_state()),
         patch("app.backup_metrics.list_retained_backup_archives", return_value=_archive_summary()),
     ):
         content, _ = backup_metrics.render_backup_metrics()
 
     assert b'hriv_backup_last_duration_seconds{backup_type="database"} NaN' in content
     assert b'hriv_backup_last_attempt_timestamp_seconds{backup_type="filesystem"} NaN' in content
+
+
+async def test_restore_metrics_render_nan_for_missing_state() -> None:
+    with (
+        patch("app.backup_metrics.get_backup_observability_state", return_value=_state()),
+        patch("app.backup_metrics.get_restore_observability_state", return_value={}),
+        patch("app.backup_metrics.list_retained_backup_archives", return_value=_archive_summary()),
+    ):
+        content, _ = backup_metrics.render_backup_metrics()
+
+    assert b'hriv_restore_last_attempt_timestamp_seconds{purpose="test",restore_type="database"} NaN' in content
+    assert b'hriv_restore_last_outcome{purpose="operator",restore_type="database"} -1.0' in content

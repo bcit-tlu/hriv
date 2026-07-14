@@ -13,6 +13,7 @@ versionConfigMap:
   enabled: true
   name: hriv-backup-version
   key: version
+  imageTagKey: image-tag
 
 # Name of the backend chart Secret containing the database URI.
 # Defaults to the Secret created by the backend chart.
