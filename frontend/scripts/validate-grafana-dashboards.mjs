@@ -121,26 +121,24 @@ for (const filename of jsonFiles) {
     }
   }
 
-  if (coreDashboards.has(filename)) {
-    const variables = dashboard.templating?.list ?? []
-    const variableNames = new Set(variables.map((variable) => variable.name))
-    for (const variableName of requiredSelectorVariables.get(filename) ?? []) {
-      if (!variableNames.has(variableName)) {
-        fail(`${filename} is missing required variable "${variableName}"`)
-      }
+  const variables = dashboard.templating?.list ?? []
+  const variableNames = new Set(variables.map((variable) => variable.name))
+  for (const variableName of requiredSelectorVariables.get(filename) ?? []) {
+    if (!variableNames.has(variableName)) {
+      fail(`${filename} is missing required variable "${variableName}"`)
     }
+  }
 
-    const targetExpressions = collectTargetExpressions(dashboard)
-    for (const variable of variables) {
-      if (selectorVariables.includes(variable.name) && variable.type === 'textbox') {
-        fail(`${filename} uses unrestricted textbox variable "${variable.name}"`)
-      }
-      if (
-        selectorVariables.includes(variable.name) &&
-        !targetExpressions.some((expr) => expr.includes(`\${${variable.name}}`))
-      ) {
-        fail(`${filename} declares selector "${variable.name}" but no panel query uses it`)
-      }
+  const targetExpressions = collectTargetExpressions(dashboard)
+  for (const variable of variables) {
+    if (selectorVariables.includes(variable.name) && variable.type === 'textbox') {
+      fail(`${filename} uses unrestricted textbox variable "${variable.name}"`)
+    }
+    if (
+      selectorVariables.includes(variable.name) &&
+      !targetExpressions.some((expr) => expr.includes(`\${${variable.name}}`))
+    ) {
+      fail(`${filename} declares selector "${variable.name}" but no panel query uses it`)
     }
   }
 
