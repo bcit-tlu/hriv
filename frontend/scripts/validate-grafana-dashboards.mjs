@@ -144,8 +144,9 @@ for (const filename of jsonFiles) {
     }
   }
 
+  const panels = collectPanels(dashboard.panels ?? [])
   const panelIds = new Set()
-  for (const panel of dashboard.panels ?? []) {
+  for (const panel of panels) {
     if (panel.id == null || panelIds.has(panel.id)) {
       fail(`${filename} has a missing or duplicate panel id`)
     }
@@ -165,7 +166,7 @@ for (const filename of jsonFiles) {
   }
 
   if (filename === 'hriv-data-and-recovery.json') {
-    const hasImageProcessingPanel = (dashboard.panels ?? []).some((panel) =>
+    const hasImageProcessingPanel = panels.some((panel) =>
       (panel.targets ?? []).some((target) =>
         (target.expr ?? '').includes('hriv_image_processing_'),
       ),
@@ -176,14 +177,14 @@ for (const filename of jsonFiles) {
   }
 
   if (filename === 'hriv-service-health.json') {
-    const titles = (dashboard.panels ?? []).map((panel) => panel.title)
+    const titles = panels.map((panel) => panel.title)
     if (!titles.includes('Image views vs failures')) {
       fail('hriv-service-health.json is missing the user-visible image health panel')
     }
   }
 
   if (filename === 'hriv-usage-and-experience.json') {
-    const privacyPanel = (dashboard.panels ?? []).find((panel) => panel.type === 'text')
+    const privacyPanel = panels.find((panel) => panel.type === 'text')
     const content = privacyPanel?.options?.content ?? ''
     if (!content.includes('No named-user panels are provisioned')) {
       fail('hriv-usage-and-experience.json is missing the privacy statement')

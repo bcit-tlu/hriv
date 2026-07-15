@@ -56,7 +56,8 @@ describe('ObservabilityErrorBoundary', () => {
     )
     const [telemetry] = emitFrontendErrorMock.mock.calls[0] ?? []
     expect(telemetry).toMatchObject({
-      dedupeKey: expect.stringContaining('react_render_error:Error:boom:'),
+      dedupeKey: expect.stringContaining('react_render_error:Error:boom:at ThrowOnRender'),
     })
+    expect(telemetry.dedupeKey.length).toBeLessThanOrEqual(240)
   })
 })

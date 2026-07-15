@@ -4,6 +4,27 @@ import Box from '@mui/material/Box'
 
 import { emitFrontendError } from '../observability'
 
+const MAX_DEDUPE_SEGMENT_LENGTH = 160
+
+function normalizeDedupeSegment(value: string | null | undefined): string {
+  const collapsed = value?.trim().replace(/\s+/g, ' ')
+  if (!collapsed) {
+    return 'none'
+  }
+  if (collapsed.length <= MAX_DEDUPE_SEGMENT_LENGTH) {
+    return collapsed
+  }
+  return `${collapsed.slice(0, MAX_DEDUPE_SEGMENT_LENGTH)}...`
+}
+
+function firstComponentFrame(componentStack: string | null | undefined): string {
+  const firstFrame = componentStack
+    ?.split('\n')
+    .map((line) => line.trim())
+    .find(Boolean)
+  return normalizeDedupeSegment(firstFrame)
+}
+
 interface ObservabilityErrorBoundaryProps {
   children: ReactNode
 }
@@ -25,12 +46,14 @@ export default class ObservabilityErrorBoundary extends Component<
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    const componentStack = errorInfo.componentStack?.trim() ?? 'none'
+    const errorName = normalizeDedupeSegment(error.name)
+    const errorMessage = normalizeDedupeSegment(error.message)
+    const componentFrame = firstComponentFrame(errorInfo.componentStack)
     emitFrontendError({
       action: 'render',
       error: error.name === 'Error' ? 'react' : `react_${error.name.toLowerCase()}`,
       errorCode: 'react_render_error',
-      dedupeKey: `react_render_error:${error.name}:${error.message}:${componentStack}`,
+      dedupeKey: `react_render_error:${errorName}:${errorMessage}:${componentFrame}`,
     })
   }
 
