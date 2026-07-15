@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.39.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.38.0...backend-v0.39.0) (2026-07-15)
+
+
+### Features
+
+* complete frontend observability events, ingestion, and docs ([#928](https://github.com/bcit-tlu/hriv/issues/928)) ([e2f59ae](https://github.com/bcit-tlu/hriv/commit/e2f59aef4b041641b538cf321b543b303bb6e7cd))
+
+
+### Bug Fixes
+
+* **observability:** consolidate HRIV Grafana dashboards ([#931](https://github.com/bcit-tlu/hriv/issues/931)) ([cf716cf](https://github.com/bcit-tlu/hriv/commit/cf716cf4ec22301419d6291aa81faddce9617057))
+
 ## [0.38.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.37.0...backend-v0.38.0) (2026-07-14)
 
 
