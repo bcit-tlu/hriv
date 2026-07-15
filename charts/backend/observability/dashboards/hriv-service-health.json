@@ -37,7 +37,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "## HRIV Service Health\n\nStart here for **student-visible health first**: can users open images, are failures rising, and is request latency stable? Generic pod CPU/memory is kept lower on the dashboard on purpose.\n\n- Use **Component** to focus on the backend/runtime slice that emitted the telemetry.\n- Use **User role** to separate broad student impact from instructor/admin activity.\n- Zero traffic can be normal during idle periods; treat synthetic monitoring and explicit failures as the primary availability signal.",
+        "content": "## HRIV Service Health\n\nStart here for **student-visible health first**: can users open images, are failures rising, and is request latency stable? Generic pod CPU/memory is kept lower on the dashboard on purpose.\n\n- Use **Component** to focus on the backend/runtime slice that emitted the telemetry.\n- Use **User role** to separate broad student impact from instructor/admin activity.\n- Zero traffic can be normal during idle periods; treat synthetic monitoring and explicit failures as the primary availability signal.\n\nThe standard **Namespace** and **Application version** variables are carried for cross-dashboard consistency. Current service-health panels only consume selectors that are exported consistently by today's telemetry contracts; the remaining selectors are present so later observability work can wire them in without another dashboard naming/layout migration.",
         "mode": "markdown"
       },
       "pluginVersion": "10.0.0",
@@ -562,7 +562,7 @@
       ],
       "title": "Image processing rate",
       "type": "timeseries",
-      "description": "Background image-processing jobs started per second by task type. Kept on Service Health because it reflects runtime throughput, not recovery posture."
+      "description": "Background image-processing jobs started per second by task type. Kept on Service Health because it reflects runtime throughput, not recovery posture. This panel is intentionally aggregate today: the current processing metrics do not expose a stable component dimension, so the Component selector does not slice it yet."
     },
     {
       "datasource": {
@@ -651,7 +651,7 @@
       ],
       "title": "Image processing duration (p95)",
       "type": "timeseries",
-      "description": "95th percentile background image-processing duration by task type."
+      "description": "95th percentile background image-processing duration by task type. This panel is intentionally aggregate today: the current processing metrics do not expose a stable component dimension, so the Component selector does not slice it yet."
     },
     {
       "datasource": {

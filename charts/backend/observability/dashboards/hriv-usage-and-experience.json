@@ -37,7 +37,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "## HRIV Usage and Experience\n\nAggregate usage analytics from structured logs (Loki). **No named-user panels are provisioned** because Grafana dashboard provisioning is broadly readable. Per-user investigation remains an ad-hoc, access-controlled log workflow.\n\nSynthetic-monitor journeys are excluded everywhere via the server-marked `event_synthetic` / `auth_synthetic` fields. The **User role** variable filters usage-event panels; authentication panels stay aggregate because some failure paths do not carry a resolved role.\n\n> Field names assume OTLP→Loki ingestion, which sanitizes attribute dots to underscores (for example `event.name` → `event_name`).",
+        "content": "## HRIV Usage and Experience\n\nAggregate usage analytics from structured logs (Loki). **No named-user panels are provisioned** because Grafana dashboard provisioning is broadly readable. Per-user investigation remains an ad-hoc, access-controlled log workflow.\n\nSynthetic-monitor journeys are excluded everywhere via the server-marked `event_synthetic` / `auth_synthetic` fields. The **User role** variable filters usage-event panels; authentication panels stay aggregate because some failure paths do not carry a resolved role.\n\n> Field names assume OTLP→Loki ingestion, which sanitizes attribute dots to underscores (for example `event.name` → `event_name`).\n\nThe standard **Namespace** and **Application version** variables are carried here for cross-dashboard consistency. Current usage queries stick to dimensions that are exported consistently across the real-user Loki events already in production.",
         "mode": "markdown"
       },
       "pluginVersion": "10.0.0",
@@ -276,14 +276,14 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum(count_over_time({service_name=~\"${component}\"} | auth_outcome=\"failure\" [$__range]))",
+          "expr": "sum(count_over_time({service_name=~\"${component}\"} | auth_outcome=\"failure\" | auth_synthetic!=\"true\" [$__range]))",
           "queryType": "instant",
           "refId": "A"
         }
       ],
       "title": "Failed logins",
       "type": "stat",
-      "description": "Failed login attempts in the selected period. These remain aggregate because some failures do not resolve to an application role."
+      "description": "Failed login attempts in the selected period, excluding synthetic accounts. These remain aggregate because some failures do not resolve to an application role."
     },
     {
       "datasource": {

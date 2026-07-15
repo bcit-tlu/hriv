@@ -38,10 +38,17 @@ function readDashboard(filename) {
   }
 }
 
-const jsonFiles = fs
-  .readdirSync(dashboardsDir)
-  .filter((name) => name.endsWith('.json'))
-  .sort()
+let jsonFiles = []
+try {
+  jsonFiles = fs
+    .readdirSync(dashboardsDir)
+    .filter((name) => name.endsWith('.json'))
+    .sort()
+} catch (error) {
+  fail(
+    `could not read dashboards directory: ${error instanceof Error ? error.message : String(error)}`,
+  )
+}
 
 for (const retired of ['hriv-backend.json', 'hriv-usage-overview.json']) {
   if (jsonFiles.includes(retired)) {
