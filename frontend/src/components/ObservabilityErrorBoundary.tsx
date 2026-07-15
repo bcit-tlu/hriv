@@ -51,7 +51,7 @@ export default class ObservabilityErrorBoundary extends Component<
     const componentFrame = firstComponentFrame(errorInfo.componentStack)
     emitFrontendError({
       action: 'render',
-      error: error.name === 'Error' ? 'react' : `react_${error.name.toLowerCase()}`,
+      error: 'react',
       errorCode: 'react_render_error',
       dedupeKey: `react_render_error:${errorName}:${errorMessage}:${componentFrame}`,
     })
