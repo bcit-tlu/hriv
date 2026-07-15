@@ -17,7 +17,7 @@ const selectorVariables = ['namespace', 'component', 'user_role', 'application_v
 const requiredSelectorVariables = new Map([
   ['hriv-service-health.json', ['component', 'user_role']],
   ['hriv-data-and-recovery.json', []],
-  ['hriv-usage-and-experience.json', ['component', 'user_role']],
+  ['hriv-usage-and-experience.json', ['user_role']],
 ])
 
 function fail(message) {
