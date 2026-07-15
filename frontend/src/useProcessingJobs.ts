@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useEffectEvent, useRef } from 'react'
 import { isAuthFailure, type ApiBulkImportJob } from './api'
 import { pollProcessingJob, type PollHandle } from './pollProcessingJob'
 import type { ImageItem } from './types'
@@ -117,7 +117,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
   // AbortController for the active replace-image upload
   const replaceAbortRef = useRef<AbortController | null>(null)
 
-  const refreshImageListsAfterCompletion = useCallback(
+  const refreshImageListsAfterCompletion = useEffectEvent(
     async ({ swallowNonAuth = false }: { swallowNonAuth?: boolean } = {}) => {
       const results = await Promise.allSettled([loadCategories(), loadUncategorizedImages()])
       const errors = results.flatMap((result) =>
@@ -139,10 +139,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
       // The server-side job already completed; keep local completion state
       // and let the next authenticated refresh reconcile the lists.
     },
-    [loadCategories, loadUncategorizedImages],
   )
-  const refreshImageListsAfterCompletionRef = useRef(refreshImageListsAfterCompletion)
-  refreshImageListsAfterCompletionRef.current = refreshImageListsAfterCompletion
 
   // Client-side progress interpolation — a simple tick counter that
   // increments every 500 ms to trigger re-renders without mutating
@@ -241,7 +238,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
       const handle = pollProcessingJob(job.id, {
         fetchStatus: fetchSourceImage,
         onCompleted: async (imageId) => {
-          await refreshImageListsAfterCompletionRef.current()
+          await refreshImageListsAfterCompletion()
           setImagesVersion((v) => v + 1)
           const current = selectedImageRef.current
           if (imageId != null && current && current.id === imageId) {
@@ -416,7 +413,7 @@ export function useProcessingJobs(deps: UseProcessingJobsDeps) {
               clearInterval(ref)
               refs.delete(updated.id)
             }
-            await refreshImageListsAfterCompletionRef.current({ swallowNonAuth: true })
+            await refreshImageListsAfterCompletion({ swallowNonAuth: true })
             setImagesVersion((v) => v + 1)
           }
         } catch (err) {

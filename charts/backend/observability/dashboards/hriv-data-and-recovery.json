@@ -37,7 +37,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "## HRIV Data and Recovery\n\nThis dashboard is intentionally limited to **backup and recovery posture** in the current telemetry contract. Runtime image-processing panels were removed so this view stays focused on protection status rather than worker throughput.\n\nA green dashboard here does **not** prove a restore drill has passed; it proves the currently exported backup signals are fresh and internally consistent.\n\nThe standard namespace/component/user-role/version variables are carried for cross-dashboard consistency. The currently exported backup gauges are cluster-wide signals, so those selectors are informational here until the backup telemetry contract fans out by those dimensions.",
+        "content": "## HRIV Data and Recovery\n\nThis dashboard is intentionally limited to **backup and recovery posture** in the current telemetry contract. Runtime image-processing panels were removed so this view stays focused on protection status rather than worker throughput.\n\nA green dashboard here does **not** prove a restore drill has passed; it proves the currently exported backup signals are fresh and internally consistent.\n\nThe currently exported backup gauges are cluster-wide signals split only by `backup_type`, so this dashboard intentionally exposes no additional filter dropdowns until the telemetry contract gains real per-scope dimensions.",
         "mode": "markdown"
       },
       "pluginVersion": "10.0.0",
@@ -378,98 +378,6 @@
         "regex": "",
         "skipUrlSync": false,
         "type": "datasource"
-      },
-      {
-        "current": {
-          "selected": true,
-          "text": "All",
-          "value": "$__all"
-        },
-        "hide": 0,
-        "includeAll": true,
-        "allValue": ".*",
-        "label": "Namespace",
-        "multi": true,
-        "name": "namespace",
-        "options": [],
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${prometheus}"
-        },
-        "query": "label_values(kube_pod_info, namespace)",
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
-      },
-      {
-        "current": {
-          "selected": true,
-          "text": "All",
-          "value": "$__all"
-        },
-        "hide": 0,
-        "includeAll": true,
-        "allValue": ".*",
-        "label": "Component",
-        "multi": true,
-        "name": "component",
-        "options": [],
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${prometheus}"
-        },
-        "query": "label_values(http_server_request_duration_seconds_count, service)",
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
-      },
-      {
-        "current": {
-          "selected": true,
-          "text": "All",
-          "value": "$__all"
-        },
-        "hide": 0,
-        "includeAll": true,
-        "allValue": ".*",
-        "label": "User role",
-        "multi": true,
-        "name": "user_role",
-        "options": [],
-        "query": "admin,instructor,student",
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "custom"
-      },
-      {
-        "current": {
-          "selected": true,
-          "text": "All",
-          "value": "$__all"
-        },
-        "hide": 0,
-        "includeAll": true,
-        "allValue": ".*",
-        "label": "Application version",
-        "multi": true,
-        "name": "application_version",
-        "options": [],
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${prometheus}"
-        },
-        "query": "label_values(http_server_request_duration_seconds_count{service=~\"${component}\"}, service_version)",
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
       }
     ]
   },

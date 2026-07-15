@@ -13,7 +13,12 @@ const coreDashboards = new Map([
 const optionalDashboards = new Map([
   ['hriv-synthetic-monitoring.json', 'HRIV Synthetic Monitoring'],
 ])
-const requiredVariables = ['namespace', 'component', 'user_role', 'application_version']
+const selectorVariables = ['namespace', 'component', 'user_role', 'application_version']
+const requiredSelectorVariables = new Map([
+  ['hriv-service-health.json', ['component', 'user_role']],
+  ['hriv-data-and-recovery.json', []],
+  ['hriv-usage-and-experience.json', ['component', 'user_role']],
+])
 
 function fail(message) {
   console.error(`dashboard validation failed: ${message}`)
@@ -36,6 +41,18 @@ function readDashboard(filename) {
     fail(`invalid JSON in ${filename}: ${error instanceof Error ? error.message : String(error)}`)
     return null
   }
+}
+
+function collectPanels(panels) {
+  return panels.flatMap((panel) => [panel, ...collectPanels(panel.panels ?? [])])
+}
+
+function collectTargetExpressions(dashboard) {
+  return collectPanels(dashboard.panels ?? []).flatMap((panel) =>
+    (panel.targets ?? []).flatMap((target) =>
+      typeof target.expr === 'string' && target.expr.trim() ? [target.expr] : [],
+    ),
+  )
 }
 
 let jsonFiles = []
@@ -107,15 +124,22 @@ for (const filename of jsonFiles) {
   if (coreDashboards.has(filename)) {
     const variables = dashboard.templating?.list ?? []
     const variableNames = new Set(variables.map((variable) => variable.name))
-    for (const variableName of requiredVariables) {
+    for (const variableName of requiredSelectorVariables.get(filename) ?? []) {
       if (!variableNames.has(variableName)) {
         fail(`${filename} is missing required variable "${variableName}"`)
       }
     }
 
+    const targetExpressions = collectTargetExpressions(dashboard)
     for (const variable of variables) {
-      if (requiredVariables.includes(variable.name) && variable.type === 'textbox') {
+      if (selectorVariables.includes(variable.name) && variable.type === 'textbox') {
         fail(`${filename} uses unrestricted textbox variable "${variable.name}"`)
+      }
+      if (
+        selectorVariables.includes(variable.name) &&
+        !targetExpressions.some((expr) => expr.includes(`\${${variable.name}}`))
+      ) {
+        fail(`${filename} declares selector "${variable.name}" but no panel query uses it`)
       }
     }
   }
