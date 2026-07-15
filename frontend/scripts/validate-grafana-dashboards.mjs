@@ -5,10 +5,13 @@ const dashboardsDir = path.resolve(
   import.meta.dirname,
   '../../charts/backend/observability/dashboards',
 )
-const expectedFiles = new Map([
+const coreDashboards = new Map([
   ['hriv-service-health.json', 'HRIV Service Health'],
   ['hriv-data-and-recovery.json', 'HRIV Data and Recovery'],
   ['hriv-usage-and-experience.json', 'HRIV Usage and Experience'],
+])
+const optionalDashboards = new Map([
+  ['hriv-synthetic-monitoring.json', 'HRIV Synthetic Monitoring'],
 ])
 const requiredVariables = ['namespace', 'component', 'user_role', 'application_version']
 
@@ -56,8 +59,8 @@ const seenTitles = new Set()
 const seenUids = new Set()
 
 for (const filename of jsonFiles) {
-  if (!expectedFiles.has(filename)) {
-    fail(`unexpected dashboard file ${filename}`)
+  const expectedTitle = allowedFiles.get(filename)
+  if (!expectedTitle) {
     continue
   }
 
@@ -89,17 +92,19 @@ for (const filename of jsonFiles) {
     }
   }
 
-  const variables = dashboard.templating?.list ?? []
-  const variableNames = new Set(variables.map((variable) => variable.name))
-  for (const variableName of requiredVariables) {
-    if (!variableNames.has(variableName)) {
-      fail(`${filename} is missing required variable "${variableName}"`)
+  if (coreDashboards.has(filename)) {
+    const variables = dashboard.templating?.list ?? []
+    const variableNames = new Set(variables.map((variable) => variable.name))
+    for (const variableName of requiredVariables) {
+      if (!variableNames.has(variableName)) {
+        fail(`${filename} is missing required variable "${variableName}"`)
+      }
     }
-  }
 
-  for (const variable of variables) {
-    if (requiredVariables.includes(variable.name) && variable.type === 'textbox') {
-      fail(`${filename} uses unrestricted textbox variable "${variable.name}"`)
+    for (const variable of variables) {
+      if (requiredVariables.includes(variable.name) && variable.type === 'textbox') {
+        fail(`${filename} uses unrestricted textbox variable "${variable.name}"`)
+      }
     }
   }
 
@@ -154,4 +159,6 @@ if (process.exitCode) {
   process.exit(process.exitCode)
 }
 
-console.log(`validated ${expectedFiles.size} Grafana dashboards`)
+console.log(
+  `validated ${coreDashboards.size} core Grafana dashboards and ${jsonFiles.length - coreDashboards.size} optional dashboard(s)`,
+)
