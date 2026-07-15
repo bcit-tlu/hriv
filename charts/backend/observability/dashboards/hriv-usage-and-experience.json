@@ -24,10 +24,6 @@
   "liveNow": false,
   "panels": [
     {
-      "datasource": {
-        "type": "loki",
-        "uid": "${loki}"
-      },
       "gridPos": {
         "h": 5,
         "w": 24,
@@ -891,7 +887,7 @@
           },
           "expr": "sum by (client_browser_major) (count_over_time({service_name=~\"${component}\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_browser_major!=\"\" [$__range]))",
           "instant": true,
-          "legendFormat": "{{client_browser_family}}",
+          "legendFormat": "{{client_browser_major}}",
           "refId": "A"
         }
       ],

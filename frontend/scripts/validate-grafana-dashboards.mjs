@@ -19,8 +19,20 @@ function fail(message) {
 
 function readDashboard(filename) {
   const fullPath = path.join(dashboardsDir, filename)
-  const raw = fs.readFileSync(fullPath, 'utf8')
-  return JSON.parse(raw)
+  let raw
+  try {
+    raw = fs.readFileSync(fullPath, 'utf8')
+  } catch (error) {
+    fail(`could not read ${filename}: ${error instanceof Error ? error.message : String(error)}`)
+    return null
+  }
+
+  try {
+    return JSON.parse(raw)
+  } catch (error) {
+    fail(`invalid JSON in ${filename}: ${error instanceof Error ? error.message : String(error)}`)
+    return null
+  }
 }
 
 const jsonFiles = fs
@@ -50,6 +62,9 @@ for (const filename of jsonFiles) {
   }
 
   const dashboard = readDashboard(filename)
+  if (!dashboard) {
+    continue
+  }
 
   if (dashboard.title !== expectedFiles.get(filename)) {
     fail(

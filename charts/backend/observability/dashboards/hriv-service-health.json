@@ -24,10 +24,6 @@
   "liveNow": false,
   "panels": [
     {
-      "datasource": {
-        "type": "loki",
-        "uid": "${loki}"
-      },
       "gridPos": {
         "h": 5,
         "w": 24,
