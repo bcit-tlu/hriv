@@ -17,7 +17,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "validate:grafana-dashboards": "node scripts/validate-grafana-dashboards.mjs"
   },
   "dependencies": {
     "@dnd-kit/helpers": "^0.4.0",

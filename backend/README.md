@@ -251,3 +251,12 @@ file's base name, lowercased with spaces replaced by hyphens
 (`base | lower | replace " " "-"`). Keep dashboard filenames restricted to
 `[-._a-zA-Z0-9]` (no spaces) — Kubernetes rejects ConfigMap data keys
 containing spaces, which fails the whole release install.
+
+The provisioned set is intentionally limited to the three operator-facing HRIV
+dashboards:
+
+- `HRIV Service Health`
+- `HRIV Data and Recovery`
+- `HRIV Usage and Experience`
+
+Broadly readable provisioned dashboards must not expose named-user activity.
