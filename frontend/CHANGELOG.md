@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.39.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.39.0...frontend-v0.39.1) (2026-07-15)
+
+
+### Bug Fixes
+
+* **observability:** replace usage dashboard with corrected loki queries ([#932](https://github.com/bcit-tlu/hriv/issues/932)) ([28e719a](https://github.com/bcit-tlu/hriv/commit/28e719a6a45cfd813860e7ad0009cc89822eba45))
+
 ## [0.39.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.38.0...frontend-v0.39.0) (2026-07-15)
 
 
