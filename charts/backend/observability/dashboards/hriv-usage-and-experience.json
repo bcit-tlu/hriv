@@ -37,7 +37,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "## HRIV Usage and Experience\n\nAggregate usage analytics from structured logs (Loki). **No named-user panels are provisioned** because Grafana dashboard provisioning is broadly readable. Per-user investigation remains an ad-hoc, access-controlled log workflow.\n\nSynthetic-monitor journeys are excluded everywhere via the server-marked `event_synthetic` / `auth_synthetic` fields. The **User role** variable filters usage-event panels; authentication panels stay aggregate because some failure paths do not carry a resolved role.\n\n> Field names assume OTLP\u2192Loki ingestion, which sanitizes attribute dots to underscores (for example `event.name` \u2192 `event_name`).\n\nThe filter bar is intentionally limited to selectors that the provisioned Loki queries actually honor, so every dropdown has a visible effect on at least one panel.\n\nThe **Component** selector is sourced from the canonical service-name contract shared across Prometheus metrics and Loki logs, so the same component choices are expected to work for both datasources.",
+        "content": "## HRIV Usage and Experience\n\nAggregate usage analytics from structured logs (Loki). **No named-user panels are provisioned** because Grafana dashboard provisioning is broadly readable. Per-user investigation remains an ad-hoc, access-controlled log workflow.\n\nSynthetic-monitor journeys are excluded everywhere via the server-marked `event_synthetic` / `auth_synthetic` fields. The **User role** variable filters usage-event panels; authentication panels stay aggregate because some failure paths do not carry a resolved role.\n\n> Field names assume OTLP→Loki ingestion, which sanitizes attribute dots to underscores (for example `event.name` → `event_name`).\n\nUsage and authentication events are emitted authoritatively by the backend and are selected from the `service_name=\"hriv-backend\"` OTLP log stream.",
         "mode": "markdown"
       },
       "pluginVersion": "10.0.0",
@@ -96,7 +96,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "count(sum by (user_id) (count_over_time({service_name=~\"${component}\"} | event_name=~\"navigation.page_changed|image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range])))",
+          "expr": "count(sum by (user_id) (count_over_time({service_name=\"hriv-backend\"} | event_name=~\"navigation.page_changed|image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range])))",
           "queryType": "instant",
           "refId": "A"
         }
@@ -156,7 +156,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "count(sum by (browser_tab_session_id) (count_over_time({service_name=~\"${component}\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range])))",
+          "expr": "count(sum by (browser_tab_session_id) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range])))",
           "queryType": "instant",
           "refId": "A"
         }
@@ -216,7 +216,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum(count_over_time({service_name=~\"${component}\"} | auth_outcome=\"success\" | auth_synthetic!=\"true\" [$__range]))",
+          "expr": "sum(count_over_time({service_name=\"hriv-backend\"} | auth_outcome=\"success\" | auth_synthetic!=\"true\" [$__range]))",
           "queryType": "instant",
           "refId": "A"
         }
@@ -276,7 +276,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum(count_over_time({service_name=~\"${component}\"} | auth_outcome=\"failure\" | auth_synthetic!=\"true\" [$__range]))",
+          "expr": "sum(count_over_time({service_name=\"hriv-backend\"} | auth_outcome=\"failure\" | auth_synthetic!=\"true\" [$__range]))",
           "queryType": "instant",
           "refId": "A"
         }
@@ -336,7 +336,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum(count_over_time({service_name=~\"${component}\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range]))",
+          "expr": "sum(count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range]))",
           "queryType": "instant",
           "refId": "A"
         }
@@ -396,7 +396,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "count(sum by (image_id) (count_over_time({service_name=~\"${component}\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | image_id!=\"\" [$__range])))",
+          "expr": "count(sum by (image_id) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | image_id!=\"\" [$__range])))",
           "queryType": "instant",
           "refId": "A"
         }
@@ -464,7 +464,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum(count_over_time({service_name=~\"${component}\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range])) / clamp_min(sum(count_over_time({service_name=~\"${component}\"} | event_name=~\"image.view.ready|image.view.failed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range])), 1)",
+          "expr": "sum(count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range])) / sum(count_over_time({service_name=\"hriv-backend\"} | event_name=~\"image.view.ready|image.view.failed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range]))",
           "queryType": "instant",
           "refId": "A"
         }
@@ -524,7 +524,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum(count_over_time({service_name=~\"${component}\"} | event_name=\"navigation.page_changed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range]))",
+          "expr": "sum(count_over_time({service_name=\"hriv-backend\"} | event_name=\"navigation.page_changed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range]))",
           "queryType": "instant",
           "refId": "A"
         }
@@ -593,7 +593,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum by (event_page) (count_over_time({service_name=~\"${component}\"} | event_name=\"navigation.page_changed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
+          "expr": "sum by (event_page) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"navigation.page_changed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
           "legendFormat": "{{event_page}}",
           "refId": "A"
         }
@@ -662,7 +662,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum by (user_role) (count_over_time({service_name=~\"${component}\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
+          "expr": "sum by (user_role) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
           "legendFormat": "{{user_role}}",
           "refId": "A"
         }
@@ -747,7 +747,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum(count_over_time({service_name=~\"${component}\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
+          "expr": "sum(count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
           "legendFormat": "successful",
           "refId": "A"
         },
@@ -756,7 +756,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum(count_over_time({service_name=~\"${component}\"} | event_name=\"image.view.failed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
+          "expr": "sum(count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.failed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
           "legendFormat": "failed",
           "refId": "B"
         }
@@ -820,7 +820,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum by (client_browser_family) (count_over_time({service_name=~\"${component}\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_browser_family!=\"\" [$__range]))",
+          "expr": "sum by (client_browser_family) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_browser_family!=\"\" [$__range]))",
           "instant": true,
           "legendFormat": "{{client_browser_family}}",
           "refId": "A"
@@ -885,7 +885,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum by (client_browser_major) (count_over_time({service_name=~\"${component}\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_browser_major!=\"\" [$__range]))",
+          "expr": "sum by (client_browser_major) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_browser_major!=\"\" [$__range]))",
           "instant": true,
           "legendFormat": "{{client_browser_major}}",
           "refId": "A"
@@ -950,7 +950,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum by (client_os_family) (count_over_time({service_name=~\"${component}\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_os_family!=\"\" [$__range]))",
+          "expr": "sum by (client_os_family) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_os_family!=\"\" [$__range]))",
           "instant": true,
           "legendFormat": "{{client_os_family}}",
           "refId": "A"
@@ -1015,7 +1015,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum by (client_device_class) (count_over_time({service_name=~\"${component}\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_device_class!=\"\" [$__range]))",
+          "expr": "sum by (client_device_class) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_device_class!=\"\" [$__range]))",
           "instant": true,
           "legendFormat": "{{client_device_class}}",
           "refId": "A"
@@ -1080,7 +1080,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum by (client_viewport_bucket) (count_over_time({service_name=~\"${component}\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_viewport_bucket!=\"\" [$__range]))",
+          "expr": "sum by (client_viewport_bucket) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_viewport_bucket!=\"\" [$__range]))",
           "instant": true,
           "legendFormat": "{{client_viewport_bucket}}",
           "refId": "A"
@@ -1145,7 +1145,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum by (client_touch) (count_over_time({service_name=~\"${component}\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range]))",
+          "expr": "sum by (client_touch) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range]))",
           "instant": true,
           "legendFormat": "{{client_touch}}",
           "refId": "A"
@@ -1213,7 +1213,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "topk(10, sum by (image_id) (count_over_time({service_name=~\"${component}\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | image_id!=\"\" [$__range])))",
+          "expr": "topk(10, sum by (image_id) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | image_id!=\"\" [$__range])))",
           "instant": true,
           "legendFormat": "{{image_id}}",
           "refId": "A"
@@ -1281,7 +1281,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "topk(10, sum by (category_id) (count_over_time({service_name=~\"${component}\"} | event_name=~\"image.view.ready|navigation.page_changed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | category_id!=\"\" [$__range])))",
+          "expr": "topk(10, sum by (category_id) (count_over_time({service_name=\"hriv-backend\"} | event_name=~\"image.view.ready|navigation.page_changed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" | category_id!=\"\" [$__range])))",
           "instant": true,
           "legendFormat": "{{category_id}}",
           "refId": "A"
@@ -1333,31 +1333,7 @@
         },
         "hide": 0,
         "includeAll": true,
-        "allValue": ".*",
-        "label": "Component",
-        "multi": true,
-        "name": "component",
-        "options": [],
-        "datasource": {
-          "type": "prometheus",
-          "uid": "${prometheus}"
-        },
-        "query": "label_values(http_server_request_duration_seconds_count, service)",
-        "refresh": 1,
-        "regex": "",
-        "skipUrlSync": false,
-        "sort": 1,
-        "type": "query"
-      },
-      {
-        "current": {
-          "selected": true,
-          "text": "All",
-          "value": "$__all"
-        },
-        "hide": 0,
-        "includeAll": true,
-        "allValue": ".*",
+        "allValue": ".+",
         "label": "User role",
         "multi": true,
         "name": "user_role",
