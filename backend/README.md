@@ -262,3 +262,5 @@ consolidated HRIV dashboards:
 Additional specialized dashboards, such as `HRIV Synthetic Monitoring`, may be
 provisioned alongside that core set when they provide distinct operational
 value and do not duplicate or expose named-user activity.
+
+Specialized dashboards should meet the same quality bar as the core set: stable titles/uids, descriptive panels, and CI validation.

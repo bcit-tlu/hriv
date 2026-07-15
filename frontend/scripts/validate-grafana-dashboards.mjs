@@ -58,14 +58,14 @@ for (const retired of ['hriv-backend.json', 'hriv-usage-overview.json']) {
 
 for (const [filename, title] of coreDashboards) {
   if (!jsonFiles.includes(filename)) {
-    fail(`missing required dashboard  ()`)
+    fail(`missing required dashboard ${title} (${filename})`)
   }
 }
 
 const allowedFiles = new Map([...coreDashboards, ...optionalDashboards])
 for (const filename of jsonFiles) {
   if (!allowedFiles.has(filename)) {
-    fail(`unexpected dashboard file `)
+    fail(`unexpected dashboard file ${filename}`)
   }
 }
 
