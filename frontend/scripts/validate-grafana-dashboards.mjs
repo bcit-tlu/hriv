@@ -49,10 +49,17 @@ for (const retired of ['hriv-backend.json', 'hriv-usage-overview.json']) {
   }
 }
 
-if (jsonFiles.length !== expectedFiles.size) {
-  fail(
-    `expected ${expectedFiles.size} provisioned dashboards, found ${jsonFiles.length}: ${jsonFiles.join(', ')}`,
-  )
+for (const [filename, title] of coreDashboards) {
+  if (!jsonFiles.includes(filename)) {
+    fail(`missing required dashboard  ()`)
+  }
+}
+
+const allowedFiles = new Map([...coreDashboards, ...optionalDashboards])
+for (const filename of jsonFiles) {
+  if (!allowedFiles.has(filename)) {
+    fail(`unexpected dashboard file `)
+  }
 }
 
 const seenTitles = new Set()
@@ -69,10 +76,8 @@ for (const filename of jsonFiles) {
     continue
   }
 
-  if (dashboard.title !== expectedFiles.get(filename)) {
-    fail(
-      `${filename} title mismatch: expected "${expectedFiles.get(filename)}", got "${dashboard.title}"`,
-    )
+  if (dashboard.title !== expectedTitle) {
+    fail(`${filename} title mismatch: expected "${expectedTitle}", got "${dashboard.title}"`)
   }
 
   if (!dashboard.uid || seenUids.has(dashboard.uid)) {
