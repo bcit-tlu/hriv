@@ -46,10 +46,17 @@ describe('ObservabilityErrorBoundary', () => {
     expect(
       screen.getByText('HRIV ran into an unexpected problem. Refresh the page and try again.'),
     ).toBeInTheDocument()
-    expect(emitFrontendErrorMock).toHaveBeenCalledWith({
-      action: 'render',
-      error: 'react',
-      errorCode: 'react_render_error',
+    expect(emitFrontendErrorMock).toHaveBeenCalledOnce()
+    expect(emitFrontendErrorMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'render',
+        error: 'react',
+        errorCode: 'react_render_error',
+      }),
+    )
+    const [telemetry] = emitFrontendErrorMock.mock.calls[0] ?? []
+    expect(telemetry).toMatchObject({
+      dedupeKey: expect.stringContaining('react_render_error:Error:boom:'),
     })
   })
 })
