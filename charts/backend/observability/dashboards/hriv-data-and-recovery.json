@@ -24,6 +24,103 @@
   "liveNow": false,
   "panels": [
     {
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 200,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "## HRIV Data and Recovery\n\nThis dashboard is intentionally limited to **backup and recovery posture** in the current telemetry contract. Runtime image-processing panels were removed so this view stays focused on protection status rather than worker throughput.\n\nA green dashboard here does **not** prove a restore drill has passed; it proves the currently exported backup signals are fresh and internally consistent.\n\nThe currently exported backup gauges are cluster-wide signals split only by `backup_type`, so this dashboard intentionally exposes no additional filter dropdowns until the telemetry contract gains real per-scope dimensions.",
+        "mode": "markdown"
+      },
+      "pluginVersion": "10.0.0",
+      "title": "Scope & caveats",
+      "type": "text",
+      "description": "Scope, caveats, and drill-down guidance for this dashboard."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "text": "Not configured"
+                },
+                "1": {
+                  "text": "Configured"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none",
+          "noValue": "No backup configuration telemetry"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 5
+      },
+      "id": 21,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "expr": "hriv_backup_configured",
+          "refId": "A"
+        }
+      ],
+      "title": "Backup configured",
+      "type": "stat",
+      "description": "Whether backup read credentials are configured. A disabled backup path is operationally different from a stale backup."
+    },
+    {
       "datasource": {
         "type": "prometheus",
         "uid": "${prometheus}"
@@ -51,15 +148,16 @@
               }
             ]
           },
-          "unit": "s"
+          "unit": "s",
+          "noValue": "No successful backup recorded"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 0
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 5
       },
       "id": 1,
       "options": {
@@ -87,7 +185,8 @@
         }
       ],
       "title": "Backup Age",
-      "type": "gauge"
+      "type": "gauge",
+      "description": "Seconds since the last successful backup completed. +Inf means backup access is configured but no valid success marker exists."
     },
     {
       "datasource": {
@@ -102,14 +201,14 @@
           "mappings": [
             {
               "options": {
-                "-1": {
-                  "text": "Missing/Stale"
-                },
                 "0": {
                   "text": "Unknown"
                 },
                 "1": {
                   "text": "OK"
+                },
+                "-1": {
+                  "text": "Missing/Stale"
                 }
               },
               "type": "value"
@@ -132,15 +231,16 @@
               }
             ]
           },
-          "unit": "none"
+          "unit": "none",
+          "noValue": "No backup outcome recorded"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 0
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 5
       },
       "id": 2,
       "options": {
@@ -167,7 +267,8 @@
         }
       ],
       "title": "Last Backup Outcome",
-      "type": "stat"
+      "type": "stat",
+      "description": "Latest backup outcome from the success marker. Use this with backup age to distinguish stale, unknown, and healthy states."
     },
     {
       "datasource": {
@@ -220,7 +321,8 @@
               }
             ]
           },
-          "unit": "binB"
+          "unit": "binB",
+          "noValue": "No successful backup size recorded"
         },
         "overrides": []
       },
@@ -228,7 +330,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 8
+        "y": 11
       },
       "id": 3,
       "options": {
@@ -254,187 +356,14 @@
         }
       ],
       "title": "Last Backup Size",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${prometheus}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 16
-      },
-      "id": 4,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${prometheus}"
-          },
-          "expr": "sum(rate(hriv_image_processing_started_total[5m])) by (task_type)",
-          "refId": "A"
-        }
-      ],
-      "title": "Image Processing Rate",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${prometheus}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 16
-      },
-      "id": 5,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${prometheus}"
-          },
-          "expr": "histogram_quantile(0.95, sum(rate(hriv_image_processing_duration_seconds_bucket[5m])) by (le, task_type))",
-          "refId": "A"
-        }
-      ],
-      "title": "Image Processing Duration (p95)",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Size of the most recent successful backup archive over time."
     }
   ],
   "refresh": "30s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["hriv", "data-recovery"],
+  "tags": ["hriv", "observability", "data-recovery", "prometheus"],
   "templating": {
     "list": [
       {

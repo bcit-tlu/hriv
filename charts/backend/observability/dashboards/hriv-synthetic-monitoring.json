@@ -82,7 +82,8 @@
         }
       ],
       "title": "Last Synthetic Run",
-      "type": "stat"
+      "type": "stat",
+      "description": "Timestamp of the most recent synthetic-monitoring execution."
     },
     {
       "datasource": {
@@ -145,7 +146,8 @@
         }
       ],
       "title": "Last Synthetic Success",
-      "type": "stat"
+      "type": "stat",
+      "description": "Timestamp of the most recent successful synthetic-monitoring execution."
     },
     {
       "datasource": {
@@ -224,7 +226,8 @@
         }
       ],
       "title": "Current Journey Outcome",
-      "type": "stat"
+      "type": "stat",
+      "description": "Latest recorded end-to-end synthetic journey result."
     },
     {
       "datasource": {
@@ -291,7 +294,8 @@
         }
       ],
       "title": "Result Age",
-      "type": "stat"
+      "type": "stat",
+      "description": "Seconds since the synthetic-monitoring metrics were last refreshed."
     },
     {
       "datasource": {
@@ -346,7 +350,8 @@
         }
       ],
       "title": "Step Durations",
-      "type": "bargauge"
+      "type": "bargauge",
+      "description": "Per-step duration from the most recent synthetic journey run."
     },
     {
       "datasource": {
@@ -421,7 +426,8 @@
         }
       ],
       "title": "Step Outcomes",
-      "type": "bargauge"
+      "type": "bargauge",
+      "description": "Per-step success state from the most recent synthetic journey run."
     },
     {
       "datasource": {
@@ -485,7 +491,8 @@
         }
       ],
       "title": "Journey Duration and Result Age Over Time",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Trend of overall synthetic journey duration and how stale the reported result is."
     }
   ],
   "refresh": "1m",

@@ -24,6 +24,191 @@
   "liveNow": false,
   "panels": [
     {
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 100,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "## HRIV Service Health\n\nStart here for **student-visible health first**: can users open images, are failures rising, and is request latency stable? Generic pod CPU/memory is kept lower on the dashboard on purpose.\n\n- Use **Component** to focus on the backend/runtime slice that emitted the telemetry.\n- Use **User role** to separate broad student impact from instructor/admin activity.\n- Zero traffic can be normal during idle periods; treat synthetic monitoring and explicit failures as the primary availability signal.\n\nEvery selector exposed on this dashboard is wired into at least one panel query so the filter bar always changes the view operators are looking at.\n\nThe **Component** selector is sourced from the canonical service-name contract shared across Prometheus metrics and Loki logs, so the same component choices are expected to work for both datasources.",
+        "mode": "markdown"
+      },
+      "pluginVersion": "10.0.0",
+      "title": "Scope & drill-down",
+      "type": "text",
+      "description": "Scope, caveats, and drill-down guidance for this dashboard."
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "noValue": "No matching image-view activity"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "failed"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "red",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "sum(count_over_time({service_name=~\"${component}\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
+          "legendFormat": "successful",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "sum(count_over_time({service_name=~\"${component}\"} | event_name=\"image.view.failed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
+          "legendFormat": "failed",
+          "refId": "B"
+        }
+      ],
+      "title": "Image views vs failures",
+      "type": "timeseries",
+      "description": "Student-visible image-open outcome from structured telemetry. This is the quickest way to see whether users can actually open images, independent of generic API traffic."
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short",
+          "noValue": "No matching usage activity"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "sum by (user_role) (count_over_time({service_name=~\"${component}\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
+          "legendFormat": "{{user_role}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Request volume by role",
+      "type": "timeseries",
+      "description": "Aggregate end-user activity split by application role. Helps distinguish broad user-impact incidents from admin-only workflows."
+    },
+    {
       "datasource": {
         "type": "prometheus",
         "uid": "${prometheus}"
@@ -74,15 +259,16 @@
               }
             ]
           },
-          "unit": "reqps"
+          "unit": "reqps",
+          "noValue": "No matching request telemetry"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
+        "w": 8,
         "x": 0,
-        "y": 0
+        "y": 13
       },
       "id": 1,
       "options": {
@@ -103,12 +289,13 @@
             "type": "prometheus",
             "uid": "${prometheus}"
           },
-          "expr": "sum(rate(http_server_request_duration_seconds_count{service=\"${service}\"}[5m]))",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service=~\"${component}\"}[5m]))",
           "refId": "A"
         }
       ],
       "title": "Request Rate",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "Backend request rate for the selected component. Zero can be healthy during idle periods; use the usage and synthetic panels for end-user context."
     },
     {
       "datasource": {
@@ -131,20 +318,25 @@
                 "value": null
               },
               {
+                "color": "yellow",
+                "value": 0.01
+              },
+              {
                 "color": "red",
                 "value": 0.05
               }
             ]
           },
-          "unit": "percentunit"
+          "unit": "percentunit",
+          "noValue": "No matching request telemetry"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 0
+        "w": 8,
+        "x": 8,
+        "y": 13
       },
       "id": 2,
       "options": {
@@ -167,12 +359,13 @@
             "type": "prometheus",
             "uid": "${prometheus}"
           },
-          "expr": "sum(rate(http_server_request_duration_seconds_count{service=\"${service}\",http_status_code=~\"5..\"}[5m])) / sum(rate(http_server_request_duration_seconds_count{service=\"${service}\"}[5m]))",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service=~\"${component}\",http_status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{service=~\"${component}\"}[5m])), 0.001)",
           "refId": "A"
         }
       ],
       "title": "Error Rate (5xx)",
-      "type": "gauge"
+      "type": "gauge",
+      "description": "5xx ratio with a protected denominator so an idle period does not render as NaN or an outage."
     },
     {
       "datasource": {
@@ -225,15 +418,16 @@
               }
             ]
           },
-          "unit": "s"
+          "unit": "s",
+          "noValue": "No matching latency telemetry"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 8
+        "w": 8,
+        "x": 16,
+        "y": 13
       },
       "id": 3,
       "options": {
@@ -254,7 +448,7 @@
             "type": "prometheus",
             "uid": "${prometheus}"
           },
-          "expr": "histogram_quantile(0.50, sum(rate(http_server_request_duration_seconds_bucket{service=\"${service}\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.50, sum(rate(http_server_request_duration_seconds_bucket{service=~\"${component}\"}[5m])) by (le))",
           "legendFormat": "p50",
           "refId": "A"
         },
@@ -263,7 +457,7 @@
             "type": "prometheus",
             "uid": "${prometheus}"
           },
-          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service=\"${service}\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service=~\"${component}\"}[5m])) by (le))",
           "legendFormat": "p95",
           "refId": "B"
         },
@@ -272,13 +466,14 @@
             "type": "prometheus",
             "uid": "${prometheus}"
           },
-          "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket{service=\"${service}\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket{service=~\"${component}\"}[5m])) by (le))",
           "legendFormat": "p99",
           "refId": "C"
         }
       ],
       "title": "Request Latency",
-      "type": "timeseries"
+      "type": "timeseries",
+      "description": "API request latency percentiles for the selected component."
     },
     {
       "datasource": {
@@ -331,7 +526,8 @@
               }
             ]
           },
-          "unit": "percent"
+          "unit": "ops",
+          "noValue": "No matching image-processing telemetry"
         },
         "overrides": []
       },
@@ -339,7 +535,185 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 16
+        "y": 21
+      },
+      "id": 22,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "expr": "sum(rate(hriv_image_processing_started_total[5m])) by (task_type)",
+          "refId": "A"
+        }
+      ],
+      "title": "Image processing rate",
+      "type": "timeseries",
+      "description": "Background image-processing jobs started per second by task type. Kept on Service Health because it reflects runtime throughput, not recovery posture. This panel is intentionally aggregate today: the current processing metrics do not expose a stable component dimension, so the Component selector does not slice it yet."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "s",
+          "noValue": "No matching image-processing telemetry"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
+      "id": 23,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(hriv_image_processing_duration_seconds_bucket[5m])) by (le, task_type))",
+          "refId": "A"
+        }
+      ],
+      "title": "Image processing duration (p95)",
+      "type": "timeseries",
+      "description": "95th percentile background image-processing duration by task type. This panel is intentionally aggregate today: the current processing metrics do not expose a stable component dimension, so the Component selector does not slice it yet."
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${prometheus}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "cores",
+          "noValue": "No matching container CPU telemetry"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 29
       },
       "id": 4,
       "options": {
@@ -360,12 +734,13 @@
             "type": "prometheus",
             "uid": "${prometheus}"
           },
-          "expr": "avg(rate(container_cpu_usage_seconds_total{pod=~\"${service}-.*\"}[5m])) by (pod)",
+          "expr": "avg(rate(container_cpu_usage_seconds_total{pod=~\"${component}-.*\"}[5m])) by (pod)",
           "refId": "A"
         }
       ],
-      "title": "CPU Usage",
-      "type": "timeseries"
+      "title": "CPU usage by pod",
+      "type": "timeseries",
+      "description": "Average CPU cores consumed per pod. This uses core-seconds per second, not percent, so it can be compared directly to pod CPU requests/limits."
     },
     {
       "datasource": {
@@ -418,7 +793,8 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "bytes",
+          "noValue": "No matching container memory telemetry"
         },
         "overrides": []
       },
@@ -426,7 +802,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 16
+        "y": 29
       },
       "id": 5,
       "options": {
@@ -447,18 +823,19 @@
             "type": "prometheus",
             "uid": "${prometheus}"
           },
-          "expr": "avg(container_memory_working_set_bytes{pod=~\"${service}-.*\"}) by (pod)",
+          "expr": "avg(container_memory_working_set_bytes{pod=~\"${component}-.*\"}) by (pod)",
           "refId": "A"
         }
       ],
-      "title": "Memory Usage",
-      "type": "timeseries"
+      "title": "Memory usage by pod",
+      "type": "timeseries",
+      "description": "Working-set memory for pods that belong to the selected component."
     }
   ],
   "refresh": "30s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["hriv", "service-health"],
+  "tags": ["hriv", "observability", "service-health", "prometheus", "loki"],
   "templating": {
     "list": [
       {
@@ -475,16 +852,31 @@
         "type": "datasource"
       },
       {
-        "current": {
-          "selected": false,
-          "text": "hriv-backend",
-          "value": "hriv-backend"
-        },
+        "current": {},
         "hide": 0,
         "includeAll": false,
-        "label": "Service",
+        "label": "Loki",
         "multi": false,
-        "name": "service",
+        "name": "loki",
+        "options": [],
+        "query": "loki",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "Component",
+        "multi": true,
+        "name": "component",
         "options": [],
         "datasource": {
           "type": "prometheus",
@@ -494,8 +886,28 @@
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
-        "sort": 0,
+        "sort": 1,
         "type": "query"
+      },
+      {
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
+        "hide": 0,
+        "includeAll": true,
+        "allValue": ".*",
+        "label": "User role",
+        "multi": true,
+        "name": "user_role",
+        "options": [],
+        "query": "admin,instructor,student",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "custom"
       }
     ]
   },

@@ -664,16 +664,16 @@ Because new OIDC users are logged with the same canonical fields as returning
 users, login reports include first-time OIDC logins; filtering
 `auth.synthetic != "true"` excludes synthetic-monitor logins.
 
-## Usage Analytics Dashboard (`HRIV Usage Overview`)
+## Usage Analytics Dashboard (`HRIV Usage and Experience`)
 
-`charts/backend/observability/dashboards/hriv-usage-overview.json` is a
+`charts/backend/observability/dashboards/hriv-usage-and-experience.json` is a
 Loki-backed, aggregate-only dashboard for decision makers, provisioned
 automatically alongside the other dashboards (the ConfigMap template globs
-every JSON in `observability/dashboards/`). Panels cover page hits, active
-users, sessions, successful/failed logins, activity by role, image views vs
-failures, top images/categories, and the bounded client-environment
-distributions. Every panel excludes synthetic traffic via the server-marked
-`event_synthetic` / `auth_synthetic` flag.
+every JSON in `observability/dashboards/`). Panels cover active users,
+sessions, successful/failed logins, successful image views, unique images,
+image-view success rate, activity by role, image views vs failures, and the
+bounded client-environment distributions. Every panel excludes synthetic
+traffic via the server-marked `event_synthetic` / `auth_synthetic` flag.
 
 **No named-user panels are provisioned.** Grafana dashboard provisioning is
 broadly readable, so listing individual users on a provisioned dashboard would
@@ -686,7 +686,7 @@ is later established, named-user panels can be added there.
 > Field-name note: the queries assume OTLP→Loki ingestion, which sanitizes
 > attribute dots to underscores (`event.name` → `event_name`,
 > `client.browser.family` → `client_browser_family`, etc.). Adjust the label
-> names / `service` template variable if your Loki label pipeline differs.
+> names / `component` template variable if your Loki label pipeline differs.
 
 ## Structured Logging vs Tracing
 
