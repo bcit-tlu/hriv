@@ -5,6 +5,11 @@ stable names, fields, privacy constraints, and aggregation rules that new
 metrics, traces, structured logs, frontend events, dashboards, and runbooks
 must follow.
 
+For operator response, alert routing, validation drills, and alert-linked
+runbooks, use [`observability-operations.md`](observability-operations.md) and
+[`observability-runbooks.md`](observability-runbooks.md) alongside this
+contract.
+
 ## Stack Overview
 
 | Layer                  | Technology                                                                 | Role                                                       |
