@@ -122,6 +122,8 @@ reconciliation model for both environments.
 | [docs/ui-behaviour-spec.md](docs/ui-behaviour-spec.md)                               | UI behaviour spec (role gating, browse, dialogs, viewer, file drop)             |
 | [docs/RELEASE_AND_DEPLOY_FLOW.md](docs/RELEASE_AND_DEPLOY_FLOW.md)                   | Release-please + Flux deploy flow                                               |
 | [docs/observability-conventions.md](docs/observability-conventions.md)               | OTel spans, telemetry ingestion, canonical auth logs, usage dashboard           |
+| [docs/observability-operations.md](docs/observability-operations.md)                 | Alert catalogue, routing policy, validation drills, and readiness checklist     |
+| [docs/observability-runbooks.md](docs/observability-runbooks.md)                     | Alert-linked operator runbooks for availability, storage, backups, and load     |
 | [docs/synthetic-monitoring.md](docs/synthetic-monitoring.md)                         | Synthetic Playwright journey, configuration, and operator runbook               |
 | [AGENTS.md](AGENTS.md)                                                               | Contributor setup, workflow, and **Critical Invariants**                        |
 

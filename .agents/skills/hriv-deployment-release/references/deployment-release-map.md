@@ -2,16 +2,16 @@
 
 ## Files
 
-| Concern               | Files                                                                       |
-| --------------------- | --------------------------------------------------------------------------- |
-| Local stack           | `docker-compose.yml`, `backend/.env`, service Dockerfiles                   |
-| Frontend image/chart  | `frontend/Dockerfile`, `charts/frontend/`                                   |
-| Backend image/chart   | `backend/Dockerfile`, `charts/backend/`                                     |
-| Backup image/chart    | `backup/Dockerfile`, `charts/backup/`                                       |
-| Backup implementation | `backup/backup.py`, `backup/README.md`                                      |
-| Release tooling       | `.release-please-manifest.json`, `.github/workflows/`, component changelogs |
-| Deploy docs           | `deploy/README.md`, `docs/RELEASE_AND_DEPLOY_FLOW.md`                       |
-| Observability         | `docs/observability-conventions.md`, backend tracing/logging files          |
+| Concern               | Files                                                                                                                                    |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Local stack           | `docker-compose.yml`, `backend/.env`, service Dockerfiles                                                                                |
+| Frontend image/chart  | `frontend/Dockerfile`, `charts/frontend/`                                                                                                |
+| Backend image/chart   | `backend/Dockerfile`, `charts/backend/`                                                                                                  |
+| Backup image/chart    | `backup/Dockerfile`, `charts/backup/`                                                                                                    |
+| Backup implementation | `backup/backup.py`, `backup/README.md`                                                                                                   |
+| Release tooling       | `.release-please-manifest.json`, `.github/workflows/`, component changelogs                                                              |
+| Deploy docs           | `deploy/README.md`, `docs/RELEASE_AND_DEPLOY_FLOW.md`                                                                                    |
+| Observability         | `docs/observability-conventions.md`, `docs/observability-operations.md`, `docs/observability-runbooks.md`, backend tracing/logging files |
 
 ## Release Components
 
@@ -90,5 +90,7 @@ docker-compose.
 
 - `../../../../docs/RELEASE_AND_DEPLOY_FLOW.md`
 - `../../../../docs/observability-conventions.md`
+- `../../../../docs/observability-operations.md`
+- `../../../../docs/observability-runbooks.md`
 - `../../../../backup/README.md`
 - `../../../../charts/backend/README.md`

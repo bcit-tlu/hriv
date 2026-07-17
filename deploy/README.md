@@ -33,6 +33,15 @@ for the full production backup and DR strategy, including:
 - Full disaster recovery runbook
 - RTO/RPO expectations and known risks
 
+## Production observability operations
+
+See [`docs/observability-operations.md`](../docs/observability-operations.md)
+for the alert catalogue, notification-routing expectations, validation drills,
+load-test evidence format, and operational readiness checklist.
+
+See [`docs/observability-runbooks.md`](../docs/observability-runbooks.md) for
+the alert-target runbooks that Flux-side alert annotations should link to.
+
 ## Production Storage Split
 
 For Kubernetes deployments that need different backup/retention behavior for
