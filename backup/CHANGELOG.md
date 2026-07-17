@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.12.0...backup-v0.12.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* triggering CI build for all components ([#937](https://github.com/bcit-tlu/hriv/issues/937)) ([2f5745a](https://github.com/bcit-tlu/hriv/commit/2f5745a1845399f7cb964cfa73999483d1f7624b))
+
 ## [0.12.0](https://github.com/bcit-tlu/hriv/compare/backup-v0.11.0...backup-v0.12.0) (2026-07-14)
 
 
