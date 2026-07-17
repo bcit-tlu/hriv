@@ -1,5 +1,6 @@
 """Tests for the image processing pipeline."""
 
+import errno
 import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -23,6 +24,7 @@ from app.processing import (
     _detect_tiff_pyramid,
     _extract_tiff_resolution,
     _get_float_field,
+    _processing_failure_message,
     _tile_source_id_from_url,
     detect_pyramid_info,
     generate_tiles,
@@ -156,6 +158,14 @@ def test_generate_tiles_calls_pyvips(tmp_path) -> None:
     mock_thumb.jpegsave.assert_called_once()
 
 
+def test_processing_failure_message_for_enospc() -> None:
+    """ENOSPC failures are surfaced as a storage-capacity problem."""
+    exc = OSError(errno.ENOSPC, "No space left on device")
+    assert _processing_failure_message(exc) == (
+        "Insufficient storage — the tiles volume is full"
+    )
+
+
 async def test_process_source_image_not_found() -> None:
     """When source image is not found, processing returns early."""
     mock_session = AsyncMock()
@@ -248,6 +258,41 @@ async def test_process_source_image_failure() -> None:
 
     assert src.status == "failed"
     assert src.error_message is not None
+
+
+async def test_process_source_image_enospc_failure() -> None:
+    """Tile-generation ENOSPC failures are surfaced clearly."""
+    src = SimpleNamespace(
+        id=3,
+        original_filename="full.svs",
+        stored_path="/data/source_images/full.svs",
+        status="pending",
+        progress=0,
+        name=None,
+        category_id=None,
+        copyright=None,
+        note=None,
+        active=True,
+        image_id=None,
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get = AsyncMock(return_value=src)
+    mock_session.add = MagicMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.processing.async_session", return_value=mock_session):
+        with patch(
+            "app.processing.asyncio.to_thread",
+            side_effect=OSError(errno.ENOSPC, "No space left on device"),
+        ):
+            with patch("app.processing.settings") as mock_settings:
+                mock_settings.tiles_dir = "/data/tiles"
+                await process_source_image(3)
+
+    assert src.status == "failed"
+    assert src.error_message == "Insufficient storage — the tiles volume is full"
 
 
 # ── _best_effort_source_checksum tests ───────────────────
