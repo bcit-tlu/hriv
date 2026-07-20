@@ -352,6 +352,59 @@ describe('CanvasOverlay', () => {
       expect(fc.getActiveObject()).toBeInstanceOf(fabric.ActiveSelection)
     })
 
+    it('keeps serialized coordinates stable across repeated active-selection emits', async () => {
+      ;(viewer.viewport.pixelFromPoint as Mock).mockImplementation(
+        (point: { x: number; y: number }) => ({
+          x: point.x * 100,
+          y: point.y * 100,
+        }),
+      )
+      ;(viewer.viewport.pointFromPixel as Mock).mockImplementation(
+        (point: { x: number; y: number }) => ({
+          x: point.x / 100,
+          y: point.y / 100,
+        }),
+      )
+      const onAnnotationsChange = vi.fn()
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      const first = new fabric.Rect({ left: 100, top: 50, width: 20, height: 10 })
+      const second = new fabric.Rect({ left: 200, top: 80, width: 20, height: 10 })
+      for (const [obj, id] of [
+        [first, 'first'],
+        [second, 'second'],
+      ] as const) {
+        const annotated = obj as fabric.FabricObject & {
+          _annotationId?: string
+          _annotationType?: string
+        }
+        annotated._annotationId = id
+        annotated._annotationType = 'rect'
+        fc.add(obj)
+      }
+      fc.setActiveObject(new fabric.ActiveSelection([first, second], { canvas: fc }))
+
+      const saveButton = screen.getByLabelText('Save & Exit Edit Mode')
+      await act(async () => {
+        saveButton.click()
+        saveButton.click()
+      })
+
+      expect(onAnnotationsChange).toHaveBeenCalledTimes(2)
+      expect(onAnnotationsChange.mock.calls[0][0]).toEqual(onAnnotationsChange.mock.calls[1][0])
+      expect(fc.getActiveObject()).toBeInstanceOf(fabric.ActiveSelection)
+    })
+
     it('cancel button restores original annotations and exits edit mode', async () => {
       const original = [makeAnnotation({ id: 'orig-1' })]
       const onAnnotationsChange = vi.fn()

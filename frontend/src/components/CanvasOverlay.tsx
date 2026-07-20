@@ -657,11 +657,7 @@ export default function CanvasOverlay({
     try {
       return read()
     } finally {
-      const selection = new fabric.ActiveSelection(selectedObjects, {
-        canvas: fc,
-        originX: 'left',
-        originY: 'top',
-      })
+      const selection = new fabric.ActiveSelection(selectedObjects, { canvas: fc })
       fc.setActiveObject(selection)
       fc.requestRenderAll()
     }
@@ -795,11 +791,7 @@ export default function CanvasOverlay({
         if (newObjs.length === 1) {
           fc.setActiveObject(newObjs[0])
         } else if (newObjs.length > 1) {
-          const sel = new fabric.ActiveSelection(newObjs, {
-            canvas: fc,
-            originX: 'left',
-            originY: 'top',
-          })
+          const sel = new fabric.ActiveSelection(newObjs, { canvas: fc })
           fc.setActiveObject(sel)
         }
         fc.renderAll()
