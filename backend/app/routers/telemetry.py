@@ -196,8 +196,9 @@ async def _lookup_display_names(
     Dashboards present these human-readable names alongside the numeric ids.
     Ids that no longer resolve (deleted rows) are simply absent from the maps.
     """
-    image_ids = {e.image_id for e in events if e.image_id is not None}
-    category_ids = {e.category_id for e in events if e.category_id is not None}
+    allowed = [e for e in events if e.event in _ALLOWED_EVENTS]
+    image_ids = {e.image_id for e in allowed if e.image_id is not None}
+    category_ids = {e.category_id for e in allowed if e.category_id is not None}
     image_names: dict[int, str] = {}
     category_labels: dict[int, str] = {}
     if image_ids:
