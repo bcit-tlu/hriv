@@ -624,6 +624,14 @@ export default function ImageViewer({
       }
     }
 
+    // Keep the bottom-left toolbar above the canvas edit overlay (zIndex 15/20)
+    // so its buttons stay visible and clickable while in canvas edit mode.
+    let toolbarAnchor: HTMLElement | null = selectionButton.element
+    while (toolbarAnchor && toolbarAnchor.parentElement !== viewer.container) {
+      toolbarAnchor = toolbarAnchor.parentElement
+    }
+    if (toolbarAnchor) toolbarAnchor.style.zIndex = '25'
+
     // --- Magnification factor badge (inside the navigator mini-map) ---
     // Only visible when the image has measurement settings (scale + unit).
     const magBadge = document.createElement('div')
