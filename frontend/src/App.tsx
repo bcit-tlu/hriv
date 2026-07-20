@@ -135,8 +135,15 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return
     if (lastEmittedPageRef.current === page) return
+    const fromPage = lastEmittedPageRef.current
     lastEmittedPageRef.current = page
-    emitEvent({ event: 'navigation.page_changed', action: 'navigate', outcome: 'success', page })
+    emitEvent({
+      event: 'navigation.page_changed',
+      action: 'navigate',
+      outcome: 'success',
+      page,
+      from_page: fromPage ?? undefined,
+    })
   }, [page, currentUser])
 
   useEffect(() => {
@@ -149,6 +156,24 @@ export default function App() {
   useEffect(() => {
     pathRef.current = path
   })
+
+  const lastEmittedCategoryRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (!currentUser) return
+    const categoryId = path.length > 0 ? path[path.length - 1].id : null
+    if (lastEmittedCategoryRef.current === categoryId) return
+    const fromCategoryId = lastEmittedCategoryRef.current
+    lastEmittedCategoryRef.current = categoryId
+    if (categoryId === null) return
+    emitEvent({
+      event: 'navigation.page_changed',
+      action: 'navigate_category',
+      outcome: 'success',
+      page,
+      category_id: categoryId,
+      from_category_id: fromCategoryId ?? undefined,
+    })
+  }, [path, currentUser, page])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
   const selectedImageRef = useRef<ImageItem | null>(null)
   useEffect(() => {
@@ -598,6 +623,8 @@ export default function App() {
 
     const isRealUserSwitch = prevUser != null && prevUser !== currentUser
     if (isRealUserSwitch) {
+      lastEmittedPageRef.current = null
+      lastEmittedCategoryRef.current = null
       setPage('browse')
       setPath([])
       setSelectedImage(null)

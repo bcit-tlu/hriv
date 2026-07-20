@@ -99,9 +99,11 @@ interface TelemetryEventBase {
   error_code?: TelemetryErrorCode
   action?: string
   page?: FrontendPage
+  from_page?: FrontendPage
   synthetic?: boolean
   image_id?: number
   category_id?: number
+  from_category_id?: number
   request_id?: string
   trace_id?: string
   value?: number

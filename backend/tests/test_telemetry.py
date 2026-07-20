@@ -637,3 +637,53 @@ async def test_telemetry_survives_display_name_lookup_failure(
     [record] = [r for r in caplog.records if r.message == "frontend telemetry event"]
     assert getattr(record, "image.id") == 617
     assert not hasattr(record, "image.name")
+
+
+async def test_telemetry_records_navigation_transition_fields(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Navigation events carry bounded from_page and enriched from-category labels."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+
+    batch = TelemetryBatch(
+        events=[
+            TelemetryEvent(
+                event="navigation.page_changed",
+                action="navigate",
+                page="manage",
+                from_page="browse",
+            ),
+            TelemetryEvent(
+                event="navigation.page_changed",
+                action="navigate_category",
+                page="browse",
+                category_id=15,
+                from_category_id=14,
+            ),
+            TelemetryEvent(
+                event="navigation.page_changed",
+                action="navigate",
+                page="browse",
+                from_page="not-a-real-page",
+            ),
+        ]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=1, role="student", metadata_=None)
+    db = _make_db(category_labels={14: "Histopathology", 15: "Renal"})
+
+    with _allow_rate_limit():
+        await ingest_telemetry_events(
+            batch=batch, request=request, user=user, db=db, x_session_id=None
+        )
+
+    first, second, third = [
+        r for r in caplog.records if r.message == "frontend telemetry event"
+    ]
+    assert getattr(first, "event.from_page") == "browse"
+    assert getattr(second, "category.id") == 15
+    assert getattr(second, "category.label") == "Renal"
+    assert getattr(second, "category.from_id") == 14
+    assert getattr(second, "category.from_label") == "Histopathology"
+    # Unrecognized from_page values are coerced to the bounded "other" bucket.
+    assert getattr(third, "event.from_page") == "other"

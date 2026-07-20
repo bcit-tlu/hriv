@@ -93,6 +93,7 @@ _OS_FAMILIES = frozenset({
     "windows", "macos", "ios", "android", "linux", "chromeos", "other",
 })
 _DEVICE_CLASSES = frozenset({"desktop", "mobile", "tablet", "other"})
+_PAGES = frozenset({"browse", "manage", "people", "admin", "unknown", "other"})
 _VIEWPORT_BUCKETS = frozenset({"xs", "sm", "md", "lg", "xl"})
 _UNITS = frozenset({"ms", "score"})
 _UPLOAD_MODES = frozenset({"single", "bulk"})
@@ -149,6 +150,7 @@ class TelemetryEvent(BaseModel):
     error_code: str | None = Field(None, max_length=64)
     action: str | None = Field(None, max_length=_MAX_ATTRIBUTE_LENGTH)
     page: str | None = Field(None, max_length=_MAX_ATTRIBUTE_LENGTH)
+    from_page: str | None = Field(None, max_length=32)
     synthetic: bool | None = None
     request_id: str | None = Field(None, max_length=128)
     trace_id: str | None = Field(None, max_length=64)
@@ -160,6 +162,7 @@ class TelemetryEvent(BaseModel):
     # Structured domain identifiers (never used as Prometheus labels).
     image_id: int | None = None
     category_id: int | None = None
+    from_category_id: int | None = None
 
     # Bounded client-environment buckets.
     browser_family: str | None = Field(None, max_length=32)
@@ -198,7 +201,12 @@ async def _lookup_display_names(
     """
     allowed = [e for e in events if e.event in _ALLOWED_EVENTS]
     image_ids = {e.image_id for e in allowed if e.image_id is not None}
-    category_ids = {e.category_id for e in allowed if e.category_id is not None}
+    category_ids = {
+        cid
+        for e in allowed
+        for cid in (e.category_id, e.from_category_id)
+        if cid is not None
+    }
     image_names: dict[int, str] = {}
     category_labels: dict[int, str] = {}
     if image_ids:
@@ -281,6 +289,9 @@ async def ingest_telemetry_events(
             extra["event.action"] = event.action
         if event.page:
             extra["event.page"] = event.page
+        from_page = _bounded(event.from_page, _PAGES)
+        if from_page is not None:
+            extra["event.from_page"] = from_page
         if event.error:
             extra["error.type"] = event.error
         error_code = _bounded(event.error_code, _ERROR_CODES)
@@ -296,6 +307,11 @@ async def ingest_telemetry_events(
             category_label = category_labels.get(event.category_id)
             if category_label is not None:
                 extra["category.label"] = category_label
+        if event.from_category_id is not None:
+            extra["category.from_id"] = event.from_category_id
+            from_category_label = category_labels.get(event.from_category_id)
+            if from_category_label is not None:
+                extra["category.from_label"] = from_category_label
         if event.request_id:
             extra["request.id"] = event.request_id
         if event.trace_id:
