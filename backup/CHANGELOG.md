@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.2](https://github.com/bcit-tlu/hriv/compare/backup-v0.12.1...backup-v0.12.2) (2026-07-20)
+
+
+### Bug Fixes
+
+* **backup:** preserve OTEL log handlers so backup log format is applied ([#957](https://github.com/bcit-tlu/hriv/issues/957)) ([5803eea](https://github.com/bcit-tlu/hriv/commit/5803eea092207e2f890b9a132d52aed35e6efe29))
+
 ## [0.12.1](https://github.com/bcit-tlu/hriv/compare/backup-v0.12.0...backup-v0.12.1) (2026-07-17)
 
 
