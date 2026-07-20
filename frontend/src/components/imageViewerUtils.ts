@@ -112,7 +112,7 @@ export const PINCH_ROTATE_ACTIVATION_DEGREES = 10
 export const PINCH_GESTURE_GAP_MS = 150
 
 /** Separation ratio that activates pinch zoom arbitration. */
-export const PINCH_ZOOM_ACTIVATION_RATIO = 1.15
+export const PINCH_ZOOM_ACTIVATION_RATIO = 1.25
 
 /** A 2D point in CSS-pixel space (subset of OpenSeadragon.Point). */
 interface Point2D {
