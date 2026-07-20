@@ -56,6 +56,7 @@ import {
 } from './treeUtils'
 import UploadImageModal from './components/UploadImageModal'
 import { isAcceptedFile } from './fileUtils'
+import { formatFileSize } from './formatUtils'
 import { useAuth } from './useAuth'
 import {
   fetchImage as apiFetchImage,
@@ -1559,7 +1560,7 @@ export default function App() {
                 )}
                 {selectedImage.fileSize != null && (
                   <Typography variant="body2" color="text.secondary" component="span">
-                    <strong>Size:</strong> {selectedImage.fileSize} MB
+                    <strong>Size:</strong> {formatFileSize(selectedImage.fileSize)}
                   </Typography>
                 )}
                 {selectedImageMeasurement && (

@@ -38,6 +38,16 @@ logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
 
 _meter = metrics.get_meter(__name__)
+
+
+def _source_image_file_size_bytes(src: SourceImage) -> int | None:
+    if src.file_size is not None:
+        return src.file_size
+    try:
+        return os.path.getsize(src.stored_path)
+    except OSError:
+        return None
+
 _processing_started_counter = _meter.create_counter(
     "hriv.image_processing.started",
     description="Number of image processing jobs started",
@@ -632,17 +642,7 @@ async def process_source_image(source_image_id: int) -> None:
 
                 name = src.name or Path(src.original_filename).stem
 
-                # Compute file size in MB from the source image on disk
-                file_size_mb: float | None = None
-                if src.file_size is not None:
-                    file_size_mb = round(src.file_size / (1024 * 1024), 2)
-                else:
-                    try:
-                        file_size_mb = round(
-                            os.path.getsize(src.stored_path) / (1024 * 1024), 2
-                        )
-                    except OSError:
-                        pass
+                file_size = _source_image_file_size_bytes(src)
 
                 # Build metadata from pyramid detection results
                 image_metadata: dict = {}
@@ -671,7 +671,7 @@ async def process_source_image(source_image_id: int) -> None:
                     metadata_=image_metadata,
                     width=img_width,
                     height=img_height,
-                    file_size=file_size_mb,
+                    file_size=file_size,
                 )
                 db.add(img)
                 await db.flush()
@@ -899,16 +899,7 @@ async def process_replace_image(
             await db.commit()
 
             with tracer.start_as_current_span("update_image_record"):
-                file_size_mb: float | None = None
-                if src.file_size is not None:
-                    file_size_mb = round(src.file_size / (1024 * 1024), 2)
-                else:
-                    try:
-                        file_size_mb = round(
-                            os.path.getsize(src.stored_path) / (1024 * 1024), 2,
-                        )
-                    except OSError:
-                        pass
+                file_size = _source_image_file_size_bytes(src)
 
                 # Re-fetch to pick up any concurrent metadata changes
                 await db.refresh(img)
@@ -917,7 +908,7 @@ async def process_replace_image(
                 img.thumb = thumb_url
                 img.width = img_width
                 img.height = img_height
-                img.file_size = file_size_mb
+                img.file_size = file_size
                 img.version = img.version + 1
 
                 # Clear edit canvas metadata (annotations and overlays)

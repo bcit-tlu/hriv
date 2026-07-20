@@ -223,7 +223,13 @@ async def test_process_source_image_success() -> None:
 
     mock_session = AsyncMock()
     mock_session.get.return_value = src
-    mock_session.add = MagicMock()
+    captured_image = {}
+
+    def capture_add(obj):
+        if hasattr(obj, "file_size"):
+            captured_image["image"] = obj
+
+    mock_session.add = MagicMock(side_effect=capture_add)
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=False)
 
@@ -235,6 +241,7 @@ async def test_process_source_image_success() -> None:
                     await process_source_image(1)
 
     assert src.status == "completed"
+    assert captured_image["image"].file_size == 5242880
     # Tile-cache provenance is recorded on success.
     from app.tile_provenance import current_tile_settings_hash
 
@@ -669,17 +676,17 @@ async def test_process_source_image_with_pyramid_metadata() -> None:
 
     mock_session = AsyncMock()
     mock_session.get.return_value = src
-    mock_session.add = MagicMock()
-    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
-    mock_session.__aexit__ = AsyncMock(return_value=False)
-
     captured_image = {}
 
     def capture_add(obj):
+        if hasattr(obj, "file_size"):
+            captured_image["image"] = obj
         if hasattr(obj, "metadata_"):
             captured_image["metadata"] = obj.metadata_
 
-    mock_session.add.side_effect = capture_add
+    mock_session.add = MagicMock(side_effect=capture_add)
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
 
     # asyncio.to_thread is called for both detect_pyramid_info and generate_tiles.
     # Patch detect_pyramid_info so when to_thread calls it, it returns pyramid_info.
@@ -693,6 +700,7 @@ async def test_process_source_image_with_pyramid_metadata() -> None:
                         await process_source_image(10)
 
     assert src.status == "completed"
+    assert captured_image["image"].file_size == 2147483648
     assert captured_image.get("metadata") is not None
     meta = captured_image["metadata"]
     assert meta["measurement_scale"] == 3.9604
