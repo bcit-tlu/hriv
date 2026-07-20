@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import OpenSeadragon from 'openseadragon'
 import * as fabric from 'fabric'
+import { emitEvent } from '../observability'
 import Box from '@mui/material/Box'
 import IconButton from '@mui/material/IconButton'
 import Tooltip from '@mui/material/Tooltip'
@@ -97,6 +98,34 @@ interface CanvasOverlayProps {
 }
 
 const LOG_PREFIX = '[CanvasOverlay]'
+
+/** Report an annotation lifecycle event with its bounded annotation type. */
+function emitAnnotationEvent(
+  event: 'annotation.created' | 'annotation.deleted',
+  annotationType: CanvasAnnotation['type'] | 'mixed',
+  count = 1,
+): void {
+  emitEvent({
+    event,
+    action: annotationType,
+    outcome: 'success',
+    value: count,
+  })
+}
+
+const ANNOTATION_TYPES: ReadonlySet<string> = new Set(['rect', 'circle', 'arrow', 'text', 'link'])
+
+/** Bounded annotation-type bucket for a set of fabric objects. */
+function annotationTypeOf(objs: fabric.FabricObject[]): CanvasAnnotation['type'] | 'mixed' {
+  const types = new Set(
+    objs.map((obj) => {
+      const t = (obj as AnnotatedObject)._annotationType
+      return t !== undefined && ANNOTATION_TYPES.has(t) ? t : 'rect'
+    }),
+  )
+  if (types.size === 1) return [...types][0] as CanvasAnnotation['type']
+  return 'mixed'
+}
 
 /** Generate a short random ID */
 function uid(): string {
@@ -696,6 +725,7 @@ export default function CanvasOverlay({
           }
           fc.discardActiveObject()
           fc.renderAll()
+          emitAnnotationEvent('annotation.deleted', annotationTypeOf(activeObjs), activeObjs.length)
           emitAnnotations()
         }
       }
@@ -744,6 +774,9 @@ export default function CanvasOverlay({
           fc.setActiveObject(sel)
         }
         fc.renderAll()
+        if (newObjs.length > 0) {
+          emitAnnotationEvent('annotation.created', annotationTypeOf(newObjs), newObjs.length)
+        }
         emitAnnotations()
         clipboardRef.current = clipboardRef.current.map((ann) => ({
           ...ann,
@@ -905,6 +938,9 @@ export default function CanvasOverlay({
       if (obj) {
         obj.set({ selectable: true, evented: true })
         obj.setCoords()
+        if (activeTool === 'rect' || activeTool === 'circle' || activeTool === 'arrow') {
+          emitAnnotationEvent('annotation.created', activeTool)
+        }
       }
       drawStartRef.current = null
       drawObjRef.current = null
@@ -966,6 +1002,7 @@ export default function CanvasOverlay({
     fc.add(text)
     fc.setActiveObject(text)
     fc.renderAll()
+    emitAnnotationEvent('annotation.created', 'text')
     emitAnnotations()
     setActiveTool('select')
   }, [activeColor, emitAnnotations])
@@ -998,6 +1035,7 @@ export default function CanvasOverlay({
     fc.add(text)
     fc.setActiveObject(text)
     fc.renderAll()
+    emitAnnotationEvent('annotation.created', 'link')
     emitAnnotations()
     setActiveTool('select')
   }, [linkText, linkUrl, activeColor, emitAnnotations])
@@ -1012,6 +1050,9 @@ export default function CanvasOverlay({
     }
     fc.discardActiveObject()
     fc.renderAll()
+    if (active.length > 0) {
+      emitAnnotationEvent('annotation.deleted', annotationTypeOf(active), active.length)
+    }
     emitAnnotations()
   }, [emitAnnotations])
 

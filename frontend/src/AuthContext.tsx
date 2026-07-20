@@ -191,6 +191,11 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     setToken(resp.access_token)
     setCurrentUser(user)
     localStorage.setItem('hriv_user', JSON.stringify(user))
+    emitEventNow({
+      event: 'auth.login_succeeded',
+      action: 'login',
+      outcome: 'success',
+    })
   }, [])
 
   const logout = useCallback(() => {

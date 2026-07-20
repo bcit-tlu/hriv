@@ -53,17 +53,25 @@ TELEMETRY_SCHEMA_VERSION = 2
 # Event names the frontend is allowed to emit. Keep this allowlist small and
 # review any new event for privacy/PII implications before adding it.
 _ALLOWED_EVENTS = frozenset({
+    "annotation.created",
+    "annotation.deleted",
+    "application.session_heartbeat",
     "application.session_started",
+    "auth.login_succeeded",
     "auth.logout_selected",
+    "category.created",
     "feedback.report_issue_opened",
     "feedback.report_issue_submitted",
     "frontend.error",
     "frontend.performance",
     "image.share_selected",
+    "image.upload.completed",
     "image.view.started",
     "image.view.ready",
+    "image.view.ended",
     "image.view.failed",
     "navigation.page_changed",
+    "ui.toolbar_action",
 })
 
 # Hard limits to prevent accidental or malicious payload abuse. These are
@@ -84,6 +92,11 @@ _OS_FAMILIES = frozenset({
 _DEVICE_CLASSES = frozenset({"desktop", "mobile", "tablet", "other"})
 _VIEWPORT_BUCKETS = frozenset({"xs", "sm", "md", "lg", "xl"})
 _UNITS = frozenset({"ms", "score"})
+_UPLOAD_MODES = frozenset({"single", "bulk"})
+_FILE_TYPES = frozenset({
+    "jpg", "jpeg", "png", "gif", "webp", "tif", "tiff", "svs", "zip",
+    "mixed", "other",
+})
 _ERROR_CODES = frozenset({
     "api_http_4xx",
     "api_http_5xx",
@@ -138,6 +151,8 @@ class TelemetryEvent(BaseModel):
     trace_id: str | None = Field(None, max_length=64)
     value: float | None = None
     unit: str | None = Field(None, max_length=16)
+    upload_mode: str | None = Field(None, max_length=16)
+    file_type: str | None = Field(None, max_length=16)
 
     # Structured domain identifiers (never used as Prometheus labels).
     image_id: int | None = None
@@ -246,6 +261,12 @@ async def ingest_telemetry_events(
         unit = _bounded(event.unit, _UNITS)
         if unit is not None:
             extra["event.unit"] = unit
+        upload_mode = _bounded(event.upload_mode, _UPLOAD_MODES)
+        if upload_mode is not None:
+            extra["upload.mode"] = upload_mode
+        file_type = _bounded(event.file_type, _FILE_TYPES)
+        if file_type is not None:
+            extra["file.type"] = file_type
 
         browser_family = _bounded(event.browser_family, _BROWSER_FAMILIES)
         if browser_family is not None:

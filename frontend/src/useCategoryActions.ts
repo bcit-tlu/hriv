@@ -9,6 +9,7 @@ import {
   userMessage,
 } from './api'
 import { computeMoveRestrictionChange } from './categoryUtils'
+import { emitEvent } from './observability'
 import type { MoveRestrictionChange } from './categoryUtils'
 import { findImageInTree, findCategoryPath } from './treeUtils'
 import type { Category, ImageItem } from './types'
@@ -144,6 +145,12 @@ export function useCategoryActions({
       if (programIds !== undefined) body.program_ids = programIds
       if (groupIds !== undefined) body.group_ids = groupIds
       const created = await apiCreateCategory(body)
+      emitEvent({
+        event: 'category.created',
+        action: 'create',
+        outcome: 'success',
+        category_id: created.id,
+      })
       if (created.warnings?.length && setWarningSnack) {
         setWarningSnack(created.warnings.map((w) => w.message).join(' '))
       }
