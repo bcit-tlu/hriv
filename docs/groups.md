@@ -147,6 +147,11 @@ selected programs (and would therefore lose access to the AND-gated category):
 The operation still succeeds — this is purely informational and is computed the
 same way regardless of which dimension was added last.
 
+When editing a parent category's group restriction in the frontend, a separate
+non-blocking warning identifies descendants whose own group restrictions are
+disjoint from the proposed parent selection. Such descendants would become
+hidden through group narrowing; the warning does not block saving.
+
 ## Frontend behaviour
 
 | Concern                                                                              | Where                                                                   |

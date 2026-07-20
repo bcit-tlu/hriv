@@ -191,6 +191,7 @@ export function computeMoveRestrictionChange(
 interface DescendantNode {
   label: string
   programIds: number[]
+  groupIds?: number[]
   children: DescendantNode[]
 }
 
@@ -205,6 +206,39 @@ export function findIncompatibleDescendants(
   function walk(nodes: ReadonlyArray<DescendantNode>): void {
     for (const node of nodes) {
       if (node.programIds.length > 0 && !node.programIds.some((id) => newSet.has(id))) {
+        affected.push(node.label)
+      }
+      walk(node.children)
+    }
+  }
+
+  walk(children)
+  return affected
+}
+
+/**
+ * Find descendant categories whose own group restrictions are incompatible
+ * with a proposed new parent group restriction set.
+ *
+ * A descendant is "incompatible" when it has at least one `groupId` of its
+ * own AND none of those IDs appear in `newParentGroupIds`. In that case the
+ * narrowing intersection at the descendant would become empty, making it
+ * invisible to all students via the group dimension.
+ *
+ * Returns the labels of every incompatible descendant (in depth-first order).
+ */
+export function findIncompatibleDescendantsByGroup(
+  children: ReadonlyArray<DescendantNode>,
+  newParentGroupIds: number[],
+): string[] {
+  if (newParentGroupIds.length === 0) return []
+  const newSet = new Set(newParentGroupIds)
+  const affected: string[] = []
+
+  function walk(nodes: ReadonlyArray<DescendantNode>): void {
+    for (const node of nodes) {
+      const groupIds = node.groupIds ?? []
+      if (groupIds.length > 0 && !groupIds.some((id) => newSet.has(id))) {
         affected.push(node.label)
       }
       walk(node.children)
