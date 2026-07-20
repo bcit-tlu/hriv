@@ -51,7 +51,7 @@ interface EditCategoryDialogProps {
   ancestorHidden?: boolean
   /** The ID of the category being edited. */
   categoryId?: number
-  /** Direct children of the category being edited (used to detect incompatible program restrictions). */
+  /** Descendant categories walked recursively to detect incompatible program/group restrictions. */
   childCategories?: Category[]
 }
 
