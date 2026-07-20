@@ -289,7 +289,7 @@
             "type": "prometheus",
             "uid": "${prometheus}"
           },
-          "expr": "sum(rate(http_server_request_duration_seconds_count{service=~\"${component}\"}[5m]))",
+          "expr": "sum(rate(http_server_duration_milliseconds_count{service_name=~\"${component}\"}[5m]))",
           "refId": "A"
         }
       ],
@@ -359,7 +359,7 @@
             "type": "prometheus",
             "uid": "${prometheus}"
           },
-          "expr": "sum(rate(http_server_request_duration_seconds_count{service=~\"${component}\",http_status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(http_server_request_duration_seconds_count{service=~\"${component}\"}[5m])), 0.001)",
+          "expr": "sum(rate(http_server_duration_milliseconds_count{service_name=~\"${component}\",http_status_code=~\"5..\"}[5m])) / clamp_min(sum(rate(http_server_duration_milliseconds_count{service_name=~\"${component}\"}[5m])), 0.001)",
           "refId": "A"
         }
       ],
@@ -418,7 +418,7 @@
               }
             ]
           },
-          "unit": "s",
+          "unit": "ms",
           "noValue": "No matching latency telemetry"
         },
         "overrides": []
@@ -448,7 +448,7 @@
             "type": "prometheus",
             "uid": "${prometheus}"
           },
-          "expr": "histogram_quantile(0.50, sum(rate(http_server_request_duration_seconds_bucket{service=~\"${component}\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.50, sum(rate(http_server_duration_milliseconds_bucket{service_name=~\"${component}\"}[5m])) by (le))",
           "legendFormat": "p50",
           "refId": "A"
         },
@@ -457,7 +457,7 @@
             "type": "prometheus",
             "uid": "${prometheus}"
           },
-          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service=~\"${component}\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_duration_milliseconds_bucket{service_name=~\"${component}\"}[5m])) by (le))",
           "legendFormat": "p95",
           "refId": "B"
         },
@@ -466,7 +466,7 @@
             "type": "prometheus",
             "uid": "${prometheus}"
           },
-          "expr": "histogram_quantile(0.99, sum(rate(http_server_request_duration_seconds_bucket{service=~\"${component}\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(http_server_duration_milliseconds_bucket{service_name=~\"${component}\"}[5m])) by (le))",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -882,7 +882,7 @@
           "type": "prometheus",
           "uid": "${prometheus}"
         },
-        "query": "label_values(http_server_request_duration_seconds_count, service)",
+        "query": "label_values(http_server_duration_milliseconds_count, service_name)",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,

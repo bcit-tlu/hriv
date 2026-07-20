@@ -2200,7 +2200,7 @@
         "type": "loki",
         "uid": "${loki}"
       },
-      "description": "Navigation flow between categories (source \u2192 target, weighted by transition count). Requires the netsage-sankey-panel plugin; falls back to a table if not installed.",
+      "description": "Drill-down navigation funnel: Home \u2192 category \u2192 sub-category \u2192 image (edges weighted by count). Only downward category moves are included so the flow stays acyclic; up/jump moves appear in the Top category transitions table. Requires the netsage-sankey-panel plugin. Data accumulates from events ingested after the direction field was introduced.",
       "gridPos": {
         "h": 10,
         "w": 24,
@@ -2216,13 +2216,29 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "topk(30, sum by (category_from_label, category_label) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"navigation.page_changed\" | event_action=\"navigate_category\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | category_label!=\"\" [$__range])))",
+          "expr": "topk(30, sum by (source, target) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"navigation.page_changed\" | event_action=\"navigate_category\" | event_direction=\"down\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | category_label!=\"\" | label_format source=\"{{ if .category_from_label }}{{ .category_from_label }}{{ else }}Home{{ end }}\", target=\"{{ .category_label }}\" [$__range]))) or topk(30, sum by (source, target) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | category_label!=\"\" | image_name!=\"\" | label_format source=\"{{ .category_label }}\", target=\"{{ .image_name }}\" [$__range])))",
           "refId": "A",
           "queryType": "instant"
         }
       ],
       "title": "Category navigation flow (Sankey)",
-      "type": "netsage-sankey-panel"
+      "type": "netsage-sankey-panel",
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "source": 0,
+              "target": 1,
+              "Value": 2
+            },
+            "renameByName": {}
+          }
+        }
+      ]
     }
   ],
   "refresh": "1m",

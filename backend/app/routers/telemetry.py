@@ -94,6 +94,7 @@ _OS_FAMILIES = frozenset({
 })
 _DEVICE_CLASSES = frozenset({"desktop", "mobile", "tablet", "other"})
 _PAGES = frozenset({"browse", "manage", "people", "admin", "unknown", "other"})
+_NAV_DIRECTIONS = frozenset({"down", "up", "jump"})
 _VIEWPORT_BUCKETS = frozenset({"xs", "sm", "md", "lg", "xl"})
 _UNITS = frozenset({"ms", "score"})
 _UPLOAD_MODES = frozenset({"single", "bulk"})
@@ -151,6 +152,7 @@ class TelemetryEvent(BaseModel):
     action: str | None = Field(None, max_length=_MAX_ATTRIBUTE_LENGTH)
     page: str | None = Field(None, max_length=_MAX_ATTRIBUTE_LENGTH)
     from_page: str | None = Field(None, max_length=32)
+    direction: str | None = Field(None, max_length=16)
     synthetic: bool | None = None
     request_id: str | None = Field(None, max_length=128)
     trace_id: str | None = Field(None, max_length=64)
@@ -292,6 +294,9 @@ async def ingest_telemetry_events(
         from_page = _bounded(event.from_page, _PAGES)
         if from_page is not None:
             extra["event.from_page"] = from_page
+        direction = _bounded(event.direction, _NAV_DIRECTIONS)
+        if direction is not None:
+            extra["event.direction"] = direction
         if event.error:
             extra["error.type"] = event.error
         error_code = _bounded(event.error_code, _ERROR_CODES)

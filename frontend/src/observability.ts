@@ -89,6 +89,7 @@ export type TelemetryErrorCode =
   | 'window_runtime_error'
 export type FrontendPerformanceMetric = 'application_load' | 'lcp' | 'inp' | 'cls' | 'image_ready'
 export type FrontendPage = 'browse' | 'manage' | 'people' | 'admin' | 'unknown'
+export type TelemetryNavDirection = 'down' | 'up' | 'jump'
 
 interface TelemetryEventBase {
   event: TelemetryEventName
@@ -104,6 +105,7 @@ interface TelemetryEventBase {
   image_id?: number
   category_id?: number
   from_category_id?: number
+  direction?: TelemetryNavDirection
   request_id?: string
   trace_id?: string
   value?: number
