@@ -79,6 +79,16 @@ Two capability flags in `AuthContext.tsx` drive all gating:
 
 - Students view locked overlays and annotations read-only; edit mode and
   measurement tools are gated by `canEditContent`.
+- Touch pinch gestures use a per-gesture zoom-vs-rotate mode lock. The
+  `ImageViewer` intercepts `canvas-pinch` and compares initial finger-line
+  rotation against finger-separation change. The dominant motion wins:
+  rotation locks `ROTATE` mode, suppresses native zoom, and applies the
+  damped `PINCH_ROTATE_SENSITIVITY` delta; separation locks `ZOOM` mode,
+  suppresses rotation, and leaves native zoom available. Before either motion
+  crosses its activation threshold, both zoom and pan remain available but
+  rotation is suppressed. A gap greater than `PINCH_GESTURE_GAP_MS` resets
+  arbitration for the next gesture. Covered by `measurement.test.ts`
+  (`pinchRotationDeltaDegrees`, `createPinchRotationTracker`).
 
 ### Search modal (`SearchModal.test.tsx`)
 

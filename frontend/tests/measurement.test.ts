@@ -13,9 +13,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   computeMagnification,
+  createPinchRotationTracker,
   createMeasurementLabel,
   CSS_PIXEL_UM,
   formatMeasurement,
+  pinchRotationDeltaDegrees,
   unitToMicrons,
   type MeasurementConfig,
 } from '../src/components/imageViewerUtils'
@@ -302,5 +304,176 @@ describe('computeMagnification', () => {
     const magDefault = computeMagnification(1, config)
     const magExplicit = computeMagnification(1, config, 1)
     expect(magDefault).toBeCloseTo(magExplicit!, 2)
+  })
+})
+
+describe('pinchRotationDeltaDegrees', () => {
+  // The finger line runs from p1 (origin) to p0, so the line's angle equals the
+  // angle of p0. Rotating p0 by `deg` about the origin rotates the line by
+  // exactly `deg`, giving a raw gesture delta of `deg` degrees.
+  const RADIUS = 10
+  const p1 = { x: 0, y: 0 }
+  const p0At = (deg: number) => ({
+    x: RADIUS * Math.cos((deg * Math.PI) / 180),
+    y: RADIUS * Math.sin((deg * Math.PI) / 180),
+  })
+
+  it('returns the raw angle delta', () => {
+    const delta = pinchRotationDeltaDegrees(p0At(0), p1, p0At(30), p1)
+    expect(delta).toBeCloseTo(30, 5)
+  })
+
+  it('preserves the raw rotation magnitude', () => {
+    const raw = 30
+    const delta = pinchRotationDeltaDegrees(p0At(0), p1, p0At(raw), p1)
+    expect(Math.abs(delta)).toBeCloseTo(raw, 5)
+  })
+
+  it('returns 0 when the finger line does not change orientation', () => {
+    // Same orientation, translated and scaled — pure pan/zoom, no rotation.
+    const delta = pinchRotationDeltaDegrees(
+      { x: 10, y: 0 },
+      { x: 0, y: 0 },
+      { x: 25, y: 5 },
+      { x: 5, y: 5 },
+    )
+    expect(delta).toBeCloseTo(0, 5)
+  })
+
+  it('preserves rotation direction (clockwise yields negative delta)', () => {
+    const delta = pinchRotationDeltaDegrees(p0At(0), p1, p0At(-30), p1)
+    expect(delta).toBeCloseTo(-30, 5)
+  })
+})
+
+describe('createPinchRotationTracker', () => {
+  const ACTIVATION_DEGREES = 10
+  const GAP_MS = 20
+  const ZOOM_ACTIVATION_RATIO = 1.1
+  const RADIUS = 10
+  const p1 = { x: 0, y: 0 }
+  const p0At = (deg: number) => ({
+    x: RADIUS * Math.cos((deg * Math.PI) / 180),
+    y: RADIUS * Math.sin((deg * Math.PI) / 180),
+  })
+  const update = (
+    tracker: ReturnType<typeof createPinchRotationTracker>,
+    lastDegrees: number,
+    currentDegrees: number,
+    lastDistance: number,
+    distance: number,
+    timestampMs: number,
+  ) =>
+    tracker.update(
+      p0At(lastDegrees),
+      p1,
+      p0At(currentDegrees),
+      p1,
+      lastDistance,
+      distance,
+      timestampMs,
+    )
+
+  it('allows zoom and suppresses rotation while undecided', () => {
+    const tracker = createPinchRotationTracker({
+      activationDegrees: ACTIVATION_DEGREES,
+      zoomActivationRatio: ZOOM_ACTIVATION_RATIO,
+    })
+
+    expect(update(tracker, 0, 4, 100, 100, 0)).toEqual({
+      rotationDelta: 0,
+      suppressZoom: false,
+    })
+    expect(update(tracker, 4, 8, 100, 102, 10)).toEqual({
+      rotationDelta: 0,
+      suppressZoom: false,
+    })
+  })
+
+  it('recovers when the first event has an invalid distance baseline', () => {
+    const tracker = createPinchRotationTracker({
+      activationDegrees: ACTIVATION_DEGREES,
+      sensitivity: 0.4,
+      zoomActivationRatio: ZOOM_ACTIVATION_RATIO,
+    })
+
+    expect(update(tracker, 0, 0, 0, 100, 0)).toEqual({
+      rotationDelta: 0,
+      suppressZoom: false,
+    })
+    const rotation = update(tracker, 0, 12, 100, 101, 10)
+    expect(rotation.rotationDelta).toBeCloseTo(4.8, 5)
+    expect(rotation.suppressZoom).toBe(true)
+  })
+
+  it('locks zoom when separation dominates first and never rotates later', () => {
+    const tracker = createPinchRotationTracker({
+      activationDegrees: ACTIVATION_DEGREES,
+      sensitivity: 0.4,
+      zoomActivationRatio: ZOOM_ACTIVATION_RATIO,
+    })
+
+    expect(update(tracker, 0, 2, 100, 112, 0)).toEqual({
+      rotationDelta: 0,
+      suppressZoom: false,
+    })
+    expect(update(tracker, 2, 20, 112, 112, 10)).toEqual({
+      rotationDelta: 0,
+      suppressZoom: false,
+    })
+  })
+
+  it('locks rotate when twist dominates first and suppresses zoom', () => {
+    const tracker = createPinchRotationTracker({
+      activationDegrees: ACTIVATION_DEGREES,
+      sensitivity: 0.4,
+      zoomActivationRatio: ZOOM_ACTIVATION_RATIO,
+    })
+
+    const firstRotation = update(tracker, 0, 12, 100, 101, 0)
+    expect(firstRotation.rotationDelta).toBeCloseTo(4.8, 5)
+    expect(firstRotation.suppressZoom).toBe(true)
+    const secondRotation = update(tracker, 12, 15, 101, 115, 10)
+    expect(secondRotation.rotationDelta).toBeCloseTo(1.2, 5)
+    expect(secondRotation.suppressZoom).toBe(true)
+  })
+
+  it('preserves rotation direction in rotate mode', () => {
+    const tracker = createPinchRotationTracker({
+      activationDegrees: ACTIVATION_DEGREES,
+      sensitivity: 0.4,
+      zoomActivationRatio: ZOOM_ACTIVATION_RATIO,
+    })
+
+    const rotation = update(tracker, 0, -12, 100, 101, 0)
+    expect(rotation.rotationDelta).toBeCloseTo(-4.8, 5)
+    expect(rotation.suppressZoom).toBe(true)
+  })
+
+  it('resets after a gesture gap and re-arbitrates the next gesture', () => {
+    const tracker = createPinchRotationTracker({
+      activationDegrees: ACTIVATION_DEGREES,
+      gapMs: GAP_MS,
+      sensitivity: 0.4,
+      zoomActivationRatio: ZOOM_ACTIVATION_RATIO,
+    })
+
+    const firstRotation = update(tracker, 0, 12, 100, 101, 0)
+    expect(firstRotation.rotationDelta).toBeCloseTo(4.8, 5)
+    expect(firstRotation.suppressZoom).toBe(true)
+    const secondRotation = update(tracker, 12, 15, 101, 102, 10)
+    expect(secondRotation.rotationDelta).toBeCloseTo(1.2, 5)
+    expect(secondRotation.suppressZoom).toBe(true)
+    expect(update(tracker, 15, 16, 102, 103, GAP_MS + 11)).toEqual({
+      rotationDelta: 0,
+      suppressZoom: false,
+    })
+    expect(update(tracker, 16, 18, 103, 104, GAP_MS + 20)).toEqual({
+      rotationDelta: 0,
+      suppressZoom: false,
+    })
+    const reactivatedRotation = update(tracker, 18, 25, 104, 105, GAP_MS + 30)
+    expect(reactivatedRotation.rotationDelta).toBeCloseTo(2.8, 5)
+    expect(reactivatedRotation.suppressZoom).toBe(true)
   })
 })
