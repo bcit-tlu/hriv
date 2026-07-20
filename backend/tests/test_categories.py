@@ -384,6 +384,52 @@ async def test_create_category_instructor_cannot_attach_unmanaged_program_name()
     assert db.execute.await_count == 2
 
 
+async def test_create_category_instructor_can_carry_inherited_program_restriction() -> None:
+    body = CategoryCreate(label="Child", parent_id=10, program_ids=[20])
+    parent = _make_category(10, "Parent", programs=[_make_program(20, "Restricted")])
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    prog_result = MagicMock()
+    prog_result.scalars.return_value.all.return_value = [
+        _make_program(20, "Restricted")
+    ]
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[parent])
+    db.execute = AsyncMock(side_effect=[dup, prog_result])
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    result = await create_category(
+        body, _editor("instructor", id=7, programs=[30]), db=db,
+    )
+
+    assert result.programs == [_make_program(20, "Restricted")]
+    db.commit.assert_awaited_once()
+
+
+async def test_create_category_instructor_cannot_attach_non_inherited_program() -> None:
+    body = CategoryCreate(label="Child", parent_id=10, program_ids=[30])
+    parent = _make_category(10, "Parent", programs=[_make_program(20)])
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    prog_result = MagicMock()
+    prog_result.scalars.return_value.all.return_value = [
+        _make_program(30, "Unmanaged")
+    ]
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[parent])
+    db.execute = AsyncMock(side_effect=[dup, prog_result])
+
+    with pytest.raises(HTTPException) as exc:
+        await create_category(
+            body, _editor("instructor", id=7, programs=[40]), db=db,
+        )
+
+    assert exc.value.status_code == 403
+    assert "Unmanaged" in exc.value.detail
+
+
 async def test_update_category_not_found() -> None:
     body = CategoryUpdate(label="Updated")
     db = AsyncMock()
@@ -884,6 +930,84 @@ async def test_create_category_instructor_attaches_managed_group() -> None:
     db.refresh = AsyncMock()
     result = await create_category(body, _editor("instructor", id=7), db=db)
     assert result.groups == [group]
+
+
+async def test_create_category_instructor_can_carry_inherited_group_restriction() -> None:
+    body = CategoryCreate(label="Child", parent_id=10, group_ids=[5])
+    group = _group_ns(5, instructors=[99], name="Inherited Cohort")
+    parent = _make_category(10, "Parent", groups=[group])
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    grp_result = MagicMock()
+    grp_result.scalars.return_value.all.return_value = [group]
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[parent])
+    db.execute = AsyncMock(side_effect=[dup, grp_result])
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    result = await create_category(
+        body, _editor("instructor", id=7), db=db,
+    )
+
+    assert result.groups == [group]
+    db.commit.assert_awaited_once()
+
+
+async def test_inherited_restrictions_narrow_across_ancestor_levels() -> None:
+    root = _make_category(
+        1, "Root", programs=[_make_program(10), _make_program(11)],
+        groups=[_group_ns(1), _group_ns(2)],
+    )
+    middle = _make_category(
+        2, "Middle", parent_id=1, programs=[_make_program(11), _make_program(12)],
+        groups=[_group_ns(2), _group_ns(3)],
+    )
+    parent = _make_category(
+        3, "Parent", parent_id=2, programs=[_make_program(11), _make_program(13)],
+        groups=[_group_ns(2), _group_ns(4)],
+    )
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[parent, middle, root])
+
+    inherited_programs, inherited_groups = (
+        await categories_router._inherited_restrictions(db, 3)
+    )
+
+    assert inherited_programs == {11}
+    assert inherited_groups == {2}
+
+
+async def test_create_category_admin_can_attach_inherited_and_new_restrictions() -> None:
+    body = CategoryCreate(
+        label="Child", parent_id=10, program_ids=[20, 30], group_ids=[5, 6],
+    )
+    inherited_group = _group_ns(5, instructors=[99], name="Inherited")
+    new_group = _group_ns(6, instructors=[98], name="New")
+    parent = _make_category(
+        10, "Parent", programs=[_make_program(20)], groups=[inherited_group],
+    )
+    dup = MagicMock()
+    dup.scalar_one_or_none.return_value = None
+    prog_result = MagicMock()
+    prog_result.scalars.return_value.all.return_value = [
+        _make_program(20), _make_program(30),
+    ]
+    grp_result = MagicMock()
+    grp_result.scalars.return_value.all.return_value = [inherited_group, new_group]
+    db = AsyncMock()
+    db.get = AsyncMock(side_effect=[parent])
+    db.execute = AsyncMock(side_effect=[dup, prog_result, grp_result])
+    db.add = MagicMock()
+    db.commit = AsyncMock()
+    db.refresh = AsyncMock()
+
+    result = await create_category(body, _editor("admin"), db=db)
+
+    assert {program.id for program in result.programs} == {20, 30}
+    assert {group.id for group in result.groups} == {5, 6}
+    db.commit.assert_awaited_once()
 
 
 # ── _intersection_warnings (symmetric, non-blocking advisory) ─

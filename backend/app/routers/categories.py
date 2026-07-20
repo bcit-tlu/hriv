@@ -90,6 +90,62 @@ async def _resolve_groups(
     return list(grps)
 
 
+async def _inherited_restrictions(
+    db: AsyncSession, parent_id: int | None,
+) -> tuple[set[int], set[int]]:
+    """Compute the effective inherited program and group IDs for a new child
+    under *parent_id*, using the same narrowing (intersection) semantics as the
+    frontend ``narrowProgramIds`` / ``narrowGroupIds`` helpers.
+
+    Walks the ancestor chain top-down: the first ancestor with a restriction on
+    a dimension initializes the effective set; each subsequent restricted
+    ancestor intersects (narrows) it. Ancestors with no restriction on a
+    dimension are unrestricted there and skipped.
+
+    These inherited IDs are already enforced up the ancestor chain, so a new
+    child that carries them forward does not widen access. They are therefore
+    treated as pre-existing (not new attachments) when validating attach
+    authority — mirroring the Edit flow's ``existing_ids`` semantics.
+    """
+    if parent_id is None:
+        return set(), set()
+    # Collect ancestors bottom-up, then reverse to top-down.
+    chain: list[Category] = []
+    current_id: int | None = parent_id
+    seen: set[int] = set()
+    while current_id is not None and current_id not in seen:
+        seen.add(current_id)
+        cat = await db.get(Category, current_id)
+        if cat is None:
+            break
+        chain.append(cat)
+        current_id = cat.parent_id
+    chain.reverse()
+
+    program_ids: set[int] = set()
+    program_initialized = False
+    group_ids: set[int] = set()
+    group_initialized = False
+    for cat in chain:
+        cat_program_ids = {p.id for p in cat.programs}
+        if cat_program_ids:
+            program_ids = (
+                program_ids & cat_program_ids
+                if program_initialized
+                else cat_program_ids
+            )
+            program_initialized = True
+        cat_group_ids = {g.id for g in cat.groups}
+        if cat_group_ids:
+            group_ids = (
+                group_ids & cat_group_ids
+                if group_initialized
+                else cat_group_ids
+            )
+            group_initialized = True
+    return program_ids, group_ids
+
+
 def _intersection_warnings(
     programs: list[Program], groups: list[Group],
 ) -> list[CategoryWarning]:
@@ -311,8 +367,15 @@ async def create_category(
             detail="A category with this name already exists at this level",
         )
 
-    progs = await _resolve_programs(db, _user, body.program_ids, set())
-    grps = await _resolve_groups(db, _user, body.group_ids, set())
+    inherited_program_ids, inherited_group_ids = await _inherited_restrictions(
+        db, body.parent_id,
+    )
+    progs = await _resolve_programs(
+        db, _user, body.program_ids, inherited_program_ids,
+    )
+    grps = await _resolve_groups(
+        db, _user, body.group_ids, inherited_group_ids,
+    )
 
     cat = Category(
         label=body.label,
