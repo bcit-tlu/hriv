@@ -4,6 +4,7 @@ import contextlib
 import io
 import importlib
 import json
+import logging
 import os
 import shutil
 import sys
@@ -73,6 +74,48 @@ class BackupModeTestCase(_BackupTestCase):
     def test_invalid_mode_exits(self):
         with self.assertRaises(SystemExit):
             self._reload({"BACKUP_MODE": "invalid"})
+
+
+class LoggingSetupTestCase(_BackupTestCase):
+    """Tests for resilient root logging configuration."""
+
+    def test_setup_logging_preserves_otel_and_replaces_other_handlers(self):
+        root = logging.getLogger()
+        original_handlers = root.handlers[:]
+        original_level = root.level
+
+        class FakeOTELHandler(logging.Handler):
+            pass
+
+        FakeOTELHandler.__module__ = "opentelemetry.sdk._logs"
+        otel_handler = FakeOTELHandler()
+        other_handler = logging.StreamHandler(io.StringIO())
+
+        try:
+            for handler in root.handlers[:]:
+                root.removeHandler(handler)
+            root.addHandler(otel_handler)
+            root.addHandler(other_handler)
+
+            backup.setup_logging()
+
+            self.assertIn(otel_handler, root.handlers)
+            self.assertNotIn(other_handler, root.handlers)
+            console_handlers = [
+                handler
+                for handler in root.handlers
+                if isinstance(handler, logging.StreamHandler) and handler is not otel_handler
+            ]
+            self.assertEqual(len(console_handlers), 1)
+            self.assertEqual(console_handlers[0].formatter._fmt, backup.LOG_FORMAT)
+            self.assertIs(console_handlers[0].stream, sys.stdout)
+            self.assertEqual(root.level, logging.INFO)
+        finally:
+            for handler in root.handlers[:]:
+                root.removeHandler(handler)
+            for handler in original_handlers:
+                root.addHandler(handler)
+            root.setLevel(original_level)
 
 
 class TarFilterTestCase(unittest.TestCase):

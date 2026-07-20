@@ -43,7 +43,31 @@ from croniter import croniter
 # ---------------------------------------------------------------------------
 
 LOG_FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
-logging.basicConfig(format=LOG_FORMAT, level=logging.INFO, stream=sys.stdout)
+
+
+def setup_logging() -> None:
+    """Configure console logging while preserving OTEL log export."""
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+
+    otel_handlers = [
+        handler
+        for handler in root.handlers
+        if type(handler).__module__.startswith("opentelemetry")
+    ]
+
+    for handler in root.handlers[:]:
+        root.removeHandler(handler)
+
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(logging.Formatter(LOG_FORMAT))
+    root.addHandler(console_handler)
+
+    for handler in otel_handlers:
+        root.addHandler(handler)
+
+
+setup_logging()
 log = logging.getLogger("hriv-backup")
 
 
