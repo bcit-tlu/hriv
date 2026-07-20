@@ -240,7 +240,6 @@ and sequence-reset details.
 Local end-to-end setup and walkthroughs live in
 [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md).
 
-
 ### Creating children with inherited group restrictions
 
 When an instructor creates a child category, a group restriction inherited

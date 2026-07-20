@@ -153,7 +153,6 @@ See also: [Groups](groups.md), [Domain model](domain-model.md),
 [`docs/TESTING.md`](TESTING.md), and the
 [agent feature map](agent-feature-map.md).
 
-
 ## Creating children under restricted ancestors
 
 When an instructor creates a child category, the backend treats program and
