@@ -670,6 +670,51 @@ describe('AdminPage', () => {
     ).not.toBeInTheDocument()
   })
 
+  it('does not resume polling when an in-flight poll resolves after cancellation', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+
+    let resolvePoll!: (task: Awaited<ReturnType<typeof api.fetchAdminTask>>) => void
+    const inFlightPoll = new Promise<Awaited<ReturnType<typeof api.fetchAdminTask>>>((resolve) => {
+      resolvePoll = resolve
+    })
+    mockFetchAdminTask.mockReturnValueOnce(inFlightPoll)
+
+    render(<AdminPage />)
+
+    await user.click(screen.getByRole('tab', { name: 'Backups' }))
+    await user.click(screen.getAllByRole('button', { name: 'Export' })[0])
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+    expect(mockFetchAdminTask).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('button', { name: 'Cancel', exact: true }))
+    await waitFor(() => expect(mockCancelAdminTask).toHaveBeenCalledWith(1))
+
+    resolvePoll({
+      id: 1,
+      task_type: 'db_export',
+      status: 'running',
+      progress: 20,
+      log: 'still running',
+      result_filename: null,
+      error_message: null,
+      created_by: 1,
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:02Z',
+    })
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000)
+    })
+    expect(mockFetchAdminTask).toHaveBeenCalledTimes(1)
+  })
+
   it('reconciles a force-cancel request that lands after the task is already terminal', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
