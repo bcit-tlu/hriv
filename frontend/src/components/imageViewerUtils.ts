@@ -180,7 +180,14 @@ export function createPinchRotationTracker({
       }
       lastTimestamp = timestampMs
 
-      if (startDistance === undefined) startDistance = lastDistance
+      if (
+        startDistance === undefined &&
+        lastDistance !== undefined &&
+        lastDistance > 0 &&
+        Number.isFinite(lastDistance)
+      ) {
+        startDistance = lastDistance
+      }
       if (
         startDistance === undefined ||
         distance === undefined ||

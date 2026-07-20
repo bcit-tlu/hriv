@@ -390,6 +390,22 @@ describe('createPinchRotationTracker', () => {
     })
   })
 
+  it('recovers when the first event has an invalid distance baseline', () => {
+    const tracker = createPinchRotationTracker({
+      activationDegrees: ACTIVATION_DEGREES,
+      sensitivity: 0.4,
+      zoomActivationRatio: ZOOM_ACTIVATION_RATIO,
+    })
+
+    expect(update(tracker, 0, 0, 0, 100, 0)).toEqual({
+      rotationDelta: 0,
+      suppressZoom: false,
+    })
+    const rotation = update(tracker, 0, 12, 100, 101, 10)
+    expect(rotation.rotationDelta).toBeCloseTo(4.8, 5)
+    expect(rotation.suppressZoom).toBe(true)
+  })
+
   it('locks zoom when separation dominates first and never rotates later', () => {
     const tracker = createPinchRotationTracker({
       activationDegrees: ACTIVATION_DEGREES,
