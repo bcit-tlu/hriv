@@ -116,6 +116,10 @@ export default function ImageViewer({
   }, [])
   const updateLockUiRef = useRef<(() => void) | null>(null)
   const updateCanvasEditUiRef = useRef<((active: boolean) => void) | null>(null)
+  const canvasCancelRef = useRef<(() => Promise<void>) | null>(null)
+  const registerCanvasCancel = useCallback((handler: (() => Promise<void>) | null) => {
+    canvasCancelRef.current = handler
+  }, [])
   const updateMagnificationRef = useRef<(() => void) | null>(null)
   useEffect(() => {
     onViewportChangeRef.current = onViewportChange
@@ -596,6 +600,11 @@ export default function ImageViewer({
         onClick: () => {
           const entering = !canvasEditModeRef.current
           emitToolbarAction(entering ? 'canvas_edit_on' : 'canvas_edit_off')
+          if (!entering && canvasCancelRef.current) {
+            // Exit through the overlay's cancel flow so unsaved changes are discarded
+            void canvasCancelRef.current()
+            return
+          }
           canvasEditModeRef.current = entering
           setCanvasEditMode(entering)
           viewer.setMouseNavEnabled(!entering)
@@ -815,6 +824,7 @@ export default function ImageViewer({
           editMode={canvasEditMode}
           onEditModeChange={handleCanvasEditModeChange}
           onFlushAnnotations={onFlushCanvasAnnotations}
+          registerCancelHandler={registerCanvasCancel}
         />
       )}
     </Box>

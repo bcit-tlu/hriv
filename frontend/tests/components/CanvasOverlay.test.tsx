@@ -693,6 +693,44 @@ describe('CanvasOverlay', () => {
       expect(onAnnotationsChange).toHaveBeenCalledWith(original)
       expect(onEditModeChange).toHaveBeenCalledWith(false)
     })
+
+    it('registers a cancel handler that mirrors the Cancel button behavior', async () => {
+      const original = [makeAnnotation({ id: 'orig-1' })]
+      const onAnnotationsChange = vi.fn()
+      const onEditModeChange = vi.fn()
+      const registerCancelHandler = vi.fn()
+      const { rerender, unmount } = render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={original}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit={true}
+          editMode={false}
+          onEditModeChange={onEditModeChange}
+          registerCancelHandler={registerCancelHandler}
+        />,
+      )
+      rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={original}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={onEditModeChange}
+          registerCancelHandler={registerCancelHandler}
+        />,
+      )
+      const handler = registerCancelHandler.mock.calls.at(-1)?.[0]
+      expect(typeof handler).toBe('function')
+      await act(async () => {
+        await handler()
+      })
+      expect(onAnnotationsChange).toHaveBeenCalledWith(original)
+      expect(onEditModeChange).toHaveBeenCalledWith(false)
+      unmount()
+      expect(registerCancelHandler).toHaveBeenLastCalledWith(null)
+    })
   })
 
   // ─── Link URL sanitization (XSS prevention) ────────────────────────

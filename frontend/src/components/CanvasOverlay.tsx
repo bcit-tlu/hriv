@@ -103,6 +103,8 @@ interface CanvasOverlayProps {
   onEditModeChange: (mode: boolean) => void
   /** Flush any pending annotation save immediately (bypass debounce) */
   onFlushAnnotations?: () => Promise<void>
+  /** Lets the parent trigger the same discard-changes flow as the Cancel button */
+  registerCancelHandler?: (handler: (() => Promise<void>) | null) => void
 }
 
 const LOG_PREFIX = '[CanvasOverlay]'
@@ -194,6 +196,33 @@ function drawArrowhead(
   }
 }
 
+/**
+ * Line that renders its arrowhead on the fabric edit canvas, matching the
+ * view-mode canvas rendering. Caching is disabled by the creation sites so
+ * the head (which extends beyond the line's bounding box) is not clipped.
+ */
+class ArrowLine extends fabric.Line {
+  override _render(ctx: CanvasRenderingContext2D) {
+    super._render(ctx)
+    const style = (this as AnnotatedObject)._arrowStyle ?? 'standard'
+    if (style === 'none') return
+    const p = this.calcLinePoints()
+    const sw = this.strokeWidth ?? 1
+    const headLen = Math.max(24, sw * 12)
+    drawArrowhead(
+      ctx,
+      p.x1,
+      p.y1,
+      p.x2,
+      p.y2,
+      headLen,
+      typeof this.stroke === 'string' ? this.stroke : '#000000',
+      style,
+      Math.max(1, sw),
+    )
+  }
+}
+
 export default function CanvasOverlay({
   viewer,
   annotations,
@@ -202,6 +231,7 @@ export default function CanvasOverlay({
   editMode,
   onFlushAnnotations,
   onEditModeChange,
+  registerCancelHandler,
 }: CanvasOverlayProps) {
   // _canEdit reserved for future per-tool gating; edit button visibility is handled by parent
   void _canEdit
@@ -436,7 +466,7 @@ export default function CanvasOverlay({
         const endPt = viewer.viewport.pixelFromPoint(
           new OpenSeadragon.Point(ann.vpX2 ?? ann.vpX, ann.vpY2 ?? ann.vpY),
         )
-        const line = new fabric.Line([topLeft.x, topLeft.y, endPt.x, endPt.y], {
+        const line = new ArrowLine([topLeft.x, topLeft.y, endPt.x, endPt.y], {
           originX: 'left',
           originY: 'top',
           stroke: ann.color,
@@ -444,6 +474,7 @@ export default function CanvasOverlay({
           selectable: true,
           hasBorders: true,
           hasControls: true,
+          objectCaching: false,
         })
         const aObj = line as AnnotatedObject
         aObj._annotationId = ann.id
@@ -933,13 +964,14 @@ export default function CanvasOverlay({
         fc.add(ellipse)
         drawObjRef.current = ellipse
       } else if (activeTool === 'arrow') {
-        const line = new fabric.Line([pointer.x, pointer.y, pointer.x, pointer.y], {
+        const line = new ArrowLine([pointer.x, pointer.y, pointer.x, pointer.y], {
           originX: 'left',
           originY: 'top',
           stroke: activeColor,
           strokeWidth: activeLineWidth,
           selectable: false,
           evented: false,
+          objectCaching: false,
         })
         const aObj = line as AnnotatedObject
         aObj._annotationId = uid()
@@ -1152,6 +1184,13 @@ export default function CanvasOverlay({
     }
     onEditModeChange(false)
   }, [onAnnotationsChange, onEditModeChange, onFlushAnnotations])
+
+  // Expose the cancel flow so the parent's toolbar toggle can discard changes
+  useEffect(() => {
+    if (!registerCancelHandler) return
+    registerCancelHandler(handleCancel)
+    return () => registerCancelHandler(null)
+  }, [registerCancelHandler, handleCancel])
 
   /** Change active color and apply to any selected fabric objects */
   const handleColorChange = useCallback(
