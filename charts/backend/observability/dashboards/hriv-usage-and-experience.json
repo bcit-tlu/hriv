@@ -564,75 +564,6 @@
             ]
           },
           "unit": "short",
-          "noValue": "No matching navigation activity"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 15
-      },
-      "id": 6,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "${loki}"
-          },
-          "expr": "sum by (event_page) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"navigation.page_changed\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
-          "legendFormat": "{{event_page}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Page hits over time (by page)",
-      "type": "timeseries",
-      "description": "Navigation activity split by page identifier over time."
-    },
-    {
-      "datasource": {
-        "type": "loki",
-        "uid": "${loki}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "lineWidth": 1,
-            "showPoints": "never",
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short",
           "noValue": "No matching usage activity"
         },
         "overrides": []
@@ -1960,71 +1891,6 @@
             ]
           },
           "unit": "short",
-          "noValue": "No matching session activity"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 60
-      },
-      "id": 309,
-      "targets": [
-        {
-          "datasource": {
-            "type": "loki",
-            "uid": "${loki}"
-          },
-          "expr": "sum by (event_page) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"application.session_started\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range]))",
-          "refId": "A",
-          "legendFormat": "{{event_page}}",
-          "queryType": "range"
-        }
-      ],
-      "title": "Session landing page",
-      "type": "piechart",
-      "description": "First page of each tab session \u2014 where users go after login.",
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "right",
-          "showLegend": true
-        },
-        "pieType": "pie",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      }
-    },
-    {
-      "datasource": {
-        "type": "loki",
-        "uid": "${loki}"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short",
           "noValue": "No matching error activity",
           "custom": {
             "drawStyle": "line",
@@ -2072,6 +1938,291 @@
           "sort": "none"
         }
       }
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "description": "Most common page-to-page moves (from \u2192 to). Landing events (no prior page) are excluded.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "No matching navigation activity"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "event_from_page"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "From page"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "event_page"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "To page"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Count"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Count"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 15
+      },
+      "id": 311,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Count"
+          }
+        ]
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "topk(15, sum by (event_from_page, event_page) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"navigation.page_changed\" | event_action=\"navigate\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | event_from_page!=\"\" [$__range])))",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ],
+      "title": "Top page transitions",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "description": "Most common category-to-category navigation steps (from \u2192 to). An empty From means the step started outside a category (site root or another page).",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "noValue": "No matching navigation activity"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Time"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "category_from_label"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "From category"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "category_label"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "To category"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Count"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #A"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Count"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 60
+      },
+      "id": 312,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "desc": true,
+            "displayName": "Count"
+          }
+        ]
+      },
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "topk(15, sum by (category_from_label, category_label) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"navigation.page_changed\" | event_action=\"navigate_category\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | category_label!=\"\" [$__range])))",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ],
+      "title": "Top category transitions",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "loki",
+        "uid": "${loki}"
+      },
+      "description": "Navigation flow between categories (source \u2192 target, weighted by transition count). Requires the netsage-sankey-panel plugin; falls back to a table if not installed.",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 76
+      },
+      "id": 313,
+      "options": {},
+      "pluginVersion": "10.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "${loki}"
+          },
+          "expr": "topk(30, sum by (category_from_label, category_label) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"navigation.page_changed\" | event_action=\"navigate_category\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | category_label!=\"\" [$__range])))",
+          "refId": "A",
+          "queryType": "instant"
+        }
+      ],
+      "title": "Category navigation flow (Sankey)",
+      "type": "netsage-sankey-panel"
     }
   ],
   "refresh": "1m",
