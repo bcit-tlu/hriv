@@ -655,8 +655,15 @@ export default function CanvasOverlay({
 
   /** Read an object's canvas transform without mutating an active selection. */
   const absoluteObjectTransform = useCallback(
-    (obj: fabric.FabricObject): SerializedObjectTransform => {
-      const [a, b, c, d, left, top] = obj.calcTransformMatrix()
+    (
+      obj: fabric.FabricObject,
+      activeSelection: fabric.ActiveSelection,
+    ): SerializedObjectTransform => {
+      const [a, b, c, d] = obj.calcTransformMatrix()
+      const { x: left, y: top } = fabric.util.transformPoint(
+        obj.getPointByOrigin('left', 'top'),
+        activeSelection.calcTransformMatrix(),
+      )
       const scaleX = Math.hypot(a, b)
       const scaleY = scaleX === 0 ? 0 : (a * d - b * c) / scaleX
       return {
@@ -686,7 +693,10 @@ export default function CanvasOverlay({
         : null
     const annotations: CanvasAnnotation[] = []
     for (const obj of fc.getObjects()) {
-      const transform = selectedObjects?.has(obj) ? absoluteObjectTransform(obj) : undefined
+      const transform =
+        activeSelection instanceof fabric.ActiveSelection && selectedObjects?.has(obj)
+          ? absoluteObjectTransform(obj, activeSelection)
+          : undefined
       const ann = fabricToAnnotation(obj, transform)
       if (ann) annotations.push(ann)
     }
@@ -770,7 +780,7 @@ export default function CanvasOverlay({
             .map((obj) => {
               const transform =
                 activeObj instanceof fabric.ActiveSelection
-                  ? absoluteObjectTransform(obj)
+                  ? absoluteObjectTransform(obj, activeObj)
                   : undefined
               return fabricToAnnotation(obj, transform)
             })
