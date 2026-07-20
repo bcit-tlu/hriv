@@ -26,13 +26,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        sa.text("UPDATE images SET file_size = round(file_size::numeric / 1048576, 2)")
-    )
     op.alter_column(
         "images",
         "file_size",
         existing_type=sa.BigInteger(),
         type_=sa.Float(precision=53),
         postgresql_using="file_size::double precision",
+    )
+    op.execute(
+        sa.text("UPDATE images SET file_size = round(file_size::numeric / 1048576, 2)")
     )
