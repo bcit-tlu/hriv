@@ -6,6 +6,7 @@ to periodically flush progress updates to the database.
 """
 
 import asyncio
+import errno
 import logging
 import math
 import os
@@ -66,6 +67,28 @@ def _record_processing_finished(
         {"task_type": task_type, "outcome": "success" if success else "failure"},
     )
     _processing_duration_histogram.record(duration_s, {"task_type": task_type})
+
+
+def _is_enospc(exc: Exception) -> bool:
+    """Whether *exc* represents an out-of-disk-space failure.
+
+    Direct filesystem calls raise ``OSError`` with ``errno.ENOSPC``, while
+    libvips write failures (e.g. ``dzsave``) surface as ``pyvips.Error``
+    carrying the strerror text in the message/detail instead of an errno,
+    so fall back to matching the strerror text.
+    """
+    if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+        return True
+    return "no space left on device" in str(exc).lower()
+
+
+def _processing_failure_message(exc: Exception, *, replacement: bool = False) -> str:
+    """Translate common processing failures into operator-facing messages."""
+    if _is_enospc(exc):
+        return "Insufficient storage — the tiles volume is full"
+    if replacement:
+        return "Image replacement failed. Check server logs."
+    return "Tile generation failed. Check server logs."
 
 
 # ── Pyramidal image detection ─────────────────────────────
@@ -701,7 +724,7 @@ async def process_source_image(source_image_id: int) -> None:
             src = await db.get(SourceImage, source_image_id)
             if src is not None:
                 src.status = "failed"
-                src.error_message = "Tile generation failed. Check server logs."
+                src.error_message = _processing_failure_message(exc)
                 src.status_message = "Failed"
                 await db.commit()
 
@@ -983,7 +1006,7 @@ async def process_replace_image(
             src = await db.get(SourceImage, source_image_id)
             if src is not None:
                 src.status = "failed"
-                src.error_message = "Image replacement failed. Check server logs."
+                src.error_message = _processing_failure_message(exc, replacement=True)
                 src.status_message = "Failed"
                 await db.commit()
 

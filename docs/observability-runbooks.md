@@ -509,7 +509,12 @@ kubectl -n hriv exec deploy/hriv-backend -- df -h /data /data/tiles
 retention cleanup, or undersized PVCs.
 
 **Mitigation:** Expand the PVC if the platform supports it, clear derived data
-only when safe, or schedule a maintenance window for storage migration.
+only when safe, or schedule a maintenance window for storage migration. If the
+worker is failing with `OSError: [Errno 28] No space left on device` under
+`/data/tiles/<source_image_id>`, treat that as a tiles-PVC capacity incident:
+prefer expanding the tiles PVC first, and only delete/rebuild tiles during a
+planned recovery action because `/data/tiles` is derived data while
+`/data/source_images` remains authoritative.
 
 **Escalation:** Escalate before the critical threshold if the source-images PVC
 contains authoritative data and expansion is not immediate.
