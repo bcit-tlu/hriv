@@ -314,7 +314,7 @@ class ImageBase(BaseModel):
     metadata_extra: Annotated[dict | None, Field(validation_alias="metadata_")] = None
     width: int | None = None
     height: int | None = None
-    file_size: float | None = None
+    file_size: int | None = None
 
 
 class ImageCreate(ImageBase):

@@ -48,7 +48,7 @@ def test_image_out_from_orm() -> None:
         version=1,
         width=1024,
         height=768,
-        file_size=5.25,
+        file_size=5_242_880,
         created_at=now,
         updated_at=now,
     )
@@ -56,6 +56,7 @@ def test_image_out_from_orm() -> None:
     assert out.name == "test-img"
     assert out.metadata_extra == {"key": "val"}
     assert out.width == 1024
+    assert out.file_size == 5_242_880
 
 
 def test_image_out_from_dict() -> None:
