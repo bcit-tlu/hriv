@@ -731,8 +731,9 @@ export default function ImageViewer({
       emitToolbarAction('home')
       viewer.viewport.setRotation(0)
     })
-    viewer.addHandler('full-page', () => {
-      emitToolbarAction('full_screen')
+    viewer.addHandler('full-page', (event) => {
+      // Fires on both enter and exit; count only entering full screen.
+      if (event.fullPage) emitToolbarAction('full_screen')
     })
 
     // Report viewport changes after animations finish
