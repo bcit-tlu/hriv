@@ -213,6 +213,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   const [sessionEndedMessage, setSessionEndedMessage] = useState<string | null>(null)
 
   const pollRefs = useRef(new Map<number, ReturnType<typeof setTimeout>>())
+  const pollGenerations = useRef(new Map<number, number>())
 
   // Abort controllers for in-flight XHR uploads, keyed by task ID.
   // Used to abort the upload immediately when a user cancels an
@@ -248,6 +249,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   // ── Polling ──────────────────────────────────────────────
 
   const stopPolling = useCallback((taskId: number) => {
+    pollGenerations.current.set(taskId, (pollGenerations.current.get(taskId) ?? 0) + 1)
     const ref = pollRefs.current.get(taskId)
     if (ref !== undefined) {
       clearTimeout(ref)
@@ -331,8 +333,10 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
 
       const schedule = () => {
         const handle = setTimeout(async () => {
+          const generation = pollGenerations.current.get(taskId) ?? 0
           try {
             const updated = await fetchAdminTask(taskId)
+            if ((pollGenerations.current.get(taskId) ?? 0) !== generation) return
             if (!hasAdminTaskShape(updated)) {
               schedule()
               return
@@ -347,6 +351,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
               schedule()
             }
           } catch (err) {
+            if ((pollGenerations.current.get(taskId) ?? 0) !== generation) return
             if (isAuthFailure(err)) {
               handleSessionEnded(taskId)
               return
@@ -366,9 +371,11 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
   // Clean up polling on unmount
   useEffect(() => {
     const refs = pollRefs.current
+    const generations = pollGenerations.current
     return () => {
       for (const handle of refs.values()) clearTimeout(handle)
       refs.clear()
+      generations.clear()
     }
   }, [])
 
