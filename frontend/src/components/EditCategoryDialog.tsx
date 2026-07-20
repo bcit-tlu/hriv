@@ -18,7 +18,7 @@ import Visibility from '@mui/icons-material/Visibility'
 import VisibilityOff from '@mui/icons-material/VisibilityOff'
 import { AuthContext } from '../authContextValue'
 import type { Category, Group, Program } from '../types'
-import { findIncompatibleDescendants } from '../categoryUtils'
+import { findIncompatibleDescendants, findIncompatibleDescendantsByGroup } from '../categoryUtils'
 import { getAttachableProgramIds } from '../programAttach'
 import { getVisibilityColors } from '../theme'
 import { useColorMode } from '../useColorMode'
@@ -51,7 +51,7 @@ interface EditCategoryDialogProps {
   ancestorHidden?: boolean
   /** The ID of the category being edited. */
   categoryId?: number
-  /** Direct children of the category being edited (used to detect incompatible program restrictions). */
+  /** Descendant categories walked recursively to detect incompatible program/group restrictions. */
   childCategories?: Category[]
 }
 
@@ -203,6 +203,10 @@ export default function EditCategoryDialog({
     if (visibility !== 'specific' || selectedProgramIds.size === 0) return []
     return findIncompatibleDescendants(childCategories, Array.from(selectedProgramIds))
   }, [childCategories, visibility, selectedProgramIds])
+  const incompatibleChildrenByGroup = useMemo(() => {
+    if (groupVisibility !== 'specific' || selectedGroupIds.size === 0) return []
+    return findIncompatibleDescendantsByGroup(childCategories, Array.from(selectedGroupIds))
+  }, [childCategories, groupVisibility, selectedGroupIds])
   // Only surface the membership caption when a chip is disabled *specifically*
   // because of membership — not because of the ancestor narrowing rule
   // (non-inherited chips) or because it is already-attached/removable.
@@ -445,6 +449,14 @@ export default function EditCategoryDialog({
             The following sub-categor{incompatibleChildren.length === 1 ? 'y has' : 'ies have'}{' '}
             program restrictions that are incompatible with your selection and will become hidden
             from all students: <strong>{incompatibleChildren.join(', ')}</strong>.
+          </Alert>
+        )}
+        {incompatibleChildrenByGroup.length > 0 && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            The following sub-categor
+            {incompatibleChildrenByGroup.length === 1 ? 'y has' : 'ies have'} group restrictions
+            that are incompatible with your selection and will become hidden from all students:{' '}
+            <strong>{incompatibleChildrenByGroup.join(', ')}</strong>.
           </Alert>
         )}
         {programRestricted && groupRestricted && (

@@ -576,6 +576,35 @@ describe('EditCategoryDialog', () => {
       expect(screen.getByText('Cohort A').closest('.MuiChip-root')).toHaveStyle({ opacity: '0.6' })
     })
 
+    it('shows a warning when a child has groups disjoint from the selected parent groups', async () => {
+      const user = userEvent.setup()
+      renderDialog({
+        groups,
+        currentGroupIds: [],
+        childCategories: [
+          {
+            id: 99,
+            label: 'Hidden Child',
+            parentId: 1,
+            programIds: [],
+            groupIds: [20, 30],
+            children: [],
+            images: [],
+            sortOrder: 0,
+            version: 1,
+          },
+        ],
+      })
+
+      await user.click(screen.getByLabelText('Specific groups'))
+      await user.click(screen.getByText('Cohort A'))
+
+      await waitFor(() => {
+        expect(screen.getByText(/Hidden Child/)).toBeInTheDocument()
+      })
+      expect(screen.getByText(/group restrictions that are incompatible/i)).toBeInTheDocument()
+    })
+
     it('saves updated groupIds when a group is toggled', async () => {
       const user = userEvent.setup()
       const onSave = vi.fn().mockResolvedValue(undefined)

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   computeMoveRestrictionChange,
   findIncompatibleDescendants,
+  findIncompatibleDescendantsByGroup,
   narrowGroupIds,
   narrowProgramIds,
   resolvePathNode,
@@ -432,5 +433,44 @@ describe('findIncompatibleDescendants', () => {
     const ids = [1, 2]
     findIncompatibleDescendants([leaf('X', [3])], ids)
     expect(ids).toEqual([1, 2])
+  })
+})
+
+describe('findIncompatibleDescendantsByGroup', () => {
+  const leaf = (label: string, groupIds: number[]) => ({
+    label,
+    programIds: [],
+    groupIds,
+    children: [],
+  })
+  const parent = (
+    label: string,
+    groupIds: number[],
+    children: { label: string; programIds: number[]; groupIds: number[]; children: never[] }[],
+  ) => ({ label, programIds: [], groupIds, children })
+
+  it('returns empty array when newParentGroupIds is empty', () => {
+    expect(findIncompatibleDescendantsByGroup([leaf('Child', [1, 2])], [])).toEqual([])
+  })
+
+  it('does not flag compatible or unrestricted descendants', () => {
+    expect(
+      findIncompatibleDescendantsByGroup(
+        [leaf('Compatible', [1, 3]), leaf('Unrestricted', [])],
+        [1, 2],
+      ),
+    ).toEqual([])
+  })
+
+  it('returns labels for disjoint descendants', () => {
+    expect(findIncompatibleDescendantsByGroup([leaf('Incompatible', [3, 4])], [1, 2])).toEqual([
+      'Incompatible',
+    ])
+  })
+
+  it('walks nested descendants in depth-first order', () => {
+    const grandchild = leaf('Grandchild', [5])
+    const child = parent('Child', [3], [grandchild])
+    expect(findIncompatibleDescendantsByGroup([child], [1, 2])).toEqual(['Child', 'Grandchild'])
   })
 })
