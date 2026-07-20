@@ -16,6 +16,8 @@ import {
   createMeasurementLabel,
   CSS_PIXEL_UM,
   formatMeasurement,
+  PINCH_ROTATE_SENSITIVITY,
+  pinchRotationDeltaDegrees,
   unitToMicrons,
   type MeasurementConfig,
 } from '../src/components/imageViewerUtils'
@@ -302,5 +304,52 @@ describe('computeMagnification', () => {
     const magDefault = computeMagnification(1, config)
     const magExplicit = computeMagnification(1, config, 1)
     expect(magDefault).toBeCloseTo(magExplicit!, 2)
+  })
+})
+
+describe('pinchRotationDeltaDegrees', () => {
+  // The finger line runs from p1 (origin) to p0, so the line's angle equals the
+  // angle of p0. Rotating p0 by `deg` about the origin rotates the line by
+  // exactly `deg`, giving a raw gesture delta of `deg` degrees.
+  const RADIUS = 10
+  const p1 = { x: 0, y: 0 }
+  const p0At = (deg: number) => ({
+    x: RADIUS * Math.cos((deg * Math.PI) / 180),
+    y: RADIUS * Math.sin((deg * Math.PI) / 180),
+  })
+
+  it('scales the raw angle delta by the default sensitivity', () => {
+    // Finger line rotates 30° counter-clockwise → damped output is 30 * factor.
+    const delta = pinchRotationDeltaDegrees(p0At(0), p1, p0At(30), p1)
+    expect(delta).toBeCloseTo(30 * PINCH_ROTATE_SENSITIVITY, 5)
+  })
+
+  it('is less than the raw rotation so small movements stay small', () => {
+    const raw = 30
+    const delta = pinchRotationDeltaDegrees(p0At(0), p1, p0At(raw), p1)
+    expect(Math.abs(delta)).toBeLessThan(raw)
+    expect(PINCH_ROTATE_SENSITIVITY).toBeGreaterThan(0)
+    expect(PINCH_ROTATE_SENSITIVITY).toBeLessThan(1)
+  })
+
+  it('returns 0 when the finger line does not change orientation', () => {
+    // Same orientation, translated and scaled — pure pan/zoom, no rotation.
+    const delta = pinchRotationDeltaDegrees(
+      { x: 10, y: 0 },
+      { x: 0, y: 0 },
+      { x: 25, y: 5 },
+      { x: 5, y: 5 },
+    )
+    expect(delta).toBeCloseTo(0, 5)
+  })
+
+  it('honours an explicit sensitivity override (1.0 = native)', () => {
+    const delta = pinchRotationDeltaDegrees(p0At(0), p1, p0At(30), p1, 1)
+    expect(delta).toBeCloseTo(30, 5)
+  })
+
+  it('preserves rotation direction (clockwise yields negative delta)', () => {
+    const delta = pinchRotationDeltaDegrees(p0At(0), p1, p0At(-30), p1)
+    expect(delta).toBeCloseTo(-30 * PINCH_ROTATE_SENSITIVITY, 5)
   })
 })
