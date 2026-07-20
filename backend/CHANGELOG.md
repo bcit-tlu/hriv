@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.41.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.40.1...backend-v0.41.0) (2026-07-20)
+
+
+### Features
+
+* **observability:** navigation direction telemetry, Sankey funnel rework, service-health metric fixes ([#961](https://github.com/bcit-tlu/hriv/issues/961)) ([6c9efc3](https://github.com/bcit-tlu/hriv/commit/6c9efc3562bb5fb06fdc6c5ac693ef5b77966609))
+* **observability:** navigation transition telemetry and path panels ([#953](https://github.com/bcit-tlu/hriv/issues/953)) ([0cdb3e3](https://github.com/bcit-tlu/hriv/commit/0cdb3e377f32527dd749014539419cd3381ad51d))
+
+
+### Bug Fixes
+
+* **backend:** store image file size in bytes instead of megabytes ([#956](https://github.com/bcit-tlu/hriv/issues/956)) ([2283530](https://github.com/bcit-tlu/hriv/commit/2283530b03dcfd7bce28e09fbf79e62b787937e3))
+* **backend:** treat inherited program/group restrictions as pre-existing on category create ([#949](https://github.com/bcit-tlu/hriv/issues/949)) ([f482adf](https://github.com/bcit-tlu/hriv/commit/f482adfc7716427a598f1c71a1248f0702e7c7c8))
+
 ## [0.40.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.40.0...backend-v0.40.1) (2026-07-20)
 
 
