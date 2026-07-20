@@ -102,15 +102,14 @@ export function computeMagnification(
   return undefined
 }
 
-/**
- * Damping factor applied to the raw pinch-rotate gesture on touch devices.
- *
- * OpenSeadragon maps finger rotation 1:1 to the viewport, which makes the
- * canvas feel twitchy on mobile — small movements cause large jumps. Scaling
- * the per-event angle delta by this factor makes small movements produce
- * proportionally small viewport changes. 1.0 restores native behaviour.
- */
+/** Damping factor applied to the pinch-rotate gesture on touch devices. */
 export const PINCH_ROTATE_SENSITIVITY = 0.4
+
+/** Minimum accumulated rotation needed to activate pinch-rotate. */
+export const PINCH_ROTATE_ACTIVATION_DEGREES = 10
+
+/** Maximum gap between pinch events before starting a new gesture. */
+export const PINCH_GESTURE_GAP_MS = 150
 
 /** A 2D point in CSS-pixel space (subset of OpenSeadragon.Point). */
 interface Point2D {
@@ -119,23 +118,67 @@ interface Point2D {
 }
 
 /**
- * Compute the damped viewport rotation delta (in degrees) for a pinch-rotate
+ * Compute the raw viewport rotation delta (in degrees) for a pinch-rotate
  * gesture, given the current and previous positions of the two contact points.
  *
- * Mirrors OpenSeadragon's internal pinch-rotate angle math (the signed change
- * in the angle of the line between the two fingers) but scales the result by
- * `sensitivity` so touch rotation is easier to control.
+ * Mirrors OpenSeadragon's internal pinch-rotate angle math: the signed change
+ * in the angle of the line between the two fingers.
  */
 export function pinchRotationDeltaDegrees(
   p0Last: Point2D,
   p1Last: Point2D,
   p0Current: Point2D,
   p1Current: Point2D,
-  sensitivity = PINCH_ROTATE_SENSITIVITY,
 ): number {
   const angleCurrent = Math.atan2(p0Current.y - p1Current.y, p0Current.x - p1Current.x)
   const angleLast = Math.atan2(p0Last.y - p1Last.y, p0Last.x - p1Last.x)
-  return (angleCurrent - angleLast) * (180 / Math.PI) * sensitivity
+  return (angleCurrent - angleLast) * (180 / Math.PI)
+}
+
+interface PinchRotationTrackerOptions {
+  sensitivity?: number
+  activationDegrees?: number
+  gapMs?: number
+}
+
+/**
+ * Create a tracker that activates pinch rotation after a signed deadzone.
+ *
+ * The tracker treats a long gap between events as the boundary between
+ * gestures because OpenSeadragon does not expose pinch-start/end events.
+ */
+export function createPinchRotationTracker({
+  sensitivity = PINCH_ROTATE_SENSITIVITY,
+  activationDegrees = PINCH_ROTATE_ACTIVATION_DEGREES,
+  gapMs = PINCH_GESTURE_GAP_MS,
+}: PinchRotationTrackerOptions = {}) {
+  let accumulatedDegrees = 0
+  let active = false
+  let lastTimestamp: number | undefined
+
+  return {
+    update(
+      p0Last: Point2D,
+      p1Last: Point2D,
+      p0Current: Point2D,
+      p1Current: Point2D,
+      timestampMs: number,
+    ): number {
+      if (lastTimestamp !== undefined && timestampMs - lastTimestamp > gapMs) {
+        accumulatedDegrees = 0
+        active = false
+      }
+      lastTimestamp = timestampMs
+
+      const rawDelta = pinchRotationDeltaDegrees(p0Last, p1Last, p0Current, p1Current)
+      if (!active) {
+        accumulatedDegrees += rawDelta
+        if (Math.abs(accumulatedDegrees) < activationDegrees) return 0
+        active = true
+      }
+      return rawDelta * sensitivity
+    },
+  }
 }
 
 /** Create a styled label element for measurement display */

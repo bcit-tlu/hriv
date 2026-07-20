@@ -13,10 +13,10 @@ import { describe, expect, it } from 'vitest'
 
 import {
   computeMagnification,
+  createPinchRotationTracker,
   createMeasurementLabel,
   CSS_PIXEL_UM,
   formatMeasurement,
-  PINCH_ROTATE_SENSITIVITY,
   pinchRotationDeltaDegrees,
   unitToMicrons,
   type MeasurementConfig,
@@ -318,18 +318,15 @@ describe('pinchRotationDeltaDegrees', () => {
     y: RADIUS * Math.sin((deg * Math.PI) / 180),
   })
 
-  it('scales the raw angle delta by the default sensitivity', () => {
-    // Finger line rotates 30° counter-clockwise → damped output is 30 * factor.
+  it('returns the raw angle delta', () => {
     const delta = pinchRotationDeltaDegrees(p0At(0), p1, p0At(30), p1)
-    expect(delta).toBeCloseTo(30 * PINCH_ROTATE_SENSITIVITY, 5)
+    expect(delta).toBeCloseTo(30, 5)
   })
 
-  it('is less than the raw rotation so small movements stay small', () => {
+  it('preserves the raw rotation magnitude', () => {
     const raw = 30
     const delta = pinchRotationDeltaDegrees(p0At(0), p1, p0At(raw), p1)
-    expect(Math.abs(delta)).toBeLessThan(raw)
-    expect(PINCH_ROTATE_SENSITIVITY).toBeGreaterThan(0)
-    expect(PINCH_ROTATE_SENSITIVITY).toBeLessThan(1)
+    expect(Math.abs(delta)).toBeCloseTo(raw, 5)
   })
 
   it('returns 0 when the finger line does not change orientation', () => {
@@ -343,13 +340,76 @@ describe('pinchRotationDeltaDegrees', () => {
     expect(delta).toBeCloseTo(0, 5)
   })
 
-  it('honours an explicit sensitivity override (1.0 = native)', () => {
-    const delta = pinchRotationDeltaDegrees(p0At(0), p1, p0At(30), p1, 1)
-    expect(delta).toBeCloseTo(30, 5)
-  })
-
   it('preserves rotation direction (clockwise yields negative delta)', () => {
     const delta = pinchRotationDeltaDegrees(p0At(0), p1, p0At(-30), p1)
-    expect(delta).toBeCloseTo(-30 * PINCH_ROTATE_SENSITIVITY, 5)
+    expect(delta).toBeCloseTo(-30, 5)
+  })
+})
+
+describe('createPinchRotationTracker', () => {
+  const ACTIVATION_DEGREES = 10
+  const GAP_MS = 20
+  const RADIUS = 10
+  const p1 = { x: 0, y: 0 }
+  const p0At = (deg: number) => ({
+    x: RADIUS * Math.cos((deg * Math.PI) / 180),
+    y: RADIUS * Math.sin((deg * Math.PI) / 180),
+  })
+  const update = (
+    tracker: ReturnType<typeof createPinchRotationTracker>,
+    lastDegrees: number,
+    currentDegrees: number,
+    timestampMs: number,
+  ) => tracker.update(p0At(lastDegrees), p1, p0At(currentDegrees), p1, timestampMs)
+
+  it('returns 0 for sub-threshold movement', () => {
+    const tracker = createPinchRotationTracker({ activationDegrees: ACTIVATION_DEGREES })
+
+    expect(update(tracker, 0, 4, 0)).toBe(0)
+    expect(update(tracker, 4, 8, 10)).toBe(0)
+  })
+
+  it('activates after crossing the threshold and damps later deltas', () => {
+    const tracker = createPinchRotationTracker({
+      activationDegrees: ACTIVATION_DEGREES,
+      sensitivity: 0.4,
+    })
+
+    expect(update(tracker, 0, 6, 0)).toBe(0)
+    expect(update(tracker, 6, 12, 10)).toBeCloseTo(2.4, 5)
+    expect(update(tracker, 12, 17, 20)).toBeCloseTo(2, 5)
+  })
+
+  it('preserves rotation direction', () => {
+    const tracker = createPinchRotationTracker({
+      activationDegrees: ACTIVATION_DEGREES,
+      sensitivity: 0.4,
+    })
+
+    expect(update(tracker, 0, -12, 0)).toBeCloseTo(-4.8, 5)
+    expect(update(tracker, -12, -15, 10)).toBeCloseTo(-1.2, 5)
+  })
+
+  it('does not activate when signed jitter nets below the threshold', () => {
+    const tracker = createPinchRotationTracker({ activationDegrees: ACTIVATION_DEGREES })
+
+    expect(update(tracker, 0, 8, 0)).toBe(0)
+    expect(update(tracker, 8, 2, 10)).toBe(0)
+    expect(update(tracker, 2, 7, 20)).toBe(0)
+    expect(update(tracker, 7, 3, 30)).toBe(0)
+  })
+
+  it('resets after a gesture gap and requires re-activation', () => {
+    const tracker = createPinchRotationTracker({
+      activationDegrees: ACTIVATION_DEGREES,
+      gapMs: GAP_MS,
+      sensitivity: 0.4,
+    })
+
+    expect(update(tracker, 0, 12, 0)).toBeCloseTo(4.8, 5)
+    expect(update(tracker, 12, 15, 10)).toBeCloseTo(1.2, 5)
+    expect(update(tracker, 15, 18, 10 + GAP_MS + 1)).toBe(0)
+    expect(update(tracker, 18, 24, 20 + GAP_MS)).toBe(0)
+    expect(update(tracker, 24, 30, 30 + GAP_MS)).toBeCloseTo(2.4, 5)
   })
 })

@@ -13,7 +13,7 @@ import {
   formatMeasurement,
   createMeasurementLabel,
   computeMagnification,
-  pinchRotationDeltaDegrees,
+  createPinchRotationTracker,
   MAX_SHARE_OVERLAYS,
   type ViewportState,
   type MeasurementConfig,
@@ -737,18 +737,22 @@ export default function ImageViewer({
       if (event.fullPage) emitToolbarAction('full_screen')
     })
 
+    const pinchRotationTracker = createPinchRotationTracker()
+
     // Damp the touch pinch-rotate gesture. OpenSeadragon rotates the viewport
-    // 1:1 with finger movement, which is hard to control on mobile; we suppress
-    // its default rotate action and apply a scaled-down delta instead.
+    // 1:1 with finger movement, which is hard to control on mobile. Require a
+    // clear rotation before activating, then apply a scaled-down delta.
     viewer.addHandler('canvas-pinch', (event) => {
       const points = event.gesturePoints
       if (!points || points.length < 2) return
       event.preventDefaultRotateAction = true
-      const delta = pinchRotationDeltaDegrees(
+      const timestamp = event.originalEvent?.timeStamp ?? performance.now()
+      const delta = pinchRotationTracker.update(
         points[0].lastPos,
         points[1].lastPos,
         points[0].currentPos,
         points[1].currentPos,
+        timestamp,
       )
       if (delta === 0) return
       const pivot = viewer.viewport.pointFromPixel(event.center, true)

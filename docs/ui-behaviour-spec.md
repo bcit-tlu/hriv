@@ -79,12 +79,16 @@ Two capability flags in `AuthContext.tsx` drive all gating:
 
 - Students view locked overlays and annotations read-only; edit mode and
   measurement tools are gated by `canEditContent`.
-- Touch pinch-rotate is damped. OpenSeadragon rotates the viewport 1:1 with
-  finger movement, which is twitchy on mobile; `ImageViewer` intercepts
-  `canvas-pinch`, sets `preventDefaultRotateAction`, and applies a scaled-down
-  delta via `pinchRotationDeltaDegrees` (`PINCH_ROTATE_SENSITIVITY`, currently
-  `0.4`; `1.0` restores native behaviour). Pinch-to-zoom and pan are unchanged.
-  Covered by `measurement.test.ts` (`pinchRotationDeltaDegrees`).
+- Touch pinch-rotate uses an activation deadzone and damping. OpenSeadragon
+  rotates the viewport 1:1 with finger movement, which is twitchy on mobile;
+  `ImageViewer` intercepts `canvas-pinch`, sets `preventDefaultRotateAction`,
+  and ignores incidental rotation until the signed finger-line rotation exceeds
+  `PINCH_ROTATE_ACTIVATION_DEGREES` (currently `10` degrees). Once activated,
+  rotation remains active for that gesture and applies a scaled-down delta via
+  `PINCH_ROTATE_SENSITIVITY` (currently `0.4`; `1.0` restores native
+  sensitivity). The activation resets when the gesture ends and restarts.
+  Pinch-to-zoom and pan are unchanged. Covered by `measurement.test.ts`
+  (`pinchRotationDeltaDegrees`, `createPinchRotationTracker`).
 
 ### Search modal (`SearchModal.test.tsx`)
 
