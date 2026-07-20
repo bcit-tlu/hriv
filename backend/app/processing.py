@@ -69,9 +69,22 @@ def _record_processing_finished(
     _processing_duration_histogram.record(duration_s, {"task_type": task_type})
 
 
+def _is_enospc(exc: Exception) -> bool:
+    """Whether *exc* represents an out-of-disk-space failure.
+
+    Direct filesystem calls raise ``OSError`` with ``errno.ENOSPC``, while
+    libvips write failures (e.g. ``dzsave``) surface as ``pyvips.Error``
+    carrying the strerror text in the message/detail instead of an errno,
+    so fall back to matching the strerror text.
+    """
+    if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+        return True
+    return "no space left on device" in str(exc).lower()
+
+
 def _processing_failure_message(exc: Exception, *, replacement: bool = False) -> str:
     """Translate common processing failures into operator-facing messages."""
-    if isinstance(exc, OSError) and exc.errno == errno.ENOSPC:
+    if _is_enospc(exc):
         return "Insufficient storage — the tiles volume is full"
     if replacement:
         return "Image replacement failed. Check server logs."

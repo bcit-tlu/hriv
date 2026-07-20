@@ -166,6 +166,30 @@ def test_processing_failure_message_for_enospc() -> None:
     )
 
 
+def test_processing_failure_message_for_pyvips_enospc() -> None:
+    """libvips ENOSPC failures (pyvips.Error, no errno) are also detected."""
+    exc = Exception(
+        "unable to call dzsave\n  write error: No space left on device"
+    )
+    assert _processing_failure_message(exc) == (
+        "Insufficient storage — the tiles volume is full"
+    )
+    assert _processing_failure_message(exc, replacement=True) == (
+        "Insufficient storage — the tiles volume is full"
+    )
+
+
+def test_processing_failure_message_generic() -> None:
+    """Non-ENOSPC failures keep the generic operator messages."""
+    exc = Exception("something else broke")
+    assert _processing_failure_message(exc) == (
+        "Tile generation failed. Check server logs."
+    )
+    assert _processing_failure_message(exc, replacement=True) == (
+        "Image replacement failed. Check server logs."
+    )
+
+
 async def test_process_source_image_not_found() -> None:
     """When source image is not found, processing returns early."""
     mock_session = AsyncMock()
