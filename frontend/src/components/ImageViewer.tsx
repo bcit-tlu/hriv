@@ -747,16 +747,19 @@ export default function ImageViewer({
       if (!points || points.length < 2) return
       event.preventDefaultRotateAction = true
       const timestamp = event.originalEvent?.timeStamp ?? performance.now()
-      const delta = pinchRotationTracker.update(
+      const { rotationDelta, suppressZoom } = pinchRotationTracker.update(
         points[0].lastPos,
         points[1].lastPos,
         points[0].currentPos,
         points[1].currentPos,
+        event.lastDistance,
+        event.distance,
         timestamp,
       )
-      if (delta === 0) return
+      event.preventDefaultZoomAction = suppressZoom
+      if (rotationDelta === 0) return
       const pivot = viewer.viewport.pointFromPixel(event.center, true)
-      viewer.viewport.rotateTo(viewer.viewport.getRotation(true) + delta, pivot, true)
+      viewer.viewport.rotateTo(viewer.viewport.getRotation(true) + rotationDelta, pivot, true)
     })
 
     // Report viewport changes after animations finish

@@ -111,6 +111,9 @@ export const PINCH_ROTATE_ACTIVATION_DEGREES = 10
 /** Maximum gap between pinch events before starting a new gesture. */
 export const PINCH_GESTURE_GAP_MS = 150
 
+/** Separation ratio that activates pinch zoom arbitration. */
+export const PINCH_ZOOM_ACTIVATION_RATIO = 1.15
+
 /** A 2D point in CSS-pixel space (subset of OpenSeadragon.Point). */
 interface Point2D {
   x: number
@@ -139,10 +142,11 @@ interface PinchRotationTrackerOptions {
   sensitivity?: number
   activationDegrees?: number
   gapMs?: number
+  zoomActivationRatio?: number
 }
 
 /**
- * Create a tracker that activates pinch rotation after a signed deadzone.
+ * Create a tracker that arbitrates pinch rotation and zoom per gesture.
  *
  * The tracker treats a long gap between events as the boundary between
  * gestures because OpenSeadragon does not expose pinch-start/end events.
@@ -151,10 +155,13 @@ export function createPinchRotationTracker({
   sensitivity = PINCH_ROTATE_SENSITIVITY,
   activationDegrees = PINCH_ROTATE_ACTIVATION_DEGREES,
   gapMs = PINCH_GESTURE_GAP_MS,
+  zoomActivationRatio = PINCH_ZOOM_ACTIVATION_RATIO,
 }: PinchRotationTrackerOptions = {}) {
   let accumulatedDegrees = 0
-  let active = false
+  let mode: 'undecided' | 'rotate' | 'zoom' = 'undecided'
+  let startDistance: number | undefined
   let lastTimestamp: number | undefined
+  const zoomActivationLnRatio = Math.log(zoomActivationRatio)
 
   return {
     update(
@@ -162,21 +169,43 @@ export function createPinchRotationTracker({
       p1Last: Point2D,
       p0Current: Point2D,
       p1Current: Point2D,
+      lastDistance: number | undefined,
+      distance: number | undefined,
       timestampMs: number,
-    ): number {
+    ): { rotationDelta: number; suppressZoom: boolean } {
       if (lastTimestamp !== undefined && timestampMs - lastTimestamp > gapMs) {
         accumulatedDegrees = 0
-        active = false
+        mode = 'undecided'
+        startDistance = undefined
       }
       lastTimestamp = timestampMs
 
-      const rawDelta = pinchRotationDeltaDegrees(p0Last, p1Last, p0Current, p1Current)
-      if (!active) {
-        accumulatedDegrees += rawDelta
-        if (Math.abs(accumulatedDegrees) < activationDegrees) return 0
-        active = true
+      if (startDistance === undefined) startDistance = lastDistance
+      if (
+        startDistance === undefined ||
+        distance === undefined ||
+        startDistance <= 0 ||
+        distance <= 0 ||
+        !Number.isFinite(startDistance) ||
+        !Number.isFinite(distance)
+      ) {
+        return { rotationDelta: 0, suppressZoom: false }
       }
-      return rawDelta * sensitivity
+
+      const rawDelta = pinchRotationDeltaDegrees(p0Last, p1Last, p0Current, p1Current)
+      if (mode === 'undecided') {
+        accumulatedDegrees += rawDelta
+        const rotationProgress = Math.abs(accumulatedDegrees) / activationDegrees
+        const zoomProgress = Math.abs(Math.log(distance / startDistance)) / zoomActivationLnRatio
+        if (rotationProgress < 1 && zoomProgress < 1) {
+          return { rotationDelta: 0, suppressZoom: false }
+        }
+        mode = rotationProgress > zoomProgress ? 'rotate' : 'zoom'
+      }
+
+      return mode === 'rotate'
+        ? { rotationDelta: rawDelta * sensitivity, suppressZoom: true }
+        : { rotationDelta: 0, suppressZoom: false }
     },
   }
 }
