@@ -623,6 +623,8 @@ export default function App() {
 
     const isRealUserSwitch = prevUser != null && prevUser !== currentUser
     if (isRealUserSwitch) {
+      lastEmittedPageRef.current = null
+      lastEmittedCategoryRef.current = null
       setPage('browse')
       setPath([])
       setSelectedImage(null)
