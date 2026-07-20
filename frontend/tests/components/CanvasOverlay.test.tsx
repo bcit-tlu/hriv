@@ -35,14 +35,28 @@ vi.mock('fabric', () => {
   function FabricCanvas(this: any) {
     fabricTestState.canvases.push(this)
     this.objects = []
+    this.handlers = new Map()
     this.activeObject = undefined
     this.dispose = vi.fn()
     this.add = vi.fn((obj) => this.objects.push(obj))
     this.renderAll = vi.fn()
     this.requestRenderAll = vi.fn()
     this.getObjects = vi.fn(() => this.objects)
-    this.on = vi.fn()
-    this.off = vi.fn()
+    this.on = vi.fn((event, handler) => {
+      const handlers = this.handlers.get(event) ?? []
+      handlers.push(handler)
+      this.handlers.set(event, handlers)
+    })
+    this.off = vi.fn((event, handler) => {
+      const handlers = this.handlers.get(event) ?? []
+      this.handlers.set(
+        event,
+        handlers.filter((candidate: unknown) => candidate !== handler),
+      )
+    })
+    this.fire = vi.fn((event, payload) => {
+      for (const handler of this.handlers.get(event) ?? []) handler(payload)
+    })
     this.getActiveObject = vi.fn(() => this.activeObject)
     this.getActiveObjects = vi.fn(() => this.activeObject?.getObjects?.() ?? [])
     this.setActiveObject = vi.fn((obj) => {
@@ -70,21 +84,25 @@ vi.mock('fabric', () => {
   function FabricRect(this: any, options: Record<string, unknown> = {}) {
     Object.assign(this, options)
     this.set = vi.fn()
+    this.calcTransformMatrix = vi.fn(() => [1, 0, 0, 1, this.left ?? 0, this.top ?? 0])
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricEllipse(this: any, options: Record<string, unknown> = {}) {
     Object.assign(this, options)
     this.set = vi.fn()
+    this.calcTransformMatrix = vi.fn(() => [1, 0, 0, 1, this.left ?? 0, this.top ?? 0])
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricLine(this: any, options: Record<string, unknown> = {}) {
     Object.assign(this, options)
     this.set = vi.fn()
+    this.calcTransformMatrix = vi.fn(() => [1, 0, 0, 1, this.left ?? 0, this.top ?? 0])
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricIText(this: any, options: Record<string, unknown> = {}) {
     Object.assign(this, options)
     this.set = vi.fn()
+    this.calcTransformMatrix = vi.fn(() => [1, 0, 0, 1, this.left ?? 0, this.top ?? 0])
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricPoint(this: any, x: number, y: number) {
@@ -95,6 +113,7 @@ vi.mock('fabric', () => {
   function FabricObject(this: any, options: Record<string, unknown> = {}) {
     Object.assign(this, options)
     this.set = vi.fn()
+    this.calcTransformMatrix = vi.fn(() => [1, 0, 0, 1, this.left ?? 0, this.top ?? 0])
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -103,6 +122,14 @@ vi.mock('fabric', () => {
     this.absolutePositions = objects.map((obj) => ({ left: obj.left, top: obj.top }))
     const origin = this.absolutePositions[0] ?? { left: 0, top: 0 }
     objects.forEach((obj) => {
+      obj.calcTransformMatrix = vi.fn(() => [
+        1,
+        0,
+        0,
+        1,
+        this.absolutePositions[objects.indexOf(obj)]?.left ?? 0,
+        this.absolutePositions[objects.indexOf(obj)]?.top ?? 0,
+      ])
       obj.left = (obj.left ?? 0) - (origin.left ?? 0)
       obj.top = (obj.top ?? 0) - (origin.top ?? 0)
     })
@@ -402,7 +429,7 @@ describe('CanvasOverlay', () => {
 
       expect(onAnnotationsChange).toHaveBeenCalledTimes(2)
       expect(onAnnotationsChange.mock.calls[0][0]).toEqual(onAnnotationsChange.mock.calls[1][0])
-      expect(fc.getActiveObject()).toBeUndefined()
+      expect(fc.getActiveObject()).toBeInstanceOf(fabric.ActiveSelection)
     })
 
     it('saves and exits with absolute coordinates without rebuilding the active selection', async () => {
@@ -421,7 +448,7 @@ describe('CanvasOverlay', () => {
       const onAnnotationsChange = vi.fn()
       const onEditModeChange = vi.fn()
       const onFlushAnnotations = vi.fn(async () => {})
-      render(
+      const { rerender } = render(
         <CanvasOverlay
           viewer={viewer}
           annotations={[]}
@@ -458,9 +485,78 @@ describe('CanvasOverlay', () => {
       expect(
         onAnnotationsChange.mock.calls[0][0].map((annotation: CanvasAnnotation) => annotation.vpX),
       ).toEqual([1, 2])
-      expect(fc.getActiveObject()).toBeUndefined()
+      expect(fc.getActiveObject()).toBeInstanceOf(fabric.ActiveSelection)
       expect(onFlushAnnotations).toHaveBeenCalledTimes(1)
       expect(onEditModeChange).toHaveBeenCalledWith(false)
+
+      rerender(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit={true}
+          editMode={false}
+          onEditModeChange={onEditModeChange}
+          onFlushAnnotations={onFlushAnnotations}
+        />,
+      )
+      expect(fc.dispose).toHaveBeenCalled()
+    })
+
+    it('serializes absolute coordinates after an active-selection move without rebuilding it', () => {
+      ;(viewer.viewport.pixelFromPoint as Mock).mockImplementation(
+        (point: { x: number; y: number }) => ({
+          x: point.x * 100,
+          y: point.y * 100,
+        }),
+      )
+      ;(viewer.viewport.pointFromPixel as Mock).mockImplementation(
+        (point: { x: number; y: number }) => ({
+          x: point.x / 100,
+          y: point.y / 100,
+        }),
+      )
+      const onAnnotationsChange = vi.fn()
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      const first = new fabric.Rect({ left: 100, top: 50, width: 20, height: 10 })
+      const second = new fabric.Rect({ left: 200, top: 80, width: 20, height: 10 })
+      for (const [obj, id] of [
+        [first, 'first'],
+        [second, 'second'],
+      ] as const) {
+        const annotated = obj as fabric.FabricObject & {
+          _annotationId?: string
+          _annotationType?: string
+        }
+        annotated._annotationId = id
+        annotated._annotationType = 'rect'
+        fc.add(obj)
+      }
+      const selection = new fabric.ActiveSelection([first, second], { canvas: fc })
+      fc.setActiveObject(selection)
+      ;(first.calcTransformMatrix as Mock).mockReturnValue([1, 0, 0, 1, 160, 150])
+      ;(second.calcTransformMatrix as Mock).mockReturnValue([1, 0, 0, 1, 260, 180])
+
+      act(() => {
+        fc.fire('object:modified', { target: selection })
+      })
+
+      expect(onAnnotationsChange).toHaveBeenCalledTimes(1)
+      expect(
+        onAnnotationsChange.mock.calls[0][0].map((annotation: CanvasAnnotation) => annotation.vpX),
+      ).toEqual([1.6, 2.6])
+      expect(fc.getActiveObject()).toBe(selection)
     })
 
     it('cancel button restores original annotations and exits edit mode', async () => {
