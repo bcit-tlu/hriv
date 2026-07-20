@@ -37,7 +37,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "## HRIV Usage and Experience\n\nAggregate usage analytics from structured logs (Loki). **No named-user panels are provisioned** because Grafana dashboard provisioning is broadly readable. Per-user investigation remains an ad-hoc, access-controlled log workflow.\n\nSynthetic-monitor journeys are excluded via the server-marked `event_synthetic` / `auth_synthetic` fields. Usage-event panels also exclude the client hint `event_client_synthetic` to remove historical events created before the synthetic account metadata was corrected. The **User role** variable filters usage-event panels; authentication panels stay aggregate because some failure paths do not carry a resolved role.\n\n> Field names assume OTLP\u2192Loki ingestion, which sanitizes attribute dots to underscores (for example `event.name` \u2192 `event_name`).\n\nUsage and authentication events are emitted authoritatively by the backend and are selected from the `service_name=\"hriv-backend\"` OTLP log stream.",
+        "content": "## HRIV Usage and Experience\n\nAggregate usage analytics from structured logs (Loki). **No named-user panels are provisioned** because Grafana dashboard provisioning is broadly readable. Per-user investigation remains an ad-hoc, access-controlled log workflow.\n\nSynthetic-monitor journeys are excluded via the server-marked `event_synthetic` / `auth_synthetic` fields. Usage-event panels also exclude the client hint `event_client_synthetic` to remove historical events created before the synthetic account metadata was corrected. The **User role** variable filters usage-event panels; authentication panels stay aggregate because some failure paths do not carry a resolved role.\n\n> Field names assume OTLP→Loki ingestion, which sanitizes attribute dots to underscores (for example `event.name` → `event_name`).\n\nUsage and authentication events are emitted authoritatively by the backend and are selected from the `service_name=\"hriv-backend\"` OTLP log stream.",
         "mode": "markdown"
       },
       "pluginVersion": "10.0.0",
@@ -1944,7 +1944,7 @@
         "type": "loki",
         "uid": "${loki}"
       },
-      "description": "Most common page-to-page moves (from \u2192 to). Landing events (no prior page) are excluded.",
+      "description": "Most common page-to-page moves (from → to). Landing events (no prior page) are excluded.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -2072,7 +2072,7 @@
         "type": "loki",
         "uid": "${loki}"
       },
-      "description": "Most common category-to-category navigation steps (from \u2192 to). An empty From means the step started outside a category (site root or another page).",
+      "description": "Most common category-to-category navigation steps (from → to). An empty From means the step started outside a category (site root or another page).",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -2200,7 +2200,7 @@
         "type": "loki",
         "uid": "${loki}"
       },
-      "description": "Drill-down navigation funnel: Home \u2192 category \u2192 sub-category \u2192 image (edges weighted by count). Only downward category moves are included so the flow stays acyclic; up/jump moves appear in the Top category transitions table. Requires the netsage-sankey-panel plugin. Data accumulates from events ingested after the direction field was introduced.",
+      "description": "Drill-down navigation funnel: Home → category → sub-category → image (edges weighted by count, identically-named nodes merged into chained flows). Only downward category moves are included so the flow stays acyclic; up/jump moves appear in the Top category transitions table. Requires the volkovlabs-echarts-panel (Business Charts) plugin. Data accumulates from events ingested after the direction field was introduced.",
       "gridPos": {
         "h": 10,
         "w": 24,
@@ -2208,8 +2208,12 @@
         "y": 76
       },
       "id": 313,
-      "options": {},
-      "pluginVersion": "10.0.0",
+      "options": {
+        "renderer": "canvas",
+        "map": "none",
+        "editorMode": "code",
+        "getOption": "const frame = context.panel.data.series[0];\nif (!frame) {\n  return {};\n}\nconst sourceField = frame.fields.find((f) => f.name === 'source');\nconst targetField = frame.fields.find((f) => f.name === 'target');\nconst valueField = frame.fields.find((f) => f.type === 'number');\nif (!sourceField || !targetField || !valueField) {\n  return {};\n}\nconst toArray = (values) => (values.buffer ? values.buffer : values);\nconst sources = toArray(sourceField.values);\nconst targets = toArray(targetField.values);\nconst values = toArray(valueField.values);\nconst nodeNames = new Set();\nconst linksByKey = new Map();\nfor (let i = 0; i < sources.length; i++) {\n  const source = sources[i];\n  const target = targets[i];\n  if (source == null || target == null || source === target) {\n    continue;\n  }\n  // Sankey rendering requires a DAG; drop any edge whose reverse is present.\n  if (linksByKey.has(target + '\\u0000' + source)) {\n    continue;\n  }\n  const key = source + '\\u0000' + target;\n  const existing = linksByKey.get(key);\n  if (existing) {\n    existing.value += values[i];\n  } else {\n    nodeNames.add(source);\n    nodeNames.add(target);\n    linksByKey.set(key, { source, target, value: values[i] });\n  }\n}\nreturn {\n  backgroundColor: 'transparent',\n  tooltip: { trigger: 'item', triggerOn: 'mousemove' },\n  series: [\n    {\n      type: 'sankey',\n      layout: 'none',\n      nodeAlign: 'left',\n      emphasis: { focus: 'adjacency' },\n      data: Array.from(nodeNames).map((name) => ({ name })),\n      links: Array.from(linksByKey.values()),\n      lineStyle: { color: 'gradient', curveness: 0.5 },\n      label: { color: 'rgba(204, 204, 220, 0.9)' },\n    },\n  ],\n};"
+      },
       "targets": [
         {
           "datasource": {
@@ -2222,7 +2226,7 @@
         }
       ],
       "title": "Category navigation flow (Sankey)",
-      "type": "netsage-sankey-panel",
+      "type": "volkovlabs-echarts-panel",
       "transformations": [
         {
           "id": "organize",
