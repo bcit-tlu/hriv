@@ -344,9 +344,7 @@
         "minVizWidth": 75,
         "orientation": "auto",
         "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
+          "calcs": ["lastNotNull"],
           "fields": "",
           "values": false
         },
@@ -837,13 +835,7 @@
   "refresh": "30s",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": [
-    "hriv",
-    "observability",
-    "service-health",
-    "prometheus",
-    "loki"
-  ],
+  "tags": ["hriv", "observability", "service-health", "prometheus", "loki"],
   "templating": {
     "list": [
       {
