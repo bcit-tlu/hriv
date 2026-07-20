@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.39.2...frontend-v0.40.0) (2026-07-20)
+
+
+### Features
+
+* **observability:** analytics-tier telemetry events, dashboard panels, and docs ([#944](https://github.com/bcit-tlu/hriv/issues/944)) ([c738808](https://github.com/bcit-tlu/hriv/commit/c738808b43d96a4265ef0b4fd04547ff32210ec4))
+
 ## [0.39.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.39.1...frontend-v0.39.2) (2026-07-17)
 
 
