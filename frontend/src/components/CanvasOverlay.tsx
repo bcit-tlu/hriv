@@ -643,6 +643,30 @@ export default function CanvasOverlay({
     [viewer],
   )
 
+  /**
+   * Fabric stores child coordinates relative to an ActiveSelection. Temporarily
+   * discard multi-object selections while reading annotations so serialization
+   * always observes each object's absolute canvas coordinates.
+   */
+  const withAbsoluteObjectCoordinates = useCallback(<T,>(fc: fabric.Canvas, read: () => T): T => {
+    const activeObject = fc.getActiveObject()
+    if (!(activeObject instanceof fabric.ActiveSelection)) return read()
+
+    const selectedObjects = activeObject.getObjects()
+    fc.discardActiveObject()
+    try {
+      return read()
+    } finally {
+      const selection = new fabric.ActiveSelection(selectedObjects, {
+        canvas: fc,
+        originX: 'left',
+        originY: 'top',
+      })
+      fc.setActiveObject(selection)
+      fc.requestRenderAll()
+    }
+  }, [])
+
   /** Collect all fabric objects and emit change */
   const emitAnnotations = useCallback(() => {
     const fc = fabricCanvasRef.current
@@ -652,15 +676,18 @@ export default function CanvasOverlay({
     if (active && active instanceof fabric.IText && active.isEditing) {
       active.exitEditing()
     }
-    const objs = fc.getObjects()
-    const result: CanvasAnnotation[] = []
-    for (const obj of objs) {
-      const ann = fabricToAnnotation(obj)
-      if (ann) result.push(ann)
-    }
+    const result = withAbsoluteObjectCoordinates(fc, () => {
+      const objs = fc.getObjects()
+      const annotations: CanvasAnnotation[] = []
+      for (const obj of objs) {
+        const ann = fabricToAnnotation(obj)
+        if (ann) annotations.push(ann)
+      }
+      return annotations
+    })
     console.debug(LOG_PREFIX, 'emitAnnotations:', result.length, 'objects')
     onAnnotationsChange(result)
-  }, [fabricToAnnotation, onAnnotationsChange])
+  }, [fabricToAnnotation, onAnnotationsChange, withAbsoluteObjectCoordinates])
 
   // Initialize / teardown fabric canvas when entering/exiting edit mode
   useEffect(() => {
@@ -734,9 +761,11 @@ export default function CanvasOverlay({
         if (activeObj && activeObj instanceof fabric.IText && activeObj.isEditing) return
         const activeObjs = fc.getActiveObjects()
         if (activeObjs.length > 0) {
-          clipboardRef.current = activeObjs
-            .map((obj) => fabricToAnnotation(obj))
-            .filter((a): a is CanvasAnnotation => a != null)
+          clipboardRef.current = withAbsoluteObjectCoordinates(fc, () =>
+            activeObjs
+              .map((obj) => fabricToAnnotation(obj))
+              .filter((a): a is CanvasAnnotation => a != null),
+          )
           console.debug(LOG_PREFIX, 'copied', clipboardRef.current.length, 'objects')
         }
       }
@@ -805,7 +834,14 @@ export default function CanvasOverlay({
         fabricCanvasRef.current = null
       }
     }
-  }, [editMode, viewer, annotationToFabric, fabricToAnnotation, emitAnnotations])
+  }, [
+    editMode,
+    viewer,
+    annotationToFabric,
+    fabricToAnnotation,
+    emitAnnotations,
+    withAbsoluteObjectCoordinates,
+  ])
 
   // Drawing handlers for edit mode
 
