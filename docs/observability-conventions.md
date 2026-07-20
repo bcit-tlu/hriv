@@ -616,17 +616,25 @@ is unset, the frontend falls back to the same-origin relative path
 
 ### Allowed event names
 
+- `annotation.created`
+- `annotation.deleted`
+- `application.session_heartbeat`
 - `application.session_started`
+- `auth.login_succeeded`
 - `auth.logout_selected`
+- `category.created`
 - `feedback.report_issue_opened`
 - `feedback.report_issue_submitted`
 - `frontend.error`
 - `frontend.performance`
 - `image.share_selected`
+- `image.upload.completed`
 - `image.view.started`
 - `image.view.ready`
+- `image.view.ended`
 - `image.view.failed`
 - `navigation.page_changed`
+- `ui.toolbar_action`
 
 ### Event fields
 
