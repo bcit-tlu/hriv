@@ -613,3 +613,27 @@ async def test_telemetry_skips_lookup_without_domain_ids() -> None:
         )
 
     db.execute.assert_not_awaited()
+
+async def test_telemetry_survives_display_name_lookup_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failing name lookup degrades to id-only logging, never a 500."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+
+    batch = TelemetryBatch(
+        events=[TelemetryEvent(event="image.view.ready", image_id=617)]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=1, role="student", metadata_=None)
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=RuntimeError("db unavailable"))
+
+    with _allow_rate_limit():
+        response = await ingest_telemetry_events(
+            batch=batch, request=request, user=user, db=db, x_session_id=None
+        )
+
+    assert response.status_code == 202
+    [record] = [r for r in caplog.records if r.message == "frontend telemetry event"]
+    assert getattr(record, "image.id") == 617
+    assert not hasattr(record, "image.name")

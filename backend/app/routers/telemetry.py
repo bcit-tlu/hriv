@@ -249,7 +249,13 @@ async def ingest_telemetry_events(
     # and backend logs stay correlated. Computed once per request.
     traceparent = request.headers.get("traceparent")
 
-    image_names, category_labels = await _lookup_display_names(db, batch.events)
+    # Name enrichment is cosmetic and must never fail ingestion: on any DB
+    # error, degrade to id-only logging so the batch is still recorded.
+    try:
+        image_names, category_labels = await _lookup_display_names(db, batch.events)
+    except Exception:
+        logger.warning("telemetry display-name lookup failed", exc_info=True)
+        image_names, category_labels = {}, {}
 
     for event in batch.events:
         if event.event not in _ALLOWED_EVENTS:
