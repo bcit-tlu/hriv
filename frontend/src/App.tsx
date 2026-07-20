@@ -83,6 +83,7 @@ import EditCategoryDialog from './components/EditCategoryDialog'
 import { useColorMode } from './useColorMode'
 import { useBrowseData } from './useBrowseData'
 import { emitEvent, emitSessionStartedOnce } from './observability'
+import type { TelemetryNavDirection } from './observability'
 import { splitDirectAncestorGroupIds, splitDirectAncestorProgramIds } from './categoryUtils'
 import { getInheritedRestrictionSx } from './restrictionStyles'
 import { getSurfaceVariant, getVisibilityColors } from './theme'
@@ -158,13 +159,24 @@ export default function App() {
   })
 
   const lastEmittedCategoryRef = useRef<number | null>(null)
+  const lastEmittedPathIdsRef = useRef<number[]>([])
   useEffect(() => {
     if (!currentUser) return
     const categoryId = path.length > 0 ? path[path.length - 1].id : null
     if (lastEmittedCategoryRef.current === categoryId) return
     const fromCategoryId = lastEmittedCategoryRef.current
     lastEmittedCategoryRef.current = categoryId
+    const prevIds = lastEmittedPathIdsRef.current
+    const ids = path.map((c) => c.id)
+    lastEmittedPathIdsRef.current = ids
     if (categoryId === null) return
+    const isPrefix = (a: number[], b: number[]) => a.every((id, i) => b[i] === id)
+    const direction: TelemetryNavDirection =
+      prevIds.length < ids.length && isPrefix(prevIds, ids)
+        ? 'down'
+        : prevIds.length > ids.length && isPrefix(ids, prevIds)
+          ? 'up'
+          : 'jump'
     emitEvent({
       event: 'navigation.page_changed',
       action: 'navigate_category',
@@ -172,6 +184,7 @@ export default function App() {
       page,
       category_id: categoryId,
       from_category_id: fromCategoryId ?? undefined,
+      direction,
     })
   }, [path, currentUser, page])
   const [selectedImage, setSelectedImage] = useState<ImageItem | null>(null)
@@ -625,6 +638,7 @@ export default function App() {
     if (isRealUserSwitch) {
       lastEmittedPageRef.current = null
       lastEmittedCategoryRef.current = null
+      lastEmittedPathIdsRef.current = []
       setPage('browse')
       setPath([])
       setSelectedImage(null)
