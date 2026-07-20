@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.40.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.40.0...backend-v0.40.1) (2026-07-20)
+
+
+### Bug Fixes
+
+* **observability:** usage dashboard pie legends and human-readable image/category names ([#947](https://github.com/bcit-tlu/hriv/issues/947)) ([7a2e3c2](https://github.com/bcit-tlu/hriv/commit/7a2e3c26c624932bee40544d7b3eed602bb23f9b))
+
 ## [0.40.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.39.1...backend-v0.40.0) (2026-07-20)
 
 
