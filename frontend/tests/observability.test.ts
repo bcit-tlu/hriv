@@ -145,7 +145,8 @@ describe('observability', () => {
     initObservability()
     initObservability()
     emitEvent({ event: 'navigation.page_changed', page: 'browse' })
-    expect(vi.getTimerCount()).toBe(1)
+    // One batching flush timer plus the session-heartbeat interval.
+    expect(vi.getTimerCount()).toBe(2)
     window.dispatchEvent(new Event('pagehide'))
 
     expect(vi.getTimerCount()).toBe(0)
@@ -349,22 +350,58 @@ describe('observability', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('emits a session heartbeat while the tab is visible and authenticated', async () => {
+    const { initObservability } = await import('../src/observability')
+
+    initObservability()
+    await vi.advanceTimersByTimeAsync(5 * 60_000 + 1_100)
+
+    expect(fetch).toHaveBeenCalledOnce()
+    const request = vi.mocked(fetch).mock.calls[0]?.[1]
+    const parsed = JSON.parse(String(request?.body))
+    expect(parsed.events).toHaveLength(1)
+    expect(parsed.events[0]).toMatchObject({
+      event: 'application.session_heartbeat',
+      action: 'heartbeat',
+      outcome: 'success',
+    })
+  })
+
+  it('stops the session heartbeat on pagehide', async () => {
+    const { initObservability } = await import('../src/observability')
+
+    initObservability()
+    window.dispatchEvent(new Event('pagehide'))
+    expect(vi.getTimerCount()).toBe(0)
+
+    await vi.advanceTimersByTimeAsync(10 * 60_000)
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it('exports the implemented frontend telemetry event contract', async () => {
     const { TELEMETRY_EVENT_NAMES, TELEMETRY_SCHEMA_VERSION } = await import('../src/observability')
 
     expect(TELEMETRY_SCHEMA_VERSION).toBe(2)
     expect(TELEMETRY_EVENT_NAMES).toEqual([
+      'annotation.created',
+      'annotation.deleted',
+      'application.session_heartbeat',
       'application.session_started',
+      'auth.login_succeeded',
       'auth.logout_selected',
+      'category.created',
       'feedback.report_issue_opened',
       'feedback.report_issue_submitted',
       'frontend.error',
       'frontend.performance',
       'image.share_selected',
+      'image.upload.completed',
       'image.view.started',
       'image.view.ready',
+      'image.view.ended',
       'image.view.failed',
       'navigation.page_changed',
+      'ui.toolbar_action',
     ])
   })
 })

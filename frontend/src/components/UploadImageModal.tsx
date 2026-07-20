@@ -15,6 +15,7 @@ import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import { uploadSourceImage, bulkImportImages, userMessage } from '../api'
 import type { ApiBulkImportJob } from '../api'
 import { isImageFile, isZipFile, isAcceptedFile } from '../fileUtils'
+import { emitEvent, type TelemetryFileType } from '../observability'
 import CategoryPickerSelect from './CategoryPickerSelect'
 import ImageMetadataFields from './ImageMetadataFields'
 import type { ImageMetadataValues } from './ImageMetadataFields'
@@ -42,6 +43,32 @@ function formatBytes(bytes: number): string {
 /** Whether the selected files should use the bulk-import workflow. */
 function isBulkMode(files: File[]): boolean {
   return files.length > 1 || (files.length === 1 && isZipFile(files[0]))
+}
+
+const TELEMETRY_FILE_TYPES: ReadonlySet<TelemetryFileType> = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'gif',
+  'webp',
+  'tif',
+  'tiff',
+  'svs',
+  'zip',
+])
+
+/** Bounded file-type bucket for telemetry: a single extension, else 'mixed'. */
+function telemetryFileType(files: File[]): TelemetryFileType {
+  const extensions = new Set(
+    files.map((file) => {
+      const ext = file.name.slice(file.name.lastIndexOf('.') + 1).toLowerCase()
+      return TELEMETRY_FILE_TYPES.has(ext as TelemetryFileType)
+        ? (ext as TelemetryFileType)
+        : 'other'
+    }),
+  )
+  if (extensions.size === 1) return [...extensions][0]
+  return 'mixed'
 }
 
 interface UploadImageModalProps {
@@ -240,6 +267,15 @@ export default function UploadImageModal({
           abort.signal,
         )
         onBulkImportStarted?.(result, uploadFilename, uploadFileSize, uploadId)
+        emitEvent({
+          event: 'image.upload.completed',
+          action: 'upload',
+          outcome: 'success',
+          upload_mode: 'bulk',
+          file_type: telemetryFileType(files),
+          value: files.length,
+          category_id: categoryId ?? undefined,
+        })
         onClose()
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') {
@@ -282,6 +318,16 @@ export default function UploadImageModal({
           abort.signal,
         )
         onProcessingStarted?.(result.id, file.name, file.size, uploadId)
+        emitEvent({
+          event: 'image.upload.completed',
+          action: 'upload',
+          outcome: 'success',
+          upload_mode: 'single',
+          file_type: telemetryFileType([file]),
+          value: 1,
+          image_id: result.id,
+          category_id: categoryId ?? undefined,
+        })
         onUploaded()
         onClose()
       } catch (err) {

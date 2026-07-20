@@ -1,7 +1,12 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import OpenSeadragon from 'openseadragon'
 import Box from '@mui/material/Box'
-import { emitEvent, emitFrontendError, emitFrontendPerformance } from '../observability'
+import {
+  emitEvent,
+  emitEventNow,
+  emitFrontendError,
+  emitFrontendPerformance,
+} from '../observability'
 import CanvasOverlay from './CanvasOverlay'
 import type { CanvasAnnotation } from './CanvasOverlay'
 import {
@@ -100,6 +105,15 @@ export default function ImageViewer({
   useEffect(() => {
     categoryIdRef.current = categoryId
   }, [categoryId])
+  const emitToolbarAction = useCallback((action: string) => {
+    emitEvent({
+      event: 'ui.toolbar_action',
+      action,
+      outcome: 'success',
+      image_id: imageIdRef.current,
+      category_id: categoryIdRef.current,
+    })
+  }, [])
   const updateLockUiRef = useRef<(() => void) | null>(null)
   const updateCanvasEditUiRef = useRef<((active: boolean) => void) | null>(null)
   const updateMagnificationRef = useRef<(() => void) | null>(null)
@@ -345,6 +359,7 @@ export default function ImageViewer({
       srcDown: prefix + 'clear_pressed.svg',
       onClick: () => {
         if (overlaysLockedRef.current) return
+        emitToolbarAction('clear_overlays')
         for (const el of overlaysRef.current) {
           viewer.removeOverlay(el)
         }
@@ -388,6 +403,7 @@ export default function ImageViewer({
       srcDown: prefix + 'selection_pressed.svg',
       onClick: () => {
         selectionModeRef.current = !selectionModeRef.current
+        emitToolbarAction(selectionModeRef.current ? 'selection_mode_on' : 'selection_mode_off')
         viewer.setMouseNavEnabled(!selectionModeRef.current)
         selectionButton.element.style.outline = selectionModeRef.current ? '2px solid red' : 'none'
         selectionButton.element.style.outlineOffset = selectionModeRef.current ? '-2px' : ''
@@ -537,6 +553,7 @@ export default function ImageViewer({
         srcHover: prefix + 'lock_open_hover.svg',
         srcDown: prefix + 'lock_open_pressed.svg',
         onClick: () => {
+          emitToolbarAction(overlaysLockedRef.current ? 'overlays_unlock' : 'overlays_lock')
           if (overlaysLockedRef.current) {
             onUnlockOverlaysRef.current?.()
           } else {
@@ -578,6 +595,7 @@ export default function ImageViewer({
         srcDown: prefix + 'canvas_edit_pressed.svg',
         onClick: () => {
           const entering = !canvasEditModeRef.current
+          emitToolbarAction(entering ? 'canvas_edit_on' : 'canvas_edit_off')
           canvasEditModeRef.current = entering
           setCanvasEditMode(entering)
           viewer.setMouseNavEnabled(!entering)
@@ -710,13 +728,29 @@ export default function ImageViewer({
 
     // Reset rotation to 0 when the home button is clicked
     viewer.addHandler('home', () => {
+      emitToolbarAction('home')
       viewer.viewport.setRotation(0)
+    })
+    viewer.addHandler('full-page', (event) => {
+      // Fires on both enter and exit; count only entering full screen.
+      if (event.fullPage) emitToolbarAction('full_screen')
     })
 
     // Report viewport changes after animations finish
     viewer.addHandler('animation-finish', emitViewport)
 
     return () => {
+      const dwellMs = viewStartTimeRef.current
+        ? Math.round(performance.now() - viewStartTimeRef.current)
+        : undefined
+      emitEventNow({
+        event: 'image.view.ended',
+        action: 'view',
+        outcome: 'success',
+        duration_ms: dwellMs,
+        image_id: imageIdRef.current,
+        category_id: categoryIdRef.current,
+      })
       selectionModeRef.current = false
       dragRef.current = null
       overlaysRef.current = []
@@ -728,7 +762,14 @@ export default function ImageViewer({
       viewer.destroy()
       viewerRef.current = null
     }
-  }, [tileSources, initialViewport, initialOverlays, emitViewport, updateMeasurementLabels])
+  }, [
+    tileSources,
+    initialViewport,
+    initialOverlays,
+    emitViewport,
+    updateMeasurementLabels,
+    emitToolbarAction,
+  ])
 
   // Reactively update lock/clear button UI when overlaysLocked prop changes
   useEffect(() => {

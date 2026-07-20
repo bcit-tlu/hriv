@@ -100,23 +100,30 @@ Event names use dot-separated verbs and remain stable once published.
 
 Implemented frontend-ingestion events:
 
-- `image.view.started`
-- `image.view.ready`
-- `image.view.failed`
-- `navigation.page_changed`
-
-Reserved names for follow-on observability issues:
-
+- `annotation.created`
+- `annotation.deleted`
+- `application.session_heartbeat`
 - `application.session_started`
 - `auth.login_succeeded`
-- `auth.login_failed`
 - `auth.logout_selected`
-- `navigation.category_viewed`
-- `image.share_selected`
+- `category.created`
 - `feedback.report_issue_opened`
 - `feedback.report_issue_submitted`
 - `frontend.error`
 - `frontend.performance`
+- `image.share_selected`
+- `image.upload.completed`
+- `image.view.started`
+- `image.view.ready`
+- `image.view.ended`
+- `image.view.failed`
+- `navigation.page_changed`
+- `ui.toolbar_action`
+
+Reserved names for follow-on observability issues:
+
+- `auth.login_failed`
+- `navigation.category_viewed`
 - `backup.completed`
 - `backup.failed`
 - `restore.completed`
@@ -503,17 +510,25 @@ never use this direct path.
 
 Approved event names:
 
+- `annotation.created`
+- `annotation.deleted`
+- `application.session_heartbeat`
 - `application.session_started`
+- `auth.login_succeeded`
 - `auth.logout_selected`
+- `category.created`
 - `feedback.report_issue_opened`
 - `feedback.report_issue_submitted`
 - `frontend.error`
 - `frontend.performance`
 - `image.share_selected`
+- `image.upload.completed`
 - `image.view.started`
 - `image.view.ready`
+- `image.view.ended`
 - `image.view.failed`
 - `navigation.page_changed`
+- `ui.toolbar_action`
 
 Common fields:
 
@@ -551,6 +566,28 @@ Additional frontend-performance fields:
 - `value`
 - `unit`
 
+Additional upload fields (`image.upload.completed`):
+
+- `upload_mode` — bounded to `single` / `bulk` (logged as `upload.mode`)
+- `file_type` — bounded to
+  `jpg`/`jpeg`/`png`/`gif`/`webp`/`tif`/`tiff`/`svs`/`zip`/`mixed`/`other`
+  (logged as `file.type`); `mixed` means a multi-file batch with more than one
+  extension. `value` carries the file count.
+
+Event-specific `action` semantics:
+
+- `ui.toolbar_action` — `action` is the bounded toolbar button identifier
+  (`clear_overlays`, `selection_mode_on`/`off`, `overlays_lock`/`overlays_unlock`,
+  `canvas_edit_on`/`off`, `home`, `full_screen`).
+- `annotation.created` / `annotation.deleted` — `action` is the bounded
+  annotation type (`rect`, `circle`, `arrow`, `text`, `link`, or `mixed` for
+  multi-object operations); `value` carries the object count.
+- `application.session_heartbeat` — emitted every 5 minutes while the tab is
+  visible and authenticated; dashboards approximate active session time per
+  role from heartbeat counts.
+- `image.view.ended` — emitted when the viewer unmounts; `duration_ms` is the
+  image dwell time.
+
 `frontend.performance` uses `action` as the metric name. Approved metrics are:
 
 - `application_load`
@@ -579,17 +616,25 @@ is unset, the frontend falls back to the same-origin relative path
 
 ### Allowed event names
 
+- `annotation.created`
+- `annotation.deleted`
+- `application.session_heartbeat`
 - `application.session_started`
+- `auth.login_succeeded`
 - `auth.logout_selected`
+- `category.created`
 - `feedback.report_issue_opened`
 - `feedback.report_issue_submitted`
 - `frontend.error`
 - `frontend.performance`
 - `image.share_selected`
+- `image.upload.completed`
 - `image.view.started`
 - `image.view.ready`
+- `image.view.ended`
 - `image.view.failed`
 - `navigation.page_changed`
+- `ui.toolbar_action`
 
 ### Event fields
 
@@ -611,6 +656,8 @@ is unset, the frontend falls back to the same-origin relative path
 | `trace_id`        | string                                | Active trace identifier when available                           |
 | `value`           | number                                | Numeric value for `frontend.performance` events                  |
 | `unit`            | bounded string                        | Unit for `value` (`ms` or `score`)                               |
+| `upload_mode`     | bounded string                        | `single`/`bulk` for `image.upload.completed`                     |
+| `file_type`       | bounded string                        | Bounded upload file-type bucket (see above)                      |
 | `browser_family`  | bounded string                        | `chrome`/`firefox`/`safari`/`edge`/`opera`/`samsung`/`other`     |
 | `browser_major`   | string                                | Major browser version only (e.g. `128`)                          |
 | `os_family`       | bounded string                        | `windows`/`macos`/`ios`/`android`/`linux`/`chromeos`/`other`     |

@@ -352,6 +352,76 @@ async def test_telemetry_bounds_unknown_error_code_and_unit(
     assert getattr(log, "error.code") == "other"
 
 
+async def test_telemetry_logs_upload_mode_and_file_type(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Upload analytics events carry bounded upload.mode and file.type fields."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+
+    batch = TelemetryBatch(
+        events=[
+            TelemetryEvent(
+                event="image.upload.completed",
+                action="upload",
+                outcome="success",
+                upload_mode="bulk",
+                file_type="zip",
+                value=3,
+            ),
+            TelemetryEvent(
+                event="image.upload.completed",
+                action="upload",
+                outcome="success",
+                upload_mode="not-a-mode",
+                file_type="exe",
+            ),
+        ]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=9, role="instructor", metadata_={})
+
+    with _allow_rate_limit():
+        await ingest_telemetry_events(
+            batch=batch, request=request, user=user, x_session_id=None
+        )
+
+    logs = [r for r in caplog.records if r.message == "frontend telemetry event"]
+    assert len(logs) == 2
+    assert getattr(logs[0], "upload.mode") == "bulk"
+    assert getattr(logs[0], "file.type") == "zip"
+    assert getattr(logs[0], "event.value") == 3
+    assert getattr(logs[1], "upload.mode") == "other"
+    assert getattr(logs[1], "file.type") == "other"
+
+
+async def test_telemetry_accepts_new_analytics_events(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The analytics-tier event names are accepted by the allowlist."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+
+    names = [
+        "annotation.created",
+        "annotation.deleted",
+        "application.session_heartbeat",
+        "auth.login_succeeded",
+        "category.created",
+        "image.view.ended",
+        "ui.toolbar_action",
+    ]
+    batch = TelemetryBatch(events=[TelemetryEvent(event=name) for name in names])
+    request = _make_request()
+    user = SimpleNamespace(id=10, role="student", metadata_={})
+
+    with _allow_rate_limit():
+        await ingest_telemetry_events(
+            batch=batch, request=request, user=user, x_session_id=None
+        )
+
+    logs = [r for r in caplog.records if r.message == "frontend telemetry event"]
+    assert [getattr(r, "event.name") for r in logs] == names
+
+
 async def test_telemetry_rejects_oversized_event_name() -> None:
     """Event names exceeding the max length are rejected during validation."""
     with pytest.raises(ValueError):

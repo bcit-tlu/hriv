@@ -33,17 +33,25 @@ export const TELEMETRY_SCHEMA_VERSION = 2
  * endpoint. Keep this in lockstep with `backend/app/routers/telemetry.py`.
  */
 export const TELEMETRY_EVENT_NAMES = [
+  'annotation.created',
+  'annotation.deleted',
+  'application.session_heartbeat',
   'application.session_started',
+  'auth.login_succeeded',
   'auth.logout_selected',
+  'category.created',
   'feedback.report_issue_opened',
   'feedback.report_issue_submitted',
   'frontend.error',
   'frontend.performance',
   'image.share_selected',
+  'image.upload.completed',
   'image.view.started',
   'image.view.ready',
+  'image.view.ended',
   'image.view.failed',
   'navigation.page_changed',
+  'ui.toolbar_action',
 ] as const
 
 export type TelemetryEventName = (typeof TELEMETRY_EVENT_NAMES)[number]
@@ -52,9 +60,24 @@ const DEFAULT_OTEL_TRACE_ENDPOINT_PROD = 'https://telemetry.ltc.bcit.ca'
 const DEFAULT_OTEL_TRACE_ENDPOINT_DEV = 'http://localhost:4318'
 const SESSION_STARTED_STORAGE_KEY = `hriv.telemetry.${SESSION_ID}.session_started`
 const ERROR_DEDUPE_TTL_MS = 30_000
+const SESSION_HEARTBEAT_INTERVAL_MS = 5 * 60_000
 
 export type TelemetryOutcome = 'success' | 'failure' | 'unknown'
 export type TelemetryUnit = 'ms' | 'score'
+export type TelemetryUploadMode = 'single' | 'bulk'
+/** Bounded upload file types; keep in lockstep with the backend allowlist. */
+export type TelemetryFileType =
+  | 'jpg'
+  | 'jpeg'
+  | 'png'
+  | 'gif'
+  | 'webp'
+  | 'tif'
+  | 'tiff'
+  | 'svs'
+  | 'zip'
+  | 'mixed'
+  | 'other'
 export type TelemetryErrorCode =
   | 'api_http_4xx'
   | 'api_http_5xx'
@@ -83,6 +106,8 @@ interface TelemetryEventBase {
   trace_id?: string
   value?: number
   unit?: TelemetryUnit
+  upload_mode?: TelemetryUploadMode
+  file_type?: TelemetryFileType
 }
 
 export type TelemetryEvent = TelemetryEventBase
@@ -119,6 +144,7 @@ let _pagehideHandlerAttached = false
 let _windowErrorHandlerAttached = false
 let _promiseRejectionHandlerAttached = false
 let _sessionStartedEmitted = false
+let _heartbeatTimer: ReturnType<typeof setInterval> | null = null
 let _latestLcpMs: number | null = null
 let _largestInpMs: number | null = null
 let _clsScore = 0
@@ -363,6 +389,7 @@ function emitFinalPerformanceMetrics(): void {
 }
 
 function handlePagehide(): void {
+  stopHeartbeatInterval()
   emitFinalPerformanceMetrics()
   flushPendingEvents()
 }
@@ -391,6 +418,36 @@ function registerWindowErrorHandlers(): void {
     })
     _promiseRejectionHandlerAttached = true
   }
+}
+
+function startHeartbeatInterval(): void {
+  if (_heartbeatTimer !== null) return
+  _heartbeatTimer = setInterval(() => {
+    // Only report time the user is plausibly active: an authenticated,
+    // visible tab. Session length per role is derived from these beats.
+    if (document.visibilityState !== 'visible') return
+    if (!getToken()) return
+    emitEvent({
+      event: 'application.session_heartbeat',
+      action: 'heartbeat',
+      outcome: 'success',
+      page: currentPage(),
+    })
+  }, SESSION_HEARTBEAT_INTERVAL_MS)
+}
+
+function stopHeartbeatInterval(): void {
+  if (_heartbeatTimer === null) return
+  clearInterval(_heartbeatTimer)
+  _heartbeatTimer = null
+}
+
+function registerSessionHeartbeat(): void {
+  if (!isBrowser()) return
+  startHeartbeatInterval()
+  // Restart the heartbeat when the page is restored from the bfcache
+  // (handlePagehide stops it so unloaded pages hold no live timers).
+  window.addEventListener('pageshow', startHeartbeatInterval)
 }
 
 function registerApiFailureObserver(): void {
@@ -469,6 +526,7 @@ export function initObservability(): void {
   registerPerformanceObservers()
   registerWindowErrorHandlers()
   registerApiFailureObserver()
+  registerSessionHeartbeat()
 
   if (!_pagehideHandlerAttached) {
     window.addEventListener('pagehide', handlePagehide)

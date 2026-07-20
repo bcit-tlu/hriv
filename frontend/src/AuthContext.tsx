@@ -22,6 +22,11 @@ import { emitEventNow } from './observability'
 // By snapshotting the hash here we guarantee we see the original value.
 const _initialHash = window.location.hash.replace(/^#/, '')
 
+// True only on the document load that carries a fresh OIDC callback token,
+// so `auth.login_succeeded` fires once per OIDC login rather than on every
+// mount-time token revalidation.
+let _oidcLoginPending = new URLSearchParams(_initialHash).get('oidc_token') !== null
+
 function toUser(u: ApiUser): User {
   return {
     id: u.id,
@@ -151,6 +156,14 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
           setCurrentUser(freshUser)
           setToken(token)
           localStorage.setItem('hriv_user', JSON.stringify(freshUser))
+          if (_oidcLoginPending) {
+            _oidcLoginPending = false
+            emitEventNow({
+              event: 'auth.login_succeeded',
+              action: 'login',
+              outcome: 'success',
+            })
+          }
         } else {
           // Token invalid or user no longer exists — clear session
           clearUserStorage()
@@ -191,6 +204,11 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
     setToken(resp.access_token)
     setCurrentUser(user)
     localStorage.setItem('hriv_user', JSON.stringify(user))
+    emitEventNow({
+      event: 'auth.login_succeeded',
+      action: 'login',
+      outcome: 'success',
+    })
   }, [])
 
   const logout = useCallback(() => {
