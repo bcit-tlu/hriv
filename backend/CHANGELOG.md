@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.40.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.39.1...backend-v0.40.0) (2026-07-20)
+
+
+### Features
+
+* **observability:** analytics-tier telemetry events, dashboard panels, and docs ([#944](https://github.com/bcit-tlu/hriv/issues/944)) ([c738808](https://github.com/bcit-tlu/hriv/commit/c738808b43d96a4265ef0b4fd04547ff32210ec4))
+
+
+### Bug Fixes
+
+* surface tiles volume ENOSPC failures ([#943](https://github.com/bcit-tlu/hriv/issues/943)) ([60af033](https://github.com/bcit-tlu/hriv/commit/60af03336adcf8c25e8325defae5b67cbe425785))
+
 ## [0.39.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.39.0...backend-v0.39.1) (2026-07-17)
 
 
