@@ -605,7 +605,10 @@ Privacy rules for frontend telemetry:
 
 - Never include free-text report-issue descriptions.
 - Never include full URLs or search-query values in events.
-- Never include image names, category labels, email addresses, or access tokens.
+- Never include image names, category labels, email addresses, or access
+  tokens. (The _client_ must not send these; the backend resolves image names
+  and category labels itself from the event's numeric ids — see the
+  server-authoritative `image.name` / `category.label` enrichment below.)
 - Preserve `request_id` only when the backend already generated it.
 - Browser and device fields must stay inside the documented bounded sets.
 
@@ -690,6 +693,9 @@ The endpoint enriches each event with:
   journey); it can never clear a server-marked synthetic account. This lets
   reports reliably exclude synthetic-monitor traffic.
 - `image.id` / `category.id` from the event's structured ids
+- `image.name` / `category.label` — server-resolved display names for the
+  event's structured ids, so dashboards can present human-readable names
+  alongside the numeric ids (omitted when the id no longer resolves)
 - `client.browser.family` / `client.browser.major` / `client.os.family` /
   `client.device.class` / `client.viewport.bucket` / `client.touch_capable` —
   bounded

@@ -823,7 +823,7 @@
           "expr": "sum by (client_browser_family) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_browser_family!=\"\" [$__range]))",
           "legendFormat": "{{client_browser_family}}",
           "refId": "A",
-          "queryType": "instant"
+          "queryType": "range"
         }
       ],
       "title": "Browser family",
@@ -888,7 +888,7 @@
           "expr": "sum by (client_browser_family, client_browser_major) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_browser_family!=\"\" | client_browser_major!=\"\" [$__range]))",
           "legendFormat": "{{client_browser_family}} {{client_browser_major}}",
           "refId": "A",
-          "queryType": "instant"
+          "queryType": "range"
         }
       ],
       "title": "Browser major by family",
@@ -953,7 +953,7 @@
           "expr": "sum by (client_os_family) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_os_family!=\"\" [$__range]))",
           "legendFormat": "{{client_os_family}}",
           "refId": "A",
-          "queryType": "instant"
+          "queryType": "range"
         }
       ],
       "title": "OS family",
@@ -1018,7 +1018,7 @@
           "expr": "sum by (client_device_class) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_device_class!=\"\" [$__range]))",
           "legendFormat": "{{client_device_class}}",
           "refId": "A",
-          "queryType": "instant"
+          "queryType": "range"
         }
       ],
       "title": "Device class",
@@ -1083,7 +1083,7 @@
           "expr": "sum by (client_viewport_bucket) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | client_viewport_bucket!=\"\" [$__range]))",
           "legendFormat": "{{client_viewport_bucket}}",
           "refId": "A",
-          "queryType": "instant"
+          "queryType": "range"
         }
       ],
       "title": "Viewport bucket",
@@ -1148,7 +1148,7 @@
           "expr": "sum by (client_touch_capable) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range]))",
           "legendFormat": "{{client_touch_capable}}",
           "refId": "A",
-          "queryType": "instant"
+          "queryType": "range"
         }
       ],
       "title": "Touch capability",
@@ -1209,6 +1209,18 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "image_name"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Image"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "Value"
             },
             "properties": [
@@ -1262,15 +1274,15 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "topk(10, sum by (image_id) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | image_id!=\"\" [$__range])))",
-          "legendFormat": "{{image_id}}",
+          "expr": "topk(10, sum by (image_id, image_name) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | image_id!=\"\" [$__range])))",
+          "legendFormat": "{{image_name}} ({{image_id}})",
           "refId": "A",
           "queryType": "instant"
         }
       ],
       "title": "Top images (by views)",
       "type": "table",
-      "description": "Most-viewed image identifiers for the selected period."
+      "description": "Most-viewed images (name and id) for the selected period."
     },
     {
       "datasource": {
@@ -1320,6 +1332,18 @@
               {
                 "id": "displayName",
                 "value": "Category ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "category_label"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Category"
               }
             ]
           },
@@ -1379,15 +1403,15 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "topk(10, sum by (category_id) (count_over_time({service_name=\"hriv-backend\"} | event_name=~\"image.view.ready|navigation.page_changed\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | category_id!=\"\" [$__range])))",
-          "legendFormat": "{{category_id}}",
+          "expr": "topk(10, sum by (category_id, category_label) (count_over_time({service_name=\"hriv-backend\"} | event_name=~\"image.view.ready|navigation.page_changed\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | category_id!=\"\" [$__range])))",
+          "legendFormat": "{{category_label}} ({{category_id}})",
           "refId": "A",
           "queryType": "instant"
         }
       ],
       "title": "Top categories (by activity)",
       "type": "table",
-      "description": "Most-active category identifiers from navigation and successful image views."
+      "description": "Most-active categories (label and id) from navigation and successful image views."
     },
     {
       "datasource": {
@@ -1619,7 +1643,7 @@
           "expr": "sum by (file_type) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.upload.completed\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | file_type!=\"\" [$__range]))",
           "refId": "A",
           "legendFormat": "{{file_type}}",
-          "queryType": "instant"
+          "queryType": "range"
         }
       ],
       "title": "Uploaded file types",
@@ -1822,7 +1846,7 @@
           "expr": "sum by (event_action) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"ui.toolbar_action\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range]))",
           "refId": "A",
           "legendFormat": "{{event_action}}",
-          "queryType": "instant"
+          "queryType": "range"
         }
       ],
       "title": "Toolbar actions",
@@ -1956,7 +1980,7 @@
           "expr": "sum by (event_page) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"application.session_started\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__range]))",
           "refId": "A",
           "legendFormat": "{{event_page}}",
-          "queryType": "instant"
+          "queryType": "range"
         }
       ],
       "title": "Session landing page",

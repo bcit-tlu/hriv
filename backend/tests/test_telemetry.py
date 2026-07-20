@@ -34,6 +34,24 @@ def _make_request(traceparent: str | None = None) -> MagicMock:
     return request
 
 
+def _make_db(
+    image_names: dict[int, str] | None = None,
+    category_labels: dict[int, str] | None = None,
+) -> MagicMock:
+    """Async-session stub resolving image/category display-name lookups."""
+
+    async def execute(stmt):
+        table = stmt.get_final_froms()[0].name
+        rows = image_names if table == "images" else category_labels
+        return iter(
+            SimpleNamespace(id=k, name=v, label=v) for k, v in (rows or {}).items()
+        )
+
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=execute)
+    return db
+
+
 def _allow_rate_limit():
     return patch(
         "app.routers.telemetry.check_telemetry_rate_limit",
@@ -69,7 +87,7 @@ async def test_telemetry_events_accepted_and_logged(
 
     with _allow_rate_limit():
         response = await ingest_telemetry_events(
-            batch=batch, request=request, user=user, x_session_id="test-session"
+            batch=batch, request=request, user=user, db=_make_db(), x_session_id="test-session"
         )
 
     assert response.status_code == 202
@@ -112,7 +130,7 @@ async def test_telemetry_drops_unknown_events(
 
     with _allow_rate_limit():
         response = await ingest_telemetry_events(
-            batch=batch, request=request, user=user, x_session_id=None
+            batch=batch, request=request, user=user, db=_make_db(), x_session_id=None
         )
 
     assert response.status_code == 202
@@ -134,7 +152,7 @@ async def test_telemetry_propagates_traceparent(
 
     with _allow_rate_limit():
         response = await ingest_telemetry_events(
-            batch=batch, request=request, user=user, x_session_id=None
+            batch=batch, request=request, user=user, db=_make_db(), x_session_id=None
         )
 
     assert response.status_code == 202
@@ -166,7 +184,7 @@ async def test_telemetry_bounds_client_environment(
 
     with _allow_rate_limit():
         await ingest_telemetry_events(
-            batch=batch, request=request, user=user, x_session_id=None
+            batch=batch, request=request, user=user, db=_make_db(), x_session_id=None
         )
 
     log = [r for r in caplog.records if r.message == "frontend telemetry event"][0]
@@ -199,7 +217,7 @@ async def test_telemetry_bounds_non_numeric_browser_major(
 
     with _allow_rate_limit():
         await ingest_telemetry_events(
-            batch=batch, request=request, user=user, x_session_id=None
+            batch=batch, request=request, user=user, db=_make_db(), x_session_id=None
         )
 
     log = [r for r in caplog.records if r.message == "frontend telemetry event"][0]
@@ -248,7 +266,7 @@ async def test_telemetry_synthetic_from_user_metadata(
 
     with _allow_rate_limit():
         await ingest_telemetry_events(
-            batch=batch, request=request, user=user, x_session_id=None
+            batch=batch, request=request, user=user, db=_make_db(), x_session_id=None
         )
 
     log = [r for r in caplog.records if r.message == "frontend telemetry event"][0]
@@ -268,7 +286,7 @@ async def test_telemetry_rate_limited_returns_429() -> None:
     ):
         with pytest.raises(HTTPException) as exc_info:
             await ingest_telemetry_events(
-                batch=batch, request=request, user=user, x_session_id=None
+                batch=batch, request=request, user=user, db=_make_db(), x_session_id=None
             )
 
     assert exc_info.value.status_code == 429
@@ -313,7 +331,7 @@ async def test_telemetry_logs_error_code_and_request_id(
 
     with _allow_rate_limit():
         await ingest_telemetry_events(
-            batch=batch, request=request, user=user, x_session_id=None
+            batch=batch, request=request, user=user, db=_make_db(), x_session_id=None
         )
 
     log = [r for r in caplog.records if r.message == "frontend telemetry event"][0]
@@ -344,7 +362,7 @@ async def test_telemetry_bounds_unknown_error_code_and_unit(
 
     with _allow_rate_limit():
         await ingest_telemetry_events(
-            batch=batch, request=request, user=user, x_session_id=None
+            batch=batch, request=request, user=user, db=_make_db(), x_session_id=None
         )
 
     log = [r for r in caplog.records if r.message == "frontend telemetry event"][0]
@@ -382,7 +400,7 @@ async def test_telemetry_logs_upload_mode_and_file_type(
 
     with _allow_rate_limit():
         await ingest_telemetry_events(
-            batch=batch, request=request, user=user, x_session_id=None
+            batch=batch, request=request, user=user, db=_make_db(), x_session_id=None
         )
 
     logs = [r for r in caplog.records if r.message == "frontend telemetry event"]
@@ -415,7 +433,7 @@ async def test_telemetry_accepts_new_analytics_events(
 
     with _allow_rate_limit():
         await ingest_telemetry_events(
-            batch=batch, request=request, user=user, x_session_id=None
+            batch=batch, request=request, user=user, db=_make_db(), x_session_id=None
         )
 
     logs = [r for r in caplog.records if r.message == "frontend telemetry event"]
@@ -543,3 +561,79 @@ async def test_synthetic_result_maps_storage_errors() -> None:
             )
 
     assert exc_info.value.status_code == 503
+
+async def test_telemetry_enriches_image_and_category_names(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Events carrying domain ids get server-resolved display names."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+
+    batch = TelemetryBatch(
+        events=[
+            TelemetryEvent(event="image.view.ready", image_id=617, category_id=14),
+            TelemetryEvent(event="image.view.ready", image_id=999),
+        ]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=1, role="student", metadata_=None)
+    db = _make_db(
+        image_names={617: "Renal biopsy H&E"},
+        category_labels={14: "Histopathology"},
+    )
+
+    with _allow_rate_limit():
+        await ingest_telemetry_events(
+            batch=batch, request=request, user=user, db=db, x_session_id=None
+        )
+
+    first, second = [
+        r for r in caplog.records if r.message == "frontend telemetry event"
+    ]
+    assert getattr(first, "image.id") == 617
+    assert getattr(first, "image.name") == "Renal biopsy H&E"
+    assert getattr(first, "category.id") == 14
+    assert getattr(first, "category.label") == "Histopathology"
+    # Unresolvable ids (e.g. deleted rows) keep the id but omit the name.
+    assert getattr(second, "image.id") == 999
+    assert not hasattr(second, "image.name")
+
+
+async def test_telemetry_skips_lookup_without_domain_ids() -> None:
+    """No DB round-trip happens when the batch carries no image/category ids."""
+    batch = TelemetryBatch(
+        events=[TelemetryEvent(event="navigation.page_changed", page="browse")]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=1, role="student", metadata_=None)
+    db = _make_db()
+
+    with _allow_rate_limit():
+        await ingest_telemetry_events(
+            batch=batch, request=request, user=user, db=db, x_session_id=None
+        )
+
+    db.execute.assert_not_awaited()
+
+async def test_telemetry_survives_display_name_lookup_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failing name lookup degrades to id-only logging, never a 500."""
+    caplog.set_level("INFO", logger="app.routers.telemetry")
+
+    batch = TelemetryBatch(
+        events=[TelemetryEvent(event="image.view.ready", image_id=617)]
+    )
+    request = _make_request()
+    user = SimpleNamespace(id=1, role="student", metadata_=None)
+    db = MagicMock()
+    db.execute = AsyncMock(side_effect=RuntimeError("db unavailable"))
+
+    with _allow_rate_limit():
+        response = await ingest_telemetry_events(
+            batch=batch, request=request, user=user, db=db, x_session_id=None
+        )
+
+    assert response.status_code == 202
+    [record] = [r for r in caplog.records if r.message == "frontend telemetry event"]
+    assert getattr(record, "image.id") == 617
+    assert not hasattr(record, "image.name")
