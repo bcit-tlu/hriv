@@ -117,6 +117,10 @@ export default function ImageViewer({
   }, [])
   const updateLockUiRef = useRef<(() => void) | null>(null)
   const updateCanvasEditUiRef = useRef<((active: boolean) => void) | null>(null)
+  const canvasCancelRef = useRef<(() => Promise<void>) | null>(null)
+  const registerCanvasCancel = useCallback((handler: (() => Promise<void>) | null) => {
+    canvasCancelRef.current = handler
+  }, [])
   const updateMagnificationRef = useRef<(() => void) | null>(null)
   useEffect(() => {
     onViewportChangeRef.current = onViewportChange
@@ -597,6 +601,11 @@ export default function ImageViewer({
         onClick: () => {
           const entering = !canvasEditModeRef.current
           emitToolbarAction(entering ? 'canvas_edit_on' : 'canvas_edit_off')
+          if (!entering && canvasCancelRef.current) {
+            // Exit through the overlay's cancel flow so unsaved changes are discarded
+            void canvasCancelRef.current()
+            return
+          }
           canvasEditModeRef.current = entering
           setCanvasEditMode(entering)
           viewer.setMouseNavEnabled(!entering)
@@ -615,6 +624,14 @@ export default function ImageViewer({
         canvasEditButton.element.style.outlineOffset = active ? '-2px' : ''
       }
     }
+
+    // Keep the bottom-left toolbar above the canvas edit overlay (zIndex 15/20)
+    // so its buttons stay visible and clickable while in canvas edit mode.
+    let toolbarAnchor: HTMLElement | null = selectionButton.element
+    while (toolbarAnchor && toolbarAnchor.parentElement !== viewer.container) {
+      toolbarAnchor = toolbarAnchor.parentElement
+    }
+    if (toolbarAnchor) toolbarAnchor.style.zIndex = '25'
 
     // --- Magnification factor badge (inside the navigator mini-map) ---
     // Only visible when the image has measurement settings (scale + unit).
@@ -841,6 +858,7 @@ export default function ImageViewer({
           editMode={canvasEditMode}
           onEditModeChange={handleCanvasEditModeChange}
           onFlushAnnotations={onFlushCanvasAnnotations}
+          registerCancelHandler={registerCanvasCancel}
         />
       )}
     </Box>

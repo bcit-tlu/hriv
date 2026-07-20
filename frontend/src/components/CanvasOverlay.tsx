@@ -86,6 +86,14 @@ type AnnotatedObject = fabric.FabricObject & {
   _filled?: boolean
 }
 
+interface SerializedObjectTransform {
+  left: number
+  top: number
+  scaleX: number
+  scaleY: number
+  angle: number
+}
+
 interface CanvasOverlayProps {
   viewer: OpenSeadragon.Viewer
   annotations: CanvasAnnotation[]
@@ -95,6 +103,8 @@ interface CanvasOverlayProps {
   onEditModeChange: (mode: boolean) => void
   /** Flush any pending annotation save immediately (bypass debounce) */
   onFlushAnnotations?: () => Promise<void>
+  /** Lets the parent trigger the same discard-changes flow as the Cancel button */
+  registerCancelHandler?: (handler: (() => Promise<void>) | null) => void
 }
 
 const LOG_PREFIX = '[CanvasOverlay]'
@@ -186,6 +196,33 @@ function drawArrowhead(
   }
 }
 
+/**
+ * Line that renders its arrowhead on the fabric edit canvas, matching the
+ * view-mode canvas rendering. Caching is disabled by the creation sites so
+ * the head (which extends beyond the line's bounding box) is not clipped.
+ */
+class ArrowLine extends fabric.Line {
+  override _render(ctx: CanvasRenderingContext2D) {
+    super._render(ctx)
+    const style = (this as AnnotatedObject)._arrowStyle ?? 'standard'
+    if (style === 'none') return
+    const p = this.calcLinePoints()
+    const sw = this.strokeWidth ?? 1
+    const headLen = Math.max(24, sw * 12)
+    drawArrowhead(
+      ctx,
+      p.x1,
+      p.y1,
+      p.x2,
+      p.y2,
+      headLen,
+      typeof this.stroke === 'string' ? this.stroke : '#000000',
+      style,
+      Math.max(1, sw),
+    )
+  }
+}
+
 export default function CanvasOverlay({
   viewer,
   annotations,
@@ -194,6 +231,7 @@ export default function CanvasOverlay({
   editMode,
   onFlushAnnotations,
   onEditModeChange,
+  registerCancelHandler,
 }: CanvasOverlayProps) {
   // _canEdit reserved for future per-tool gating; edit button visibility is handled by parent
   void _canEdit
@@ -428,7 +466,7 @@ export default function CanvasOverlay({
         const endPt = viewer.viewport.pixelFromPoint(
           new OpenSeadragon.Point(ann.vpX2 ?? ann.vpX, ann.vpY2 ?? ann.vpY),
         )
-        const line = new fabric.Line([topLeft.x, topLeft.y, endPt.x, endPt.y], {
+        const line = new ArrowLine([topLeft.x, topLeft.y, endPt.x, endPt.y], {
           originX: 'left',
           originY: 'top',
           stroke: ann.color,
@@ -436,6 +474,7 @@ export default function CanvasOverlay({
           selectable: true,
           hasBorders: true,
           hasControls: true,
+          objectCaching: false,
         })
         const aObj = line as AnnotatedObject
         aObj._annotationId = ann.id
@@ -525,7 +564,7 @@ export default function CanvasOverlay({
 
   /** Convert a fabric object back to a viewport-coordinate annotation */
   const fabricToAnnotation = useCallback(
-    (obj: fabric.FabricObject): CanvasAnnotation | null => {
+    (obj: fabric.FabricObject, transform?: SerializedObjectTransform): CanvasAnnotation | null => {
       if (!viewer.viewport) return null
 
       const aObj = obj as AnnotatedObject
@@ -536,13 +575,13 @@ export default function CanvasOverlay({
         // Use direct fabric properties (left/top/width/height/scaleX/scaleY/angle)
         // instead of calcLinePoints + calcTransformMatrix + transformPoint.
         // This aligns arrow serialisation with how rect/circle/text are handled.
-        const left = obj.left ?? 0
-        const top = obj.top ?? 0
-        const sx = obj.scaleX ?? 1
-        const sy = obj.scaleY ?? 1
+        const left = transform?.left ?? obj.left ?? 0
+        const top = transform?.top ?? obj.top ?? 0
+        const sx = transform?.scaleX ?? obj.scaleX ?? 1
+        const sy = transform?.scaleY ?? obj.scaleY ?? 1
         const w = (obj.width ?? 0) * sx
         const h = (obj.height ?? 0) * sy
-        const rad = ((obj.angle ?? 0) * Math.PI) / 180
+        const rad = ((transform?.angle ?? obj.angle ?? 0) * Math.PI) / 180
         const cos = Math.cos(rad)
         const sin = Math.sin(rad)
 
@@ -583,10 +622,10 @@ export default function CanvasOverlay({
       // rotation angle and non-uniform scale (e.g. side-handle resize on ellipses)
       // are captured correctly.  getBoundingRect() returns the axis-aligned bounding
       // box which loses rotation and can misrepresent scaled ellipse dimensions.
-      const objLeft = obj.left ?? 0
-      const objTop = obj.top ?? 0
-      const scaledW = (obj.width ?? 0) * (obj.scaleX ?? 1)
-      const scaledH = (obj.height ?? 0) * (obj.scaleY ?? 1)
+      const objLeft = transform?.left ?? obj.left ?? 0
+      const objTop = transform?.top ?? obj.top ?? 0
+      const scaledW = (obj.width ?? 0) * (transform?.scaleX ?? obj.scaleX ?? 1)
+      const scaledH = (obj.height ?? 0) * (transform?.scaleY ?? obj.scaleY ?? 1)
       const vpTopLeft = viewer.viewport.pointFromPixel(new OpenSeadragon.Point(objLeft, objTop))
       const vpBottomRight = viewer.viewport.pointFromPixel(
         new OpenSeadragon.Point(objLeft + scaledW, objTop + scaledH),
@@ -605,7 +644,8 @@ export default function CanvasOverlay({
 
       if (type === 'rect' || type === 'circle') {
         base.filled = aObj._filled ?? false
-        if (obj.angle) base.rotation = obj.angle
+        const angle = transform?.angle ?? obj.angle ?? 0
+        if (angle) base.rotation = angle
       }
 
       if (type === 'text' || type === 'link') {
@@ -622,14 +662,15 @@ export default function CanvasOverlay({
           | undefined
         const firstCharFill = styles?.[0]?.[0]?.fill
         base.color = firstCharFill || (textObj.fill as string) || '#000000'
-        if (obj.angle) base.rotation = obj.angle
+        const angle = transform?.angle ?? obj.angle ?? 0
+        if (angle) base.rotation = angle
         // Convert visual font size to viewport units using the bounding-box ratio.
         // vpWidth/pixelWidth is the conversion factor from pixels to viewport units.
         // The old formula (fontSize / zoom) was wrong — it produced values in
         // "font-size / zoom" space, not viewport units, causing the load formula
         // (vpFontSize * pw / vpWidth) to multiply by containerWidth and produce
         // enormous pixel sizes (e.g. 60 000 px), rendering text off-screen.
-        const visualFontSize = (textObj.fontSize ?? 16) * (textObj.scaleY ?? 1)
+        const visualFontSize = (textObj.fontSize ?? 16) * (transform?.scaleY ?? textObj.scaleY ?? 1)
         const pw = scaledW
         base.vpFontSize =
           pw > 0 ? (visualFontSize * base.vpWidth) / pw : visualFontSize / viewer.viewport.getZoom()
@@ -643,6 +684,30 @@ export default function CanvasOverlay({
     [viewer],
   )
 
+  /** Read an object's canvas transform without mutating an active selection. */
+  const absoluteObjectTransform = useCallback(
+    (
+      obj: fabric.FabricObject,
+      activeSelection: fabric.ActiveSelection,
+    ): SerializedObjectTransform => {
+      const [a, b, c, d] = obj.calcTransformMatrix()
+      const { x: left, y: top } = fabric.util.transformPoint(
+        obj.getPointByOrigin('left', 'top'),
+        activeSelection.calcTransformMatrix(),
+      )
+      const scaleX = Math.hypot(a, b)
+      const scaleY = scaleX === 0 ? 0 : (a * d - b * c) / scaleX
+      return {
+        left,
+        top,
+        scaleX,
+        scaleY,
+        angle: (Math.atan2(b, a) * 180) / Math.PI,
+      }
+    },
+    [],
+  )
+
   /** Collect all fabric objects and emit change */
   const emitAnnotations = useCallback(() => {
     const fc = fabricCanvasRef.current
@@ -652,15 +717,23 @@ export default function CanvasOverlay({
     if (active && active instanceof fabric.IText && active.isEditing) {
       active.exitEditing()
     }
-    const objs = fc.getObjects()
-    const result: CanvasAnnotation[] = []
-    for (const obj of objs) {
-      const ann = fabricToAnnotation(obj)
-      if (ann) result.push(ann)
+    const activeSelection = fc.getActiveObject()
+    const selectedObjects =
+      activeSelection instanceof fabric.ActiveSelection
+        ? new Set(activeSelection.getObjects())
+        : null
+    const annotations: CanvasAnnotation[] = []
+    for (const obj of fc.getObjects()) {
+      const transform =
+        activeSelection instanceof fabric.ActiveSelection && selectedObjects?.has(obj)
+          ? absoluteObjectTransform(obj, activeSelection)
+          : undefined
+      const ann = fabricToAnnotation(obj, transform)
+      if (ann) annotations.push(ann)
     }
-    console.debug(LOG_PREFIX, 'emitAnnotations:', result.length, 'objects')
-    onAnnotationsChange(result)
-  }, [fabricToAnnotation, onAnnotationsChange])
+    console.debug(LOG_PREFIX, 'emitAnnotations:', annotations.length, 'objects')
+    onAnnotationsChange(annotations)
+  }, [absoluteObjectTransform, fabricToAnnotation, onAnnotationsChange])
 
   // Initialize / teardown fabric canvas when entering/exiting edit mode
   useEffect(() => {
@@ -735,7 +808,13 @@ export default function CanvasOverlay({
         const activeObjs = fc.getActiveObjects()
         if (activeObjs.length > 0) {
           clipboardRef.current = activeObjs
-            .map((obj) => fabricToAnnotation(obj))
+            .map((obj) => {
+              const transform =
+                activeObj instanceof fabric.ActiveSelection
+                  ? absoluteObjectTransform(obj, activeObj)
+                  : undefined
+              return fabricToAnnotation(obj, transform)
+            })
             .filter((a): a is CanvasAnnotation => a != null)
           console.debug(LOG_PREFIX, 'copied', clipboardRef.current.length, 'objects')
         }
@@ -766,11 +845,7 @@ export default function CanvasOverlay({
         if (newObjs.length === 1) {
           fc.setActiveObject(newObjs[0])
         } else if (newObjs.length > 1) {
-          const sel = new fabric.ActiveSelection(newObjs, {
-            canvas: fc,
-            originX: 'left',
-            originY: 'top',
-          })
+          const sel = new fabric.ActiveSelection(newObjs, { canvas: fc })
           fc.setActiveObject(sel)
         }
         fc.renderAll()
@@ -805,7 +880,14 @@ export default function CanvasOverlay({
         fabricCanvasRef.current = null
       }
     }
-  }, [editMode, viewer, annotationToFabric, fabricToAnnotation, emitAnnotations])
+  }, [
+    editMode,
+    viewer,
+    annotationToFabric,
+    fabricToAnnotation,
+    emitAnnotations,
+    absoluteObjectTransform,
+  ])
 
   // Drawing handlers for edit mode
 
@@ -882,13 +964,14 @@ export default function CanvasOverlay({
         fc.add(ellipse)
         drawObjRef.current = ellipse
       } else if (activeTool === 'arrow') {
-        const line = new fabric.Line([pointer.x, pointer.y, pointer.x, pointer.y], {
+        const line = new ArrowLine([pointer.x, pointer.y, pointer.x, pointer.y], {
           originX: 'left',
           originY: 'top',
           stroke: activeColor,
           strokeWidth: activeLineWidth,
           selectable: false,
           evented: false,
+          objectCaching: false,
         })
         const aObj = line as AnnotatedObject
         aObj._annotationId = uid()
@@ -1070,7 +1153,11 @@ export default function CanvasOverlay({
 
   const handleDone = useCallback(async () => {
     console.debug(LOG_PREFIX, 'handleDone — emitting and flushing before exiting edit mode')
-    emitAnnotations()
+    try {
+      emitAnnotations()
+    } catch (error) {
+      console.error(LOG_PREFIX, 'failed to emit annotations before exiting edit mode', error)
+    }
     // Flush immediately (bypass debounce) so data is persisted before exit.
     // Await the flush so the PATCH completes before edit mode state changes.
     if (onFlushAnnotations) {
@@ -1097,6 +1184,13 @@ export default function CanvasOverlay({
     }
     onEditModeChange(false)
   }, [onAnnotationsChange, onEditModeChange, onFlushAnnotations])
+
+  // Expose the cancel flow so the parent's toolbar toggle can discard changes
+  useEffect(() => {
+    if (!registerCancelHandler) return
+    registerCancelHandler(handleCancel)
+    return () => registerCancelHandler(null)
+  }, [registerCancelHandler, handleCancel])
 
   /** Change active color and apply to any selected fabric objects */
   const handleColorChange = useCallback(
