@@ -670,7 +670,7 @@ export default function CanvasOverlay({
         // "font-size / zoom" space, not viewport units, causing the load formula
         // (vpFontSize * pw / vpWidth) to multiply by containerWidth and produce
         // enormous pixel sizes (e.g. 60 000 px), rendering text off-screen.
-        const visualFontSize = (textObj.fontSize ?? 16) * (textObj.scaleY ?? 1)
+        const visualFontSize = (textObj.fontSize ?? 16) * (transform?.scaleY ?? textObj.scaleY ?? 1)
         const pw = scaledW
         base.vpFontSize =
           pw > 0 ? (visualFontSize * base.vpWidth) / pw : visualFontSize / viewer.viewport.getZoom()
