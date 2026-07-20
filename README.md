@@ -44,7 +44,10 @@ All seed users share the password `password`.
 | List users                      | Yes   | Yes        | No      |
 
 \* Instructors manage only the groups they co-own and may attach only groups
-they manage; admins manage and attach any group. See [docs/groups.md](docs/groups.md).
+they manage; admins manage and attach any group. Inherited program and group
+restrictions are treated as pre-existing when an instructor creates a child
+category, so carrying an ancestor restriction does not require new attach
+authority. See [docs/groups.md](docs/groups.md).
 
 ### Programs
 

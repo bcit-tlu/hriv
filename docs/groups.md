@@ -239,3 +239,14 @@ and sequence-reset details.
 
 Local end-to-end setup and walkthroughs live in
 [`.agents/skills/testing-hriv/SKILL.md`](../.agents/skills/testing-hriv/SKILL.md).
+
+### Creating children with inherited group restrictions
+
+When an instructor creates a child category, a group restriction inherited
+from the parent path is treated as an existing restriction rather than a new
+group attachment. Therefore an instructor can carry an ancestor's narrowed
+group restriction into a new child even when they do not manage that group.
+New, non-inherited group IDs in the same create request still require the
+instructor to manage those groups. The backend applies the same top-down
+intersection semantics used by the frontend, independently of the program
+restriction dimension.

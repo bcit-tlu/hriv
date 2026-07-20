@@ -332,3 +332,10 @@ Programs are a flat, admin/OIDC-managed entity: only admins may create, rename, 
 The response shape stays role-dependent: admins receive full `UserOut`; instructors receive a minimal projection (`id, name, email, role` plus `program_ids`/`program_names` so the membership picker can filter by program and render chips — `metadata_extra`/`last_access` stay hidden). These params back the redesigned Manage Groups detail panel (server-side program filtering, name/email search, and pagination over hundreds of students).
 
 `GET /api/auth/me` (and the `POST /api/auth/login` response) now also include the caller's group memberships as `group_ids`/`group_names`, alongside `program_ids`/`program_names`, so the profile menu can show students which groups they belong to.
+
+When testing `POST /api/categories/` as an instructor, a child created beneath
+a restricted ancestor may include the ancestor's narrowed program and group
+IDs even when the instructor does not belong to those programs or manage those
+groups. Those inherited IDs are treated as pre-existing restrictions. The
+request must still return **403** for any additional program or group ID that
+is not inherited and is outside the instructor's attach authority.
