@@ -690,6 +690,9 @@ The endpoint enriches each event with:
   journey); it can never clear a server-marked synthetic account. This lets
   reports reliably exclude synthetic-monitor traffic.
 - `image.id` / `category.id` from the event's structured ids
+- `image.name` / `category.label` — server-resolved display names for the
+  event's structured ids, so dashboards can present human-readable names
+  alongside the numeric ids (omitted when the id no longer resolves)
 - `client.browser.family` / `client.browser.major` / `client.os.family` /
   `client.device.class` / `client.viewport.bucket` / `client.touch_capable` —
   bounded

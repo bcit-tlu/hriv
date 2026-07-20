@@ -28,10 +28,13 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from pydantic.config import ConfigDict
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import get_current_user
 from ..auth_events import is_synthetic_user
-from ..models import User
+from ..database import get_db
+from ..models import Category, Image, User
 from ..rate_limit import check_telemetry_rate_limit
 from ..synthetic_result import (
     StaleSyntheticResultError,
@@ -185,11 +188,37 @@ class SyntheticResultIngestResponse(BaseModel):
     completed_at: str
 
 
+async def _lookup_display_names(
+    db: AsyncSession, events: list[TelemetryEvent]
+) -> tuple[dict[int, str], dict[int, str]]:
+    """Resolve image names and category labels for the ids in *events*.
+
+    Dashboards present these human-readable names alongside the numeric ids.
+    Ids that no longer resolve (deleted rows) are simply absent from the maps.
+    """
+    image_ids = {e.image_id for e in events if e.image_id is not None}
+    category_ids = {e.category_id for e in events if e.category_id is not None}
+    image_names: dict[int, str] = {}
+    category_labels: dict[int, str] = {}
+    if image_ids:
+        rows = await db.execute(
+            select(Image.id, Image.name).where(Image.id.in_(image_ids))
+        )
+        image_names = {row.id: row.name for row in rows}
+    if category_ids:
+        rows = await db.execute(
+            select(Category.id, Category.label).where(Category.id.in_(category_ids))
+        )
+        category_labels = {row.id: row.label for row in rows}
+    return image_names, category_labels
+
+
 @router.post("/events", status_code=202)
 async def ingest_telemetry_events(
     batch: TelemetryBatch,
     request: Request,
     user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[AsyncSession, Depends(get_db)],
     x_session_id: Annotated[str | None, Header(alias="X-Session-ID")] = None,
 ) -> Response:
     """Accept a batch of validated frontend telemetry events.
@@ -218,6 +247,8 @@ async def ingest_telemetry_events(
     # Propagate any trace context from the incoming request so frontend spans
     # and backend logs stay correlated. Computed once per request.
     traceparent = request.headers.get("traceparent")
+
+    image_names, category_labels = await _lookup_display_names(db, batch.events)
 
     for event in batch.events:
         if event.event not in _ALLOWED_EVENTS:
@@ -250,8 +281,14 @@ async def ingest_telemetry_events(
             extra["error.code"] = error_code
         if event.image_id is not None:
             extra["image.id"] = event.image_id
+            image_name = image_names.get(event.image_id)
+            if image_name is not None:
+                extra["image.name"] = image_name
         if event.category_id is not None:
             extra["category.id"] = event.category_id
+            category_label = category_labels.get(event.category_id)
+            if category_label is not None:
+                extra["category.label"] = category_label
         if event.request_id:
             extra["request.id"] = event.request_id
         if event.trace_id:

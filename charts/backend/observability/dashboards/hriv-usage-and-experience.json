@@ -1209,6 +1209,18 @@
           {
             "matcher": {
               "id": "byName",
+              "options": "image_name"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Image"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
               "options": "Value"
             },
             "properties": [
@@ -1262,15 +1274,15 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "topk(10, sum by (image_id) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | image_id!=\"\" [$__range])))",
-          "legendFormat": "{{image_id}}",
+          "expr": "topk(10, sum by (image_id, image_name) (count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | image_id!=\"\" [$__range])))",
+          "legendFormat": "{{image_name}} ({{image_id}})",
           "refId": "A",
           "queryType": "instant"
         }
       ],
       "title": "Top images (by views)",
       "type": "table",
-      "description": "Most-viewed image identifiers for the selected period."
+      "description": "Most-viewed images (name and id) for the selected period."
     },
     {
       "datasource": {
@@ -1320,6 +1332,18 @@
               {
                 "id": "displayName",
                 "value": "Category ID"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "category_label"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Category"
               }
             ]
           },
@@ -1379,15 +1403,15 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "topk(10, sum by (category_id) (count_over_time({service_name=\"hriv-backend\"} | event_name=~\"image.view.ready|navigation.page_changed\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | category_id!=\"\" [$__range])))",
-          "legendFormat": "{{category_id}}",
+          "expr": "topk(10, sum by (category_id, category_label) (count_over_time({service_name=\"hriv-backend\"} | event_name=~\"image.view.ready|navigation.page_changed\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" | category_id!=\"\" [$__range])))",
+          "legendFormat": "{{category_label}} ({{category_id}})",
           "refId": "A",
           "queryType": "instant"
         }
       ],
       "title": "Top categories (by activity)",
       "type": "table",
-      "description": "Most-active category identifiers from navigation and successful image views."
+      "description": "Most-active categories (label and id) from navigation and successful image views."
     },
     {
       "datasource": {
