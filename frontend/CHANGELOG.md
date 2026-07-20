@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.41.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.40.0...frontend-v0.41.0) (2026-07-20)
+
+
+### Features
+
+* **frontend:** warn when parent group restrictions would hide incompatible child categories ([#950](https://github.com/bcit-tlu/hriv/issues/950)) ([6ea7767](https://github.com/bcit-tlu/hriv/commit/6ea7767b4f28c2f2aa39b2daf5c73f103420fc2b))
+* **observability:** navigation direction telemetry, Sankey funnel rework, service-health metric fixes ([#961](https://github.com/bcit-tlu/hriv/issues/961)) ([6c9efc3](https://github.com/bcit-tlu/hriv/commit/6c9efc3562bb5fb06fdc6c5ac693ef5b77966609))
+* **observability:** navigation transition telemetry and path panels ([#953](https://github.com/bcit-tlu/hriv/issues/953)) ([0cdb3e3](https://github.com/bcit-tlu/hriv/commit/0cdb3e377f32527dd749014539419cd3381ad51d))
+
+
+### Bug Fixes
+
+* **backend:** store image file size in bytes instead of megabytes ([#956](https://github.com/bcit-tlu/hriv/issues/956)) ([2283530](https://github.com/bcit-tlu/hriv/commit/2283530b03dcfd7bce28e09fbf79e62b787937e3))
+* **frontend:** damp mobile pinch-rotate velocity in image viewer ([#958](https://github.com/bcit-tlu/hriv/issues/958)) ([0c60706](https://github.com/bcit-tlu/hriv/commit/0c60706ffdc3e97852494886f2b6ca21b68773c8))
+* **frontend:** prevent admin task poll from restarting after stopPolling ([#952](https://github.com/bcit-tlu/hriv/issues/952)) ([8079e2a](https://github.com/bcit-tlu/hriv/commit/8079e2a1f66ba9fd9764496e2f28c43e6d3bc02b))
+* **frontend:** serialize absolute coordinates for objects in an ActiveSelection ([#951](https://github.com/bcit-tlu/hriv/issues/951)) ([b0421b8](https://github.com/bcit-tlu/hriv/commit/b0421b81656b4780c3255f6be7772b86ba4f4d72))
+
 ## [0.40.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.39.2...frontend-v0.40.0) (2026-07-20)
 
 
