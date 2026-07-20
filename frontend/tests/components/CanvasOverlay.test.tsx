@@ -352,7 +352,7 @@ describe('CanvasOverlay', () => {
       expect(fc.getActiveObject()).toBeInstanceOf(fabric.ActiveSelection)
     })
 
-    it('keeps serialized coordinates stable across repeated active-selection emits', async () => {
+    it('keeps serialized coordinates stable across repeated save emits', async () => {
       ;(viewer.viewport.pixelFromPoint as Mock).mockImplementation(
         (point: { x: number; y: number }) => ({
           x: point.x * 100,
@@ -402,7 +402,65 @@ describe('CanvasOverlay', () => {
 
       expect(onAnnotationsChange).toHaveBeenCalledTimes(2)
       expect(onAnnotationsChange.mock.calls[0][0]).toEqual(onAnnotationsChange.mock.calls[1][0])
-      expect(fc.getActiveObject()).toBeInstanceOf(fabric.ActiveSelection)
+      expect(fc.getActiveObject()).toBeUndefined()
+    })
+
+    it('saves and exits with absolute coordinates without rebuilding the active selection', async () => {
+      ;(viewer.viewport.pixelFromPoint as Mock).mockImplementation(
+        (point: { x: number; y: number }) => ({
+          x: point.x * 100,
+          y: point.y * 100,
+        }),
+      )
+      ;(viewer.viewport.pointFromPixel as Mock).mockImplementation(
+        (point: { x: number; y: number }) => ({
+          x: point.x / 100,
+          y: point.y / 100,
+        }),
+      )
+      const onAnnotationsChange = vi.fn()
+      const onEditModeChange = vi.fn()
+      const onFlushAnnotations = vi.fn(async () => {})
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={onAnnotationsChange}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={onEditModeChange}
+          onFlushAnnotations={onFlushAnnotations}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      const first = new fabric.Rect({ left: 100, top: 50, width: 20, height: 10 })
+      const second = new fabric.Rect({ left: 200, top: 80, width: 20, height: 10 })
+      for (const [obj, id] of [
+        [first, 'first'],
+        [second, 'second'],
+      ] as const) {
+        const annotated = obj as fabric.FabricObject & {
+          _annotationId?: string
+          _annotationType?: string
+        }
+        annotated._annotationId = id
+        annotated._annotationType = 'rect'
+        fc.add(obj)
+      }
+      fc.setActiveObject(new fabric.ActiveSelection([first, second], { canvas: fc }))
+
+      await act(async () => {
+        screen.getByLabelText('Save & Exit Edit Mode').click()
+      })
+
+      expect(onAnnotationsChange).toHaveBeenCalledTimes(1)
+      expect(
+        onAnnotationsChange.mock.calls[0][0].map((annotation: CanvasAnnotation) => annotation.vpX),
+      ).toEqual([1, 2])
+      expect(fc.getActiveObject()).toBeUndefined()
+      expect(onFlushAnnotations).toHaveBeenCalledTimes(1)
+      expect(onEditModeChange).toHaveBeenCalledWith(false)
     })
 
     it('cancel button restores original annotations and exits edit mode', async () => {

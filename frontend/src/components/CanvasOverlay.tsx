@@ -663,6 +663,12 @@ export default function CanvasOverlay({
     }
   }, [])
 
+  const discardActiveSelection = useCallback((fc: fabric.Canvas) => {
+    if (fc.getActiveObject() instanceof fabric.ActiveSelection) {
+      fc.discardActiveObject()
+    }
+  }, [])
+
   /** Collect all fabric objects and emit change */
   const emitAnnotations = useCallback(() => {
     const fc = fabricCanvasRef.current
@@ -1098,7 +1104,15 @@ export default function CanvasOverlay({
 
   const handleDone = useCallback(async () => {
     console.debug(LOG_PREFIX, 'handleDone — emitting and flushing before exiting edit mode')
-    emitAnnotations()
+    try {
+      // Edit mode is ending, so do not rebuild a live ActiveSelection after
+      // discarding it for serialization.
+      const fc = fabricCanvasRef.current
+      if (fc) discardActiveSelection(fc)
+      emitAnnotations()
+    } catch (error) {
+      console.error(LOG_PREFIX, 'failed to emit annotations before exiting edit mode', error)
+    }
     // Flush immediately (bypass debounce) so data is persisted before exit.
     // Await the flush so the PATCH completes before edit mode state changes.
     if (onFlushAnnotations) {
@@ -1111,9 +1125,11 @@ export default function CanvasOverlay({
       }
     }
     onEditModeChange(false)
-  }, [emitAnnotations, onEditModeChange, onFlushAnnotations])
+  }, [discardActiveSelection, emitAnnotations, onEditModeChange, onFlushAnnotations])
 
   const handleCancel = useCallback(async () => {
+    const fc = fabricCanvasRef.current
+    if (fc) discardActiveSelection(fc)
     onAnnotationsChange(snapshotRef.current)
     if (onFlushAnnotations) {
       setFlushing(true)
@@ -1124,7 +1140,7 @@ export default function CanvasOverlay({
       }
     }
     onEditModeChange(false)
-  }, [onAnnotationsChange, onEditModeChange, onFlushAnnotations])
+  }, [discardActiveSelection, onAnnotationsChange, onEditModeChange, onFlushAnnotations])
 
   /** Change active color and apply to any selected fabric objects */
   const handleColorChange = useCallback(
