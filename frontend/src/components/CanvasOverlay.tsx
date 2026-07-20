@@ -1059,6 +1059,10 @@ export default function CanvasOverlay({
   const handleClearAll = useCallback(() => {
     const fc = fabricCanvasRef.current
     if (!fc) return
+    const objs = fc.getObjects()
+    if (objs.length > 0) {
+      emitAnnotationEvent('annotation.deleted', annotationTypeOf(objs), objs.length)
+    }
     fc.clear()
     fc.renderAll()
     onAnnotationsChange([])
