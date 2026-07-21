@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.41.0...backend-v0.41.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* **backend:** coerce telemetry page field to bounded allowlist ([#965](https://github.com/bcit-tlu/hriv/issues/965)) ([a843180](https://github.com/bcit-tlu/hriv/commit/a84318003051b302eb493c44c6ec47b0d6495418))
+
 ## [0.41.0](https://github.com/bcit-tlu/hriv/compare/backend-v0.40.1...backend-v0.41.0) (2026-07-20)
 
 
