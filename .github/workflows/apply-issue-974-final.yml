@@ -1,0 +1,113 @@
+name: Apply issue 974 final correction
+
+on:
+  push:
+    branches:
+      - agent/fix-fabric-textbox-resizing
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Apply correction
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('frontend/src/components/CanvasOverlay.tsx')
+          source = source_path.read_text()
+          old = """/**
+           * Create editable annotation text with Fabric's textbox-specific controls.
+           * Side handles change the wrapping width, corner handles scale the text, and
+           * vertical scale handles are hidden to prevent accidental non-uniform scaling.
+           */
+          function createAnnotationTextbox(
+            text: string,
+            options: ConstructorParameters<typeof fabric.Textbox>[1],
+          ): fabric.Textbox {
+            const textbox = new fabric.Textbox(text, options)
+            textbox.setControlsVisibility({ mt: false, mb: false })
+            return textbox
+          }
+          """
+          new = """/**
+           * Create editable annotation text with dimension controls that do not distort
+           * glyphs. Side handles change wrapping width, top/bottom handles change the
+           * bounding-box height, and corner handles retain proportional text scaling.
+           */
+          function createAnnotationTextbox(
+            text: string,
+            options: ConstructorParameters<typeof fabric.Textbox>[1],
+          ): fabric.Textbox {
+            const textbox = new fabric.Textbox(text, options)
+            const objectControls = fabric.controlsUtils.createObjectDefaultControls()
+
+            objectControls.mt.actionHandler = fabric.controlsUtils.changeHeight
+            objectControls.mt.actionName = 'resizing'
+            objectControls.mb.actionHandler = fabric.controlsUtils.changeHeight
+            objectControls.mb.actionName = 'resizing'
+            textbox.controls.mt = objectControls.mt
+            textbox.controls.mb = objectControls.mb
+
+            return textbox
+          }
+          """
+          if source.count(old) != 1:
+              raise SystemExit(f'Expected one CanvasOverlay helper, found {source.count(old)}')
+          source_path.write_text(source.replace(old, new))
+
+          test_path = Path('frontend/tests/components/CanvasOverlay.test.tsx')
+          tests = test_path.read_text()
+
+          replacements = [
+            ("    this.setControlsVisibility = vi.fn()\n", "    this.controls = createObjectDefaultControls()\n"),
+            ("  // eslint-disable-next-line @typescript-eslint/no-explicit-any\n  function FabricActiveSelection", "  const changeHeight = vi.fn(\n    (\n      _eventData: unknown,\n      transform: { target: { height?: number; scaleY?: number } },\n      _x: number,\n      y: number,\n    ) => {\n      transform.target.height = Math.abs(y)\n      return true\n    },\n  )\n  const createObjectDefaultControls = () => ({\n    mt: { actionHandler: vi.fn(), actionName: 'scale' },\n    mb: { actionHandler: vi.fn(), actionName: 'scale' },\n  })\n\n  // eslint-disable-next-line @typescript-eslint/no-explicit-any\n  function FabricActiveSelection"),
+            ("    FabricObject: FabricObject,\n    util: {", "    FabricObject: FabricObject,\n    controlsUtils: {\n      changeHeight,\n      createObjectDefaultControls,\n    },\n    util: {"),
+            ("creates text annotations as textboxes with width controls", "creates text annotations as textboxes with independent dimension controls"),
+            ("      expect(text.setControlsVisibility).toHaveBeenCalledWith({ mt: false, mb: false })\n", "      expect(text.controls.mt.actionHandler).toBe(fabric.controlsUtils.changeHeight)\n      expect(text.controls.mb.actionHandler).toBe(fabric.controlsUtils.changeHeight)\n      expect(text.controls.mt.actionName).toBe('resizing')\n      expect(text.controls.mb.actionName).toBe('resizing')\n\n      const initialScaleY = text.scaleY ?? 1\n      text.controls.mb.actionHandler({}, { target: text }, 0, 260)\n      expect(text.height).toBe(260)\n      expect(text.scaleY ?? 1).toBe(initialScaleY)\n", 1),
+            ("hydrates saved text annotations as textboxes using the persisted width", "hydrates saved text annotations as textboxes using persisted dimensions"),
+            ("      expect(text.setControlsVisibility).toHaveBeenCalledWith({ mt: false, mb: false })\n", "      expect(text.controls.mt.actionHandler).toBe(fabric.controlsUtils.changeHeight)\n      expect(text.controls.mb.actionHandler).toBe(fabric.controlsUtils.changeHeight)\n", 1),
+          ]
+
+          for replacement in replacements:
+              old_text, new_text, *limit = replacement
+              expected = limit[0] if limit else 1
+              if tests.count(old_text) < expected:
+                  raise SystemExit(f'Missing expected test text: {old_text[:80]!r}')
+              tests = tests.replace(old_text, new_text, expected)
+
+          test_path.write_text(tests)
+          PY
+
+          rm .github/workflows/apply-issue-974-final.yml
+
+      - name: Validate frontend
+        working-directory: frontend
+        run: |
+          npm ci --ignore-scripts
+          npx prettier --write src/components/CanvasOverlay.tsx tests/components/CanvasOverlay.test.tsx
+          npm run format:check
+          npm test -- --run tests/components/CanvasOverlay.test.tsx
+          npm run build
+
+      - name: Commit correction
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add frontend/src/components/CanvasOverlay.tsx frontend/tests/components/CanvasOverlay.test.tsx .github/workflows/apply-issue-974-final.yml
+          git commit -m 'Support independent text box dimensions'
+          git push
