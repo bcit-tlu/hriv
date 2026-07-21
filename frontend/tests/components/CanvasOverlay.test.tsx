@@ -162,7 +162,7 @@ vi.mock('fabric', () => {
   function FabricIText(this: any, text = '', options: Record<string, unknown> = {}) {
     Object.assign(this, options)
     this.text = text
-    this.set = vi.fn()
+    this.set = vi.fn((values: Record<string, unknown>) => Object.assign(this, values))
     this.controls = createObjectDefaultControls()
     installObjectGeometry(this)
   }
@@ -466,6 +466,10 @@ describe('CanvasOverlay', () => {
       expect(text.controls.mb.actionName).toBe('resizing')
 
       const initialScaleY = text.scaleY ?? 1
+      text.controls.mt.actionHandler({}, { target: text }, 0, -220)
+      expect(text.height).toBe(220)
+      expect(text.scaleY ?? 1).toBe(initialScaleY)
+
       text.controls.mb.actionHandler({}, { target: text }, 0, 260)
       expect(text.height).toBe(260)
       expect(text.scaleY ?? 1).toBe(initialScaleY)
@@ -498,6 +502,7 @@ describe('CanvasOverlay', () => {
       const text = fc.getObjects()[0]
       expect(text).toBeInstanceOf(fabric.Textbox)
       expect(text.width).toBe(250)
+      expect(text.height).toBe(50)
       expect(text.controls.mt.actionHandler).toBe(fabric.controlsUtils.changeHeight)
       expect(text.controls.mb.actionHandler).toBe(fabric.controlsUtils.changeHeight)
     })

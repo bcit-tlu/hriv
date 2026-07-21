@@ -429,7 +429,7 @@ export default function CanvasOverlay({
         // Fabric's lineHeight (1.16) is multiplied by _fontSizeMult (1.13).
         const lineHeight = fontSize * 1.16 * 1.13
         const text = ann.type === 'link' ? ann.text || ann.url || 'Link' : ann.text || ''
-        const lines = wrapCanvasText(ctx, text, Math.abs(pw))
+        const lines = wrapCanvasText(ctx, text, Math.max(MIN_TEXTBOX_WIDTH, Math.abs(pw)))
 
         lines.forEach((line, index) => {
           const baseline = fontSize + index * lineHeight
@@ -614,6 +614,7 @@ export default function CanvasOverlay({
           underline: ann.type === 'link',
           angle: ann.rotation ?? 0,
         })
+        text.set({ height: Math.max(1, Math.abs(ph)) })
         const aObj = text as AnnotatedObject
         aObj._annotationId = ann.id
         aObj._annotationType = ann.type
