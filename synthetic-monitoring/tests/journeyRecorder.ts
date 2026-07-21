@@ -1,4 +1,4 @@
-import { errors, type APIRequestContext } from '@playwright/test'
+import { errors, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -128,10 +128,16 @@ export class SyntheticJourneyRecorder {
     }
   }
 
-  async submit(request: APIRequestContext, success: boolean): Promise<void> {
+  async submit(page: Page, success: boolean): Promise<void> {
     const payload = this.buildPayload(success)
-    const response = await request.post('/api/telemetry/synthetic-result', {
+    // The app authenticates API calls with a Bearer JWT persisted in
+    // localStorage; Playwright's APIRequestContext only replays cookies, so we
+    // must forward the token explicitly or the endpoint rejects the submission
+    // as unauthenticated (401).
+    const token = await page.evaluate(() => window.localStorage.getItem('hriv_token'))
+    const response = await page.request.post('/api/telemetry/synthetic-result', {
       data: payload,
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       failOnStatusCode: false,
     })
 
