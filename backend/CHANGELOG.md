@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.2](https://github.com/bcit-tlu/hriv/compare/backend-v0.41.1...backend-v0.41.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* removes Grafana dashboards as part of the migration to a separate git ([#986](https://github.com/bcit-tlu/hriv/issues/986)) ([925ccff](https://github.com/bcit-tlu/hriv/commit/925ccff9e0bd612998fe804d374c417988579473))
+
 ## [0.41.1](https://github.com/bcit-tlu/hriv/compare/backend-v0.41.0...backend-v0.41.1) (2026-07-21)
 
 
