@@ -72,6 +72,9 @@ const PALETTE = [
 ]
 
 const LINE_WIDTHS = [1, 2, 4, 8, 16]
+const MIN_TEXTBOX_WIDTH = 40
+const DEFAULT_TEXTBOX_WIDTH = 180
+const DEFAULT_LINK_TEXTBOX_WIDTH = 240
 
 type ArrowStyle = 'none' | 'standard' | 'triangle' | 'circle'
 type FillMode = 'outlined' | 'filled'
@@ -135,6 +138,62 @@ function annotationTypeOf(objs: fabric.FabricObject[]): CanvasAnnotation['type']
   )
   if (types.size === 1) return [...types][0] as CanvasAnnotation['type']
   return 'mixed'
+}
+
+/**
+ * Create editable annotation text with dimension controls that do not distort
+ * glyphs. Side handles change wrapping width, top/bottom handles change the
+ * bounding-box height, and corner handles retain proportional text scaling.
+ */
+function createAnnotationTextbox(
+  text: string,
+  options: ConstructorParameters<typeof fabric.Textbox>[1],
+): fabric.Textbox {
+  const textbox = new fabric.Textbox(text, options)
+  const objectControls = fabric.controlsUtils.createObjectDefaultControls()
+
+  objectControls.mt.actionHandler = fabric.controlsUtils.changeHeight
+  objectControls.mt.actionName = 'resizing'
+  objectControls.mb.actionHandler = fabric.controlsUtils.changeHeight
+  objectControls.mb.actionName = 'resizing'
+  textbox.controls.mt = objectControls.mt
+  textbox.controls.mb = objectControls.mb
+
+  return textbox
+}
+
+/**
+ * Wrap canvas text to the same persisted pixel width used by Fabric Textbox.
+ * Explicit newlines start a new paragraph; words that exceed the width remain
+ * intact, matching Fabric's default dynamicMinWidth behaviour.
+ */
+export function wrapCanvasText(
+  ctx: Pick<CanvasRenderingContext2D, 'measureText'>,
+  text: string,
+  maxWidth: number,
+): string[] {
+  const lines: string[] = []
+
+  for (const paragraph of text.split('\n')) {
+    if (paragraph === '') {
+      lines.push('')
+      continue
+    }
+
+    let line = ''
+    for (const word of paragraph.split(/\s+/)) {
+      const candidate = line ? `${line} ${word}` : word
+      if (line && ctx.measureText(candidate).width > maxWidth) {
+        lines.push(line)
+        line = word
+      } else {
+        line = candidate
+      }
+    }
+    lines.push(line)
+  }
+
+  return lines
 }
 
 /** Generate a short random ID */
@@ -367,13 +426,16 @@ export default function CanvasOverlay({
         ctx.save()
         ctx.translate(topLeft.x, topLeft.y)
         if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
-        if (ann.type === 'link') {
-          const text = ann.text || ann.url || 'Link'
-          // Fabric's lineHeight (1.16) is multiplied by _fontSizeMult (1.13).
-          const lineHeight = fontSize * 1.16 * 1.13
-          text.split('\n').forEach((line, index) => {
-            const baseline = fontSize + index * lineHeight
-            ctx.fillText(line, 0, baseline)
+        // Fabric's lineHeight (1.16) is multiplied by _fontSizeMult (1.13).
+        const lineHeight = fontSize * 1.16 * 1.13
+        const text = ann.type === 'link' ? ann.text || ann.url || 'Link' : ann.text || ''
+        const lines = wrapCanvasText(ctx, text, Math.max(MIN_TEXTBOX_WIDTH, Math.abs(pw)))
+
+        lines.forEach((line, index) => {
+          const baseline = fontSize + index * lineHeight
+          ctx.fillText(line, 0, baseline)
+
+          if (ann.type === 'link') {
             const textWidth = ctx.measureText(line).width
             ctx.beginPath()
             ctx.moveTo(0, baseline + 2)
@@ -381,15 +443,8 @@ export default function CanvasOverlay({
             ctx.strokeStyle = ann.color
             ctx.lineWidth = 1
             ctx.stroke()
-          })
-        } else {
-          // Fabric's lineHeight (1.16) is multiplied by _fontSizeMult (1.13).
-          const lineHeight = fontSize * 1.16 * 1.13
-          const lines = (ann.text || '').split('\n')
-          lines.forEach((line, index) => {
-            ctx.fillText(line, 0, fontSize + index * lineHeight)
-          })
-        }
+          }
+        })
         ctx.restore()
       }
     }
@@ -547,17 +602,19 @@ export default function CanvasOverlay({
         const vpFontSize = ann.vpFontSize ?? 0.02
         const pxFontSize = Math.abs((vpFontSize * pw) / (ann.vpWidth || 1))
         const displayText = ann.type === 'link' ? ann.text || ann.url || 'Link' : ann.text || ''
-        const text = new fabric.IText(displayText, {
+        const text = createAnnotationTextbox(displayText, {
           originX: 'left',
           originY: 'top',
           left: topLeft.x,
           top: topLeft.y,
+          width: Math.max(MIN_TEXTBOX_WIDTH, Math.abs(pw)),
           fontFamily: 'sans-serif',
           fontSize: Math.max(10, pxFontSize),
           fill: ann.color,
           underline: ann.type === 'link',
           angle: ann.rotation ?? 0,
         })
+        text.set({ height: Math.max(1, Math.abs(ph)) })
         const aObj = text as AnnotatedObject
         aObj._annotationId = ann.id
         aObj._annotationType = ann.type
@@ -1080,11 +1137,12 @@ export default function CanvasOverlay({
     const fc = fabricCanvasRef.current
     if (!fc) return
     const center = { x: fc.width! / 2, y: fc.height! / 2 }
-    const text = new fabric.IText('Text', {
+    const text = createAnnotationTextbox('Text', {
       originX: 'left',
       originY: 'top',
       left: center.x - 90,
       top: center.y - 30,
+      width: DEFAULT_TEXTBOX_WIDTH,
       fontFamily: 'sans-serif',
       fontSize: 60,
       fill: activeColor,
@@ -1111,11 +1169,12 @@ export default function CanvasOverlay({
     if (!fc || !linkUrl) return
     setLinkDialogOpen(false)
     const center = { x: fc.width! / 2, y: fc.height! / 2 }
-    const text = new fabric.IText(linkText || linkUrl, {
+    const text = createAnnotationTextbox(linkText || linkUrl, {
       originX: 'left',
       originY: 'top',
       left: center.x - 120,
       top: center.y - 30,
+      width: DEFAULT_LINK_TEXTBOX_WIDTH,
       fontFamily: 'sans-serif',
       fontSize: 60,
       fill: activeColor,

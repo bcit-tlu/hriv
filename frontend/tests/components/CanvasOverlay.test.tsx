@@ -159,17 +159,41 @@ vi.mock('fabric', () => {
     installObjectGeometry(this)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function FabricIText(this: any, options: Record<string, unknown> = {}) {
+  function FabricIText(this: any, text = '', options: Record<string, unknown> = {}) {
     Object.assign(this, options)
-    this.set = vi.fn()
+    this.text = text
+    this.set = vi.fn((values: Record<string, unknown>) => Object.assign(this, values))
+    this.controls = createObjectDefaultControls()
     installObjectGeometry(this)
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function FabricTextbox(this: any, text = '', options: Record<string, unknown> = {}) {
+    FabricIText.call(this, text, options)
+  }
+  FabricTextbox.prototype = Object.create(FabricIText.prototype)
+  FabricTextbox.prototype.constructor = FabricTextbox
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricObject(this: any, options: Record<string, unknown> = {}) {
     Object.assign(this, options)
     this.set = vi.fn()
     installObjectGeometry(this)
   }
+
+  const changeHeight = vi.fn(
+    (
+      _eventData: unknown,
+      transform: { target: { height?: number; scaleY?: number } },
+      _x: number,
+      y: number,
+    ) => {
+      transform.target.height = Math.abs(y)
+      return true
+    },
+  )
+  const createObjectDefaultControls = () => ({
+    mt: { actionHandler: vi.fn(), actionName: 'scale' },
+    mb: { actionHandler: vi.fn(), actionName: 'scale' },
+  })
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricActiveSelection(this: any, objects: Array<{ left?: number; top?: number }>) {
@@ -204,9 +228,14 @@ vi.mock('fabric', () => {
     Ellipse: FabricEllipse,
     Line: FabricLine,
     IText: FabricIText,
+    Textbox: FabricTextbox,
     ActiveSelection: FabricActiveSelection,
     Point: FabricPoint,
     FabricObject: FabricObject,
+    controlsUtils: {
+      changeHeight,
+      createObjectDefaultControls,
+    },
     util: {
       transformPoint: vi.fn((point, matrix) => ({
         x: matrix[0] * point.x + matrix[2] * point.y + matrix[4],
@@ -226,7 +255,30 @@ vi.mock('openseadragon', () => {
 })
 
 // Now import the component (after mocks are registered)
-import CanvasOverlay from '../../src/components/CanvasOverlay'
+import CanvasOverlay, { wrapCanvasText } from '../../src/components/CanvasOverlay'
+
+describe('wrapCanvasText', () => {
+  const context = {
+    measureText: (value: string) => ({ width: value.length * 10 }),
+  } as Pick<CanvasRenderingContext2D, 'measureText'>
+
+  it('wraps words to the persisted text box width', () => {
+    expect(wrapCanvasText(context, 'alpha beta gamma', 100)).toEqual(['alpha beta', 'gamma'])
+  })
+
+  it('preserves explicit newlines while wrapping each paragraph', () => {
+    expect(wrapCanvasText(context, 'alpha beta\ngamma delta', 60)).toEqual([
+      'alpha',
+      'beta',
+      'gamma',
+      'delta',
+    ])
+  })
+
+  it('keeps a single word that exceeds the available width intact', () => {
+    expect(wrapCanvasText(context, 'extraordinary', 40)).toEqual(['extraordinary'])
+  })
+})
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -386,6 +438,73 @@ describe('CanvasOverlay', () => {
       )
       const canvases = container.querySelectorAll('canvas')
       expect(canvases.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('creates text annotations as textboxes with independent dimension controls', () => {
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      act(() => {
+        screen.getByLabelText('Add Text').click()
+      })
+
+      const fc = fabricTestState.canvases.at(-1)
+      const text = fc.getObjects().at(-1)
+      expect(text).toBeInstanceOf(fabric.Textbox)
+      expect(text.width).toBe(180)
+      expect(text.controls.mt.actionHandler).toBe(fabric.controlsUtils.changeHeight)
+      expect(text.controls.mb.actionHandler).toBe(fabric.controlsUtils.changeHeight)
+      expect(text.controls.mt.actionName).toBe('resizing')
+      expect(text.controls.mb.actionName).toBe('resizing')
+
+      const initialScaleY = text.scaleY ?? 1
+      text.controls.mt.actionHandler({}, { target: text }, 0, -220)
+      expect(text.height).toBe(220)
+      expect(text.scaleY ?? 1).toBe(initialScaleY)
+
+      text.controls.mb.actionHandler({}, { target: text }, 0, 260)
+      expect(text.height).toBe(260)
+      expect(text.scaleY ?? 1).toBe(initialScaleY)
+    })
+
+    it('hydrates saved text annotations as textboxes using persisted dimensions', () => {
+      ;(viewer.viewport.pixelFromPoint as Mock).mockImplementation(
+        (point: { x: number; y: number }) => ({ x: point.x * 100, y: point.y * 100 }),
+      )
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[
+            makeAnnotation({
+              type: 'text',
+              text: 'Wrapped annotation text',
+              vpWidth: 2.5,
+              vpHeight: 0.5,
+              vpFontSize: 0.2,
+            }),
+          ]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      const text = fc.getObjects()[0]
+      expect(text).toBeInstanceOf(fabric.Textbox)
+      expect(text.width).toBe(250)
+      expect(text.height).toBe(50)
+      expect(text.controls.mt.actionHandler).toBe(fabric.controlsUtils.changeHeight)
+      expect(text.controls.mb.actionHandler).toBe(fabric.controlsUtils.changeHeight)
     })
 
     it('emits absolute coordinates when copying and pasting an active selection', () => {
