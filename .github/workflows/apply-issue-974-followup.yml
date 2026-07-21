@@ -13,149 +13,162 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Apply and validate follow-up
+      - name: Apply vertical resize fix
         shell: bash
         run: |
-          cat > /tmp/issue-974-followup.patch <<'PATCH'
-          diff --git a/frontend/src/components/CanvasOverlay.tsx b/frontend/src/components/CanvasOverlay.tsx
-          index e5159fc..0000000 100644
-          --- a/frontend/src/components/CanvasOverlay.tsx
-          +++ b/frontend/src/components/CanvasOverlay.tsx
-          @@ -141,16 +141,24 @@ function annotationTypeOf(objs: fabric.FabricObject[]): CanvasAnnotation['type']
-           }
-           
-           /**
-          - * Create editable annotation text with Fabric's textbox-specific controls.
-          - * Side handles change the wrapping width, corner handles scale the text, and
-          - * vertical scale handles are hidden to prevent accidental non-uniform scaling.
-          + * Create editable annotation text with dimension controls that do not distort
-          + * glyphs. Side handles change wrapping width, top/bottom handles change the
-          + * bounding-box height, and corner handles retain proportional text scaling.
-           */
-           function createAnnotationTextbox(
-             text: string,
-             options: ConstructorParameters<typeof fabric.Textbox>[1],
-           ): fabric.Textbox {
-             const textbox = new fabric.Textbox(text, options)
-          -  textbox.setControlsVisibility({ mt: false, mb: false })
-          +  const objectControls = fabric.controlsUtils.createObjectDefaultControls()
-          +
-          +  objectControls.mt.actionHandler = fabric.controlsUtils.changeHeight
-          +  objectControls.mt.actionName = 'resizing'
-          +  objectControls.mb.actionHandler = fabric.controlsUtils.changeHeight
-          +  objectControls.mb.actionName = 'resizing'
-          +  textbox.controls.mt = objectControls.mt
-          +  textbox.controls.mb = objectControls.mb
-          +
-             return textbox
-           }
-           
-          diff --git a/frontend/tests/components/CanvasOverlay.test.tsx b/frontend/tests/components/CanvasOverlay.test.tsx
-          index 6288b6c..0000000 100644
-          --- a/frontend/tests/components/CanvasOverlay.test.tsx
-          +++ b/frontend/tests/components/CanvasOverlay.test.tsx
-          @@ -167,7 +167,7 @@ vi.mock('fabric', () => {
-               Object.assign(this, options)
-               this.text = text
-               this.set = vi.fn()
-          -    this.setControlsVisibility = vi.fn()
-          +    this.controls = createObjectDefaultControls()
-               installObjectGeometry(this)
-             }
-             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          @@ -183,6 +183,17 @@ vi.mock('fabric', () => {
-               installObjectGeometry(this)
-             }
-           
-          +  const changeHeight = vi.fn(
-          +    (_eventData: unknown, transform: { target: { height?: number; scaleY?: number } }, _x: number, y: number) => {
-          +      transform.target.height = Math.abs(y)
-          +      return true
-          +    },
-          +  )
-          +  const createObjectDefaultControls = () => ({
-          +    mt: { actionHandler: vi.fn(), actionName: 'scale' },
-          +    mb: { actionHandler: vi.fn(), actionName: 'scale' },
-          +  })
-          +
-             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-             function FabricActiveSelection(this: any, objects: Array<{ left?: number; top?: number }>) {
-               this.objects = objects
-          @@ -220,6 +231,10 @@ vi.mock('fabric', () => {
-               ActiveSelection: FabricActiveSelection,
-               Point: FabricPoint,
-               FabricObject: FabricObject,
-          +    controlsUtils: {
-          +      changeHeight,
-          +      createObjectDefaultControls,
-          +    },
-               util: {
-                 transformPoint: vi.fn((point, matrix) => ({
-                   x: matrix[0] * point.x + matrix[2] * point.y + matrix[4],
-          @@ -401,7 +416,7 @@ describe('CanvasOverlay', () => {
-                 expect(canvases.length).toBeGreaterThanOrEqual(1)
-               })
-           
-          -    it('creates text annotations as textboxes with width controls', () => {
-          +    it('creates text annotations as textboxes with independent dimension controls', () => {
-                 render(
-                   <CanvasOverlay
-                     viewer={viewer}
-          @@ -421,10 +436,18 @@ describe('CanvasOverlay', () => {
-                 const text = fc.getObjects().at(-1)
-                 expect(text).toBeInstanceOf(fabric.Textbox)
-                 expect(text.width).toBe(180)
-          -      expect(text.setControlsVisibility).toHaveBeenCalledWith({ mt: false, mb: false })
-          +      expect(text.controls.mt.actionHandler).toBe(fabric.controlsUtils.changeHeight)
-          +      expect(text.controls.mb.actionHandler).toBe(fabric.controlsUtils.changeHeight)
-          +      expect(text.controls.mt.actionName).toBe('resizing')
-          +      expect(text.controls.mb.actionName).toBe('resizing')
-          +
-          +      const initialScaleY = text.scaleY ?? 1
-          +      text.controls.mb.actionHandler({}, { target: text }, 0, 260)
-          +      expect(text.height).toBe(260)
-          +      expect(text.scaleY ?? 1).toBe(initialScaleY)
-               })
-           
-          -    it('hydrates saved text annotations as textboxes using the persisted width', () => {
-          +    it('hydrates saved text annotations as textboxes using persisted dimensions', () => {
-                 ;(viewer.viewport.pixelFromPoint as Mock).mockImplementation(
-                   (point: { x: number; y: number }) => ({ x: point.x * 100, y: point.y * 100 }),
-                 )
-          @@ -436,7 +459,7 @@ describe('CanvasOverlay', () => {
-                         type: 'text',
-                         text: 'Wrapped annotation text',
-                         vpWidth: 2.5,
-          -              vpHeight: 0.5,
-          +              vpHeight: 0.8,
-                         vpFontSize: 0.2,
-                       }),
-                     ]}
-          @@ -451,7 +474,8 @@ describe('CanvasOverlay', () => {
-                 const text = fc.getObjects()[0]
-                 expect(text).toBeInstanceOf(fabric.Textbox)
-                 expect(text.width).toBe(250)
-          -      expect(text.setControlsVisibility).toHaveBeenCalledWith({ mt: false, mb: false })
-          +      expect(text.controls.mt.actionHandler).toBe(fabric.controlsUtils.changeHeight)
-          +      expect(text.controls.mb.actionHandler).toBe(fabric.controlsUtils.changeHeight)
-               })
-           
-               it('emits absolute coordinates when copying and pasting an active selection', () => {
-          PATCH
+          python - <<'PY'
+          from pathlib import Path
 
-          git apply /tmp/issue-974-followup.patch
+          source_path = Path('frontend/src/components/CanvasOverlay.tsx')
+          source = source_path.read_text()
+          old = """/**
+           * Create editable annotation text with Fabric's textbox-specific controls.
+           * Side handles change the wrapping width, corner handles scale the text, and
+           * vertical scale handles are hidden to prevent accidental non-uniform scaling.
+           */
+          function createAnnotationTextbox(
+            text: string,
+            options: ConstructorParameters<typeof fabric.Textbox>[1],
+          ): fabric.Textbox {
+            const textbox = new fabric.Textbox(text, options)
+            textbox.setControlsVisibility({ mt: false, mb: false })
+            return textbox
+          }
+          """
+          new = """/**
+           * Create editable annotation text with dimension controls that do not distort
+           * glyphs. Side handles change wrapping width, top/bottom handles change the
+           * bounding-box height, and corner handles retain proportional text scaling.
+           */
+          function createAnnotationTextbox(
+            text: string,
+            options: ConstructorParameters<typeof fabric.Textbox>[1],
+          ): fabric.Textbox {
+            const textbox = new fabric.Textbox(text, options)
+            const objectControls = fabric.controlsUtils.createObjectDefaultControls()
+
+            objectControls.mt.actionHandler = fabric.controlsUtils.changeHeight
+            objectControls.mt.actionName = 'resizing'
+            objectControls.mb.actionHandler = fabric.controlsUtils.changeHeight
+            objectControls.mb.actionName = 'resizing'
+            textbox.controls.mt = objectControls.mt
+            textbox.controls.mb = objectControls.mb
+
+            return textbox
+          }
+          """
+          if old not in source:
+              raise SystemExit('CanvasOverlay helper did not match expected source')
+          source_path.write_text(source.replace(old, new, 1))
+
+          test_path = Path('frontend/tests/components/CanvasOverlay.test.tsx')
+          tests = test_path.read_text()
+          replacements = [
+              (
+                  """    this.set = vi.fn()
+              this.setControlsVisibility = vi.fn()
+              installObjectGeometry(this)
+          """,
+                  """    this.set = vi.fn()
+              this.controls = createObjectDefaultControls()
+              installObjectGeometry(this)
+          """,
+              ),
+              (
+                  """  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            function FabricActiveSelection(this: any, objects: Array<{ left?: number; top?: number }>) {
+          """,
+                  """  const changeHeight = vi.fn(
+              (
+                _eventData: unknown,
+                transform: { target: { height?: number; scaleY?: number } },
+                _x: number,
+                y: number,
+              ) => {
+                transform.target.height = Math.abs(y)
+                return true
+              },
+            )
+            const createObjectDefaultControls = () => ({
+              mt: { actionHandler: vi.fn(), actionName: 'scale' },
+              mb: { actionHandler: vi.fn(), actionName: 'scale' },
+            })
+
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            function FabricActiveSelection(this: any, objects: Array<{ left?: number; top?: number }>) {
+          """,
+              ),
+              (
+                  """    FabricObject: FabricObject,
+              util: {
+          """,
+                  """    FabricObject: FabricObject,
+              controlsUtils: {
+                changeHeight,
+                createObjectDefaultControls,
+              },
+              util: {
+          """,
+              ),
+              (
+                  """    it('creates text annotations as textboxes with width controls', () => {
+          """,
+                  """    it('creates text annotations as textboxes with independent dimension controls', () => {
+          """,
+              ),
+              (
+                  """      expect(text.width).toBe(180)
+              expect(text.setControlsVisibility).toHaveBeenCalledWith({ mt: false, mb: false })
+          """,
+                  """      expect(text.width).toBe(180)
+              expect(text.controls.mt.actionHandler).toBe(fabric.controlsUtils.changeHeight)
+              expect(text.controls.mb.actionHandler).toBe(fabric.controlsUtils.changeHeight)
+              expect(text.controls.mt.actionName).toBe('resizing')
+              expect(text.controls.mb.actionName).toBe('resizing')
+
+              const initialScaleY = text.scaleY ?? 1
+              text.controls.mb.actionHandler({}, { target: text }, 0, 260)
+              expect(text.height).toBe(260)
+              expect(text.scaleY ?? 1).toBe(initialScaleY)
+          """,
+              ),
+              (
+                  """    it('hydrates saved text annotations as textboxes using the persisted width', () => {
+          """,
+                  """    it('hydrates saved text annotations as textboxes using persisted dimensions', () => {
+          """,
+              ),
+              (
+                  """      expect(text.width).toBe(250)
+              expect(text.setControlsVisibility).toHaveBeenCalledWith({ mt: false, mb: false })
+          """,
+                  """      expect(text.width).toBe(250)
+              expect(text.controls.mt.actionHandler).toBe(fabric.controlsUtils.changeHeight)
+              expect(text.controls.mb.actionHandler).toBe(fabric.controlsUtils.changeHeight)
+          """,
+              ),
+          ]
+          for old_text, new_text in replacements:
+              if old_text not in tests:
+                  raise SystemExit(f'Test source did not match expected text: {old_text[:60]!r}')
+              tests = tests.replace(old_text, new_text, 1)
+          test_path.write_text(tests)
+          PY
+
           rm .github/workflows/apply-issue-974-followup.yml
-          cd frontend
+
+      - name: Validate frontend
+        working-directory: frontend
+        run: |
           npm ci --ignore-scripts
-          npx prettier --write tests/components/CanvasOverlay.test.tsx src/components/CanvasOverlay.tsx
+          npx prettier --write src/components/CanvasOverlay.tsx tests/components/CanvasOverlay.test.tsx
           npm run format:check
           npm test -- --run tests/components/CanvasOverlay.test.tsx
           npm run build
-          cd ..
 
       - name: Commit follow-up
         shell: bash
