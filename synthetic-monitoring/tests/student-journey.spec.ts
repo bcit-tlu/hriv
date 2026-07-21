@@ -187,7 +187,7 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
     recorder.markUnexpectedFailure(error)
   } finally {
     try {
-      await recorder.submit(page.request, journeySucceeded)
+      await recorder.submit(page, journeySucceeded)
     } catch (submissionError) {
       console.error(`[synthetic] ${String(submissionError)}`)
       if (journeySucceeded) {
