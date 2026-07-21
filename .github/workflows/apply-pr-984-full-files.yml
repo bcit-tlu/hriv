@@ -1,5 +1,6 @@
 name: Apply PR 984 full-file review fixes
 
+# Second branch update intentionally triggers this established workflow.
 on:
   push:
     branches:
