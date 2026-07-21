@@ -1,0 +1,189 @@
+name: Apply PR 984 review fixes
+
+on:
+  push:
+    branches:
+      - agent/fix-fabric-textbox-resizing
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Apply review fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          source_path = Path('frontend/src/components/CanvasOverlay.tsx')
+          source = source_path.read_text()
+
+          marker = """/** Generate a short random ID */
+          function uid(): string {
+          """
+          helper = """/**
+           * Wrap canvas text to the same persisted pixel width used by Fabric Textbox.
+           * Explicit newlines start a new paragraph; words that exceed the width remain
+           * intact, matching Fabric's default dynamicMinWidth behaviour.
+           */
+          export function wrapCanvasText(
+            ctx: Pick<CanvasRenderingContext2D, 'measureText'>,
+            text: string,
+            maxWidth: number,
+          ): string[] {
+            const lines: string[] = []
+
+            for (const paragraph of text.split('\\n')) {
+              if (paragraph === '') {
+                lines.push('')
+                continue
+              }
+
+              let line = ''
+              for (const word of paragraph.split(/\\s+/)) {
+                const candidate = line ? `${line} ${word}` : word
+                if (line && ctx.measureText(candidate).width > maxWidth) {
+                  lines.push(line)
+                  line = word
+                } else {
+                  line = candidate
+                }
+              }
+              lines.push(line)
+            }
+
+            return lines
+          }
+
+          /** Generate a short random ID */
+          function uid(): string {
+          """
+          if source.count(marker) != 1:
+              raise SystemExit('Could not locate uid marker')
+          source = source.replace(marker, helper, 1)
+
+          old = """        if (ann.type === 'link') {
+                    const text = ann.text || ann.url || 'Link'
+                    // Fabric's lineHeight (1.16) is multiplied by _fontSizeMult (1.13).
+                    const lineHeight = fontSize * 1.16 * 1.13
+                    text.split('\\n').forEach((line, index) => {
+                      const baseline = fontSize + index * lineHeight
+                      ctx.fillText(line, 0, baseline)
+                      const textWidth = ctx.measureText(line).width
+                      ctx.beginPath()
+                      ctx.moveTo(0, baseline + 2)
+                      ctx.lineTo(textWidth, baseline + 2)
+                      ctx.strokeStyle = ann.color
+                      ctx.lineWidth = 1
+                      ctx.stroke()
+                    })
+                  } else {
+                    // Fabric's lineHeight (1.16) is multiplied by _fontSizeMult (1.13).
+                    const lineHeight = fontSize * 1.16 * 1.13
+                    const lines = (ann.text || '').split('\\n')
+                    lines.forEach((line, index) => {
+                      ctx.fillText(line, 0, fontSize + index * lineHeight)
+                    })
+                  }
+          """
+          new = """        // Fabric's lineHeight (1.16) is multiplied by _fontSizeMult (1.13).
+                  const lineHeight = fontSize * 1.16 * 1.13
+                  const text = ann.type === 'link' ? ann.text || ann.url || 'Link' : ann.text || ''
+                  const lines = wrapCanvasText(ctx, text, Math.abs(pw))
+
+                  lines.forEach((line, index) => {
+                    const baseline = fontSize + index * lineHeight
+                    ctx.fillText(line, 0, baseline)
+
+                    if (ann.type === 'link') {
+                      const textWidth = ctx.measureText(line).width
+                      ctx.beginPath()
+                      ctx.moveTo(0, baseline + 2)
+                      ctx.lineTo(textWidth, baseline + 2)
+                      ctx.strokeStyle = ann.color
+                      ctx.lineWidth = 1
+                      ctx.stroke()
+                    }
+                  })
+          """
+          if source.count(old) != 1:
+              raise SystemExit('Could not locate view-mode text renderer')
+          source = source.replace(old, new, 1)
+          source_path.write_text(source)
+
+          test_path = Path('frontend/tests/components/CanvasOverlay.test.tsx')
+          tests = test_path.read_text()
+          old_import = "import CanvasOverlay from '../../src/components/CanvasOverlay'"
+          new_import = "import CanvasOverlay, { wrapCanvasText } from '../../src/components/CanvasOverlay'"
+          if tests.count(old_import) != 1:
+              raise SystemExit('Could not locate CanvasOverlay test import')
+          tests = tests.replace(old_import, new_import, 1)
+
+          marker = """// ---------------------------------------------------------------------------
+          // Helpers
+          // ---------------------------------------------------------------------------
+          """
+          wrapping_tests = """describe('wrapCanvasText', () => {
+            const context = {
+              measureText: (value: string) => ({ width: value.length * 10 }),
+            } as Pick<CanvasRenderingContext2D, 'measureText'>
+
+            it('wraps words to the persisted text box width', () => {
+              expect(wrapCanvasText(context, 'alpha beta gamma', 100)).toEqual(['alpha beta', 'gamma'])
+            })
+
+            it('preserves explicit newlines while wrapping each paragraph', () => {
+              expect(wrapCanvasText(context, 'alpha beta\\ngamma delta', 60)).toEqual([
+                'alpha',
+                'beta',
+                'gamma',
+                'delta',
+              ])
+            })
+
+            it('keeps a single word that exceeds the available width intact', () => {
+              expect(wrapCanvasText(context, 'extraordinary', 40)).toEqual(['extraordinary'])
+            })
+          })
+
+          // ---------------------------------------------------------------------------
+          // Helpers
+          // ---------------------------------------------------------------------------
+          """
+          if tests.count(marker) != 1:
+              raise SystemExit('Could not locate test helper marker')
+          tests = tests.replace(marker, wrapping_tests, 1)
+          test_path.write_text(tests)
+          PY
+
+          rm .github/workflows/apply-pr984-review-fixes.yml
+
+      - name: Validate frontend
+        working-directory: frontend
+        run: |
+          npm ci --ignore-scripts
+          npx prettier --write src/components/CanvasOverlay.tsx tests/components/CanvasOverlay.test.tsx
+          npm run format:check
+          npm test -- --run tests/components/CanvasOverlay.test.tsx
+          npm run build
+
+      - name: Commit review fixes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add frontend/src/components/CanvasOverlay.tsx frontend/tests/components/CanvasOverlay.test.tsx .github/workflows/apply-pr984-review-fixes.yml
+          git commit -m 'Match view-mode text wrapping to editor'
+          git push
