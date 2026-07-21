@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.1...synthetic-monitoring-v1.2.2) (2026-07-21)
+
+
+### Bug Fixes
+
+* **synthetic-monitoring:** authenticate synthetic result submission with bearer token ([#968](https://github.com/bcit-tlu/hriv/issues/968)) ([d83ae05](https://github.com/bcit-tlu/hriv/commit/d83ae0548727401f1a05896610e655f8a1a92a9f))
+
 ## [1.2.1](https://github.com/bcit-tlu/hriv/compare/synthetic-monitoring-v1.2.0...synthetic-monitoring-v1.2.1) (2026-07-17)
 
 
