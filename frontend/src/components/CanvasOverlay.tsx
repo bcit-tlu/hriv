@@ -369,7 +369,8 @@ export default function CanvasOverlay({
         if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
         if (ann.type === 'link') {
           const text = ann.text || ann.url || 'Link'
-          const lineHeight = fontSize * 1.16
+          // Fabric's lineHeight (1.16) is multiplied by _fontSizeMult (1.13).
+          const lineHeight = fontSize * 1.16 * 1.13
           text.split('\n').forEach((line, index) => {
             const baseline = fontSize + index * lineHeight
             ctx.fillText(line, 0, baseline)
@@ -382,7 +383,8 @@ export default function CanvasOverlay({
             ctx.stroke()
           })
         } else {
-          const lineHeight = fontSize * 1.16
+          // Fabric's lineHeight (1.16) is multiplied by _fontSizeMult (1.13).
+          const lineHeight = fontSize * 1.16 * 1.13
           const lines = (ann.text || '').split('\n')
           lines.forEach((line, index) => {
             ctx.fillText(line, 0, fontSize + index * lineHeight)

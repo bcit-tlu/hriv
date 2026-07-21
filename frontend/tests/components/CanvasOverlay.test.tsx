@@ -1210,7 +1210,7 @@ describe('CanvasOverlay', () => {
 
       expect(fillTextCalls).toHaveLength(2)
       expect(fillTextCalls[0].args).toEqual(['First line', 0, 20])
-      expect(fillTextCalls[1].args).toEqual(['Second line', 0, 20 * 1.16 + 20])
+      expect(fillTextCalls[1].args).toEqual(['Second line', 0, 20 * 1.16 * 1.13 + 20])
     })
 
     it('renders arrow with moveTo/lineTo from start to end point', () => {
@@ -1273,16 +1273,16 @@ describe('CanvasOverlay', () => {
 
       expect(fillTextCalls).toHaveLength(2)
       expect(fillTextCalls[0].args).toEqual(['First link', 0, 20])
-      expect(fillTextCalls[1].args).toEqual(['Second link', 0, 20 * 1.16 + 20])
+      expect(fillTextCalls[1].args).toEqual(['Second link', 0, 20 * 1.16 * 1.13 + 20])
       expect(moveToCalls).toHaveLength(2)
       expect(lineToCalls).toHaveLength(2)
       expect(moveToCalls.map((call) => call.args)).toEqual([
         [0, 22],
-        [0, 20 * 1.16 + 22],
+        [0, 20 * 1.16 * 1.13 + 22],
       ])
       expect(lineToCalls.map((call) => call.args)).toEqual([
         [50, 22],
-        [50, 20 * 1.16 + 22],
+        [50, 20 * 1.16 * 1.13 + 22],
       ])
     })
   })
