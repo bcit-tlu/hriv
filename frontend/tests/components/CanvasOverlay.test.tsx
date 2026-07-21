@@ -1197,6 +1197,22 @@ describe('CanvasOverlay', () => {
       expect(fillTextCall.args[1]).toBe(0) // x = 0 (origin-based)
     })
 
+    it('renders each line of multiline text with fabric line-height spacing', () => {
+      const calls = renderAndCaptureCalls([
+        makeAnnotation({
+          type: 'text',
+          text: 'First line\nSecond line',
+          vpFontSize: 0.02,
+        }),
+      ])
+
+      const fillTextCalls = calls.filter((c) => c.method === 'fillText')
+
+      expect(fillTextCalls).toHaveLength(2)
+      expect(fillTextCalls[0].args).toEqual(['First line', 0, 20])
+      expect(fillTextCalls[1].args).toEqual(['Second line', 0, 20 * 1.16 * 1.13 + 20])
+    })
+
     it('renders arrow with moveTo/lineTo from start to end point', () => {
       const calls = renderAndCaptureCalls([
         makeAnnotation({
@@ -1239,6 +1255,35 @@ describe('CanvasOverlay', () => {
       const moveToCall = calls.find((c) => c.method === 'moveTo')
       expect(moveToCall).toBeDefined()
       expect(moveToCall!.args[0]).toBe(0) // x = 0
+    })
+
+    it('renders multiline link underlines independently for each line', () => {
+      const calls = renderAndCaptureCalls([
+        makeAnnotation({
+          type: 'link',
+          text: 'First link\nSecond link',
+          url: 'https://example.com',
+          vpFontSize: 0.02,
+        }),
+      ])
+
+      const fillTextCalls = calls.filter((c) => c.method === 'fillText')
+      const moveToCalls = calls.filter((c) => c.method === 'moveTo')
+      const lineToCalls = calls.filter((c) => c.method === 'lineTo')
+
+      expect(fillTextCalls).toHaveLength(2)
+      expect(fillTextCalls[0].args).toEqual(['First link', 0, 20])
+      expect(fillTextCalls[1].args).toEqual(['Second link', 0, 20 * 1.16 * 1.13 + 20])
+      expect(moveToCalls).toHaveLength(2)
+      expect(lineToCalls).toHaveLength(2)
+      expect(moveToCalls.map((call) => call.args)).toEqual([
+        [0, 22],
+        [0, 20 * 1.16 * 1.13 + 22],
+      ])
+      expect(lineToCalls.map((call) => call.args)).toEqual([
+        [50, 22],
+        [50, 20 * 1.16 * 1.13 + 22],
+      ])
     })
   })
 })
