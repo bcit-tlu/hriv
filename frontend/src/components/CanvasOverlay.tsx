@@ -369,16 +369,24 @@ export default function CanvasOverlay({
         if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
         if (ann.type === 'link') {
           const text = ann.text || ann.url || 'Link'
-          ctx.fillText(text, 0, fontSize)
-          const textWidth = ctx.measureText(text).width
-          ctx.beginPath()
-          ctx.moveTo(0, fontSize + 2)
-          ctx.lineTo(textWidth, fontSize + 2)
-          ctx.strokeStyle = ann.color
-          ctx.lineWidth = 1
-          ctx.stroke()
+          const lineHeight = fontSize * 1.16
+          text.split('\n').forEach((line, index) => {
+            const baseline = fontSize + index * lineHeight
+            ctx.fillText(line, 0, baseline)
+            const textWidth = ctx.measureText(line).width
+            ctx.beginPath()
+            ctx.moveTo(0, baseline + 2)
+            ctx.lineTo(textWidth, baseline + 2)
+            ctx.strokeStyle = ann.color
+            ctx.lineWidth = 1
+            ctx.stroke()
+          })
         } else {
-          ctx.fillText(ann.text || '', 0, fontSize)
+          const lineHeight = fontSize * 1.16
+          const lines = (ann.text || '').split('\n')
+          lines.forEach((line, index) => {
+            ctx.fillText(line, 0, fontSize + index * lineHeight)
+          })
         }
         ctx.restore()
       }
