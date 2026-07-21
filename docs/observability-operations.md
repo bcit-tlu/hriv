@@ -9,16 +9,17 @@ evidence should be organized around that contract.
 ## Scope And Ownership
 
 - This repository owns:
-  - telemetry names and dashboard JSON
+  - telemetry names and contract semantics
   - alert catalogue definitions and severity guidance
   - runbook content
   - operational validation procedures
   - load-validation report format
-- `bcit-tlu/flux-fleet` owns:
+- Platform deployment repos (including the Grafana git-sync repo and `bcit-tlu/flux-fleet`) own:
+  - dashboard JSON provisioning and folder placement
   - Alertmanager receivers and secrets
   - environment-specific dashboard base URLs
   - PrometheusRule and Alertmanager manifests
-  - Grafana folder placement, permissions, and retention policy
+  - Grafana permissions and retention policy
 
 Treat this document as the source of truth for _what_ must alert and _how_ an
 operator should respond. Treat `flux-fleet` as the source of truth for _where_
@@ -29,12 +30,12 @@ those rules are deployed and _who_ they notify in each environment.
 Use these dashboard identifiers consistently in alerts, runbooks, and
 validation notes:
 
-| Dashboard                   | Provisioned file                                                         | Use for                                                               |
-| --------------------------- | ------------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| `HRIV Service Health`       | `charts/backend/observability/dashboards/hriv-service-health.json`       | API availability, latency, error-rate, tile health, worker throughput |
-| `HRIV Data and Recovery`    | `charts/backend/observability/dashboards/hriv-data-and-recovery.json`    | Backup freshness, backup outcomes, archive retention, restore posture |
-| `HRIV Usage and Experience` | `charts/backend/observability/dashboards/hriv-usage-and-experience.json` | Browser experience, frontend events, bounded usage analysis           |
-| `HRIV Synthetic Monitoring` | `charts/backend/observability/dashboards/hriv-synthetic-monitoring.json` | Synthetic journey success, duration, step breakdown, stale detection  |
+| Dashboard                   | Provisioning source                                     | Use for                                                               |
+| --------------------------- | ------------------------------------------------------- | --------------------------------------------------------------------- |
+| `HRIV Service Health`       | Grafana git-sync repository (external to this codebase) | API availability, latency, error-rate, tile health, worker throughput |
+| `HRIV Data and Recovery`    | Grafana git-sync repository (external to this codebase) | Backup freshness, backup outcomes, archive retention, restore posture |
+| `HRIV Usage and Experience` | Grafana git-sync repository (external to this codebase) | Browser experience, frontend events, bounded usage analysis           |
+| `HRIV Synthetic Monitoring` | Grafana git-sync repository (external to this codebase) | Synthetic journey success, duration, step breakdown, stale detection  |
 
 Alerts should link to the most directly relevant dashboard first. When one
 alert spans multiple systems, prefer the dashboard that answers the first

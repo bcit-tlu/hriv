@@ -244,23 +244,11 @@ override must also use `type: Recreate`.
 
 ## Grafana dashboards
 
-When `observability.grafanaDashboards.enabled` is set, the chart renders each
-`charts/backend/observability/dashboards/*.json` file into a
-`grafana_dashboard` ConfigMap. The ConfigMap data key is derived from the
-file's base name, lowercased with spaces replaced by hyphens
-(`base | lower | replace " " "-"`). Keep dashboard filenames restricted to
-`[-._a-zA-Z0-9]` (no spaces) — Kubernetes rejects ConfigMap data keys
-containing spaces, which fails the whole release install.
+The backend Helm chart no longer provisions Grafana dashboards and no longer
+supports `observability.grafanaDashboards.enabled`.
 
-The core operator-facing set is intentionally limited to the three
-consolidated HRIV dashboards:
-
-- `HRIV Service Health`
-- `HRIV Data and Recovery`
-- `HRIV Usage and Experience`
-
-Additional specialized dashboards, such as `HRIV Synthetic Monitoring`, may be
-provisioned alongside that core set when they provide distinct operational
-value and do not duplicate or expose named-user activity.
-
-Specialized dashboards should meet the same quality bar as the core set: stable titles/uids, descriptive panels, and CI validation.
+Dashboard JSON and provisioning now live in a separate Grafana git-sync
+repository managed outside this repo. Keep this backend repo focused on the
+telemetry contract (metric names, log fields, and semantics), and coordinate
+any dashboard updates in the external provisioning repo when that contract
+changes.

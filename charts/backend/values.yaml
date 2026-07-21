@@ -87,13 +87,6 @@ observability:
     # exporter.  Without this, OTEL_LOGS_EXPORTER=otlp alone is not
     # enough — logs go to stdout but never reach the collector via OTLP.
     loggingAutoInstrumentation: 'true'
-  # ── Grafana dashboard provisioning ──────────────────────────
-  # When enabled, the chart renders ConfigMaps from JSON files in the
-  # dashboards/ directory, labeled for the Grafana sidecar to discover.
-  # Requires the Grafana sidecar to be configured with:
-  #   searchNamespace: ALL, label: grafana_dashboard, labelValue: "1"
-  grafanaDashboards:
-    enabled: false
   # ── Prometheus ServiceMonitor ───────────────────────────────
   # When enabled, the chart renders a ServiceMonitor so kube-prometheus-stack
   # scrapes the /api/metrics endpoint for backup-status gauges. Operational
