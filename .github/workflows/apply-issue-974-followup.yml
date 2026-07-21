@@ -151,6 +151,8 @@ jobs:
           rm .github/workflows/apply-issue-974-followup.yml
           cd frontend
           npm ci --ignore-scripts
+          npx prettier --write tests/components/CanvasOverlay.test.tsx src/components/CanvasOverlay.tsx
+          npm run format:check
           npm test -- --run tests/components/CanvasOverlay.test.tsx
           npm run build
           cd ..
