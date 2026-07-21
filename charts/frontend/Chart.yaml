@@ -2,5 +2,5 @@ apiVersion: v2
 name: hriv-frontend
 description: HRIV Frontend – React/Vite SPA served by nginx
 type: application
-version: 0.41.2 # x-release-please-version
-appVersion: '0.41.2' # x-release-please-version
+version: 0.41.3 # x-release-please-version
+appVersion: '0.41.3' # x-release-please-version

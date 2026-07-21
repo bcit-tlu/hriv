@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.3](https://github.com/bcit-tlu/hriv/compare/frontend-v0.41.2...frontend-v0.41.3) (2026-07-21)
+
+
+### Bug Fixes
+
+* correct Fabric text box resizing ([#984](https://github.com/bcit-tlu/hriv/issues/984)) ([e5a4355](https://github.com/bcit-tlu/hriv/commit/e5a4355b5adca9461bd861b9dd82b1617c5b5b1f))
+
 ## [0.41.2](https://github.com/bcit-tlu/hriv/compare/frontend-v0.41.1...frontend-v0.41.2) (2026-07-21)
 
 
