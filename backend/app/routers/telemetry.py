@@ -289,8 +289,9 @@ async def ingest_telemetry_events(
             extra["event.duration_ms"] = event.duration_ms
         if event.action:
             extra["event.action"] = event.action
-        if event.page:
-            extra["event.page"] = event.page
+        page = _bounded(event.page, _PAGES)
+        if page is not None:
+            extra["event.page"] = page
         from_page = _bounded(event.from_page, _PAGES)
         if from_page is not None:
             extra["event.from_page"] = from_page

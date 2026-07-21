@@ -664,7 +664,7 @@ async def test_telemetry_records_navigation_transition_fields(
             TelemetryEvent(
                 event="navigation.page_changed",
                 action="navigate",
-                page="browse",
+                page="free-text page name",
                 from_page="not-a-real-page",
                 direction="sideways",
             ),
@@ -682,13 +682,15 @@ async def test_telemetry_records_navigation_transition_fields(
     first, second, third = [
         r for r in caplog.records if r.message == "frontend telemetry event"
     ]
+    assert getattr(first, "event.page") == "manage"
     assert getattr(first, "event.from_page") == "browse"
     assert getattr(second, "category.id") == 15
     assert getattr(second, "category.label") == "Renal"
     assert getattr(second, "category.from_id") == 14
     assert getattr(second, "category.from_label") == "Histopathology"
     assert getattr(second, "event.direction") == "down"
-    # Unrecognized from_page values are coerced to the bounded "other" bucket.
+    # Unrecognized page/from_page values are coerced to the bounded "other" bucket.
+    assert getattr(third, "event.page") == "other"
     assert getattr(third, "event.from_page") == "other"
     # Unrecognized directions are coerced to the bounded "other" bucket too.
     assert getattr(third, "event.direction") == "other"
