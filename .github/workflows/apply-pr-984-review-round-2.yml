@@ -117,3 +117,5 @@ jobs:
           git add frontend/src/components/CanvasOverlay.tsx frontend/tests/components/CanvasOverlay.test.tsx .github/workflows/apply-pr-984-review-round-2.yml
           git commit -m 'Preserve text box dimensions across modes'
           git push
+
+# Existing-on-branch trigger
