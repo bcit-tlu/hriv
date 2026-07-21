@@ -141,16 +141,24 @@ function annotationTypeOf(objs: fabric.FabricObject[]): CanvasAnnotation['type']
 }
 
 /**
- * Create editable annotation text with Fabric's textbox-specific controls.
- * Side handles change the wrapping width, corner handles scale the text, and
- * vertical scale handles are hidden to prevent accidental non-uniform scaling.
+ * Create editable annotation text with dimension controls that do not distort
+ * glyphs. Side handles change wrapping width, top/bottom handles change the
+ * bounding-box height, and corner handles retain proportional text scaling.
  */
 function createAnnotationTextbox(
   text: string,
   options: ConstructorParameters<typeof fabric.Textbox>[1],
 ): fabric.Textbox {
   const textbox = new fabric.Textbox(text, options)
-  textbox.setControlsVisibility({ mt: false, mb: false })
+  const objectControls = fabric.controlsUtils.createObjectDefaultControls()
+
+  objectControls.mt.actionHandler = fabric.controlsUtils.changeHeight
+  objectControls.mt.actionName = 'resizing'
+  objectControls.mb.actionHandler = fabric.controlsUtils.changeHeight
+  objectControls.mb.actionName = 'resizing'
+  textbox.controls.mt = objectControls.mt
+  textbox.controls.mb = objectControls.mb
+
   return textbox
 }
 
