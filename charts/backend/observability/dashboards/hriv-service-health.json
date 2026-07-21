@@ -121,7 +121,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum(count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
+          "expr": "sum(count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
           "legendFormat": "successful",
           "refId": "A"
         },
@@ -130,7 +130,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum(count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.failed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
+          "expr": "sum(count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.failed\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
           "legendFormat": "failed",
           "refId": "B"
         }
@@ -199,7 +199,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum by (user_role) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
+          "expr": "sum by (user_role) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | event_client_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
           "legendFormat": "{{user_role}}",
           "refId": "A"
         }
