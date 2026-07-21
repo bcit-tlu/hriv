@@ -77,9 +77,6 @@ jobs:
       - name: Check formatting (Prettier)
         run: npm run format:check
 
-      - name: Validate Grafana dashboards
-        run: npm run validate:grafana-dashboards
-
       # Fails if the committed THIRD-PARTY-LICENSES.txt drifts from the
       # production dependency tree (run `npm run licenses:generate` to refresh).
       - name: Verify third-party license notices

@@ -734,14 +734,13 @@ users, login reports include first-time OIDC logins; filtering
 
 ## Usage Analytics Dashboard (`HRIV Usage and Experience`)
 
-`charts/backend/observability/dashboards/hriv-usage-and-experience.json` is a
-Loki-backed, aggregate-only dashboard for decision makers, provisioned
-automatically alongside the other dashboards (the ConfigMap template globs
-every JSON in `observability/dashboards/`). Panels cover active users,
-sessions, successful/failed logins, successful image views, unique images,
-image-view success rate, activity by role, image views vs failures, and the
-bounded client-environment distributions. Every panel excludes synthetic
-traffic via the server-marked `event_synthetic` / `auth_synthetic` flag.
+`HRIV Usage and Experience` is a Loki-backed, aggregate-only dashboard for
+decision makers, provisioned from the external Grafana git-sync repository
+(rather than this Helm chart). Panels cover active users, sessions,
+successful/failed logins, successful image views, unique images, image-view
+success rate, activity by role, image views vs failures, and the bounded
+client-environment distributions. Every panel excludes synthetic traffic via
+the server-marked `event_synthetic` / `auth_synthetic` flag.
 
 **No named-user panels are provisioned.** Grafana dashboard provisioning is
 broadly readable, so listing individual users on a provisioned dashboard would
