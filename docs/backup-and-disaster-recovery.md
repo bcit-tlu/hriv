@@ -142,6 +142,9 @@ current pipeline settings. The operation is:
 See [admin-import-export.md](admin-import-export.md#rebuild-tiles) for the
 full API reference and [tile-cache-provenance.md](tile-cache-provenance.md)
 for how `missing` vs `stale` is determined.
+For the staged plan to evolve this into a scalable supervisor-plus-workers
+rebuild architecture, see
+[rebuild-tiles-architecture-plan.md](rebuild-tiles-architecture-plan.md).
 
 **Restore from Longhorn (faster for large tile sets):**
 
