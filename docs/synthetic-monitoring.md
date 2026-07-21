@@ -186,6 +186,47 @@ interval, the `BASE_URL` for the target environment, and the monitor account
 credentials delivered as a secret. The monitor account itself must be seeded
 with `metadata_.synthetic = true` in the target database.
 
+### Creating the synthetic monitor account
+
+The admin UI cannot set `metadata_.synthetic`, so the monitor account must be
+created (or flagged) directly in the target database via `psql` — connect to
+the `pg-core` cluster (NodePort `31432`, database `hriv`), or `kubectl exec`
+into the pg-core primary pod.
+
+1. Generate a bcrypt password hash (same scheme as `backend/app/auth.py`):
+
+   ```bash
+   cd backend && poetry run python -c "import bcrypt,getpass; print(bcrypt.hashpw(getpass.getpass('password: ').encode(), bcrypt.gensalt()).decode())"
+   ```
+
+2. Create the user with the synthetic flag:
+
+   ```sql
+   INSERT INTO users (name, email, password_hash, role, metadata)
+   VALUES ('Synthetic Student', 'synthetic.student@example.ca',
+           '<bcrypt-hash>', 'student', '{"synthetic": true}'::jsonb);
+   ```
+
+3. Assign it to the dedicated program:
+
+   ```sql
+   INSERT INTO user_programs (user_id, program_id)
+   SELECT u.id, p.id FROM users u, programs p
+   WHERE u.email = 'synthetic.student@example.ca'
+     AND p.name = 'Synthetic Monitoring';
+   ```
+
+If the account already exists and only the flag is missing:
+
+```sql
+UPDATE users
+SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"synthetic": true}'::jsonb
+WHERE email = 'synthetic.student@example.ca';
+```
+
+Store the credentials in Vault at `apps/data/hriv/<env>/synthetic-monitoring`
+so the CronJob secret (see `bcit-tlu/flux-fleet`) picks them up.
+
 ### Provisioning the production test target
 
 For each environment:
