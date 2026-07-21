@@ -255,7 +255,30 @@ vi.mock('openseadragon', () => {
 })
 
 // Now import the component (after mocks are registered)
-import CanvasOverlay from '../../src/components/CanvasOverlay'
+import CanvasOverlay, { wrapCanvasText } from '../../src/components/CanvasOverlay'
+
+describe('wrapCanvasText', () => {
+  const context = {
+    measureText: (value: string) => ({ width: value.length * 10 }),
+  } as Pick<CanvasRenderingContext2D, 'measureText'>
+
+  it('wraps words to the persisted text box width', () => {
+    expect(wrapCanvasText(context, 'alpha beta gamma', 100)).toEqual(['alpha beta', 'gamma'])
+  })
+
+  it('preserves explicit newlines while wrapping each paragraph', () => {
+    expect(wrapCanvasText(context, 'alpha beta\ngamma delta', 60)).toEqual([
+      'alpha',
+      'beta',
+      'gamma',
+      'delta',
+    ])
+  })
+
+  it('keeps a single word that exceeds the available width intact', () => {
+    expect(wrapCanvasText(context, 'extraordinary', 40)).toEqual(['extraordinary'])
+  })
+})
 
 // ---------------------------------------------------------------------------
 // Helpers

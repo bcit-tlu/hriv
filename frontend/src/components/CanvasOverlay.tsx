@@ -162,6 +162,40 @@ function createAnnotationTextbox(
   return textbox
 }
 
+/**
+ * Wrap canvas text to the same persisted pixel width used by Fabric Textbox.
+ * Explicit newlines start a new paragraph; words that exceed the width remain
+ * intact, matching Fabric's default dynamicMinWidth behaviour.
+ */
+export function wrapCanvasText(
+  ctx: Pick<CanvasRenderingContext2D, 'measureText'>,
+  text: string,
+  maxWidth: number,
+): string[] {
+  const lines: string[] = []
+
+  for (const paragraph of text.split('\n')) {
+    if (paragraph === '') {
+      lines.push('')
+      continue
+    }
+
+    let line = ''
+    for (const word of paragraph.split(/\s+/)) {
+      const candidate = line ? `${line} ${word}` : word
+      if (line && ctx.measureText(candidate).width > maxWidth) {
+        lines.push(line)
+        line = word
+      } else {
+        line = candidate
+      }
+    }
+    lines.push(line)
+  }
+
+  return lines
+}
+
 /** Generate a short random ID */
 function uid(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -392,13 +426,16 @@ export default function CanvasOverlay({
         ctx.save()
         ctx.translate(topLeft.x, topLeft.y)
         if (ann.rotation) ctx.rotate((ann.rotation * Math.PI) / 180)
-        if (ann.type === 'link') {
-          const text = ann.text || ann.url || 'Link'
-          // Fabric's lineHeight (1.16) is multiplied by _fontSizeMult (1.13).
-          const lineHeight = fontSize * 1.16 * 1.13
-          text.split('\n').forEach((line, index) => {
-            const baseline = fontSize + index * lineHeight
-            ctx.fillText(line, 0, baseline)
+        // Fabric's lineHeight (1.16) is multiplied by _fontSizeMult (1.13).
+        const lineHeight = fontSize * 1.16 * 1.13
+        const text = ann.type === 'link' ? ann.text || ann.url || 'Link' : ann.text || ''
+        const lines = wrapCanvasText(ctx, text, Math.abs(pw))
+
+        lines.forEach((line, index) => {
+          const baseline = fontSize + index * lineHeight
+          ctx.fillText(line, 0, baseline)
+
+          if (ann.type === 'link') {
             const textWidth = ctx.measureText(line).width
             ctx.beginPath()
             ctx.moveTo(0, baseline + 2)
@@ -406,15 +443,8 @@ export default function CanvasOverlay({
             ctx.strokeStyle = ann.color
             ctx.lineWidth = 1
             ctx.stroke()
-          })
-        } else {
-          // Fabric's lineHeight (1.16) is multiplied by _fontSizeMult (1.13).
-          const lineHeight = fontSize * 1.16 * 1.13
-          const lines = (ann.text || '').split('\n')
-          lines.forEach((line, index) => {
-            ctx.fillText(line, 0, fontSize + index * lineHeight)
-          })
-        }
+          }
+        })
         ctx.restore()
       }
     }
