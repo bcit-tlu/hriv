@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.41.1](https://github.com/bcit-tlu/hriv/compare/frontend-v0.41.0...frontend-v0.41.1) (2026-07-21)
+
+
+### Bug Fixes
+
+* **frontend:** render multi-line canvas text annotations in view mode ([#972](https://github.com/bcit-tlu/hriv/issues/972)) ([f3de096](https://github.com/bcit-tlu/hriv/commit/f3de09687f6517d76982df73541af845d7b62cda))
+
 ## [0.41.0](https://github.com/bcit-tlu/hriv/compare/frontend-v0.40.0...frontend-v0.41.0) (2026-07-20)
 
 
