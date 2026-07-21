@@ -72,6 +72,9 @@ const PALETTE = [
 ]
 
 const LINE_WIDTHS = [1, 2, 4, 8, 16]
+const MIN_TEXTBOX_WIDTH = 40
+const DEFAULT_TEXTBOX_WIDTH = 180
+const DEFAULT_LINK_TEXTBOX_WIDTH = 240
 
 type ArrowStyle = 'none' | 'standard' | 'triangle' | 'circle'
 type FillMode = 'outlined' | 'filled'
@@ -135,6 +138,20 @@ function annotationTypeOf(objs: fabric.FabricObject[]): CanvasAnnotation['type']
   )
   if (types.size === 1) return [...types][0] as CanvasAnnotation['type']
   return 'mixed'
+}
+
+/**
+ * Create editable annotation text with Fabric's textbox-specific controls.
+ * Side handles change the wrapping width, corner handles scale the text, and
+ * vertical scale handles are hidden to prevent accidental non-uniform scaling.
+ */
+function createAnnotationTextbox(
+  text: string,
+  options: ConstructorParameters<typeof fabric.Textbox>[1],
+): fabric.Textbox {
+  const textbox = new fabric.Textbox(text, options)
+  textbox.setControlsVisibility({ mt: false, mb: false })
+  return textbox
 }
 
 /** Generate a short random ID */
@@ -547,11 +564,12 @@ export default function CanvasOverlay({
         const vpFontSize = ann.vpFontSize ?? 0.02
         const pxFontSize = Math.abs((vpFontSize * pw) / (ann.vpWidth || 1))
         const displayText = ann.type === 'link' ? ann.text || ann.url || 'Link' : ann.text || ''
-        const text = new fabric.IText(displayText, {
+        const text = createAnnotationTextbox(displayText, {
           originX: 'left',
           originY: 'top',
           left: topLeft.x,
           top: topLeft.y,
+          width: Math.max(MIN_TEXTBOX_WIDTH, Math.abs(pw)),
           fontFamily: 'sans-serif',
           fontSize: Math.max(10, pxFontSize),
           fill: ann.color,
@@ -1080,11 +1098,12 @@ export default function CanvasOverlay({
     const fc = fabricCanvasRef.current
     if (!fc) return
     const center = { x: fc.width! / 2, y: fc.height! / 2 }
-    const text = new fabric.IText('Text', {
+    const text = createAnnotationTextbox('Text', {
       originX: 'left',
       originY: 'top',
       left: center.x - 90,
       top: center.y - 30,
+      width: DEFAULT_TEXTBOX_WIDTH,
       fontFamily: 'sans-serif',
       fontSize: 60,
       fill: activeColor,
@@ -1111,11 +1130,12 @@ export default function CanvasOverlay({
     if (!fc || !linkUrl) return
     setLinkDialogOpen(false)
     const center = { x: fc.width! / 2, y: fc.height! / 2 }
-    const text = new fabric.IText(linkText || linkUrl, {
+    const text = createAnnotationTextbox(linkText || linkUrl, {
       originX: 'left',
       originY: 'top',
       left: center.x - 120,
       top: center.y - 30,
+      width: DEFAULT_LINK_TEXTBOX_WIDTH,
       fontFamily: 'sans-serif',
       fontSize: 60,
       fill: activeColor,

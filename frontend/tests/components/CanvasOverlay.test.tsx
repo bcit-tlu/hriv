@@ -159,11 +159,23 @@ vi.mock('fabric', () => {
     installObjectGeometry(this)
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function FabricIText(this: any, options: Record<string, unknown> = {}) {
+  function FabricIText(
+    this: any,
+    text = '',
+    options: Record<string, unknown> = {},
+  ) {
     Object.assign(this, options)
+    this.text = text
     this.set = vi.fn()
+    this.setControlsVisibility = vi.fn()
     installObjectGeometry(this)
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function FabricTextbox(this: any, text = '', options: Record<string, unknown> = {}) {
+    FabricIText.call(this, text, options)
+  }
+  FabricTextbox.prototype = Object.create(FabricIText.prototype)
+  FabricTextbox.prototype.constructor = FabricTextbox
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   function FabricObject(this: any, options: Record<string, unknown> = {}) {
     Object.assign(this, options)
@@ -204,6 +216,7 @@ vi.mock('fabric', () => {
     Ellipse: FabricEllipse,
     Line: FabricLine,
     IText: FabricIText,
+    Textbox: FabricTextbox,
     ActiveSelection: FabricActiveSelection,
     Point: FabricPoint,
     FabricObject: FabricObject,
@@ -386,6 +399,59 @@ describe('CanvasOverlay', () => {
       )
       const canvases = container.querySelectorAll('canvas')
       expect(canvases.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('creates text annotations as textboxes with width controls', () => {
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      act(() => {
+        screen.getByLabelText('Add Text').click()
+      })
+
+      const fc = fabricTestState.canvases.at(-1)
+      const text = fc.getObjects().at(-1)
+      expect(text).toBeInstanceOf(fabric.Textbox)
+      expect(text.width).toBe(180)
+      expect(text.setControlsVisibility).toHaveBeenCalledWith({ mt: false, mb: false })
+    })
+
+    it('hydrates saved text annotations as textboxes using the persisted width', () => {
+      ;(viewer.viewport.pixelFromPoint as Mock).mockImplementation(
+        (point: { x: number; y: number }) => ({ x: point.x * 100, y: point.y * 100 }),
+      )
+      render(
+        <CanvasOverlay
+          viewer={viewer}
+          annotations={[
+            makeAnnotation({
+              type: 'text',
+              text: 'Wrapped annotation text',
+              vpWidth: 2.5,
+              vpHeight: 0.5,
+              vpFontSize: 0.2,
+            }),
+          ]}
+          onAnnotationsChange={noop}
+          canEdit={true}
+          editMode={true}
+          onEditModeChange={noop}
+        />,
+      )
+
+      const fc = fabricTestState.canvases.at(-1)
+      const text = fc.getObjects()[0]
+      expect(text).toBeInstanceOf(fabric.Textbox)
+      expect(text.width).toBe(250)
+      expect(text.setControlsVisibility).toHaveBeenCalledWith({ mt: false, mb: false })
     })
 
     it('emits absolute coordinates when copying and pasting an active selection', () => {
