@@ -37,7 +37,7 @@
           "showLineNumbers": false,
           "showMiniMap": false
         },
-        "content": "## HRIV Service Health\n\nStart here for **student-visible health first**: can users open images, are failures rising, and is request latency stable? Generic pod CPU/memory is kept lower on the dashboard on purpose.\n\n- Use **Component** to focus on the backend/runtime slice that emitted the telemetry.\n- Use **User role** to separate broad student impact from instructor/admin activity.\n- Zero traffic can be normal during idle periods; treat synthetic monitoring and explicit failures as the primary availability signal.\n\nEvery selector exposed on this dashboard is wired into at least one panel query so the filter bar always changes the view operators are looking at.\n\nThe **Component** selector is sourced from the canonical service-name contract shared across Prometheus metrics and Loki logs, so the same component choices are expected to work for both datasources.",
+        "content": "## HRIV Service Health\n\nStart here for **student-visible health first**: can users open images, are failures rising, and is request latency stable? Generic pod CPU/memory is kept lower on the dashboard on purpose.\n\n- Use **Component** to scope the Prometheus HTTP, latency, and resource panels. Student-experience telemetry panels (image views and request volume by role) always reflect backend-relayed frontend events and are not affected by this selector.\n- Use **User role** to separate broad student impact from instructor/admin activity.\n- Zero traffic can be normal during idle periods; treat synthetic monitoring and explicit failures as the primary availability signal.\n\nEvery selector exposed on this dashboard is wired into at least one panel query so the filter bar always changes the view operators are looking at.\n\nThe **Component** selector drives the Prometheus metric panels; the Loki telemetry panels are pinned to `hriv-backend`, which relays all frontend analytics events.",
         "mode": "markdown"
       },
       "pluginVersion": "10.0.0",
@@ -121,7 +121,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum(count_over_time({service_name=~\"${component}\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
+          "expr": "sum(count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.ready\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
           "legendFormat": "successful",
           "refId": "A"
         },
@@ -130,7 +130,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum(count_over_time({service_name=~\"${component}\"} | event_name=\"image.view.failed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
+          "expr": "sum(count_over_time({service_name=\"hriv-backend\"} | event_name=\"image.view.failed\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
           "legendFormat": "failed",
           "refId": "B"
         }
@@ -199,7 +199,7 @@
             "type": "loki",
             "uid": "${loki}"
           },
-          "expr": "sum by (user_role) (count_over_time({service_name=~\"${component}\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
+          "expr": "sum by (user_role) (count_over_time({service_name=\"hriv-backend\"} | event_name!=\"\" | event_synthetic!=\"true\" | user_role=~\"${user_role}\" [$__auto]))",
           "legendFormat": "{{user_role}}",
           "refId": "A"
         }
