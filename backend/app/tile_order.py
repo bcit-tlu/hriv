@@ -196,7 +196,9 @@ async def bump_scopes(db: AsyncSession, scope_keys: set[int]) -> None:
 
     Used by the legacy per-entity reorder endpoints so ordering writes made
     during the staged frontend migration still invalidate tile-order
-    revisions held by other clients.
+    revisions held by other clients. Locks are taken in sorted scope-key
+    order so concurrent transactions touching overlapping scope sets cannot
+    deadlock.
     """
     for scope_key in sorted(scope_keys):
         await lock_scope_revision(db, scope_key)
