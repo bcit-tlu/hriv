@@ -51,6 +51,7 @@ export const TELEMETRY_EVENT_NAMES = [
   'image.view.ended',
   'image.view.failed',
   'navigation.page_changed',
+  'reorder.operation',
   'ui.toolbar_action',
 ] as const
 
@@ -112,6 +113,17 @@ interface TelemetryEventBase {
   unit?: TelemetryUnit
   upload_mode?: TelemetryUploadMode
   file_type?: TelemetryFileType
+  // Reorder operation diagnostics ('reorder.operation' events); the state
+  // vocabulary is kept in lockstep with backend/app/reorder_metrics.py.
+  operation_id?: string
+  state?: string
+  item_type?: 'category' | 'image' | 'mixed'
+  from_index?: number
+  to_index?: number
+  category_count?: number
+  image_count?: number
+  queue_depth?: number
+  local_revision?: number
 }
 
 export type TelemetryEvent = TelemetryEventBase

@@ -119,6 +119,7 @@ reconciliation model for both environments.
 | [docs/OIDC_SETUP.md](docs/OIDC_SETUP.md)                                             | OIDC / auth configuration                                                       |
 | [docs/drag-and-drop.md](docs/drag-and-drop.md)                                       | Tile drag-and-drop move-vs-reorder contract                                     |
 | [docs/reorder-fixture.md](docs/reorder-fixture.md)                                   | Production-scale reorder fixture and regression scaffolding (epic #975)         |
+| [docs/reorder-telemetry.md](docs/reorder-telemetry.md)                               | Reorder operation correlation, timing, and diagnostic telemetry (epic #975)     |
 | [docs/image-metadata-and-versioning.md](docs/image-metadata-and-versioning.md)       | Image metadata, versioning, and optimistic concurrency control                  |
 | [docs/image-processing-lifecycle.md](docs/image-processing-lifecycle.md)             | Image processing pipeline stages, tile generation, and worker configuration     |
 | [docs/tile-cache-provenance.md](docs/tile-cache-provenance.md)                       | Tile-cache provenance fields and current/missing/stale/failed status rules      |

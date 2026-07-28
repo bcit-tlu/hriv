@@ -181,10 +181,13 @@ describe('SortableTileGrid', () => {
       })
     })
 
-    expect(reorderImages).toHaveBeenCalledWith([
-      { id: 11, sort_order: 0 },
-      { id: 10, sort_order: 1 },
-    ])
+    expect(reorderImages).toHaveBeenCalledWith(
+      [
+        { id: 11, sort_order: 0 },
+        { id: 10, sort_order: 1 },
+      ],
+      expect.any(String),
+    )
     expect(reorderCategories).not.toHaveBeenCalled()
   })
 
@@ -206,8 +209,11 @@ describe('SortableTileGrid', () => {
       })
     })
 
-    expect(reorderImages).toHaveBeenCalledWith([{ id: 10, sort_order: 0 }])
-    expect(reorderCategories).toHaveBeenCalledWith([{ id: 1, parent_id: null, sort_order: 1 }])
+    expect(reorderImages).toHaveBeenCalledWith([{ id: 10, sort_order: 0 }], expect.any(String))
+    expect(reorderCategories).toHaveBeenCalledWith(
+      [{ id: 1, parent_id: null, sort_order: 1 }],
+      expect.any(String),
+    )
   })
 
   it('calls onReorderError when a reorder API call fails', async () => {
@@ -377,10 +383,13 @@ describe('handleDragEnd — move guards', () => {
       })
     })
 
-    expect(reorderImages).toHaveBeenCalledWith([
-      { id: 11, sort_order: 0 },
-      { id: 10, sort_order: 1 },
-    ])
+    expect(reorderImages).toHaveBeenCalledWith(
+      [
+        { id: 11, sort_order: 0 },
+        { id: 10, sort_order: 1 },
+      ],
+      expect.any(String),
+    )
   })
 
   it('does nothing when target is null', async () => {
@@ -453,10 +462,13 @@ describe('handleDragEnd — reorder branches', () => {
       })
     })
 
-    expect(reorderCategories).toHaveBeenCalledWith([
-      { id: 2, parent_id: 99, sort_order: 0 },
-      { id: 1, parent_id: 99, sort_order: 1 },
-    ])
+    expect(reorderCategories).toHaveBeenCalledWith(
+      [
+        { id: 2, parent_id: 99, sort_order: 0 },
+        { id: 1, parent_id: 99, sort_order: 1 },
+      ],
+      expect.any(String),
+    )
     expect(reorderImages).not.toHaveBeenCalled()
   })
 
@@ -765,10 +777,13 @@ describe('drag-and-drop spec contract (docs/drag-and-drop.md)', () => {
 
     // Projected index 2 → [11, 12, 10]. Target position 1 would give
     // [11, 10, 12]; asserting the former proves we follow source.index.
-    expect(reorderImages).toHaveBeenCalledWith([
-      { id: 11, sort_order: 0 },
-      { id: 12, sort_order: 1 },
-      { id: 10, sort_order: 2 },
-    ])
+    expect(reorderImages).toHaveBeenCalledWith(
+      [
+        { id: 11, sort_order: 0 },
+        { id: 12, sort_order: 1 },
+        { id: 10, sort_order: 2 },
+      ],
+      expect.any(String),
+    )
   })
 })
