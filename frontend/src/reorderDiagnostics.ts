@@ -44,7 +44,12 @@ export interface ReorderDiagnosticEvent {
   state: ReorderOperationState
   /** Ordering scope: parent category ID, or null for the root scope. */
   scopeCategoryId?: number | null
-  /** Moved item type; 'mixed' when categories and images move together. */
+  /**
+   * Dragged item type for `ignored` events. For `submitted` and later
+   * states it reflects the persisted scope: 'mixed' whenever the scope
+   * contains both categories and images (persistence re-indexes the whole
+   * scope), regardless of which single tile was dragged.
+   */
   itemType?: 'category' | 'image' | 'mixed'
   /** Moved item ID (single-item moves only). */
   itemId?: number
