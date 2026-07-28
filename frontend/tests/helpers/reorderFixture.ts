@@ -16,6 +16,15 @@ export const CATEGORY_ID_BASE = 9_100_000
 export const IMAGE_ID_BASE = 9_200_000
 export const FLAT_SIBLING_CATEGORY_COUNT = 80
 export const GALLERY_SIBLING_IMAGE_COUNT = 600
+export const ROOT_MIXED_CATEGORY_COUNT = 5
+export const ROOT_UNCATEGORIZED_IMAGE_COUNT = 10
+
+// The backend fixture (backend/app/reorder_fixture.py) assigns IDs
+// sequentially: root categories first, then the flat scope; uncategorized
+// images first, then the gallery scope. Mirror that numbering exactly so a
+// given RF- name maps to the same ID in both generators.
+const FLAT_CATEGORY_ID_START = CATEGORY_ID_BASE + ROOT_MIXED_CATEGORY_COUNT
+const GALLERY_IMAGE_ID_START = IMAGE_ID_BASE + ROOT_UNCATEGORIZED_IMAGE_COUNT
 
 /** Pairwise-collapsed sort orders (0,0,1,1,…) guarantee duplicates. */
 export function duplicatedSortOrder(index: number): number {
@@ -26,7 +35,7 @@ export function duplicatedSortOrder(index: number): number {
 export function makeFlatCategoryScope(parentId: number | null = null): Category[] {
   return Array.from({ length: FLAT_SIBLING_CATEGORY_COUNT }, (_, i) =>
     makeCategory({
-      id: CATEGORY_ID_BASE + i,
+      id: FLAT_CATEGORY_ID_START + i,
       label: `${FIXTURE_PREFIX}Flat-Cat-${String(i + 1).padStart(3, '0')}`,
       parentId,
       sortOrder: duplicatedSortOrder(i),
@@ -38,7 +47,7 @@ export function makeFlatCategoryScope(parentId: number | null = null): Category[
 export function makeGalleryImageScope(): ImageItem[] {
   return Array.from({ length: GALLERY_SIBLING_IMAGE_COUNT }, (_, i) =>
     makeImage({
-      id: IMAGE_ID_BASE + i,
+      id: GALLERY_IMAGE_ID_START + i,
       name: `${FIXTURE_PREFIX}Gallery-Img-${String(i + 1).padStart(3, '0')}`,
       sortOrder: duplicatedSortOrder(i),
     }),
@@ -50,16 +59,16 @@ export function makeMixedRootScope(): {
   categories: Category[]
   uncategorizedImages: ImageItem[]
 } {
-  const categories = Array.from({ length: 5 }, (_, i) =>
+  const categories = Array.from({ length: ROOT_MIXED_CATEGORY_COUNT }, (_, i) =>
     makeCategory({
-      id: CATEGORY_ID_BASE + 500 + i,
+      id: CATEGORY_ID_BASE + i,
       label: `${FIXTURE_PREFIX}Root-${String(i + 1).padStart(2, '0')}`,
       sortOrder: duplicatedSortOrder(i),
     }),
   )
-  const uncategorizedImages = Array.from({ length: 10 }, (_, i) =>
+  const uncategorizedImages = Array.from({ length: ROOT_UNCATEGORIZED_IMAGE_COUNT }, (_, i) =>
     makeImage({
-      id: IMAGE_ID_BASE + 5000 + i,
+      id: IMAGE_ID_BASE + i,
       name: `${FIXTURE_PREFIX}Uncat-Img-${String(i + 1).padStart(2, '0')}`,
       sortOrder: duplicatedSortOrder(i),
     }),
