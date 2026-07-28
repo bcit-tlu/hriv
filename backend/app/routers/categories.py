@@ -559,13 +559,15 @@ async def reorder_categories(
                 outcome=classify_reorder_exception(exc),
             )
             raise
-    record_reorder_result(
-        entity="category",
-        operation_id=operation_id,
-        item_count=len(body.items),
-        duration_seconds=time.perf_counter() - started,
-        outcome="success",
-    )
+        # Emitted while the span is still active so the success log carries
+        # trace context, matching the failure path.
+        record_reorder_result(
+            entity="category",
+            operation_id=operation_id,
+            item_count=len(body.items),
+            duration_seconds=time.perf_counter() - started,
+            outcome="success",
+        )
     return {"status": "ok"}
 
 
