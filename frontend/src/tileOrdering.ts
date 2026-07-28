@@ -224,10 +224,20 @@ export class TileOrderingCoordinator {
       let revision = state.revision
       if (revision === null) {
         this.seeding.add(scopeKey(scope))
+        this.setScope(scope, { ...state, status: 'saving' })
+        const seedOperationId = newReorderOperationId()
+        const seedStartedAt = performance.now()
         try {
           const current = await getTileOrder(scope)
           revision = current.revision
         } catch (err) {
+          emitReorderDiagnostic({
+            operationId: seedOperationId,
+            state: 'failed',
+            scopeCategoryId: scope,
+            durationMs: performance.now() - seedStartedAt,
+            errorCode: reorderErrorCode(err),
+          })
           this.setScope(scope, {
             ...this.getScope(scope),
             status: 'error',

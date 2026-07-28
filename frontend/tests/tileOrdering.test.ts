@@ -68,7 +68,9 @@ describe('TileOrderingCoordinator', () => {
     mockedPut.mockResolvedValue(response(2, refs(2, 1, 3)))
 
     coordinator.reportOrder(null, refs(2, 1, 3))
-    expect(coordinator.getScope(null).status).toBe('dirty')
+    // The flush starts synchronously (revision seeding), so the scope is
+    // already saving by the time the caller observes it.
+    expect(coordinator.getScope(null).status).toBe('saving')
     await flushMicrotasks()
 
     const state = coordinator.getScope(null)
@@ -254,6 +256,28 @@ describe('TileOrderingCoordinator', () => {
     expect(state.pending).toEqual(refs(2, 1, 3))
     expect(mockedPut).toHaveBeenCalledTimes(1)
     expect(events.some((e) => e.state === 'conflicted')).toBe(true)
+  })
+
+  it('shows saving during seeding and emits a failed diagnostic when the seed GET fails', async () => {
+    let rejectGet: (err: unknown) => void = () => {}
+    mockedGet.mockImplementation(
+      () => new Promise<never>((_resolve, reject) => (rejectGet = reject)),
+    )
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('saving')
+
+    rejectGet(new ApiError(500, 'boom'))
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('error')
+    expect(state.pending).toEqual(refs(2, 1, 3))
+    expect(mockedPut).not.toHaveBeenCalled()
+    const failed = events.filter((e) => e.state === 'failed')
+    expect(failed).toHaveLength(1)
+    expect(failed[0].errorCode).toBe('api_http_5xx')
   })
 
   it('seeds the revision with GET before the first save of a scope', async () => {
