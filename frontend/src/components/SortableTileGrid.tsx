@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import Box from '@mui/material/Box'
 import Typography from '@mui/material/Typography'
@@ -94,6 +94,35 @@ function SortableTile({ id, index, disabled, children }: SortableTileProps) {
     </Box>
   )
 }
+
+interface GridTileProps {
+  item: TileItem
+  index: number
+  disabled: boolean
+  renderCategoryTile: (cat: Category, wrapDroppable?: boolean) => React.ReactNode
+  renderImageTile: (img: ImageItem) => React.ReactNode
+}
+
+// Memoized: grid-level state changes (drag start/end sets `activeItem`) must
+// not re-render every mounted tile — at production scale (600+ tiles) that
+// re-render is a main-thread stall at the start and end of every drag. The
+// render callbacks are stable (useCallback), so a tile only re-renders when
+// its own item, index, or disabled state changes.
+const GridTile = memo(function GridTile({
+  item,
+  index,
+  disabled,
+  renderCategoryTile,
+  renderImageTile,
+}: GridTileProps) {
+  return (
+    <SortableTile id={tileId(item)} index={index} disabled={disabled}>
+      {item.type === 'category'
+        ? renderCategoryTile(item.data, true)
+        : renderImageTile(item.data as ImageItem)}
+    </SortableTile>
+  )
+})
 
 interface DroppableCategoryZoneProps {
   categoryId: number
@@ -571,44 +600,63 @@ export default function SortableTileGrid({
     ],
   )
 
-  const renderCategoryTile = (cat: Category, wrapDroppable = false) => {
-    const tile = (
-      <CategoryTile
-        category={cat}
-        onClick={onCategoryClick}
-        onMove={canEditContent ? onMoveCategory : undefined}
-        onSetCardImage={canEditContent ? onSetCardImage : undefined}
-        onEditName={canEditContent ? onEditCategoryName : undefined}
-        programs={programs}
-        inheritedProgramIds={inheritedProgramIds}
-        groups={groups}
-        inheritedGroupIds={inheritedGroupIds}
-        parentHidden={pathHiddenState.hidden}
-        inheritedHidden={pathHiddenState.hidden}
-        onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
+  const renderCategoryTile = useCallback(
+    (cat: Category, wrapDroppable = false) => {
+      const tile = (
+        <CategoryTile
+          category={cat}
+          onClick={onCategoryClick}
+          onMove={canEditContent ? onMoveCategory : undefined}
+          onSetCardImage={canEditContent ? onSetCardImage : undefined}
+          onEditName={canEditContent ? onEditCategoryName : undefined}
+          programs={programs}
+          inheritedProgramIds={inheritedProgramIds}
+          groups={groups}
+          inheritedGroupIds={inheritedGroupIds}
+          parentHidden={pathHiddenState.hidden}
+          inheritedHidden={pathHiddenState.hidden}
+          onDropFiles={canEditContent ? onDropFilesOnCategory : undefined}
+        />
+      )
+
+      if (!wrapDroppable) return tile
+
+      return (
+        <DroppableCategoryZone
+          categoryId={cat.id}
+          disabled={!canEditContent}
+          blockedIdsMap={blockedIdsMap}
+        >
+          {tile}
+        </DroppableCategoryZone>
+      )
+    },
+    [
+      canEditContent,
+      blockedIdsMap,
+      programs,
+      groups,
+      inheritedProgramIds,
+      inheritedGroupIds,
+      pathHiddenState,
+      onCategoryClick,
+      onMoveCategory,
+      onSetCardImage,
+      onEditCategoryName,
+      onDropFilesOnCategory,
+    ],
+  )
+
+  const renderImageTile = useCallback(
+    (img: ImageItem) => (
+      <ImageTile
+        image={img}
+        onClick={onImageClick}
+        onEditDetails={canEditContent ? onEditImageDetails : undefined}
+        categoryHidden={pathHiddenState.hidden}
       />
-    )
-
-    if (!wrapDroppable) return tile
-
-    return (
-      <DroppableCategoryZone
-        categoryId={cat.id}
-        disabled={!canEditContent}
-        blockedIdsMap={blockedIdsMap}
-      >
-        {tile}
-      </DroppableCategoryZone>
-    )
-  }
-
-  const renderImageTile = (img: ImageItem) => (
-    <ImageTile
-      image={img}
-      onClick={onImageClick}
-      onEditDetails={canEditContent ? onEditImageDetails : undefined}
-      categoryHidden={pathHiddenState.hidden}
-    />
+    ),
+    [canEditContent, pathHiddenState, onImageClick, onEditImageDetails],
   )
 
   const sensors = useMemo(
@@ -649,16 +697,16 @@ export default function SortableTileGrid({
         onDragOver={onGridDragOver}
         onDrop={onGridDrop}
       >
-        {items.map((item, index) => {
-          const id = tileId(item)
-          return (
-            <SortableTile key={id} id={id} index={index} disabled={!canEditContent}>
-              {item.type === 'category'
-                ? renderCategoryTile(item.data, true)
-                : renderImageTile(item.data as ImageItem)}
-            </SortableTile>
-          )
-        })}
+        {items.map((item, index) => (
+          <GridTile
+            key={tileId(item)}
+            item={item}
+            index={index}
+            disabled={!canEditContent}
+            renderCategoryTile={renderCategoryTile}
+            renderImageTile={renderImageTile}
+          />
+        ))}
         {canEditContent && <FileDropZone isDragActive={fileDragActive} onDrop={onFilesDrop} />}
       </Box>
 
