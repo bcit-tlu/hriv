@@ -23,7 +23,7 @@ from prometheus_client import (
 
 _registry = CollectorRegistry()
 
-REORDER_ENTITIES = frozenset({"category", "image"})
+REORDER_ENTITIES = frozenset({"category", "image", "tile"})
 REORDER_OUTCOMES = frozenset({"success", "failure", "conflict", "client_error"})
 
 # The frontend reorder diagnostics vocabulary
