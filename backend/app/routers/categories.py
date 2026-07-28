@@ -544,18 +544,24 @@ async def reorder_categories(
                         current = ancestor.parent_id if ancestor else None
 
             affected_scopes: set[int] = set()
+            cats: list[Category] = []
             for item in body.items:
                 cat = await db.get(Category, item.id)
                 if cat is None:
                     raise HTTPException(status_code=404, detail=f"Category {item.id} not found")
                 affected_scopes.add(scope_key_for(cat.parent_id))
                 affected_scopes.add(scope_key_for(item.parent_id))
-                cat.parent_id = item.parent_id
-                cat.sort_order = item.sort_order
+                cats.append(cat)
             # Invalidate tile-order revisions for every touched scope so
             # clients of PUT /api/tile-order get a 409 instead of silently
-            # overwriting this write (docs/tile-ordering.md).
+            # overwriting this write. Revision locks are taken BEFORE the
+            # category rows are mutated, matching PUT /api/tile-order's
+            # revision-then-rows lock order to avoid deadlocks
+            # (docs/tile-ordering.md).
             await bump_scopes(db, affected_scopes)
+            for cat, item in zip(cats, body.items):
+                cat.parent_id = item.parent_id
+                cat.sort_order = item.sort_order
             await db.commit()
         except Exception as exc:
             record_exception_if_server_error(span, exc)

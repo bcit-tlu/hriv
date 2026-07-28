@@ -432,16 +432,22 @@ async def reorder_images(
                 item_count=len(body.items),
             )
             affected_scopes: set[int] = set()
+            imgs: list[Image] = []
             for item in body.items:
                 img = await db.get(Image, item.id)
                 if img is None:
                     raise HTTPException(status_code=404, detail=f"Image {item.id} not found")
                 affected_scopes.add(scope_key_for(img.category_id))
-                img.sort_order = item.sort_order
+                imgs.append(img)
             # Invalidate tile-order revisions for every touched scope so
             # clients of PUT /api/tile-order get a 409 instead of silently
-            # overwriting this write (docs/tile-ordering.md).
+            # overwriting this write. Revision locks are taken BEFORE the
+            # image rows are mutated, matching PUT /api/tile-order's
+            # revision-then-rows lock order to avoid deadlocks
+            # (docs/tile-ordering.md).
             await bump_scopes(db, affected_scopes)
+            for img, item in zip(imgs, body.items):
+                img.sort_order = item.sort_order
             await db.commit()
         except Exception as exc:
             record_exception_if_server_error(span, exc)

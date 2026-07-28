@@ -103,7 +103,10 @@ ordering**: they persist through separate transactions and row-by-row
 updates. They DO bump the tile-order revision of every scope they touch
 (`bump_scopes`), so a tile-order client holding a pre-reorder revision
 gets a 409 instead of silently overwriting a legacy write while both
-paths coexist. Remove them once Browse and Manage Categories use `PUT
+paths coexist. The legacy endpoints take the revision locks BEFORE
+mutating category/image rows — the same revision-then-rows lock order as
+`PUT /api/tile-order` — so concurrent same-scope writes across both paths
+serialize instead of deadlocking. Remove them once Browse and Manage Categories use `PUT
 /api/tile-order` exclusively (#982).
 
 ## Telemetry

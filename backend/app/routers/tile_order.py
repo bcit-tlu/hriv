@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..auth import require_role
 from ..database import get_db
-from ..models import TileOrderRevision, User
+from ..models import Category, TileOrderRevision, User
 from ..reorder_telemetry import (
     annotate_reorder_span,
     classify_reorder_exception,
@@ -50,6 +50,13 @@ tracer = trace.get_tracer(__name__)
 router = APIRouter(prefix="/tile-order", tags=["tile-order"])
 
 
+async def _require_scope_exists(db: AsyncSession, parent_category_id: int | None) -> None:
+    if parent_category_id is None:
+        return
+    if await db.get(Category, parent_category_id) is None:
+        raise HTTPException(status_code=404, detail="Parent category not found")
+
+
 async def _authoritative_response(
     db: AsyncSession, parent_category_id: int | None, revision: int
 ) -> TileOrderResponse:
@@ -74,6 +81,7 @@ async def get_tile_order(
     db: AsyncSession = Depends(get_db),
 ):
     """Current authoritative order and revision for one scope (read-only)."""
+    await _require_scope_exists(db, parent_category_id)
     result = await db.execute(
         select(TileOrderRevision.revision).where(
             TileOrderRevision.scope_key == scope_key_for(parent_category_id)
@@ -101,6 +109,7 @@ async def put_tile_order(
                 operation_id=operation_id,
                 item_count=len(body.items),
             )
+            await _require_scope_exists(db, parent_category_id)
             scope_key = scope_key_for(parent_category_id)
             current_revision = await lock_scope_revision(db, scope_key)
             category_ids, image_ids = await load_scope_members(db, parent_category_id)

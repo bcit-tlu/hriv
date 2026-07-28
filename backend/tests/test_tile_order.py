@@ -443,7 +443,7 @@ async def test_statement_count_is_bounded_by_scope_size(db_engine, db_session):
     # the small mixed scope needs one UPDATE per entity type. Statement
     # count must never grow with item count.
     assert large_count <= small_count
-    assert large_count <= 12
+    assert large_count <= 16
 
 
 @requires_db
@@ -513,6 +513,27 @@ async def test_legacy_reorder_endpoints_bump_scope_revision(db_session):
     with pytest.raises(HTTPException) as excinfo:
         await put_tile_order(body, _admin(), db_session)
     assert excinfo.value.status_code == 409
+
+
+@requires_db
+async def test_nonexistent_parent_scope_returns_404(db_session):
+    missing_parent = 999_999_999
+    with pytest.raises(HTTPException) as excinfo:
+        await get_tile_order(_admin(), missing_parent, db_session)
+    assert excinfo.value.status_code == 404
+    body = TileOrderRequest(
+        scope=TileOrderScope(parent_category_id=missing_parent),
+        expected_revision=1,
+        operation_id=None,
+        items=[],
+    )
+    with pytest.raises(HTTPException) as excinfo:
+        await put_tile_order(body, _admin(), db_session)
+    assert excinfo.value.status_code == 404
+    result = await db_session.execute(
+        select(TileOrderRevision).where(TileOrderRevision.scope_key == missing_parent)
+    )
+    assert result.scalar_one_or_none() is None
 
 
 @requires_db
