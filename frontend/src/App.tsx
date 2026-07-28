@@ -258,6 +258,14 @@ export default function App() {
   // (epic #975, issue #979).
   const browseScopeId = path.length > 0 ? path[path.length - 1].id : null
   const tileOrdering = useTileOrdering(browseScopeId)
+  const browseTileOrderingProp = useMemo(
+    () => ({
+      displayOrder: tileOrdering.displayOrder,
+      reportOrder: tileOrdering.reportOrder,
+      claimGeneration: tileOrdering.claimGeneration,
+    }),
+    [tileOrdering.displayOrder, tileOrdering.reportOrder, tileOrdering.claimGeneration],
+  )
 
   const selectedImageCategoryHidden = useMemo(
     () => getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
@@ -1861,11 +1869,7 @@ export default function App() {
                 }
                 onReorderComplete={handleReorderComplete}
                 onReorderError={handleReorderError}
-                tileOrdering={{
-                  displayOrder: tileOrdering.displayOrder,
-                  reportOrder: tileOrdering.reportOrder,
-                  claimGeneration: tileOrdering.claimGeneration,
-                }}
+                tileOrdering={browseTileOrderingProp}
               />
 
               {categoriesLoading ? (

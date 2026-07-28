@@ -39,6 +39,8 @@ export function useTileOrdering(scope: ScopeId): UseTileOrderingResult {
     const handler = (event: BeforeUnloadEvent) => {
       if (tileOrderingCoordinator.hasUnsavedChanges()) {
         event.preventDefault()
+        // Some browser versions only show the prompt when returnValue is set.
+        event.returnValue = ''
       }
     }
     window.addEventListener('beforeunload', handler)

@@ -97,6 +97,8 @@ export class TileOrderingCoordinator {
    * unmounted grid can never overwrite its replacement.
    */
   private generations = new Map<string, number>()
+  /** Scopes whose initial revision is being fetched (dedupes seeding GETs). */
+  private seeding = new Set<string>()
 
   subscribe(listener: () => void): () => void {
     this.listeners.add(listener)
@@ -216,10 +218,12 @@ export class TileOrderingCoordinator {
     for (;;) {
       const state = this.getScope(scope)
       if (state.pending === null || state.inFlight !== null) return
+      if (this.seeding.has(scopeKey(scope))) return
       const order = state.pending
 
       let revision = state.revision
       if (revision === null) {
+        this.seeding.add(scopeKey(scope))
         try {
           const current = await getTileOrder(scope)
           revision = current.revision
@@ -230,6 +234,8 @@ export class TileOrderingCoordinator {
             error: err,
           })
           return
+        } finally {
+          this.seeding.delete(scopeKey(scope))
         }
         // A newer snapshot may have arrived while fetching the revision.
         const latest = this.getScope(scope)
@@ -278,7 +284,18 @@ export class TileOrderingCoordinator {
         if (stillNewest) return
         continue
       } catch (err) {
-        const conflict = tileOrderConflictCurrent(err)
+        // 409: the CAS revision is stale. 400: scope membership changed
+        // underneath the client (membership changes do not bump the
+        // revision) — the tile-order contract says to treat it like 409 and
+        // refresh via GET (docs/tile-ordering.md).
+        let conflict = tileOrderConflictCurrent(err)
+        if (conflict === null && err instanceof ApiError && err.status === 400) {
+          try {
+            conflict = await getTileOrder(scope)
+          } catch {
+            conflict = null
+          }
+        }
         if (conflict !== null) {
           emitReorderDiagnostic({
             operationId,
