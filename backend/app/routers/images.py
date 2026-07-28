@@ -33,6 +33,7 @@ from ..reorder_telemetry import (
     record_reorder_result,
     sanitize_reorder_operation_id,
 )
+from ..tile_order import bump_scopes, scope_key_for
 from ..tracing import record_exception_if_server_error
 from ..visibility import get_student_excluded_category_ids, is_category_visible_to_student
 
@@ -430,11 +431,17 @@ async def reorder_images(
                 operation_id=operation_id,
                 item_count=len(body.items),
             )
+            affected_scopes: set[int] = set()
             for item in body.items:
                 img = await db.get(Image, item.id)
                 if img is None:
                     raise HTTPException(status_code=404, detail=f"Image {item.id} not found")
+                affected_scopes.add(scope_key_for(img.category_id))
                 img.sort_order = item.sort_order
+            # Invalidate tile-order revisions for every touched scope so
+            # clients of PUT /api/tile-order get a 409 instead of silently
+            # overwriting this write (docs/tile-ordering.md).
+            await bump_scopes(db, affected_scopes)
             await db.commit()
         except Exception as exc:
             record_exception_if_server_error(span, exc)

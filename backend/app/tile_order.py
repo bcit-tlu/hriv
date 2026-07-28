@@ -191,6 +191,18 @@ async def bump_scope_revision(db: AsyncSession, scope_key: int) -> int:
     return result.scalar_one()
 
 
+async def bump_scopes(db: AsyncSession, scope_keys: set[int]) -> None:
+    """Lock and increment the revision of each affected scope.
+
+    Used by the legacy per-entity reorder endpoints so ordering writes made
+    during the staged frontend migration still invalidate tile-order
+    revisions held by other clients.
+    """
+    for scope_key in sorted(scope_keys):
+        await lock_scope_revision(db, scope_key)
+        await bump_scope_revision(db, scope_key)
+
+
 async def normalize_scope(db: AsyncSession, parent_category_id: int | None) -> int:
     """Rewrite one scope to canonical contiguous positions; return tile count.
 

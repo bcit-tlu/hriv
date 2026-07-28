@@ -36,7 +36,9 @@ Both endpoints require the `instructor` role (or `admin`).
 ### `GET /api/tile-order?parent_category_id=<id|omitted>`
 
 Returns the scope's authoritative order and current revision (revision `1`
-if the scope has never been written):
+if the scope has never been written). `sort_order` in responses is always
+the contiguous canonical position (`0..n-1`), even if the stored values
+still contain duplicates or gaps from before normalization:
 
 ```json
 {
@@ -74,7 +76,10 @@ Within **one database transaction** the endpoint:
    `SELECT … FOR UPDATE`), serializing concurrent writers per scope;
 2. loads the scope's member IDs with two set-based queries;
 3. rejects duplicated, foreign-scope, or missing IDs (HTTP 400) — the
-   submitted items must be exactly the scope's members;
+   submitted items must be exactly the scope's members. A 400 can also mean
+   scope membership changed underneath the client (a tile was moved in or
+   out); membership changes do not bump the revision, so clients should
+   treat 400 like 409 and refresh via `GET /api/tile-order`;
 4. compares `expected_revision` with the current revision and returns
    HTTP 409 with the current revision and authoritative order for stale
    requests;
@@ -95,7 +100,10 @@ from PR #631 (this contract changes persistence only).
 `PUT /api/categories/reorder` and `PUT /api/images/reorder` remain during
 the staged frontend migration (#979–#982) but are **deprecated for
 ordering**: they persist through separate transactions and row-by-row
-updates. Remove them once Browse and Manage Categories use `PUT
+updates. They DO bump the tile-order revision of every scope they touch
+(`bump_scopes`), so a tile-order client holding a pre-reorder revision
+gets a 409 instead of silently overwriting a legacy write while both
+paths coexist. Remove them once Browse and Manage Categories use `PUT
 /api/tile-order` exclusively (#982).
 
 ## Telemetry

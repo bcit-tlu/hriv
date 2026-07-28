@@ -14,6 +14,7 @@ from ..authz import (
     can_attach_program_to_category,
 )
 from ..database import get_db
+from ..tile_order import bump_scopes, scope_key_for
 from ..reorder_telemetry import (
     annotate_reorder_span,
     classify_reorder_exception,
@@ -542,12 +543,19 @@ async def reorder_categories(
                         ancestor = await db.get(Category, current)
                         current = ancestor.parent_id if ancestor else None
 
+            affected_scopes: set[int] = set()
             for item in body.items:
                 cat = await db.get(Category, item.id)
                 if cat is None:
                     raise HTTPException(status_code=404, detail=f"Category {item.id} not found")
+                affected_scopes.add(scope_key_for(cat.parent_id))
+                affected_scopes.add(scope_key_for(item.parent_id))
                 cat.parent_id = item.parent_id
                 cat.sort_order = item.sort_order
+            # Invalidate tile-order revisions for every touched scope so
+            # clients of PUT /api/tile-order get a 409 instead of silently
+            # overwriting this write (docs/tile-ordering.md).
+            await bump_scopes(db, affected_scopes)
             await db.commit()
         except Exception as exc:
             record_exception_if_server_error(span, exc)

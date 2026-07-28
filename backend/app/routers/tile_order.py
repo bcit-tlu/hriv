@@ -54,11 +54,15 @@ async def _authoritative_response(
     db: AsyncSession, parent_category_id: int | None, revision: int
 ) -> TileOrderResponse:
     tiles = await load_scope_tiles(db, parent_category_id)
+    # ``sort_order`` is reported as the contiguous canonical position, not the
+    # raw stored value, so clients can rely on 0..n-1 even before a scope has
+    # ever been written or normalized.
     return TileOrderResponse(
         scope=TileOrderScope(parent_category_id=parent_category_id),
         revision=revision,
         items=[
-            TileOrderItemOut(type=t.type, id=t.id, sort_order=t.sort_order) for t in tiles
+            TileOrderItemOut(type=t.type, id=t.id, sort_order=pos)
+            for pos, t in enumerate(tiles)
         ],
     )
 
