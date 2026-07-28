@@ -159,7 +159,9 @@ authoritative order directly (no category-tree refresh); if newer local
 changes accumulated it immediately saves again and does not show "saved". On
 failure the newest local intent is retained and retryable. On 409 the
 authoritative order from the conflict body is offered to the user ("Order
-changed elsewhere" → Refresh). A `beforeunload` guard warns when unsaved
+changed elsewhere" → Refresh); a 400 membership rejection is treated the
+same way, with the authoritative order fetched via `GET /api/tile-order`
+(membership changes do not bump the revision). A `beforeunload` guard warns when unsaved
 order remains. Stale grid instances are fenced by a per-scope generation
 counter (`claimGeneration`), so callbacks from an unmounted grid cannot
 overwrite a remounted one.

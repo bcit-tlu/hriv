@@ -238,6 +238,24 @@ describe('TileOrderingCoordinator', () => {
     expect(state.conflictOrder).toBeNull()
   })
 
+  it('treats a 400 membership change like a conflict and refreshes via GET', async () => {
+    const current = response(4, refs(3, 1, 2))
+    mockedPut.mockRejectedValueOnce(new ApiError(400, 'Images not in scope: [99]'))
+    mockedGet.mockResolvedValue(current)
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('conflict')
+    expect(state.revision).toBe(4)
+    expect(state.conflictOrder).toEqual(refs(3, 1, 2))
+    // The stale snapshot is retained for explicit resolution, not re-PUT.
+    expect(state.pending).toEqual(refs(2, 1, 3))
+    expect(mockedPut).toHaveBeenCalledTimes(1)
+    expect(events.some((e) => e.state === 'conflicted')).toBe(true)
+  })
+
   it('seeds the revision with GET before the first save of a scope', async () => {
     mockedGet.mockResolvedValue(response(5, refs(1, 2, 3)))
     mockedPut.mockResolvedValue(response(6, refs(2, 1, 3)))
