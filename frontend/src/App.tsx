@@ -30,6 +30,7 @@ import HomeIcon from '@mui/icons-material/Home'
 import LinkIcon from '@mui/icons-material/Link'
 import ImageViewer from './components/ImageViewer'
 import SortableTileGrid from './components/SortableTileGrid'
+import ReorderStatusIndicator from './components/ReorderStatusIndicator'
 import NoteDisplay from './components/NoteDisplay'
 import ManageCategoriesDialog from './components/ManageCategoriesDialog'
 import AdminPage from './components/AdminPage'
@@ -96,6 +97,7 @@ import { useCategoryActions } from './useCategoryActions'
 import { useImageActions } from './useImageActions'
 import { useAnnouncementModal } from './useAnnouncementModal'
 import { useUserProfile } from './useUserProfile'
+import { useTileOrdering } from './useTileOrdering'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
 
@@ -251,6 +253,11 @@ export default function App() {
     ancestorGroupIds,
     currentCategories,
   } = useBrowseData({ path, currentUser })
+
+  // Navigation-safe reorder coordinator for the current Browse scope
+  // (epic #975, issue #979).
+  const browseScopeId = path.length > 0 ? path[path.length - 1].id : null
+  const tileOrdering = useTileOrdering(browseScopeId)
 
   const selectedImageCategoryHidden = useMemo(
     () => getCategoryHiddenStateInTree(categories, selectedImage?.categoryId),
@@ -1800,6 +1807,16 @@ export default function App() {
                   })()}
               </Box>
 
+              {canEditContent && (
+                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }}>
+                  <ReorderStatusIndicator
+                    status={tileOrdering.status}
+                    onRetry={tileOrdering.retry}
+                    onAcceptServerOrder={tileOrdering.acceptServerOrder}
+                  />
+                </Box>
+              )}
+
               {/* Tile grid */}
               <SortableTileGrid
                 allCategories={categories}
@@ -1844,6 +1861,11 @@ export default function App() {
                 }
                 onReorderComplete={handleReorderComplete}
                 onReorderError={handleReorderError}
+                tileOrdering={{
+                  displayOrder: tileOrdering.displayOrder,
+                  reportOrder: tileOrdering.reportOrder,
+                  claimGeneration: tileOrdering.claimGeneration,
+                }}
               />
 
               {categoriesLoading ? (
