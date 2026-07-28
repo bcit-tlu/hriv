@@ -42,6 +42,10 @@ import {
 } from './sortableTileGridUtils'
 import type { TileItem } from './sortableTileGridUtils'
 
+// Stable default so omitting `groups` cannot produce a fresh array on every
+// render and defeat the render-callback memoization below.
+const NO_GROUPS: Group[] = []
+
 // Shared by the real reorder path and the in-flight discarded-drop
 // accounting so the two order-change checks cannot drift apart.
 function computeReorderedIds(
@@ -262,7 +266,7 @@ export default function SortableTileGrid({
   canEditContent,
   fileDragActive,
   programs,
-  groups = [],
+  groups = NO_GROUPS,
   onCategoryClick,
   onMoveCategory,
   onSetCardImage,
