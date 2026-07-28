@@ -913,8 +913,8 @@ export default function App() {
     deleteCategoryInline,
     editCategoryInline,
     toggleCategoryVisibility,
-    reorderCategoriesInline,
-    reorderImagesInline,
+    reorderTilesFromManage,
+    manageReorderScope,
     handleMoveCategory,
     handleRequestMoveCategory,
     handleDropImageOnCategory,
@@ -940,6 +940,10 @@ export default function App() {
     setWarningSnack: setWarnSnack,
     setMoveSnack,
   })
+
+  // Save-state readout for the scope most recently reordered from the
+  // Manage Categories dialog (epic #975, issue #982).
+  const manageTileOrdering = useTileOrdering(manageReorderScope ? manageReorderScope.scope : null)
 
   const visibleJobs = getVisibleJobs({
     uploadOpen,
@@ -1914,9 +1918,18 @@ export default function App() {
         onDeleteCategory={deleteCategoryInline}
         onEditCategory={editCategoryInline}
         onToggleVisibility={toggleCategoryVisibility}
-        onReorderCategories={reorderCategoriesInline}
-        onReorderImages={reorderImagesInline}
+        onReorderTiles={reorderTilesFromManage}
         onReorderComplete={handleReorderComplete}
+        reorderStatus={
+          manageReorderScope ? (
+            <ReorderStatusIndicator
+              status={manageTileOrdering.status}
+              onRetry={manageTileOrdering.retry}
+              onAcceptServerOrder={manageTileOrdering.acceptServerOrder}
+              onReapplyLocalOrder={manageTileOrdering.reapplyLocalOrder}
+            />
+          ) : undefined
+        }
         programs={programs}
         groups={groups}
       />

@@ -3,18 +3,13 @@ import {
   createCategory as apiCreateCategory,
   deleteCategory as apiDeleteCategory,
   updateCategory as apiUpdateCategory,
-  reorderCategories as apiReorderCategories,
-  reorderImages as apiReorderImages,
   updateImage as apiUpdateImage,
   userMessage,
 } from './api'
+import { tileOrderingCoordinator, type ScopeId } from './tileOrdering'
+import type { ParentMove, ScopeOrder } from './components/manageCategoriesDialogUtils'
 import { computeMoveRestrictionChange } from './categoryUtils'
 import { emitEvent } from './observability'
-import {
-  emitReorderDiagnostic,
-  newReorderOperationId,
-  reorderErrorCode,
-} from './reorderDiagnostics'
 import type { MoveRestrictionChange } from './categoryUtils'
 import { findImageInTree, findCategoryPath } from './treeUtils'
 import type { Category, ImageItem } from './types'
@@ -242,120 +237,40 @@ export function useCategoryActions({
     [categories, loadCategories, setErrorSnack, setPath],
   )
 
-  const reorderCategoriesInline = useCallback(
-    async (
-      items: Array<{
-        id: number
-        parent_id: number | null
-        sort_order: number
-      }>,
-      /**
-       * Correlation ID shared across all persistence calls of one drag.
-       * When supplied, the caller owns the operation's lifecycle diagnostics
-       * (exactly one `submitted` and one terminal event per operation ID);
-       * this helper then only forwards the ID to the persistence request.
-       */
-      existingOperationId?: string,
-    ) => {
-      const callerOwnsLifecycle = existingOperationId !== undefined
-      const operationId = existingOperationId ?? newReorderOperationId()
-      const startedAt = performance.now()
-      if (!callerOwnsLifecycle) {
-        emitReorderDiagnostic({
-          operationId,
-          state: 'submitted',
-          itemType: 'category',
-          categoryCount: items.length,
-          imageCount: 0,
-          queueDepth: 0,
-        })
-      }
-      try {
-        await apiReorderCategories(items, operationId)
-        if (!callerOwnsLifecycle) {
-          emitReorderDiagnostic({
-            operationId,
-            state: 'committed',
-            itemType: 'category',
-            categoryCount: items.length,
-            imageCount: 0,
-            durationMs: performance.now() - startedAt,
-          })
-        }
-      } catch (err) {
-        if (!callerOwnsLifecycle) {
-          emitReorderDiagnostic({
-            operationId,
-            state: 'failed',
-            itemType: 'category',
-            categoryCount: items.length,
-            imageCount: 0,
-            durationMs: performance.now() - startedAt,
-            errorCode: reorderErrorCode(err),
-          })
-        }
-        console.error('Failed to reorder categories', err)
-        setErrorSnack(userMessage(err, 'Failed to reorder categories.'))
-        throw err
-      }
-    },
-    [setErrorSnack],
-  )
+  // Scope of the most recent Manage Categories reorder, for the dialog's
+  // save-state indicator. Wrapped so a root-scope reorder (scope null) is
+  // distinguishable from "no reorder yet".
+  const [manageReorderScope, setManageReorderScope] = useState<{ scope: ScopeId } | null>(null)
 
-  const reorderImagesInline = useCallback(
-    async (
-      items: Array<{ id: number; sort_order: number }>,
-      /**
-       * Correlation ID shared across all persistence calls of one drag.
-       * When supplied, the caller owns the operation's lifecycle diagnostics
-       * (exactly one `submitted` and one terminal event per operation ID);
-       * this helper then only forwards the ID to the persistence request.
-       */
-      existingOperationId?: string,
-    ) => {
-      const callerOwnsLifecycle = existingOperationId !== undefined
-      const operationId = existingOperationId ?? newReorderOperationId()
-      const startedAt = performance.now()
-      if (!callerOwnsLifecycle) {
-        emitReorderDiagnostic({
-          operationId,
-          state: 'submitted',
-          itemType: 'image',
-          categoryCount: 0,
-          imageCount: items.length,
-          queueDepth: 0,
-        })
+  /**
+   * Persist a Manage Categories drop through the shared ordering contract
+   * (epic #975, issue #982): parent changes go through the versioned
+   * category PATCH (same as Browse moves), then the full interleaved order
+   * of every affected scope is reported to the tile-ordering coordinator,
+   * which persists it atomically via PUT /api/tile-order with CAS revisions
+   * and explicit conflict handling.
+   */
+  const reorderTilesFromManage = useCallback(
+    async (moves: ParentMove[], scopes: ScopeOrder[]) => {
+      for (const move of moves) {
+        const catPath = findCategoryPath(categories, move.categoryId)
+        const version = catPath?.at(-1)?.version
+        try {
+          await apiUpdateCategory(move.categoryId, { parent_id: move.newParentId }, version)
+        } catch (err) {
+          console.error('Failed to move category', err)
+          setErrorSnack(userMessage(err, 'Failed to move category.'))
+          throw err
+        }
       }
-      try {
-        await apiReorderImages(items, operationId)
-        if (!callerOwnsLifecycle) {
-          emitReorderDiagnostic({
-            operationId,
-            state: 'committed',
-            itemType: 'image',
-            categoryCount: 0,
-            imageCount: items.length,
-            durationMs: performance.now() - startedAt,
-          })
-        }
-      } catch (err) {
-        if (!callerOwnsLifecycle) {
-          emitReorderDiagnostic({
-            operationId,
-            state: 'failed',
-            itemType: 'image',
-            categoryCount: 0,
-            imageCount: items.length,
-            durationMs: performance.now() - startedAt,
-            errorCode: reorderErrorCode(err),
-          })
-        }
-        console.error('Failed to reorder images', err)
-        setErrorSnack(userMessage(err, 'Failed to reorder images.'))
-        throw err
+      for (const { scope, order } of scopes) {
+        tileOrderingCoordinator.reportOrder(scope, order)
+      }
+      if (scopes.length > 0) {
+        setManageReorderScope({ scope: scopes[scopes.length - 1].scope })
       }
     },
-    [setErrorSnack],
+    [categories, setErrorSnack],
   )
 
   const doMoveCategory = useCallback(
@@ -596,8 +511,8 @@ export function useCategoryActions({
     deleteCategoryInline,
     editCategoryInline,
     toggleCategoryVisibility,
-    reorderCategoriesInline,
-    reorderImagesInline,
+    reorderTilesFromManage,
+    manageReorderScope,
     handleMoveCategory,
     handleRequestMoveCategory,
     handleDropImageOnCategory,

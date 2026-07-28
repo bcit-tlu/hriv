@@ -106,8 +106,13 @@ gets a 409 instead of silently overwriting a legacy write while both
 paths coexist. The legacy endpoints take the revision locks BEFORE
 mutating category/image rows — the same revision-then-rows lock order as
 `PUT /api/tile-order` — so concurrent same-scope writes across both paths
-serialize instead of deadlocking. Remove them once Browse and Manage Categories use `PUT
-/api/tile-order` exclusively (#982).
+serialize instead of deadlocking.
+
+As of #982 no frontend caller uses these endpoints for ordering: Browse and
+Manage Categories both persist through the shared coordinator and
+`PUT /api/tile-order`. The endpoints (and the legacy non-coordinator
+fallback path in `SortableTileGrid`) are retained only for API clients and
+tests; their removal is tracked in #998.
 
 ## Telemetry
 
@@ -172,7 +177,32 @@ The compact save-state readout is `ReorderStatusIndicator`
 diagnostic events (`queued`, `coalesced`, `submitted`, `committed`,
 `conflicted`, `failed`) from `docs/reorder-telemetry.md`.
 
-Manage Categories still uses the legacy endpoints until #982.
+## Manage Categories migration (#982)
+
+The Manage Categories dialog shares the same ordering contract as Browse —
+there is no second independent ordering implementation:
+
+- A drop in the dialog's tree is decomposed into **parent moves** and
+  **per-scope orders** (`diffParentMoves` / `interleavedTileOrders` in
+  `manageCategoriesDialogUtils.ts`). Move-vs-reorder stays distinct: parent
+  changes persist first through the versioned `PATCH /api/categories/{id}`
+  (the same validated move path as Browse, including self/descendant cycle
+  rejection), then the full interleaved category+image order of every
+  changed scope is reported to the shared `tileOrderingCoordinator`, which
+  persists each scope atomically via `PUT /api/tile-order` with CAS
+  revisions.
+- The dialog renders sibling order from the coordinator's per-scope display
+  orders (`reorderFlatOptions`), so pending/unsaved order is shown
+  optimistically instead of snapping back to the last-loaded `sort_order`
+  while a save is in flight — the same navigation-safe behaviour as the
+  Browse grid.
+- The dialog shows the same `ReorderStatusIndicator` save states (unsaved,
+  saving, saved, conflict with Refresh / Keep my order, error with Retry)
+  for the scope most recently reordered from the dialog.
+- Because Browse and Manage write through one contract, ordering is
+  consistent across both interfaces after navigation and reload: whichever
+  interface wrote last owns the scope revision, and stale writers get an
+  explicit 409.
 
 ## Stale-refresh prevention and conflict recovery (#980)
 

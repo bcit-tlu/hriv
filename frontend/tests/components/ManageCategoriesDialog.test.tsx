@@ -43,7 +43,7 @@ function renderDialog(overrides: Partial<Parameters<typeof ManageCategoriesDialo
   const onDeleteCategory = overrides.onDeleteCategory ?? vi.fn().mockResolvedValue(undefined)
   const onEditCategory = overrides.onEditCategory ?? vi.fn().mockResolvedValue(undefined)
   const onToggleVisibility = overrides.onToggleVisibility ?? undefined
-  const onReorderCategories = overrides.onReorderCategories ?? undefined
+  const onReorderTiles = overrides.onReorderTiles ?? undefined
   const onCategoryNavigate = overrides.onCategoryNavigate ?? undefined
   return {
     onClose,
@@ -62,7 +62,7 @@ function renderDialog(overrides: Partial<Parameters<typeof ManageCategoriesDialo
         onDeleteCategory={onDeleteCategory}
         onEditCategory={onEditCategory}
         onToggleVisibility={onToggleVisibility}
-        onReorderCategories={onReorderCategories}
+        onReorderTiles={onReorderTiles}
         programs={overrides.programs ?? programs}
         groups={overrides.groups ?? []}
       />,
@@ -435,13 +435,13 @@ describe('ManageCategoriesDialog — visibility toggle', () => {
 // ---------------------------------------------------------------------------
 
 describe('ManageCategoriesDialog — drag handle', () => {
-  it('renders drag handles when onReorderCategories is provided', () => {
+  it('renders drag handles when onReorderTiles is provided', () => {
     const categories = [makeCategory({ id: 1, label: 'Cat' })]
-    renderDialog({ categories, onReorderCategories: vi.fn() })
+    renderDialog({ categories, onReorderTiles: vi.fn() })
     expect(document.querySelector('svg[data-testid="DragIndicatorIcon"]')).toBeInTheDocument()
   })
 
-  it('does not render drag handles when onReorderCategories is omitted', () => {
+  it('does not render drag handles when onReorderTiles is omitted', () => {
     const categories = [makeCategory({ id: 1, label: 'Cat' })]
     renderDialog({ categories })
     expect(document.querySelector('svg[data-testid="DragIndicatorIcon"]')).not.toBeInTheDocument()
