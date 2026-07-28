@@ -312,9 +312,16 @@ export default function SortableTileGrid({
       if (reorderInFlightRef.current) {
         // Current behavior: a drop during an in-flight save is silently
         // discarded (epic #975). Record reorder drops so they are observable;
-        // move-into-category drops are outside the reorder lifecycle and are
+        // move-into-category drops are outside the reorder lifecycle and
+        // no-op drops (order unchanged, mirroring the idle-path filter) are
         // not reported as reorder operations.
         if (!targetId.startsWith(DROP_PREFIX)) {
+          const inFlightIds = items.map(tileId)
+          const inFlightReordered = move(inFlightIds, event)
+          const isNoOp =
+            inFlightReordered.length === inFlightIds.length &&
+            inFlightReordered.every((id, i) => id === inFlightIds[i])
+          if (isNoOp) return
           emitReorderDiagnostic({
             operationId: newReorderOperationId(),
             state: 'ignored',
