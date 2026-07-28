@@ -79,7 +79,7 @@ appear as metric labels.
 | --------------------------------------- | --------- | ------------------- | ---------------------------------------------------- |
 | `hriv_reorder_request_duration_seconds` | Histogram | `entity`            | Server-side reorder persistence duration             |
 | `hriv_reorder_request_items`            | Histogram | `entity`            | Items per reorder persistence request                |
-| `hriv_reorder_requests_total`           | Counter   | `entity`, `outcome` | Requests by outcome (`success`/`failure`/`conflict`) |
+| `hriv_reorder_requests_total`           | Counter   | `entity`, `outcome` | Requests by outcome (`success`/`failure`/`conflict`/`client_error`) |
 | `hriv_reorder_client_operations_total`  | Counter   | `state`             | Client-reported lifecycle state transitions          |
 
 ## Tracing one operation end-to-end

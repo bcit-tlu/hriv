@@ -8,8 +8,9 @@
  *   `reorder.operation` telemetry event (backend-validated ingestion);
  * - mirrored to the console in dev for quick local debugging.
  *
- * The state vocabulary is kept in lockstep with
- * `backend/app/reorder_metrics.py` (`REORDER_CLIENT_STATES`).
+ * The state vocabulary mirrors `backend/app/reorder_metrics.py`
+ * (`REORDER_CLIENT_STATES`), which additionally accepts an `other` sentinel
+ * that unrecognized states are coerced to server-side.
  */
 
 import { emitEvent } from './observability'

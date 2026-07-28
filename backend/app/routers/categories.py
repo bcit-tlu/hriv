@@ -16,6 +16,7 @@ from ..authz import (
 from ..database import get_db
 from ..reorder_telemetry import (
     annotate_reorder_span,
+    classify_reorder_exception,
     record_reorder_result,
     sanitize_reorder_operation_id,
 )
@@ -548,29 +549,24 @@ async def reorder_categories(
                 cat.parent_id = item.parent_id
                 cat.sort_order = item.sort_order
             await db.commit()
-            record_reorder_result(
-                entity="category",
-                operation_id=operation_id,
-                item_count=len(body.items),
-                duration_seconds=time.perf_counter() - started,
-                outcome="success",
-            )
-            return {"status": "ok"}
         except Exception as exc:
             record_exception_if_server_error(span, exc)
-            outcome = (
-                "conflict"
-                if isinstance(exc, HTTPException) and exc.status_code == 409
-                else "failure"
-            )
             record_reorder_result(
                 entity="category",
                 operation_id=operation_id,
                 item_count=len(body.items),
                 duration_seconds=time.perf_counter() - started,
-                outcome=outcome,
+                outcome=classify_reorder_exception(exc),
             )
             raise
+    record_reorder_result(
+        entity="category",
+        operation_id=operation_id,
+        item_count=len(body.items),
+        duration_seconds=time.perf_counter() - started,
+        outcome="success",
+    )
+    return {"status": "ok"}
 
 
 @router.delete("/{category_id}", status_code=204)

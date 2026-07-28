@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from app.reorder_metrics import (
     observe_reorder_request,
@@ -14,6 +15,7 @@ from app.reorder_metrics import (
 )
 from app.reorder_telemetry import (
     annotate_reorder_span,
+    classify_reorder_exception,
     record_reorder_result,
     sanitize_reorder_operation_id,
 )
@@ -35,6 +37,14 @@ OPERATION_ID = "b1946ac9-4931-4a95-bb32-9f8e4a2c9d11"
 
 
 # ── sanitize_reorder_operation_id ────────────────────────
+
+
+def test_classify_reorder_exception_buckets() -> None:
+    assert classify_reorder_exception(HTTPException(status_code=409)) == "conflict"
+    assert classify_reorder_exception(HTTPException(status_code=400)) == "client_error"
+    assert classify_reorder_exception(HTTPException(status_code=404)) == "client_error"
+    assert classify_reorder_exception(HTTPException(status_code=500)) == "failure"
+    assert classify_reorder_exception(RuntimeError("db down")) == "failure"
 
 
 def test_sanitize_accepts_uuid_and_safe_ids() -> None:
@@ -175,7 +185,7 @@ async def test_reorder_images_propagates_operation_id(
     assert getattr(records[0], "reorder.entity") == "image"
 
 
-async def test_reorder_images_failure_outcome_logged(
+async def test_reorder_images_missing_item_outcome_logged(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     caplog.set_level("INFO", logger="app.reorder_telemetry")
@@ -189,7 +199,9 @@ async def test_reorder_images_failure_outcome_logged(
     records = [r for r in caplog.records if r.message == "reorder.persisted"]
     assert len(records) == 1
     assert getattr(records[0], "reorder.operation_id") == "unknown"
-    assert getattr(records[0], "reorder.outcome") == "failure"
+    # A missing image is an expected client-side condition (404), not a
+    # server failure.
+    assert getattr(records[0], "reorder.outcome") == "client_error"
 
 
 # ── telemetry ingestion of reorder.operation events ──────

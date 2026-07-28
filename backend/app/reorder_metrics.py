@@ -24,10 +24,11 @@ from prometheus_client import (
 _registry = CollectorRegistry()
 
 REORDER_ENTITIES = frozenset({"category", "image"})
-REORDER_OUTCOMES = frozenset({"success", "failure", "conflict"})
+REORDER_OUTCOMES = frozenset({"success", "failure", "conflict", "client_error"})
 
-# Client-side operation lifecycle states, kept in lockstep with the frontend
-# reorder diagnostics vocabulary (frontend/src/reorderDiagnostics.ts).
+# The frontend reorder diagnostics vocabulary
+# (frontend/src/reorderDiagnostics.ts) plus the "other" sentinel that
+# unrecognized client-supplied states are coerced to server-side.
 REORDER_CLIENT_STATES = frozenset({
     "ignored",
     "queued",

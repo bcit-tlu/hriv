@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import re
 
+from fastapi import HTTPException
 from opentelemetry.trace import Span
 
 from .middleware import get_request_id
@@ -41,6 +42,22 @@ def annotate_reorder_span(
     span.set_attribute("reorder.item_count", item_count)
     if operation_id is not None:
         span.set_attribute("reorder.operation_id", operation_id)
+
+
+def classify_reorder_exception(exc: Exception) -> str:
+    """Map an exception from a reorder endpoint to a bounded outcome.
+
+    Mirrors the span convention in ``tracing.py``: 4xx HTTPExceptions are
+    expected application behaviour and must not inflate the failure rate.
+    409 marks an ordering conflict; other 4xx are client errors; everything
+    else is a genuine server failure.
+    """
+    if isinstance(exc, HTTPException):
+        if exc.status_code == 409:
+            return "conflict"
+        if 400 <= exc.status_code < 500:
+            return "client_error"
+    return "failure"
 
 
 def record_reorder_result(
