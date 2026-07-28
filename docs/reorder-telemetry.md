@@ -64,7 +64,7 @@ contract change; the current UI emits `ignored`, `submitted`, `committed`,
 - `queue_depth` (drops waiting behind the in-flight save)
 - `local_revision` (client ordering revision; populated once #978 lands)
 - `duration_ms` (for terminal states)
-- `error` (message for `failed`)
+- `error` / `error_code` (bounded category — `api_http_4xx`, `api_http_5xx`, or `api_network_error` — for `failed`; never free-text)
 
 Structured log fields are prefixed `reorder.*` (e.g. `reorder.state`,
 `reorder.operation_id`).
@@ -75,12 +75,12 @@ Rendered into `/api/metrics` by `backend/app/reorder_metrics.py`. Labels are
 bounded (`entity`, `outcome`, `state`); operation IDs and category IDs never
 appear as metric labels.
 
-| Metric                                  | Type      | Labels              | Meaning                                              |
-| --------------------------------------- | --------- | ------------------- | ---------------------------------------------------- |
-| `hriv_reorder_request_duration_seconds` | Histogram | `entity`            | Server-side reorder persistence duration             |
-| `hriv_reorder_request_items`            | Histogram | `entity`            | Items per reorder persistence request                |
+| Metric                                  | Type      | Labels              | Meaning                                                             |
+| --------------------------------------- | --------- | ------------------- | ------------------------------------------------------------------- |
+| `hriv_reorder_request_duration_seconds` | Histogram | `entity`            | Server-side reorder persistence duration                            |
+| `hriv_reorder_request_items`            | Histogram | `entity`            | Items per reorder persistence request                               |
 | `hriv_reorder_requests_total`           | Counter   | `entity`, `outcome` | Requests by outcome (`success`/`failure`/`conflict`/`client_error`) |
-| `hriv_reorder_client_operations_total`  | Counter   | `state`             | Client-reported lifecycle state transitions          |
+| `hriv_reorder_client_operations_total`  | Counter   | `state`             | Client-reported lifecycle state transitions                         |
 
 ## Tracing one operation end-to-end
 

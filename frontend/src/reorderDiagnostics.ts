@@ -14,6 +14,7 @@
  */
 
 import { emitEvent } from './observability'
+import type { TelemetryErrorCode } from './observability'
 
 /** Lifecycle states of one client-side reorder operation. */
 export const REORDER_OPERATION_STATES = [
@@ -60,7 +61,8 @@ export interface ReorderDiagnosticEvent {
   queueDepth?: number
   localRevision?: number
   durationMs?: number
-  error?: string
+  /** Bounded error category (never a free-text exception message). */
+  errorCode?: TelemetryErrorCode
 }
 
 type ReorderDiagnosticListener = (event: ReorderDiagnosticEvent) => void
@@ -115,6 +117,7 @@ export function emitReorderDiagnostic(event: ReorderDiagnosticEvent): void {
     queue_depth: event.queueDepth,
     local_revision: event.localRevision,
     duration_ms: event.durationMs,
-    error: event.error,
+    error: event.errorCode,
+    error_code: event.errorCode,
   })
 }

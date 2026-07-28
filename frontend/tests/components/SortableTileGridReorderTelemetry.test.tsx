@@ -156,7 +156,7 @@ describe('reorder operation correlation', () => {
 
     expect(events.map((e) => e.state)).toEqual(['submitted', 'failed'])
     expect(events[1].operationId).toBe(events[0].operationId)
-    expect(events[1].error).toContain('boom')
+    expect(events[1].errorCode).toBe('api_network_error')
   })
 
   it('emits abandoned when the grid unmounts during an active save', async () => {

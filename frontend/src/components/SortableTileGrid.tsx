@@ -23,7 +23,8 @@ import { getCategoryHiddenStateFromPath } from '../treeUtils'
 import CategoryTile from './CategoryTile'
 import ImageTile from './ImageTile'
 import FileDropZone from './FileDropZone'
-import { reorderCategories, reorderImages } from '../api'
+import { ApiError, reorderCategories, reorderImages } from '../api'
+import type { TelemetryErrorCode } from '../observability'
 import { emitReorderDiagnostic, newReorderOperationId } from '../reorderDiagnostics'
 import {
   buildTileItems,
@@ -35,6 +36,15 @@ import {
   tileId,
 } from './sortableTileGridUtils'
 import type { TileItem } from './sortableTileGridUtils'
+
+// Map a persistence failure to the bounded telemetry error vocabulary; raw
+// exception text stays in the console, never in ingested telemetry.
+function reorderErrorCode(err: unknown): TelemetryErrorCode {
+  if (err instanceof ApiError) {
+    return err.status >= 500 ? 'api_http_5xx' : 'api_http_4xx'
+  }
+  return 'api_network_error'
+}
 
 interface SortableTileProps {
   id: string
@@ -429,7 +439,7 @@ export default function SortableTileGrid({
             categoryCount: catUpdates.length,
             imageCount: imgUpdates.length,
             durationMs: performance.now() - startedAt,
-            error: err instanceof Error ? err.message : String(err),
+            errorCode: reorderErrorCode(err),
           })
           reorderInFlightRef.current = false
           activeOperationRef.current = null
@@ -474,7 +484,7 @@ export default function SortableTileGrid({
           categoryCount: catUpdates.length,
           imageCount: imgUpdates.length,
           durationMs: performance.now() - startedAt,
-          error: err instanceof Error ? err.message : String(err),
+          errorCode: reorderErrorCode(err),
         })
         reorderInFlightRef.current = false
         activeOperationRef.current = null
