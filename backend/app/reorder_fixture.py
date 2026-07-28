@@ -162,20 +162,25 @@ def build_fixture_spec() -> FixtureSpec:
 
 async def purge_reorder_fixture(session: AsyncSession) -> None:
     """Delete all fixture rows (reserved ID range or ``RF-`` name prefix)."""
+    # ``synchronize_session="fetch"`` is pinned explicitly so deleted rows are
+    # always expunged from the session identity map — reseeding with the same
+    # explicit primary keys in one session must never hit an identity conflict.
     await session.execute(
-        delete(Image).where(
-            or_(Image.id >= IMAGE_ID_BASE, Image.name.like(f"{FIXTURE_PREFIX}%"))
-        )
+        delete(Image)
+        .where(or_(Image.id >= IMAGE_ID_BASE, Image.name.like(f"{FIXTURE_PREFIX}%")))
+        .execution_options(synchronize_session="fetch")
     )
     # ``categories.parent_id`` has ON DELETE CASCADE, so a single bulk delete
     # removes the whole fixture tree regardless of nesting depth.
     await session.execute(
-        delete(Category).where(
+        delete(Category)
+        .where(
             or_(
                 Category.id >= CATEGORY_ID_BASE,
                 Category.label.like(f"{FIXTURE_PREFIX}%"),
             )
         )
+        .execution_options(synchronize_session="fetch")
     )
     await session.commit()
 

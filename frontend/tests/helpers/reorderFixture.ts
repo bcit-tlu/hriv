@@ -32,7 +32,7 @@ export function duplicatedSortOrder(index: number): number {
 }
 
 /** 80 deterministic sibling categories with duplicate sortOrder values. */
-export function makeFlatCategoryScope(parentId: number | null = null): Category[] {
+export function makeFlatCategoryScope(parentId: number | null = CATEGORY_ID_BASE): Category[] {
   return Array.from({ length: FLAT_SIBLING_CATEGORY_COUNT }, (_, i) =>
     makeCategory({
       id: FLAT_CATEGORY_ID_START + i,
