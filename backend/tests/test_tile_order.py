@@ -227,7 +227,7 @@ async def test_put_never_touches_membership_fields(mocked_helpers):
     body = _request([("category", 1), ("category", 2), ("image", 10)])
     await put_tile_order(body, _admin(), db)
     # apply_positions receives only (type, id) pairs — no parent/category IDs.
-    (_, ordered), _kwargs = mocked_helpers.apply.await_args
+    _, ordered = mocked_helpers.apply.await_args.args
     assert ordered == [("category", 1), ("category", 2), ("image", 10)]
 
 
