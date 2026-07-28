@@ -18,6 +18,29 @@ export function tileId(item: TileItem): string {
 // reflowed index (see SortableTileGrid handleDragEnd).
 export const DROP_PREFIX = 'drop-cat-'
 
+/**
+ * Reorder `items` to match a coordinator-provided order of `{type, id}` refs
+ * (issue #979). Items missing from `order` keep their relative position and
+ * are appended after the ordered ones; refs with no matching item are
+ * ignored, so membership changes (uploads, moves, deletions) can never drop
+ * or duplicate tiles.
+ */
+export function orderTileItems(
+  items: TileItem[],
+  order: Array<{ type: 'category' | 'image'; id: number }>,
+): TileItem[] {
+  const position = new Map(order.map((ref, i) => [`${ref.type}-${ref.id}`, i] as const))
+  const known: Array<{ item: TileItem; pos: number }> = []
+  const unknown: TileItem[] = []
+  for (const item of items) {
+    const pos = position.get(`${item.type}-${item.data.id}`)
+    if (pos === undefined) unknown.push(item)
+    else known.push({ item, pos })
+  }
+  known.sort((a, b) => a.pos - b.pos)
+  return [...known.map((k) => k.item), ...unknown]
+}
+
 // ── Directional "far-half" collision rule (move-wins guard) ──
 //
 // The move-vs-reorder guard is expressed geometrically as a single threshold

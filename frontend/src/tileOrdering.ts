@@ -1,0 +1,329 @@
+/**
+ * Navigation-safe tile-ordering coordinator (epic #975, issue #979).
+ *
+ * Owns the reorder persistence lifecycle for every Browse scope (the root or
+ * one parent category) ABOVE the grid component, so pending state survives
+ * grid unmount/remount (SPA navigation). The grid applies each accepted drag
+ * locally and reports the new order here; it never calls persistence APIs
+ * directly and no accepted drop is ever discarded.
+ *
+ * Persistence uses the atomic `PUT /api/tile-order` contract
+ * (docs/tile-ordering.md): one request per scope carrying the full ordered
+ * item list plus an `expected_revision` compare-and-set token. Drops that
+ * land while a save is in flight are coalesced — only the newest local
+ * snapshot is submitted next, never one request per drop.
+ */
+
+import {
+  getTileOrder,
+  putTileOrder,
+  tileOrderConflictCurrent,
+  ApiError,
+  type TileOrderItemRef,
+  type TileOrderResponse,
+} from './api'
+import type { TelemetryErrorCode } from './observability'
+import { emitReorderDiagnostic, newReorderOperationId } from './reorderDiagnostics'
+
+/** Save-state vocabulary shown to the user (see issue #979). */
+export type TileOrderStatus =
+  | 'idle'
+  | 'dirty'
+  | 'saving'
+  | 'dirty-while-saving'
+  | 'saved'
+  | 'conflict'
+  | 'error'
+
+/** Ordering scope key: the parent category ID, or null for the root scope. */
+export type ScopeId = number | null
+
+export interface ScopeState {
+  status: TileOrderStatus
+  /** Last revision returned by the server for this scope (CAS token). */
+  revision: number | null
+  /** Newest local order not yet submitted (coalesces intermediate drops). */
+  pending: TileOrderItemRef[] | null
+  /** Order currently being persisted. */
+  inFlight: TileOrderItemRef[] | null
+  /**
+   * The order the UI should display: the newest local intent, falling back
+   * to the last authoritative server order. Null until the first drop or
+   * server response for the scope.
+   */
+  displayOrder: TileOrderItemRef[] | null
+  /** Authoritative server order captured from a 409 conflict. */
+  conflictOrder: TileOrderItemRef[] | null
+  error: unknown
+}
+
+// Shared initial snapshot: `getScope` must be referentially stable for
+// unknown scopes (`useSyncExternalStore` compares snapshots by identity).
+const INITIAL_SCOPE_STATE: ScopeState = Object.freeze({
+  status: 'idle',
+  revision: null,
+  pending: null,
+  inFlight: null,
+  displayOrder: null,
+  conflictOrder: null,
+  error: null,
+})
+
+function reorderErrorCode(err: unknown): TelemetryErrorCode {
+  if (err instanceof ApiError) {
+    return err.status >= 500 ? 'api_http_5xx' : 'api_http_4xx'
+  }
+  return 'api_network_error'
+}
+
+function scopeKey(scope: ScopeId): string {
+  return scope === null ? 'root' : String(scope)
+}
+
+function sameOrder(a: TileOrderItemRef[], b: TileOrderItemRef[]): boolean {
+  return a.length === b.length && a.every((ref, i) => ref.type === b[i].type && ref.id === b[i].id)
+}
+
+function refsOf(response: TileOrderResponse): TileOrderItemRef[] {
+  return response.items.map(({ type, id }) => ({ type, id }))
+}
+
+export class TileOrderingCoordinator {
+  private scopes = new Map<string, ScopeState>()
+  private listeners = new Set<() => void>()
+  /**
+   * Monotonic grid-instance generation per scope. A remounting grid claims a
+   * new generation; callbacks carrying an older generation are ignored so an
+   * unmounted grid can never overwrite its replacement.
+   */
+  private generations = new Map<string, number>()
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
+
+  getScope(scope: ScopeId): ScopeState {
+    return this.scopes.get(scopeKey(scope)) ?? INITIAL_SCOPE_STATE
+  }
+
+  /** True when any scope holds unsaved or in-flight changes (unload guard). */
+  hasUnsavedChanges(): boolean {
+    for (const state of this.scopes.values()) {
+      if (
+        state.pending !== null ||
+        state.inFlight !== null ||
+        state.status === 'dirty' ||
+        state.status === 'error'
+      ) {
+        return true
+      }
+    }
+    return false
+  }
+
+  /** Claim a new grid generation for a scope (called on grid mount). */
+  claimGeneration(scope: ScopeId): number {
+    const key = scopeKey(scope)
+    const next = (this.generations.get(key) ?? 0) + 1
+    this.generations.set(key, next)
+    return next
+  }
+
+  isCurrentGeneration(scope: ScopeId, generation: number): boolean {
+    return (this.generations.get(scopeKey(scope)) ?? 0) === generation
+  }
+
+  /**
+   * Record a new local order for a scope and schedule persistence.
+   * Every accepted drop lands here; drops during an active save are queued
+   * (coalescing any previously queued snapshot) — never discarded.
+   */
+  reportOrder(scope: ScopeId, order: TileOrderItemRef[], generation?: number): void {
+    if (generation !== undefined && !this.isCurrentGeneration(scope, generation)) return
+    const state = this.getScope(scope)
+    if (state.displayOrder !== null && sameOrder(state.displayOrder, order)) return
+
+    if (state.inFlight !== null) {
+      if (state.pending !== null) {
+        emitReorderDiagnostic({
+          operationId: newReorderOperationId(),
+          state: 'coalesced',
+          scopeCategoryId: scope,
+          queueDepth: 1,
+        })
+      } else {
+        emitReorderDiagnostic({
+          operationId: newReorderOperationId(),
+          state: 'queued',
+          scopeCategoryId: scope,
+          queueDepth: 1,
+        })
+      }
+      this.setScope(scope, {
+        ...state,
+        status: 'dirty-while-saving',
+        pending: order,
+        displayOrder: order,
+      })
+      return
+    }
+
+    this.setScope(scope, {
+      ...state,
+      status: 'dirty',
+      pending: order,
+      displayOrder: order,
+      error: null,
+    })
+    void this.flush(scope)
+  }
+
+  /** Retry persisting the newest local order after a failure. */
+  retry(scope: ScopeId): void {
+    const state = this.getScope(scope)
+    if (state.status !== 'error' || state.pending === null || state.inFlight !== null) return
+    this.setScope(scope, { ...state, status: 'dirty', error: null })
+    void this.flush(scope)
+  }
+
+  /**
+   * Resolve a conflict by adopting the server's authoritative order.
+   * Local intent is replaced — the caller surfaces this as "Order changed
+   * elsewhere" and the user explicitly accepts the refresh.
+   */
+  acceptServerOrder(scope: ScopeId): void {
+    const state = this.getScope(scope)
+    if (state.status !== 'conflict') return
+    this.setScope(scope, {
+      ...state,
+      status: 'saved',
+      pending: null,
+      displayOrder: state.conflictOrder ?? state.displayOrder,
+      conflictOrder: null,
+      error: null,
+    })
+  }
+
+  private setScope(scope: ScopeId, state: ScopeState): void {
+    this.scopes.set(scopeKey(scope), state)
+    for (const listener of this.listeners) listener()
+  }
+
+  private async flush(scope: ScopeId): Promise<void> {
+    // Persist snapshots until no newer local changes remain. Each iteration
+    // submits the newest snapshot only (coalescing anything in between).
+    for (;;) {
+      const state = this.getScope(scope)
+      if (state.pending === null || state.inFlight !== null) return
+      const order = state.pending
+
+      let revision = state.revision
+      if (revision === null) {
+        try {
+          const current = await getTileOrder(scope)
+          revision = current.revision
+        } catch (err) {
+          this.setScope(scope, {
+            ...this.getScope(scope),
+            status: 'error',
+            error: err,
+          })
+          return
+        }
+        // A newer snapshot may have arrived while fetching the revision.
+        const latest = this.getScope(scope)
+        this.setScope(scope, { ...latest, revision })
+        continue
+      }
+
+      const operationId = newReorderOperationId()
+      const startedAt = performance.now()
+      this.setScope(scope, {
+        ...state,
+        status: 'saving',
+        pending: null,
+        inFlight: order,
+      })
+      emitReorderDiagnostic({
+        operationId,
+        state: 'submitted',
+        scopeCategoryId: scope,
+        categoryCount: order.filter((r) => r.type === 'category').length,
+        imageCount: order.filter((r) => r.type === 'image').length,
+        queueDepth: 0,
+        localRevision: revision,
+      })
+
+      try {
+        const response = await putTileOrder(scope, revision, order, operationId)
+        emitReorderDiagnostic({
+          operationId,
+          state: 'committed',
+          scopeCategoryId: scope,
+          durationMs: performance.now() - startedAt,
+          localRevision: response.revision,
+        })
+        const after = this.getScope(scope)
+        const stillNewest = after.pending === null
+        this.setScope(scope, {
+          ...after,
+          status: stillNewest ? 'saved' : 'dirty',
+          revision: response.revision,
+          inFlight: null,
+          // Only adopt the authoritative order when no newer local intent
+          // accumulated during the save — never roll back newer changes.
+          displayOrder: stillNewest ? refsOf(response) : after.displayOrder,
+        })
+        if (stillNewest) return
+        continue
+      } catch (err) {
+        const conflict = tileOrderConflictCurrent(err)
+        if (conflict !== null) {
+          emitReorderDiagnostic({
+            operationId,
+            state: 'conflicted',
+            scopeCategoryId: scope,
+            durationMs: performance.now() - startedAt,
+            localRevision: conflict.revision,
+          })
+          const after = this.getScope(scope)
+          this.setScope(scope, {
+            ...after,
+            status: 'conflict',
+            revision: conflict.revision,
+            inFlight: null,
+            // Retain the newest local intent for explicit user resolution.
+            pending: after.pending ?? order,
+            conflictOrder: refsOf(conflict),
+            error: err,
+          })
+          return
+        }
+        emitReorderDiagnostic({
+          operationId,
+          state: 'failed',
+          scopeCategoryId: scope,
+          durationMs: performance.now() - startedAt,
+          errorCode: reorderErrorCode(err),
+        })
+        const after = this.getScope(scope)
+        this.setScope(scope, {
+          ...after,
+          status: 'error',
+          inFlight: null,
+          // Keep the newest local intent retryable.
+          pending: after.pending ?? order,
+          error: err,
+        })
+        return
+      }
+    }
+  }
+}
+
+/**
+ * Module-level coordinator instance: state intentionally outlives any React
+ * component so pending saves survive SPA navigation and grid remounts.
+ */
+export const tileOrderingCoordinator = new TileOrderingCoordinator()

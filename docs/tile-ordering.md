@@ -138,7 +138,47 @@ intentional — it is an operator-invoked repair tool and a single transaction
 guarantees an all-or-nothing repair — but schedule it outside peak editing
 hours on large libraries.
 
+## Frontend reorder coordinator (#979)
+
+Browse persists ordering through a navigation-safe coordinator owned above
+the grid (`frontend/src/tileOrdering.ts`, bound to React via
+`useTileOrdering`). The coordinator is a module-level singleton, so pending
+saves and unsaved order survive SPA navigation and grid unmount/remount.
+
+Per scope (root or one parent category) it tracks an explicit state machine:
+`idle → dirty → saving → saved`, with `dirty-while-saving` when a drop lands
+during an active save, plus `conflict` (409) and `error` (retryable failure).
+The grid applies every accepted drag locally and reports the full new order;
+it never calls persistence APIs directly and never discards a drop. While a
+save is in flight, newer snapshots replace each other (coalescing) and only
+the newest is submitted after the active request settles — never one request
+per drop.
+
+On success the coordinator stores the returned revision and applies the
+authoritative order directly (no category-tree refresh); if newer local
+changes accumulated it immediately saves again and does not show "saved". On
+failure the newest local intent is retained and retryable. On 409 the
+authoritative order from the conflict body is offered to the user ("Order
+changed elsewhere" → Refresh). A `beforeunload` guard warns when unsaved
+order remains. Stale grid instances are fenced by a per-scope generation
+counter (`claimGeneration`), so callbacks from an unmounted grid cannot
+overwrite a remounted one.
+
+The compact save-state readout is `ReorderStatusIndicator`
+(`Unsaved order`, `Saving order…`, `Order saved`, `Order changed elsewhere`,
+`Could not save order — Retry`). Coordinator transitions emit the reorder
+diagnostic events (`queued`, `coalesced`, `submitted`, `committed`,
+`conflicted`, `failed`) from `docs/reorder-telemetry.md`.
+
+Manage Categories still uses the legacy endpoints until #982.
+
 ## Tests
+
+`frontend/tests/tileOrdering.test.ts` covers the coordinator state machine
+(queueing, coalescing, retry, conflict adoption, revision seeding, the
+20-rapid-reorder scenario);
+`frontend/tests/components/SortableTileGridCoordinator.test.tsx` covers the
+grid's coordinator mode.
 
 `backend/tests/test_tile_order.py` covers the canonical rule and validation
 (unit) plus PostgreSQL integration tests (atomic commit, rollback of both
