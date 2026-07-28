@@ -311,17 +311,21 @@ export default function SortableTileGrid({
 
       if (reorderInFlightRef.current) {
         // Current behavior: a drop during an in-flight save is silently
-        // discarded (epic #975). Record it so ignored drops are observable.
-        emitReorderDiagnostic({
-          operationId: newReorderOperationId(),
-          state: 'ignored',
-          scopeCategoryId: path.length > 0 ? path[path.length - 1].id : null,
-          itemType: sourceId.startsWith('img-') ? 'image' : 'category',
-          itemId: Number(sourceId.slice(4)),
-          categoryCount: currentCategoriesRef.current.length,
-          imageCount: visibleImagesRef.current.length,
-          queueDepth: 1,
-        })
+        // discarded (epic #975). Record reorder drops so they are observable;
+        // move-into-category drops are outside the reorder lifecycle and are
+        // not reported as reorder operations.
+        if (!targetId.startsWith(DROP_PREFIX)) {
+          emitReorderDiagnostic({
+            operationId: newReorderOperationId(),
+            state: 'ignored',
+            scopeCategoryId: path.length > 0 ? path[path.length - 1].id : null,
+            itemType: sourceId.startsWith('img-') ? 'image' : 'category',
+            itemId: Number(sourceId.slice(4)),
+            categoryCount: currentCategoriesRef.current.length,
+            imageCount: visibleImagesRef.current.length,
+            queueDepth: 1,
+          })
+        }
         return
       }
 

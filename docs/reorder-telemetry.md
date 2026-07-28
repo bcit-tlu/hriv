@@ -94,10 +94,14 @@ appear as metric labels.
 3. **Open the trace.** In Tempo, search
    `{ span.reorder.operation_id = "<id>" }` to find the `category.reorder` /
    `image.reorder` spans with their database child spans.
-4. **Interpret the outcome.** A `submitted` without a matching `committed` /
-   `failed` plus an `abandoned` event means the user navigated away mid-save;
-   an `ignored` event is a drop the current UI silently discarded (the defect
-   tracked by epic #975).
+4. **Interpret the outcome.** `abandoned` means the grid unmounted
+   (navigation) while the save was active, so the outcome was unobservable to
+   the user. For in-app (SPA) navigation the in-flight request keeps running,
+   so the same operation usually also emits a terminal `committed` / `failed`
+   afterwards — `abandoned` marks the UX gap, not the network outcome. An
+   `abandoned` with no terminal event means a full page unload cut the
+   operation off entirely. An `ignored` event is a drop the current UI
+   silently discarded (the defect tracked by epic #975).
 
 ## Local verification
 
