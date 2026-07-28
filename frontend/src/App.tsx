@@ -1821,6 +1821,7 @@ export default function App() {
                     status={tileOrdering.status}
                     onRetry={tileOrdering.retry}
                     onAcceptServerOrder={tileOrdering.acceptServerOrder}
+                    onReapplyLocalOrder={tileOrdering.reapplyLocalOrder}
                   />
                 </Box>
               )}

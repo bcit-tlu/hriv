@@ -12,6 +12,7 @@ export interface ReorderStatusIndicatorProps {
   status: TileOrderStatus
   onRetry: () => void
   onAcceptServerOrder: () => void
+  onReapplyLocalOrder: () => void
 }
 
 /**
@@ -23,6 +24,7 @@ export default function ReorderStatusIndicator({
   status,
   onRetry,
   onAcceptServerOrder,
+  onReapplyLocalOrder,
 }: ReorderStatusIndicatorProps) {
   if (status === 'idle') return null
 
@@ -52,6 +54,9 @@ export default function ReorderStatusIndicator({
             <Typography variant="caption">Order changed elsewhere</Typography>
             <Button size="small" onClick={onAcceptServerOrder}>
               Refresh
+            </Button>
+            <Button size="small" onClick={onReapplyLocalOrder}>
+              Keep my order
             </Button>
           </>
         )

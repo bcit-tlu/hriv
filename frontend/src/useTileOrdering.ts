@@ -26,6 +26,8 @@ export interface UseTileOrderingResult {
   retry: () => void
   /** Adopt the server's order after a conflict. */
   acceptServerOrder: () => void
+  /** Reapply the newest local intent against the server's current revision. */
+  reapplyLocalOrder: () => void
 }
 
 export function useTileOrdering(scope: ScopeId): UseTileOrderingResult {
@@ -58,5 +60,6 @@ export function useTileOrdering(scope: ScopeId): UseTileOrderingResult {
     claimGeneration: useCallback(() => tileOrderingCoordinator.claimGeneration(scope), [scope]),
     retry: useCallback(() => tileOrderingCoordinator.retry(scope), [scope]),
     acceptServerOrder: useCallback(() => tileOrderingCoordinator.acceptServerOrder(scope), [scope]),
+    reapplyLocalOrder: useCallback(() => tileOrderingCoordinator.reapplyLocalOrder(scope), [scope]),
   }
 }

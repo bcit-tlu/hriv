@@ -174,13 +174,41 @@ diagnostic events (`queued`, `coalesced`, `submitted`, `committed`,
 
 Manage Categories still uses the legacy endpoints until #982.
 
+## Stale-refresh prevention and conflict recovery (#980)
+
+Category-tree and uncategorized-image reads in `useBrowseData` use
+latest-request-wins sequencing: every read (foreground or background) claims
+a generation, and only the newest read may commit state, so a slow older
+response can never overwrite data from a newer one regardless of completion
+order. Foreground reads and authoritative refreshes
+(`refreshCategories`/`refreshUncategorizedImages`) also abort the previous
+read for the same data via `AbortController`; aborted requests are treated
+as expected control flow (no error state, no console noise).
+
+Background polling (`useBackgroundRefresh`) is paused for reads while the
+tile-ordering coordinator reports unsaved work
+(`tileOrderingCoordinator.hasUnsavedChanges()` — dirty, saving, queued,
+conflicted, or awaiting retry), so a polling response can never replace a
+local pending order. Polling resumes automatically on the next tick once
+the coordinator is clean.
+
+Conflict recovery is explicit, never last-write-wins: on 409 the indicator
+offers both **Refresh** (adopt the server's authoritative order via
+`acceptServerOrder`) and **Keep my order** (`reapplyLocalOrder`, which
+resubmits the newest local intent against the authoritative revision from
+the conflict body). Scope-specific refreshes go through
+`GET /api/tile-order` for the affected scope rather than reloading the
+full category tree.
+
 ## Tests
 
 `frontend/tests/tileOrdering.test.ts` covers the coordinator state machine
-(queueing, coalescing, retry, conflict adoption, revision seeding, the
-20-rapid-reorder scenario);
+(queueing, coalescing, retry, conflict adoption and reapply, revision
+seeding, the 20-rapid-reorder scenario);
 `frontend/tests/components/SortableTileGridCoordinator.test.tsx` covers the
-grid's coordinator mode.
+grid's coordinator mode; `frontend/tests/useBrowseData.test.ts` covers
+latest-request-wins sequencing, abort handling, and polling pause/resume
+during pending reorders.
 
 `backend/tests/test_tile_order.py` covers the canonical rule and validation
 (unit) plus PostgreSQL integration tests (atomic commit, rollback of both

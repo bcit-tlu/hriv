@@ -240,6 +240,27 @@ describe('TileOrderingCoordinator', () => {
     expect(state.conflictOrder).toBeNull()
   })
 
+  it('reapplyLocalOrder resubmits the newest local intent against the conflict revision', async () => {
+    const current = response(4, refs(3, 1, 2))
+    mockedPut
+      .mockRejectedValueOnce(conflictError(current))
+      .mockResolvedValueOnce(response(5, refs(2, 1, 3)))
+
+    coordinator.reportOrder(null, refs(2, 1, 3))
+    await flushMicrotasks()
+    expect(coordinator.getScope(null).status).toBe('conflict')
+
+    coordinator.reapplyLocalOrder(null)
+    await flushMicrotasks()
+
+    const state = coordinator.getScope(null)
+    expect(state.status).toBe('saved')
+    expect(state.revision).toBe(5)
+    expect(state.displayOrder).toEqual(refs(2, 1, 3))
+    // The second PUT used the authoritative revision from the conflict body.
+    expect(mockedPut).toHaveBeenLastCalledWith(null, 4, refs(2, 1, 3), expect.any(String))
+  })
+
   it('treats a 400 membership change like a conflict and refreshes via GET', async () => {
     const current = response(4, refs(3, 1, 2))
     mockedPut.mockRejectedValueOnce(new ApiError(400, 'Images not in scope: [99]'))

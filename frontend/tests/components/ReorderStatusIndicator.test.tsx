@@ -7,14 +7,16 @@ import type { TileOrderStatus } from '../../src/tileOrdering'
 function renderIndicator(status: TileOrderStatus) {
   const onRetry = vi.fn()
   const onAcceptServerOrder = vi.fn()
+  const onReapplyLocalOrder = vi.fn()
   const result = render(
     <ReorderStatusIndicator
       status={status}
       onRetry={onRetry}
       onAcceptServerOrder={onAcceptServerOrder}
+      onReapplyLocalOrder={onReapplyLocalOrder}
     />,
   )
-  return { ...result, onRetry, onAcceptServerOrder }
+  return { ...result, onRetry, onAcceptServerOrder, onReapplyLocalOrder }
 }
 
 describe('ReorderStatusIndicator', () => {
@@ -45,6 +47,13 @@ describe('ReorderStatusIndicator', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }))
     expect(onAcceptServerOrder).toHaveBeenCalledTimes(1)
     expect(onRetry).not.toHaveBeenCalled()
+  })
+
+  it('shows a "Keep my order" button wired to onReapplyLocalOrder in conflict', () => {
+    const { onReapplyLocalOrder, onAcceptServerOrder } = renderIndicator('conflict')
+    fireEvent.click(screen.getByRole('button', { name: 'Keep my order' }))
+    expect(onReapplyLocalOrder).toHaveBeenCalledTimes(1)
+    expect(onAcceptServerOrder).not.toHaveBeenCalled()
   })
 
   it('shows the error message with a Retry button wired to onRetry', () => {

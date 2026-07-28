@@ -203,6 +203,27 @@ export class TileOrderingCoordinator {
     })
   }
 
+  /**
+   * Resolve a conflict by reapplying the newest local intent against the
+   * server's current revision (deliberate "keep my order" path — never a
+   * silent last-write-wins).
+   */
+  reapplyLocalOrder(scope: ScopeId): void {
+    const state = this.getScope(scope)
+    if (state.status !== 'conflict') return
+    if (state.pending === null) {
+      this.acceptServerOrder(scope)
+      return
+    }
+    this.setScope(scope, {
+      ...state,
+      status: 'dirty',
+      conflictOrder: null,
+      error: null,
+    })
+    void this.flush(scope)
+  }
+
   private setScope(scope: ScopeId, state: ScopeState): void {
     this.scopes.set(scopeKey(scope), state)
     for (const listener of this.listeners) listener()
