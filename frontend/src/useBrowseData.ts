@@ -81,8 +81,20 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
   // request for the same data.
   const categoriesReadGen = useRef(0)
   const uncategorizedReadGen = useRef(0)
+  const visibleCategoriesLoadGen = useRef(0)
   const categoriesAbortRef = useRef<AbortController | null>(null)
   const uncategorizedAbortRef = useRef<AbortController | null>(null)
+
+  // Mirror the latest committed state so a superseded (aborted) refresh can
+  // resolve with the freshest data instead of rejecting.
+  const categoriesRef = useRef<Category[]>([])
+  const uncategorizedRef = useRef<ImageItem[]>([])
+  useEffect(() => {
+    categoriesRef.current = categories
+  }, [categories])
+  useEffect(() => {
+    uncategorizedRef.current = uncategorizedImages
+  }, [uncategorizedImages])
 
   const loadCategories = useCallback(async (opts?: { silent?: boolean; signal?: AbortSignal }) => {
     const { silent = false, signal } = opts ?? {}
@@ -95,6 +107,7 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       categoriesAbortRef.current = ac
       effectiveSignal = ac.signal
     }
+    const visibleGen = silent ? 0 : ++visibleCategoriesLoadGen.current
     try {
       if (!silent) setCategoriesLoading(true)
       const tree = await fetchCategoryTree(
@@ -106,7 +119,9 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
       if (effectiveSignal?.aborted || isAbortError(err)) return
       console.error('Failed to load categories', err)
     } finally {
-      if (!silent && gen === categoriesReadGen.current) setCategoriesLoading(false)
+      // Only a newer visible load (which will clear the flag itself) may
+      // suppress cleanup — silent reads never own the loading flag.
+      if (!silent && visibleGen === visibleCategoriesLoadGen.current) setCategoriesLoading(false)
     }
   }, [])
 
@@ -172,10 +187,17 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     // freshly-committed sort_order values after a reorder.  Without
     // this the browser may serve a stale 304-backed response whose
     // ETag was computed before the reorder transaction committed.
-    const tree = await fetchCategoryTree({ cache: 'reload', signal: ac.signal })
-    const cats = tree.map(apiTreeToCategory)
-    if (gen === categoriesReadGen.current) setCategories(cats)
-    return cats
+    try {
+      const tree = await fetchCategoryTree({ cache: 'reload', signal: ac.signal })
+      const cats = tree.map(apiTreeToCategory)
+      if (gen === categoriesReadGen.current) setCategories(cats)
+      return cats
+    } catch (err) {
+      // A newer read superseded this refresh: expected control flow, not a
+      // failure — resolve with the freshest committed data.
+      if (isAbortError(err)) return categoriesRef.current
+      throw err
+    }
   }, [])
 
   const refreshUncategorizedImages = useCallback(async (): Promise<ImageItem[]> => {
@@ -183,13 +205,18 @@ export function useBrowseData({ path, currentUser }: UseBrowseDataDeps) {
     uncategorizedAbortRef.current?.abort()
     const ac = new AbortController()
     uncategorizedAbortRef.current = ac
-    const imgs = await fetchUncategorizedImages({ cache: 'reload', signal: ac.signal })
-    const items = imgs.map(apiImageToItem)
-    if (gen === uncategorizedReadGen.current) {
-      setUncategorizedImages(items)
-      uncategorizedLoaded.current = true
+    try {
+      const imgs = await fetchUncategorizedImages({ cache: 'reload', signal: ac.signal })
+      const items = imgs.map(apiImageToItem)
+      if (gen === uncategorizedReadGen.current) {
+        setUncategorizedImages(items)
+        uncategorizedLoaded.current = true
+      }
+      return items
+    } catch (err) {
+      if (isAbortError(err)) return uncategorizedRef.current
+      throw err
     }
-    return items
   }, [])
 
   // Background refresh: re-fetch categories and uncategorized images every

@@ -655,6 +655,70 @@ describe('useBrowseData', () => {
       expect(result.current.categories[0].label).toBe('Fresh')
     })
 
+    it('a superseded refresh resolves with the freshest committed data instead of rejecting', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      let rejectOld!: (err: unknown) => void
+      mockFetchCategoryTree.mockImplementationOnce(
+        () => new Promise((_resolve, reject) => (rejectOld = reject)),
+      )
+
+      let oldRefresh!: Promise<Category[]>
+      act(() => {
+        oldRefresh = result.current.refreshCategories()
+      })
+
+      mockFetchCategoryTree.mockResolvedValue([makeApiTree({ id: 2, label: 'Newest' })])
+      await act(async () => {
+        await result.current.refreshCategories()
+      })
+
+      let cats: Category[] = []
+      await act(async () => {
+        rejectOld(new DOMException('The operation was aborted.', 'AbortError'))
+        cats = await oldRefresh
+      })
+      // Resolves (no rejection) with the freshest committed data.
+      expect(cats[0].label).toBe('Newest')
+      expect(result.current.categories[0].label).toBe('Newest')
+    })
+
+    it('a silent read finishing later cannot strand the visible loading spinner', async () => {
+      const deps = makeDeps({ currentUser: makeUser() })
+      const { result } = renderHook(() => useBrowseData(deps))
+      await triggerInitialLoad(result)
+
+      let resolveVisible!: (v: ApiCategoryTree[]) => void
+      mockFetchCategoryTree.mockImplementationOnce(() => new Promise((r) => (resolveVisible = r)))
+
+      let visibleDone!: Promise<void>
+      act(() => {
+        visibleDone = result.current.loadCategories({ signal: new AbortController().signal })
+      })
+      expect(result.current.categoriesLoading).toBe(true)
+
+      // A silent background read starts and finishes while the visible load
+      // is still in flight (bumping the read generation past it).
+      mockFetchCategoryTree.mockResolvedValue([makeApiTree({ id: 2, label: 'Silent' })])
+      await act(async () => {
+        await result.current.loadCategories({
+          silent: true,
+          signal: new AbortController().signal,
+        })
+      })
+
+      await act(async () => {
+        resolveVisible([makeApiTree({ id: 1, label: 'Visible' })])
+        await visibleDone
+      })
+      // The visible load still clears the spinner even though it was
+      // superseded for data purposes.
+      expect(result.current.categoriesLoading).toBe(false)
+      expect(result.current.categories[0].label).toBe('Silent')
+    })
+
     it('treats an aborted request as control flow, not a user-facing failure', async () => {
       const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
       const deps = makeDeps({ currentUser: makeUser() })
