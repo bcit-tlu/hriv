@@ -24,7 +24,6 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-import app.reorder_fixture as reorder_fixture_module
 from app.models import Category, Image
 from app.reorder_fixture import (
     CATEGORY_ID_BASE,
@@ -35,7 +34,9 @@ from app.reorder_fixture import (
     NESTED_LEVELS,
     ROOT_MIXED_CATEGORY_COUNT,
     ROOT_UNCATEGORIZED_IMAGE_COUNT,
+    _resolve_database_url,
     build_fixture_spec,
+    main,
     purge_reorder_fixture,
     seed_reorder_fixture,
 )
@@ -159,9 +160,9 @@ def test_spec_has_duplicate_sort_orders_in_every_large_scope():
 def test_resolve_database_url_requires_env(monkeypatch):
     monkeypatch.delenv("DATABASE_URL", raising=False)
     with pytest.raises(SystemExit):
-        reorder_fixture_module._resolve_database_url()
+        _resolve_database_url()
     monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://x/y")
-    assert reorder_fixture_module._resolve_database_url() == "postgresql+asyncpg://x/y"
+    assert _resolve_database_url() == "postgresql+asyncpg://x/y"
 
 
 def test_main_parses_purge_flag(monkeypatch):
@@ -170,9 +171,9 @@ def test_main_parses_purge_flag(monkeypatch):
     async def fake_run_cli(purge_only: bool) -> None:
         calls.append(purge_only)
 
-    monkeypatch.setattr(reorder_fixture_module, "_run_cli", fake_run_cli)
-    reorder_fixture_module.main([])
-    reorder_fixture_module.main(["--purge"])
+    monkeypatch.setattr("app.reorder_fixture._run_cli", fake_run_cli)
+    main([])
+    main(["--purge"])
     assert calls == [False, True]
 
 
