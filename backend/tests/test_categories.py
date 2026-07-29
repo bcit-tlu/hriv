@@ -17,10 +17,9 @@ from app.routers.categories import (
     get_category,
     create_category,
     update_category,
-    reorder_categories,
     delete_category,
 )
-from app.schemas import CategoryCreate, CategoryUpdate, CategoryReorderRequest, CategoryReorderItem
+from app.schemas import CategoryCreate, CategoryUpdate
 
 
 def _make_program(id: int = 1, name: str = "Test Program") -> SimpleNamespace:
@@ -624,52 +623,6 @@ async def test_delete_category_endpoint_rejects_student() -> None:
 
     assert response.status_code == 403
     db.get.assert_not_called()
-
-
-async def test_reorder_categories_self_parent() -> None:
-    items = [CategoryReorderItem(id=1, parent_id=1, sort_order=0)]
-    body = CategoryReorderRequest(items=items)
-    db = AsyncMock()
-
-    with pytest.raises(HTTPException) as exc:
-        await reorder_categories(body, MagicMock(), db=db)
-    assert exc.value.status_code == 400
-    assert "own parent" in exc.value.detail.lower()
-
-
-async def test_reorder_categories_success() -> None:
-    cat1 = _make_category(1, "A")
-    cat2 = _make_category(2, "B")
-
-    items = [
-        CategoryReorderItem(id=1, parent_id=None, sort_order=1),
-        CategoryReorderItem(id=2, parent_id=None, sort_order=0),
-    ]
-    body = CategoryReorderRequest(items=items)
-
-    async def mock_get(model, id_):
-        lookup = {1: cat1, 2: cat2}
-        return lookup.get(id_)
-
-    db = AsyncMock()
-    db.get = AsyncMock(side_effect=mock_get)
-    db.commit = AsyncMock()
-
-    result = await reorder_categories(body, MagicMock(), db=db)
-    assert result == {"status": "ok"}
-    db.commit.assert_awaited_once()
-
-
-async def test_reorder_categories_missing_category() -> None:
-    items = [CategoryReorderItem(id=999, parent_id=None, sort_order=0)]
-    body = CategoryReorderRequest(items=items)
-
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=None)
-
-    with pytest.raises(HTTPException) as exc:
-        await reorder_categories(body, MagicMock(), db=db)
-    assert exc.value.status_code == 404
 
 
 async def test_delete_category_success() -> None:

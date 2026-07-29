@@ -44,7 +44,6 @@ import {
   createCategory,
   updateCategory,
   deleteCategory,
-  reorderCategories,
   fetchImage,
   fetchImages,
   fetchUncategorizedImages,
@@ -52,7 +51,6 @@ import {
   deleteImage,
   bulkUpdateImages,
   bulkDeleteImages,
-  reorderImages,
   fetchOidcEnabled,
   getOidcLoginUrl,
   fetchUsers,
@@ -620,17 +618,6 @@ describe('Category API', () => {
     expect(url).toBe('/api/categories/1')
     expect(init.method).toBe('DELETE')
   })
-
-  it('reorderCategories sends PUT with items array', async () => {
-    mockFetch.mockReturnValueOnce(noContentResponse())
-    await reorderCategories([{ id: 1, parent_id: null, sort_order: 0 }])
-    const [url, init] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/categories/reorder')
-    expect(init.method).toBe('PUT')
-    expect(JSON.parse(init.body)).toEqual({
-      items: [{ id: 1, parent_id: null, sort_order: 0 }],
-    })
-  })
 })
 
 // ── Images ───────────────────────────────────────────────────────────────
@@ -711,23 +698,6 @@ describe('Image API', () => {
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/images/bulk')
     expect(init.method).toBe('DELETE')
-  })
-
-  it('reorderImages sends PUT with items array', async () => {
-    mockFetch.mockReturnValueOnce(noContentResponse())
-    await reorderImages([
-      { id: 1, sort_order: 0 },
-      { id: 2, sort_order: 1 },
-    ])
-    const [url, init] = mockFetch.mock.calls[0]
-    expect(url).toBe('/api/images/reorder')
-    expect(init.method).toBe('PUT')
-    expect(JSON.parse(init.body)).toEqual({
-      items: [
-        { id: 1, sort_order: 0 },
-        { id: 2, sort_order: 1 },
-      ],
-    })
   })
 })
 

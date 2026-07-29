@@ -19,18 +19,10 @@ from app.reorder_telemetry import (
     record_reorder_result,
     sanitize_reorder_operation_id,
 )
-from app.routers.categories import reorder_categories
-from app.routers.images import reorder_images
 from app.routers.telemetry import (
     TelemetryBatch,
     TelemetryEvent,
     ingest_telemetry_events,
-)
-from app.schemas import (
-    CategoryReorderItem,
-    CategoryReorderRequest,
-    ImageReorderItem,
-    ImageReorderRequest,
 )
 
 OPERATION_ID = "b1946ac9-4931-4a95-bb32-9f8e4a2c9d11"
@@ -128,80 +120,6 @@ def test_record_reorder_result_emits_structured_log(
     assert getattr(record, "reorder.item_count") == 600
     assert getattr(record, "reorder.duration_seconds") == pytest.approx(1.234567)
     assert getattr(record, "reorder.outcome") == "success"
-
-
-# ── endpoint propagation ─────────────────────────────────
-
-
-def _make_category(id_: int) -> MagicMock:
-    cat = MagicMock()
-    cat.id = id_
-    cat.parent_id = None
-    return cat
-
-
-async def test_reorder_categories_propagates_operation_id(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    caplog.set_level("INFO", logger="app.reorder_telemetry")
-    body = CategoryReorderRequest(
-        items=[CategoryReorderItem(id=1, parent_id=None, sort_order=0)]
-    )
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=_make_category(1))
-    db.commit = AsyncMock()
-
-    result = await reorder_categories(
-        body, MagicMock(), db=db, x_reorder_operation_id=OPERATION_ID
-    )
-    assert result == {"status": "ok"}
-
-    records = [r for r in caplog.records if r.message == "reorder.persisted"]
-    assert len(records) == 1
-    assert getattr(records[0], "reorder.operation_id") == OPERATION_ID
-    assert getattr(records[0], "reorder.entity") == "category"
-    assert getattr(records[0], "reorder.outcome") == "success"
-
-
-async def test_reorder_images_propagates_operation_id(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    caplog.set_level("INFO", logger="app.reorder_telemetry")
-    body = ImageReorderRequest(items=[ImageReorderItem(id=1, sort_order=0)])
-    img = MagicMock()
-    img.id = 1
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=img)
-    db.commit = AsyncMock()
-
-    result = await reorder_images(
-        body, MagicMock(), db=db, x_reorder_operation_id=OPERATION_ID
-    )
-    assert result == {"status": "ok"}
-
-    records = [r for r in caplog.records if r.message == "reorder.persisted"]
-    assert len(records) == 1
-    assert getattr(records[0], "reorder.operation_id") == OPERATION_ID
-    assert getattr(records[0], "reorder.entity") == "image"
-
-
-async def test_reorder_images_missing_item_outcome_logged(
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    caplog.set_level("INFO", logger="app.reorder_telemetry")
-    body = ImageReorderRequest(items=[ImageReorderItem(id=999, sort_order=0)])
-    db = AsyncMock()
-    db.get = AsyncMock(return_value=None)
-
-    with pytest.raises(Exception):
-        await reorder_images(body, MagicMock(), db=db, x_reorder_operation_id=None)
-
-    records = [r for r in caplog.records if r.message == "reorder.persisted"]
-    assert len(records) == 1
-    assert getattr(records[0], "reorder.operation_id") == "unknown"
-    # A missing image is an expected client-side condition (404), not a
-    # server failure.
-    assert getattr(records[0], "reorder.outcome") == "client_error"
 
 
 # ── telemetry ingestion of reorder.operation events ──────

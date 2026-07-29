@@ -13,8 +13,6 @@ vi.mock('../src/api', async () => {
     createCategory: vi.fn(),
     deleteCategory: vi.fn(),
     updateCategory: vi.fn(),
-    reorderCategories: vi.fn(),
-    reorderImages: vi.fn(),
     updateImage: vi.fn(),
   }
 })
@@ -22,8 +20,6 @@ vi.mock('../src/api', async () => {
 const mockCreateCategory = vi.mocked(api.createCategory)
 const mockDeleteCategory = vi.mocked(api.deleteCategory)
 const mockUpdateCategory = vi.mocked(api.updateCategory)
-const mockReorderCategories = vi.mocked(api.reorderCategories)
-const mockReorderImages = vi.mocked(api.reorderImages)
 const mockUpdateImage = vi.mocked(api.updateImage)
 
 function makeDeps(overrides: Partial<UseCategoryActionsDeps> = {}): UseCategoryActionsDeps {
@@ -52,8 +48,6 @@ describe('useCategoryActions', () => {
     mockCreateCategory.mockReset()
     mockDeleteCategory.mockReset()
     mockUpdateCategory.mockReset()
-    mockReorderCategories.mockReset()
-    mockReorderImages.mockReset()
     mockUpdateImage.mockReset()
   })
 

@@ -17,9 +17,11 @@ Every ordering operation gets a client-generated `operation_id`
 1. **Frontend diagnostic events** — one `reorder.operation` telemetry event
    per lifecycle state transition, sent through the authenticated ingestion
    endpoint (`POST /api/telemetry/events`).
-2. **Persistence requests** — `PUT /api/categories/reorder` and
-   `PUT /api/images/reorder` carry the `X-Reorder-Operation-Id` header.
-3. **Backend spans** — `category.reorder` / `image.reorder` spans carry the
+2. **Persistence requests** — `PUT /api/tile-order` carries the operation ID
+   in the request body (`operation_id`) and the `X-Reorder-Operation-Id`
+   header (the legacy per-entity reorder endpoints that carried the header
+   were removed in #998).
+3. **Backend spans** — `tile.reorder` spans carry the
    `reorder.operation_id`, `reorder.entity`, and `reorder.item_count`
    attributes.
 4. **Backend structured logs** — one `reorder.persisted` log line per
@@ -34,30 +36,23 @@ else is dropped so arbitrary client text never reaches traces or logs.
 `REORDER_OPERATION_STATES` (frontend) and `REORDER_CLIENT_STATES` (backend)
 share this bounded vocabulary:
 
-| State             | Meaning                                                                          |
-| ----------------- | -------------------------------------------------------------------------------- |
-| `ignored`         | Drop accepted visually but discarded by the in-flight guard                      |
-| `queued`          | Drop accepted and waiting behind an in-flight save (future #979)                 |
-| `coalesced`       | Queued drop merged into a newer one before submission (future #979)              |
-| `submitted`       | Persistence requests sent to the backend                                         |
-| `committed`       | Persistence completed successfully (refresh-callback failures are not reflected) |
-| `conflicted`      | Backend rejected the operation due to a revision conflict (future #978/#980)     |
-| `failed`          | Persistence failed (fully or partially) and the UI rolled back                   |
-| `stale_discarded` | Refresh response discarded because a newer operation superseded it (future #980) |
-| `abandoned`       | Component unmounted (navigation) while the operation was active                  |
+| State             | Meaning                                                                                    |
+| ----------------- | ------------------------------------------------------------------------------------------ |
+| `ignored`         | Drop accepted visually but discarded by the in-flight guard (legacy path, removed in #998) |
+| `queued`          | Drop accepted and waiting behind an in-flight save (future #979)                           |
+| `coalesced`       | Queued drop merged into a newer one before submission (future #979)                        |
+| `submitted`       | Persistence requests sent to the backend                                                   |
+| `committed`       | Persistence and follow-up refresh completed successfully                                   |
+| `conflicted`      | Backend rejected the operation due to a revision conflict (future #978/#980)               |
+| `failed`          | Persistence failed (fully or partially) and the UI rolled back                             |
+| `stale_discarded` | Refresh response discarded because a newer operation superseded it (future #980)           |
+| `abandoned`       | Component unmounted (navigation) while the operation was active                            |
 
-`queued`, `coalesced`, `conflicted`, and `stale_discarded` are defined now so
-dashboards and later sub-issues (#978–#980) can emit them without another
-contract change; the current UI emits `ignored`, `submitted`, `committed`,
-`failed`, and `abandoned`. Both reorder surfaces are instrumented: the Browse
-grid (`SortableTileGrid`, full lifecycle) and the Manage Categories dialog
-(`submitted`/`committed`/`failed`). Every surface emits exactly one
-`submitted` and one terminal event per operation ID: a Manage Categories drag
-that persists both categories and images shares one operation ID across both
-requests, with the dialog owning the single lifecycle (the
-`useCategoryActions` inline helpers skip their own emission when the caller
-supplies an operation ID). A drag whose category half succeeded but whose
-image half failed is reported as one `failed` operation.
+The coordinator (`frontend/src/tileOrdering.ts`) emits `queued`,
+`coalesced`, `submitted`, `committed`, `conflicted`, and `failed`.
+`ignored` and `abandoned` were emitted only by the legacy
+non-coordinator grid path removed in #998; they and `stale_discarded`
+remain in the vocabulary so historical dashboards keep working.
 
 Server-side, an event that omits `state` entirely is logged with
 `reorder.state: "missing"` and skipped by the client-operations counter, so
@@ -115,8 +110,8 @@ and `state`); operation IDs and category IDs never appear as metric labels.
    `reorder.persisted` lines give per-entity duration, item count, and
    outcome, plus `request_id` for the audit log.
 3. **Open the trace.** In Tempo, search
-   `{ span.reorder.operation_id = "<id>" }` to find the `category.reorder` /
-   `image.reorder` spans with their database child spans.
+   `{ span.reorder.operation_id = "<id>" }` to find the `tile.reorder`
+   spans with their database child spans.
 4. **Interpret the outcome.** `abandoned` means the grid unmounted
    (navigation) while the save was active, so the outcome was unobservable to
    the user. For in-app (SPA) navigation the in-flight request keeps running,
@@ -132,7 +127,7 @@ and `state`); operation IDs and category IDs never appear as metric labels.
 # Backend: correlation, structured logs, metrics
 cd backend && poetry run pytest tests/test_reorder_telemetry.py
 
-# Frontend: diagnostics module + grid correlation tests
+# Frontend: diagnostics module + coordinator correlation tests
 cd frontend && npx vitest run tests/reorderDiagnostics.test.ts \
-  tests/components/SortableTileGridReorderTelemetry.test.tsx
+  tests/tileOrdering.test.ts
 ```

@@ -8,11 +8,9 @@ Two layers:
 - Database integration tests that run when ``REORDER_FIXTURE_DATABASE_URL``
   points at a PostgreSQL database (CI provides one; locally use
   ``docker compose up -d db`` and
-  ``postgresql+asyncpg://hriv:hriv@localhost:5432/hriv``). These include
-  ``xfail(strict=True)`` regression tests that document the current
-  partial-persistence and silent last-write-wins behaviour the rest of the
-  epic will fix — they flip to failures once the behaviour is corrected,
-  forcing the markers to be removed.
+  ``postgresql+asyncpg://hriv:hriv@localhost:5432/hriv``). Atomicity and
+  stale-submission conflict behaviour are covered by ``test_tile_order.py``
+  against the same fixture.
 """
 
 import os
@@ -20,7 +18,6 @@ from collections import Counter, defaultdict
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -40,13 +37,11 @@ from app.reorder_fixture import (
     purge_reorder_fixture,
     seed_reorder_fixture,
 )
-from app.routers.categories import reorder_categories
-from app.routers.images import reorder_images
+from app.routers.tile_order import get_tile_order, put_tile_order
 from app.schemas import (
-    CategoryReorderItem,
-    CategoryReorderRequest,
-    ImageReorderItem,
-    ImageReorderRequest,
+    TileOrderItemRef,
+    TileOrderRequest,
+    TileOrderScope,
 )
 
 DB_URL = os.environ.get("REORDER_FIXTURE_DATABASE_URL", "")
@@ -228,25 +223,22 @@ async def test_full_authoritative_order_round_trip(db_session):
     """Reorder the 80-category flat scope and read the whole order back."""
     spec = await seed_reorder_fixture(db_session)
     flat_parent = spec.categories[0].id
-    flat = [c for c in spec.categories if c.parent_id == flat_parent]
-    reversed_ids = [c.id for c in reversed(flat)]
 
-    body = CategoryReorderRequest(
-        items=[
-            CategoryReorderItem(id=cid, parent_id=flat_parent, sort_order=idx)
-            for idx, cid in enumerate(reversed_ids)
-        ]
+    current = await get_tile_order(_admin(), flat_parent, db_session)
+    reversed_items = list(reversed(current.items))
+
+    body = TileOrderRequest(
+        scope=TileOrderScope(parent_category_id=flat_parent),
+        expected_revision=current.revision,
+        operation_id=None,
+        items=[TileOrderItemRef(type=i.type, id=i.id) for i in reversed_items],
     )
-    await reorder_categories(body, _admin(), db_session)
+    await put_tile_order(body, _admin(), db_session)
 
-    rows = (
-        await db_session.execute(
-            select(Category.id)
-            .where(Category.parent_id == flat_parent)
-            .order_by(Category.sort_order, Category.label)
-        )
-    ).all()
-    assert [row[0] for row in rows] == reversed_ids
+    after = await get_tile_order(_admin(), flat_parent, db_session)
+    assert [(i.type, i.id) for i in after.items] == [
+        (i.type, i.id) for i in reversed_items
+    ]
 
 
 @requires_db

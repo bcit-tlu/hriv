@@ -258,16 +258,6 @@ class CategoryUpdate(BaseModel):
     _validate_label = field_validator("label", mode="before")(normalize_optional_nonblank_value)
 
 
-class CategoryReorderItem(BaseModel):
-    id: int
-    parent_id: int | None = None
-    sort_order: int
-
-
-class CategoryReorderRequest(BaseModel):
-    items: list[CategoryReorderItem]
-
-
 class TileOrderScope(BaseModel):
     parent_category_id: int | None = None
 
@@ -374,15 +364,6 @@ class ImageUpdate(BaseModel):
             if raw is not None:
                 _validate_locked_overlays(self.metadata_extra_merge)
         return self
-
-
-class ImageReorderItem(BaseModel):
-    id: int
-    sort_order: int
-
-
-class ImageReorderRequest(BaseModel):
-    items: list[ImageReorderItem]
 
 
 class ImageOut(ImageBase):
