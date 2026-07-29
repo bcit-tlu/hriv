@@ -280,6 +280,36 @@ describe('interleavedTileOrders', () => {
     expect(interleavedTileOrders(newCats, oldCats, imagesByParent, () => displayOrder)).toEqual([])
   })
 
+  it('falls back to the sortOrder template when the display order is entirely stale', () => {
+    const oldCats = [
+      makeFlatOption({ id: 1, parentId: null }),
+      makeFlatOption({ id: 2, parentId: null }),
+    ]
+    const newCats = [
+      makeFlatOption({ id: 2, parentId: null }),
+      makeFlatOption({ id: 1, parentId: null }),
+    ]
+    const imagesByParent = new Map([
+      ['null', [makeImage({ id: 10, sortOrder: 1 }), makeImage({ id: 11, sortOrder: 3 })]],
+    ])
+    // Coordinator order references only members that no longer exist.
+    const staleDisplay = [
+      { type: 'category' as const, id: 98 },
+      { type: 'image' as const, id: 99 },
+    ]
+    expect(interleavedTileOrders(newCats, oldCats, imagesByParent, () => staleDisplay)).toEqual([
+      {
+        scope: null,
+        order: [
+          { type: 'category', id: 2 },
+          { type: 'image', id: 10 },
+          { type: 'category', id: 1 },
+          { type: 'image', id: 11 },
+        ],
+      },
+    ])
+  })
+
   it('preserves image positions with three categories and two images', () => {
     // Old order: cat_A(0), img_1(1), cat_B(2), cat_C(3), img_2(4)
     const oldCats = [

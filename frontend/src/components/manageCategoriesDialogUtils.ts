@@ -160,31 +160,35 @@ export function interleavedTileOrders(
       const template = display.filter((ref) =>
         ref.type === 'category' ? oldCatIds.has(ref.id) : imageIds.has(ref.id),
       )
-      const seenCats = new Set(template.filter((r) => r.type === 'category').map((r) => r.id))
-      const seenImgs = new Set(template.filter((r) => r.type === 'image').map((r) => r.id))
-      for (const cat of oldCats) {
-        if (!seenCats.has(cat.id)) template.push({ type: 'category', id: cat.id })
-      }
-      for (const img of images) {
-        if (!seenImgs.has(img.id)) template.push({ type: 'image', id: img.id })
-      }
+      // An entirely-stale coordinator order (no current members) carries no
+      // interleaving information — fall back to the sortOrder template.
+      if (template.length > 0) {
+        const seenCats = new Set(template.filter((r) => r.type === 'category').map((r) => r.id))
+        const seenImgs = new Set(template.filter((r) => r.type === 'image').map((r) => r.id))
+        for (const cat of oldCats) {
+          if (!seenCats.has(cat.id)) template.push({ type: 'category', id: cat.id })
+        }
+        for (const img of images) {
+          if (!seenImgs.has(img.id)) template.push({ type: 'image', id: img.id })
+        }
 
-      const newOrder: TileOrderItemRef[] = []
-      let newCatIdx = 0
-      for (const ref of template) {
-        if (ref.type === 'image') {
-          newOrder.push(ref)
-        } else if (newCatIdx < newCats.length) {
+        const newOrder: TileOrderItemRef[] = []
+        let newCatIdx = 0
+        for (const ref of template) {
+          if (ref.type === 'image') {
+            newOrder.push(ref)
+          } else if (newCatIdx < newCats.length) {
+            newOrder.push({ type: 'category', id: newCats[newCatIdx++].id })
+          }
+        }
+        while (newCatIdx < newCats.length) {
           newOrder.push({ type: 'category', id: newCats[newCatIdx++].id })
         }
-      }
-      while (newCatIdx < newCats.length) {
-        newOrder.push({ type: 'category', id: newCats[newCatIdx++].id })
-      }
 
-      if (newOrder.length === 0 || sameRefs(template, newOrder)) continue
-      scopes.push({ scope: parentId, order: newOrder })
-      continue
+        if (newOrder.length === 0 || sameRefs(template, newOrder)) continue
+        scopes.push({ scope: parentId, order: newOrder })
+        continue
+      }
     }
 
     // Build the old interleaved template from old categories + images.
