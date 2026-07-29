@@ -9,13 +9,14 @@ import os
 import tarfile
 import tempfile
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.database import settings
 from app.models import AdminTask
 
 from app.admin_ops import (
@@ -31,6 +32,8 @@ from app.admin_ops import (
     _update_task,
     _write_file,
     delete_files_import_archive,
+    enforce_files_import_archive_retention,
+    files_import_archive_retention_policy,
     list_files_import_archives,
     reconcile_stale_tasks,
     run_db_export,
@@ -2059,6 +2062,128 @@ async def test_delete_files_import_archive_removes_retained_file(tmp_path) -> No
     assert result["deleted"] is True
     assert result["archive_task_id"] == 7
     assert not archive.exists()
+
+
+def _retention_archive(task_id: int, path: str, created_at: datetime) -> dict[str, object]:
+    return {
+        "archive_task_id": task_id,
+        "original_filename": f"archive-{task_id}.tar.gz",
+        "size_bytes": 10,
+        "created_at": created_at,
+        "last_status": "completed",
+    }
+
+
+def test_files_import_archive_retention_policy_defaults() -> None:
+    policy = files_import_archive_retention_policy()
+    assert policy == {"retention_count": 0, "retention_days": 0}
+
+
+async def test_enforce_retention_noop_when_policy_disabled(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "files_import_archive_retention_count", 0)
+    monkeypatch.setattr(settings, "files_import_archive_retention_days", 0)
+    session = AsyncMock()
+    with patch("app.admin_ops.list_files_import_archives") as mock_list:
+        assert await enforce_files_import_archive_retention(session) == []
+    mock_list.assert_not_called()
+
+
+async def test_enforce_retention_keeps_newest_count(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "files_import_archive_retention_count", 1)
+    monkeypatch.setattr(settings, "files_import_archive_retention_days", 0)
+    now = datetime.now(timezone.utc)
+    archives = [
+        _retention_archive(3, "/tasks/c.tar.gz", now),
+        _retention_archive(2, "/tasks/b.tar.gz", now - timedelta(days=1)),
+        _retention_archive(1, "/tasks/a.tar.gz", now - timedelta(days=2)),
+    ]
+    tasks = {
+        1: SimpleNamespace(input_path="/tasks/a.tar.gz"),
+        2: SimpleNamespace(input_path="/tasks/b.tar.gz"),
+        3: SimpleNamespace(input_path="/tasks/c.tar.gz"),
+    }
+    session = AsyncMock()
+    session.get = AsyncMock(side_effect=lambda _model, task_id: tasks.get(task_id))
+    with (
+        patch("app.admin_ops.list_files_import_archives", AsyncMock(return_value=archives)),
+        patch("app.admin_ops.delete_files_import_archive", AsyncMock()) as mock_delete,
+    ):
+        deleted = await enforce_files_import_archive_retention(session)
+    assert deleted == [2, 1]
+    assert mock_delete.await_count == 2
+
+
+async def test_enforce_retention_deletes_older_than_max_age(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "files_import_archive_retention_count", 0)
+    monkeypatch.setattr(settings, "files_import_archive_retention_days", 7)
+    now = datetime.now(timezone.utc)
+    archives = [
+        _retention_archive(2, "/tasks/b.tar.gz", now - timedelta(days=1)),
+        _retention_archive(1, "/tasks/a.tar.gz", now - timedelta(days=30)),
+    ]
+    tasks = {
+        1: SimpleNamespace(input_path="/tasks/a.tar.gz"),
+        2: SimpleNamespace(input_path="/tasks/b.tar.gz"),
+    }
+    session = AsyncMock()
+    session.get = AsyncMock(side_effect=lambda _model, task_id: tasks.get(task_id))
+    with (
+        patch("app.admin_ops.list_files_import_archives", AsyncMock(return_value=archives)),
+        patch("app.admin_ops.delete_files_import_archive", AsyncMock()) as mock_delete,
+    ):
+        deleted = await enforce_files_import_archive_retention(session)
+    assert deleted == [1]
+    mock_delete.assert_awaited_once_with(session, 1)
+
+
+async def test_enforce_retention_dedupes_rerun_tasks_sharing_archive(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "files_import_archive_retention_count", 1)
+    monkeypatch.setattr(settings, "files_import_archive_retention_days", 0)
+    now = datetime.now(timezone.utc)
+    # Task 5 is a rerun of task 4 — both reference the same on-disk file, so
+    # the shared archive counts once and survives a keep-newest-1 policy.
+    archives = [
+        _retention_archive(5, "/tasks/a.tar.gz", now),
+        _retention_archive(4, "/tasks/a.tar.gz", now - timedelta(days=1)),
+    ]
+    tasks = {
+        4: SimpleNamespace(input_path="/tasks/a.tar.gz"),
+        5: SimpleNamespace(input_path="/tasks/a.tar.gz"),
+    }
+    session = AsyncMock()
+    session.get = AsyncMock(side_effect=lambda _model, task_id: tasks.get(task_id))
+    with (
+        patch("app.admin_ops.list_files_import_archives", AsyncMock(return_value=archives)),
+        patch("app.admin_ops.delete_files_import_archive", AsyncMock()) as mock_delete,
+    ):
+        deleted = await enforce_files_import_archive_retention(session)
+    assert deleted == []
+    mock_delete.assert_not_awaited()
+
+
+async def test_enforce_retention_keeps_archives_in_active_use(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "files_import_archive_retention_count", 1)
+    monkeypatch.setattr(settings, "files_import_archive_retention_days", 0)
+    now = datetime.now(timezone.utc)
+    archives = [
+        _retention_archive(2, "/tasks/b.tar.gz", now),
+        _retention_archive(1, "/tasks/a.tar.gz", now - timedelta(days=1)),
+    ]
+    tasks = {
+        1: SimpleNamespace(input_path="/tasks/a.tar.gz"),
+        2: SimpleNamespace(input_path="/tasks/b.tar.gz"),
+    }
+    session = AsyncMock()
+    session.get = AsyncMock(side_effect=lambda _model, task_id: tasks.get(task_id))
+    with (
+        patch("app.admin_ops.list_files_import_archives", AsyncMock(return_value=archives)),
+        patch(
+            "app.admin_ops.delete_files_import_archive",
+            AsyncMock(side_effect=RuntimeError("Archive is currently in use")),
+        ),
+    ):
+        deleted = await enforce_files_import_archive_retention(session)
+    assert deleted == []
 
 
 def test_validate_retained_files_import_archive_path_rejects_traversal(tmp_path) -> None:

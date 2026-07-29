@@ -446,6 +446,16 @@ class FilesImportArchiveOut(BaseModel):
     last_status: str
 
 
+class FilesImportArchiveRetentionPolicyOut(BaseModel):
+    """Active retention policy for retained files-import archives.
+
+    ``0`` means that dimension is disabled (retain indefinitely).
+    """
+
+    retention_count: int
+    retention_days: int
+
+
 class FilesImportRerunRequest(BaseModel):
     archive_task_id: int
 

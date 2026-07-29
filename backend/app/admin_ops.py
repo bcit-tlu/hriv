@@ -641,6 +641,81 @@ async def rerun_files_import_archive(
     return task
 
 
+def files_import_archive_retention_policy() -> dict[str, int]:
+    """Return the active retention policy for retained import archives."""
+    return {
+        "retention_count": settings.files_import_archive_retention_count,
+        "retention_days": settings.files_import_archive_retention_days,
+    }
+
+
+async def enforce_files_import_archive_retention(
+    session: AsyncSession,
+) -> list[int]:
+    """Delete retained import archives that fall outside the retention policy.
+
+    Keeps only the newest ``files_import_archive_retention_count`` distinct
+    archives and/or deletes archives older than
+    ``files_import_archive_retention_days``. A value of ``0`` disables that
+    dimension. Deletion goes through :func:`delete_files_import_archive`, so
+    archives referenced by an active files import are never removed.
+
+    Returns the archive task ids whose files were deleted.
+    """
+    count_limit = settings.files_import_archive_retention_count
+    max_age_days = settings.files_import_archive_retention_days
+    if count_limit <= 0 and max_age_days <= 0:
+        return []
+
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(days=max_age_days)
+        if max_age_days > 0
+        else None
+    )
+
+    # list_files_import_archives is newest-first; reruns share the same
+    # input_path, so dedupe by on-disk file before counting.
+    seen_paths: set[str] = set()
+    deleted: list[int] = []
+    kept = 0
+    for archive in await list_files_import_archives(session):
+        archive_task_id = archive["archive_task_id"]
+        assert isinstance(archive_task_id, int)
+        task = await session.get(AdminTask, archive_task_id)
+        if task is None or not task.input_path or task.input_path in seen_paths:
+            continue
+        seen_paths.add(task.input_path)
+
+        over_count = count_limit > 0 and kept >= count_limit
+        created_at = archive["created_at"]
+        assert isinstance(created_at, datetime)
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=timezone.utc)
+        too_old = cutoff is not None and created_at < cutoff
+        if not (over_count or too_old):
+            kept += 1
+            continue
+
+        try:
+            await delete_files_import_archive(session, archive_task_id)
+        except (LookupError, FileNotFoundError, ValueError, RuntimeError, OSError):
+            # In use by an active import, already gone, or not deletable —
+            # keep it and move on.
+            kept += 1
+            continue
+        deleted.append(archive_task_id)
+        logger.info(
+            "Deleted retained files-import archive per retention policy",
+            extra={
+                "event": "admin_task.files_import_archive_retention_deleted",
+                "archive_task_id": archive_task_id,
+                "retention_count": count_limit,
+                "retention_days": max_age_days,
+            },
+        )
+    return deleted
+
+
 async def delete_files_import_archive(
     session: AsyncSession,
     archive_task_id: int,
@@ -2527,6 +2602,20 @@ async def run_files_import(
                 status="completed", progress=100,
                 log_line=f"Import complete. {summary}",
             )
+            try:
+                pruned = await enforce_files_import_archive_retention(session)
+                if pruned:
+                    await _update_task(
+                        session, task,
+                        log_line=(
+                            "Retention policy removed "
+                            f"{len(pruned)} older retained archive(s)."
+                        ),
+                    )
+            except Exception:
+                logger.exception(
+                    "Retention enforcement after files import failed",
+                )
             logger.info(
                 "Background files import completed",
                 extra={

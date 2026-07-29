@@ -192,6 +192,27 @@ storage usage (for example, "3 retained archives using 87.4 GiB") so operators
 can see at a glance how much persistent space retained archives consume before
 deciding what to reclaim.
 
+### Automatic retention policy
+
+Operators can bound retained-archive storage with two env-driven settings
+(both default to `0` = retain indefinitely, preserving the original behavior):
+
+| Env var                                | Meaning                                                           |
+| -------------------------------------- | ----------------------------------------------------------------- |
+| `FILES_IMPORT_ARCHIVE_RETENTION_COUNT` | Keep only the newest N distinct archives; older ones are deleted. |
+| `FILES_IMPORT_ARCHIVE_RETENTION_DAYS`  | Delete archives older than N days.                                |
+
+Both dimensions can be combined; an archive is deleted when it violates
+either one. Enforcement runs after each successful filesystem import and once
+at backend startup (so age-based limits apply even when no import runs).
+Deletions reuse the same safe cleanup as the manual Delete action
+(`delete_files_import_archive`), so an archive referenced by an active files
+import is never removed, and rerun tasks sharing one on-disk file count as a
+single archive. The active policy is exposed at
+`GET /api/admin/tasks/files-import/archive-retention` and shown in the admin
+UI next to the cumulative-usage summary whenever a non-zero policy is
+configured.
+
 ## Stored export archives
 
 Completed `db_export` and `files_export` tasks leave their result archive on the

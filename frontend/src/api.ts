@@ -1309,6 +1309,16 @@ export function fetchFilesImportArchives(): Promise<FilesImportArchive[]> {
   return request('/admin/tasks/files-import/archives')
 }
 
+/** Active retention policy for retained import archives (0 = disabled). */
+export interface FilesImportArchiveRetentionPolicy {
+  retention_count: number
+  retention_days: number
+}
+
+export function fetchFilesImportArchiveRetention(): Promise<FilesImportArchiveRetentionPolicy> {
+  return request('/admin/tasks/files-import/archive-retention')
+}
+
 export interface RebuildTilesRequest {
   scope: 'missing' | 'stale' | 'missing_stale' | 'all'
   image_ids?: number[] | null
