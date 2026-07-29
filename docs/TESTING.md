@@ -301,6 +301,10 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | PUT    | /api/admin/tasks/{task_id}/upload (raw `application/octet-stream`; multipart/form-data rejected with 415) | Yes           | admin        |
 | PATCH  | /api/admin/tasks/{task_id}/upload (raw chunk; `Upload-Offset` + `Upload-Length` headers)                  | Yes           | admin        |
 | POST   | /api/admin/tasks/{task_id}/upload/finalize (finalize chunked upload)                                      | Yes           | admin        |
+| GET    | /api/admin/tasks/files-import/archives                                                                    | Yes           | admin        |
+| GET    | /api/admin/tasks/files-import/archive-retention                                                           | Yes           | admin        |
+| POST   | /api/admin/tasks/files-import/rerun                                                                       | Yes           | admin        |
+| DELETE | /api/admin/tasks/files-import/archives/{archive_task_id}                                                  | Yes           | admin        |
 | GET    | /api/admin/tasks/backup-archives                                                                          | Yes           | admin        |
 | DELETE | /api/admin/tasks/backup-archives/{task_id}/{artifact_role}                                                | Yes           | admin        |
 

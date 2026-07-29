@@ -203,7 +203,10 @@ Operators can bound retained-archive storage with two env-driven settings
 | `FILES_IMPORT_ARCHIVE_RETENTION_DAYS`  | Delete archives older than N days.                                |
 
 Both dimensions can be combined; an archive is deleted when it violates
-either one. Enforcement runs after each successful filesystem import and once
+either one. An archive's age is measured from its most recent import task, so
+re-running a retained archive resets its age — an archive that is actively
+being reused is treated as fresh. Enforcement runs after each successful
+filesystem import and once
 at backend startup (so age-based limits apply even when no import runs).
 Deletions reuse the same safe cleanup as the manual Delete action
 (`delete_files_import_archive`), so an archive referenced by an active files
