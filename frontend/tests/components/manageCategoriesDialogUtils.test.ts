@@ -220,6 +220,66 @@ describe('interleavedTileOrders', () => {
     expect(dest.order).toEqual([{ type: 'category', id: 1 }])
   })
 
+  it('skips scopes left with no members after a move', () => {
+    const oldCats = [makeFlatOption({ id: 1, parentId: null })]
+    const newCats = [makeFlatOption({ id: 1, parentId: 5 })]
+    const scopes = interleavedTileOrders(newCats, oldCats, new Map())
+    // Root lost its only member — no empty order is reported for it.
+    expect(scopes.find((s) => s.scope === null)).toBeUndefined()
+    expect(scopes.find((s) => s.scope === 5)!.order).toEqual([{ type: 'category', id: 1 }])
+  })
+
+  it('uses the coordinator display order as the template when provided', () => {
+    // Server sortOrder says img 10 then img 11, but a pending (unsaved)
+    // reorder in the coordinator has them swapped. A category-only reorder
+    // must preserve the pending image order, not revert it.
+    const oldCats = [
+      makeFlatOption({ id: 1, parentId: null }),
+      makeFlatOption({ id: 2, parentId: null }),
+    ]
+    const newCats = [
+      makeFlatOption({ id: 2, parentId: null }),
+      makeFlatOption({ id: 1, parentId: null }),
+    ]
+    const imagesByParent = new Map([
+      ['null', [makeImage({ id: 10, sortOrder: 1 }), makeImage({ id: 11, sortOrder: 3 })]],
+    ])
+    const displayOrder = [
+      { type: 'category' as const, id: 1 },
+      { type: 'image' as const, id: 11 },
+      { type: 'category' as const, id: 2 },
+      { type: 'image' as const, id: 10 },
+    ]
+    expect(
+      interleavedTileOrders(newCats, oldCats, imagesByParent, (parentId) =>
+        parentId === null ? displayOrder : null,
+      ),
+    ).toEqual([
+      {
+        scope: null,
+        order: [
+          { type: 'category', id: 2 },
+          { type: 'image', id: 11 },
+          { type: 'category', id: 1 },
+          { type: 'image', id: 10 },
+        ],
+      },
+    ])
+  })
+
+  it('drops stale refs and appends unknown members when using a display-order template', () => {
+    const oldCats = [makeFlatOption({ id: 1, parentId: null })]
+    const newCats = [makeFlatOption({ id: 1, parentId: null })]
+    const imagesByParent = new Map([['null', [makeImage({ id: 10, sortOrder: 0 })]]])
+    // Display order references a category that no longer exists (99) and
+    // does not know about image 10 yet.
+    const displayOrder = [
+      { type: 'category' as const, id: 99 },
+      { type: 'category' as const, id: 1 },
+    ]
+    expect(interleavedTileOrders(newCats, oldCats, imagesByParent, () => displayOrder)).toEqual([])
+  })
+
   it('preserves image positions with three categories and two images', () => {
     // Old order: cat_A(0), img_1(1), cat_B(2), cat_C(3), img_2(4)
     const oldCats = [

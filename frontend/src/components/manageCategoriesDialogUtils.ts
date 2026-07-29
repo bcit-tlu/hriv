@@ -110,12 +110,18 @@ function sameRefs(a: TileOrderItemRef[], b: TileOrderItemRef[]): boolean {
  * order while image slots stay in place. If the number of categories at a
  * parent changed (cross-parent move), extra categories are appended and
  * removed slots are collapsed. Only scopes whose resulting order differs
- * from the old order are returned.
+ * from the old order are returned; scopes left with no members are skipped.
+ *
+ * When `displayOrderFor` returns an order for a scope (the coordinator's
+ * newest local/pending order), it is used as the template instead of the
+ * last-loaded `sortOrder`, so a category-only reorder never reverts a
+ * pending image reorder for the same scope.
  */
 export function interleavedTileOrders(
   newCatList: FlatOption[],
   oldCatList: FlatOption[],
   imagesByParent: Map<string, ImageItem[]>,
+  displayOrderFor?: (parentId: number | null) => TileOrderItemRef[] | null,
 ): ScopeOrder[] {
   // Group categories by parent (preserving list order)
   const groupByParent = (list: FlatOption[]) => {
@@ -143,6 +149,43 @@ export function interleavedTileOrders(
     const newCats = newByParent.get(parentKey) ?? []
     const oldCats = oldByParent.get(parentKey) ?? []
     const images = imagesByParent.get(parentKey) ?? []
+    const parentId = parentKey === 'null' ? null : Number(parentKey)
+
+    const display = displayOrderFor?.(parentId)
+    if (display && display.length > 0) {
+      // Use the coordinator's newest order as the template: keep only
+      // current members, then append members it doesn't know about yet.
+      const oldCatIds = new Set(oldCats.map((c) => c.id))
+      const imageIds = new Set(images.map((i) => i.id))
+      const template = display.filter((ref) =>
+        ref.type === 'category' ? oldCatIds.has(ref.id) : imageIds.has(ref.id),
+      )
+      const seenCats = new Set(template.filter((r) => r.type === 'category').map((r) => r.id))
+      const seenImgs = new Set(template.filter((r) => r.type === 'image').map((r) => r.id))
+      for (const cat of oldCats) {
+        if (!seenCats.has(cat.id)) template.push({ type: 'category', id: cat.id })
+      }
+      for (const img of images) {
+        if (!seenImgs.has(img.id)) template.push({ type: 'image', id: img.id })
+      }
+
+      const newOrder: TileOrderItemRef[] = []
+      let newCatIdx = 0
+      for (const ref of template) {
+        if (ref.type === 'image') {
+          newOrder.push(ref)
+        } else if (newCatIdx < newCats.length) {
+          newOrder.push({ type: 'category', id: newCats[newCatIdx++].id })
+        }
+      }
+      while (newCatIdx < newCats.length) {
+        newOrder.push({ type: 'category', id: newCats[newCatIdx++].id })
+      }
+
+      if (newOrder.length === 0 || sameRefs(template, newOrder)) continue
+      scopes.push({ scope: parentId, order: newOrder })
+      continue
+    }
 
     // Build the old interleaved template from old categories + images.
     // Old categories don't carry a meaningful sortOrder in FlatOption,
@@ -185,11 +228,8 @@ export function interleavedTileOrders(
       newOrder.push({ type: 'category', id: newCats[newCatIdx++].id })
     }
 
-    if (sameRefs(oldOrder, newOrder)) continue
-    scopes.push({
-      scope: parentKey === 'null' ? null : Number(parentKey),
-      order: newOrder,
-    })
+    if (newOrder.length === 0 || sameRefs(oldOrder, newOrder)) continue
+    scopes.push({ scope: parentId, order: newOrder })
   }
 
   return scopes

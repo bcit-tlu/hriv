@@ -237,10 +237,10 @@ export function useCategoryActions({
     [categories, loadCategories, setErrorSnack, setPath],
   )
 
-  // Scope of the most recent Manage Categories reorder, for the dialog's
-  // save-state indicator. Wrapped so a root-scope reorder (scope null) is
-  // distinguishable from "no reorder yet".
-  const [manageReorderScope, setManageReorderScope] = useState<{ scope: ScopeId } | null>(null)
+  // All scopes touched by the most recent Manage Categories reorder, for
+  // the dialog's save-state indicator (a cross-parent move touches both the
+  // source and destination scopes). Null until the first dialog reorder.
+  const [manageReorderScopes, setManageReorderScopes] = useState<ScopeId[] | null>(null)
 
   /**
    * Persist a Manage Categories drop through the shared ordering contract
@@ -267,7 +267,7 @@ export function useCategoryActions({
         tileOrderingCoordinator.reportOrder(scope, order)
       }
       if (scopes.length > 0) {
-        setManageReorderScope({ scope: scopes[scopes.length - 1].scope })
+        setManageReorderScopes(scopes.map((s) => s.scope))
       }
     },
     [categories, setErrorSnack],
@@ -512,7 +512,7 @@ export function useCategoryActions({
     editCategoryInline,
     toggleCategoryVisibility,
     reorderTilesFromManage,
-    manageReorderScope,
+    manageReorderScopes,
     handleMoveCategory,
     handleRequestMoveCategory,
     handleDropImageOnCategory,

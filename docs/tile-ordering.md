@@ -190,7 +190,10 @@ there is no second independent ordering implementation:
   rejection), then the full interleaved category+image order of every
   changed scope is reported to the shared `tileOrderingCoordinator`, which
   persists each scope atomically via `PUT /api/tile-order` with CAS
-  revisions.
+  revisions. When the coordinator already holds a newer (pending/unsaved)
+  order for a scope, that order is used as the interleaving template, so a
+  category-only reorder never reverts a pending image reorder for the same
+  scope; scopes left with no members are skipped.
 - The dialog renders sibling order from the coordinator's per-scope display
   orders (`reorderFlatOptions`), so pending/unsaved order is shown
   optimistically instead of snapping back to the last-loaded `sort_order`
@@ -198,7 +201,9 @@ there is no second independent ordering implementation:
   Browse grid.
 - The dialog shows the same `ReorderStatusIndicator` save states (unsaved,
   saving, saved, conflict with Refresh / Keep my order, error with Retry)
-  for the scope most recently reordered from the dialog.
+  for the affected scopes of the most recent dialog reorder; when a
+  cross-parent move touches two scopes, the indicator surfaces whichever
+  scope most urgently needs attention (conflict/error first).
 - Because Browse and Manage write through one contract, ordering is
   consistent across both interfaces after navigation and reload: whichever
   interface wrote last owns the scope revision, and stale writers get an

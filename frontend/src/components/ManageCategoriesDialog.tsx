@@ -210,16 +210,27 @@ export default function ManageCategoriesDialog({
   // Re-render when the shared tile-ordering coordinator changes so sibling
   // order reflects the newest local intent (optimistic/pending order) instead
   // of snapping back to the last-loaded sort_order while a save is in flight.
-  const [, coordinatorVersion] = useReducer((v: number) => v + 1, 0)
-  useEffect(() => tileOrderingCoordinator.subscribe(coordinatorVersion), [coordinatorVersion])
+  const [coordinatorVersion, bumpCoordinatorVersion] = useReducer((v: number) => v + 1, 0)
+  useEffect(
+    () => tileOrderingCoordinator.subscribe(bumpCoordinatorVersion),
+    [bumpCoordinatorVersion],
+  )
 
   const baseOptions = useMemo(
     () => flattenCategoryOptions(categories) as FlatOption[],
     [categories],
   )
-  const options = reorderFlatOptions(
-    baseOptions,
-    (parentId) => tileOrderingCoordinator.getScope(parentId).displayOrder,
+  const options = useMemo(
+    () =>
+      reorderFlatOptions(
+        baseOptions,
+        (parentId) => tileOrderingCoordinator.getScope(parentId).displayOrder,
+      ),
+    // coordinatorVersion invalidates the memo whenever the coordinator's
+    // per-scope display orders change (the coordinator is read imperatively,
+    // so the linter cannot see the dependency).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [baseOptions, coordinatorVersion],
   )
   const [dragId, setDragId] = useState<number | null>(null)
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null)
@@ -464,7 +475,12 @@ export default function ManageCategoriesDialog({
 
       const imagesByParent = collectImagesByParent(categories, uncategorizedImages)
       const moves = diffParentMoves(newList, options)
-      const scopes = interleavedTileOrders(newList, options, imagesByParent)
+      const scopes = interleavedTileOrders(
+        newList,
+        options,
+        imagesByParent,
+        (parentId) => tileOrderingCoordinator.getScope(parentId).displayOrder,
+      )
 
       setDragId(null)
       setDropTarget(null)

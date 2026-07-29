@@ -392,7 +392,7 @@ describe('useCategoryActions', () => {
       expect(reportOrder).toHaveBeenCalledTimes(2)
       expect(reportOrder).toHaveBeenNthCalledWith(1, null, scopes[0].order)
       expect(reportOrder).toHaveBeenNthCalledWith(2, 1, scopes[1].order)
-      expect(result.current.manageReorderScope).toEqual({ scope: 1 })
+      expect(result.current.manageReorderScopes).toEqual([null, 1])
       reportOrder.mockRestore()
     })
 

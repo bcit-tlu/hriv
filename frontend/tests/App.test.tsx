@@ -238,7 +238,7 @@ const categoryActionsMock = {
   editCategoryInline: vi.fn(),
   toggleCategoryVisibility: vi.fn(),
   reorderTilesFromManage: vi.fn(),
-  manageReorderScope: null,
+  manageReorderScopes: null,
   handleMoveCategory: vi.fn(),
   handleRequestMoveCategory: vi.fn(),
   handleDropImageOnCategory: vi.fn(),

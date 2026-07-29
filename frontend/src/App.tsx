@@ -97,7 +97,7 @@ import { useCategoryActions } from './useCategoryActions'
 import { useImageActions } from './useImageActions'
 import { useAnnouncementModal } from './useAnnouncementModal'
 import { useUserProfile } from './useUserProfile'
-import { useTileOrdering } from './useTileOrdering'
+import { useMostSevereScope, useTileOrdering } from './useTileOrdering'
 
 const COLLAPSED_BREADCRUMB_CATEGORY_DEPTH = 2
 
@@ -914,7 +914,7 @@ export default function App() {
     editCategoryInline,
     toggleCategoryVisibility,
     reorderTilesFromManage,
-    manageReorderScope,
+    manageReorderScopes,
     handleMoveCategory,
     handleRequestMoveCategory,
     handleDropImageOnCategory,
@@ -941,9 +941,11 @@ export default function App() {
     setMoveSnack,
   })
 
-  // Save-state readout for the scope most recently reordered from the
-  // Manage Categories dialog (epic #975, issue #982).
-  const manageTileOrdering = useTileOrdering(manageReorderScope ? manageReorderScope.scope : null)
+  // Save-state readout for the scopes most recently reordered from the
+  // Manage Categories dialog (epic #975, issue #982). A cross-parent move
+  // touches two scopes; surface whichever needs attention most.
+  const manageAttentionScope = useMostSevereScope(manageReorderScopes)
+  const manageTileOrdering = useTileOrdering(manageAttentionScope ?? null)
 
   const visibleJobs = getVisibleJobs({
     uploadOpen,
@@ -1921,7 +1923,7 @@ export default function App() {
         onReorderTiles={reorderTilesFromManage}
         onReorderComplete={handleReorderComplete}
         reorderStatus={
-          manageReorderScope ? (
+          manageAttentionScope !== undefined ? (
             <ReorderStatusIndicator
               status={manageTileOrdering.status}
               onRetry={manageTileOrdering.retry}
