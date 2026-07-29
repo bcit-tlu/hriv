@@ -3,7 +3,6 @@ import json as _json
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from opentelemetry import trace
 from sqlalchemy import and_, select, update as sql_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,7 +12,6 @@ from ..authz import (
     can_attach_program_to_category,
 )
 from ..database import get_db
-from ..tracing import record_exception_if_server_error
 from ..models import Category, Group, Image, Program, User
 from ..schemas import (
     CategoryCreate,
@@ -25,7 +23,6 @@ from ..schemas import (
 )
 from ..visibility import compute_excluded_category_ids, get_student_excluded_category_ids, is_category_visible_to_student
 
-tracer = trace.get_tracer(__name__)
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
