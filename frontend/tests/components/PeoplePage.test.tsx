@@ -843,7 +843,9 @@ describe('PeoplePage', () => {
     await user.click(screen.getByRole('button', { name: 'Add to Groups' }))
 
     await waitFor(() => {
-      expect(screen.getByText(/Failed to add person to 1 of 2 groups/i)).toBeInTheDocument()
+      expect(
+        screen.getByText(/Added to 1 group, but failed to add person to 1 of 2 groups/i),
+      ).toBeInTheDocument()
       expect(screen.getByText(/Lab B1 add failed/i)).toBeInTheDocument()
     })
 

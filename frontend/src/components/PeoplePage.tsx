@@ -619,10 +619,15 @@ export default function PeoplePage({
           (hiddenCount > 0
             ? ` (and ${hiddenCount} more distinct ${hiddenCount === 1 ? 'error' : 'errors'})`
             : '')
+        const succeededCount = groupIds.length - failedGroupIds.length
         const groupWord = groupIds.length === 1 ? 'group' : 'groups'
         const selectionWord = selected.size === 1 ? 'person' : 'people'
+        const successPrefix =
+          succeededCount > 0
+            ? `Added to ${succeededCount} ${succeededCount === 1 ? 'group' : 'groups'}, but failed`
+            : 'Failed'
         setErrorSnack(
-          `Failed to add ${selectionWord} to ${failedGroupIds.length} of ${groupIds.length} ${groupWord}. ${reasonsText}`,
+          `${successPrefix} to add ${selectionWord} to ${failedGroupIds.length} of ${groupIds.length} ${groupWord}. ${reasonsText}`,
         )
         return failedGroupIds
       }
@@ -1137,7 +1142,10 @@ export default function PeoplePage({
 
       <BulkGroupModal
         open={bulkGroupOpen}
-        onClose={() => setBulkGroupOpen(false)}
+        onClose={() => {
+          setBulkGroupOpen(false)
+          setErrorSnack(null)
+        }}
         onSave={handleBulkGroupSave}
         groups={groups}
         selectedCount={selected.size}
