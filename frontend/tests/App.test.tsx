@@ -904,8 +904,8 @@ describe('App shell interactions', () => {
     rerender(<App />)
     expect(await screen.findByText('versions: null/null')).toBeInTheDocument()
 
-    vi.mocked(fetchVersions).mockRejectedValue(new Error('down'))
-    vi.mocked(fetchFrontendVersion).mockRejectedValue(new Error('down'))
+    vi.mocked(fetchVersions).mockRejectedValueOnce(new Error('down'))
+    vi.mocked(fetchFrontendVersion).mockRejectedValueOnce(new Error('down'))
     authState = { ...authState, canManageUsers: true }
     rerender(<App />)
     await waitFor(() => expect(fetchVersions).toHaveBeenCalledTimes(2))
@@ -1022,15 +1022,20 @@ describe('App grid file drops and reorder feedback', () => {
   it('toggles the file-drag state as native files drag over and leave the window', async () => {
     render(<App />)
 
-    const makeDragEvent = (type: string) => {
+    const makeDragEvent = (type: string, types: string[] = ['Files']) => {
       const event = new Event(type, { bubbles: true, cancelable: true })
-      Object.defineProperty(event, 'dataTransfer', { value: { types: ['Files'] } })
+      Object.defineProperty(event, 'dataTransfer', { value: { types } })
       return event
     }
 
     expect(screen.queryByText('File drag active')).not.toBeInTheDocument()
 
     fireEvent(window, makeDragEvent('dragenter'))
+    expect(screen.getByText('File drag active')).toBeInTheDocument()
+
+    // Non-file dragleave events must not decrement the counter (symmetric
+    // Files filtering keeps the counter from going negative)
+    fireEvent(window, makeDragEvent('dragleave', []))
     expect(screen.getByText('File drag active')).toBeInTheDocument()
 
     // Nested dragenter/dragleave pairs must not deactivate until the counter hits 0
