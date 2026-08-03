@@ -60,7 +60,11 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
 
         // Local-credentials view. If OIDC is enabled, click through to local form.
         if (oidcEnabled) {
-          await page.getByRole('button', { name: 'Log in with a guest account' }).click()
+          // Transitional regex: match both the new and old link labels until
+          // every monitored environment runs a frontend with the new wording.
+          await page
+            .getByRole('button', { name: /Log in with a guest account|Use a local user/ })
+            .click()
         }
         await expect(page.getByLabel('Username')).toBeVisible()
       }),
