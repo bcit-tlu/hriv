@@ -45,6 +45,19 @@ describe('useRowsPerPagePreference', () => {
     expect(localStorage.getItem(storageKeyFor('manage-images', 1))).toBe('10')
   })
 
+  it('supports functional updaters and persists the resolved value', () => {
+    localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
+
+    const { result } = renderHook(() => useRowsPerPagePreference('manage-images'))
+
+    act(() => {
+      result.current[1]((prev) => prev * 2)
+    })
+
+    expect(result.current[0]).toBe(50)
+    expect(localStorage.getItem(storageKeyFor('manage-images', 1))).toBe('50')
+  })
+
   it('falls back to the default for values outside the allowed options', () => {
     localStorage.setItem('hriv_user', JSON.stringify({ id: 1 }))
     localStorage.setItem(storageKeyFor('manage-images', 1), '9999')

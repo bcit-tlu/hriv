@@ -46,7 +46,7 @@ import {
   matchesTextFilter,
   removeFilterTerm,
 } from '../tableFilterUtils'
-import { useRowsPerPagePreference } from '../useRowsPerPagePreference'
+import { ROWS_PER_PAGE_OPTIONS, useRowsPerPagePreference } from '../useRowsPerPagePreference'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import {
   getStoredIntSet,
@@ -1065,7 +1065,7 @@ export default function PeoplePage({
             </TableBody>
           </Table>
           <TablePagination
-            rowsPerPageOptions={[5, 10, 25, 50]}
+            rowsPerPageOptions={[...ROWS_PER_PAGE_OPTIONS]}
             component="div"
             count={sortedUsers.length}
             rowsPerPage={rowsPerPage}

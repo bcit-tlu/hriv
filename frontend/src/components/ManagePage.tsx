@@ -51,7 +51,7 @@ import { formatFileSize } from '../formatUtils'
 import { getVisibilityColors } from '../theme'
 import { getInheritedRestrictionSx } from '../restrictionStyles'
 import { getCategoryHiddenStateFromPath } from '../treeUtils'
-import { useRowsPerPagePreference } from '../useRowsPerPagePreference'
+import { ROWS_PER_PAGE_OPTIONS, useRowsPerPagePreference } from '../useRowsPerPagePreference'
 import { useTableColumnPreferences } from '../useTableColumnPreferences'
 import { useColorMode } from '../useColorMode'
 import BulkEditImagesModal from './BulkEditImagesModal'
@@ -817,7 +817,7 @@ export default function ManagePage({
 
   const renderPagination = (position: 'top' | 'bottom') => (
     <TablePagination
-      rowsPerPageOptions={[5, 10, 25, 50]}
+      rowsPerPageOptions={[...ROWS_PER_PAGE_OPTIONS]}
       component="div"
       count={sortedImages.length}
       rowsPerPage={rowsPerPage}

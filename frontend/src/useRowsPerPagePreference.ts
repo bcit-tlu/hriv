@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { getStoredUserScope } from './userScope'
 
 export const ROWS_PER_PAGE_OPTIONS = [5, 10, 25, 50] as const
@@ -23,14 +23,17 @@ export function useRowsPerPagePreference(tableKey: string, defaultRowsPerPage = 
     loadStoredRowsPerPage(storageKey, defaultRowsPerPage),
   )
 
-  const setRowsPerPage = useCallback(
-    (value: number) => {
-      setRowsPerPageState(value)
-      try {
-        localStorage.setItem(storageKey, String(value))
-      } catch {
-        // Ignore localStorage write failures and fall back to in-memory state.
-      }
+  const setRowsPerPage = useCallback<Dispatch<SetStateAction<number>>>(
+    (action) => {
+      setRowsPerPageState((prev) => {
+        const value = typeof action === 'function' ? action(prev) : action
+        try {
+          localStorage.setItem(storageKey, String(value))
+        } catch {
+          // Ignore localStorage write failures and fall back to in-memory state.
+        }
+        return value
+      })
     },
     [storageKey],
   )
