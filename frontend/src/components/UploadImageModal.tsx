@@ -237,9 +237,14 @@ export default function UploadImageModal({
 
   const uploadIdRef = useRef<number | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // Synchronous in-flight guard: `uploading` state only updates on the next
+  // render, so rapid double Enter/click could otherwise submit twice.
+  const isSubmittingRef = useRef(false)
 
   const handleUpload = async () => {
     if (files.length === 0) return
+    if (isSubmittingRef.current) return
+    isSubmittingRef.current = true
 
     if (bulk) {
       // Bulk import workflow — category is optional (images go to root if unset)
@@ -287,6 +292,7 @@ export default function UploadImageModal({
           onUploadFailed?.(uploadId, msg)
         }
       } finally {
+        isSubmittingRef.current = false
         setUploading(false)
         setUploadProgress(null)
         uploadIdRef.current = null
@@ -340,6 +346,7 @@ export default function UploadImageModal({
           onUploadFailed?.(uploadId, msg)
         }
       } finally {
+        isSubmittingRef.current = false
         setUploading(false)
         setUploadProgress(null)
         uploadIdRef.current = null
