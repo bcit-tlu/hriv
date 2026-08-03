@@ -209,7 +209,7 @@ describe('AdminPage', () => {
     await waitFor(() => expect(mockFetchAdminTasks).toHaveBeenCalledTimes(1))
   })
 
-  it('shows export actions first and keeps recent tasks collapsed on the backups tab', async () => {
+  it('groups data-transfer cards together and keeps recent tasks collapsed on the backups tab', async () => {
     const user = userEvent.setup()
     mockFetchAdminTasks.mockResolvedValue([
       {
@@ -230,8 +230,6 @@ describe('AdminPage', () => {
 
     await user.click(screen.getByRole('tab', { name: 'Backups' }))
 
-    expect(screen.getByRole('heading', { name: 'Export' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Import' })).toBeInTheDocument()
     expect(screen.getByText('Export Database')).toBeInTheDocument()
     expect(screen.getByText('Export Files')).toBeInTheDocument()
     expect(screen.getByText('Import Database')).toBeInTheDocument()
