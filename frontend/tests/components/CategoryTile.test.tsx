@@ -512,7 +512,7 @@ describe('CategoryTile', () => {
           onDropFiles={onDropFiles}
         />,
       )
-      const card = container.querySelector('.MuiCard-root')!
+      const card = container.querySelector('[data-testid="category-tile"]')!
       const fakeFile = new File(['data'], 'photo.png', { type: 'image/png' })
       const event = new Event('drop', { bubbles: true })
       Object.assign(event, {

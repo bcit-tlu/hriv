@@ -203,11 +203,14 @@ describe('PeoplePage', () => {
       expect(screen.getAllByText('Medical Lab').length).toBeGreaterThan(0)
     })
 
-    // Program name rendered as a MUI Chip (filter panel + table row)
-    const chips = screen
-      .getAllByText('Medical Lab')
-      .map((el) => el.closest('[data-testid="program-chip"]'))
-    expect(chips.some(Boolean)).toBe(true)
+    // Program name rendered as a chip in the student's table row
+    const studentRow = screen.getByText('Test Student').closest('tr')
+    expect(studentRow).not.toBeNull()
+    expect(
+      within(studentRow as HTMLElement)
+        .getByText('Medical Lab')
+        .closest('[data-testid="program-chip"]'),
+    ).toBeInTheDocument()
   })
 
   it('shows the configured default visible columns', async () => {

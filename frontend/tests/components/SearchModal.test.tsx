@@ -169,7 +169,9 @@ describe('SearchModal', () => {
       'Liver',
     )
     // The Images chip should still be in the selected (filled) state, not just present
-    const imagesChipAfterReopen = screen.getByText('Images').closest('[class*="MuiChip-root"]')!
+    const imagesChipAfterReopen = screen
+      .getByText('Images')
+      .closest('[data-testid="type-filter-chip"]')!
     expect(imagesChipAfterReopen.className).toMatch(/MuiChip-filled/)
     expect(imagesChipAfterReopen.className).not.toMatch(/MuiChip-outlined/)
   })
@@ -210,7 +212,7 @@ describe('SearchModal', () => {
     // Click the first result button (image result for "Liver Section")
     const resultButtons = screen
       .getAllByRole('button')
-      .filter((btn) => btn.closest('[class*="MuiCard"]'))
+      .filter((btn) => btn.closest('[data-testid="search-result-action-area"]'))
     await user.click(resultButtons[0])
 
     expect(onClose).toHaveBeenCalled()
@@ -236,7 +238,7 @@ describe('SearchModal', () => {
     // Click the first result button (category result for "Histology")
     const resultButtons = screen
       .getAllByRole('button')
-      .filter((btn) => btn.closest('[class*="MuiCard"]'))
+      .filter((btn) => btn.closest('[data-testid="search-result-action-area"]'))
     await user.click(resultButtons[0])
 
     expect(onClose).toHaveBeenCalled()
@@ -292,9 +294,9 @@ describe('SearchModal', () => {
 
     const cards = screen
       .getAllByText('Liver Section')
-      .filter((el) => el.closest('[class*="MuiCardActionArea"]'))
+      .filter((el) => el.closest('[data-testid="search-result-action-area"]'))
     expect(cards).toHaveLength(1)
-    const card = cards[0].closest('[class*="MuiCard"]')!
+    const card = cards[0].closest('[data-testid="search-result-action-area"]')!
     expect(card.textContent).toContain('Annotation:')
     expect(card.textContent).toContain('Portal triad')
   })
@@ -308,9 +310,9 @@ describe('SearchModal', () => {
 
     const cards = screen
       .getAllByText('Liver Section')
-      .filter((el) => el.closest('[class*="MuiCardActionArea"]'))
+      .filter((el) => el.closest('[data-testid="search-result-action-area"]'))
     expect(cards).toHaveLength(1)
-    const card = cards[0].closest('[class*="MuiCard"]')!
+    const card = cards[0].closest('[data-testid="search-result-action-area"]')!
     expect(card.textContent).toContain('Link:')
     expect(card.textContent).toContain('Reference Atlas')
   })
@@ -324,9 +326,9 @@ describe('SearchModal', () => {
 
     const cards = screen
       .getAllByText('Liver Section')
-      .filter((el) => el.closest('[class*="MuiCardActionArea"]'))
+      .filter((el) => el.closest('[data-testid="search-result-action-area"]'))
     expect(cards).toHaveLength(1)
-    const card = cards[0].closest('[class*="MuiCard"]')!
+    const card = cards[0].closest('[data-testid="search-result-action-area"]')!
     expect(card.textContent).toContain('Link URL:')
     expect(card.textContent).toContain('https://atlas.example/liver')
   })
@@ -353,10 +355,10 @@ describe('SearchModal', () => {
 
     const cards = screen
       .getAllByText('Liver Section')
-      .filter((el) => el.closest('[class*="MuiCardActionArea"]'))
+      .filter((el) => el.closest('[data-testid="search-result-action-area"]'))
     expect(cards).toHaveLength(1)
 
-    const card = cards[0].closest('[class*="MuiCard"]')!
+    const card = cards[0].closest('[data-testid="search-result-action-area"]')!
     expect(card.textContent).toContain('Link:')
     expect(card.textContent).not.toContain('Note:')
   })
@@ -478,7 +480,7 @@ describe('SearchModal', () => {
     // Program result label should be rendered as a chip (MuiChip)
     const chipElements = screen
       .getAllByText('Medical Lab Science')
-      .filter((el) => el.closest('[class*="MuiChip-root"]'))
+      .filter((el) => el.closest('[data-testid="program-result-chip"]'))
     expect(chipElements.length).toBeGreaterThan(0)
   })
 
@@ -493,11 +495,11 @@ describe('SearchModal', () => {
     // Should show one card (deduplicated) with both field matches
     const cards = screen
       .getAllByText('Kidney Cross')
-      .filter((el) => el.closest('[class*="MuiCardActionArea"]'))
+      .filter((el) => el.closest('[data-testid="search-result-action-area"]'))
     expect(cards).toHaveLength(1)
 
     // Both matched fields should be visible within the same card
-    const card = cards[0].closest('[class*="MuiCard"]')!
+    const card = cards[0].closest('[data-testid="search-result-action-area"]')!
     expect(card.textContent).toContain('Name:')
     expect(card.textContent).toContain('Copyright:')
   })
@@ -511,10 +513,10 @@ describe('SearchModal', () => {
 
     const cards = screen
       .getAllByText('Liver Section')
-      .filter((el) => el.closest('[class*="MuiCardActionArea"]'))
+      .filter((el) => el.closest('[data-testid="search-result-action-area"]'))
     expect(cards).toHaveLength(1)
 
-    const card = cards[0].closest('[class*="MuiCard"]')!
+    const card = cards[0].closest('[data-testid="search-result-action-area"]')!
     expect(card.textContent).toContain('Note:')
     expect(card.textContent).toContain('Link:')
   })
@@ -531,7 +533,7 @@ describe('SearchModal', () => {
     expect(screen.queryByText('Programs')).not.toBeInTheDocument()
     expect(screen.queryByText('People')).not.toBeInTheDocument()
     expect(
-      screen.queryAllByText('Role').filter((el) => el.closest('[class*="MuiChip-root"]')),
+      screen.queryAllByText('Role').filter((el) => el.closest('[data-testid="field-filter-chip"]')),
     ).toHaveLength(0)
   })
 
@@ -551,18 +553,17 @@ describe('SearchModal', () => {
     const input = screen.getByPlaceholderText('Search categories, images, programs, people')
     await user.type(input, 'Medical Lab')
 
-    // Program results render their label as a default Chip (no color prop),
-    // while other results show program names as color="primary" chips.
-    const chips = screen.getAllByText('Medical Lab Science').filter((el) => {
-      const chip = el.closest('[class*="MuiChip-root"]')
-      return (
-        chip &&
-        !chip.className.includes('MuiChip-colorPrimary') &&
-        el.closest('[class*="MuiCardActionArea"]')
+    // Program results render their label as a dedicated result chip,
+    // while other results show program names as separate program chips.
+    const chips = screen
+      .getAllByText('Medical Lab Science')
+      .filter(
+        (el) =>
+          el.closest('[data-testid="program-result-chip"]') &&
+          el.closest('[data-testid="search-result-action-area"]'),
       )
-    })
     expect(chips.length).toBeGreaterThan(0)
-    const actionArea = chips[0].closest('[class*="MuiCardActionArea"]')!
+    const actionArea = chips[0].closest('[data-testid="search-result-action-area"]')!
     await user.click(actionArea)
 
     expect(onClose).toHaveBeenCalled()
@@ -590,7 +591,7 @@ describe('SearchModal', () => {
     // Category result should not show the program chip for students
     const programChips = screen
       .queryAllByText('Medical Lab Science')
-      .filter((el) => el.closest('[class*="MuiChip-root"]'))
+      .filter((el) => el.closest('[data-testid="program-chip"]'))
     expect(programChips.length).toBe(0)
   })
 
@@ -607,7 +608,7 @@ describe('SearchModal', () => {
 
     const resultButtons = screen
       .getAllByRole('button')
-      .filter((btn) => btn.closest('[class*="MuiCard"]'))
+      .filter((btn) => btn.closest('[data-testid="search-result-action-area"]'))
     await user.click(resultButtons[0])
 
     expect(onClose).toHaveBeenCalled()
