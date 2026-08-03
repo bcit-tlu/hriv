@@ -2297,9 +2297,10 @@ async def run_files_export(task_id: int) -> None:
                     cancel_event=cancel_event,
                 )
             )
+            scan_poll_task = asyncio.ensure_future(_poll_cancel_only())
             file_count, total_bytes = await _run_with_cancel_poll(
                 scan_task,
-                asyncio.ensure_future(_poll_cancel_only()),
+                scan_poll_task,
                 cancel_event=cancel_event,
                 grace_timeout_log=(
                     "Filesystem export scan did not finish within the "
