@@ -105,7 +105,7 @@ describe('BulkEditModal', () => {
 
     await user.click(screen.getByRole('button', { name: 'Save' }))
 
-    const savingButton = screen.getByRole('button', { name: /Saving/ })
+    const savingButton = await screen.findByRole('button', { name: /Saving/ })
     expect(savingButton).toBeDisabled()
     // Cancel stays enabled so a hung request can never trap the user
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()

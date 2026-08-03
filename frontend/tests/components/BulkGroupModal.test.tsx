@@ -105,7 +105,7 @@ describe('BulkGroupModal', () => {
     await user.keyboard('{Escape}')
     await user.click(screen.getByRole('button', { name: 'Add to Groups' }))
 
-    const savingButton = screen.getByRole('button', { name: /Adding/ })
+    const savingButton = await screen.findByRole('button', { name: /Adding/ })
     expect(savingButton).toBeDisabled()
     // Cancel stays enabled so a hung request can never trap the user
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
