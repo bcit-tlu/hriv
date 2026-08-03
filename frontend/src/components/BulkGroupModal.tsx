@@ -110,7 +110,7 @@ export default function BulkGroupModal({
           onClick={handleSave}
           variant="contained"
           disabled={groupIds.length === 0 || saving}
-          startIcon={saving ? <CircularProgress size={16} aria-hidden /> : undefined}
+          startIcon={saving ? <CircularProgress size={16} color="inherit" aria-hidden /> : undefined}
         >
           {saving ? 'Adding…' : 'Add to Groups'}
         </Button>
