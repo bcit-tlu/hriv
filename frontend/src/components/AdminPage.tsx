@@ -1020,7 +1020,7 @@ export default function AdminPage({ onChangelogEntriesChanged }: AdminPageProps)
               </CardContent>
             </Card>
 
-            <Card sx={{ bgcolor: 'background.paper' }}>
+            <Card sx={{ bgcolor: 'background.paper', gridColumn: { sm: '1 / -1' } }}>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
                   Rebuild Tiles
