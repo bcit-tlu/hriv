@@ -413,7 +413,7 @@ describe('ImageViewer selection rectangles', () => {
 })
 
 describe('ImageViewer overlay locking', () => {
-  it('locks drawn rectangles for editors and unlocks when already locked', () => {
+  it('locks drawn rectangles for editors', () => {
     const onLockOverlays = vi.fn()
     render(<ImageViewer tileSources="/tiles.dzi" canEditContent onLockOverlays={onLockOverlays} />)
     drawRect()
@@ -513,7 +513,11 @@ describe('ImageViewer magnification badge and pinch rotation', () => {
     render(<ImageViewer tileSources="/tiles.dzi" />)
     const badge = viewer().navigator.element.firstElementChild as HTMLDivElement
 
+    // Force the badge visible so the assertion proves updateMagnification
+    // actively re-hides it rather than it never having been shown.
+    badge.style.display = ''
     act(() => viewer().fire('animation'))
+    expect(viewer().viewport.viewportToImageZoom).toHaveBeenCalled()
     expect(badge.style.display).toBe('none')
   })
 
