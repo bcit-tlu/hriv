@@ -239,6 +239,7 @@ export default function AddCategoryDialog({
                     return (
                       <Chip
                         key={p.id}
+                        data-testid="program-chip"
                         label={p.name}
                         size="small"
                         color={
@@ -290,6 +291,7 @@ export default function AddCategoryDialog({
                   return (
                     <Chip
                       key={g.id}
+                      data-testid="group-chip"
                       label={g.name}
                       size="small"
                       color={isActive ? 'secondary' : undefined}

@@ -30,10 +30,12 @@ export default function ImageTile({
   const visColors = getVisibilityColors(mode)
   return (
     <Card
+      data-testid="image-tile"
       elevation={2}
       sx={{ width: '100%', maxWidth: 300, position: 'relative', opacity: categoryHidden ? 0.5 : 1 }}
     >
       <CardActionArea
+        data-testid="image-tile-action-area"
         onClick={() => onClick(image)}
         sx={{
           display: 'flex',
@@ -51,7 +53,10 @@ export default function ImageTile({
           sx={{ objectFit: 'cover', objectPosition: 'center' }}
         />
         <CardContent sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
+          <Box
+            data-testid="image-tile-title-row"
+            sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}
+          >
             <Tooltip title={image.name}>
               <Typography
                 variant="h6"

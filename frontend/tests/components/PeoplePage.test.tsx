@@ -204,7 +204,9 @@ describe('PeoplePage', () => {
     })
 
     // Program name rendered as a MUI Chip (filter panel + table row)
-    const chips = screen.getAllByText('Medical Lab').map((el) => el.closest('.MuiChip-root'))
+    const chips = screen
+      .getAllByText('Medical Lab')
+      .map((el) => el.closest('[data-testid="program-chip"]'))
     expect(chips.some(Boolean)).toBe(true)
   })
 
@@ -724,7 +726,7 @@ describe('PeoplePage', () => {
     expect(
       within(studentRow as HTMLElement)
         .getByText('Lab A2')
-        .closest('.MuiChip-root'),
+        .closest('[data-testid="group-chip"]'),
     ).toBeInTheDocument()
   })
 

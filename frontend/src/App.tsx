@@ -350,6 +350,7 @@ export default function App() {
         {inline.map((item) => (
           <Chip
             key={item.id}
+            data-testid={`${kind}-chip`}
             label={item.name}
             size="small"
             color={color}
@@ -390,6 +391,7 @@ export default function App() {
                 {items.map((item) => (
                   <Chip
                     key={item.id}
+                    data-testid={`${kind}-chip`}
                     label={item.name}
                     size="small"
                     color={color}
