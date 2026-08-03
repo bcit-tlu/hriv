@@ -76,6 +76,7 @@ import {
   startRebuildTiles,
   getUploadStatus,
   finalizeUpload,
+  uploadTaskFile,
   type FilesImportArchive,
   type FilesImportArchiveDeleteResponse,
   type ExportArchive,
@@ -1456,6 +1457,184 @@ describe('XHR upload abort support', () => {
     // Rejects directly without calling xhr.abort() (abort before send
     // doesn't fire the abort event per XHR spec).
     expect(xhrInstances[0].send).not.toHaveBeenCalled()
+  })
+})
+
+// ── Chunked task-file upload (#125) ──────────────────────────────────────
+
+describe('uploadTaskFile', () => {
+  const CHUNK = 10 * 1024 * 1024
+
+  let xhrInstances: Array<{
+    open: ReturnType<typeof vi.fn>
+    send: ReturnType<typeof vi.fn>
+    abort: ReturnType<typeof vi.fn>
+    setRequestHeader: ReturnType<typeof vi.fn>
+    upload: { addEventListener: ReturnType<typeof vi.fn> }
+    addEventListener: ReturnType<typeof vi.fn>
+    getResponseHeader: ReturnType<typeof vi.fn>
+    status: number
+    responseText: string
+    listeners: Record<string, (() => void)[]>
+  }>
+
+  beforeEach(() => {
+    mockFetch.mockReset()
+    setToken('jwt')
+    xhrInstances = []
+    // Must use `function` keyword (not arrow) so `new XMLHttpRequest()` works.
+    function MockXHR(this: (typeof xhrInstances)[0]) {
+      const listeners: Record<string, (() => void)[]> = {}
+      this.open = vi.fn()
+      this.send = vi.fn()
+      this.abort = vi.fn().mockImplementation(() => {
+        for (const cb of listeners['abort'] ?? []) cb()
+      })
+      this.setRequestHeader = vi.fn()
+      this.upload = { addEventListener: vi.fn() }
+      this.addEventListener = vi.fn().mockImplementation((event: string, cb: () => void) => {
+        if (!listeners[event]) listeners[event] = []
+        listeners[event].push(cb)
+      })
+      this.getResponseHeader = vi.fn().mockReturnValue(null)
+      this.status = 200
+      this.responseText = '{}'
+      this.listeners = listeners
+      xhrInstances.push(this)
+    }
+    vi.stubGlobal('XMLHttpRequest', MockXHR)
+  })
+
+  afterEach(() => {
+    setToken(null)
+    vi.unstubAllGlobals()
+    // Re-stub the globals needed by other test blocks
+    vi.stubGlobal('fetch', mockFetch)
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => storage[key] ?? null,
+      setItem: (key: string, val: string) => {
+        storage[key] = val
+      },
+      removeItem: (key: string) => {
+        delete storage[key]
+      },
+      clear: () => {
+        for (const key of Object.keys(storage)) delete storage[key]
+      },
+      get length() {
+        return Object.keys(storage).length
+      },
+      key: (i: number) => Object.keys(storage)[i] ?? null,
+    })
+    vi.stubGlobal('crypto', { randomUUID: () => 'test-session-id' })
+  })
+
+  const TASK = { id: 3, task_type: 'files_import', status: 'pending' }
+
+  function flush(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0))
+  }
+
+  function respond(index: number, status: number, body: string): void {
+    const xhr = xhrInstances[index]
+    xhr.status = status
+    xhr.responseText = body
+    for (const cb of xhr.listeners['load'] ?? []) cb()
+  }
+
+  function bigFile(size: number): File {
+    return new File([new Uint8Array(size)], 'big.tar', { type: 'application/octet-stream' })
+  }
+
+  it('uses the single raw PUT fast path for files within one chunk', async () => {
+    const file = new File(['abc'], 'small.tar')
+    const promise = uploadTaskFile(3, file)
+    expect(xhrInstances).toHaveLength(1)
+    expect(xhrInstances[0].open).toHaveBeenCalledWith('PUT', '/api/admin/tasks/3/upload')
+    respond(0, 200, JSON.stringify(TASK))
+    await expect(promise).resolves.toEqual(TASK)
+    expect(mockFetch).not.toHaveBeenCalled()
+  })
+
+  it('raw PUT path rejects with ApiError on server failure', async () => {
+    const file = new File(['abc'], 'small.tar')
+    const promise = uploadTaskFile(3, file)
+    respond(0, 500, JSON.stringify({ detail: 'disk full' }))
+    const err = await promise.catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).status).toBe(500)
+    expect((err as ApiError).detail).toBe('disk full')
+  })
+
+  it('uploads a large file in sequential PATCH chunks and finalizes', async () => {
+    const file = bigFile(CHUNK + 5)
+    // resync → GET upload status, then finalize → POST
+    mockFetch.mockReturnValueOnce(jsonResponse({ bytes_received: 0, status: 'uploading' }))
+    mockFetch.mockReturnValueOnce(jsonResponse(TASK))
+    const promise = uploadTaskFile(3, file)
+    await flush()
+    expect(xhrInstances).toHaveLength(1)
+    expect(xhrInstances[0].open).toHaveBeenCalledWith('PATCH', '/api/admin/tasks/3/upload')
+    expect(xhrInstances[0].setRequestHeader).toHaveBeenCalledWith('Upload-Offset', '0')
+    expect(xhrInstances[0].setRequestHeader).toHaveBeenCalledWith(
+      'Upload-Length',
+      String(file.size),
+    )
+    respond(0, 200, JSON.stringify({ bytes_received: CHUNK, status: 'uploading' }))
+    await flush()
+    expect(xhrInstances).toHaveLength(2)
+    expect(xhrInstances[1].setRequestHeader).toHaveBeenCalledWith('Upload-Offset', String(CHUNK))
+    respond(1, 200, JSON.stringify({ bytes_received: file.size, status: 'uploading' }))
+    await expect(promise).resolves.toEqual(TASK)
+    const finalizeCall = mockFetch.mock.calls[1]
+    expect(finalizeCall[0]).toBe('/api/admin/tasks/3/upload/finalize')
+    expect(JSON.parse(finalizeCall[1].body)).toEqual({ total_bytes: file.size })
+  })
+
+  it('resumes from the server-reported offset on a 409 offset conflict', async () => {
+    const file = bigFile(CHUNK + 5)
+    mockFetch.mockReturnValueOnce(jsonResponse({ bytes_received: 0, status: 'uploading' }))
+    mockFetch.mockReturnValueOnce(jsonResponse(TASK))
+    const promise = uploadTaskFile(3, file)
+    await flush()
+    // Server already has the first chunk: conflict carries the real offset.
+    respond(0, 409, JSON.stringify({ detail: { bytes_received: CHUNK, status: 'uploading' } }))
+    await flush()
+    expect(xhrInstances).toHaveLength(2)
+    expect(xhrInstances[1].setRequestHeader).toHaveBeenCalledWith('Upload-Offset', String(CHUNK))
+    respond(1, 200, JSON.stringify({ bytes_received: file.size, status: 'uploading' }))
+    await expect(promise).resolves.toEqual(TASK)
+  })
+
+  it('rejects when the task is not in uploading state at resync', async () => {
+    const file = bigFile(CHUNK + 5)
+    mockFetch.mockReturnValueOnce(jsonResponse({ bytes_received: 0, status: 'processing' }))
+    const err = await uploadTaskFile(3, file).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).status).toBe(409)
+    expect((err as ApiError).detail).toContain("'processing'")
+    expect(xhrInstances).toHaveLength(0)
+  })
+
+  it('rejects when a 409 chunk conflict reports a non-uploading task state', async () => {
+    const file = bigFile(CHUNK + 5)
+    mockFetch.mockReturnValueOnce(jsonResponse({ bytes_received: 0, status: 'uploading' }))
+    const promise = uploadTaskFile(3, file)
+    await flush()
+    respond(0, 409, JSON.stringify({ detail: { bytes_received: CHUNK, status: 'cancelled' } }))
+    const err = await promise.catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).status).toBe(409)
+    expect((err as ApiError).detail).toContain("'cancelled'")
+  })
+
+  it('rejects immediately when the signal is already aborted (chunked path)', async () => {
+    const ac = new AbortController()
+    ac.abort()
+    const promise = uploadTaskFile(3, bigFile(CHUNK + 5), undefined, ac.signal)
+    await expect(promise).rejects.toMatchObject({ name: 'AbortError' })
+    expect(mockFetch).not.toHaveBeenCalled()
+    expect(xhrInstances).toHaveLength(0)
   })
 })
 

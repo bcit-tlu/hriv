@@ -37,10 +37,10 @@ export default defineConfig({
       // Floor — not target.  Ratchet upward as component-level tests
       // are filled in.  The >80 % AGENTS.md target is the goal.
       thresholds: {
-        lines: 70,
-        statements: 68,
-        functions: 69,
-        branches: 64,
+        lines: 71,
+        statements: 69,
+        functions: 70,
+        branches: 65,
       },
     },
   },
