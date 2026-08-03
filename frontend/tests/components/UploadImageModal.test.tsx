@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
 vi.mock('../../src/api', async (importOriginal) => {
@@ -188,10 +188,10 @@ describe('UploadImageModal', () => {
 
     await user.click(screen.getByRole('button', { name: 'Import 2 files' }))
 
-    await waitFor(() => expect(bulkImportImages).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+    expect(bulkImportImages).toHaveBeenCalledTimes(1)
     expect(onUploadStarted).toHaveBeenCalledWith(expect.any(Number), '2 files', 3)
     expect(onBulkImportStarted).toHaveBeenCalledWith(job, '2 files', 3, expect.any(Number))
-    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('treats a single zip file as bulk mode', () => {
@@ -231,7 +231,7 @@ describe('UploadImageModal', () => {
     fireEvent.change(fileInput, { target: { files: [a, b] } })
 
     const chip = screen.getByText('second.png').closest('.MuiChip-root') as HTMLElement
-    await user.click(chip.querySelector('svg') as Element)
+    await user.click(within(chip).getByTestId('CancelIcon'))
 
     // Back in single mode: name auto-filled from the remaining file
     expect(await screen.findByLabelText('Name')).toHaveValue('first')
