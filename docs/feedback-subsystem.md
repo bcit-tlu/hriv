@@ -126,6 +126,10 @@ Issue `#789` (with `#713`) defines the provider-aware outcome behavior of the
   button reads "Close" in this state.
 - When no tracking URL is returned (e.g. the Teams provider), the modal shows
   the plain success state and auto-closes after a short delay.
+- Only absolute `http(s)` tracking URLs are surfaced. Any other value
+  (non-http(s) scheme, relative path, or unparseable URL) is discarded and the
+  modal falls back to the no-link auto-close behavior — provider authors must
+  return absolute `http(s)` URLs for the link to appear.
 
 ## Notes For Future Providers
 
