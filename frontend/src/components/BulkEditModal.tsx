@@ -110,7 +110,9 @@ export default function BulkEditModal({
           onClick={handleSave}
           variant="contained"
           disabled={saving}
-          startIcon={saving ? <CircularProgress size={16} color="inherit" aria-hidden /> : undefined}
+          startIcon={
+            saving ? <CircularProgress size={16} color="inherit" aria-hidden /> : undefined
+          }
         >
           {saving ? 'Saving…' : 'Save'}
         </Button>
