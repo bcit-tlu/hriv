@@ -586,36 +586,43 @@ export default function PeoplePage({
     }
   }
 
-  // Bulk add-to-group handler
-  const handleBulkGroupSave = async (groupIds: number[]) => {
+  // Bulk add-to-group handler. Resolves with the group ids that failed so the
+  // modal can prune succeeded groups from the selection for retry.
+  const handleBulkGroupSave = async (groupIds: number[]): Promise<number[]> => {
     try {
       const results = await Promise.allSettled(
         groupIds.map((groupId) => addGroupMembersBulk(groupId, Array.from(selected))),
       )
       await loadData()
 
-      const failures = results.filter(
-        (result): result is PromiseRejectedResult => result.status === 'rejected',
-      )
+      const failedGroupIds = groupIds.filter((_, i) => results[i]?.status === 'rejected')
 
-      if (failures.length > 0) {
-        const failure = failures[0]?.reason
-        const failureMessage = userMessage(
-          failure,
-          'Failed to add selected people to groups. Please try again.',
-        )
-        const groupWord = failures.length === 1 ? 'group' : 'groups'
+      if (failedGroupIds.length > 0) {
+        const distinctReasons = [
+          ...new Set(
+            results
+              .filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+              .map((failure) =>
+                userMessage(
+                  failure.reason,
+                  'Failed to add selected people to groups. Please try again.',
+                ),
+              ),
+          ),
+        ]
+        const groupWord = groupIds.length === 1 ? 'group' : 'groups'
         const selectionWord = selected.size === 1 ? 'person' : 'people'
         setErrorSnack(
-          `Failed to add ${selectionWord} to ${failures.length} of ${groupIds.length} ${groupWord}. ${failureMessage}`,
+          `Failed to add ${selectionWord} to ${failedGroupIds.length} of ${groupIds.length} ${groupWord}. ${distinctReasons.join(' ')}`,
         )
-        throw failure
+        return failedGroupIds
       }
 
       setBulkGroupOpen(false)
       setSelected(new Set())
       setErrorSnack(null)
       setSuccessSnack('Added to group(s).')
+      return []
     } catch (err) {
       console.error('Failed to bulk add to groups', err)
       throw err

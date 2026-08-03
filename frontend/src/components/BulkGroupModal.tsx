@@ -19,7 +19,9 @@ import type { Group } from '../types'
 interface BulkGroupModalProps {
   open: boolean
   onClose: () => void
-  onSave: (groupIds: number[]) => Promise<void>
+  // Resolves with the group ids that failed (empty/void on full success) so
+  // the modal can prune succeeded groups from the selection for retry.
+  onSave: (groupIds: number[]) => Promise<number[] | void>
   groups: Group[]
   selectedCount: number
 }
@@ -48,9 +50,9 @@ export default function BulkGroupModal({
     const token = ++saveTokenRef.current
     setSaving(true)
     try {
-      await onSave(groupIds)
+      const failedGroupIds = await onSave(groupIds)
       if (saveTokenRef.current === token) {
-        setGroupIds([])
+        setGroupIds(failedGroupIds && failedGroupIds.length > 0 ? failedGroupIds : [])
       }
     } catch {
       return

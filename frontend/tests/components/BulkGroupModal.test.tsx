@@ -152,4 +152,25 @@ describe('BulkGroupModal', () => {
     expect(screen.getByText('Lab B1')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add to Groups' })).toBeEnabled()
   })
+
+  it('prunes succeeded groups from the selection when onSave reports failures', async () => {
+    const user = userEvent.setup()
+    // Lab A2 (7) succeeds; Lab B1 (8) fails
+    const onSave = vi.fn().mockResolvedValue([8])
+    render(
+      <BulkGroupModal open onClose={vi.fn()} onSave={onSave} groups={groups} selectedCount={1} />,
+    )
+
+    await user.click(screen.getByRole('combobox'))
+    await user.click(screen.getByRole('option', { name: 'Lab A2' }))
+    await user.click(screen.getByRole('option', { name: 'Lab B1' }))
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Add to Groups' }))
+
+    expect(onSave).toHaveBeenCalledWith([7, 8])
+    // Only the failed group remains selected for retry
+    expect(await screen.findByText('Lab B1')).toBeInTheDocument()
+    expect(screen.queryByText('Lab A2')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add to Groups' })).toBeEnabled()
+  })
 })
