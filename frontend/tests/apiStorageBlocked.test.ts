@@ -21,12 +21,24 @@ function blockedError(): DOMException {
   return new DOMException('Storage is blocked', 'SecurityError')
 }
 
-/** Simulates storage blocked at the property level: any access throws. */
+/**
+ * Simulates storage blocked at the property level: any access throws.
+ *
+ * Note: this relies on Vitest's jsdom environment aliasing `window` to
+ * `globalThis`, so redefining the property here also blocks the
+ * `window.localStorage` fallback inside api.ts `getStorage()`. The seeded
+ * token in the accessor tests guards this coupling: if the environment ever
+ * kept a distinct working `window.localStorage`, those tests would fail
+ * loudly instead of passing vacuously.
+ */
 function installThrowingAccessor() {
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     get() {
       throw blockedError()
+    },
+    set() {
+      /* ignore writes while blocked */
     },
   })
 }
@@ -95,9 +107,17 @@ describe('api.ts with blocked localStorage', () => {
   })
 
   it('imports without crashing when every storage operation throws', async () => {
-    installThrowingStorage()
-    const api = await importApi()
-    expect(api.getToken()).toBeNull()
+    // Seed a real stored token first so the null assertion below proves the
+    // blocked path was taken (a working storage would surface this token).
+    globalThis.localStorage.setItem('hriv_token', 'seeded-token')
+    try {
+      installThrowingStorage()
+      const api = await importApi()
+      expect(api.getToken()).toBeNull()
+    } finally {
+      restoreStorage()
+      globalThis.localStorage.removeItem('hriv_token')
+    }
   })
 
   it('setToken stores the token in memory when storage operations throw', async () => {
