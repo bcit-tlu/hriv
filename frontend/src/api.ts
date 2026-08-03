@@ -290,6 +290,10 @@ function parseError(text: string): { message: string; data?: unknown } {
           )
           .join('; ')
       else if (isMessageDetail(bodyDetail)) message = bodyDetail.message
+      // Object detail without a `message` field would stringify to
+      // "[object Object]"; leave the message empty so userMessage falls back
+      // to the caller's message while `data` keeps the structured payload.
+      else if (isRecord(bodyDetail)) message = ''
       else if (bodyDetail !== undefined) message = String(bodyDetail)
     }
   } catch {
