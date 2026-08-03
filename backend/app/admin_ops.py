@@ -2222,6 +2222,9 @@ async def _run_with_cancel_poll(
             worker_task.cancel()
         if not poll_task.done():
             poll_task.cancel()
+        # The poller shares the caller's AsyncSession; make sure it has fully
+        # stopped before the caller resumes issuing its own queries.
+        await asyncio.gather(poll_task, return_exceptions=True)
 
 
 async def run_files_export(task_id: int) -> None:
