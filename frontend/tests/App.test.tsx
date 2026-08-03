@@ -852,10 +852,11 @@ describe('App shell interactions', () => {
     expect(browseDataFns.loadCategories).toHaveBeenCalledTimes(baseCategories + 1)
     expect(browseDataFns.loadUncategorizedImages).toHaveBeenCalledTimes(baseImages + 1)
 
+    const baseClear = shareableImageStateMock.clearImage.mock.calls.length
     fireEvent.click(screen.getByRole('button', { name: 'Shell home' }))
     expect(browseDataFns.loadCategories).toHaveBeenCalledTimes(baseCategories + 2)
     expect(browseDataFns.loadUncategorizedImages).toHaveBeenCalledTimes(baseImages + 2)
-    expect(shareableImageStateMock.clearImage).toHaveBeenCalled()
+    expect(shareableImageStateMock.clearImage).toHaveBeenCalledTimes(baseClear + 1)
   })
 
   it('loads users for search when the search modal opens', async () => {
