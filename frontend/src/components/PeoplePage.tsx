@@ -1065,7 +1065,7 @@ export default function PeoplePage({
             </TableBody>
           </Table>
           <TablePagination
-            rowsPerPageOptions={[...ROWS_PER_PAGE_OPTIONS]}
+            rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
             component="div"
             count={sortedUsers.length}
             rowsPerPage={rowsPerPage}

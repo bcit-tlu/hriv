@@ -817,7 +817,7 @@ export default function ManagePage({
 
   const renderPagination = (position: 'top' | 'bottom') => (
     <TablePagination
-      rowsPerPageOptions={[...ROWS_PER_PAGE_OPTIONS]}
+      rowsPerPageOptions={ROWS_PER_PAGE_OPTIONS}
       component="div"
       count={sortedImages.length}
       rowsPerPage={rowsPerPage}

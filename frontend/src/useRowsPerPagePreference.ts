@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { getStoredUserScope } from './userScope'
 
 export const ROWS_PER_PAGE_OPTIONS = [5, 10, 25, 50] as const
@@ -19,24 +19,22 @@ function loadStoredRowsPerPage(storageKey: string, defaultRowsPerPage: number): 
 export function useRowsPerPagePreference(tableKey: string, defaultRowsPerPage = 25) {
   const userScope = useMemo(() => getStoredUserScope(), [])
   const storageKey = `hrivpref:rows-per-page:${tableKey}:user:${userScope}`
-  const [rowsPerPage, setRowsPerPageState] = useState(() =>
+  const [rowsPerPage, setRowsPerPage] = useState(() =>
     loadStoredRowsPerPage(storageKey, defaultRowsPerPage),
   )
+  const hasMountedRef = useRef(false)
 
-  const setRowsPerPage = useCallback<Dispatch<SetStateAction<number>>>(
-    (action) => {
-      setRowsPerPageState((prev) => {
-        const value = typeof action === 'function' ? action(prev) : action
-        try {
-          localStorage.setItem(storageKey, String(value))
-        } catch {
-          // Ignore localStorage write failures and fall back to in-memory state.
-        }
-        return value
-      })
-    },
-    [storageKey],
-  )
+  useEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true
+      return
+    }
+    try {
+      localStorage.setItem(storageKey, String(rowsPerPage))
+    } catch {
+      // Ignore localStorage write failures and fall back to in-memory state.
+    }
+  }, [storageKey, rowsPerPage])
 
   return [rowsPerPage, setRowsPerPage] as const
 }
