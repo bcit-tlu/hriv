@@ -711,17 +711,17 @@ export default function App() {
     }
   }, [searchOpen, canEditContent])
 
-  // Load deployed component versions for the footer (admin only).
-  // Backend+backup come from ``/api/admin/version`` (admin-guarded on
-  // the backend; non-admins never see those strings). The frontend
-  // version is served by its own nginx and is not strictly admin-
-  // guarded at the transport layer, but we only fetch it in the admin
-  // path to match the footer's gating behaviour — the displayed
-  // version string carries the same info as the image-tag filenames
-  // already visible in the public JS bundle, so there is no new
-  // information leak.
+  // Load deployed component versions for the footer and About dialog
+  // (admin and instructor). Backend+backup come from
+  // ``/api/admin/version`` (guarded to admin/instructor on the
+  // backend; students never see those strings). The frontend version
+  // is served by its own nginx and is not strictly role-guarded at
+  // the transport layer, but we only fetch it alongside the guarded
+  // versions — the displayed version string carries the same info as
+  // the image-tag filenames already visible in the public JS bundle,
+  // so there is no new information leak.
   useEffect(() => {
-    if (!canManageUsers) {
+    if (!canEditContent) {
       /* eslint-disable react-hooks/set-state-in-effect -- early-return cleanup in conditional fetch effect */
       setBackendVersion(null)
       setBackupVersion(null)
@@ -750,7 +750,7 @@ export default function App() {
         // time.
         setFrontendVersion(null)
       })
-  }, [canManageUsers])
+  }, [canEditContent])
 
   // Program management handlers (for Manage menu)
   const handleAddProgram = useCallback(

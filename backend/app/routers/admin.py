@@ -1080,7 +1080,7 @@ async def upload_task_file(
 
 @router.get("/version")
 async def get_version(
-    _user: Annotated[User, Depends(_admin)],
+    _user: Annotated[User, Depends(require_role("admin", "instructor"))],
 ) -> dict[str, str]:
     """Return deployed component versions.
 
@@ -1102,8 +1102,9 @@ async def get_version(
     admin panel in sync with independently deployed components without
     requiring a backend pod restart.
 
-    Admin-only: version strings leak information about the deployed
-    image and are not surfaced to other roles.
+    Admin and instructor only: instructors need version numbers to
+    include in issue reports (the About dialog), while students have
+    no operational need for deployed-image details.
     """
     synthetic_state = await load_stored_synthetic_result_state()
     latest_synthetic_version = None

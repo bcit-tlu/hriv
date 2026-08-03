@@ -289,6 +289,7 @@ All endpoints except login require a valid JWT bearer token in the `Authorizatio
 | POST   | /api/changelog/mark-read                                                                                  | Yes           | instructor   |
 | PATCH  | /api/changelog/{id}                                                                                       | Yes           | admin        |
 | DELETE | /api/changelog/{id}                                                                                       | Yes           | admin        |
+| GET    | /api/admin/version                                                                                        | Yes           | instructor   |
 | GET    | /api/admin/export                                                                                         | Yes           | admin        |
 | POST   | /api/admin/import                                                                                         | Yes           | admin        |
 | POST   | /api/admin/tasks/rebuild-tiles                                                                            | Yes           | admin        |
