@@ -77,6 +77,7 @@ import {
   getUploadStatus,
   finalizeUpload,
   type FilesImportArchive,
+  type FilesImportArchiveDeleteResponse,
   type ExportArchive,
   fetchPrograms,
   createProgram,
@@ -1644,11 +1645,17 @@ describe('Admin archive API', () => {
   })
 
   it('deleteFilesImportArchive sends DELETE to the archive path', async () => {
-    mockFetch.mockReturnValueOnce(jsonResponse({ deleted: true }))
-    await deleteFilesImportArchive(9)
+    const resp: FilesImportArchiveDeleteResponse = {
+      archive_task_id: 9,
+      deleted: true,
+      path: '/data/import-archives/9.tar.gz',
+    }
+    mockFetch.mockReturnValueOnce(jsonResponse(resp))
+    const result = await deleteFilesImportArchive(9)
     const [url, init] = mockFetch.mock.calls[0]
     expect(url).toBe('/api/admin/tasks/files-import/archives/9')
     expect(init.method).toBe('DELETE')
+    expect(result).toEqual(resp)
   })
 
   it('listExportArchives sends GET to /admin/tasks/backup-archives', async () => {
