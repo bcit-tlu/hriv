@@ -292,6 +292,17 @@ def test_extract_and_restore_rejects_invalid_manifest_json(tmp_path) -> None:
             )
 
 
+def test_extract_and_restore_rejects_non_utf8_manifest(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    archive = _make_manifest_archive(tmp_path, b"\xff\xfe\x00binary")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="not valid JSON"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+
 def test_extract_and_restore_rejects_directory_named_like_manifest(tmp_path) -> None:
     data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
     payload_dir = tmp_path / "payload"

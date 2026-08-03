@@ -134,7 +134,7 @@ def _validate_files_import_manifest(staging_root: Path) -> int:
             "regular file"
         )
     try:
-        raw = manifest_path.read_text(encoding="utf-8")
+        raw = manifest_path.read_bytes().decode("utf-8", errors="replace")
     except OSError as exc:
         raise ValueError(
             f"Could not read archive manifest ({FILES_EXPORT_MANIFEST_NAME}) "
@@ -144,7 +144,7 @@ def _validate_files_import_manifest(staging_root: Path) -> int:
         try:
             manifest_path.unlink()
         except OSError:
-            logger.debug("Failed to remove staged manifest", exc_info=True)
+            logger.warning("Failed to remove staged manifest", exc_info=True)
     try:
         manifest = json.loads(raw)
     except ValueError as exc:
