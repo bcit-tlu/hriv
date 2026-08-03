@@ -2174,29 +2174,47 @@ async def _run_with_cancel_poll(
             [worker_task, poll_task], return_when=asyncio.FIRST_COMPLETED,
         )
         if worker_task in done:
-            poll_task.cancel()
+            # The poller may have finished in the same wait cycle; retrieve
+            # its exception (if any) so it is not silently dropped.
+            if poll_task in done and not poll_task.cancelled():
+                stray_poll_exc = poll_task.exception()
+                if stray_poll_exc is not None:
+                    logger.warning(
+                        "Cancel poller failed while the worker was finishing",
+                        exc_info=stray_poll_exc,
+                    )
+            else:
+                poll_task.cancel()
             return worker_task.result()
         poll_exc = poll_task.exception() if poll_task.done() else None
         if poll_exc is not None:
             cancel_event.set()  # stop the worker thread
-            try:
-                await asyncio.wait_for(worker_task, timeout=shutdown_grace)
-            except asyncio.TimeoutError:
+            # Plain asyncio.wait does not cancel the task on timeout (unlike
+            # wait_for), so a slow worker is left to be cancelled explicitly.
+            await asyncio.wait([worker_task], timeout=shutdown_grace)
+            if worker_task.done() and not worker_task.cancelled():
+                worker_exc = worker_task.exception()
+                if worker_exc is not None:
+                    logger.warning(
+                        "Worker failed while shutting down after a cancel-"
+                        "poller error",
+                        exc_info=worker_exc,
+                    )
+            elif not worker_task.done():
                 logger.debug(grace_timeout_log)
-            if not worker_task.done():
                 worker_task.cancel()
             raise poll_exc
-        # Poll returned normally → cancellation detected. Wait briefly for
-        # the worker thread to notice the event.
-        try:
-            await asyncio.wait_for(worker_task, timeout=shutdown_grace)
-        except asyncio.TimeoutError:
-            logger.debug(grace_timeout_log)
-        if worker_task.done():
+        # Poll returned normally → cancellation detected. The poller sets
+        # the event itself, but set it here too so the worker is guaranteed
+        # to be signalled, then wait briefly for it to notice.
+        cancel_event.set()
+        await asyncio.wait([worker_task], timeout=shutdown_grace)
+        if worker_task.done() and not worker_task.cancelled():
             if return_result_on_cancel:
                 return worker_task.result()
             worker_task.result()  # propagate worker exceptions
-        else:
+        elif not worker_task.done():
+            logger.debug(grace_timeout_log)
             worker_task.cancel()
         raise TaskCancelled("Task cancelled by admin")
     finally:

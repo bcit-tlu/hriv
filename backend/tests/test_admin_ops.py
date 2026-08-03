@@ -33,6 +33,7 @@ from app.admin_ops import (
     _iter_export_files,
     _parse_dt,
     _read_file,
+    _run_with_cancel_poll,
     _update_task,
     _write_file,
     delete_files_import_archive,
@@ -2952,3 +2953,171 @@ async def test_queue_rebuild_tiles_after_import_falls_back_to_background_tasks(t
     # Params file is left for the in-process runner to consume and delete.
     params_files = list(tmp_path.glob("rebuild-after-import-*.json"))
     assert len(params_files) == 1
+
+
+# ── _run_with_cancel_poll ─────────────────────────────────
+
+
+def _make_cancel_poll_tasks(worker_coro, poll_coro):
+    return (
+        asyncio.ensure_future(worker_coro),
+        asyncio.ensure_future(poll_coro),
+    )
+
+
+async def test_run_with_cancel_poll_worker_wins() -> None:
+    async def worker() -> int:
+        return 42
+
+    async def poll() -> None:
+        await asyncio.sleep(60)
+
+    worker_task, poll_task = _make_cancel_poll_tasks(worker(), poll())
+    result = await _run_with_cancel_poll(
+        worker_task, poll_task,
+        cancel_event=threading.Event(),
+        grace_timeout_log="grace timeout",
+    )
+    assert result == 42
+
+
+async def test_run_with_cancel_poll_worker_exception_propagates() -> None:
+    async def worker() -> None:
+        raise RuntimeError("boom")
+
+    async def poll() -> None:
+        await asyncio.sleep(60)
+
+    worker_task, poll_task = _make_cancel_poll_tasks(worker(), poll())
+    with pytest.raises(RuntimeError, match="boom"):
+        await _run_with_cancel_poll(
+            worker_task, poll_task,
+            cancel_event=threading.Event(),
+            grace_timeout_log="grace timeout",
+        )
+
+
+async def test_run_with_cancel_poll_cancellation_returns_result() -> None:
+    cancel_event = threading.Event()
+
+    async def worker() -> str:
+        while not cancel_event.is_set():
+            await asyncio.sleep(0.01)
+        return "partial"
+
+    async def poll() -> None:
+        return None  # cancellation detected immediately
+
+    worker_task, poll_task = _make_cancel_poll_tasks(worker(), poll())
+    result = await _run_with_cancel_poll(
+        worker_task, poll_task,
+        cancel_event=cancel_event,
+        grace_timeout_log="grace timeout",
+        return_result_on_cancel=True,
+    )
+    assert result == "partial"
+
+
+async def test_run_with_cancel_poll_cancellation_raises_task_cancelled() -> None:
+    cancel_event = threading.Event()
+
+    async def worker() -> None:
+        while not cancel_event.is_set():
+            await asyncio.sleep(0.01)
+
+    async def poll() -> None:
+        return None
+
+    worker_task, poll_task = _make_cancel_poll_tasks(worker(), poll())
+    with pytest.raises(TaskCancelled):
+        await _run_with_cancel_poll(
+            worker_task, poll_task,
+            cancel_event=cancel_event,
+            grace_timeout_log="grace timeout",
+        )
+
+
+async def test_run_with_cancel_poll_grace_timeout_raises_task_cancelled() -> None:
+    """A worker that ignores the cancel event is cancelled after the grace
+    period and the caller still gets ``TaskCancelled`` (not CancelledError)."""
+
+    async def worker() -> None:
+        await asyncio.sleep(60)  # never observes the cancel event
+
+    async def poll() -> None:
+        return None
+
+    worker_task, poll_task = _make_cancel_poll_tasks(worker(), poll())
+    with pytest.raises(TaskCancelled):
+        await _run_with_cancel_poll(
+            worker_task, poll_task,
+            cancel_event=threading.Event(),
+            grace_timeout_log="grace timeout",
+            shutdown_grace=0.05,
+        )
+    with pytest.raises(asyncio.CancelledError):
+        await worker_task
+
+
+async def test_run_with_cancel_poll_poller_error_reraised() -> None:
+    cancel_event = threading.Event()
+
+    async def worker() -> None:
+        while not cancel_event.is_set():
+            await asyncio.sleep(0.01)
+
+    async def poll() -> None:
+        raise ConnectionError("db gone")
+
+    worker_task, poll_task = _make_cancel_poll_tasks(worker(), poll())
+    with pytest.raises(ConnectionError, match="db gone"):
+        await _run_with_cancel_poll(
+            worker_task, poll_task,
+            cancel_event=cancel_event,
+            grace_timeout_log="grace timeout",
+        )
+    assert cancel_event.is_set()
+
+
+async def test_run_with_cancel_poll_poller_error_not_masked_by_worker() -> None:
+    """The poller's exception wins even if the worker also fails during the
+    shutdown grace period."""
+    cancel_event = threading.Event()
+
+    async def worker() -> None:
+        while not cancel_event.is_set():
+            await asyncio.sleep(0.01)
+        raise RuntimeError("worker failed during shutdown")
+
+    async def poll() -> None:
+        raise ConnectionError("db gone")
+
+    worker_task, poll_task = _make_cancel_poll_tasks(worker(), poll())
+    with pytest.raises(ConnectionError, match="db gone"):
+        await _run_with_cancel_poll(
+            worker_task, poll_task,
+            cancel_event=cancel_event,
+            grace_timeout_log="grace timeout",
+        )
+
+
+async def test_run_with_cancel_poll_poller_error_grace_timeout() -> None:
+    """A slow worker after a poller error is cancelled; the poller error is
+    still the exception the caller sees."""
+
+    async def worker() -> None:
+        await asyncio.sleep(60)
+
+    async def poll() -> None:
+        raise ConnectionError("db gone")
+
+    worker_task, poll_task = _make_cancel_poll_tasks(worker(), poll())
+    with pytest.raises(ConnectionError, match="db gone"):
+        await _run_with_cancel_poll(
+            worker_task, poll_task,
+            cancel_event=threading.Event(),
+            grace_timeout_log="grace timeout",
+            shutdown_grace=0.05,
+        )
+    with pytest.raises(asyncio.CancelledError):
+        await worker_task
