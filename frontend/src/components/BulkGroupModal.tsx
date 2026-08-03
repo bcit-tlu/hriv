@@ -85,6 +85,7 @@ export default function BulkGroupModal({
           <InputLabel id="bulk-group-label">Groups</InputLabel>
           <Select
             multiple
+            disabled={saving}
             labelId="bulk-group-label"
             value={groupIds}
             onChange={handleGroupChange}
