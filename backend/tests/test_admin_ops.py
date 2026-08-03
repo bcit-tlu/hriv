@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from sqlalchemy.sql.dml import Update
 
 from app.database import settings
 from app.models import AdminTask
@@ -1910,6 +1911,13 @@ async def test_run_files_import_uses_import_staging_dir_and_preserves_data(tmp_p
     assert task.status == "completed"
     assert task.input_checksum == compute_archive_sha256(archive)
     assert "Archive SHA-256 recorded:" in task.log
+    backfill_updates = [
+        call.args[0]
+        for call in mock_session.execute.call_args_list
+        if isinstance(call.args[0], Update)
+    ]
+    assert len(backfill_updates) == 1
+    assert backfill_updates[0].table.name == "admin_tasks"
     assert task.progress == 100
     assert "Tile rebuild task #99" in task.log
     assert (source_dir / "new.tiff").read_text() == "new"

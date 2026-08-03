@@ -2585,6 +2585,11 @@ async def run_files_import(
                     f"have {format_bytes(free_bytes)}"
                 )
 
+            await _update_task(
+                session, task, progress=2,
+                log_line="Computing archive SHA-256 for integrity verification…",
+                check_cancelled=True,
+            )
             checksum = await asyncio.to_thread(
                 compute_archive_sha256, input_path
             )
@@ -2597,6 +2602,18 @@ async def run_files_import(
                 )
             else:
                 task.input_checksum = checksum
+                # Backfill tasks sharing this retained archive (e.g. the
+                # pre-checksum task a rerun was launched from) so future
+                # reruns from any of them verify against this baseline.
+                await session.execute(
+                    update(AdminTask)
+                    .where(
+                        AdminTask.task_type == "files_import",
+                        AdminTask.input_path == input_path,
+                        AdminTask.input_checksum.is_(None),
+                    )
+                    .values(input_checksum=checksum)
+                )
                 checksum_note = f"Archive SHA-256 recorded: {checksum}."
             await _update_task(
                 session, task, progress=3,

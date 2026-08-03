@@ -273,7 +273,8 @@ retained archives and makes reruns reproducible. It is an integrity check,
 not a security feature — it complements (and does not replace) the archive
 path validation and manifest validation above. Archives retained before this
 feature have no recorded checksum; their next import records a baseline
-checksum, and subsequent reruns are verified against it. The task log shows
+checksum (backfilled onto every task sharing that archive's `input_path`, so
+reruns launched from any of those tasks verify against it). The task log shows
 either `Archive SHA-256 recorded: <hex>.` (baseline) or
 `Archive integrity verified: SHA-256 matches the original upload.` (verified
 rerun).
