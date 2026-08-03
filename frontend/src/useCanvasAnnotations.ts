@@ -157,23 +157,21 @@ export function useCanvasAnnotations(deps: UseCanvasAnnotationsDeps) {
   // Rapid edits reset a 600ms timer; if a save is already in-flight the
   // latest data is queued and flushed when the current request completes.
   // Also eagerly updates local state so view mode reflects edits immediately.
-  const handleCanvasAnnotationsChange = useCallback(
-    (annotations: CanvasAnnotation[]) => {
-      setLocalCanvasAnnotations(annotations)
-      latestCanvasAnnotationsRef.current = annotations
-      if (canvasSaveTimerRef.current) clearTimeout(canvasSaveTimerRef.current)
-      if (canvasSaveInFlightRef.current) {
-        // A save is in-flight — queue the latest data (replaces any prior queued data)
-        pendingCanvasAnnotationsRef.current = annotations
-        return
-      }
-      canvasSaveTimerRef.current = setTimeout(() => {
-        canvasSaveTimerRef.current = null
-        void saveCanvasAnnotations(annotations)
-      }, 600)
-    },
-    [saveCanvasAnnotations],
-  )
+  const handleCanvasAnnotationsChange = useCallback((annotations: CanvasAnnotation[]) => {
+    setLocalCanvasAnnotations(annotations)
+    latestCanvasAnnotationsRef.current = annotations
+    if (canvasSaveTimerRef.current) clearTimeout(canvasSaveTimerRef.current)
+    if (canvasSaveInFlightRef.current) {
+      // A save is in-flight — queue the latest data (replaces any prior queued data)
+      pendingCanvasAnnotationsRef.current = annotations
+      return
+    }
+    canvasSaveTimerRef.current = setTimeout(() => {
+      canvasSaveTimerRef.current = null
+      // Read through the ref so the debounce window never fires a stale closure
+      void saveCanvasAnnotationsRef.current(annotations)
+    }, 600)
+  }, [])
 
   // Flush any pending canvas annotation save immediately (bypass debounce).
   // Used by the "Done" button to ensure data is persisted before exiting edit mode,
