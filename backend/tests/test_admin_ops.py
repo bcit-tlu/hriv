@@ -236,6 +236,22 @@ def test_extract_and_restore_legacy_archive_without_manifest(tmp_path) -> None:
     assert (source_dir / "new.tiff").read_text() == "new"
 
 
+def test_extract_and_restore_rejects_manifest_only_archive(tmp_path) -> None:
+    data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
+    manifest = json.dumps(build_files_export_manifest()).encode("utf-8")
+    archive = str(tmp_path / "manifest-only.tar.gz")
+    with tarfile.open(archive, "w:gz") as tar:
+        info = tarfile.TarInfo(FILES_EXPORT_MANIFEST_NAME)
+        info.size = len(manifest)
+        tar.addfile(info, io.BytesIO(manifest))
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with pytest.raises(ValueError, match="no data entries"):
+            _extract_and_restore(
+                archive, tmpdir, str(data_dir), str(tiles_dir), str(source_dir),
+            )
+
+
 def test_extract_and_restore_rejects_unsupported_format_version(tmp_path) -> None:
     data_dir, tiles_dir, source_dir = _restore_dirs(tmp_path)
     manifest = build_files_export_manifest()

@@ -136,7 +136,10 @@ For a full cross-environment clone, follow this order:
 
 > HRIV is **not** in production and has no legacy export archives. Imports do not
 > need to support older export formats — backward-compat code can be removed
-> rather than maintained.
+> rather than maintained. The one deliberate exception is manifest-less
+> archives: retained filesystem-import archives already sitting on deployed
+> data volumes predate the manifest, so they stay importable as legacy
+> format v0 (see below) to keep their reruns working.
 
 ### Archive manifest and format versioning
 

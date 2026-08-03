@@ -33,6 +33,7 @@ from .backup_access import (
     BackupSnapshotCancelledError,
     restore_snapshot_file,
 )
+from .component_versions import get_app_version
 from .database import get_async_session, settings
 from .tile_order import INITIAL_SCOPE_REVISION
 from .worker import enqueue_admin_task
@@ -84,16 +85,11 @@ FILES_EXPORT_FORMAT_VERSION = 1
 SUPPORTED_FILES_IMPORT_FORMAT_VERSIONS = frozenset({FILES_EXPORT_FORMAT_VERSION})
 
 
-def _app_version() -> str:
-    """Return the deployed application version, or ``unknown``."""
-    return os.environ.get("APP_VERSION", "").strip() or "unknown"
-
-
 def build_files_export_manifest() -> dict[str, object]:
     """Build the manifest embedded at the root of filesystem exports."""
     return {
         "format_version": FILES_EXPORT_FORMAT_VERSION,
-        "hriv_version": _app_version(),
+        "hriv_version": get_app_version(),
         "export_type": "filesystem",
         "created_at": datetime.now(timezone.utc)
         .isoformat()
@@ -2476,6 +2472,9 @@ def _extract_and_restore(
             if len(entries) == 1 and entries[0].is_dir()
             else staging_root
         )
+
+    if not extracted_dir.is_dir() or not any(extracted_dir.iterdir()):
+        raise ValueError("Archive contains no data entries to restore")
 
     _check_cancel()
     if on_progress:

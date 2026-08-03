@@ -10,6 +10,8 @@ from typing import Protocol
 
 import httpx
 
+from .component_versions import get_app_version
+
 logger = logging.getLogger(__name__)
 
 _TEAMS_RATE_LIMIT_SIGNAL = "Microsoft Teams endpoint returned HTTP error 429"
@@ -214,7 +216,7 @@ class TeamsFeedbackDelivery:
 
 def get_feedback_app_version() -> str:
     """Return the deployed app version for provider payloads."""
-    return os.environ.get("APP_VERSION", "").strip() or "unknown"
+    return get_app_version()
 
 
 def get_feedback_submission_timestamp() -> str:

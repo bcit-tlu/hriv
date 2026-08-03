@@ -52,6 +52,11 @@ def _resolve_commit_sha(*candidates: str | None) -> str:
     return "unknown"
 
 
+def get_app_version() -> str:
+    """Return the deployed application version, or ``unknown``."""
+    return _coerce(os.environ.get("APP_VERSION"), "unknown")
+
+
 def get_backend_version() -> str:
     return _coerce(os.environ.get("APP_VERSION"), "dev")
 
