@@ -50,7 +50,8 @@ export default function BulkGroupModal({
     const token = ++saveTokenRef.current
     setSaving(true)
     try {
-      const failedGroupIds = (await onSave(groupIds))?.filter((id) => groupIds.includes(id)) ?? []
+      const returnedIds = (await onSave(groupIds)) ?? []
+      const failedGroupIds = [...new Set(returnedIds)].filter((id) => groupIds.includes(id))
       if (saveTokenRef.current === token) {
         setGroupIds(failedGroupIds)
       }
