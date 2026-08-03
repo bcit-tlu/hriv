@@ -60,7 +60,7 @@ test('synthetic student can log in, browse, and view an image', async ({ page })
 
         // Local-credentials view. If OIDC is enabled, click through to local form.
         if (oidcEnabled) {
-          await page.getByRole('button', { name: 'Use a local user' }).click()
+          await page.getByRole('button', { name: 'Log in with a guest account' }).click()
         }
         await expect(page.getByLabel('Username')).toBeVisible()
       }),
