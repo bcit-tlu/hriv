@@ -128,6 +128,7 @@ reconciliation model for both environments.
 | [docs/observability-operations.md](docs/observability-operations.md)                 | Alert catalogue, routing policy, validation drills, and readiness checklist     |
 | [docs/observability-runbooks.md](docs/observability-runbooks.md)                     | Alert-linked operator runbooks for availability, storage, backups, and load     |
 | [docs/synthetic-monitoring.md](docs/synthetic-monitoring.md)                         | Synthetic Playwright journey, configuration, and operator runbook               |
+| [docs/per-file-restore-design.md](docs/per-file-restore-design.md)                   | Per-file restore design and implemented backend/UI shape                        |
 | [docs/rebuild-architecture-design.md](docs/rebuild-architecture-design.md)           | Design plan for scalable, parallel tile rebuilds after backup restores          |
 | [AGENTS.md](AGENTS.md)                                                               | Contributor setup, workflow, and **Critical Invariants**                        |
 
