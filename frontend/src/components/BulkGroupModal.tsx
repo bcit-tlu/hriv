@@ -53,6 +53,7 @@ export default function BulkGroupModal({
   }
 
   const handleClose = () => {
+    setSaving(false)
     setGroupIds([])
     onClose()
   }

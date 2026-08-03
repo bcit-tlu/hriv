@@ -53,6 +53,7 @@ export default function BulkEditModal({
   }
 
   const handleClose = () => {
+    setSaving(false)
     setProgramIds([])
     onClose()
   }
