@@ -110,7 +110,7 @@ describe('BulkGroupModal', () => {
     // Cancel stays enabled so a hung request can never trap the user
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeEnabled()
 
-    // Further clicks while in flight do not trigger another save
+    // The disabled button ignores further clicks, so no second save fires
     fireEvent.click(savingButton)
     expect(onSave).toHaveBeenCalledTimes(1)
 
