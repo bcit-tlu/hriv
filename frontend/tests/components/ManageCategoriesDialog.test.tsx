@@ -13,10 +13,12 @@
  * 9. Edit button opens edit dialog
  * 10. Image count display
  * 11. Category indentation via depth
+ * 12. Edit-save flow for nested categories (inherited restrictions, hidden ancestor)
+ * 13. Drag-and-drop reorder (root reorder, nesting, failure refresh, image interleave, subtree moves)
  */
 
 import { StrictMode } from 'react'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import ManageCategoriesDialog from '../../src/components/ManageCategoriesDialog'
@@ -27,6 +29,10 @@ import { makeCategory, makeImage } from '../helpers/fixtures'
 beforeEach(() => {
   localStorage.clear()
   resetCategoryTreeExpansionPreferencesForTests()
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
 })
 
 // ---------------------------------------------------------------------------
@@ -613,7 +619,10 @@ describe('ManageCategoriesDialog — edit save', () => {
 
 /** Give the list and its rows deterministic geometry (jsdom rects are all 0). */
 function mockListGeometry() {
-  const list = document.querySelector('ul') as HTMLElement
+  // Scope to the list that actually contains the category rows
+  const list = document
+    .querySelector<HTMLElement>('[data-category-id]')!
+    .closest('ul') as HTMLElement
   const listRect = { top: 0, bottom: 400, left: 0, right: 400, width: 400, height: 400, x: 0, y: 0 }
   vi.spyOn(list, 'getBoundingClientRect').mockReturnValue({
     ...listRect,
