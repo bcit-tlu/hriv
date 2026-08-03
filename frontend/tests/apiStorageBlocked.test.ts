@@ -81,9 +81,17 @@ afterEach(() => {
 
 describe('api.ts with blocked localStorage', () => {
   it('imports without crashing when the localStorage accessor throws', async () => {
-    installThrowingAccessor()
-    const api = await importApi()
-    expect(api.getToken()).toBeNull()
+    // Seed a real stored token first so the null assertion below proves the
+    // blocked path was taken (a working storage would surface this token).
+    globalThis.localStorage.setItem('hriv_token', 'seeded-token')
+    try {
+      installThrowingAccessor()
+      const api = await importApi()
+      expect(api.getToken()).toBeNull()
+    } finally {
+      restoreStorage()
+      globalThis.localStorage.removeItem('hriv_token')
+    }
   })
 
   it('imports without crashing when every storage operation throws', async () => {
@@ -133,6 +141,7 @@ describe('api.ts with blocked localStorage', () => {
   })
 
   it('does not disturb tokens persisted by working storage in other tests', async () => {
+    restoreStorage()
     const api = await importApi()
     api.setToken('persisted-token')
     expect(globalThis.localStorage.getItem('hriv_token')).toBe('persisted-token')
